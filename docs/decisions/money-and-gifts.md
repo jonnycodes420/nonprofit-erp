@@ -78,6 +78,23 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **The bookkeeper export must foot in cents before a byte is written.** Mismatch is a 409, nothing
   repaired; the database sum is asked for exactly, not pre-rounded (`bookkeeper.js`). (BUILD-87)
 
+### GIVE-2 — the four figures on an online gift
+- **Gross, covered, fee and net are four different questions and `shared/giftFooting.js` names all
+  four.** A thermometer counts INTENDED (gross minus covered); a receipt, Reports and the ledger
+  count GROSS; a bank reconciliation counts NET (gross minus fee). Each is right for its own screen
+  and none is right for another's. (GIVE-2 §5)
+- **Net is derived, never stored.** A stored net column would be a second opinion about a
+  subtraction, and the only thing a second opinion about a subtraction can do is disagree.
+  (GIVE-2 §5)
+- **The cover-the-fee gross-up is the ORG's rate (`shared/processingRates.js`), and it is the CARD
+  rate.** With Stripe Checkout the donor picks a method after the amount is fixed, so the dearer of
+  the two is the only one safe to ask for: a donor who then pays by bank transfer has covered more
+  than the processor took, never less, and the sentence under the box says so. A percentage is typed
+  as a percentage and stored as a fraction, in one place. (GIVE-2 §5)
+- **A capped rate needs its own branch.** The naive gross-up is wrong above an ACH cap in the
+  expensive direction: a $5,000 bank gift grossed up at 0.8% would add $40 to cover a fee Stripe
+  caps at $5. (GIVE-2 §5)
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)

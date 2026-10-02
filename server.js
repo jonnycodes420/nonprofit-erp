@@ -928,7 +928,11 @@ async function recordGift(o) {
                 // donor-covers-fee amount above it), and the provider's own
                 // subscription id. They belong in THIS insert and nowhere else:
                 // a second UPDATE after the fact is a second write path.
-                "giving_source_id", "processor_fee_amount", "provider_recurring_ref",
+                // GIVE-2 §5 — and WHO SAID so. NULL means nobody has: a zero
+                // fee that nobody stated is not the same fact as a gift that
+                // cost nothing, and `shared/giftFooting.js` is the one place
+                // that distinction is read.
+                "giving_source_id", "processor_fee_amount", "processor_fee_source", "provider_recurring_ref",
                 // BUILD-95 — the photograph of the cheque this gift came on.
                 // In THIS insert for the same reason as the source columns
                 // above: a second UPDATE after the fact is a second write path.
@@ -949,7 +953,13 @@ async function recordGift(o) {
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
                 o.givingPageId || null, o.peerFundraiserId || null, o.coverFeeAmount || 0,
                 o.recurringSubscriptionId || null, actorId, actorName,
-                o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0), o.providerRecurringRef || null,
+                o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0),
+                // A gift through a connected giving source always arrives with
+                // the provider's own fee stated, so it needs no caller to say
+                // so — which also means every existing call site stays correct
+                // without being touched.
+                o.processorFeeSource || (o.givingSourceId ? "provider" : null),
+                o.providerRecurringRef || null,
                 o.chequeAssetId || null,
                 o.quidProQuoValue != null ? round2(Math.max(0, amount - Number(o.quidProQuoValue))) : null,
                 o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
@@ -4091,6 +4101,109 @@ function signRecoveryToken(subscriptionId, orgId) {
   return `${payload}.${sig}`;
 }
 
+// BUILD-77 Part 6 — the reconnect token binds a giving-page prefill to the
+// EXISTING donor so the new subscription stitches back to their record
+// (never a second donor). Same HMAC construction as the recovery token.
+function signReconnectToken(donorId, orgId) {
+  const payload = Buffer.from(JSON.stringify({ donorId, orgId, k: "reconnect" })).toString("base64url");
+  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+function verifyReconnectToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try { const d = JSON.parse(Buffer.from(payload, "base64url").toString()); return (d.k === "reconnect" && d.donorId && d.orgId) ? d : null; }
+  catch { return null; }
+}
+
+// ── GIVE-2 §3 · WHICH AMOUNTS A FORM OFFERS ────────────────────────────────
+// Two questions, in this order, and the org wins both:
+//
+//   1. Has this form asked for computed amounts (`smartAmounts`)? OFF by
+//      default. A fundraiser who typed four numbers is not overruled.
+//   2. Who is looking? A donor arriving on their OWN personal link (the
+//      BUILD-77 reconnect token, which is the personal link this product
+//      already sends) sees amounts starting from their own last gift. Everybody
+//      else sees amounts drawn from this organisation's own recorded gifts
+//      through this form.
+//
+// FROM THE ORG'S OWN DATA AND NOTHING ELSE. Not wealth data, not a capacity
+// estimate, not anything bought from anybody — that is PROSPECT-1 and it is a
+// different build with different promises. The sentence the form shows says
+// exactly which of the two answers a donor is reading.
+//
+// A ladder that cannot be computed honestly is NOT computed: fewer than eight
+// gifts is not a distribution, and the form keeps what the fundraiser set.
+async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
+  if (!spec || !spec.amount || !spec.amount.smartAmounts) return null;
+  const S = await smartAmountsMod();
+
+  // THE DONOR'S OWN LAST GIFT, when they hold their own link. Verified by HMAC
+  // and scoped to this org, so a token minted for another organisation reads
+  // nothing here.
+  if (personalToken) {
+    const decoded = verifyReconnectToken(personalToken);
+    if (decoded && decoded.orgId === orgId) {
+      const [d] = await query(
+        `SELECT last_gift_amount FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+        [decoded.donorId, orgId]);
+      const ladder = d ? S.ladderFromLastGift(toCents(d.last_gift_amount) || 0) : null;
+      if (ladder) return ladder;
+    }
+  }
+
+  // THE ORG'S OWN DISTRIBUTION. This form's gifts when it has enough of them,
+  // the org's otherwise — a brand-new form has no history of its own and the
+  // organisation's is the next most honest thing. Twenty-four months, because a
+  // ladder built on what people gave four years ago is a ladder about a
+  // different organisation. Cover-the-fee comes OFF first: what the donor MEANT
+  // to give is the number a suggested amount is built from.
+  const rows = await query(
+    `SELECT round((amount - COALESCE(cover_fee_amount,0)) * 100)::bigint AS cents
+       FROM gifts
+      WHERE org_id = ? AND giving_page_id = ?
+        AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
+        AND amount > 0
+      ORDER BY date DESC LIMIT 2000`, [orgId, givingPageId]);
+  let cents = rows.map(r => Number(r.cents));
+  let scope = "this form";
+  if (cents.length < S.MIN_SAMPLE) {
+    const orgRows = await query(
+      `SELECT round((amount - COALESCE(cover_fee_amount,0)) * 100)::bigint AS cents
+         FROM gifts
+        WHERE org_id = ?
+          AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
+          AND amount > 0
+        ORDER BY date DESC LIMIT 2000`, [orgId]);
+    if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organisation"; }
+  }
+  const dist = S.ladderFromDistribution(cents);
+  if (!dist.amountsCents) return null;
+  return { ...dist, scope };
+}
+
+// The one place a computed ladder replaces a typed one, so the public form and
+// the editor's preview cannot disagree about which answer the donor is reading.
+// A null ladder leaves the spec byte-for-byte as `formSpec` built it.
+async function withSmartAmounts(spec, ctx) {
+  const ladder = await smartAmountsFor(spec, ctx).catch(e => {
+    // A ladder is a nicety. A form that cannot compute one still has to take a
+    // gift, so the typed amounts stand and the failure is logged.
+    console.error("[forms] could not compute smart amounts:", e.message);
+    return null;
+  });
+  if (!ladder) return spec;
+  return { ...spec, amount: { ...spec.amount,
+    amountsCents: [...ladder.amountsCents],
+    amountsSource: ladder.source,
+    amountsSentence: ladder.sentence || "",
+  } };
+}
+
 function buildCardUpdateUrl(subscriptionId, orgId) {
   // Canonical domain via the vercel.json /recurring/update-card proxy rewrite
   // — the failed-card recovery email is exactly where a suspicious-looking
@@ -4527,6 +4640,36 @@ async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, 
 // function — not two components fed similar props — so a preview cannot show a
 // field the donor will not get.
 async function formConfigMod() { return import("./shared/formConfig.js"); }
+
+// GIVE-2 — the three pure money modules the giving layer reads, loaded the same
+// way, so there is one place each rule lives:
+//   processingRates  what the processor takes and what the cover-fee box adds
+//   giftFooting      gross / covered / fee / net on one gift, footing to the cent
+//   smartAmounts     which amounts a form offers, and the ask from a history
+//   employerMatch    the employer list and the (unsigned, unnamed) lookup shape
+async function ratesMod() { return import("./shared/processingRates.js"); }
+async function footingMod() { return import("./shared/giftFooting.js"); }
+async function smartAmountsMod() { return import("./shared/smartAmounts.js"); }
+async function employerMatchMod() { return import("./shared/employerMatch.js"); }
+
+// ── GIVE-2 §5 — THE RATE THE PUBLIC FORM SHOWS ────────────────────────────
+// Every public giving payload carries it, so the sentence under the
+// cover-the-fee box is the org's own rate rather than a constant hand-copied
+// into two client files. ONE function, because four payloads show this number
+// and a number shown in four places is computed once (CLAUDE.md).
+//
+// The CARD rate, and only the card rate: with Stripe Checkout the donor picks
+// how to pay after the amount is fixed, so the dearer of the two is the only
+// one it is safe to ask for. The sentence says so.
+async function coverFeePayload(org) {
+  const R = await ratesMod();
+  const rates = R.orgRates(org || {});
+  return {
+    feeRate: { pct: rates.card.pct, flatCents: rates.card.flatCents, capCents: rates.card.capCents },
+    feeRateSentence: R.rateSentence(rates.card),
+    coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organisation.`,
+  };
+}
 
 // Caller-supplied name/story/org/page title get interpolated into a raw
 // HTML email body below — escape them so a submitted name like
@@ -10013,7 +10156,9 @@ require("./routes/give").mount({
   checkThemeImageDimensions, checkWriteAccess, classifySourceError, computeRecoveryRate,
   consumerEmailHtml, crypto, directorySearchLimiter, displayNameCase, donateLimiter, donorAudit,
   donorFacingOrgName, donorFromAddress, donorMailDecision, donorSendOpts, einLookup,
-  ensureOrgLedger, escHtmlWf, escapeHtml, express, foldEmail, formConfigMod, fromWithDisplayName,
+  ensureOrgLedger, escHtmlWf, escapeHtml, express, foldEmail, footingMod, formConfigMod,
+  fromWithDisplayName, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  signReconnectToken, verifyReconnectToken, withSmartAmounts,
   fundraiserManageLimiter, getThemeAsset, giveThemePayload, invitationLimiter, linkAccountEmail,
   logRecoveryEvent, logRecurringChange, networkSignupLimiter, normalizeAccent, normalizeTint,
   normalizeUploadImage, notifyExpiringCards, notifyUserOnce, orgOwns, orgSendingIdentity, orgTime,
@@ -10045,7 +10190,9 @@ require("./routes/crm").mount({
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
-  filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
+  filterBySegment, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
+  ratesMod, smartAmountsMod, coverFeePayload, geocode, getOrgAccessState,
+  signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,
   grantDocs, grantMoneyRows, grantMsMod, hashApiKey, imageBytesMatchMime, inboundMod, insertShift,
   inviteeDisplayName, issueGiftReceipt, levelTaken, loadCfDefs, lookupMatchingGift,

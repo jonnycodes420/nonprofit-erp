@@ -323,6 +323,63 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (!evRow) evLevel = null;
             }
             const EVm = evLevel ? await EV_READY : null;
+
+            // ── GIVE-2 §5 — WHAT THE PROCESSOR ACTUALLY TOOK, AND HOW ──────
+            // The cover-the-fee box asks for what the org's CONFIGURED rate
+            // says. This is what happened: the charge's own balance
+            // transaction, which is the number on the org's Stripe payout and
+            // therefore the only one a bookkeeper can reconcile against.
+            //
+            // Two facts come out of the same read, and they are both wrong
+            // today without it:
+            //   · THE FEE. `processor_fee_amount` was 0 on every online gift,
+            //     so "received" equalled "charged" on every screen that showed
+            //     both.
+            //   · THE METHOD. `paymentMethod: "Card"` was hard-coded, so an
+            //     ACH gift was recorded as a card gift — in the gift's own
+            //     method column, which the deposit sheet and every method
+            //     breakdown read.
+            //
+            // IT MAY NOT COST THE DONATION. A Stripe read that fails leaves the
+            // fee unstated (source NULL, which `giftFooting` shows as "not yet
+            // known" rather than zero) and the method at its old default, and
+            // the gift is still written. An outage in a reporting detail is not
+            // allowed to turn a completed payment into a 500.
+            let feeAmount = 0, feeSource = null, methodLabel = "Card";
+            try {
+              const chargeId = pi.latest_charge
+                || (Array.isArray(pi.charges?.data) && pi.charges.data[0]?.id)
+                || null;
+              if (chargeId && accountId) {
+                const ch = await stripe.charges.retrieve(
+                  chargeId, { expand: ["balance_transaction"] }, { stripeAccount: accountId });
+                const bt = ch && typeof ch.balance_transaction === "object" ? ch.balance_transaction : null;
+                // `bt.fee` is ALREADY an integer number of cents — it is
+                // Stripe's own representation, and this is the one place in the
+                // codebase that has no rounding decision to make. A value that
+                // is not a whole number of cents is not a fee Stripe sent, so it
+                // is refused rather than rounded into one.
+                if (bt && Number.isInteger(bt.fee) && bt.fee >= 0) {
+                  feeAmount = bt.fee / 100;
+                  feeSource = "stripe_balance_transaction";
+                }
+                // Stripe's own type string, turned into the words the rest of
+                // the product already uses for a method. `us_bank_account` is
+                // the one that matters: it is the ACH debit this build turned on.
+                const t = String(ch?.payment_method_details?.type || "");
+                const wallet = String(ch?.payment_method_details?.card?.wallet?.type || "");
+                methodLabel =
+                  t === "us_bank_account" ? "Bank transfer (ACH)"
+                  : t === "paypal" ? "PayPal"
+                  : t === "link" ? "Card"
+                  : wallet === "apple_pay" ? "Card (Apple Pay)"
+                  : wallet === "google_pay" ? "Card (Google Pay)"
+                  : t === "card" || !t ? "Card"
+                  : "Card";
+              }
+            } catch (e) {
+              console.error(`[stripe] could not read the fee on ${pi.id}:`, e.message);
+            }
             // BUILD-101 Part 4 — a membership bought online, or a renewal charge
             // on an auto-renewing one (its level rides the subscription row).
             // Re-read org-scoped; the metadata's word is never the price.
@@ -355,7 +412,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               utmMedium: pi.metadata?.utm_medium || null,
               utmCampaign: pi.metadata?.utm_campaign || null,
               type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
-              paymentMethod: "Card", fundId, campaignId, givingPageId,
+              // GIVE-2 §5 — the method the donor actually used, and what the
+              // processor actually took, both read off the charge above.
+              paymentMethod: methodLabel, processorFeeAmount: feeAmount, processorFeeSource: feeSource,
+              fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
               stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
               // A donor who designated nothing has designated nothing.
@@ -657,6 +717,57 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       // per-connected-account configuration across 100+ orgs; a setup-mode
       // Checkout Session is self-contained, so this branch handles it
       // directly rather than routing through the Portal's own webhook shape.
+      // ── GIVE-2 §4 — THE CARD A DONOR ASKED STEWARD TO REMEMBER ──────────
+      // A one-time Checkout that carried `remember_me` saved its payment
+      // method on a customer on THE ORG'S OWN connected account. This is where
+      // Steward writes down which customer and which method, so the donor can
+      // give again in one tap from an email sign-in link.
+      //
+      // WHAT IS STORED: Stripe's id for the customer, Stripe's id for the
+      // method, and the brand and last four digits — which is what a person
+      // needs to recognise their own card, and is not enough for anybody to
+      // charge it. No card number, no expiry, no CVC, not now and not ever.
+      // Card details never touch Steward.
+      //
+      // HERE AND NOT IN `payment_intent.succeeded`, for two reasons: the
+      // session is the only object that carries `customer`, and this event
+      // arrives after the PI one (BUILD-62's ordering rule cuts the other way
+      // for once) so the donor row the id belongs on already exists. If it
+      // somehow does not, nothing is written and the donor simply gives the
+      // ordinary way next time.
+      if (session.mode === "payment" && session.metadata?.remember_me === "1" && event.account) {
+        try {
+          const email = session.customer_email || session.customer_details?.email || session.metadata?.donor_email || "";
+          const [orgRowRm] = await query("SELECT id FROM orgs WHERE stripe_account_id=$1", [event.account]);
+          if (orgRowRm && email && session.customer) {
+            let pmId = null, brand = null, last4 = null;
+            if (session.payment_intent) {
+              const piRm = await stripe.paymentIntents.retrieve(
+                String(session.payment_intent), { expand: ["payment_method"] }, { stripeAccount: event.account });
+              const pm = piRm && typeof piRm.payment_method === "object" ? piRm.payment_method : null;
+              pmId = pm?.id || (typeof piRm?.payment_method === "string" ? piRm.payment_method : null);
+              brand = pm?.card?.brand || (pm?.type === "us_bank_account" ? "bank account" : pm?.type) || null;
+              last4 = pm?.card?.last4 || pm?.us_bank_account?.last4 || null;
+            }
+            if (pmId) {
+              // Matched on EXACT EMAIL, which is the one way this codebase
+              // links a person, and scoped to the org — one org may never
+              // charge a card saved with another.
+              await run(
+                `UPDATE donors SET stripe_customer_id = ?, express_pm_id = ?, express_pm_brand = ?,
+                                   express_pm_last4 = ?, express_pm_saved_at = NOW(), updated_at = NOW()
+                  WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
+                [session.customer, pmId, brand, last4, orgRowRm.id, email]);
+              console.log(`[give] remembered a payment method for ${email} on ${orgRowRm.id}`);
+            }
+          }
+        } catch (e) {
+          // A gift that completed may not be turned into an error by a
+          // convenience that did not.
+          console.error("[give] could not remember the payment method:", e.message);
+        }
+      }
+
       if (session.mode === "setup" && session.setup_intent && event.account
           && !(await recoveryEventAlreadyProcessed(event.id))) {
         try {

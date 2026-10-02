@@ -78,6 +78,29 @@ Read this when you touch Stripe Connect, the donation webhook, recurring gifts, 
 - **Proxy every bare backend path a donor opens in vercel.json before the SPA catch-all.** These are
   `/recurring/update-card`, `/recurring/proposal` and `/recurring/proposal/confirm`. (publicUrl FIX, BUILD-57)
 
+### GIVE-2 — what the processor actually took
+- **Read the fee off the charge's own balance transaction, never from a rate.** The webhook expands
+  `balance_transaction` on `pi.latest_charge` and writes `gifts.processor_fee_amount` plus
+  `processor_fee_source='stripe_balance_transaction'`. The org's configured rate is what the form
+  ASKED for; this is what happened, and it is the number a bookkeeper reconciles against a payout.
+  (GIVE-2 §5)
+- **A fee nobody has read is not a fee of zero.** `processor_fee_amount` has defaulted to 0 since
+  BUILD-89S, so `processor_fee_source` (NULL until somebody says) is what tells "nothing was taken"
+  from "nobody has told us yet". `shared/giftFooting.js` is the one place that distinction is read.
+  (GIVE-2 §5)
+- **A Stripe read that fails costs the donation nothing.** The fee stays unstated, the method keeps
+  its default, and the gift is still written. An outage in a reporting detail may not turn a
+  completed payment into a 500. (GIVE-2 §5)
+- **Take the payment method from the charge, never a constant.** `paymentMethod: "Card"` was
+  hard-coded, so every bank transfer was recorded as a card gift in the column the deposit sheet and
+  every method breakdown read. (GIVE-2 §5)
+- **Store a remembered card in `checkout.session.completed`, not in `payment_intent.succeeded`.**
+  The session is the only object carrying `customer`, and it arrives after the PI event, so the
+  donor row already exists. (GIVE-2 §4)
+- **The recovery panel's money figure is gifts, not a forecast.** `GET /recurring/recovery` opens
+  every figure's rows, and the dollars figure's rows are the same gift rows every other giving total
+  counts, from the day the card was fixed. (GIVE-2 §7)
+
 ## Gotchas
 - **`stripe listen` forwards events one at a time, so it hides ordering races.** Prove ordering with
   `tests/webhook-ordering.test.js` (events reversed, simultaneous and redelivered). (BUILD-62, BUILD-63)

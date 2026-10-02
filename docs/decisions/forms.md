@@ -110,6 +110,45 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **Every new Fundraising part id goes in `FR_LEGACY`**, or a link to it silently opens the
   Overview. (BUILD-103)
 
+### GIVE-2 — the form that raises more
+- **Never pin Checkout to `payment_method_types`.** Omitting it is what turns on Stripe's dynamic
+  payment methods, and it is the ONLY way to be certain nothing is offered that the org's account
+  cannot take: the account itself decides. `GET /give-settings/payment-methods` reads the account's
+  capabilities so an org can SEE the answer, and it is a report, never a gate. (GIVE-2 §2)
+- **Venmo is not offered and that is a fact, not an omission.** Steward takes payments on the org's
+  own Stripe account, Stripe does not offer Venmo, and Steward's PayPal connection reads a statement
+  rather than taking a payment. The settings card says so rather than showing a row that never
+  lights up. (GIVE-2 §2)
+- **A suggested amount comes from the org's own gifts or the donor's own history, never from
+  anything bought from anybody.** `shared/smartAmounts.js` holds the arithmetic and the sentence;
+  the switch is `form_config.smartAmounts`, OFF by default, because a fundraiser who typed four
+  numbers is not overruled by a median. Fewer than eight gifts is not a distribution and the typed
+  amounts stand. (GIVE-2 §3)
+- **`withSmartAmounts` wraps EVERY public form payload.** There are two — `/forms/:id/public` and
+  the giving-page payload in crm.js — and the first cut wired only one, so the page a donor actually
+  opens still showed Steward's $25/$50/$100/$250 guess. The browser walk caught it. (GIVE-2 §3)
+- **A ladder rung missing from `FRIENDLY_CENTS` is a 150% jump.** The first cut skipped $2,000 and
+  $3,000, so a donor whose largest gift was $2,000 was asked for $5,000. The list is 1/1.5/2/2.5/3.5
+  /5/7.5 in every decade. (GIVE-2 §3)
+- **A returning donor's first button is their OWN number, unrounded.** "That, a step up, and a
+  bigger step" means the $120 they gave, not the $100 nearest it. (GIVE-2 §3)
+- **"Remember me" is opt-in, one-time gifts only, and saves nothing to Steward.** The card lives on
+  the org's own Stripe customer; `donors.stripe_customer_id` / `express_pm_id` / `express_pm_brand`
+  / `express_pm_last4` are an id and the four digits a person recognises. No card number, no expiry,
+  no CVC, ever. (GIVE-2 §4)
+- **An express link and a portal link are the same table and must never be the same link.**
+  `portal_magic_links.purpose` is load-bearing and BOTH consumers filter on it in SQL: an express
+  link may not open the portal and a portal link may not charge a card. (GIVE-2 §4)
+- **The express link is consumed by a POST.** A GET never changes state, and a single-use token is
+  state. The email's link opens the APP, which then posts. (GIVE-2 §4)
+- **The matching-employer list is the org's own typed rows.** `shared/employerMatch.js` has the
+  adapter shape for a paid lookup partner and names none, behind `MATCHING_LOOKUP_ENABLED` with no
+  provider registered. Resolution order: the org's list, then the curated snapshot in
+  `matchingGifts.js` at the root, then a flagged provider. A `form_url` is https or it is refused at
+  write time rather than dropped. (GIVE-2 §8)
+- **The org may name the monthly suggestion (`orgs.form_upsell_monthly_cents`).** NULL keeps a third
+  of the gift, which is every org today. (GIVE-2 §6)
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)

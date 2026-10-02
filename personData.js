@@ -34,7 +34,14 @@ const DONOR_PII_NULL = ["email", "email2", "phone", "mobile", "address", "addres
   "geocode_key", "geocoded_at", "geocode_status", "geocode_provider", "photo_asset_id", "photo_source_url",
   "photo_fetch_status", "photo_fetch_error", "score_rationale", "wealth_screen_source", "wealth_screen_rating",
   "wealth_screen_capacity", "wealth_screen_date", "deceased_date", "funder_ein", "external_donor_id",
-  "external_household_id", "email_unreachable_reason"];
+  "external_household_id", "email_unreachable_reason",
+  // GIVE-2 §4 — THE SAVED CARD GOES WHEN THEY ASK TO BE FORGOTTEN. These are
+  // not a card number, but they are a pointer at one: with them, anybody who
+  // knows the address could ask for a one-tap link and charge it. A person who
+  // has asked to be forgotten has withdrawn exactly that permission. The card
+  // itself lives on the organisation's own Stripe account and is theirs to
+  // remove there; Steward stops being able to reach it here.
+  "express_pm_id", "express_pm_brand", "express_pm_last4", "express_pm_saved_at"];
 
 // Rows that are about the person and nothing else: removed.
 const DELETE_BY_DONOR = ["interactions", "threads", "thank_you_drafts", "milestone_drafts", "agent_drafts", "note_reminders",

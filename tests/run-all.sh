@@ -169,6 +169,7 @@ CORE=(
   webhook-ordering
   stripe-disputes
   recurring-recovery
+  give2-fee-footing
   trial-end
   upgrade-checkout
   close-link

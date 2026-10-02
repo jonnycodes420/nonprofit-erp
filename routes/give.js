@@ -31,6 +31,10 @@ const {
   consumerEmailHtml, crypto, directorySearchLimiter, displayNameCase, donateLimiter, donorAudit,
   donorFacingOrgName, donorFromAddress, donorMailDecision, donorSendOpts, einLookup,
   ensureOrgLedger, escHtmlWf, escapeHtml, express, foldEmail, formConfigMod, fromWithDisplayName,
+  // GIVE-2 — the pure money modules (rates, footing, smart amounts, employer
+  // match) and the one public cover-fee payload every giving page shows.
+  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  signReconnectToken, verifyReconnectToken, withSmartAmounts,
   fundraiserManageLimiter, getThemeAsset, giveThemePayload, invitationLimiter, linkAccountEmail,
   logRecoveryEvent, logRecurringChange, networkSignupLimiter, normalizeAccent, normalizeTint,
   normalizeUploadImage, notifyExpiringCards, notifyUserOnce, orgOwns, orgSendingIdentity, orgTime,
@@ -1308,24 +1312,12 @@ function verifyRecoveryToken(token) {
   } catch { return null; }
 }
 
-// BUILD-77 Part 6 — the reconnect token binds a giving-page prefill to the
-// EXISTING donor so the new subscription stitches back to their record
-// (never a second donor). Same HMAC construction as the recovery token.
-function signReconnectToken(donorId, orgId) {
-  const payload = Buffer.from(JSON.stringify({ donorId, orgId, k: "reconnect" })).toString("base64url");
-  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
-  return `${payload}.${sig}`;
-}
-function verifyReconnectToken(token) {
-  if (!token || typeof token !== "string" || !token.includes(".")) return null;
-  const [payload, sig] = token.split(".");
-  if (!payload || !sig) return null;
-  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
-  const a = Buffer.from(sig), b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try { const d = JSON.parse(Buffer.from(payload, "base64url").toString()); return (d.k === "reconnect" && d.donorId && d.orgId) ? d : null; }
-  catch { return null; }
-}
+// BUILD-77 Part 6's reconnect-token pair MOVED to server.js in GIVE-2, beside
+// `signRecoveryToken` — the same token family, the same HMAC, the same secret,
+// and now two route files need it: the donate path here and the giving-page
+// public payload in crm.js, which is where a donor's personal link decides
+// which amounts their form offers. It is handed back through ctx
+// (`signReconnectToken` / `verifyReconnectToken`) so there is still one copy.
 
 // UNSUPPRESSIBLE donor notification for STAFF-side subscription changes.
 // The standing rule (BUILD-57): every staff action on a donor's recurring
@@ -1725,7 +1717,10 @@ app.get("/forms/:id/public", wrap(async (req, res) => {
   const F = await formConfigMod();
   const [page] = await query(
     `SELECT gp.*, o.id AS org_id, o.name AS org_name, o.org_slug, o.cover_fees_enabled,
-            o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
+            o.form_upsell_threshold_cents, o.form_upsell_monthly_cents,
+            o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
+            o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+            ${GIVE_THEME_COLS}
        FROM giving_pages gp
        JOIN orgs o ON o.id = gp.org_id
        LEFT JOIN portal_settings ps ON ps.org_id = o.id
@@ -1745,18 +1740,29 @@ app.get("/forms/:id/public", wrap(async (req, res) => {
   res.json({
     closed: false,
     org: { name: orgName, slug: page.org_slug,
-           coverFeesEnabled: page.cover_fees_enabled !== false, theme: giveThemePayload(page) },
+           coverFeesEnabled: page.cover_fees_enabled !== false,
+           // GIVE-2 §5 — the org's own rate, so the sentence under the box is
+           // this organisation's number rather than a constant copied into two
+           // client files (`coverFeePayload`, server.js).
+           ...(await coverFeePayload(page)),
+           theme: giveThemePayload(page) },
     form: {
       id: page.id, slug: page.slug, title: page.title,
       // BUILD-102 Part 6 — the variant the caller was assigned. The SPLIT is the
       // page's (a cookie it sets itself); the SPEC for each side comes from here,
       // through one function, so A and B cannot drift into two forms.
-      spec: F.specForVariant(page.form_config, page.ab_test, req.query.v,
-        { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+      spec: await withSmartAmounts(
+        F.specForVariant(page.form_config, page.ab_test, req.query.v,
+          { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+        { orgId: page.org_id, givingPageId: page.id, personalToken: req.query.reconnect || req.query.r || null }),
       abRunning: !!(page.ab_test && page.ab_test.running !== false && page.ab_test.b),
       upsellThresholdCents: page.form_upsell_threshold_cents != null
         ? Number(page.form_upsell_threshold_cents)
         : F.UPSELL_DEFAULT_THRESHOLD_CENTS,
+      // GIVE-2 §6 — null means "a third of the gift", which is what every org
+      // had before this build.
+      upsellMonthlyCents: page.form_upsell_monthly_cents != null
+        ? Number(page.form_upsell_monthly_cents) : null,
     },
   });
 }));
@@ -2332,10 +2338,24 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
 // only — orgs on negotiated/nonprofit rates net slightly more, never less.
 // The client computes the same number for DISPLAY; this server-side
 // derivation is the one that gets charged (client math is never trusted).
-const COVER_FEES_PCT = 0.029;
-const COVER_FEES_FLAT_CENTS = 30;
-function coverFeesGrossUpCents(netCents) {
-  return Math.ceil((netCents + COVER_FEES_FLAT_CENTS) / (1 - COVER_FEES_PCT));
+// ── GIVE-2 §5 — THE RATE IS THE ORG'S NOW ────────────────────────────────
+// It was these two constants, hard-coded to Stripe's published card rate and
+// hand-copied into two client files. An org on Stripe's nonprofit rate pays
+// 2.2% and was asked to cover 2.9%; an ACH gift pays 0.8% capped at $5 and was
+// asked to cover a card rate four times it. `shared/processingRates.js` is now
+// the one place, and a NULL column there still answers with these same numbers,
+// so no org's arithmetic moved by a cent until somebody typed a rate.
+//
+// THE GROSS-UP IS ALWAYS AT THE CARD RATE, and that is a decision rather than
+// an oversight: with Stripe Checkout the donor picks their payment method on
+// Stripe's own page, AFTER the amount has been fixed. The dearer of the two
+// rates is the only safe one to ask for — a donor who then pays by bank
+// transfer has covered more than the processor took, and the org nets more than
+// the gift. Never less. The sentence under the box says so.
+const COVER_FEE_RATE_KIND = "card";
+async function coverFeesGrossUpCentsFor(org, netCents, kind = COVER_FEE_RATE_KIND) {
+  const R = await ratesMod();
+  return R.grossUpCents(netCents, R.orgRates(org)[kind]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2391,6 +2411,18 @@ const donateHandler = async (req, res) => {
   // cost this repo five builds and now fails the pre-push hook.
   let formAsks = null;
   let { givingPageId, peerFundraiserId } = req.body;
+  // GIVE-2 §4 — "remember me", for a plain one-time gift only. A subscription
+  // already saves its own method by definition, and a ticket or a membership is
+  // a purchase: neither is a reason to keep somebody's card.
+  const rememberMe = req.body.rememberMe === true && frequency !== "monthly" && frequency !== "annual"
+    && !req.body.eventLevelId && !req.body.membershipLevelId;
+  // THE SAME PERSON IS THE SAME STRIPE CUSTOMER. `donors.stripe_customer_id`
+  // already exists on this row for the recurring layer, so a one-time gift that
+  // asks to be remembered attaches to THAT customer rather than minting a
+  // second one for the same human on the same connected account — which would
+  // also overwrite the column another path wrote. Filled in below, once the org
+  // is known; declared here, above every line that reads it (the TDZ rule).
+  let rememberCustomerId = null;
   // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
   // never by the amount the page sent. One-time only, and no fee gross-up: the
   // receipt's deductible split is computed on exactly what the level costs.
@@ -2410,7 +2442,13 @@ const donateHandler = async (req, res) => {
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
-    "SELECT id, name, plan, stripe_account_id, stripe_connected, cover_fees_enabled FROM orgs WHERE org_slug = $1",
+    // GIVE-2 §5 — the org's own processing rates travel with the row, because
+    // the gross-up is computed from them a few lines below and a second query
+    // for five numbers on the hot path of a donation is a second thing to fail.
+    `SELECT id, name, plan, stripe_account_id, stripe_connected, cover_fees_enabled,
+            fee_rate_card_pct, fee_rate_card_flat_cents,
+            fee_rate_ach_pct, fee_rate_ach_flat_cents, fee_rate_ach_cap_cents
+       FROM orgs WHERE org_slug = $1`,
     [req.params.orgSlug]
   );
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
@@ -2427,6 +2465,16 @@ const donateHandler = async (req, res) => {
     if (!appRows.length || appRows[0].status !== "approved") {
       return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
     }
+  }
+
+  if (rememberMe) {
+    // Exact email, org-scoped — the one way this codebase links a person.
+    const [known] = await query(
+      `SELECT stripe_customer_id FROM donors
+        WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL
+          AND stripe_customer_id IS NOT NULL
+        ORDER BY updated_at DESC LIMIT 1`, [org.id, email]);
+    rememberCustomerId = known ? known.stripe_customer_id : null;
   }
 
   let baseCents = toCents(amount);                       // BUILD-73: the money seam
@@ -2476,7 +2524,7 @@ const donateHandler = async (req, res) => {
   // boolean, never its own total. The full charged amount IS the donation
   // (gifts + receipts record what was actually charged; no fee itemization).
   const feesCovered = !!coverFees && org.cover_fees_enabled !== false;
-  const amountCents = feesCovered ? coverFeesGrossUpCents(baseCents) : baseCents;
+  const amountCents = feesCovered ? await coverFeesGrossUpCentsFor(org, baseCents) : baseCents;
 
   const donorName = `${firstName} ${lastName}`.trim();
   const isRecurring = frequency === "monthly" || frequency === "annual";
@@ -2653,6 +2701,11 @@ const donateHandler = async (req, res) => {
     event_dietary: eventLevel ? String(req.body.dietary || "").trim().slice(0, 200) : "",
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
+    // GIVE-2 §4 — the donor ticked "remember me". The webhook reads this to
+    // decide whether to store the saved method against their donor record;
+    // without it a card is saved on the org's Stripe account and Steward never
+    // offers it, which is the honest failure mode of the two.
+    remember_me: rememberMe ? "1" : "",
   };
   // ── BUILD-102 Part 3 — WHAT THE FORM ASKED, carried to the webhook ────────
   // One metadata key per thing rather than a JSON blob, because Stripe's own
@@ -2702,10 +2755,27 @@ const donateHandler = async (req, res) => {
       ? `/give/${req.params.orgSlug}/${givingPageSlug}`
       : `/give/${req.params.orgSlug}`;
 
+  // ── GIVE-2 §2 — WALLETS AND BANK, DECIDED BY THE ORG'S OWN ACCOUNT ───────
+  // `payment_method_types: ["card"]` was here, and it is the reason a donor on
+  // an iPhone had to type a sixteen-digit number: it pins Checkout to cards and
+  // nothing else, whatever the org's Stripe account supports.
+  //
+  // OMITTING IT is what turns on Stripe's dynamic payment methods, and that is
+  // the whole of the change. Stripe then renders exactly the methods enabled on
+  // THE CONNECTED ACCOUNT — Apple Pay, Google Pay, Link, US bank account (ACH),
+  // and PayPal where the org has turned it on — in the order Stripe's own
+  // conversion data puts them, and renders none that the account cannot take.
+  //
+  // THAT GUARANTEE IS BY CONSTRUCTION, not by a capability check of ours. The
+  // brief asks that nothing be shown the org's account cannot take, and the one
+  // way to be certain of it is to let the account itself decide: a list Steward
+  // computed could be stale the moment a capability changed. `GET
+  // /give-settings/payment-methods` reads the account's capabilities so the org
+  // can SEE what will appear, and it is a report, never a gate.
   const sessionParams = {
-    payment_method_types: ["card"],
     mode: isRecurring ? "subscription" : "payment",
-    customer_email: email,
+    // Stripe refuses `customer` and `customer_email` together.
+    ...(rememberMe && rememberCustomerId ? {} : { customer_email: email }),
     line_items: [{
       price_data: {
         currency: "usd",
@@ -2727,7 +2797,25 @@ const donateHandler = async (req, res) => {
             receipt_email: email,
             metadata,
             statement_descriptor: org.name.toUpperCase().replace(/[^A-Z0-9 ]/g, "").replace(/\s+/g, " ").trim().slice(0, 22),
+            // ── GIVE-2 §4 — "REMEMBER ME" ────────────────────────────────
+            // Saves the payment method on a customer on THE ORG'S OWN Stripe
+            // account, so the same donor can give again in one tap from an
+            // email sign-in link. Steward never sees a card number: what it
+            // stores is Stripe's id for the method, its brand and its last
+            // four digits, which is what a person needs to recognise their own
+            // card and is not enough to charge it anywhere else.
+            //
+            // OFF unless the donor ticked the box. A saved card nobody asked
+            // to save is the single worst thing a donation form can do.
+            ...(rememberMe ? { setup_future_usage: "off_session" } : {}),
           },
+          // A customer is created only when there is something to attach to
+          // it. Stripe will not accept `setup_future_usage` without one, and it
+          // will not accept `customer` and `customer_email` together — so a
+          // donor Steward already has a customer for gets that customer, and a
+          // donor it does not gets a new one.
+          ...(rememberMe && rememberCustomerId ? { customer: rememberCustomerId } : {}),
+          ...(rememberMe && !rememberCustomerId ? { customer_creation: "always" } : {}),
         }
     ),
   };
@@ -3850,6 +3938,267 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GIVE-2 §7 · FAILED-CARD RECOVERY, SHOWN
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The engine has been running since BUILD-63 and the only place its work was
+// visible was a recovery RATE — a percentage, with nothing behind it. A
+// percentage is the one shape of number a fundraiser cannot act on and cannot
+// check. So: three figures for the year, each one opening the rows it counted,
+// each footing to the cent.
+//
+//   FAILED        monthly gifts whose card failed this year. One row per
+//                 subscription, with the donor, the amount and the day it broke.
+//   RECOVERED     how many of those came back. A subscription counts here on
+//                 the strength of a `payment_recovered` event, which is written
+//                 only when Stripe said the money moved.
+//   DOLLARS       what those recoveries actually collected: every gift on a
+//                 recovered subscription DATED ON OR AFTER the day it was
+//                 recovered, this year. That is the money that would have
+//                 stopped and did not, and the sentence on screen says exactly
+//                 that — it is deliberately not "the monthly amount times the
+//                 months left", which would be a forecast dressed as a figure.
+app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  // The calendar year in the ORG'S own timezone, because "this year" on a
+  // fundraising screen is the org's year and not the database session's.
+  const yearStart = `${String(await orgToday(orgId)).slice(0, 4)}-01-01`;
+
+  const [failedRows, recoveredRows] = await Promise.all([
+    query(
+      `SELECT DISTINCT ON (rs.id)
+              rs.id, rs.donor_id, d.name AS donor_name, rs.amount, rs.interval, rs.status,
+              rs.first_failed_at, rs.last_failed_at, rs.failure_count
+         FROM payment_recovery_events pre
+         JOIN recurring_subscriptions rs
+           ON rs.stripe_subscription_id = pre.subscription_id AND rs.org_id = pre.org_id
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+        WHERE pre.org_id = ? AND pre.type = 'payment_failed'
+          AND pre.created_at >= ?::date
+        ORDER BY rs.id, pre.created_at DESC`,
+      [orgId, yearStart]),
+    query(
+      `SELECT DISTINCT ON (rs.id)
+              rs.id, rs.donor_id, d.name AS donor_name, rs.amount, rs.interval, rs.status,
+              rs.recovered_at, pre.created_at AS recovered_event_at
+         FROM payment_recovery_events pre
+         JOIN recurring_subscriptions rs
+           ON rs.stripe_subscription_id = pre.subscription_id AND rs.org_id = pre.org_id
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+        WHERE pre.org_id = ? AND pre.type = 'payment_recovered'
+          AND pre.created_at >= ?::date
+        ORDER BY rs.id, pre.created_at DESC`,
+      [orgId, yearStart]),
+  ]);
+
+  // THE DOLLARS OPEN THEIR OWN ROWS, and the rows are GIFTS — the same rows
+  // every other giving total in this product counts, so the figure foots
+  // against Reports rather than standing beside it.
+  const recoveredIds = recoveredRows.map(r => r.id);
+  const giftRows = recoveredIds.length
+    ? await query(
+        `SELECT g.id, g.date, g.amount, g.cover_fee_amount, g.processor_fee_amount,
+                g.processor_fee_source, g.donor_id, d.name AS donor_name,
+                g.recurring_subscription_id
+           FROM gifts g
+           JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+           JOIN recurring_subscriptions rs ON rs.id = g.recurring_subscription_id AND rs.org_id = g.org_id
+          WHERE g.org_id = ? AND g.recurring_subscription_id = ANY(?)
+            AND g.date >= ?
+            AND g.date >= COALESCE(to_char(rs.recovered_at, 'YYYY-MM-DD'), ?)
+          ORDER BY g.date DESC, g.id DESC`,
+        [orgId, recoveredIds, yearStart, yearStart])
+    : [];
+
+  const F = await footingMod();
+  const gifts = giftRows.map(g => {
+    const f = F.giftFooting({
+      grossCents: toCents(g.amount) || 0,
+      feeCents: toCents(g.processor_fee_amount) || 0,
+      coveredCents: toCents(g.cover_fee_amount) || 0,
+      feeSource: g.processor_fee_source,
+    });
+    return { id: g.id, date: g.date, donorId: g.donor_id, donorName: g.donor_name,
+             subscriptionId: g.recurring_subscription_id, ...f };
+  });
+  const dollarsCents = gifts.reduce((a, g) => a + g.grossCents, 0);
+
+  res.json({
+    year: yearStart.slice(0, 4),
+    failed: {
+      count: failedRows.length,
+      definition: "Monthly gifts whose card failed at least once this year. One row per gift, however many times it retried.",
+      rows: failedRows.map(r => ({
+        subscriptionId: r.id, donorId: r.donor_id, donorName: r.donor_name,
+        amount: parseFloat(r.amount) || 0, interval: r.interval, status: r.status,
+        firstFailedAt: r.first_failed_at, lastFailedAt: r.last_failed_at,
+        failureCount: r.failure_count || 0,
+      })),
+    },
+    recovered: {
+      count: recoveredRows.length,
+      definition: "How many of those came back. A gift counts here only once Stripe confirmed the money moved, which is what the card-update emails are for.",
+      rows: recoveredRows.map(r => ({
+        subscriptionId: r.id, donorId: r.donor_id, donorName: r.donor_name,
+        amount: parseFloat(r.amount) || 0, interval: r.interval, status: r.status,
+        recoveredAt: r.recovered_at || r.recovered_event_at,
+      })),
+    },
+    dollars: {
+      cents: dollarsCents,
+      definition: "Every gift on a recovered monthly donor's record from the day their card was fixed, this year. Money that would have stopped and did not. Not a forecast.",
+      rows: gifts,
+    },
+  });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GIVE-2 §2 · WHAT WILL APPEAR ON THE FORM
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A REPORT, NEVER A GATE. Checkout decides what to show from the connected
+// account itself, which is the only way to be certain nothing is offered that
+// the account cannot take. This route exists so an organisation can SEE that
+// answer without opening its Stripe dashboard, and so the settings screen can
+// say which wallet is missing and why.
+//
+// An unreachable Stripe fails HONEST rather than safe: it says it could not
+// ask, and shows nothing, because an invented list is worse than no list.
+app.get("/give-settings/payment-methods", requireAuth, wrap(async (req, res) => {
+  const [org] = await query(
+    `SELECT id, name, stripe_account_id, stripe_connected, cover_fees_enabled,
+            fee_rate_card_pct, fee_rate_card_flat_cents,
+            fee_rate_ach_pct, fee_rate_ach_flat_cents, fee_rate_ach_cap_cents
+       FROM orgs WHERE id = ?`, [req.user.orgId]);
+  const R = await ratesMod();
+  const rates = R.orgRates(org || {});
+  const base = {
+    connected: !!(org && org.stripe_connected && org.stripe_account_id),
+    coverFeesEnabled: !(org && org.cover_fees_enabled === false),
+    rates: {
+      card: { ...rates.card, sentence: R.rateSentence(rates.card) },
+      ach: { ...rates.ach, sentence: R.rateSentence(rates.ach, { kind: "ach" }) },
+    },
+    // The one sentence a settings screen needs about the fee the donor is asked
+    // to cover, and the one thing about it that is not obvious.
+    coverFeeDefinition: `The box on the form adds the card rate (${R.rateSentence(rates.card)}), because a donor chooses how to pay on Stripe's own page after the amount is set. A donor who then pays by bank transfer has covered more than the processor took, never less.`,
+    howToChange: "Apple Pay, Google Pay, Link, bank transfers and PayPal are switched on in your own Stripe dashboard, under Settings, Payment methods. Steward shows whatever your account accepts and never anything it does not.",
+  };
+  if (!base.connected || !stripe) {
+    return res.json({ ...base, asked: false, methods: [],
+      message: "Connect Stripe to see which payment methods your donors will be offered." });
+  }
+  try {
+    const acct = await stripe.accounts.retrieve(org.stripe_account_id);
+    const cap = acct?.capabilities || {};
+    // Stripe's own capability names, turned into the words a donor sees. Only
+    // what the ACCOUNT says is active is reported active: `pending` and
+    // `inactive` both mean a donor will not see it yet, and saying otherwise
+    // would be a claim about somebody else's onboarding.
+    const methods = [
+      { key: "card", label: "Card", active: cap.card_payments === "active",
+        note: "Visa, Mastercard, American Express and Discover." },
+      { key: "wallets", label: "Apple Pay and Google Pay", active: cap.card_payments === "active",
+        note: "They ride on card payments, so they appear wherever cards do and on a device that has them set up." },
+      { key: "link", label: "Link", active: cap.link_payments === "active" || cap.card_payments === "active",
+        note: "Stripe's own one-tap checkout, for a donor who has used it anywhere before." },
+      { key: "us_bank_account", label: "US bank account (ACH)", active: cap.us_bank_account_ach_payments === "active",
+        note: `Cheaper than a card at ${R.rateSentence(rates.ach, { kind: "ach" })}, and it settles in a few business days rather than instantly.` },
+      { key: "paypal", label: "PayPal", active: cap.paypal_payments === "active",
+        note: "Appears when you have turned PayPal on in your own Stripe dashboard." },
+    ];
+    res.json({ ...base, asked: true, methods,
+      // VENMO IS NOT ON THIS LIST and that is a fact rather than an omission.
+      // Steward takes payments through Stripe Connect, Stripe does not offer
+      // Venmo, and Steward's PayPal connection reads a statement rather than
+      // taking a payment. Saying so is better than a row that never lights up.
+      notOffered: [{ key: "venmo", label: "Venmo",
+        why: "Steward takes payments on your own Stripe account, and Stripe does not offer Venmo. Steward's PayPal connection reads your PayPal giving into the CRM; it does not take payments." }],
+      definition: "What a donor will be offered on your donation form. Stripe decides this from your own account, so this list is a report of your Stripe settings, not a Steward setting.",
+    });
+  } catch (e) {
+    console.error("[give] could not read the connected account's capabilities:", e.message);
+    res.json({ ...base, asked: false, methods: [],
+      message: "Steward could not reach Stripe just now, so it cannot say which methods are on. Nothing on your form has changed." });
+  }
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GIVE-2 §8 · THE EMPLOYERS THIS ORGANISATION KNOWS MATCH
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Typed by staff, with each company's OWN form link, and shown to a donor on
+// the page their gift just landed on. No vendor and no contract: a small
+// nonprofit's matching money comes from a handful of large local employers it
+// already knows by name, and a donor who works at one needs the link.
+app.get("/matching-employers", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, name, form_url, ratio, min_cents, max_cents, note, created_at
+       FROM matching_employers WHERE org_id = ? ORDER BY lower(name) ASC`, [req.user.orgId]);
+  const M = await employerMatchMod();
+  res.json({
+    employers: rows,
+    lookupPartner: null,
+    lookupEnabled: process.env[M.LOOKUP_FLAG_ENV] === "1",
+    definition: "Employers you know match gifts, with their own form link. Shown to a donor after they give, and on their record when the employer they typed is one of these.",
+  });
+}));
+
+app.post("/matching-employers", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const M = await employerMatchMod();
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  if (!name) return res.status(400).json({ error: "Name the employer." });
+  const prog = M.normaliseProgramme({
+    employerName: name, matches: true, ratio: req.body?.ratio,
+    minCents: req.body?.minCents, maxCents: req.body?.maxCents,
+    formUrl: req.body?.formUrl, note: req.body?.note,
+  }, "org_list");
+  // A FORM LINK THAT IS NOT https IS REFUSED RATHER THAN DROPPED. A donor is
+  // about to be sent to it from a page their gift just landed on, and a row
+  // that silently lost its link is a row that looks fine and does nothing.
+  if (String(req.body?.formUrl || "").trim() && !prog.formUrl) {
+    return res.status(400).json({ error: "A matching form link has to be a full https:// address with no username or password in it." });
+  }
+  const id = "me_" + uuid().slice(0, 8);
+  const inserted = await query(
+    `INSERT INTO matching_employers (id, org_id, name, form_url, ratio, min_cents, max_cents, note, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, lower(name)) DO NOTHING RETURNING id`,
+    [id, req.user.orgId, prog.employerName, prog.formUrl, prog.ratio, prog.minCents, prog.maxCents,
+     prog.note, req.user.id, actor(req).name]);
+  if (!inserted.length) return res.status(409).json({ error: `${prog.employerName} is already on your list.` });
+  res.json({ id, employer: { id, name: prog.employerName, form_url: prog.formUrl, ratio: prog.ratio,
+                             min_cents: prog.minCents, max_cents: prog.maxCents, note: prog.note } });
+}));
+
+app.delete("/matching-employers/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const gone = await query(`DELETE FROM matching_employers WHERE id=? AND org_id=? RETURNING id`,
+    [req.params.id, req.user.orgId]);
+  if (!gone.length) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true });
+}));
+
+// PUBLIC, because it is shown on the page a donor lands on after giving, and
+// that page has no session. It discloses nothing private: the list is which
+// large employers match gifts, which is each company's own published policy,
+// and the link is the company's own form. No donor, no gift, no amount.
+app.get("/org/:orgSlug/matching-employers", wrap(async (req, res) => {
+  const M = await employerMatchMod();
+  const [org] = await query("SELECT id FROM orgs WHERE org_slug = ?", [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "not_found" });
+  const rows = await query(
+    `SELECT name, form_url, ratio, min_cents, max_cents, note
+       FROM matching_employers WHERE org_id = ? ORDER BY lower(name) ASC LIMIT 100`, [org.id]);
+  res.json({
+    employers: rows,
+    heading: M.MATCH_HEADING,
+    cta: M.MATCH_CTA,
+    unknown: M.MATCH_UNKNOWN,
+  });
+}));
+
 // Everyday staff action from the home-screen queue — re-sends the CURRENT
 // dunning step's email on demand. Not gated by requireAdmin (matches
 // POST /note-reminders/:id/send, the other "queue nudge" action any staff
@@ -4129,14 +4478,290 @@ app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLi
     // Re-request invalidates any live prior link (P-1).
     await run(
       `UPDATE portal_magic_links SET superseded_at = NOW()
-       WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL`, [org.id, email]);
+       WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL
+         AND purpose = 'portal'`, [org.id, email]);
     const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
     await run(
-      `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip)
-       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?)`,
+      // GIVE-2 §4 — the purpose is stamped rather than defaulted, so the one
+      // table's two kinds of link are explicit at both ends.
+      `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
+       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, 'portal')`,
       ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null]);
     await sendPortalMagicLinkEmail(org, email, token);
   })().catch(e => console.error("[portal] link request failed:", e.message));
+}));
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  GIVE-2 §4 · EXPRESS GIVING — A RETURNING DONOR GIVES IN ONE TAP
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A donor who ticked "Remember me" has a payment method saved on THE ORG'S OWN
+// Stripe account (the webhook wrote down which one). This is the path that lets
+// them use it again without typing a card number, and the whole of its security
+// model is: prove you still control the address the card was saved under.
+//
+//   1. POST /express/:orgSlug/request-link   an email, and the same answer for
+//      every address whether or not Steward has it on file.
+//   2. POST /express/:orgSlug/open           the link's token, consumed ONCE.
+//      A POST and not a GET because consuming a single-use token is a change of
+//      state, and every link in an email must survive GET and HEAD with zero
+//      writes.
+//   3. POST /express/:orgSlug/charge         the amount, against the saved
+//      method, on the org's own account.
+//
+// WHY THE LINKS LIVE IN `portal_magic_links`. Expiry, single use and
+// supersede-on-re-request are three things to get wrong and that table already
+// gets them right. `purpose` keeps the two kinds apart at both ends: an express
+// link can never open the portal and a portal link can never charge a card.
+//
+// WHAT STEWARD NEVER HAS. A card number, an expiry or a CVC, at any point in
+// this flow. It holds Stripe's id for the customer and Stripe's id for the
+// method, and the brand and last four digits so a person can recognise their
+// own card. The charge is made by handing those ids back to Stripe.
+//
+// AND IT IS STILL ONE GIFT PATH. This route creates a PaymentIntent and nothing
+// else. The gift is written by the same `/stripe/webhook` handler that writes
+// every other online gift, from the same metadata, through `recordGift`. No
+// second writer, and a redelivered event is still a no-op on the payment
+// intent's id.
+
+// A twenty-minute, signed, server-only claim that THIS browser just proved it
+// controls the donor's email. Same HMAC construction as the recovery and
+// reconnect tokens. It is deliberately not a cookie and not a session row: it
+// buys exactly one thing (giving again to the org that saved the card) and it
+// expires on its own, so there is nothing to revoke and nothing to leave behind.
+const EXPRESS_SESSION_MINUTES = 20;
+function signExpressSession(donorId, orgId) {
+  const payload = Buffer.from(JSON.stringify({
+    donorId, orgId, k: "express",
+    exp: Math.floor(Date.now() / 1000) + EXPRESS_SESSION_MINUTES * 60,
+  })).toString("base64url");
+  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+function verifyExpressSession(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update(payload).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const d = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (d.k !== "express" || !d.donorId || !d.orgId) return null;
+    if (!Number.isFinite(d.exp) || d.exp * 1000 < Date.now()) return null;
+    return d;
+  } catch { return null; }
+}
+
+// The org, and the five rate columns the gross-up needs. One query, because a
+// donation path is not a place to make two.
+async function expressOrg(orgSlug) {
+  const [org] = await query(
+    `SELECT id, name, org_slug, plan, stripe_account_id, stripe_connected, cover_fees_enabled,
+            fee_rate_card_pct, fee_rate_card_flat_cents,
+            fee_rate_ach_pct, fee_rate_ach_flat_cents, fee_rate_ach_cap_cents
+       FROM orgs WHERE org_slug = ?`, [orgSlug]);
+  if (!org || !org.stripe_connected || !org.stripe_account_id) return null;
+  return org;
+}
+
+// A donor is eligible for express giving when they have a saved method on THIS
+// org's account. Matched on exact email, the one way this codebase links a
+// person, and never on a name.
+async function expressDonorByEmail(orgId, email) {
+  // `donors` carries ONE name column and a salutation; there is no `first_name`
+  // and the first cut of this query asked for one, which 500'd the whole open.
+  const [d] = await query(
+    `SELECT id, name, salutation, email, stripe_customer_id, express_pm_id, express_pm_brand,
+            express_pm_last4, last_gift_amount
+       FROM donors
+      WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL
+        AND stripe_customer_id IS NOT NULL AND express_pm_id IS NOT NULL
+      ORDER BY updated_at DESC LIMIT 1`, [orgId, email]);
+  return d || null;
+}
+
+app.post("/express/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLimiter, wrap(async (req, res) => {
+  const org = await expressOrg(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "not_found" });
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  // IDENTICAL RESPONSE AND IDENTICAL TIMING for an address on file and one that
+  // is not — the portal's own P-2 rule. "We have no card for you" is a fact
+  // about somebody else's giving that this route is not entitled to disclose.
+  res.json({ received: true,
+    message: "If there is a saved card for this address, a one-tap giving link is on its way." });
+  if (!email || email.length > 320 || !email.includes("@")) return;
+  (async () => {
+    const donor = await expressDonorByEmail(org.id, email);
+    if (!donor) return;
+    await run(
+      `UPDATE portal_magic_links SET superseded_at = NOW()
+        WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL
+          AND purpose = 'express'`, [org.id, email]);
+    const token = crypto.randomBytes(32).toString("base64url");   // 256-bit CSPRNG
+    await run(
+      `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
+       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, 'express')`,
+      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null]);
+    await sendExpressLinkEmail(org, donor, token);
+  })().catch(e => console.error("[give] express link request failed:", e.message));
+}));
+
+// THE LINK GOES TO THE APP, not to the API. A provider or a mail client follows
+// an https link with no bearer token and lands on a page; the page then calls
+// the API. (INT-OAUTH learned this the hard way in the other direction.)
+async function sendExpressLinkEmail(org, donor, token) {
+  if (!process.env.RESEND_API_KEY) return true;
+  const decision = await donorMailDecision("express_link", donor.email, org.id);
+  if (!decision.send) { console.log(`[give] express link refused (${decision.reason})`); return false; }
+  const orgName = await donorFacingOrgName(org.id, org.name);
+  const url = `${publicAppUrl()}/give/${encodeURIComponent(org.org_slug)}?express=${encodeURIComponent(token)}`;
+  const first = String(donor.name || "").trim().split(/\s+/)[0] || "there";
+  const card = donor.express_pm_last4
+    ? `${donor.express_pm_brand ? displayNameCase(donor.express_pm_brand) : "card"} ending ${donor.express_pm_last4}`
+    : "the card you saved";
+  const body = `Hello ${first},\n\nHere is your one-tap giving link for ${orgName}. It uses the ${card}, and it works once, for the next fifteen minutes.\n\n${url}\n\nIf you did not ask for this, nothing has happened and you can ignore it.`;
+  try {
+    await resend.emails.send({
+      ...donorSendOpts(await orgSendingIdentity(org.id)),
+      to: donor.email,
+      subject: `Your one-tap giving link for ${orgName}`,
+      html: `${await brandEmailHeaderHtml(org.id)}<div style="font-family:Georgia,serif;font-size:16px;line-height:1.6;color:#0F1A12">
+        <p>Hello ${escapeHtml(first)},</p>
+        <p>Here is your one-tap giving link for ${escapeHtml(orgName)}. It uses the ${escapeHtml(card)}, and it works once, for the next fifteen minutes.</p>
+        <p><a href="${escapeHtml(url)}" style="display:inline-block;background:#0D5C3A;color:#FFFFFF;padding:12px 20px;border-radius:6px;text-decoration:none">Give again</a></p>
+        <p style="color:#5a6b5f;font-size:14px">If you did not ask for this, nothing has happened and you can ignore it.</p>
+      </div>`,
+      text: body,
+    });
+    return true;
+  } catch (e) { console.error("[give] express link email failed:", e.message); return false; }
+}
+
+// A POST, because it CONSUMES the single-use link. The answer carries what the
+// one-tap screen needs and nothing else: a first name, the card the donor will
+// recognise, and their own amount ladder.
+app.post("/express/:orgSlug/open", portalLinkIpLimiter, wrap(async (req, res) => {
+  const org = await expressOrg(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "not_found" });
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
+  const rows = await query(
+    `UPDATE portal_magic_links SET used_at = NOW()
+      WHERE token_hash = ? AND org_id = ? AND used_at IS NULL AND superseded_at IS NULL
+        AND expires_at > NOW() AND purpose = 'express'
+      RETURNING email`,
+    [sha256hex(token), org.id]);
+  if (!rows.length) {
+    return res.status(400).json({ error: "invalid_link",
+      message: "That link has expired or was already used. Ask for a fresh one." });
+  }
+  const donor = await expressDonorByEmail(org.id, rows[0].email);
+  if (!donor) return res.status(400).json({ error: "no_saved_card", message: "There is no saved card for this address any more." });
+  const S = await smartAmountsMod();
+  const R = await ratesMod();
+  const ladder = S.ladderFromLastGift(toCents(donor.last_gift_amount) || 0);
+  res.json({
+    session: signExpressSession(donor.id, org.id),
+    expiresInMinutes: EXPRESS_SESSION_MINUTES,
+    firstName: String(donor.name || "").trim().split(/\s+/)[0] || "",
+    orgName: await donorFacingOrgName(org.id, org.name),
+    card: { brand: donor.express_pm_brand || null, last4: donor.express_pm_last4 || null },
+    amountsCents: ladder ? ladder.amountsCents : S.ladderFromDistribution([]).amountsCents,
+    amountsSentence: ladder ? ladder.sentence : "",
+    defaultIndex: ladder ? ladder.defaultIndex : 0,
+    coverFeesEnabled: org.cover_fees_enabled !== false,
+    coverFeeRateSentence: R.rateSentence(R.orgRates(org).card),
+    definition: "One tap uses the card you saved with this organisation. Steward never sees your card number.",
+  });
+}));
+
+app.post("/express/:orgSlug/charge", donateLimiter, wrap(async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
+  const org = await expressOrg(req.params.orgSlug);
+  if (!org) return res.status(404).json({ error: "not_found" });
+  const sess = verifyExpressSession(req.body?.session);
+  if (!sess || sess.orgId !== org.id) {
+    return res.status(401).json({ error: "expired", message: "That one-tap window has closed. Ask for a fresh link." });
+  }
+  const [donor] = await query(
+    `SELECT id, name, email, stripe_customer_id, express_pm_id
+       FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [sess.donorId, org.id]);
+  if (!donor || !donor.stripe_customer_id || !donor.express_pm_id) {
+    return res.status(400).json({ error: "no_saved_card" });
+  }
+  const baseCents = toCents(req.body?.amount);
+  if (baseCents === null || baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
+  const R = await ratesMod();
+  const feesCovered = req.body?.coverFees === true && org.cover_fees_enabled !== false;
+  const amountCents = feesCovered ? R.grossUpCents(baseCents, R.orgRates(org).card) : baseCents;
+
+  // A FUND THE REQUEST NAMES IS CHECKED AGAINST THIS ORG, and a donor who
+  // designated nothing has designated nothing (`defaultFund: false` is the
+  // webhook's own rule and it still applies).
+  let fundId = req.body?.fundId ? String(req.body.fundId) : null;
+  if (fundId) {
+    const ok = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, org.id]);
+    if (!ok.length) fundId = null;
+  }
+  const metadata = {
+    donor_email: donor.email || "",
+    donor_name: donor.name || "",
+    fund_id: fundId || "",
+    frequency: "once",
+    campaign_id: "",
+    giving_page_id: "",
+    peer_fundraiser_id: "",
+    org_id: org.id,
+    cover_fees: feesCovered ? "true" : "",
+    base_amount_cents: feesCovered ? String(baseCents) : "",
+    event_level_id: "", event_qty: "", event_hold_id: "", event_member_price: "",
+    event_guests: "", event_dietary: "", membership_level_id: "",
+    show_name_to_fundraiser: "",
+    utm_medium: "express",
+    remember_me: "",
+  };
+  try {
+    const pi = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: "usd",
+      customer: donor.stripe_customer_id,
+      payment_method: donor.express_pm_id,
+      // ON SESSION: the donor is sitting in front of the page. Stripe may still
+      // ask their bank for a step-up, and the branch below hands that case back
+      // to the ordinary form rather than pretending the gift went through.
+      off_session: false,
+      confirm: true,
+      // A one-tap gift may not silently open a hosted page in a context that
+      // cannot show one.
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      receipt_email: donor.email || undefined,
+      description: `Donation to ${org.name}`,
+      metadata,
+      statement_descriptor_suffix: undefined,
+    }, { stripeAccount: org.stripe_account_id });
+
+    if (pi.status === "succeeded" || pi.status === "processing") {
+      // THE GIFT IS NOT WRITTEN HERE. `payment_intent.succeeded` on the
+      // connected account writes it, through `recordGift`, from this metadata —
+      // one gift path, and a redelivery is a no-op on the payment intent's id.
+      return res.json({ ok: true, status: pi.status, amountCents,
+        message: pi.status === "processing"
+          ? "Thank you. Your gift is on its way; your bank takes a few days to settle it."
+          : "Thank you." });
+    }
+    // requires_action / requires_payment_method — the saved card needs the
+    // donor's bank to say yes, or has stopped working. Either way the ordinary
+    // form is where that conversation happens.
+    return res.status(409).json({ error: "needs_card", status: pi.status,
+      message: "Your bank needs to confirm this one. Please give the usual way just this once." });
+  } catch (e) {
+    console.error("[give] express charge failed:", e.message);
+    return res.status(400).json({ error: "charge_failed",
+      message: "That card did not go through. Please give the usual way and it will save the new one." });
+  }
 }));
 
 // ── S-4: token is POST-consumed, atomically single-use ─────────────────────
@@ -4148,8 +4773,13 @@ app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) =
   // Atomic consume: UPDATE … RETURNING wins exactly once even under a
   // parallel replay of the same link.
   const rows = await query(
+    // GIVE-2 §4 — AND IT IS A PORTAL LINK. An express-giving link is in the
+    // same table and must never open the portal: it was emailed to prove that
+    // somebody controls an address well enough to charge a card they already
+    // saved, which is not the same claim as "show me my giving history".
     `UPDATE portal_magic_links SET used_at = NOW()
      WHERE token_hash = ? AND org_id = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
+       AND purpose = 'portal'
      RETURNING email`,
     [sha256hex(token), org.id]);
   if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used. Request a fresh one." });

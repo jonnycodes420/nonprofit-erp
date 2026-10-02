@@ -42,11 +42,17 @@ const MUTED = T.ink3;
 const HAIRLINE = "rgba(0,0,0,0.14)";
 const HAIRLINE_SOFT = "rgba(0,0,0,0.10)";
 
+// `en-US`, NAMED. It was `toLocaleString(undefined, …)`, which is the exact
+// shape EVENTS-2 banned: a browser in half of Europe flips the separator and
+// `$25.000` beside a dollar sign reads as twenty-five dollars. On a donation
+// form that is the amount somebody thinks they are about to give.
 const fmtCents = c => {
   const v = Math.round(Number(c) || 0);
-  return v % 100 === 0
-    ? "$" + (v / 100).toLocaleString()
-    : "$" + (v / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const whole = v % 100 === 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD",
+    minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2,
+  }).format(v / 100);
 };
 
 // The decline is remembered for the SESSION, per form — not forever, and not
@@ -82,6 +88,11 @@ function countFormEvent(apiBase, formId, kind, variant) {
 
 export default function GiveSteps({
   spec, formId, theme: th, coverFeesEnabled, upsellThresholdCents,
+  // GIVE-2 §6 — the monthly amount the org suggests (null = a third of the gift).
+  upsellMonthlyCents,
+  // GIVE-2 §5 — the org's own processing rate, in the org's own words, so the
+  // sentence beside the box is this organisation's number.
+  feeRateSentence,
   onSubmit, submitting, submitErr, grossUpCents, styles, apiBase,
 }) {
   const { card, inp, btn, quiet } = styles;
@@ -95,6 +106,9 @@ export default function GiveSteps({
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [coverFees, setCoverFees] = useState(false);   // always opt-in, never pre-checked
+  // GIVE-2 §4 — "remember me", for a one-time gift. Opt-in, never pre-ticked:
+  // a saved card nobody asked to save is the worst thing a donation form can do.
+  const [rememberMe, setRememberMe] = useState(false);
   const [tributeType, setTributeType] = useState("");
   const [tributeName, setTributeName] = useState("");
   const [notifyName, setNotifyName] = useState("");
@@ -123,10 +137,14 @@ export default function GiveSteps({
   const upsell = useMemo(
     () => upsellFor(chosenCents, {
       thresholdCents: upsellThresholdCents,
+      suggestMonthlyCents: upsellMonthlyCents,
       offerMonthly: spec.amount.frequencies.includes("monthly"),
       frequency,
     }),
-    [chosenCents, upsellThresholdCents, spec.amount.frequencies, frequency]
+    // A useCallback/useMemo that gains a closed-over value needs it in its deps
+    // or it goes stale — the BUILD-95 gotcha, which cost that build a form that
+    // kept the first threshold it ever saw.
+    [chosenCents, upsellThresholdCents, upsellMonthlyCents, spec.amount.frequencies, frequency]
   );
 
   // Switching frequency never carries the amount across (BUILD-60's rule, kept):
@@ -198,6 +216,9 @@ export default function GiveSteps({
       fundId: fundId || "",
       firstName, lastName, email,
       coverFees: showCoverFees && coverFees,
+      // GIVE-2 §4 — the server ignores it for a monthly gift, a ticket and a
+      // membership, so this is a request rather than a decision.
+      rememberMe: frequency === "once" && rememberMe,
       tributeType: tributeType || undefined,
       tributeName: tributeName || undefined,
       notifyName: notifyName || undefined,
@@ -260,6 +281,16 @@ export default function GiveSteps({
                   {fmtCents(c)}
                 </button>
               ))}
+            </div>
+          ) : null}
+
+          {/* GIVE-2 §3 — WHERE THESE AMOUNTS CAME FROM. A form that quietly
+              knows your last gift and does not say so is a form that feels
+              like it has been reading your post. The sentence is the server's
+              (`shared/smartAmounts.js`), never written here. */}
+          {spec.amount.amountsSentence ? (
+            <div className="give-amt-why" style={{ fontSize: 12, color: MUTED, marginTop: -4, marginBottom: 10, lineHeight: 1.5 }}>
+              {spec.amount.amountsSentence}
             </div>
           ) : null}
 
@@ -421,14 +452,44 @@ export default function GiveSteps({
             <label className="give-cover" style={{ display: "block", fontSize: 13, marginBottom: 12 }}>
               <input type="checkbox" checked={coverFees} onChange={e => setCoverFees(e.target.checked)} />{" "}
               Add {fmtCents(feeCents)} to cover the card fee, so all of {fmtCents(chosenCents)} reaches us.
+              {/* GIVE-2 §5 — THE RATE IS NAMED. A checkbox that adds money to
+                  somebody's charge says what the money is for. It is the CARD
+                  rate because the payment method is chosen on Stripe's page
+                  after the amount is set, so this is the dearer of the two: a
+                  donor who then pays by bank transfer has covered more than the
+                  processor takes, never less. */}
+              {feeRateSentence ? (
+                <span className="give-cover-rate" style={{ display: "block", fontSize: 12, color: MUTED, marginTop: 3, marginLeft: 22 }}>
+                  Card processing is {feeRateSentence}.
+                </span>
+              ) : null}
+            </label>
+          ) : null}
+
+          {/* GIVE-2 §4 — REMEMBER ME. One-time gifts only: a monthly gift
+              already keeps its own method, and a ticket is a purchase rather
+              than a reason to keep somebody's card. Never pre-ticked, and the
+              sentence says exactly what is kept and where. */}
+          {frequency === "once" ? (
+            <label className="give-remember" style={{ display: "block", fontSize: 13, marginBottom: 12 }}>
+              <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />{" "}
+              Remember my card so I can give again in one tap.
+              <span style={{ display: "block", fontSize: 12, color: MUTED, marginTop: 3, marginLeft: 22 }}>
+                It is kept with {spec.orgName || "this organisation"}&rsquo;s own payment provider, not with Steward, and we email you a link when you want to use it.
+              </span>
             </label>
           ) : null}
 
           {/* NO CARD FIELD LIVES HERE, EVER. Payment happens on Stripe's own
-              page on the org's connected account, which is also where Apple Pay
-              and Google Pay come from on a device that has them. */}
+              page on the org's connected account, which is also where the
+              wallets and the bank option come from.
+              GIVE-2 §2 — the form no longer pins Checkout to cards, so what a
+              donor is actually offered is whatever the organisation's own Stripe
+              account accepts. This sentence is hedged because that is the truth:
+              naming a method that the account has not switched on would be a
+              claim about somebody else's settings. */}
           <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
-            You will finish on Stripe's secure page, where you can pay by card, Apple Pay or Google Pay.
+            You will finish on Stripe&rsquo;s secure page. Card, Apple Pay, Google Pay, a US bank account and PayPal appear there wherever this organisation and your device support them.
           </div>
           {submitErr ? <div className="give-err" style={{ fontSize: 13, color: ERR, marginBottom: 10 }}>{submitErr}</div> : null}
           <button type="button" className="give-pay" onClick={submit} disabled={submitting} style={{ ...btn, opacity: submitting ? 0.6 : 1 }}>

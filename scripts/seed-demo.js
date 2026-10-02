@@ -2261,6 +2261,162 @@ async function main() {
     console.log("[assert] the demo holds no provider credentials: 0 sealed rows across every connection");
   }
 
+  // ── GIVE-2 · THE DONATION FORM THAT RAISES MORE ────────────────────────
+  // Four things a prospect should be able to see working, on real rows:
+  //   · A FORM with smart amounts on, so the ladder is drawn from Harborlight's
+  //     own gifts rather than Steward's $25/$50/$100/$250 guess.
+  //   · COVER-THE-FEE actually taken, on a handful of this year's online gifts,
+  //     with the processor's own fee beside it so "charged / received" has two
+  //     different numbers on it.
+  //   · A RECOVERED monthly gift: a card that failed, a card-update email, and
+  //     the money that came back.
+  //   · TWO MATCHING EMPLOYERS, with their own form links.
+  console.log("[seed] the donation form, covered fees, a recovered card and two matching employers…");
+  {
+    // A FORM ON THE EXISTING 5K PAGE. No second page: the form is a config on
+    // the giving page, which is the whole BUILD-102 premise.
+    await q(`UPDATE giving_pages SET form_config = $2::jsonb WHERE id = $1 AND org_id = $3`,
+      [P2P_PAGE, JSON.stringify({
+        amountsCents: [2500, 5000, 10000, 25000],
+        smartAmounts: true,
+        allowOther: true,
+        offerMonthly: true,
+        defaultFrequency: "once",
+        designation: { mode: "none", fundId: null, fundIds: [] },
+        showTribute: false,
+        showEmployerMatch: true,
+        questions: [],
+        thankYou: { message: "", redirectUrl: "" },
+        headline: "Every runner, every mile, every scholarship.",
+      }), ORG]);
+    // The org's own suggestion when it asks a one-time donor to go monthly.
+    await q(`UPDATE orgs SET form_upsell_monthly_cents = 2500 WHERE id = $1`, [ORG]);
+
+    // COVER-THE-FEE, ON REAL GIFTS. The five most recent online gifts of this
+    // year get the donor-covered portion and the processor's own fee, computed
+    // with the SAME module the product computes them with — a seed that does
+    // its own arithmetic is a seed that can disagree with the screen.
+    const RATES = await import("../shared/processingRates.js");
+    const cardRate = RATES.DEFAULT_RATES.card;
+    const online = await q(
+      `SELECT id, amount FROM gifts
+        WHERE org_id = $1 AND payment_method = 'Card' AND amount >= 25
+          AND date >= $2 AND cover_fee_amount = 0
+        ORDER BY date DESC LIMIT 5`, [ORG, `${TODAY.slice(0, 4)}-01-01`]);
+    for (const g of online) {
+      // The donor intended `amount`; they were charged the gross-up; the
+      // processor took its cut of the charge. All three on the one row, and
+      // `shared/giftFooting.js` is what foots them.
+      const intendedCents = Math.round(Number(g.amount) * 100);
+      const chargedCents = RATES.grossUpCents(intendedCents, cardRate);
+      const feeCents = RATES.feeOnChargeCents(chargedCents, cardRate);
+      await q(
+        `UPDATE gifts SET amount = $2, cover_fee_amount = $3,
+                          processor_fee_amount = $4, processor_fee_source = 'stripe_balance_transaction'
+          WHERE id = $1 AND org_id = $5`,
+        [g.id, chargedCents / 100, (chargedCents - intendedCents) / 100, feeCents / 100, ORG]);
+    }
+    // The donor rollups move with them, because the charge IS the gift.
+    await q(
+      `UPDATE donors d SET total_giving = s.total, last_gift_amount = CASE
+                WHEN COALESCE(NULLIF(d.last_gift_date,''),'0001-01-01')::date = s.last_date THEN s.last_amount
+                ELSE d.last_gift_amount END
+         FROM (SELECT donor_id, SUM(amount) AS total, MAX(date)::date AS last_date,
+                      (array_agg(amount ORDER BY date DESC))[1] AS last_amount
+                 FROM gifts WHERE org_id = $1 GROUP BY donor_id) s
+        WHERE d.id = s.donor_id AND d.org_id = $1`, [ORG]).catch(() => {});
+
+    // A RECOVERED MONTHLY GIFT. One of the monthly givers' cards failed six
+    // weeks ago, the card-update email went out, they updated it, and the gift
+    // came back. Three `payment_recovery_events` rows, because that is what the
+    // engine writes and what the Fundraising panel reads.
+    const [recovered] = await q(
+      `SELECT id, donor_id, stripe_subscription_id, amount FROM recurring_subscriptions
+        WHERE org_id = $1 AND status = 'active' AND stripe_subscription_id IS NOT NULL
+        ORDER BY amount DESC LIMIT 1`, [ORG]);
+    if (recovered) {
+      const failedOn = orgTime.addDays(TODAY, -42);
+      const cameBackOn = orgTime.addDays(TODAY, -39);
+      await q(
+        `UPDATE recurring_subscriptions
+            SET status = 'recovered', failure_count = 1,
+                first_failed_at = $2::date, last_failed_at = $2::date, recovered_at = $3::date
+          WHERE id = $1 AND org_id = $4`, [recovered.id, failedOn, cameBackOn, ORG]);
+      const ev = (type, on) => q(
+        `INSERT INTO payment_recovery_events (id,org_id,donor_id,subscription_id,type,detail,created_at)
+         VALUES ($1,$2,$3,$4,$5,'{}'::jsonb,$6::date)`,
+        [`pre_g2_${type}`, ORG, recovered.donor_id, recovered.stripe_subscription_id, type, on]);
+      await ev("payment_failed", failedOn);
+      await ev("dunning_sent", failedOn);
+      await ev("payment_recovered", cameBackOn);
+      // The money the recovery collected: every renewal on that subscription
+      // from the day it came back. Stamped so the panel's dollars figure has
+      // gifts to open rather than a count with nothing behind it.
+      // COALESCE, not `IS NULL`: the monthly givers' renewals already carry
+      // their subscription id from the block above, and the first cut's
+      // `recurring_subscription_id IS NULL` guard therefore matched nothing —
+      // the panel showed a recovery with no gifts behind its money figure,
+      // which is precisely the shape of number this build exists to retire.
+      await q(
+        `UPDATE gifts SET recurring_subscription_id = COALESCE(recurring_subscription_id, $1),
+                          processor_fee_amount = round((amount * $4)::numeric + $5, 2),
+                          processor_fee_source = 'stripe_balance_transaction'
+          WHERE org_id = $2 AND donor_id = $3 AND date >= $6`,
+        [recovered.id, ORG, recovered.donor_id, cardRate.pct, cardRate.flatCents / 100, cameBackOn]);
+    }
+
+    // TWO MATCHING EMPLOYERS, with the companies' own form links. Typed by
+    // staff — there is no vendor behind this and no lookup service, which is
+    // exactly what the card in Settings says.
+    const EMPLOYERS = [
+      ["me_b72_meridian", "Meridian Bank", "https://meridianbank.example.com/community/matching-gifts", "1:1", 2500, 1000000,
+       "Their form needs the gift date and the receipt, both of which are on the donor's record."],
+      ["me_b72_harborgen", "Harbor General Hospital", "https://harborgeneral.example.org/foundation/match", "2:1", 5000, 500000,
+       "Two to one for staff of five years or more, one to one below that."],
+    ];
+    for (const [id, name, url, ratio, minC, maxC, note] of EMPLOYERS)
+      await q(`INSERT INTO matching_employers (id,org_id,name,form_url,ratio,min_cents,max_cents,note,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'u_b72demo','Dana Reyes')
+               ON CONFLICT (org_id, lower(name)) DO NOTHING`,
+        [id, ORG, name, url, ratio, minC, maxC, note]);
+
+    // ── THE SEED'S OWN ASSERTION ────────────────────────────────────────────
+    // Every covered gift must foot: charged = intended + covered, and
+    // charged = received + fee. A seed that writes money that does not add up
+    // is a demonstration of a bug.
+    const F = await import("../shared/giftFooting.js");
+    const covered = await q(
+      `SELECT id, amount, cover_fee_amount, processor_fee_amount, processor_fee_source
+         FROM gifts WHERE org_id = $1 AND cover_fee_amount > 0`, [ORG]);
+    for (const g of covered) {
+      const f = F.giftFooting({
+        grossCents: Math.round(Number(g.amount) * 100),
+        feeCents: Math.round(Number(g.processor_fee_amount) * 100),
+        coveredCents: Math.round(Number(g.cover_fee_amount) * 100),
+        feeSource: g.processor_fee_source,
+      });
+      if (!F.footsToTheCent(f)) {
+        throw new Error(`REFUSED: gift ${g.id} does not foot — ${JSON.stringify(f)}`);
+      }
+    }
+    console.log(`[assert] ${covered.length} covered-fee gifts foot to the cent (charged = intended + covered = received + fee)`);
+
+    // AND THE RECOVERY HAS MONEY BEHIND IT. A recovered card with no gifts
+    // dated after it is a figure with nothing to open, which the first cut of
+    // this seed produced and nothing would have caught.
+    if (recovered) {
+      const [back] = await q(
+        `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0)::float AS total FROM gifts
+          WHERE org_id = $1 AND recurring_subscription_id = $2
+            AND date >= (SELECT to_char(recovered_at,'YYYY-MM-DD') FROM recurring_subscriptions WHERE id = $2)`,
+        [ORG, recovered.id]);
+      if (!back || back.n < 1) {
+        throw new Error("REFUSED: the recovered monthly gift has no gifts dated after it came back, so the Fundraising panel's money figure would open nothing.");
+      }
+      console.log(`[assert] the recovered card collected ${back.n} gift${back.n === 1 ? "" : "s"} since, $${back.total.toLocaleString("en-US")}`);
+    }
+  }
+
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
   // Six planned instructions, one from each of the six agents, each about
   // people who are really in this file. They sit in Plans as PLANNED: nothing

@@ -25,9 +25,15 @@ import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
 import GiveSteps from "./GiveSteps";
 import { assignVariant } from "../lib/abVariant";
+import * as RATES from "../../../shared/processingRates.js";
 
-function grossUpCents(baseCents) {
-  return Math.ceil((baseCents + 30) / (1 - 0.029));
+// GIVE-2 §5 — the third hand-copied mirror of two server constants, retired.
+// The arithmetic is `shared/processingRates.js` (the module the charge itself is
+// grossed up with) and the rate comes off the public payload. Display only; the
+// server re-derives the charge and never trusts a client total.
+function grossUpWith(feeRate) {
+  const rate = feeRate && Number.isFinite(Number(feeRate.pct)) ? feeRate : RATES.DEFAULT_RATES.card;
+  return baseCents => RATES.grossUpCents(baseCents, rate);
 }
 
 function resolveTheme(theme) {
@@ -145,7 +151,9 @@ export default function EmbeddedForm() {
         theme={th}
         coverFeesEnabled={data.org.coverFeesEnabled}
         upsellThresholdCents={data.form.upsellThresholdCents}
-        grossUpCents={grossUpCents}
+        upsellMonthlyCents={data.form.upsellMonthlyCents}
+        feeRateSentence={data.org.feeRateSentence}
+        grossUpCents={grossUpWith(data.org.feeRate)}
         submitting={submitting}
         submitErr={submitErr}
         onSubmit={postDonation}
