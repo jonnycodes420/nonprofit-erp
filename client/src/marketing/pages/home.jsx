@@ -22,18 +22,19 @@ const TABS = [
 const FINDER = Object.keys(FEAT).map(k => ({ n: FEAT[k].name, s: FEAT[k].short, i: FEAT[k].icon, h: "/features/" + k, c: FEATURE_CATS[k] || "keep" })).concat(FEATURE_EXTRAS);
 const CHIPS = [["all", "All"], ["keep", "Keep"], ["raise", "Raise"], ["run", "Run"], ["focus", "Focus"]];
 
-function StatMarquee() {
-  const cards = STATS.map(s => (
-    <div className="sc" key={s[0]} data-stat={s[0]}><b>{s[0]}</b><p>{s[1]}</p><span><A href={SRC[s[2]][1]} style={{ color: "inherit" }}>{srcShort(s[2])}</A></span></div>
-  ));
+// FIX-13 · a static row: the six research cards, each rendered ONCE. The
+// marquee this replaced drew three copies and scrolled them, so a visitor
+// saw the same card twice at once. Nothing here moves or repeats.
+function StatStrip() {
   return (
     <div className="marq-s" aria-label="What the research says">
-      <div className="wrap"><div className="eyebrow">What the research says</div></div>
-      <div className="marq"><div className="track">
-        {cards}
-        <div style={{ display: "contents" }} data-dup aria-hidden="true">{STATS.map(s => <div className="sc" key={"b" + s[0]}><b>{s[0]}</b><p>{s[1]}</p><span>{srcShort(s[2])}</span></div>)}</div>
-        <div style={{ display: "contents" }} data-dup aria-hidden="true">{STATS.map(s => <div className="sc" key={"c" + s[0]}><b>{s[0]}</b><p>{s[1]}</p><span>{srcShort(s[2])}</span></div>)}</div>
-      </div></div>
+      <div className="wrap"><div className="eyebrow">What the research says</div>
+        <div className="marq"><div className="track">
+          {STATS.map(s => (
+            <div className="sc" key={s[0]} data-stat={s[0]}><b>{s[0]}</b><p>{s[1]}</p><span><A href={SRC[s[2]][1]} style={{ color: "inherit" }}>{srcShort(s[2])}</A></span></div>
+          ))}
+        </div></div>
+      </div>
     </div>
   );
 }
@@ -120,7 +121,7 @@ export default function Home() {
         </div>
       </section>
 
-      <StatMarquee />
+      <StatStrip />
       <WhyTabs />
 
       <section style={{ paddingTop: 0 }}>

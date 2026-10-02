@@ -13,6 +13,7 @@ import {
   sanitizeStepTime, formatStepTime,
 } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
+import { NavIcon } from "./NavIcon";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
@@ -369,12 +370,14 @@ export function PutItOnMyCalendar({ threadId, compact = false }) {
   return (
     <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
       <button type="button" onClick={() => setOpen(v => !v)} data-testid="put-on-calendar"
-        title="Open your calendar with this filled in"
+        title="Open your calendar with this filled in" aria-label={compact ? "Calendar" : undefined}
         style={compact
-          ? { background: "none", border: "none", padding: "4px 6px", fontSize: 12, color: T.ink3, cursor: "pointer" }
+          ? { background: "none", border: "none", padding: "4px 6px", fontSize: 12, color: T.ink3, cursor: "pointer", display: "inline-flex", alignItems: "center" }
           : { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "8px 12px",
-              fontSize: 12, fontWeight: 600, color: T.ink2, cursor: "pointer", whiteSpace: "nowrap" }}>
-        {compact ? "◫" : "◫ Calendar"}
+              fontSize: 12, fontWeight: 600, color: T.ink2, cursor: "pointer", whiteSpace: "nowrap",
+              display: "inline-flex", alignItems: "center", gap: 6 }}>
+        {/* FIX-13 Part 5 — the NAV-1 calendar, not the ◫ text glyph. */}
+        <NavIcon id="events" size={compact ? 16 : 15} />{compact ? null : "Calendar"}
       </button>
       {open && (
         <div data-testid="calendar-menu" style={{

@@ -7,7 +7,8 @@
 // can pick a different org.
 //
 // The key travels in the x-api-key header, which is how the Steward API reads
-// it. Calls are scoped: read:people, read:gifts, read:events, write:people,
+// it, and always to the one production API host (lib/api.js). Calls are
+// scoped: read:people, read:gifts, read:funds, read:events, write:people,
 // write:gifts, write:notes. A key made before scopes existed carries the
 // legacy "read" scope, which expands to every read scope and no write scope.
 
@@ -21,7 +22,7 @@ const testAuth = async (z, bundle) => {
   response.throwForStatus();
   const body = response.json;
   if (!body || !body.organization) {
-    throw new z.errors.Error('Steward answered, but not the way the connection check expects. Is this the API host?');
+    throw new z.errors.Error('Steward answered, but not the way the connection check expects. Check the API key and try again.');
   }
   return body;
 };
@@ -35,14 +36,6 @@ module.exports = {
       type: 'password',
       required: true,
       helpText: 'Made in Steward under Settings, API keys. Tick the permissions the Zap needs: reading gifts for the New Gift trigger, writing gifts to record them, and so on. The key is shown once, so copy it then. [How to make a Steward API key](https://stewardapp.dev/connections#api)',
-    },
-    {
-      key: 'baseUrl',
-      label: 'API host',
-      type: 'string',
-      required: true,
-      default: 'https://nonprofit-erp-production.up.railway.app',
-      helpText: 'Where your Steward API lives. This is the production host for almost everyone; only change it if your Steward runs somewhere else. It must be an https address Zapier can reach on the public internet. [About the Steward API](https://stewardapp.dev/connections#api)',
     },
   ],
   test: testAuth,

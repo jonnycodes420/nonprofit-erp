@@ -18,6 +18,15 @@ import { FAQ_PAGE } from "../data/faqs";
 import { SRC, QUOTES } from "../data/research";
 import { LEGAL_ENTITY_NAME } from "../../../../shared/legalEntity.js";
 
+// FIX-13 · the page runs the audit. It used to promise "run the free audit"
+// and "drop it in" with nothing to drop a file on: the working audit lived
+// only at /lost-and-found. Now this page renders that same component, so the
+// drop zone and the Run the free audit button sit in the hero, and every
+// Lost & Found link on the site (menu, tools, feature finder) lands on a page
+// that can run it. Book a demo and Start free stay below the result.
+// Lazy, so the audit's code loads only for the people who come here.
+const LostAndFoundAudit = React.lazy(() => import("../../pages/LostAndFound").then(m => ({ default: m.LostAndFoundAudit })));
+
 export function Resources() {
   return <>
     <Hero eyebrow="Resources" crumbs={[["Resources"]]} h="Learn from people <b>who've done the work.</b>" lede="Guides, templates, free tools and the research behind them, for development teams of one to five." noCta />
@@ -260,8 +269,16 @@ export function Tools() {
 export function ToolLostAndFound() {
   return <>
     <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
-      lede="Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored."
-      photo="kitchen-card" />
+      lede="Drop in a giving export and see your lapsing donors and what they used to give. Free, no signup."
+      noCta>
+      <React.Suspense fallback={<div className="lf-loading" style={{ minHeight: 220 }} />}>
+        <div data-lf-audit><LostAndFoundAudit compact /></div>
+      </React.Suspense>
+      <div className="ctas" style={{ marginTop: 34 }} data-lf-ctas>
+        <Pill href="/demo">Book a demo</Pill>
+        <Pill kind="soft" href="/signup">Start free</Pill>
+      </div>
+    </Hero>
     <Steps eb="How it works" h="A minute, <b>start to finish.</b>" list={[["Export your gifts", "Any spreadsheet with donor, date and amount."], ["Drop it in", "The audit reads it in your browser. Nothing is uploaded."], ["See who is slipping", "Lapsing donors ranked by what they used to give."]]} />
     <StatBand n={4} />
     <FinalCta />

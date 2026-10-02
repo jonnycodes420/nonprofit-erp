@@ -10,6 +10,7 @@ const newGiftTrigger = require('./triggers/newGift');
 const newPersonTrigger = require('./triggers/newPerson');
 const stageChangedTrigger = require('./triggers/stageChanged');
 const personListTrigger = require('./triggers/personList');
+const fundListTrigger = require('./triggers/fundList');
 const createPersonCreate = require('./creates/createPerson');
 const recordGiftCreate = require('./creates/recordGift');
 const addNoteCreate = require('./creates/addNote');
@@ -42,6 +43,8 @@ const App = {
     [stageChangedTrigger.key]: stageChangedTrigger,
     // Hidden: the people dropdown behind the Person fields.
     [personListTrigger.key]: personListTrigger,
+    // Hidden: the funds dropdown behind the Fund field on Record Gift.
+    [fundListTrigger.key]: fundListTrigger,
   },
 
   searches: {},

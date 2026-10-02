@@ -4907,6 +4907,12 @@ async function initSchema() {
       ip TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
+  // FIX-13: a Book a demo request is a lead in this table too (ref
+  // book-a-demo), and it carries two more answers: the size band she picked
+  // and where her records live today. Both are words she chose about her
+  // organisation, never a row from a file.
+  await pool.query(`ALTER TABLE lost_and_found_leads ADD COLUMN IF NOT EXISTS org_size TEXT`);
+  await pool.query(`ALTER TABLE lost_and_found_leads ADD COLUMN IF NOT EXISTS current_system TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_lf_leads_created ON lost_and_found_leads (created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_lf_leads_ref ON lost_and_found_leads (ref) WHERE ref IS NOT NULL`);
 

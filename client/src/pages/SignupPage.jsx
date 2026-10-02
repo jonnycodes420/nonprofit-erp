@@ -75,7 +75,9 @@ export default function SignupPage() {
     const t = TIERS.find(x => x.id === params.get("plan"));
     return t ? String(t.maxDonors) : "";
   });
-  const [interval, setIntervalChoice] = useState("monthly");
+  // FIX-13 · …and ?interval=yearly when the yearly toggle was on, so the
+  // price she saw on the card is the price this page opens on.
+  const [interval, setIntervalChoice] = useState(() => (params.get("interval") === "yearly" ? "yearly" : "monthly"));
   const [accepted, setAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
 
@@ -238,7 +240,7 @@ export default function SignupPage() {
                 <div style={{ fontSize: 13, color: SAGE_GREY, marginBottom: 6 }}>{TALK_TO_US.band}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, lineHeight: 1.55 }}>
                   That is a conversation rather than a checkout: at your size the import and the setup matter more than the price.{" "}
-                  <a href={CAL} target="_blank" rel="noreferrer" style={{ color: EMERALD, fontWeight: 700 }}>Book a call</a> and we will size it with you.
+                  <Link to="/demo" data-testid="signup-talk-demo" style={{ color: EMERALD, fontWeight: 700 }}>{TALK_TO_US.cta}</Link> and we will size it with you.
                 </div>
               </div>
             )}

@@ -232,10 +232,12 @@ export function Contact() {
 
 // BOOK A DEMO. The request is stored as a lead in the same table the Lost &
 // Found leads live in (POST /lost-and-found/lead, which super-admin lists),
-// tagged ref "book-a-demo" so it reads as its own source there. Exactly the
-// three fields that route accepts are sent, by name. Steward never emails the
+// tagged ref "book-a-demo" so it reads as its own source there. Every field
+// on the form is sent, by name: the three the audit's lead also has, plus the
+// size band and where the donors are today (FIX-13). Steward never emails the
 // prospect: the route notifies Jonathan only, and he follows up himself.
 export const DEMO_REF = "book-a-demo";
+export const DEMO_FALLBACK = "That did not go through. Please email jonathan@stewardapp.dev and he will set up a time with you.";
 
 export function Demo() {
   const [f, setF] = useState({ name: "", email: "", organization: "", band: "Under 1,000", today: "" });
@@ -247,13 +249,16 @@ export function Demo() {
     e.preventDefault();
     setState("sending"); setErr("");
     try {
-      const body = { name: f.name.trim(), email: f.email.trim(), organization: f.organization.trim(), ref: DEMO_REF };
+      const body = { name: f.name.trim(), email: f.email.trim(), organization: f.organization.trim(), orgSize: f.band, currentSystem: f.today.trim(), ref: DEMO_REF };
       const r = await fetch(API + "/lost-and-found/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d.message || "That did not go through. Please try again, or email jonathan@stewardapp.dev.");
+      if (!r.ok) throw new Error(d.message ? d.message + " If it keeps failing, email jonathan@stewardapp.dev." : DEMO_FALLBACK);
       setState("sent");
     } catch (x) {
-      setState("idle"); setErr(String((x && x.message) || "That did not go through."));
+      // Never a silent nothing: a network failure (no message worth showing)
+      // gets the plain sentence with the address to write to.
+      const m = x && x.message;
+      setState("idle"); setErr(m && /jonathan@stewardapp\.dev/.test(m) ? m : DEMO_FALLBACK);
     }
   }
 
@@ -268,11 +273,11 @@ export function Demo() {
           <div className="form" data-demo-sent><p className="lede">Thank you. Jonathan will email you within one business day to pick a time.</p></div>
         ) : (
           <form className="form" onSubmit={submit} data-demo-form>
-            <label>Your name<input required name="name" autoComplete="name" value={f.name} onChange={set("name")} /></label>
-            <label>Work email<input type="email" required name="email" autoComplete="email" value={f.email} onChange={set("email")} /></label>
-            <label>Organization<input required name="organization" autoComplete="organization" value={f.organization} onChange={set("organization")} /></label>
-            <label>Active donors<select value={f.band} onChange={set("band")}><option>Under 1,000</option><option>1,000 to 5,000</option><option>5,000 to 10,000</option><option>Over 10,000</option></select></label>
-            <label>Where are your donors today?<input placeholder="A spreadsheet, another donor system, not sure" value={f.today} onChange={set("today")} /></label>
+            <label htmlFor="demo-name">Your name<input id="demo-name" required name="name" autoComplete="name" value={f.name} onChange={set("name")} /></label>
+            <label htmlFor="demo-email">Work email<input id="demo-email" type="email" required name="email" autoComplete="email" value={f.email} onChange={set("email")} /></label>
+            <label htmlFor="demo-organization">Organization<input id="demo-organization" required name="organization" autoComplete="organization" value={f.organization} onChange={set("organization")} /></label>
+            <label htmlFor="demo-org-size">Active donors<select id="demo-org-size" name="orgSize" autoComplete="off" value={f.band} onChange={set("band")}><option>Under 1,000</option><option>1,000 to 5,000</option><option>5,000 to 10,000</option><option>Over 10,000</option></select></label>
+            <label htmlFor="demo-current-system">Where are your donors today?<input id="demo-current-system" name="currentSystem" autoComplete="off" placeholder="A spreadsheet, another donor system, not sure" value={f.today} onChange={set("today")} /></label>
             {err && <p className="form-err" role="alert">{err}</p>}
             <button className="pill pill-ink" type="submit" disabled={state === "sending"}><i></i>{state === "sending" ? "Sending…" : "Request a time"}</button>
           </form>

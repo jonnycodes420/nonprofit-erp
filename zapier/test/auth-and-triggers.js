@@ -6,20 +6,21 @@
 // ids for dedupe), and the donor-data path (a stage change is a new dedupe
 // id, so the trigger fires exactly once per change). It also proves the API
 // host cannot be pointed at an address inside Zapier's own network, and that
-// the people dropdown says what to do when the key lacks read:people.
+// the people and fund dropdowns say what to do when the key lacks the scope.
 
 const should = require('should');
 const nock = require('nock');
 const zapier = require('zapier-platform-core');
 
 const App = require('../index');
-const { assertSafeHost } = require('../lib/api');
+const { assertSafeHost, API_BASE_URL } = require('../lib/api');
 const appTester = zapier.createAppTester(App);
 
-const BASE = 'https://steward-test.example.com';
+// The host is fixed (no auth field), so the mocks sit on the real API host.
+const BASE = API_BASE_URL;
 const KEY = 'stw_test_not_a_real_key';
 
-const bundle = () => ({ authData: { apiKey: KEY, baseUrl: BASE } });
+const bundle = () => ({ authData: { apiKey: KEY } });
 
 describe('Steward Zapier app', () => {
   beforeEach(() => nock.cleanAll());
@@ -111,7 +112,7 @@ describe('Steward Zapier app', () => {
       should.throws(() => assertSafeHost(host), /.+/, `expected ${host} to be refused`);
     }
 
-    // And a real one, self-hosted or not, still works, trimmed to its origin.
+    // And a real one still works, trimmed to its origin.
     assertSafeHost('https://steward.example.org/api/').should.equal('https://steward.example.org');
     assertSafeHost('https://nonprofit-erp-production.up.railway.app')
       .should.equal('https://nonprofit-erp-production.up.railway.app');
@@ -133,6 +134,37 @@ describe('Steward Zapier app', () => {
     }
     // Not Zapier's opaque 403: the two ways out, named.
     message.should.match(/Read people/);
+    message.should.match(/Custom/);
+  });
+
+  it('has no API host field: every call goes to the one production host', () => {
+    App.authentication.fields.map(f => f.key).should.eql(['apiKey']);
+    BASE.should.equal('https://nonprofit-erp-production.up.railway.app');
+  });
+
+  it('lists funds for the Fund dropdown, and tells a key without read:funds how to fix it', async () => {
+    App.creates.recordGift.operation.inputFields.find(f => f.key === 'fundId').dynamic.should.equal('fundList.id.name');
+
+    nock(BASE, { reqheaders: { 'x-api-key': KEY } })
+      .get('/api/v1/funds')
+      .query(true)
+      .reply(200, { data: [{ id: 'fund_1', name: 'Annual Fund' }], limit: 100, offset: 0 });
+    const b = bundle();
+    b.meta = { page: 0 };
+    const funds = await appTester(App.triggers.fundList.operation.perform, b);
+    funds.should.eql([{ id: 'fund_1', name: 'Annual Fund' }]);
+
+    nock(BASE, { reqheaders: { 'x-api-key': KEY } })
+      .get('/api/v1/funds')
+      .query(true)
+      .reply(403, { error: 'insufficient_scope', required: 'read:funds' });
+    let message = '';
+    try {
+      await appTester(App.triggers.fundList.operation.perform, b);
+    } catch (e) {
+      message = e.message;
+    }
+    message.should.match(/Read funds/);
     message.should.match(/Custom/);
   });
 });

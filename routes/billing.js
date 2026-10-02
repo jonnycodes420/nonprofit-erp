@@ -1638,6 +1638,7 @@ app.post("/admin/orgs/:id/reconcile-subscription", requireAuth, requireSuperAdmi
 // and both of them are written to be read at a glance:
 //
 //   POST /lost-and-found/lead       three fields the visitor typed, plus ?ref=
+//                                   (Book a demo adds two: orgSize, currentSystem)
 //   POST /lost-and-found/benchmark  four aggregate numbers, opt-in
 //
 // Neither accepts anything else. Every field is picked OUT of the body by
@@ -1653,6 +1654,11 @@ app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
   const email = String(b.email || "").trim().toLowerCase().slice(0, 200);
   const organization = String(b.organization || "").trim().slice(0, 200);
   const ref = String(b.ref || "").trim().slice(0, 120) || null;
+  // FIX-13 · Book a demo's two extra answers. Optional, picked out by name
+  // like the rest, and stored as the words she chose.
+  const orgSize = String(b.orgSize || "").trim().slice(0, 60) || null;
+  const currentSystem = String(b.currentSystem || "").trim().slice(0, 300) || null;
+  const isDemo = ref === "book-a-demo";
 
   if (!name) return res.status(400).json({ error: "name_required", message: "Your name, so we know who to write back to." });
   if (!LF_EMAIL.test(email)) return res.status(400).json({ error: "email_invalid", message: "A working email address, so we can send the report." });
@@ -1660,22 +1666,28 @@ app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
 
   const id = "lf_" + uuid().slice(0, 12);
   await run(
-    `INSERT INTO lost_and_found_leads (id, name, email, organization, ref, user_agent, ip)
-     VALUES (?,?,?,?,?,?,?)`,
-    [id, name, email, organization, ref,
+    `INSERT INTO lost_and_found_leads (id, name, email, organization, ref, org_size, current_system, user_agent, ip)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, name, email, organization, ref, orgSize, currentSystem,
      String(req.get("user-agent") || "").slice(0, 300), String(req.ip || "").slice(0, 60)]);
 
   // Jonathan hears about every one. Not a digest: a nonprofit running a
   // donor audit at 11pm is somebody to write to in the morning, and a
   // deduped alert would hide the second one.
-  const to = process.env.FOUNDER_EMAIL;
+  const to = process.env.FOUNDER_EMAIL || "jonathan@stewardapp.dev";
   if (to && process.env.RESEND_API_KEY) {
     resend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, replyTo: email,
-      subject: `Lost & Found — ${organization}`,
+      // FIX-13: a demo request is named one, in the subject and the body.
+      // It used to arrive as "Lost & Found", which read as an audit download.
+      subject: isDemo ? `Demo request: ${organization}` : `Lost & Found: ${organization}`,
       html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">`
-        + [organization, `${name} · ${email}`, ref ? `Came from: ${ref}` : "No referrer.",
-           "They ran the audit and downloaded the report. Their donor file never reached us."]
+        + (isDemo
+          ? [`Demo request from ${organization}`, `${name} · ${email}`,
+             `Active donors: ${orgSize || "not given"}`, `Where their donors are today: ${currentSystem || "not given"}`,
+             "Source: book-a-demo. They asked for a demo on stewardapp.dev/demo. Reply to pick a time."]
+          : [organization, `${name} · ${email}`, ref ? `Came from: ${ref}` : "No referrer.",
+             "They ran the audit and downloaded the report. Their donor file never reached us."])
             .map(l => `<div>${String(l).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</div>`).join("")
         + `</div>`,
     }).catch(e => console.error("[lost-and-found] founder notification failed:", e.message));
@@ -1684,7 +1696,8 @@ app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
   }
   console.log(`[lost-and-found] lead ${id} — ${organization} (${email})${ref ? ` via ${ref}` : ""}`);
   res.status(201).json({ ok: true, id,
-    message: "Thank you. Your report is downloading, and nothing about your donors left your computer." });
+    message: isDemo ? "Thank you. Jonathan will email you within one business day to pick a time."
+      : "Thank you. Your report is downloading, and nothing about your donors left your computer." });
 }));
 
 // THE BENCHMARK. Four numbers, and the route REFUSES anything that is not
@@ -1724,7 +1737,7 @@ app.post("/lost-and-found/benchmark", registerLimiter, wrap(async (req, res) => 
 // the one question Jonathan asks this list is "who came from where".
 app.get("/admin/lost-and-found", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const leads = await query(
-    `SELECT id, name, email, organization, ref, created_at FROM lost_and_found_leads
+    `SELECT id, name, email, organization, ref, org_size, current_system, created_at FROM lost_and_found_leads
       ORDER BY created_at DESC LIMIT 500`, []);
   const byRef = await query(
     `SELECT COALESCE(ref, 'direct') AS ref, COUNT(*)::int AS n FROM lost_and_found_leads

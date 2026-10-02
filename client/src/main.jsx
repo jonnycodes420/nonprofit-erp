@@ -11,6 +11,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch } from "./api";
+import { safeNext } from "./lib/appUrls";
 // The marketing site (LANDING-2) stays an eager import: "/" is the public
 // entry page and must not wait on a second network hop. Everything else is
 // route-split (React.lazy) so visiting "/" does not download the
@@ -115,15 +116,22 @@ function AuthProvider({ children }) {
   return <AuthCtx.Provider value={{ auth, login, logout, refreshOrg }}>{children}</AuthCtx.Provider>;
 }
 
+// FIX-13 Part 6 — a signed-out visit to a deep link goes to sign-in and
+// carries the page with it, so it lands back there afterwards.
+function loginWithNext() {
+  const here = window.location.pathname + window.location.search;
+  return here && here !== "/" && here !== "/dashboard" ? "/login?next=" + encodeURIComponent(here) : "/login";
+}
+
 function RequireAuth({ children }) {
   const { auth } = useAuth();
-  if (!auth) return <Navigate to="/login" replace />;
+  if (!auth) return <Navigate to={loginWithNext()} replace />;
   return children;
 }
 
 function RequireOnboarded({ children }) {
   const { auth } = useAuth();
-  if (!auth) return <Navigate to="/login" replace />;
+  if (!auth) return <Navigate to={loginWithNext()} replace />;
   if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
   return children;
 }
@@ -133,7 +141,11 @@ function PublicOnly({ children }) {
   if (auth) {
     if (auth.user?.isSuperAdmin) return <Navigate to="/admin" replace />;
     if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
-    return <Navigate to="/dashboard" replace />;
+    // FIX-13 Part 6 — already signed in (another tab did it): go straight to
+    // the page the sign-in was for.
+    let next = null;
+    try { next = safeNext(new URLSearchParams(window.location.search).get("next")); } catch { /* no query */ }
+    return <Navigate to={next || "/dashboard"} replace />;
   }
   return children;
 }
@@ -211,6 +223,11 @@ function Root() {
               survive cmd/middle-click + open-in-new-tab. Renders the same shell;
               App reads the :donorId on mount and opens that profile. */}
           <Route path="/donors/:donorId" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          {/* FIX-13 Part 6 — every tab has a URL now: /donors is the list (its
+              filters in the query), /app/:tab every other tab. Same shell; App
+              reads the URL (lib/appUrls.js) on load and on back/forward. */}
+          <Route path="/donors" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
               MARKETING_ROUTES above, in the marketing shell with the prices on

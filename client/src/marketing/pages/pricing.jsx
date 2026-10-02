@@ -37,6 +37,9 @@ const TIERS = PRICING.tiers;
 const TALK = PRICING.talkToUs;
 
 const money = n => "$" + Number(n).toLocaleString("en-US");
+// FIX-13 · the Start link carries the tier AND the interval the toggle shows,
+// and SignupPage reads both, so /signup opens on the plan and price she picked.
+export const signupHref = (id, yearly) => "/signup?plan=" + id + (yearly ? "&interval=yearly" : "");
 
 function Tier({ t, yearly, authed, orgPlan, busy, onChoose, err }) {
   const isCurrent = authed && orgPlan === t.id;
@@ -56,7 +59,7 @@ function Tier({ t, yearly, authed, orgPlan, busy, onChoose, err }) {
                 disabled={busy} onClick={() => onChoose(t)}><i></i>{busy ? "Starting checkout…" : "Choose " + t.name}</button>
               {err && <p className="err" role="alert">{err}</p>}
             </>
-          : <Pill href={"/signup?plan=" + t.id} data-testid={"pricing-start-" + t.id}>{PRICING.startCta}</Pill>}
+          : <Pill href={signupHref(t.id, yearly)} data-testid={"pricing-start-" + t.id}>{PRICING.startCta}</Pill>}
     </div>
   );
 }

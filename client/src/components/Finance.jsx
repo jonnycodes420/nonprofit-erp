@@ -7,6 +7,7 @@ import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import { DonorLink } from "./RecordLink";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
@@ -362,7 +363,7 @@ function ConnectStripeCard({ onNavigate }) {
           <div style={{ fontSize:14, color:T.ink, fontWeight:600, marginBottom:3 }}>Connect Stripe to accept donations online.</div>
           <div style={{ fontSize:12, color:T.ink3, lineHeight:1.6 }}>Once you connect, every online gift lands here — and in your ledger — automatically, with 0% platform fees.</div>
         </div>
-        {onNavigate && <button style={btn(T.gold, T.ink)} onClick={() => onNavigate("settings", { section:"giving" })}>Connect Stripe →</button>}
+        {onNavigate && <button style={btn(T.gold, T.ink)} onClick={() => onNavigate("settings", { section:"connections", focus:"stripe" })}>Connect Stripe →</button>}
       </div>
     </Card>
   );
@@ -481,8 +482,8 @@ function PayoutsView({ onNavigate, openId, onOpen }) {
                   <td style={{ padding:"8px" }}>{KIND_LABEL[r.kind] || r.kind}</td>
                   <td style={{ padding:"8px" }}>
                     {r.donorId
-                      ? <span {...interactive(() => onNavigate && onNavigate("donors", { selectDonorId: r.donorId }), { label: `Open ${r.donorName}` })}
-                          data-testid="payout-donor" style={{ color:T.greenMid, fontWeight:700 }}>{r.donorName}</span>
+                      ? <DonorLink id={r.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: r.donorId }) : undefined}
+                          data-testid="payout-donor" style={{ color:T.greenMid, fontWeight:700 }}>{r.donorName}</DonorLink>
                       : <span style={{ color:T.ink3 }}>{r.kind === "fee" ? "Stripe" : "Not a gift on file"}</span>}
                   </td>
                   <td style={{ padding:"8px", textAlign:"right" }}>{fmtFull(r.grossCents / 100)}</td>
@@ -1325,7 +1326,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                           </div>
                           {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3, marginTop:2 }}>
                             {linkedDonor && onNavigate
-                              ? <button onClick={() => onNavigate("donors", { selectDonorId:t.donor_id })} style={{ background:"none", border:"none", padding:0, color:T.greenMid, fontWeight:600, cursor:"pointer", fontSize:11, textDecoration:"underline" }}>{t.vendor_donor}</button>
+                              ? <DonorLink id={t.donor_id} onOpen={() => onNavigate("donors", { selectDonorId:t.donor_id })} style={{ background:"none", border:"none", padding:0, color:T.greenMid, fontWeight:600, cursor:"pointer", fontSize:11, textDecoration:"underline" }}>{t.vendor_donor}</DonorLink>
                               : t.vendor_donor}
                           </div>}
                         </td>

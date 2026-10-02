@@ -26,6 +26,7 @@ import { parseFileToSheets } from "./DonorImport";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { DonorLink } from "./RecordLink";
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -480,7 +481,7 @@ function GiversView({ narrow, onOpenRecord, onOpen }) {
           </div>
           {!narrow && <span style={{ color: T.ink }}>{hrs(p.hundredths)} hours in all</span>}
           {!narrow && <span style={{ color: T.ink3 }}>Last gift {p.lastGiftDate || "not recorded"}</span>}
-          <button onClick={() => onOpenRecord(p.id)} style={btnLink}>Open record</button>
+          <DonorLink id={p.id} onOpen={() => onOpenRecord && onOpenRecord(p.id)} style={btnLink}>Open record</DonorLink>
         </div>
       ))}
       <Definitions items={[["Hours in all", "Every shift ever logged for this person, to the hundredth of an hour."], ["Last gift", "The date of the most recent gift on their record. Their giving is on the record itself."]]} />
@@ -548,7 +549,7 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
               </>}
             </div>
           </div>
-          <button onClick={() => onOpenRecord(person.id)} style={btnLink}>Open their record</button>
+          <DonorLink id={person.id} onOpen={() => onOpenRecord && onOpenRecord(person.id)} style={btnLink}>Open their record</DonorLink>
         </div>
 
         {/* THREE FACTS IN ONE ROW. The hours were a number, then the same
@@ -1122,7 +1123,7 @@ function GroupPanel({ groupId, isReadOnly, onClose, onOpenRecord, onSignUp }) {
             <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>{g.sentence}</div>
             {g.lead && (
               <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>
-                Lead: <button onClick={() => onOpenRecord(g.lead.id)} style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>{g.lead.name}</button>
+                Lead: <DonorLink id={g.lead.id} onOpen={() => onOpenRecord && onOpenRecord(g.lead.id)} style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>{g.lead.name}</DonorLink>
                 {g.lead.email ? ` · ${g.lead.email}` : ""}
               </div>)}
           </div>
@@ -1167,7 +1168,7 @@ function GroupPanel({ groupId, isReadOnly, onClose, onOpenRecord, onSignUp }) {
             {g.members.map(m => (
               <div key={m.id} data-testid="vol-group-member" style={{ display: "flex", gap: 10, alignItems: "baseline",
                 padding: "8px 0", borderTop: "1px solid " + T.bg2, flexWrap: "wrap", fontSize: 13 }}>
-                <button onClick={() => onOpenRecord(m.id)} style={{ ...btnLink, fontSize: 13, fontWeight: 700 }}>{m.name}</button>
+                <DonorLink id={m.id} onOpen={() => onOpenRecord && onOpenRecord(m.id)} style={{ ...btnLink, fontSize: 13, fontWeight: 700 }}>{m.name}</DonorLink>
                 {m.gives && <span title="They also give" style={{ fontSize: 11, fontWeight: 700, color: T.greenDk,
                   background: T.green100, borderRadius: 99, padding: "1px 8px" }}>gives</span>}
                 <span style={{ color: T.ink3 }}>{m.hoursThisYear} {m.hoursThisYear === 1 ? "hour" : "hours"} this year</span>
@@ -1295,7 +1296,7 @@ function CredentialsView({ isReadOnly, onOpenRecord }) {
         {data.credentials.map(c => (
           <div key={c.personId + c.kind} data-testid="vol-cred-row"
             style={{ display: "flex", gap: 12, alignItems: "baseline", padding: "10px 0", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap" }}>
-            <button onClick={() => onOpenRecord && onOpenRecord(c.personId)} style={{ ...btnLink, color: T.ink, fontSize: 13.5, minWidth: 140 }}>{c.name}</button>
+            <DonorLink id={c.personId} onOpen={() => onOpenRecord && onOpenRecord(c.personId)} style={{ ...btnLink, color: T.ink, fontSize: 13.5, minWidth: 140 }}>{c.name}</DonorLink>
             <span style={{ fontSize: 12.5, color: T.ink3, minWidth: 130 }}>{c.kind === "waiver" ? "Waiver" : "Background check"}</span>
             <span style={{ fontSize: 12.5, color: tone(c.status) }}>{c.sentence}</span>
           </div>
@@ -1465,7 +1466,7 @@ function CrossoverView({ onOpenRecord }) {
           <div style={{ maxHeight: 360, overflowY: "auto" }}>
             {rows.rows.map(r => (
               <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: "1px solid " + T.bg2, fontSize: 13.5 }}>
-                <button onClick={() => onOpenRecord && onOpenRecord(r.id)} style={{ ...btnLink, color: T.ink }}>{r.name}</button>
+                <DonorLink id={r.id} onOpen={() => onOpenRecord && onOpenRecord(r.id)} style={{ ...btnLink, color: T.ink }}>{r.name}</DonorLink>
                 <span style={{ color: T.ink3 }}>{r.hours} hours{r.lifetimeGiving ? ` · ${fmtUsd(r.lifetimeGiving)}` : ""}</span>
               </div>
             ))}

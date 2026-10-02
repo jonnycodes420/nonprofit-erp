@@ -9,7 +9,7 @@ import { ICON } from "./data/icons";
 import { PHOTOS, photoSrc, rowFor } from "./data/photos";
 import { FEAT } from "./data/features";
 import { SRC, STATS, QUOTES, srcShort } from "./data/research";
-import { TEAM } from "./data/team";
+import { LEADERSHIP_SHOWN } from "./data/team";
 import { CREW, CREW_NEVER } from "./data/crew";
 
 // ── Rich strings ───────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ export function Crumbs({ list }) {
 // choose its second button, so the twelve noCta pages (articles, guides, the
 // calculators, the legal drafts) still show none, and every other hero shows
 // the same two. No hero offers a tour or says "See pricing".
-export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float }) {
+export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float, children }) {
   return (
     <>
       <Crumbs list={crumbs || [[eyebrow]]} />
@@ -129,6 +129,7 @@ export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float }) {
               </div>
             )}
             {proof && <div className="proof">{proof.map(p => <span key={p}>{p}</span>)}</div>}
+            {children}
           </div>
           {photo && <div className="collage one"><Photo k={photo} cls="p1" eager />{float}</div>}
         </div>
@@ -321,7 +322,7 @@ export function Person({ t, i }) {
 }
 
 export function People() {
-  return <div className="wrap lead-g">{TEAM.map((t, i) => <Person key={t[0]} t={t} i={i} />)}</div>;
+  return <div className="wrap lead-g">{LEADERSHIP_SHOWN.map((t, i) => <Person key={t[0]} t={t} i={i} />)}</div>;
 }
 
 // The homepage band that stands where the reel did: one line, one button.

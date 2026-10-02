@@ -9,6 +9,7 @@ import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
+import { DonorLink } from "./RecordLink";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -113,7 +114,7 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly, dndEnabled, 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <div title={card.assignedToName || "Unassigned"} style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: color || T.greenDk+"22", color: color ? T.white : T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{initials(card.assignedToName)}</div>
             <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{card.name}</span>
+              <DonorLink id={card.donorId} draggable={false} onOpen={() => onOpen(card.donorId)} style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{card.name}</DonorLink>
               <DriftBadge drift={card.drift}/>
             </div>
           </div>

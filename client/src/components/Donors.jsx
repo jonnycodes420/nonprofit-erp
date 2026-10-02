@@ -22,6 +22,8 @@ import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
 import { PLAN_UNKNOWN } from "../lib/entitlement";
+import { useNavigate } from "react-router-dom";
+import { donorHref, donorsListHref, donorsListState } from "../lib/appUrls";
 export { DonorImport } from "./DonorImport";
 
 class ErrorBoundary extends Component {
@@ -48,10 +50,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const isAdmin=auth?.user?.role==="admin";
   const userId=auth?.user?.id||"";
   const userName=auth?.user?.name||auth?.user?.email||"";
+  // FIX-13 Part 6 — the list's search, filters and view live in the URL
+  // (/donors?q=&stage=&owner=&nomeeting=1…), read once here on mount and
+  // written back below, so a filtered list opens the same in a new tab.
+  const[urlList]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/donors"?donorsListState(window.location.search):{});
+  const routerNavigate=useNavigate();
   const lapsedCount=data.donors.filter(d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).length;   // BUILD-77 — the badge matches the (gated) list
-  const[view,setView]=useState(initialView||"directory");
-  const[search,setSearch]=useState("");
-  const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||null:null);
+  const[view,setView]=useState(initialView||urlList.view||"directory");
+  const[search,setSearch]=useState(urlList.search||"");
+  const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||{id:initialSelectDonorId}:null);
   const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
   // FIX-11 Part 1 — "+ Log → Gift" hands the person to the real gift form on
   // the donor's profile rather than collecting an amount in the touchpoint
@@ -80,10 +87,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[customFields,setCustomFields]=useState([]);
   const[cfValues,setCfValues]=useState({});
   const[cfFilters,setCfFilters]=useState({});
-  const[dirStage,setDirStage]=useState(initialStageFilter||"");
-  const[dirAssignee,setDirAssignee]=useState("");
-  const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
-  const[noMeetingOpen,setNoMeetingOpen]=useState(false);   // INT-BUILD-1 Part 6
+  const[dirStage,setDirStage]=useState(initialStageFilter||urlList.stage||"");
+  const[dirAssignee,setDirAssignee]=useState(urlList.owner||"");
+  const[dirDesignation,setDirDesignation]=useState(urlList.designation||"");   // BUILD-14 planned-giving/estate segment
+  const[noMeetingOpen,setNoMeetingOpen]=useState(!!urlList.noMeeting);
+  const[nmFilter,setNmFilter]=useState({owner:urlList.nmOwner||"",min:urlList.nmMin||""});   // INT-BUILD-1 Part 6
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
   const[portfolioMeta,setPortfolioMeta]=useState({tier:PLAN_UNKNOWN,single_user:true}); // unknown until it loads, never "core" (FIX-3 finding 9)
   const[pendingInvites,setPendingInvites]=useState([]); // [{id:"invite:<id>",name,email,pending}] — bulk assign-owner to a not-yet-accepted officer (B2)
@@ -135,8 +143,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // A deep-linked selection starts from a summary row — upgrade it to the
     // full record (selectDonor is defined below; safe to call from here).
     if(initialSelectDonorId){
-      const d=data.donors.find(x=>x.id===initialSelectDonorId);
-      if(d)selectDonor(d);
+      // FIX-13 Part 6 — a deep link to someone outside the summaries (a
+      // non-donor person, a fresh tab) still opens: the full record loads.
+      selectDonor(data.donors.find(x=>x.id===initialSelectDonorId)||{id:initialSelectDonorId});
     }
   },[]);
 
@@ -347,7 +356,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     catch(e){
       // The status code and the real cause are already in the console
       // (api.js). What she reads is one sentence and a button.
-      console.warn("[suggest] "+key+" failed:",errorMessage(e,"no reason given"));
+      console.warn("[suggest] %s failed: %s",String(key),errorMessage(e,"no reason given"));
       setAiErr(p=>({...p,[key]:"Suggestions aren't available right now."}));
     }
     finally{setLoadingKey(null);}
@@ -393,6 +402,18 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       }:prev);
     }catch(e){console.error(e);}
   };
+
+  // FIX-13 Part 6 — the address bar follows the list and the open profile.
+  // Opening or closing a profile is a step Back undoes; a filter or a
+  // keystroke in search replaces the entry rather than piling up history.
+  useEffect(()=>{
+    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:""});
+    const here=window.location.pathname+window.location.search;
+    if(href===here)return;
+    const step=selected?.id?!here.startsWith(donorHref(selected.id)):here.startsWith("/donors/");
+    routerNavigate(href,{replace:!step,state:{internal:true}});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,nmFilter.owner,nmFilter.min]);
 
   const handleEditSaved=(raw)=>{
     // Reuse the same single-donor adapter adaptData() uses for the initial
@@ -464,7 +485,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         <button type="button" data-testid="filter-no-meeting" aria-pressed={noMeetingOpen} onClick={()=>setNoMeetingOpen(o=>!o)}
           style={{background:noMeetingOpen?T.ink:T.white,color:noMeetingOpen?T.inkInverse:T.ink,border:"1px solid "+(noMeetingOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>No meeting in 90 days</button>
       </div>
-      {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}/>}
+      {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}
+        initialOwner={nmFilter.owner} initialMin={nmFilter.min} onFilterChange={setNmFilter}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}

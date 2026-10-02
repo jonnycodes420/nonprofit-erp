@@ -1274,6 +1274,29 @@ function SupportAdmin() {
   </div>;
 }
 
+// FIX-13 — every lead in lost_and_found_leads: Book a demo requests (source
+// book-a-demo, with the size band and where their donors are today) and the
+// people who downloaded a Lost & Found report. Read from the one admin route.
+function LeadsAdmin() {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { adminFetch("/admin/lost-and-found").then(setD).catch(e => setErr(errorMessage(e, "Could not load the leads."))); }, []);
+  const box = { background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 12 };
+  if (err) return <div style={box}>{err}</div>;
+  if (!d) return <div style={box}>Loading…</div>;
+  return <div data-testid="admin-leads">
+    <div style={{ fontSize: 13, opacity: 0.8, marginBottom: 6 }}>{d.leads.length} {d.leads.length === 1 ? "lead" : "leads"}, newest first. A lead is what the person typed on stewardapp.dev; no donor file ever reaches this server.</div>
+    <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 14 }}>By source: {(d.byRef || []).map(r => `${r.ref === "book-a-demo" ? "Book a demo" : r.ref} ${r.n}`).join(" · ") || "none yet"}</div>
+    {!d.leads.length && <div style={box}>No leads yet.</div>}
+    {d.leads.map(l => <div key={l.id} style={box} data-lead-ref={l.ref || "direct"}>
+      <div style={{ fontWeight: 700 }}>{l.organization} · {l.ref === "book-a-demo" ? "Demo request" : "Lost & Found report"}</div>
+      <div style={{ fontSize: 13, margin: "4px 0" }}>{l.name} · <a href={"mailto:" + l.email}>{l.email}</a></div>
+      {(l.org_size || l.current_system) && <div style={{ fontSize: 13 }}>Active donors: {l.org_size || "not given"} · Donors today: {l.current_system || "not given"}</div>}
+      <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>Source: {l.ref || "direct"} · {new Date(l.created_at).toLocaleString()}</div>
+    </div>)}
+  </div>;
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
@@ -1330,6 +1353,8 @@ export default function AdminDashboard() {
     { id: "trust",    label: "Status and What's new", icon: "◌" },
     // HELP-1 — tickets from "Ask a person", and what people ask.
     { id: "support",  label: "Support", icon: "◍" },
+    // FIX-13 — Book a demo requests and Lost & Found report downloads.
+    { id: "leads",    label: "Leads", icon: "◎" },
   ];
 
   const currentPage = NAV.find(n => n.id === page)?.label || "";
@@ -1403,6 +1428,7 @@ export default function AdminDashboard() {
           {page === "network"   && <NetworkReview />}
           {page === "trust"     && <TrustAdmin />}
           {page === "support"   && <SupportAdmin />}
+          {page === "leads"     && <LeadsAdmin />}
         </div>
       </div>
     </div>

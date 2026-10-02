@@ -2,8 +2,13 @@
 // reads Steward on the org's behalf.
 //
 // A key is shown ONCE, in the answer to the press that made it; Steward keeps
-// only a fingerprint. Keys are read-only. Revoking keeps the row, so the list
-// still says who made a key and when it was last used.
+// only a fingerprint. Revoking keeps the row, so the list still says who made
+// a key and when it was last used.
+//
+// FIX-13: THE PERMISSIONS ARE TICKED HERE. The list comes from the server
+// (GET /api-keys/scopes), so a scope added there (read:funds) appears here
+// without a client change. The read set starts ticked, as before; a write is
+// only ever granted by somebody ticking it.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, SectionLabel } from "./shared";
@@ -16,11 +21,17 @@ export function ApiKeysPanel({ isReadOnly }) {
   const [name, setName] = useState("");
   const [fresh, setFresh] = useState(null);
   const [msg, setMsg] = useState("");
+  const [scopes, setScopes] = useState([]);
+  const [picked, setPicked] = useState([]);
   const load = () => apiFetch("/api-keys").then(r => setKeys(r.keys || [])).catch(e => setMsg(errorMessage(e, "Could not load your keys.")));
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    apiFetch("/api-keys/scopes").then(r => { setScopes(r.scopes || []); setPicked(r.defaults || []); }).catch(() => {});
+  }, []);
+  const toggle = k => setPicked(p => (p.includes(k) ? p.filter(x => x !== k) : [...p, k]));
   const make = async () => {
     setMsg("");
-    try { const r = await apiFetch("/api-keys", { method: "POST", body: JSON.stringify({ name }) }); setFresh(r); setName(""); load(); }
+    try { const r = await apiFetch("/api-keys", { method: "POST", body: JSON.stringify(scopes.length ? { name, scopes: picked } : { name }) }); setFresh(r); setName(""); load(); }
     catch (e) { setMsg(errorMessage(e, "Could not make that key.")); }
   };
   const revoke = async id => {
@@ -34,12 +45,19 @@ export function ApiKeysPanel({ isReadOnly }) {
     <div data-testid="api-keys" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "24px 28px" }}>
       <SectionLabel>API keys</SectionLabel>
       <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px" }}>
-        For Zapier or your own tools. A key can read your people and gifts and cannot change anything.
+        For Zapier or your own tools. A key can do exactly what is ticked when it is made, and nothing else.
       </p>
       {!isReadOnly && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="What it's for, e.g. Zapier"
           style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink, minWidth: 220 }} />
-        <button onClick={make} disabled={!name.trim()} style={{ ...btn, background: T.white, color: T.ink, border: "1.5px solid " + T.ink }}>Make a key</button>
+        <button onClick={make} disabled={!name.trim() || (scopes.length > 0 && !picked.length)} style={{ ...btn, background: T.white, color: T.ink, border: "1.5px solid " + T.ink }}>Make a key</button>
+      </div>}
+      {!isReadOnly && scopes.length > 0 && <div data-testid="api-key-scopes" style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+        {scopes.map(sc => (
+          <label key={sc.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: T.ink, cursor: "pointer" }}>
+            <input type="checkbox" checked={picked.includes(sc.key)} onChange={() => toggle(sc.key)} style={{ marginTop: 2, accentColor: T.green }} />
+            <span><span style={{ fontWeight: 700 }}>{sc.label}</span> <span style={{ color: T.ink3 }}>{sc.description}</span></span>
+          </label>))}
       </div>}
       {fresh && <div role="status" data-testid="api-key-fresh" style={{ background: T.bg, border: "1px solid " + T.gold500, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: T.ink, marginBottom: 6 }}>{fresh.sentence}</div>
@@ -54,6 +72,7 @@ export function ApiKeysPanel({ isReadOnly }) {
         <div key={k.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: "1px solid " + T.bg2, fontSize: 13, color: T.ink }}>
           <span style={{ fontWeight: 700 }}>{k.name}</span>
           <code style={{ fontSize: 12, color: T.ink3 }}>{k.prefix}…</code>
+          {Array.isArray(k.scopes) && <span style={{ fontSize: 12, color: T.ink3 }}>{k.scopes.join(", ")}</span>}
           <span style={{ fontSize: 12, color: T.ink3 }}>
             {k.revokedAt ? `revoked ${day(k.revokedAt)}` : k.lastUsedAt ? `last used ${day(k.lastUsedAt)}` : "never used"}
             {k.createdBy ? ` · made by ${k.createdBy}` : ""}

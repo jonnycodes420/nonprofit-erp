@@ -59,7 +59,11 @@ module.exports = {
       },
       { key: 'type', label: 'Type', type: 'string', required: false, default: 'cash', helpText: 'cash, check, card, stock, and so on.' },
       { key: 'campaign', label: 'Campaign', type: 'string', required: false },
-      { key: 'fundId', label: 'Fund ID', type: 'string', required: false, helpText: 'The Steward fund ID, if the gift is restricted to a fund.' },
+      {
+        key: 'fundId', label: 'Fund', type: 'string', required: false,
+        dynamic: 'fundList.id.name',
+        helpText: 'The fund the gift goes to, if it is restricted to one. Pick it, or switch to Custom and map a Fund ID from an earlier step. Listing funds needs the "Read funds" permission on your API key; mapping an id does not.',
+      },
       { key: 'paymentMethod', label: 'Payment Method', type: 'string', required: false },
       { key: 'notes', label: 'Notes', type: 'text', required: false },
       {

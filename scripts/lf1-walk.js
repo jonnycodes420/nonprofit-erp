@@ -82,7 +82,7 @@ const ok = (n, c, x) => { if (c) { pass++; console.log("  PASS  " + n); }
     ok(`${width}: the why-free block says the whole thing, including "No catch."`,
        /We sell a CRM/.test(why) && /free, forever/.test(why) && /No catch\./.test(why), why.slice(0, 120));
     const priv = await page.locator("[data-testid='lf-privacy']").innerText().catch(() => "");
-    ok(`${width}: the trust line sits by the upload`, /never leaves your computer/.test(priv), priv);
+    ok(`${width}: the trust line sits by the upload`, /never leaves your browser/.test(priv), priv);
     const noScroll = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     ok(`${width}: no horizontal scroll`, noScroll <= 0, noScroll);
     await shot(page, `lf-hero-${width}`);

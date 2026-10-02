@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
+import { DonorLink } from "./RecordLink";
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -1064,7 +1065,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
           <div style={{ maxHeight: 340, overflowY: "auto" }}>
             {(rowsPanel.donors || []).map((d, i) => (
               <div key={(d.id || "") + i} style={{ padding: "8px 0", borderBottom: "1px solid " + T.bg3, fontSize: 13.5 }}>
-                <a href={`/donors/${d.id}`} style={{ color: T.ink, fontWeight: 600 }}>{d.name}</a>
+                <DonorLink id={d.id} style={{ color: T.ink, fontWeight: 600 }}>{d.name}</DonorLink>
                 {d.reason && <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{d.reason}</div>}
               </div>
             ))}

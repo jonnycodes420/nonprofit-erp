@@ -20,6 +20,9 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { InboxConnectCard, useMailbox } from "./InboxConnect";
+import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send, BookOpen, FileText, Store,
+  KeyRound, Webhook, Zap } from "lucide-react";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -427,7 +430,12 @@ function EmailToolMapping({ card, onSaved, onError }) {
   );
 }
 
-export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
+// FIX-13 Part 5 — ConnectionsView is now the DETAIL behind one card's Manage
+// or Fix on the one Connections page (ConnectionsPage below): `onlyIds` picks
+// the card, `bare` drops the page header, and `mappings` names which folded
+// form ("books" or "pos") belongs under it. With no props it draws what it
+// always drew.
+export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyIds = null, bare = false, mappings = null }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
   const [openId, setOpenId] = useState("");
@@ -518,11 +526,11 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
 
   return (
     <div data-testid="connections-view" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div>
+      {!bare && <div>
         <div style={h}>Connections</div>
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.55, marginTop: 6, maxWidth: 720 }}>{d.definition}</div>
-      </div>
-      {d.attentionSentence && (
+      </div>}
+      {!bare && d.attentionSentence && (
         <Card data-testid="connections-attention" style={{ padding: "12px 16px", borderLeft: "3px solid " + T.gold600 }}>
           <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.attentionSentence}</div>
         </Card>)}
@@ -533,7 +541,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
           item mapping and the whole QuickBooks account mapping, so the first
           card was about sixty per cent down the page. The forms are below now,
           each folded to one line until somebody opens it. */}
-      {(d.cards || []).map(c => (
+      {(d.cards || []).filter(c => !onlyIds || onlyIds.includes(c.id)).map(c => (
         <Card key={c.id} data-testid="connection-card" data-status={c.status} style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
             <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, background: DOT[c.status] || T.ink3, display: "inline-block" }} />
@@ -581,7 +589,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                 <button style={{ ...btn(true), marginLeft: "auto" }} data-testid="connection-connect"
                   data-action={c.action}
                   onClick={() => onNavigate && onNavigate("settings",
-                    { section: c.action === "import" ? "imports" : "integrations" })}>{c.actionLabel}</button>
+                    { section: c.action === "import" ? "imports" : "connections" })}>{c.actionLabel}</button>
               ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
@@ -606,7 +614,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                   {!part.connected && part.action && !isReadOnly && isAdmin && (
                     <button style={{ ...btn(false), marginLeft: "auto" }}
                       data-testid="connection-part-connect" data-part-action={part.key}
-                      onClick={() => onNavigate && onNavigate("settings", { section: "integrations" })}>
+                      onClick={() => onNavigate && onNavigate("settings", { section: "connections", focus: "stripe" })}>
                       {part.actionLabel || "Connect"}
                     </button>)}
                 </div>))}
@@ -821,8 +829,340 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
         </Card>))}
 
       {/* The two mappings, below the cards, each a line until it is opened. */}
-      <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />
-      <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />
+      {(!bare || mappings === "pos") && <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
+      {(!bare || mappings === "books") && <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
+    </div>
+  );
+}
+
+// ═══ FIX-13 Part 5 — ONE CONNECTIONS PAGE ═══════════════════════════════════
+//
+// Settings had an Integrations tab ("set this up") and a Connections tab ("is
+// it still working") covering the same ground, and things were scattered
+// between them: INT-BUILD-1 found the inbox card halfway down Integrations,
+// below Payments, the QR code and the embed form. This is the one page now.
+//
+// One summary line, then six sections in a fixed order, and every connection
+// is the SAME card: icon, name, one line on what it does, a status, and one
+// button. The status is one of three: Connected (with when it last synced),
+// Not connected, or Needs attention in brass with the reason. The button is
+// Connect, Manage or Fix, and only Connect on a card that is not connected is
+// emerald. Manage and Fix open the card's detail in place, which is the
+// INT-1 card it always was (figures, the sync log, Check now, the mappings).
+//
+// This changes the SCREEN only. Every button calls the handshake, route or
+// panel it called before; nothing here connects anything a new way.
+const SECTIONS = [
+  { id: "giving", title: "Giving", line: "Where gifts come in." },
+  { id: "inbox", title: "Email and calendar", line: "Conversations and meetings with people on file, logged for you." },
+  { id: "marketing", title: "Email marketing", line: "Your newsletter list, kept in step with Steward." },
+  { id: "books", title: "Books", line: "What your bookkeeper and accounting system receive." },
+  { id: "pos", title: "Point of sale", line: "Registers at the shop, the café or the event." },
+  { id: "api", title: "Build your own", line: "Keys, webhooks and Zapier, for tools Steward does not connect to itself." },
+];
+// The order inside Giving: the processors people know, then the files.
+const GIVING_ORDER = ["stripe", "paypal", "givebutter", "donorbox", "zeffy", "cashapp", "venmo", "statements"];
+const CONN_ICON = {
+  stripe: CreditCard, paypal: HandCoins, givebutter: HandCoins, donorbox: HandCoins, zeffy: HandCoins,
+  cashapp: Smartphone, venmo: Smartphone, statements: FileSpreadsheet, inbox: Mail, bcc: AtSign,
+  email_marketing: Send, bookkeeping: BookOpen, bookkeeperFile: FileText, pos: Store,
+  apiKeys: KeyRound, webhooks: Webhook, zapier: Zap,
+};
+const STATUS_WORD = { connected: "Connected", not_connected: "Not connected", attention: "Needs attention", ready: "Ready" };
+const sinceWord = ts => {
+  if (!ts) return "";
+  const t = new Date(ts);
+  if (isNaN(t)) return "";
+  const days = Math.floor((Date.now() - t) / 864e5);
+  if (days < 1) return "synced today";
+  if (days === 1) return "synced yesterday";
+  if (days < 30) return `synced ${days} days ago`;
+  return "synced " + t.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
+const statusOf = c => c.status === "broken" || c.status === "quiet" ? "attention"
+  : c.connected ? "connected" : "not_connected";
+const sectionOf = c => c.kind === "email_marketing" ? "marketing" : c.kind === "bookkeeping" ? "books"
+  : c.kind === "pos" ? "pos" : "giving";
+
+const PAGE_CSS = `.conn-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.conn-grid > .conn-detail{grid-column:1 / -1}
+@media (max-width:760px){.conn-grid{grid-template-columns:minmax(0,1fr)}}`;
+
+function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
+  const Icon = CONN_ICON[card.icon] || FileText;
+  const att = card.status === "attention";
+  const isConnect = card.button && card.button.kind === "connect" && card.status === "not_connected";
+  const canPress = card.button && !(card.button.adminOnly && !isAdmin) && !(card.button.writes && isReadOnly);
+  return (
+    <div id={"conn-" + card.key} data-testid="conn-card" data-key={card.key} data-status={card.status}
+      style={{ background: T.white, border: "1px solid " + (open ? T.ink3 : T.bg2), borderRadius: 12,
+        padding: "16px 18px", display: "flex", gap: 14, alignItems: "flex-start", minWidth: 0, scrollMarginTop: 80 }}>
+      <span aria-hidden="true" style={{ width: 38, height: 38, borderRadius: 10, background: T.bg, color: T.ink,
+        display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <Icon size={19} strokeWidth={1.75} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, flex: "1 1 160px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{card.name}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{card.line}</div>
+          </div>
+          {card.button && canPress && (
+            <button type="button" data-testid="conn-button" data-kind={card.button.kind}
+              aria-expanded={card.button.opens ? !!open : undefined}
+              disabled={!!card.button.disabled} title={card.button.title || undefined}
+              onClick={onButton}
+              style={{ background: isConnect ? T.greenDk : T.white, color: isConnect ? T.white : T.ink,
+                border: "1px solid " + (isConnect ? T.greenDk : T.ink), borderRadius: 9, padding: "8px 15px",
+                minHeight: 36, fontSize: 13, fontWeight: 700, cursor: card.button.disabled ? "not-allowed" : "pointer",
+                opacity: card.button.disabled ? 0.5 : 1, fontFamily: "inherit", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {card.button.label}
+            </button>)}
+        </div>
+        <div data-testid="conn-status" style={{ display: "flex", gap: 7, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 99, flexShrink: 0, boxSizing: "border-box",
+            background: att ? T.gold600 : card.status === "connected" || card.status === "ready" ? T.ink : "transparent",
+            border: card.status === "not_connected" ? "1.5px solid " + T.ink3 : "none" }} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: att ? T.gold700 : card.status === "not_connected" ? T.ink3 : T.ink }}>
+            {STATUS_WORD[card.status]}</span>
+          {card.status === "connected" && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
+        </div>
+        {card.reason && <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink3, lineHeight: 1.5, marginTop: 4 }}>{card.reason}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus = null,
+  stripe = null, stripeLoading = false, onConnectStripe, paymentsPanel = null,
+  renderGivingSources, bccPanel = null, apiKeysPanel = null }) {
+  const [d, setD] = useState(null);
+  const [mail] = useMailbox();
+  const [inbound, setInbound] = useState(null);
+  const [keys, setKeys] = useState(null);
+  const [hooks, setHooks] = useState(null);
+  const [oauth, setOauth] = useState(null);
+  const [open, setOpen] = useState(focus === "inbox" ? "inbox" : "");
+  const [filter, setFilter] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState("");
+  const [nonce, setNonce] = useState(0);
+
+  const loadHooks = () => apiFetch("/webhooks").then(setHooks).catch(() => setHooks(null));
+  useEffect(() => {
+    apiFetch("/connections").then(setD).catch(e => { setD({ cards: [] }); setMsg(errorMessage(e, "Connections did not load.")); });
+    apiFetch("/settings/inbound-email").then(setInbound).catch(() => setInbound({ enabled: false }));
+    apiFetch("/oauth/status").then(r => setOauth(r.providers || {})).catch(() => setOauth({}));
+    if (isAdmin) {
+      apiFetch("/api-keys").then(r => setKeys(r.keys || [])).catch(() => setKeys(null));
+      loadHooks();
+    }
+  }, [isAdmin]); // eslint-disable-line
+
+  // A deep link's anchor (#api, #inbox, #stripe, a provider key, a section)
+  // lands on its card or section once the cards are drawn.
+  useEffect(() => {
+    if (!focus || !d) return;
+    const el = document.getElementById("conn-" + focus) || document.getElementById("connections-" + focus);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [focus, !!d]); // eslint-disable-line
+
+  const startOauth = async (c) => {
+    setBusy("connect:" + c.id); setMsg("");
+    try {
+      const r = await apiFetch(`/oauth/${encodeURIComponent(c.oauthProvider)}/start`, { method: "POST" });
+      window.location.href = r.url;
+    } catch (e) { setBusy(""); setMsg(e?.body?.sentence || errorMessage(e, "That connection could not be started.")); }
+  };
+  const toggle = (key, auto = null) => {
+    setNonce(n => n + 1);
+    setOpen(o => (o === key && !auto ? "" : key));
+  };
+  const resume = async id => {
+    setBusy("hook:" + id); setMsg("");
+    try { const r = await apiFetch(`/webhooks/${encodeURIComponent(id)}/resume`, { method: "POST" }); setMsg(r.sentence || "Back on."); loadHooks(); }
+    catch (e) { setMsg(errorMessage(e, "That did not change.")); }
+    setBusy("");
+  };
+
+  if (!d) return <div style={{ padding: 40, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
+
+  // ── The cards, one model for every kind ────────────────────────────────
+  const cards = [];
+  const oauthNotReady = c => c.oauthProvider && oauth && oauth[c.oauthProvider] && oauth[c.oauthProvider].ready === false;
+  const giving = (k) => renderGivingSources ? renderGivingSources(k, nonce) : null;
+  for (const c of d.cards || []) {
+    let status = statusOf(c);
+    let reason = status === "attention" ? c.sentence : "";
+    const key = c.kind === "own_stripe" ? "stripe" : c.kind === "statements" ? "statements" : c.provider;
+    const isFile = c.action === "import";
+    const isSource = c.kind === "source" || c.kind === "statements";
+    // Stripe set up but not finished is a thing to fix, in Settings' own words.
+    if (c.kind === "own_stripe" && stripe && stripe.onboardingStarted && !stripe.connected && status !== "connected") {
+      status = "attention";
+      reason = stripe.checked ? "Stripe setup isn't finished. Stripe cannot take gifts on it until it is." : "Steward could not check with Stripe just now.";
+    }
+    let button;
+    const detail = () => <>
+      {c.kind === "own_stripe" && paymentsPanel}
+      <ConnectionsView key={nonce} isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate} onlyIds={[c.id]} bare
+        mappings={c.kind === "bookkeeping" ? "books" : c.kind === "pos" ? "pos" : null} />
+      {c.kind === "source" && giving(null)}
+    </>;
+    if (status === "not_connected") {
+      if (c.kind === "own_stripe") button = { kind: "connect", label: stripeLoading ? "Opening…" : "Connect", adminOnly: true, writes: true, onClick: () => onConnectStripe && onConnectStripe() };
+      else if (c.oauthProvider) button = { kind: "connect", label: busy === "connect:" + c.id ? "Opening…" : "Connect", adminOnly: true, writes: true,
+        disabled: oauthNotReady(c), title: oauthNotReady(c) ? oauth[c.oauthProvider].sentence : "", onClick: () => startOauth(c) };
+      else if (isFile || c.kind === "statements") button = { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle(key), detail: () => giving(null) };
+      else if (isSource) button = { kind: "connect", label: "Connect", opens: true, adminOnly: true, writes: true, onClick: () => toggle(key, c.provider), detail: () => giving(c.provider) };
+    } else {
+      button = { kind: status === "attention" ? "fix" : "manage", label: status === "attention" ? "Fix" : "Manage", opens: true,
+        onClick: () => (status === "attention" && c.kind === "own_stripe" && stripe && stripe.checked && onConnectStripe) ? onConnectStripe() : toggle(key),
+        detail: c.kind === "statements" ? () => giving(null) : detail };
+    }
+    if (status === "not_connected" && oauthNotReady(c)) reason = oauth[c.oauthProvider].sentence;
+    // Square is listed only where it is live: an unconnected Square card on a
+    // deployment with no Square app is a button that cannot finish.
+    if (c.provider === "square" && status === "not_connected" && oauthNotReady(c)) continue;
+    cards.push({ key, section: sectionOf(c), icon: c.kind === "own_stripe" ? "stripe" : c.kind === "source" || c.kind === "statements" ? key : c.kind,
+      name: c.label, line: c.subtitle, status, reason,
+      synced: sinceWord(c.lastSyncedAt || c.lastSentAt || c.lastGiftDate), button });
+  }
+  // DONORBOX HAS NO ADAPTER (LANDING-3). It is listed because people ask for
+  // it, and it says what is true: its export comes in as a statement.
+  if (!cards.some(c => c.key === "donorbox")) cards.push({ key: "donorbox", section: "giving", icon: "donorbox", name: "Donorbox",
+    line: "Steward has no direct Donorbox connection yet. Its gift export comes in as a statement file.",
+    status: "not_connected", button: { kind: "import", label: "Import a file", opens: true, adminOnly: true, onClick: () => toggle("donorbox"), detail: () => giving(null) } });
+
+  // Email and calendar: the one inbox card, and the BCC address.
+  if (mail) {
+    const ps = (mail.providers || []);
+    const broken = ps.find(p => p.connected && p.lastError);
+    const conn = ps.filter(p => p.connected);
+    const last = conn.map(p => p.lastSyncedAt).filter(Boolean).sort().pop();
+    const st = broken ? "attention" : mail.connected ? "connected" : "not_connected";
+    cards.push({ key: "inbox", section: "inbox", icon: "inbox", name: "Gmail and Outlook",
+      line: "Emails and meetings with people on file land on their timeline. Each person connects their own.",
+      status: st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
+      synced: sinceWord(last),
+      button: { kind: st === "attention" ? "fix" : st === "connected" ? "manage" : "connect", label: st === "attention" ? "Fix" : st === "connected" ? "Manage" : "Connect",
+        opens: true, onClick: () => toggle("inbox"),
+        detail: () => <InboxConnectCard isReadOnly={isReadOnly} onNavigate={onNavigate} /> } });
+  }
+  if (inbound) {
+    const on = !!(inbound.enabled && inbound.address);
+    cards.push({ key: "bcc", section: "inbox", icon: "bcc", name: "BCC address",
+      line: on ? `BCC ${inbound.address} on an email and it is logged to the person it names.` : "One address for the organisation: BCC it on an email and it is logged to the person it names.",
+      status: on ? "connected" : "not_connected",
+      button: { kind: on ? "manage" : "connect", label: on ? "Manage" : "Connect", opens: true, onClick: () => toggle("bcc"), detail: () => bccPanel } });
+  }
+  // Books: the bookkeeper file needs nothing connected; it is always ready.
+  cards.push({ key: "bookkeeper-file", section: "books", icon: "bookkeeperFile", name: "Bookkeeper file",
+    line: "A monthly file of every gift, by fund and payout, that foots to the cent. Nothing to connect.",
+    status: "ready", button: { kind: "manage", label: "Manage", onClick: () => onNavigate && onNavigate("finance", "close") } });
+  // Build your own.
+  if (isAdmin) {
+    const live = (keys || []).filter(k => !k.revokedAt);
+    const used = live.map(k => k.lastUsedAt).filter(Boolean).sort().pop();
+    cards.push({ key: "api", section: "api", icon: "apiKeys", name: "API keys",
+      line: "For Zapier or your own tools. A key reads your people and gifts and is shown once.",
+      status: live.length ? "connected" : "not_connected",
+      reason: live.length ? `${live.length} ${live.length === 1 ? "key" : "keys"} in use.` : "",
+      synced: used ? sinceWord(used).replace(/^synced/, "last used") : "",
+      button: { kind: live.length ? "manage" : "connect", label: live.length ? "Manage" : "Connect", opens: true, onClick: () => toggle("api"), detail: () => apiKeysPanel } });
+    const eps = (hooks && hooks.endpoints) || [];
+    const paused = eps.find(e => e.paused);
+    const lastHook = eps.map(e => e.lastDeliveredAt).filter(Boolean).sort().pop();
+    const hookDetail = () => (
+      <div data-testid="webhooks-detail" style={{ background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" }}>
+        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, marginBottom: 10 }}>{hooks?.definition}</div>
+        {!eps.length && <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>Nothing is set up yet. An endpoint is added through the Steward API with an API key, or by Zapier when a Zap starts. <a href="/connections#api" style={{ color: T.ink, fontWeight: 700 }}>How the API works</a></div>}
+        {eps.map(e => (
+          <div key={e.id} data-testid="webhook-row" style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", padding: "8px 0", borderTop: "1px solid " + T.bg2 }}>
+            <code style={{ fontSize: 12.5, color: T.ink, overflowWrap: "anywhere", flex: "1 1 240px", minWidth: 0 }}>{e.url}</code>
+            <span style={{ fontSize: 12.5, color: e.paused ? T.gold700 : T.ink3, flex: "1 1 200px", minWidth: 0 }}>{e.sentence}</span>
+            {e.paused && !isReadOnly && <button type="button" onClick={() => resume(e.id)} disabled={busy === "hook:" + e.id}
+              style={{ background: T.white, color: T.ink, border: "1px solid " + T.ink, borderRadius: 9, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              {busy === "hook:" + e.id ? "Turning on…" : "Turn back on"}</button>}
+          </div>))}
+      </div>);
+    const hst = paused ? "attention" : eps.length ? "connected" : "not_connected";
+    cards.push({ key: "webhooks", section: "api", icon: "webhooks", name: "Webhooks",
+      line: "Steward posts to an address you choose when something happens here, signed and retried for a day.",
+      status: hst, reason: paused ? paused.sentence : "", synced: lastHook ? sinceWord(lastHook).replace(/^synced/, "last delivered") : "",
+      button: { kind: hst === "attention" ? "fix" : hst === "connected" ? "manage" : "connect", label: hst === "attention" ? "Fix" : hst === "connected" ? "Manage" : "Connect",
+        opens: true, onClick: () => toggle("webhooks"), detail: hookDetail } });
+    const zap = eps.filter(e => /zapier\.com/i.test(e.url || ""));
+    cards.push({ key: "zapier", section: "api", icon: "zapier", name: "Zapier",
+      line: "Start a Zap when a gift comes in, or record one from somewhere else, with an API key.",
+      status: zap.length ? "connected" : "not_connected",
+      reason: zap.length ? `${zap.length} ${zap.length === 1 ? "Zap is" : "Zaps are"} listening.` : "",
+      button: { kind: zap.length ? "manage" : "connect", label: zap.length ? "Manage" : "Connect", opens: true, onClick: () => toggle("zapier"),
+        detail: () => (
+          <div data-testid="zapier-detail" style={{ background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", fontSize: 13, color: T.ink, lineHeight: 1.6 }}>
+            <ol style={{ margin: 0, paddingLeft: 20 }}>
+              <li>Make an API key on the API keys card, named for the Zap.</li>
+              <li>In Zapier, choose Steward as the app and paste the key when it asks.</li>
+              <li>Each Zap that listens for a gift shows up here and under Webhooks.</li>
+            </ol>
+            <div style={{ marginTop: 8 }}><a href="/connections#api" style={{ color: T.ink, fontWeight: 700 }}>About the Steward API</a></div>
+          </div>) } });
+  }
+
+  // ── The summary line ───────────────────────────────────────────────────
+  const nConn = cards.filter(c => c.status === "connected").length;
+  const nAtt = cards.filter(c => c.status === "attention").length;
+  const shown = filter ? cards.filter(c => c.status === filter) : cards;
+  const order = c => { const i = GIVING_ORDER.indexOf(c.key); return i < 0 ? 99 : i; };
+  const sumBtn = (on) => ({ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, cursor: "pointer",
+    textDecoration: "underline", textUnderlineOffset: 3, color: on ? T.gold700 : T.ink });
+
+  return (
+    <div data-testid="connections-page" style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+      <style>{PAGE_CSS}</style>
+      <div data-testid="connections-summary" style={{ fontSize: 15, color: T.ink, lineHeight: 1.6 }}>
+        <button type="button" data-testid="summary-connected" aria-pressed={filter === "connected"} style={sumBtn(false)}
+          onClick={() => setFilter(f => f === "connected" ? "" : "connected")}>{nConn} connected</button>
+        {", "}
+        <button type="button" data-testid="summary-attention" aria-pressed={filter === "attention"} style={sumBtn(nAtt > 0)}
+          onClick={() => setFilter(f => f === "attention" ? "" : "attention")}>{nAtt} {nAtt === 1 ? "needs" : "need"} attention</button>
+        .
+        {filter && <button type="button" onClick={() => setFilter("")} style={{ ...sumBtn(false), fontWeight: 600, color: T.ink3, marginLeft: 12 }}>Show every connection</button>}
+      </div>
+      {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
+
+      {SECTIONS.map(sec => {
+        const list = shown.filter(c => c.section === sec.id).sort((a, b) => sec.id === "giving" ? order(a) - order(b) : 0);
+        if (!list.length) return null;
+        return (
+          <section key={sec.id} id={"connections-" + sec.id} data-testid="connections-section" data-section={sec.id} style={{ scrollMarginTop: 80 }}>
+            <h3 style={{ margin: "0 0 2px", fontSize: 17, fontWeight: 700, color: T.ink }}>{sec.title}</h3>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 12 }}>{sec.line}</div>
+            <div className="conn-grid">
+              {list.flatMap(c => {
+                const isOpen = open === c.key && c.button && c.button.detail;
+                const out = [<ConnCard key={c.key} card={c} open={isOpen} isAdmin={isAdmin} isReadOnly={isReadOnly}
+                  onButton={c.button ? c.button.onClick : undefined} />];
+                if (isOpen) out.push(<div key={c.key + ":detail"} className="conn-detail" data-testid="conn-detail" data-key={c.key}
+                  style={{ minWidth: 0 }}>{c.button.detail()}</div>);
+                return out;
+              })}
+            </div>
+          </section>);
+      })}
+
+      {/* Other: what is not a connection. The donation form embed and the QR
+          code moved to Fundraising; this pointer stays for one release. */}
+      {!filter && (
+        <section id="connections-other" data-testid="connections-section" data-section="other">
+          <h3 style={{ margin: "0 0 8px", fontSize: 17, fontWeight: 700, color: T.ink }}>Other</h3>
+          <div data-testid="connections-moved-pointer" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.55 }}>
+            Your donation form embed code and QR code have moved to{" "}
+            <button type="button" onClick={() => onNavigate && onNavigate("fundraising", { frSection: "pages" })}
+              style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>
+              Fundraising, Giving pages and forms</button>.
+          </div>
+        </section>)}
     </div>
   );
 }
