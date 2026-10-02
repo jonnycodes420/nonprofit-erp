@@ -516,8 +516,10 @@ function GiftLinkModal({donor,orgName,onClose}){
             {sent?(
               <div style={{textAlign:"center",padding:"20px 0"}}>
                 <div style={{fontSize:28,marginBottom:10}}>✓</div>
-                <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Email sent!</div>
-                <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} has been sent.</div>
+                {/* FIX-15 Part 3: the route QUEUES the send (it goes out in the
+                    background), so at this moment nothing is known about delivery. */}
+                <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Queued to send</div>
+                <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} is on its way out. Communications shows whether it was delivered.</div>
                 <button onClick={onClose} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"11px 24px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
               </div>
             ):(
@@ -2801,7 +2803,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {(()=>{
                                 const r=receiptForGift(g.id);
-                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
+                                // FIX-15 Part 3: a tick means EMAILED. A receipt the provider refused is
+                                // issued (it has a number and a PDF) but not sent, and says so in brass.
+                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} title={r.sent_at?undefined:"Issued, but the email did not go. Download the PDF to send it yourself."} style={{background:"none",border:"none",color:r.sent_at?T.greenDk:T.gold700,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>{r.sent_at?`Receipt ✓ #${r.receipt_number}`:`Receipt #${r.receipt_number}, not emailed`}</button>;
                                 if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:12}}>Off</span>;
                                 const busy=receiptBusyId===g.id;
                                 return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;

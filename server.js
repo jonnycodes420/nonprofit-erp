@@ -5165,8 +5165,9 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
             ${digestNudgeHtml(`A quiet week — nothing logged. <strong>${wkDue}</strong> donor${wkDue === 1 ? "" : "s"} ${isOfficerScope ? "in your portfolio " : ""}${wkDue === 1 ? "is" : "are"} due for a touch — a call or note this week keeps them from drifting.`, "Open Steward")}
           </div>` + rollupLine
         : renderWeekInReviewBody(sec, wk, isOfficerScope ? displayNameCase(u.name) : null) + rollupLine;
-      await sendDigestEmail(org, u.email, `Week in Review — ${displayNameCase(org.name)}`, body);
-      out.weekly.sent.push(payload);
+      // FIX-15 Part 3: "sent" only when the provider took it.
+      if (await sendDigestEmail(org, u.email, `Week in Review: ${displayNameCase(org.name)}`, body)) out.weekly.sent.push(payload);
+      else out.weekly.skipped.push({ ...payload, reason: "provider_refused" });
     }
   }
 
@@ -5193,8 +5194,8 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
             ${digestNudgeHtml(`No moves logged this month — <strong>${moDue}</strong> prospect${moDue === 1 ? "" : "s"} in your portfolio ${moDue === 1 ? "is" : "are"} due for a touch. One conversation this week is next month's ask.`, "Open your pipeline")}
           </div>`
         : renderOfficerMonthlyBody(rep, mo);
-      await sendDigestEmail(org, u.email, `Your Monthly Report — ${displayNameCase(org.name)}`, body);
-      out.monthly.sent.push(payload);
+      if (await sendDigestEmail(org, u.email, `Your Monthly Report: ${displayNameCase(org.name)}`, body)) out.monthly.sent.push(payload);
+      else out.monthly.skipped.push({ ...payload, reason: "provider_refused" });
     }
   }
   return out;
@@ -5672,8 +5673,8 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
 
     const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today,
                                           team: isAdmin && multiOfficer ? teamRows : null });
-    await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body);
-    out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
+    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body)) out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
+    else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
   try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send }); }
@@ -5710,8 +5711,8 @@ async function runMeetingBriefForOrg(org, { today, send = true }) {
 <p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
 ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
       + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Account. Untick "Your meetings today" there to stop it.</p>`;
-    await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body);
-    out.sent.push({ recipientUserId: u.id, count: meetings.length });
+    if (await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body)) out.sent.push({ recipientUserId: u.id, count: meetings.length });
+    else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   return out;
 }
@@ -5812,8 +5813,8 @@ async function runStepRemindersForOrg(org, { today, nowHHMM, send = true, force 
       const rid = await reserveDigest(org.id, "step_reminder", `step:${t.id}:${today}`, u.id, u.email, "user",
         { threadId: t.id, donorId: t.donor_id, due: t.due_date, time: t.due_time });
       if (!rid) { out.skipped.push({ threadId: t.id, recipientUserId: u.id, reason: "already_sent" }); continue; }
-      await sendDigestEmail(org, u.email, subject, body);
-      out.sent.push({ threadId: t.id, recipientUserId: u.id, email: u.email, subject });
+      if (await sendDigestEmail(org, u.email, subject, body)) out.sent.push({ threadId: t.id, recipientUserId: u.id, email: u.email, subject });
+      else out.skipped.push({ threadId: t.id, recipientUserId: u.id, reason: "provider_refused" });
     }
   }
   return out;
@@ -7871,7 +7872,9 @@ async function processPledgeReminders() {
         // picks back up correctly if re-enabled) but don't send.
         if (org.pledge_reminder_enabled === false) continue;
 
-        await sendPledgeReminderEmail(org, { name: p.donor_name, email: p.donor_email }, p);
+        // FIX-15 Part 3: no "Pledge reminder sent" line, and no step forward,
+        // for a reminder the provider refused; the next run tries again.
+        if (!(await sendPledgeReminderEmail(org, { name: p.donor_name, email: p.donor_email }, p))) continue;
         await run(
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
           ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",

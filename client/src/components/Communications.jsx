@@ -1441,7 +1441,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try {
       const id = await saveForSend();
       const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({}) });
-      setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
+      // FIX-15 Part 3: a 200 with sent:false (no mail key configured) is not a send.
+      if (r && r.sent === false) setTestState({ state: "error", message: r.message || r.error || "The test was not sent: email is not set up on this server." });
+      else setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
       await loadCampaigns();
     } catch (e) { setTestState({ state: "error", message: errorMessage(e) }); }
   };

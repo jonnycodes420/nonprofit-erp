@@ -6,6 +6,11 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 
+// FIX-15 Part 3 — "notified" only when the email provider took the message.
+const notified = (r, name) => (r && r.donorNotified === false
+  ? `The email to ${name} did not go, so tell them yourself.`
+  : `${name} has been emailed.`);
+
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
 // from. Two exports: RecurringView (the full Fundraising → Recurring page:
 // movement summary, at-risk queue first, the roster, every staff action) and
@@ -231,7 +236,7 @@ function ProposeModal({ sub, funds, presetKind, onClose, onDone }) {
     if (kind === "create" && fundId) body.fundId = fundId;
     setBusy(true);
     apiFetch("/recurring/proposals", { method: "POST", body: JSON.stringify(body) })
-      .then(() => { setBusy(false); onDone(); })
+      .then(r => { setBusy(false); onDone(r); })
       .catch(e => { setBusy(false); setErr(errorMessage(e, "Couldn't send the proposal.")); });
   };
 
@@ -636,14 +641,14 @@ export function RecurringView({ onNavigate, isReadOnly }) {
     if (key === "fund") { setModal({ type: "fund", sub }); return; }
     if (key === "resume") {
       apiFetch(`/recurring/subs/${sub.id}/resume`, { method: "POST", body: JSON.stringify({}) })
-        .then(() => { say(`${sub.donorName}'s gift resumed — they've been notified.`); load(); })
+        .then(r => { say(`${sub.donorName}'s gift resumed. ${notified(r, sub.donorName)}`); load(); })
         .catch(e => say(errorMessage(e, "Couldn't resume.")));
       return;
     }
     if (key === "cancel") {
       if (!window.confirm(`Cancel ${sub.donorName}'s ${money(sub.amount)}${per(sub.interval)} recurring gift? They won't be charged again, and they'll be notified.`)) return;
       apiFetch(`/recurring/subs/${sub.id}/cancel`, { method: "POST", body: JSON.stringify({}) })
-        .then(() => { say(`Canceled — ${sub.donorName} has been notified.`); load(); })
+        .then(r => { say(`Canceled. ${notified(r, sub.donorName)}`); load(); })
         .catch(e => say(errorMessage(e, "Couldn't cancel.")));
       return;
     }
@@ -655,14 +660,14 @@ export function RecurringView({ onNavigate, isReadOnly }) {
     }
     if (key === "resend_proposal" && sub.pendingProposal) {
       apiFetch(`/recurring/proposals/${sub.pendingProposal.id}/resend`, { method: "POST", body: JSON.stringify({}) })
-        .then(() => { say("Proposal resent."); load(); })
+        .then(() => { say("Proposal resent. The email provider accepted it."); load(); })
         .catch(e => say(errorMessage(e, "Couldn't resend.")));
     }
   };
 
   const resendInvitation = inv => {
     apiFetch(`/recurring/proposals/${inv.id}/resend`, { method: "POST", body: JSON.stringify({}) })
-      .then(() => { say("Invitation resent."); load(); })
+      .then(() => { say("Invitation resent. The email provider accepted it."); load(); })
       .catch(e => say(errorMessage(e, "Couldn't resend.")));
   };
 
@@ -807,19 +812,21 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       {modal?.type === "propose" && (
         <ProposeModal sub={modal.sub} funds={funds} presetKind={modal.presetKind}
           onClose={() => setModal(null)}
-          onDone={() => { setModal(null); say("Proposal sent — it shows as pending until the donor completes it."); load(); }} />
+          onDone={r => { setModal(null); say(r && r.delivered === false
+            ? "Proposal created, but the email did not go. Resend it from the roster; it shows as pending until the donor completes it."
+            : "Proposal sent. It shows as pending until the donor completes it."); load(); }} />
       )}
       {modal?.type === "pause" && (
         <PauseModal sub={modal.sub} onClose={() => setModal(null)}
           onConfirm={resumeAt =>
             apiFetch(`/recurring/subs/${modal.sub.id}/pause`, { method: "POST", body: JSON.stringify({ resumeAt }) })
-              .then(() => { setModal(null); say(`Paused — ${modal.sub.donorName} has been notified.`); load(); })} />
+              .then(r => { setModal(null); say(`Paused. ${notified(r, modal.sub.donorName)}`); load(); })} />
       )}
       {modal?.type === "fund" && (
         <FundModal sub={modal.sub} funds={funds} onClose={() => setModal(null)}
           onConfirm={fundId =>
             apiFetch(`/recurring/subs/${modal.sub.id}/fund`, { method: "PUT", body: JSON.stringify({ fundId }) })
-              .then(() => { setModal(null); say("Designation updated — the donor has been notified."); load(); })} />
+              .then(r => { setModal(null); say(`Designation updated. ${notified(r, modal.sub.donorName)}`); load(); })} />
       )}
     </div>
   );

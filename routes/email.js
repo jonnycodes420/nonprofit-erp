@@ -424,12 +424,14 @@ async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
   }
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml; // internal staff mail — no donor unsubscribe footer
   const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
-      if (error) console.error("[digest] email error:", error.message);
-    } catch (e) { console.error("[digest] email threw:", e.message); }
-  }
+  // FIX-15 Part 3 — HONEST "SENT". This returned true after logging the
+  // provider's refusal, so every caller reported a digest as sent that the
+  // provider had turned away. It now returns what the provider said.
+  if (!process.env.RESEND_API_KEY) return false;
+  try {
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    if (error) { console.error("[digest] email error:", error.message); return false; }
+  } catch (e) { console.error("[digest] email threw:", e.message); return false; }
   return true;
 }
 
@@ -577,15 +579,15 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
   const bodyHtml = applyPledgeReminderTokens(org.pledge_reminder_body || DEFAULT_PLEDGE_REMINDER_BODY, tokenCtx)
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
   const smtpFrom = await donorFromAddress(org.id); // BUILD-64: org name in the inbox
-  if (process.env.RESEND_API_KEY) {
-    try {
-      const { error: sendErr } = await resend.emails.send({
-        ...(await donorSendOpts(org.id, donor.email, "campaign")),
-        to: donor.email, subject, html: bodyHtml,
-      });
-      if (sendErr) console.error("[pledge-reminder] send error:", sendErr.message);
-    } catch (e) { console.error("[pledge-reminder] resend error:", e.message); }
-  }
+  // FIX-15 Part 3 — the provider's answer, not an assumed success.
+  if (!process.env.RESEND_API_KEY) return false;
+  try {
+    const { error: sendErr } = await resend.emails.send({
+      ...(await donorSendOpts(org.id, donor.email, "campaign")),
+      to: donor.email, subject, html: bodyHtml,
+    });
+    if (sendErr) { console.error("[pledge-reminder] send error:", sendErr.message); return false; }
+  } catch (e) { console.error("[pledge-reminder] resend error:", e.message); return false; }
   return true;
 }
 

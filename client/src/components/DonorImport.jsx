@@ -1827,7 +1827,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     try {
       const r = await apiFetch("/auth/invite", { method:"POST", body: JSON.stringify({ email: inviteEmail.trim(), role: "staff" }) });
       const val = inviteFor;
-      setInvitedValues(p => ({ ...p, [val]: true }));
+      // FIX-15 Part 3: "invited" means the email went. When it did not, the
+      // link is shown to copy instead (as Settings does).
+      setInvitedValues(p => ({ ...p, [val]: r && r.emailSent === false ? { link: r.inviteLink || "" } : true }));
       // Make the just-invited officer immediately selectable AND assigned to
       // this owner value as PENDING — no re-import needed (task #4). The invite
       // resolves into their portfolio when they accept.
@@ -1906,7 +1908,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     <button onClick={()=>{ setInviteFor(mm.value); setInviteEmail(mm.value.includes("@")?mm.value:""); setInviteErr(""); }}
                       style={{background:"transparent",border:`1px solid ${T.gold500}`,borderRadius:7,padding:"4px 10px",color:T.gold600,fontSize:11,fontWeight:700,cursor:"pointer"}}>Invite</button>
                   )}
-                  {invited && <span style={{fontSize:11,color:T.green600,fontWeight:700}}>✓ invited</span>}
+                  {invited === true && <span style={{fontSize:11,color:T.green600,fontWeight:700}}>✓ invited</span>}
+                  {invited && invited !== true && <span style={{fontSize:11,color:T.gold700,fontWeight:700}}>
+                    Invite created, but the email did not go.{invited.link ? <> Copy this link to them: <span style={{fontWeight:400,userSelect:"all",overflowWrap:"anywhere"}}>{invited.link}</span></> : null}</span>}
                 </div>
               );
             })}
