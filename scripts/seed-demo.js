@@ -2875,6 +2875,31 @@ async function main() {
     console.log(`[seed] surveys: ${givers.length} donor answers, ${vols.length} volunteer answers`);
   }
 
+  // ── PARITY-1 Part F · ONE VIDEO THANK-YOU, WAITING TO BE SENT ──────────
+  // Dana recorded a short thank-you for Margaret's August gift. The video is
+  // a three-second placeholder (scripts/fixtures/video-thanks-demo.webm),
+  // stored the way the asset store's Postgres fallback stores it, and the
+  // email with its link is a DRAFT in Communications. Never emailed: the org
+  // sends nothing (emails_enabled=false) and nobody has pressed send.
+  {
+    const crypto = require("crypto");
+    const buf = require("fs").readFileSync(require("path").join(__dirname, "fixtures", "video-thanks-demo.webm"));
+    const sha = b => crypto.createHash("sha256").update(b).digest("hex");
+    // assetStore.assetIdFor, the same formula, so the id is what a live upload would mint.
+    const assetId = "pa_" + sha(ORG + "|video_thanks|video/webm|").slice(0, 8) + sha(buf).slice(0, 16);
+    await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'video_thanks','video/webm',$3,'db',$4)
+             ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`, [assetId, ORG, buf.length, buf.toString("base64")]);
+    const token = crypto.randomBytes(32).toString("base64url");
+    const link = `${require("../publicUrl").publicAppUrl()}/v/${token}`;
+    await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+             VALUES ('md_b72demo_video',$1,$2,'video:vt_b72demo_1','A thank-you from Harborlight Youth Collective',$3,'pending_review','video_thanks','u_b72demo','Dana Reyes')`,
+      [ORG, margaretId, `Dear Margaret,\n\nI recorded a short video to say thank you. You can watch it here:\n\n${link}\n\nWith gratitude,\nDana Reyes\nHarborlight Youth Collective`]);
+    await q(`INSERT INTO video_thanks (id,org_id,donor_id,asset_id,mime,bytes,duration_seconds,token,draft_id,created_by,created_by_name,created_at)
+             VALUES ('vt_b72demo_1',$1,$2,$3,'video/webm',$4,3,$5,'md_b72demo_video','u_b72demo','Dana Reyes',NOW() - INTERVAL '1 hour')`,
+      [ORG, margaretId, assetId, buf.length, token]);
+    console.log("[seed] video thank-you: one draft for Margaret Chen, not sent");
+  }
+
   // ── WHY-1 · TOMORROW MORNING, AND THE JOURNEYS A RAIL CAN SUGGEST ──────
   // "Who should I call tomorrow?" is the demo's second question and it should
   // come back with five strong names for five different reasons. Four are

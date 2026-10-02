@@ -160,6 +160,58 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
       LIMIT ?`, [orgId, only, only, Math.min(Number(limit) || 400, 1000)]);
 }
 
+// PARITY-1 Part F: THE GIFTS IN A WINDOW. Org-scoped, Steward's own query,
+// never the model's: gifts dated from..to (civil, the org's calendar), on a
+// live record, not sample, with a positive amount. `ids` narrows it to the
+// people her words named.
+async function agentReadGifts(orgId, win, ids = null) {
+  const only = Array.isArray(ids) && ids.length ? ids.map(String) : null;
+  return query(
+    `SELECT g.id, g.donor_id, g.amount, g.date, d.name AS donor_name, d.deceased, d.do_not_contact, d.is_sample
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND d.deleted_at IS NULL AND COALESCE(g.is_sample, false) = false
+        AND g.amount > 0 AND LEFT(g.date, 10) >= ? AND LEFT(g.date, 10) <= ?
+        AND (?::text[] IS NULL OR g.donor_id = ANY(?::text[]))
+      ORDER BY LEFT(g.date, 10), g.id
+      LIMIT 1000`, [orgId, win.from, win.to, only, only]);
+}
+
+// "Create thank-you calls for every gift this week, due in a week." No model
+// enumerates anything: the gifts are read, and the plan is one task per gift
+// with the civil due date she will read before saying yes. Returns a plan, or
+// { refuse } with the sentence to show.
+async function agentGiftTaskPlan(orgId, shape, scope = null) {
+  const A = await agentShapeMod();
+  const D = await import("../shared/displayDate.js");
+  const today = orgToday(await orgTz(orgId));
+  const win = shape.window;
+  const all = await agentReadGifts(orgId, win, scope);
+  const gifts = all.filter(g => !g.deceased && !g.do_not_contact && !g.is_sample);
+  const leftOut = all.length - gifts.length;
+  const range = win.from === win.to ? D.displayDateShort(win.from, today)
+    : `${D.displayDateShort(win.from, today)} to ${D.displayDateShort(win.to, today)}`;
+  if (!gifts.length) return { refuse: { error: "nothing_to_do",
+    sentence: `No gifts dated ${win.words} (${range}) are on file${leftOut ? `, apart from ${leftOut} from records that say not to contact them` : ""}, so there is nothing to make a task for.` } };
+  if (gifts.length > A.MAX_PLAN_STEPS) return { refuse: { error: "too_many",
+    sentence: `${gifts.length} gifts are dated ${win.words} (${range}). That is more tasks than one plan can show you before you say yes (${A.MAX_PLAN_STEPS}). Narrow the window and try again.` } };
+  const due = shape.dueDays != null ? agentCivil(today, shape.dueDays) : null;
+  const people = await agentReadPeople(orgId, { ids: [...new Set(gifts.map(g => g.donor_id))], limit: 1000 });
+  const steps = gifts.map(g => {
+    const day = String(g.date).slice(0, 10);
+    return { tool: "create_task", donorId: g.donor_id, giftId: g.id, citesRows: [g.donor_id, g.id],
+      title: A.giftTaskTitle(shape.kind, g.donor_name, Math.round(Number(g.amount) * 100), D.displayDateShort(day, today)),
+      due: due ? due.ymd : null, dueDays: shape.dueDays, priority: "medium",
+      detail: due ? `Due ${D.displayDateShort(due.ymd, today)}` : "No due date" };
+  });
+  const plan = A.compilePlan(steps, { people, reads: `the ${gifts.length} gift${gifts.length === 1 ? "" : "s"} dated ${win.words} (${range})` });
+  plan.readIds = null;
+  plan.readDetail = `Gifts dated ${range}, one task each`
+    + (leftOut ? `. ${leftOut} left out: the record says not to contact them` : "");
+  plan.giftWindow = { from: win.from, to: win.to, words: win.words };
+  plan.confirmLabel = A.confirmLabel(plan);
+  return plan;
+}
+
 // WHO AN INSTRUCTION NAMES. Only the records whose name appears in her words
 // come back from the database (ids, names and kinds, nothing else), and
 // agentShape.namedIn keeps the ones named by whole words. This is how "the
@@ -260,10 +312,16 @@ const AGENT_EXECUTORS = {
     const donor = step.donorId ? ctx.donorById(step.donorId) : null;
     if (step.donorId && !donor) return { skipped: "unknown_donor" };
     const id = "task_" + uuid().slice(0, 10);
+    // PARITY-1 Part F: `due` is a CIVIL DATE or nothing. The plan she read
+    // carries the date it showed her; a step with only `dueDays` is resolved
+    // here from the org's own today. Free text ("next Friday") is not a date
+    // the task list can sort or call overdue, so it is dropped.
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(String(step.due || "")) ? String(step.due)
+      : Number.isInteger(step.dueDays) && step.dueDays >= 0 && step.dueDays <= 365 ? orgTime.addDays(ctx.today, step.dueDays) : "";
     await runTx(ctx.client,
       `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,created_by,created_by_name)
        VALUES (?,?,?,?,?,'donor',0,?,?,?)`,
-      [id, ctx.orgId, String(step.title || "Follow up").slice(0, 300), step.due || "",
+      [id, ctx.orgId, String(step.title || "Follow up").slice(0, 300), due,
        step.priority === "high" ? "high" : "medium", donor ? donor.id : null,
        AGENT_ACTOR.id, AGENT_ACTOR.name]);
     await agentWrite(ctx, { tool: "create_task", table: "tasks", entityId: id,
@@ -441,7 +499,24 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const words = V.normalizeVocabulary(orgRow && orgRow.vocabulary_json);
   // The people a draft may never be written for are removed BEFORE the model
   // sees them (BUILD-83's rule: fiction and the no-ask family generate nothing).
-  const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
+  const reachable0 = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
+  // PARITY-1 Part F: TODAY, AND THE GIFTS SHE MEANT. The prompt had no date,
+  // so "this week" and "due in a week" were guesses; and it had donor rows
+  // only, so "every gift this week" became "every donor". Now the org's own
+  // today is in the prompt, and when her words name a window of time and
+  // gifts, the gift rows in that window are read (org-scoped, Steward's query)
+  // and shown, with their givers among the people even when they are not in
+  // the top 200 by giving.
+  const today = orgToday(await orgTz(orgId));
+  const win = /\b(gifts?|donations?|gave|given|donated)\b/i.test(String(instructionText)) ? A.giftWindowFromInstruction(instructionText, today) : null;
+  const windowGifts = win ? await agentReadGifts(orgId, win, scope) : [];
+  const shownIds = new Set(reachable0.slice(0, 200).map(p => p.id));
+  const giverIds = [...new Set(windowGifts.map(g => g.donor_id))].filter(id => !shownIds.has(id));
+  const extraGivers = giverIds.length && !scope
+    ? (await agentReadPeople(orgId, { ids: giverIds, limit: 1000 })).filter(p => !p.deceased && !p.do_not_contact && !p.is_sample) : [];
+  const reachable = [...reachable0.slice(0, 200), ...extraGivers];
+  const reachableIds = new Set(reachable.map(p => p.id));
+  const giftRows = windowGifts.filter(g => reachableIds.has(g.donor_id));
   const client = anthropicFor(orgId);
   // The model is shown the persona's OWN tools, not the whole table. An
   // Analyst that is never offered set_stage rarely asks for it; the filter
@@ -470,14 +545,21 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     "- Use NO number that is not in the rows below. Never state a rule about how giving works.",
     "- Call each person what the row calls them. An organisation is a foundation, church or business, never a donor's word.",
     "- Plain sentences. No markdown.",
+    `- Today is ${today} in this organisation's own calendar. A date you write is YYYY-MM-DD.`,
+    "- A task's due date goes in `dueDays`: whole days from today (a week is 7). Leave `due` null.",
+    "- When the rows include GIFTS and she asks for something per gift, return one step per gift, citing the gift id and the giver's id.",
   ].join("\n");
 
   const user = [
     `Her instruction, verbatim: "${String(instructionText).slice(0, 2000)}"`,
     "",
+    `Today: ${today}`,
+    "",
     scope ? "The records she named:" : `The people on file (${reachable.length}):`,
-    ...reachable.slice(0, 200).map(p =>
+    ...reachable.map(p =>
       `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}`),
+    ...(win ? ["", `The gifts dated ${win.words} (${win.from} to ${win.to}), ${giftRows.length}:`,
+      ...giftRows.map(g => `  ${g.id} | giver ${g.donor_id} | ${g.donor_name} | amount ${Number(g.amount)} | date ${String(g.date).slice(0, 10)}`)] : []),
   ].join("\n");
 
   const msg = await client.messages.create({
@@ -497,6 +579,10 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // person WITH a body is far past that for a few hundred people. Say so.
   const _truncated = msg.stop_reason === "max_tokens";
   if (_truncated) console.warn(`[agent] the model hit max_tokens: the plan is TRUNCATED (${(raw.steps || []).length} steps returned)`);
+  // PARITY-1 Part F: A TRUNCATED PLAN IS REFUSED, not run in part. It was
+  // only warned about, so she could confirm a plan that stopped at an
+  // arbitrary person and never learn who was left out.
+  if (_truncated) throw Object.assign(new Error("plan truncated"), { truncated: true, stepsReturned: (raw.steps || []).length });
   await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
              VALUES (?,?,?,'agent_plan',?,?,?)`,
     ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
@@ -507,9 +593,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // tool she has not signed for stays in, so validatePlan REFUSES the plan
   // rather than trimming it.
   const byId = new Map(reachable.map(p => [p.id, p]));
-  const knownRowIds = reachable.map(p => p.id);
-  const groundedValues = reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount])
-    .map(Number).filter(Number.isFinite);
+  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id)];
+  const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
+    ...giftRows.map(g => g.amount)].map(Number).filter(Number.isFinite);
   const steps = [];
   let withheld = 0;
   let outOfScope = 0;
@@ -524,6 +610,12 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     if (A.citationProblems(s, { knownRowIds }).length) { withheld++; continue; }
     const text = [s.body, s.note, s.title, s.label, s.subject].filter(Boolean).join(" \n ");
     if (TH.ungroundedClaims(text, { groundedValues }).length) { withheld++; continue; }
+    // A task's due date: whole days from today, resolved HERE to the civil date
+    // she reads on the plan. A `due` that is not a date is dropped.
+    if (s.tool === "create_task") {
+      const dd = Number.isInteger(s.dueDays) && s.dueDays >= 0 && s.dueDays <= 365 ? s.dueDays : null;
+      s.due = /^\d{4}-\d{2}-\d{2}$/.test(String(s.due || "")) ? String(s.due) : dd != null ? orgTime.addDays(today, dd) : null;
+    }
     steps.push(s);
   }
   const _tEnd = Date.now();
@@ -624,7 +716,14 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
   const named = [...new Set(planSteps.map(s => s.donorId).filter(Boolean))];
   const people = named.length ? await agentReadPeople(orgId, { ids: named }) : [];
   const byId = new Map(people.map(p => [p.id, p]));
-  const knownRowIds = people.map(p => p.id);
+  // PARITY-1 Part F: a step may cite a GIFT as well as its giver. A cited
+  // gift counts as read only when it is this org's and that giver's.
+  const citedGiftIds = [...new Set(planSteps.flatMap(s => (Array.isArray(s.citesRows) ? s.citesRows : []).map(String))
+    .filter(id => !byId.has(id)))].slice(0, 2000);
+  const citedGifts = citedGiftIds.length && named.length
+    ? await query(`SELECT id, donor_id, amount FROM gifts WHERE org_id = ? AND id = ANY(?::text[]) AND donor_id = ANY(?::text[])`,
+        [orgId, citedGiftIds, named]) : [];
+  const knownRowIds = [...people.map(p => p.id), ...citedGifts.map(g => g.id)];
   // Deceased, do-not-contact and sample people get no work, whatever the plan
   // says (BUILD-83; the incident's rule that fiction generates nothing).
   const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
@@ -644,8 +743,8 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
     ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instruction.text).slice(0, 100),
      JSON.stringify({ instruction: instruction.text, steps: planSteps }).slice(0, 200000), "", runId]);
 
-  const groundedValues = reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount])
-    .map(Number).filter(Number.isFinite);
+  const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
+    ...citedGifts.map(g => g.amount)].map(Number).filter(Number.isFinite);
   const SKIPPED = { already_open: "a follow-up was already open", unknown_donor: "the record is not there",
     unknown_stage: "that stage does not exist", already_there: "they were already at that stage",
     no_tag: "there was no tag to add", already_tagged: "they already had that tag",
@@ -1037,9 +1136,21 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
           + `about Steward is affected, and every plan you have already written is still here.`,
       });
     }
+    // PARITY-1 Part F: "a task for every gift this week, due in a week" is
+    // planned by Steward from the gift rows, behind the same switch and the
+    // same plan sheet: she reads every task before one is created.
+    const giftTasks = kind === A.KIND_TASK ? A.giftTaskShape(text, orgToday(await orgTz(req.user.orgId))) : null;
+    if (giftTasks && (!persona || PS.getPersona(persona).tools.includes("create_task"))) {
+      const p = await agentGiftTaskPlan(req.user.orgId, giftTasks, named.scope);
+      if (p.refuse) return res.status(400).json(p.refuse);
+      plan = p;
+    } else {
     let built;
     try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId, persona }); }
-    catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }
+    catch (e) {
+      if (e && e.truncated) return res.status(422).json({ error: "plan_truncated", sentence: A.TRUNCATED_SENTENCE });
+      console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" });
+    }
     const readNames = named.scope
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
       : `your ${built.people.length} people`;
@@ -1048,6 +1159,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     plan.sends = Math.max(plan.sends, built.sends);
     plan.readIds = named.scope || null;
     plan.confirmLabel = A.confirmLabel(plan);
+    }
   }
 
   const check = A.validatePlan(plan, { authorization: auth });

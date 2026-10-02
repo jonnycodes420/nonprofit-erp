@@ -452,6 +452,17 @@ const donateLimiter = rateLimit({
   skip: rateLimitDisabled, // local scripted suites exercise /donate repeatedly (tests/cover-fees.test.js)
 });
 
+// PARITY-1 Part F: the video thank-you page and its stream. A video player
+// asks for many byte ranges, so this budget is per IP and generous.
+const videoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: rateLimitDisabled,
+});
+
 // Public "Request an invitation" form (invitation pivot, 2026-08-06). A human
 // fills this once; anything past this budget from one IP is a bot.
 const invitationLimiter = rateLimit({
@@ -545,6 +556,16 @@ app.use((req, res, next) =>
 app.use((req, res, next) =>
   /^\/interactions\/[^/]+\/attachments$/.test(req.path) && req.method === "POST"
     ? express.json({ limit: "16mb" })(req, res, next)
+    : next());
+// PARITY-1 Part F: a video thank-you arrives as the raw file (WebM or MP4,
+// up to 60MB: routes/videoThanks.js VIDEO_MAX_BYTES). The two numbers are one
+// decision; raising either alone gives a PayloadTooLargeError.
+app.use((req, res, next) =>
+  req.method === "POST" && /^\/donors\/[^/]+\/video-thanks$/.test(req.path)
+    ? express.raw({ type: ["video/webm", "video/mp4"], limit: "61mb" })(req, res, err =>
+        err && err.type === "entity.too.large"
+          ? res.status(413).json({ error: "too_large", sentence: "That video is over 60 MB. Record a shorter one." })
+          : next(err))
     : next());
 // ── FIX-11 Part 5 — THE INBOUND WEBHOOK'S RAW BODY ────────────────────────
 // Resend signs its webhooks the way every other Resend webhook here is
@@ -3736,6 +3757,7 @@ app.use(require("./routes/volunteer").routers.r0);
 // place; the catch-all /volunteer/:slug there defers to them by name.
 app.use(require("./routes/volunteerScheduling").routers.r0);
 app.use(require("./routes/surveys").routers.r0);   // SURVEY-1
+app.use(require("./routes/videoThanks").routers.r0);   // PARITY-1 Part F
 app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
@@ -10345,6 +10367,9 @@ require("./routes/profileStatus").mount({
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,
+});
+require("./routes/videoThanks").mount({
+  actor, checkWriteAccess, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, videoLimiter, wrap,
 });
 require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,

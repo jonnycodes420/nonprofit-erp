@@ -35,6 +35,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
+import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -1732,6 +1733,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const [impactPdfLoading,setImpactPdfLoading]=useState(false);
+  // PARITY-1 Part F: record a video thank-you; saving drafts the email.
+  const [videoThanksOpen,setVideoThanksOpen]=useState(false);
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -1979,6 +1982,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
                 [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
                 ["Brief me",()=>setBriefOpen(true),false],
+                // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
+                ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
                 // WHY-1 — only for a lapsed donor: the facts on their record
                 // before they stopped, and the one touch that fits.
                 ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
@@ -2000,6 +2005,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               ))}
             </div>
           )}
+          {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
           {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
           {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}

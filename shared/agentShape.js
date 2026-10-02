@@ -209,7 +209,7 @@ export function moneyRefusal(instructionText) {
 export const PLAN_STEP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["tool", "donorId", "citesRows", "subject", "body", "title", "note", "stage", "tag", "label", "due", "priority"],
+  required: ["tool", "donorId", "citesRows", "subject", "body", "title", "note", "stage", "tag", "label", "due", "dueDays", "priority"],
   properties: {
     tool: { type: "string", description: "One of Steward's own tools." },
     donorId: { type: ["string", "null"], description: "The id of the person this step is about, from the rows given." },
@@ -218,6 +218,9 @@ export const PLAN_STEP_SCHEMA = {
     title: { type: ["string", "null"] }, note: { type: ["string", "null"] },
     stage: { type: ["string", "null"] }, tag: { type: ["string", "null"] },
     label: { type: ["string", "null"] }, due: { type: ["string", "null"] },
+    // PARITY-1 Part F: a task's due date as whole days from today; Steward
+    // resolves it to a civil date in the org's calendar.
+    dueDays: { type: ["integer", "null"] },
     priority: { type: ["string", "null"] },
   },
 };
@@ -341,7 +344,8 @@ export function describeStep(step, byId = new Map()) {
     case "draft_note": return step.purpose === "welcome"
       ? `Draft a welcome to ${who}, for you to read and send.`
       : `Draft a note to ${who}${step.subject ? ` ("${step.subject}")` : ""}.`;
-    case "create_task": return `Create a task${p ? ` about ${who}` : ""}${step.title ? `: ${step.title}` : ""}.`;
+    // A title that already names the person (a task per gift) is not prefixed twice.
+    case "create_task": return `Create a task${p && !(step.title && p.name && String(step.title).includes(p.name)) ? ` about ${who}` : ""}${step.title ? `: ${step.title}` : ""}.`;
     case "log_note": return `Log a note on ${who}'s record.`;
     case "set_stage": return `Move ${who} to ${step.stage || "a new stage"}.`;
     case "add_tag": return `Tag ${who} "${step.tag || ""}".`;
@@ -854,3 +858,93 @@ export function draftingState({ configured = false, enabled = true, paused = fal
   return { on: reason === null, reason, sentence, canNow: DRAFTING_CAN_NOW, adds: DRAFTING_ADDS,
            where: DRAFTING_WHERE, canTurnOn: reason === "ai_disabled" && !!isAdmin, whoCan };
 }
+
+// ── PARITY-1 Part F · A TASK FOR EVERY GIFT IN A WINDOW ────────────────────
+// "Create thank-you calls for every gift this week, due in a week." The model
+// used to see donor rows only (so "every gift" became "every donor"), had no
+// today's date (so "this week" and "due in a week" were guesses, and `due` was
+// free text) and saw the top 200 people by giving. This instruction shape is
+// now read HERE, by Steward: the window is a civil range from the org's own
+// today, the gifts are read from the database inside it, and the plan is one
+// task per gift with a civil due date. The model is not asked to enumerate.
+//
+// Pure civil arithmetic on YYYY-MM-DD strings, pinned to UTC so it cannot move.
+const civilParts = ymd => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || "")); return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null; };
+export function civilAddDays(ymd, n) {
+  const p = civilParts(ymd);
+  if (!p) return null;
+  return new Date(Date.UTC(p[0], p[1] - 1, p[2] + Number(n || 0))).toISOString().slice(0, 10);
+}
+const civilDow = ymd => { const p = civilParts(ymd); return p ? new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay() : null; };   // 0 Sunday
+const NUM_WORD = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, fourteen: 14, thirty: 30 };
+const numOf = w => (w == null ? null : NUM_WORD[String(w).toLowerCase()] ?? (/^\d{1,3}$/.test(w) ? Number(w) : null));
+const UNIT_DAYS = { day: 1, days: 1, week: 7, weeks: 7, month: 30, months: 30 };
+
+// The window of GIFT DATES an instruction names, from the org's today, or
+// null. A week starts on Monday. "This week" is Monday to today.
+export function giftWindowFromInstruction(text, today) {
+  const t = String(text || "").toLowerCase().replace(/[’']/g, "'");
+  if (!civilParts(today)) return null;
+  const dow = civilDow(today);
+  const monday = civilAddDays(today, -((dow + 6) % 7));
+  const p = civilParts(today);
+  const firstOfMonth = `${p[0]}-${String(p[1]).padStart(2, "0")}-01`;
+  if (/\btoday\b/.test(t) && !/\bdue today\b/.test(t)) return { from: today, to: today, words: "today" };
+  if (/\byesterday\b/.test(t)) { const y = civilAddDays(today, -1); return { from: y, to: y, words: "yesterday" }; }
+  if (/\bthis week\b/.test(t)) return { from: monday, to: today, words: "this week" };
+  if (/\blast week\b(?!s)/.test(t) && !/\bin the last week\b|\bover the last week\b/.test(t))
+    return { from: civilAddDays(monday, -7), to: civilAddDays(monday, -1), words: "last week" };
+  if (/\bthis month\b/.test(t)) return { from: firstOfMonth, to: today, words: "this month" };
+  if (/\blast month\b/.test(t) && !/\b(in|over) the last month\b/.test(t)) {
+    const prevLast = civilAddDays(firstOfMonth, -1);
+    return { from: prevLast.slice(0, 8) + "01", to: prevLast, words: "last month" };
+  }
+  const m = t.match(/\b(?:in|over|during|from) the (?:last|past)\s+(\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|thirty)?\s*(days?|weeks?|months?)\b/)
+    || t.match(/\b(?:the )?(?:last|past)\s+(\d{1,3}|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|thirty)\s+(days?|weeks?|months?)\b/);
+  if (m) {
+    const n = m[1] ? numOf(m[1]) : 1;
+    if (n && n > 0 && n <= 400) {
+      const days = n * UNIT_DAYS[m[2]];
+      return { from: civilAddDays(today, -(days - 1)), to: today, words: `in the last ${n === 1 ? m[2].replace(/s$/, "") : `${n} ${m[2]}`}` };
+    }
+  }
+  return null;
+}
+
+// "due in a week" → 7, "due in 3 days" → 3, "due tomorrow" → 1, "due today"
+// → 0, "due next week" → 7, "due in two weeks" → 14. Null when it says none.
+export function dueDaysFromInstruction(text) {
+  const t = String(text || "").toLowerCase();
+  if (/\bdue (by )?today\b/.test(t)) return 0;
+  if (/\bdue (by )?tomorrow\b/.test(t)) return 1;
+  if (/\bdue (by )?next week\b/.test(t)) return 7;
+  const m = t.match(/\b(?:due|by|within)\s+(?:in\s+)?(\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fourteen|thirty)\s+(days?|weeks?|months?)\b/);
+  if (!m) return null;
+  const n = numOf(m[1]);
+  return n == null ? null : Math.min(n * UNIT_DAYS[m[2]], 365);
+}
+
+// Is this the shape "a task (or call) for every gift in <window>"? Returns
+// { window, dueDays, kind } or null. It must say EVERY/EACH/ALL gifts, a task
+// word, and a window, and it must not be about drafting or sending.
+const TASK_WORD = /\b(tasks?|calls?|call\b|phone|ring|to-?dos?|follow[- ]?ups?|reminders?)\b/;
+const PER_GIFT = /\b(every|each|all( the| of the)?|any)\s+(new\s+|one-time\s+)?(gifts?|donations?)\b|\bfor (the )?(gifts?|donations?) (received|made|given|that came in)\b|\bper gift\b/;
+const NOT_TASK = /\b(draft|write|email|e-mail|send|letter|note to|message)\b/;
+export function giftTaskShape(text, today) {
+  const t = String(text || "").toLowerCase().replace(/[’']/g, "'");
+  if (!TASK_WORD.test(t) || !PER_GIFT.test(t) || NOT_TASK.test(t)) return null;
+  const win = giftWindowFromInstruction(t, today);
+  if (!win) return null;
+  const kind = /\b(calls?|phone|ring)\b/.test(t) ? (/\bthank/.test(t) ? "Thank-you call" : "Call") : (/\bthank/.test(t) ? "Thank-you" : "Follow up");
+  return { window: win, dueDays: dueDaysFromInstruction(t), kind };
+}
+
+// The title of one task: "Thank-you call: Ada Lovelace, $250.00 gift on Sep 30".
+export function giftTaskTitle(kind, donorName, amountCents, dateShort) {
+  return `${kind}: ${donorName}, ${money(amountCents)} gift on ${dateShort}`.slice(0, 300);
+}
+
+// A truncated model answer is not a shorter plan; it is a plan cut off at an
+// arbitrary person. It is refused, never run in part.
+export const TRUNCATED_SENTENCE = "That instruction made a plan too long for Steward to finish writing, so none of it will run. Narrow it (a shorter window, or a smaller group) and try again.";
