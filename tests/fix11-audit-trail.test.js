@@ -192,9 +192,14 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
 
   const dRow = await waitForRow(ORG_A, r => r.entity_type === "donor" && r.action === "created",
     "§2 creating a donor leaves a row");
-  if (dRow) ok("§2 …naming the donor and the person who did it",
-    dRow.entity_label === "Ada Petrossian" && dRow.user_name === "admin-a@f11.local" && dRow.entity_id === donorId,
-    { label: dRow.entity_label, who: dRow.user_name, id: dRow.entity_id });
+  // FIX-12 Part 4: the row stores WHO by id; the log view names them on read.
+  if (dRow) {
+    const shown = (await mfetch("GET", `/audit/log/${dRow.id}`, token)).body || {};
+    ok("§2 …naming the donor and the person who did it (ids stored, names resolved on read)",
+      dRow.entity_label === null && dRow.user_name === null && dRow.user_id === `u_${ORG_A}_admin` && dRow.entity_id === donorId
+        && shown.entity_label === "Ada Petrossian" && shown.user_name === "Dana Reyes",
+      { label: dRow.entity_label, who: dRow.user_name, id: dRow.entity_id, shown: [shown.entity_label, shown.user_name] });
+  }
 
   const gift = await mfetch("POST", `/donors/${donorId}/gifts`, token,
     { amount: 100000, date: "2026-09-30", payment_method: "ACH", idempotencyKey: "f11-k1" });
@@ -263,16 +268,18 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
   const dlRow = await waitForRow(ORG_A, r => r.action === "downloaded",
     "§2 downloading donor data leaves a row");
   if (dlRow) ok("§2 …naming the file and who took it",
-    /\.csv$/.test(String(dlRow.entity_label || "")) && dlRow.user_name === "admin-a@f11.local",
-    { file: dlRow.entity_label, who: dlRow.user_name });
+    /\.csv$/.test(String(dlRow.entity_label || "")) && dlRow.user_id === `u_${ORG_A}_admin` && dlRow.user_name === null,
+    { file: dlRow.entity_label, who: dlRow.user_id });
 
   // SIGN-INS, INCLUDING THE ONE THAT WAS REFUSED.
   await mfetch("POST", "/auth/login", null, { email: "admin-a@f11.local", password: "nope" });
   const badRow = await waitForRow(ORG_A, r => /refused/.test(String(r.action)),
     "§2 a sign-in with the wrong password leaves a row");
-  if (badRow) ok("§2 …filed to the right org, naming the address that was typed",
-    badRow.org_id === ORG_A && String(badRow.user_name) === "admin-a@f11.local",
-    { org: badRow.org_id, who: badRow.user_name });
+  // FIX-12 Part 4: the address typed is somebody's address, so the row keeps
+  // that person's user id instead.
+  if (badRow) ok("§2 …filed to the right org, naming whose sign-in it was (by id)",
+    badRow.org_id === ORG_A && badRow.user_id === `u_${ORG_A}_admin` && !/@/.test(String(badRow.user_name || "")),
+    { org: badRow.org_id, who: badRow.user_id, name: badRow.user_name });
   const inRow = await waitForRow(ORG_A, r => r.action === "signed in", "§2 a successful sign-in leaves a row");
   ok("§2 a successful sign-in is distinguishable from a refused one",
     !!inRow && !!badRow && inRow.action !== badRow.action, { good: inRow && inRow.action, bad: badRow && badRow.action });

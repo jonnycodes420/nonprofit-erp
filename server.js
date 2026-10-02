@@ -46,7 +46,8 @@ const compression = require("compression");
 const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const Anthropic = require("@anthropic-ai/sdk");
+// FIX-12 Part 3: every model call goes through aiClient.js, which asks the org's AI switch first.
+const { aiGate, anthropicFor, AiOffError } = require("./aiClient");
 const { Resend } = require("resend");
 // 2026-09-24 — addresses Steward must never email, from any org (mailBlock.js).
 const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
@@ -4272,15 +4273,8 @@ async function thresholdsMod() { return import("./shared/thresholds.js"); }
 //                 Steward's state, not the org's, and the control is ABSENT
 //                 rather than broken (MANUAL-STEPS §12).
 //   ai_disabled — the org turned it off in Settings. Its choice, per org.
-async function aiGate(orgId) {
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, reason: "ai_no_key" };
-  const [org] = await query("SELECT ai_enabled FROM orgs WHERE id=?", [orgId]);
-  if (!org) return { ok: false, reason: "org_not_found" };
-  // A column added by a migration that has not run yet reads undefined, and
-  // undefined must mean ON — the same direction as the DEFAULT.
-  if (org.ai_enabled === false) return { ok: false, reason: "ai_disabled" };
-  return { ok: true, reason: null };
-}
+// aiGate now lives in aiClient.js (FIX-12 Part 3), beside the only code that
+// may call a model, so the gate and the call cannot drift apart.
 
 // One place decides whether the agent may act for this org, and it answers with
 // a REASON rather than a boolean, because a quiet screen has to say why.
@@ -5535,11 +5529,46 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body);
     out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
   }
+  // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
+  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send }); }
+  catch (e) { console.error("[meeting-brief]", org.id, e.message); }
   return out;
 }
 
 // Kept as the name the ops route and the suites call. One sender underneath.
 async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
+
+// ── FIX-12 Part 7a — "YOUR MEETINGS TODAY", BY EMAIL, IF SHE ASKS ──────────
+// The same meetings and the same briefs Home shows (routes/finance.js
+// composeTodayMeetings), to the staff member's OWN sign-in address and nobody
+// else. Off unless she ticks it in Settings → Account. One a day (the
+// meeting_brief ledger), and none on a day with no meetings.
+async function runMeetingBriefForOrg(org, { today, send = true }) {
+  const out = { sent: [], skipped: [] };
+  const users = await query(
+    "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
+  const fin = require("./routes/finance");
+  for (const u of users) {
+    const { meetings } = await fin.composeTodayMeetings(org.id, u.id);
+    if (!meetings.length) { out.skipped.push({ recipientUserId: u.id, reason: "no_meetings" }); continue; }
+    if (!send) { out.sent.push({ recipientUserId: u.id, count: meetings.length }); continue; }
+    if (!(await reserveDigest(org.id, "meeting_brief", "day:" + today, u.id, u.email, "user", { count: meetings.length }))) {
+      out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue;
+    }
+    const tz = org.timezone || "America/New_York";
+    const at = iso => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
+    const lines = b => [b && b.giving && `Giving: ${b.giving.text}`, b && b.openAsk && `Open ask: ${b.openAsk.text}`,
+      b && b.lastTime && `Last time: ${b.lastTime.text}`, b && b.unthanked && b.unthanked.text].filter(Boolean);
+    const body = `<p style="color:#0f1a12;">Good morning${u.name ? ", " + escHtmlWf(u.name.split(" ")[0]) : ""}. Here ${meetings.length === 1 ? "is the meeting" : `are the ${meetings.length} meetings`} on your calendar today, with what Steward knows about each person.</p>`
+      + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
+<p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(at(m.startsAt))}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
+${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
+      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Account. Untick "Your meetings today" there to stop it.</p>`;
+    await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body);
+    out.sent.push({ recipientUserId: u.id, count: meetings.length });
+  }
+  return out;
+}
 
 // ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ─────────
 //
@@ -6176,7 +6205,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
     : `They just crossed $${(meta.threshold || 0).toLocaleString()} in total lifetime giving.`;
 
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
@@ -6224,7 +6253,7 @@ async function generateAtRiskDraft(recipient, orgId) {
   const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "there";
 
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
@@ -6837,12 +6866,12 @@ async function notifyExpiringCards(org, { send = true, today = new Date() } = {}
 const WORKFLOW_RECIPES = [
   {
     key: "failed_recurring_recovery",
-    name: "Failed recurring gift → recovery email + task",
-    description: "When a donor's recurring card fails, email them a warm branded card-update link in your name and create a task to follow up.",
+    name: "Failed recurring gift → recovery note to review + task",
+    description: "When a donor's recurring card fails, Steward drafts a personal note for you to review and send, and creates a task to follow up. Steward drafts it. You send it. (The card-update link itself goes out in the automatic payment-failed email.)",
     trigger: "recurring_failed",
     conditions: [],
     actions: [
-      { type: "send_email", template: "recovery" },
+      { type: "draft_email", template: "recovery" },
       // A.2 — the label is the step, not the word "follow-up" and a name.
       { type: "create_task", title: "Call {donor} about the monthly gift that failed", priority: "high", dueDays: 2 },
     ],
@@ -6850,12 +6879,12 @@ const WORKFLOW_RECIPES = [
   },
   {
     key: "new_donor_welcome",
-    name: "New donor's first gift → thank-you + task",
-    description: "The moment a brand-new donor gives for the first time, send a branded thank-you and queue a personal welcome call.",
+    name: "New donor's first gift → thank-you to review + task",
+    description: "The moment a brand-new donor gives for the first time, Steward drafts a thank-you for you to review and send, and queues a personal welcome call. Steward drafts it. You send it.",
     trigger: "gift_received",
     conditions: [{ field: "is_first_gift", op: "eq", value: true }],
     actions: [
-      { type: "send_email", template: "thankyou" },
+      { type: "draft_email", template: "thankyou" },
       { type: "create_task", title: "Personal welcome call: {donor}", priority: "medium", dueDays: 5 },
     ],
     defaultConfig: {},
@@ -6863,7 +6892,7 @@ const WORKFLOW_RECIPES = [
   {
     key: "lapsing_reengage",
     name: "Lapsing donor → re-engagement task",
-    description: "When a donor crosses your lapse window with no gift, tag them and create a re-engagement task (optionally email them).",
+    description: "When a donor crosses your lapse window with no gift, tag them and create a re-engagement task (optionally draft a note for you to review and send. Steward drafts it. You send it.).",
     trigger: "donor_lapsed",
     conditions: [],
     actions: [
@@ -7400,31 +7429,33 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       }
       return { type: "add_tag", tag: action.tag };
     }
-    case "send_email": {
+    // FIX-12 Part 2 — STEWARD DRAFTS IT. YOU SEND IT. A recipe never emails a
+    // donor. Its words land in the drafts queue (Communications → Drafts to
+    // review), where a person reads, edits and sends each one. `send_email` is
+    // the type every recipe row saved before FIX-12 carries; it is handled here
+    // as a draft too, so an org whose row was not yet migrated cannot send.
+    // Nothing in this branch may call a mail function.
+    case "send_email":
+    case "draft_email": {
       if (!donor) return null;
-      if (action.template === "recovery") {
-        // W-4 log honesty: actions_taken records what actually happened, not
-        // what was attempted — sent:false rows are visible in the run log.
-        const r = ctx.subscriptionRow ? await sendDunningEmail(org, donor, ctx.subscriptionRow) : { sent: false, refused: "no_subscription" };
-        return { type: "send_email", template: "recovery", sent: r.sent === true, ...(r.refused ? { refused: r.refused } : {}) };
-      }
-      if (action.template === "thankyou") {
-        const body = `<p>Hi ${escHtmlWf(firstName)},</p>
-<p>Thank you for your first gift to ${escHtmlWf(displayNameCase(org.name))} — welcome to our community. Gifts like yours are exactly what make our work possible, and we're so glad you're part of it.</p>
-<p>You'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.</p>
-<p>With gratitude,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
-        const sentTy = await sendWorkflowEmail(org, donor, `Thank you from ${displayNameCase(org.name)}`, body);
-        return { type: "send_email", template: "thankyou", sent: sentTy === true };
-      }
-      if (action.template === "reengage") {
-        const body = `<p>Hi ${escHtmlWf(firstName)},</p>
-<p>It's been a while, and we've missed you at ${escHtmlWf(displayNameCase(org.name))}. Your past support made a real difference — and there's more good work ahead we'd love for you to be part of.</p>
-<p>If now's a good time to come back, we'd be grateful. And if not, thank you all the same.</p>
-<p>Warmly,<br/>${escHtmlWf(displayNameCase(org.name))}</p>`;
-        const sentRe = await sendWorkflowEmail(org, donor, `We've missed you at ${displayNameCase(org.name)}`, body);
-        return { type: "send_email", template: "reengage", sent: sentRe === true };
-      }
-      return null;
+      const orgName = displayNameCase(org.name);
+      const DRAFTS = {
+        recovery: [`About your monthly gift to ${orgName}`,
+          `Hi ${firstName},\n\nYour monthly gift to ${orgName} didn't go through this time. It happens, usually because a card expired or was replaced. ${org.recurring_dunning_enabled === false ? "If you reply, I'll send you a secure link to update your card." : "We have sent you a separate email with a secure link to update your card."}\n\nThank you for giving every month. It makes a real difference, and if there's anything I can help with, just reply.\n\nWith thanks,\n${orgName}`],
+        thankyou: [`Thank you from ${orgName}`,
+          `Hi ${firstName},\n\nThank you for your first gift to ${orgName}, and welcome. Gifts like yours are what make our work possible, and we're so glad you're part of it.\n\nYou'll hear from a real person here soon. In the meantime, just reply if there's anything you'd like to know.\n\nWith gratitude,\n${orgName}`],
+        reengage: [`We've missed you at ${orgName}`,
+          `Hi ${firstName},\n\nIt's been a while, and we've missed you at ${orgName}. Your past support made a real difference, and there's more good work ahead we'd love for you to be part of.\n\nIf now's a good time to come back, we'd be grateful. And if not, thank you all the same.\n\nWarmly,\n${orgName}`],
+      };
+      const tpl = DRAFTS[action.template];
+      if (!tpl) return null;
+      const draftId = "md_" + uuid().slice(0, 8);
+      await run(
+        `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,workflow_run_id,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,'pending_review',?,?,?,?)`,
+        [draftId, org.id, donor.id, `workflow:${recipeKey}:${action.template}`, tpl[0], tpl[1],
+         `workflow:${recipeKey}`, ctx.runId || null, wfActor.id, wfActor.name]);
+      return { type: "draft_email", template: action.template, draftId, sent: false };
     }
     default:
       return null;
@@ -7449,9 +7480,10 @@ async function fireWorkflows(orgId, trigger, ctx) {
     let actions = asJson(wf.actions, []);
     const config = asJson(wf.config, {});
     if (!workflowConditionsPass(conditions, config, ctx)) continue;
-    // Config can toggle the optional re-engagement email on the lapse recipe.
-    if (wf.recipe_key === "lapsing_reengage" && config.sendEmail && !actions.some(a => a.type === "send_email")) {
-      actions = [...actions, { type: "send_email", template: "reengage" }];
+    // Config can toggle the optional re-engagement DRAFT on the lapse recipe
+    // (the config key keeps its old name, sendEmail, so saved settings carry over).
+    if (wf.recipe_key === "lapsing_reengage" && config.sendEmail && !actions.some(a => a.type === "send_email" || a.type === "draft_email")) {
+      actions = [...actions, { type: "draft_email", template: "reengage" }];
     }
 
     // Reserve the run row FIRST — the unique (workflow_id, dedup_key) makes a
@@ -7468,7 +7500,7 @@ async function fireWorkflows(orgId, trigger, ctx) {
 
     const taken = [];
     for (const a of actions) {
-      try { const res = await runWorkflowAction(a, { org, donor, ctx, config, recipeKey: wf.recipe_key }); if (res) taken.push(res); }
+      try { const res = await runWorkflowAction(a, { org, donor, ctx: { ...ctx, runId }, config, recipeKey: wf.recipe_key }); if (res) taken.push(res); }
       catch (e) { console.error(`[workflow:${wf.recipe_key}] action ${a.type} failed:`, e.message); }
     }
     await run("UPDATE workflow_runs SET actions_taken=? WHERE id=?", [JSON.stringify(taken), runId]);
@@ -9565,6 +9597,9 @@ app.use((req, res) => {
 if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // FIX-12 Part 3: a model call the org's AI switch refused is the org's
+  // choice, not a crash. A route with a non-AI path catches it before here.
+  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : 503).json({ error: err.message, code: err.code, reason: err.reason });
   console.error(err);
   res.status(500).json({ error: "Internal server error" });
 });
@@ -9911,6 +9946,7 @@ require("./routes/billing").mount({
   checkActiveDonorBand,
 });
 require("./routes/finance").mount({
+  AGENT_MODEL,   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
   // INT-BUILD-1 — the first sync after a connect, and the calendar.
   syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
@@ -9956,7 +9992,7 @@ require("./routes/volunteerScheduling").mount({
   supporterSession: { mint: (...a) => _supporterSession.mint(...a), setCookie: (...a) => _supporterSession.setCookie(...a) },
 });
 require("./routes/agent").mount({
-  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
+  AGENT_MODEL, ALL_PIPELINE_STAGES, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
@@ -9991,7 +10027,7 @@ require("./routes/crm").mount({
   // because somebody's endpoint is down.
   emitWebhook,
   ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
-  Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
+  CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
   MB_READY, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, PHOTO_FETCH_BUDGET, PT_READY, RB_READY,
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,

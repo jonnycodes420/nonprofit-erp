@@ -927,7 +927,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
     setBusyId(id);
     try {
       await apiFetch(`/milestone-drafts/${id}`, { method: "PUT", body: JSON.stringify(editForm) });
-      setDrafts(prev => prev.map(d => d.id === id ? { ...d, ...editForm } : d));
+      setDrafts(prev => prev.map(d => d.id === id ? { ...d, ...editForm, reviewed_at: new Date().toISOString() } : d));
       setEditingId(null);
     } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
@@ -939,6 +939,28 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
     try {
       await apiFetch(`/milestone-drafts/${id}/send`, { method: "POST" });
       setDrafts(prev => prev.filter(d => d.id !== id));
+    } catch (e) { alert(errorMessage(e)); }
+    setBusyId(null);
+  };
+
+  // FIX-12 Part 2: "reviewed" is her saying the words are right. Only
+  // reviewed drafts go out with "Send all reviewed".
+  const markReviewed = async (id) => {
+    setBusyId(id);
+    try {
+      await apiFetch(`/milestone-drafts/${id}/reviewed`, { method: "POST" });
+      setDrafts(prev => prev.map(d => d.id === id ? { ...d, reviewed_at: new Date().toISOString() } : d));
+    } catch (e) { alert(errorMessage(e)); }
+    setBusyId(null);
+  };
+  const reviewedCount = drafts.filter(d => d.reviewed_at).length;
+  const sendAllReviewed = async () => {
+    if (!window.confirm(`Send ${reviewedCount} reviewed draft${reviewedCount === 1 ? "" : "s"} now?`)) return;
+    setBusyId("all");
+    try {
+      const r = await apiFetch("/milestone-drafts/send-reviewed", { method: "POST" });
+      if (r.failed && r.failed.length) alert(`${r.sent} sent. ${r.failed.length} could not be sent: ${r.failed.map(f => f.error).join("; ")}`);
+      await load();
     } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
@@ -960,15 +982,21 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Milestone Drafts</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Drafts to review</h2>
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
-          Drafted emails for donors who just crossed a giving threshold or hit a giving anniversary. Nothing sends until you approve it here.
+          Emails Steward drafted for a milestone, an anniversary or a workflow you turned on. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
+        {reviewedCount > 0 && (
+          <button data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
+            style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+            {busyId === "all" ? "Sending…" : `Send all reviewed (${reviewedCount})`}
+          </button>
+        )}
       </div>
 
       {drafts.length === 0 && (
         <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          Nothing waiting on you. When a donor crosses a milestone or a giving anniversary, the draft will be sitting right here for your eyes first — nothing ever sends itself.
+          Nothing waiting on you. When a donor crosses a milestone, hits a giving anniversary or sets off a workflow, the draft waits here for you. Nothing sends itself.
         </div>
       )}
 
@@ -978,6 +1006,10 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
             <div>
               <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{d.donor_name}</div>
               <div style={{ fontSize: 12, color: T.ink3 }}>{d.donor_email} · {fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
+                {d.source && d.source.startsWith("workflow:") ? "Drafted by a workflow" : "Milestone draft"}
+                {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
+              </div>
             </div>
             <div style={{ fontSize: 11, color: T.ink3 }}>{new Date(d.created_at).toLocaleDateString()}</div>
           </div>
@@ -999,8 +1031,9 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => send(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                  {busyId === d.id ? "Sending…" : "Approve & Send"}
+                  {busyId === d.id ? "Sending…" : "Send"}
                 </button>
+                {!d.reviewed_at && <button onClick={() => markReviewed(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Mark reviewed</button>}
                 <button onClick={() => startEdit(d)} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Edit</button>
                 <button onClick={() => dismiss(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Dismiss</button>
               </div>
@@ -1066,7 +1099,7 @@ function EmailToolPanel({ onNavigate }) {
             in step, and the campaigns you have already sent will appear here.
           </div>
           {onNavigate && (
-            <button onClick={() => onNavigate("settings", { tab: "connections" })}
+            <button onClick={() => onNavigate("settings", { section: "connections" })}
               style={{ marginTop: 14, background: T.green, color: "#fff", border: "none", borderRadius: 8,
                        padding: "9px 16px", fontWeight: 600, cursor: "pointer" }}>
               Open Connections
@@ -1701,7 +1734,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     // Steward only reports on, and running them together would suggest she
     // could resend one from here.
     { id: "emailtool",  label: "Your email tool", icon: "◌" },
-    { id: "milestones", label: "Milestone Drafts", icon: "✦" },
+    { id: "milestones", label: "Drafts to review", icon: "✦" },
   ];
 
   // ── Audience tab segments ───────────────────────────────────────────────────

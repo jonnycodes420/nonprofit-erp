@@ -15,9 +15,12 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
+const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../auditTrail");
+const auditMw = require("../middleware/auditTrail");
 // FIX-11 Part 3 — the bookkeeper's two files. Pure: grouping, the fee line,
 // the net and the assertion that the deposits foot (depositsFile.js), and the
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
@@ -37,7 +40,7 @@ const reportHooks = {};
 function mount(ctx) {
 const {
   ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
-  Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
+  CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
   MB_READY, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, PHOTO_FETCH_BUDGET, PT_READY, RB_READY,
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
@@ -781,7 +784,7 @@ async function calcWealthScore(donorId, orgId) {
     const avgGiftAmt = gc > 0 ? Math.round(total / gc) : 0;
     let rationale = `${d.name} scored ${finalScore}/10 based on ${gc} gift${gc !== 1 ? "s" : ""} totaling $${total.toLocaleString()} and ${interactions.length} recorded touchpoints.`;
     try {
-      const client = new Anthropic();
+      const client = anthropicFor(orgId);
       const msg = await client.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 130,
@@ -1028,7 +1031,7 @@ app.post("/me/password", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
@@ -1043,7 +1046,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 // about: portfolio gifts / task assignments / daily task reminder". Default on.
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder" };
+  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder", meetingBrief: "notify_meeting_brief" };
   const sets = [], params = [];
   for (const [k, col] of Object.entries(map)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
@@ -1051,7 +1054,7 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
-  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id=?", [req.user.userId]);
+  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id=?", [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
@@ -2457,18 +2460,9 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
 // open task assignments) are released. DELETE-shaped, so per the standing
 // convention it is deliberately NOT checkWriteAccess-gated.
 // BUILD-93 Part 2 — every user removal, and every REFUSED removal, leaves an
-// actor behind. Append-only; a write failure is logged and never fails the
-// action it records (an audit row is evidence, not a permission).
-async function auditUserAdmin(orgId, action, target, actor, detail) {
-  await run(
-    `INSERT INTO user_admin_audit (id, org_id, action, target_user_id, target_email, target_role,
-                                   actor_user_id, actor_email, detail)
-     VALUES (?,?,?,?,?,?,?,?,?)`,
-    ["uaa_" + uuid().slice(0, 8), orgId, action, target.id, target.email || null,
-     target.is_super_admin ? "super_admin" : (target.role || null),
-     actor?.userId || null, actor?.email || null, detail ? JSON.stringify(detail) : null]);
-}
-
+// actor behind. FIX-12 Part 5: that row is the audit middleware's (one audit
+// write); this route only names it. The refusals are logged because
+// auditTrail.js marks DELETE /users/:id with logFailures.
 app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { orgId } = req.user;
   const [target] = await query(
@@ -2478,8 +2472,10 @@ app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // Everything that refuses below is RECORDED, not just returned. A refusal is
   // an attempt, and an attempt on a super-admin is the thing you most want to
   // find afterwards.
+  req.audit.entity("user", target.id);
+  req.audit.before({ role: target.is_super_admin ? "super_admin" : (target.role || null) });
   const refuse = async (status, error, message) => {
-    await auditUserAdmin(orgId, "refused", target, req.user, { error }).catch(() => {});
+    req.audit.after({ refused: error });
     return res.status(status).json({ error, message });
   };
 
@@ -2520,8 +2516,7 @@ app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // TTL, same as a password reset).
   await run("UPDATE users SET deactivated_at=NOW(), sessions_valid_after=NOW() WHERE id=? AND org_id=?", [target.id, orgId]);
   await require("../twoFactor").revokeSessions("user_id=?", [target.id], req.user.userId).catch(() => {});   // SEC-1
-  await auditUserAdmin(orgId, "removed", target, req.user, null).catch(e =>
-    console.error("[user-removal] audit write failed (removal stands):", e.message));
+  req.audit.action("removed from the team"); req.audit.after({ removed: true });
   // Release operational attachments — assignment is portfolio/board membership
   // (BUILD-30), and a removed officer's donors go back to the Directory
   // unassigned rather than orbiting a ghost. Authorship (created_by) is
@@ -6873,7 +6868,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
       error: "reading_unavailable",
       reason: gate.reason,
       message: gate.reason === "ai_disabled"
-        ? "Reading cheque photographs is turned off for this organisation. You can turn it back on in Settings."
+        ? AI_OFF_MESSAGE + ". You can turn it back on in Settings, or type the cheques in."
         : "Reading cheque photographs is not enabled yet.",
     });
   }
@@ -6884,7 +6879,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
     strict: true,
     input_schema: cr.CHEQUE_READ_SCHEMA,
   };
-  const client = new Anthropic();
+  const client = anthropicFor(req.user.orgId);
   const money = c => "$" + (c / 100).toFixed(2);
 
   async function readOne(item) {
@@ -10811,7 +10806,8 @@ app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess
   // THE ABSENCE HAS A NAME. No key configured is Steward's state, not the org's,
   // and the honest answer is that the control is unavailable — never a 500 and
   // never an invented brief.
-  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason });
+  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason,
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -10837,7 +10833,7 @@ app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess
 
   let raw = null, err = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: AGENT_MODEL, max_tokens: 2000, system,
       tools: [{ name: "brief", description: "The one-page brief she reads in the car.", strict: true, input_schema: B.BRIEF_SCHEMA }],
@@ -12710,7 +12706,8 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
   if (!ctx) return res.status(404).json({ error: "Grant not found" });
 
   const gate = await agentGate(orgId);
-  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason });
+  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason,
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -12745,7 +12742,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
 
   let raw = null, err = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: AGENT_MODEL, max_tokens: 2000, system,
       tools: [{ name: "outline", description: "The report outline a human writes the report from.", strict: true, input_schema: O.OUTLINE_SCHEMA }],
@@ -13104,7 +13101,12 @@ async function auditQuery(req) {
   const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
   let sql = `SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE org_id = ?`;
   const params = [req.user.orgId];
-  if (actor) { sql += " AND (user_id = ? OR user_name = ?)"; params.push(actor, actor); }
+  // FIX-12 Part 4: rows from FIX-12 on carry the actor's id, not a name, so a
+  // name chosen in the filter also matches the ids of the people it names.
+  if (actor) {
+    sql += " AND (user_id = ? OR user_name = ? OR user_id IN (SELECT id FROM users WHERE org_id = ? AND (name = ? OR email = ?)))";
+    params.push(actor, actor, req.user.orgId, actor, actor);
+  }
   if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
   if (action) { sql += " AND action = ?"; params.push(action); }
   if (from) { sql += " AND created_at >= ?::date"; params.push(from); }
@@ -13117,13 +13119,15 @@ async function auditQuery(req) {
   // acted and the record id, rather than making her know which field it is in.
   if (search && String(search).trim()) {
     sql += ` AND (entity_label ILIKE ? OR user_name ILIKE ? OR entity_id = ? OR summary ILIKE ?
-                  OR after_fields::text ILIKE ? OR before_fields::text ILIKE ?)`;
+                  OR after_fields::text ILIKE ? OR before_fields::text ILIKE ?
+                  OR entity_id IN (SELECT id FROM donors WHERE org_id = ? AND erased_at IS NULL AND name ILIKE ?)
+                  OR user_id IN (SELECT id FROM users WHERE org_id = ? AND (name ILIKE ? OR email ILIKE ?)))`;
     const like = "%" + String(search).trim() + "%";
-    params.push(like, like, String(search).trim(), like, like, like);
+    params.push(like, like, String(search).trim(), like, like, like, req.user.orgId, like, req.user.orgId, like, like);
   }
   sql += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?";
   params.push(limit, offset);
-  return query(sql, params);
+  return auditMw.resolveAuditNames(await query(sql, params), req.user.orgId);
 }
 
 // Which record a row opens. A voided gift and a deleted donor still open,
@@ -13163,8 +13167,11 @@ app.get("/audit/log", requireAuth, requireAdmin, wrap(async (req, res) => {
     `SELECT
        (SELECT COALESCE(JSON_AGG(DISTINCT entity_type), '[]') FROM fin_audit_log WHERE org_id=? AND entity_type IS NOT NULL) AS types,
        (SELECT COALESCE(JSON_AGG(DISTINCT action),      '[]') FROM fin_audit_log WHERE org_id=? AND action IS NOT NULL) AS actions,
-       (SELECT COALESCE(JSON_AGG(DISTINCT user_name),   '[]') FROM fin_audit_log WHERE org_id=? AND user_name IS NOT NULL) AS actors`,
-    [req.user.orgId, req.user.orgId, req.user.orgId]);
+       (SELECT COALESCE(JSON_AGG(DISTINCT n), '[]') FROM (
+          SELECT user_name AS n FROM fin_audit_log WHERE org_id=? AND user_name IS NOT NULL
+          UNION SELECT COALESCE(u.name, u.email) FROM users u
+           WHERE u.org_id=? AND u.id IN (SELECT user_id FROM fin_audit_log WHERE org_id=? AND user_name IS NULL)) x) AS actors`,
+    [req.user.orgId, req.user.orgId, req.user.orgId, req.user.orgId, req.user.orgId]);
   res.json({
     coverage: AUDIT_COVERAGE,
     rows: rows.map(auditRowOut),
@@ -13179,8 +13186,8 @@ app.get("/audit/log", requireAuth, requireAdmin, wrap(async (req, res) => {
 // ONE ROW of history, for the "what changed?" panel. Scoped to the org like
 // everything else.
 app.get("/audit/log/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const rows = await query(`SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE id=? AND org_id=?`,
-    [req.params.id, req.user.orgId]);
+  const rows = await auditMw.resolveAuditNames(await query(`SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE id=? AND org_id=?`,
+    [req.params.id, req.user.orgId]), req.user.orgId);
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   res.json(auditRowOut(rows[0]));
 }));
@@ -17029,6 +17036,9 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const activeGrants    = allGrants.filter(g => g.status === "active");
   const pipelineGrants  = allGrants.filter(g => ["prospecting", "pending"].includes(g.status));
   const wonThisQ        = allGrants.filter(g => g.status === "active" && toDs(g.updated_at) >= qMs);
+  // FIX-12: `now` lived in server.js's scope before the FIX-1 split and was
+  // never brought across, so every board report died here with a ReferenceError.
+  const now             = new Date();
   const thirty          = new Date(now); thirty.setDate(thirty.getDate() + 30);
   const upcomingDL      = allGrants.filter(g => {
     if (!g.deadline || g.status === "closed") return false;
@@ -17056,7 +17066,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
 
   // AI Executive Summary
   console.log("[board-report] step 7: calling Claude API...");
-  const client = new Anthropic();
+  const client = anthropicFor(orgId);
   let execSummary = "";
   try {
     const msg = await client.messages.create({
@@ -19191,8 +19201,9 @@ app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req,
   const { subject, body } = req.body;
   if (!subject || !body) return res.status(400).json({ error: "subject and body required" });
   const affected = await run(
-    "UPDATE milestone_drafts SET subject=?, body=? WHERE id=? AND org_id=? AND status='pending_review'",
-    [subject, body, req.params.id, req.user.orgId]
+    // Saving her own edit is reviewing it: she has just read every word.
+    "UPDATE milestone_drafts SET subject=?, body=?, reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [subject, body, actor(req).id, actor(req).name, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
   const rows = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
@@ -19208,47 +19219,78 @@ app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => 
   res.json({ success: true });
 }));
 
-app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const drafts = await query(
-    "SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'",
-    [req.params.id, req.user.orgId]
-  );
-  if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
-  const draft = drafts[0];
-
+// One send of one draft, by the person who pressed the button. Used by the
+// single "Send" and by "Send all reviewed", so the two cannot drift apart.
+// FIX-12 Part 2: workflow recipes' emails arrive here as drafts too.
+async function sendMilestoneDraft(req, draft) {
   const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
   const donor = donorRows[0];
-  if (!donor || !donor.email) return res.status(400).json({ error: "Donor has no email on file" });
+  if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };
 
   const decision = await donorMailDecision("milestone", donor.email, req.user.orgId);
-  if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` });
+  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
-  const smtpFrom = await donorFromAddress(req.user.orgId); // BUILD-64: org name in the inbox
   if (process.env.RESEND_API_KEY) {
-    const bodyHtml = `<p>${draft.body.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
+    const bodyHtml = `<p>${escapeHtml(draft.body).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
       + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
     try {
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(req.user.orgId, donor.email, "sequence")),
         to: donor.email, subject: draft.subject, html: bodyHtml,
       });
-      if (sendErr) return res.status(502).json({ error: `Send failed: ${sendErr.message}` });
+      if (sendErr) return { status: 502, error: `Send failed: ${sendErr.message}` };
     } catch (e) {
-      return res.status(502).json({ error: `Send failed: ${e.message}` });
+      return { status: 502, error: `Send failed: ${e.message}` };
     }
   }
 
+  const who = actor(req);
   await run(
-    "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=? WHERE id=?",
-    [req.user.userId, draft.id]
+    "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=?, reviewed_by_name=COALESCE(reviewed_by_name, ?) WHERE id=?",
+    [req.user.userId, who.name, draft.id]
   );
   const today = new Date().toISOString().slice(0, 10);
   await run(
-    "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `Milestone email: ${draft.subject}`, today]
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)",
+    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name]
   ).catch(() => {});
+  return { status: 200 };
+}
 
+app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const drafts = await query(
+    "SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
+  const r = await sendMilestoneDraft(req, drafts[0]);
+  if (r.status !== 200) return res.status(r.status).json({ error: r.error });
   res.json({ success: true });
+}));
+
+// She read it and the words are right. Not sent: that is still her press.
+app.post("/milestone-drafts/:id/reviewed", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const who = actor(req);
+  const { changes } = await run(
+    "UPDATE milestone_drafts SET reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [who.id, who.name, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found or already sent" });
+  res.json({ success: true });
+}));
+
+// "Send all reviewed": every draft somebody marked reviewed, and nothing else.
+// One press by one person; each draft is still checked against the mail rules.
+app.post("/milestone-drafts/send-reviewed", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const drafts = await query(
+    "SELECT * FROM milestone_drafts WHERE org_id=? AND status='pending_review' AND reviewed_at IS NOT NULL ORDER BY created_at ASC LIMIT 200",
+    [req.user.orgId]);
+  let sent = 0; const failed = [];
+  for (const d of drafts) {
+    const r = await sendMilestoneDraft(req, d);
+    if (r.status === 200) sent++; else failed.push({ id: d.id, error: r.error });
+  }
+  req.audit && req.audit.action(`sent ${sent} reviewed draft${sent === 1 ? "" : "s"}`);
+  res.json({ sent, failed });
 }));
 
 // ── Personal-note reminders (non-AI-drafted sibling of milestone_drafts) ───
@@ -19319,17 +19361,14 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
 
   let transcript;
+  // FIX-12 Part 3: the recording goes to OpenAI only through the one AI door,
+  // which refuses when the org has AI turned off.
+  try { await requireAi(req.user.orgId, "openai"); }
+  catch (e) { if (e instanceof AiOffError) return res.status(403).json({ error: AI_OFF_MESSAGE, code: "ai_off" }); throw e; }
   try {
     const audioBuffer = Buffer.from(audioBase64, "base64");
     const ext = (mimeType || "").includes("mp4") ? "mp4" : (mimeType || "").includes("wav") ? "wav" : "webm";
-    const form = new FormData();
-    form.append("file", new Blob([audioBuffer], { type: mimeType || "audio/webm" }), `memo.${ext}`);
-    form.append("model", "whisper-1");
-    const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: form,
-    });
+    const whisperResp = await transcribeAudio(req.user.orgId, { audioBuffer, mimeType, ext });
     if (!whisperResp.ok) {
       const errText = await whisperResp.text();
       console.error("[voice-memo] Whisper error:", whisperResp.status, errText);
@@ -19347,7 +19386,7 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   // Single narrow extraction pass — not a general chatbot, one specific job.
   let suggestedDetail = null, suggestedAction = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(req.user.orgId);
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 200,
@@ -19657,6 +19696,7 @@ function mapNotifyPrefs(row) {
     dailyTasks: row?.notify_daily_tasks !== false,
     threadNudge: row?.notify_thread_nudge !== false,
     stepReminder: row?.notify_step_reminder !== false,
+    meetingBrief: row?.notify_meeting_brief === true,   // FIX-12 Part 7a: off unless she turns it on
   };
 }
 

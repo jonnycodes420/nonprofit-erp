@@ -681,7 +681,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               Delete {selFiltered.length} donor{selFiltered.length!==1?"s":""}?
             </div>
             <div style={{fontSize:14,color:T.ink3,lineHeight:1.65,marginBottom:28}}>
-              This removes {selFiltered.length} donor{selFiltered.length!==1?"s":""} and their gift history from your active lists. You can restore them later from trash.
+              This removes {selFiltered.length} donor{selFiltered.length!==1?"s":""} and their gift history from your active lists. Steward keeps the records, so support can bring them back if this was a mistake. There is no trash screen to restore them from yourself.
             </div>
             <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
               <button onClick={()=>setDelModal(false)}

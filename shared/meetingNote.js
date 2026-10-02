@@ -30,6 +30,70 @@ const WORDS_TO_N = { two: 2, three: 3, four: 4, five: 5, six: 6, twelve: 12 };
  * @param ctx    { funds: [{id, name}], openAsk: {amount, fundId, fundName}|null }
  * @returns [{ kind: "pledge"|"gift"|"fund"|"next", label, amount?, payments?, fundId?, text?, quote }]
  */
+// ── FIX-12 Part 7b — THE ENGINE'S CHIPS, HELD TO THE READER'S RULE ─────────
+// The Agent engine reads the note now (through aiClient.js, so the org's AI
+// switch is asked first), and this reader is the fallback when AI is off or
+// the model returns nothing usable. The rule does not change with the reader:
+// a chip must point to her own words. validateNoteChips drops any chip whose
+// quote is not in the note, whose amount is not in its quote, or whose fund is
+// not one of the org's.
+export const NOTE_CHIP_TOOL = {
+  name: "suggest_chips",
+  description: "Return the chips this meeting note supports. Every chip quotes the note.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chips: { type: "array", items: { type: "object", properties: {
+        kind: { type: "string", enum: ["pledge", "gift", "fund", "next"] },
+        quote: { type: "string", description: "The exact words from the note this chip comes from." },
+        amount: { type: "number" }, payments: { type: "integer" },
+        fundId: { type: "string" }, text: { type: "string" },
+      }, required: ["kind", "quote"] } },
+    },
+    required: ["chips"],
+  },
+};
+
+export function buildNoteChipPrompt(note, { funds = [], openAsk = null } = {}, systemPrompt = "") {
+  return {
+    system: systemPrompt,
+    messages: [{ role: "user", content:
+      `Funds (id: name):\n${funds.map(f => `${f.id}: ${f.name}`).join("\n") || "(none)"}\n`
+      + `${openAsk ? `Open ask: $${openAsk.amount}${openAsk.fundName ? " for " + openAsk.fundName : ""}\n` : ""}`
+      + `\nHer note:\n"""${String(note || "").slice(0, 4000)}"""` }],
+  };
+}
+
+export function validateNoteChips(chips, note, { funds = [] } = {}) {
+  const text = String(note || "");
+  const lower = text.toLowerCase();
+  const fundIds = new Map(funds.map(f => [f.id, f]));
+  const out = [];
+  for (const c of Array.isArray(chips) ? chips : []) {
+    const quote = String(c && c.quote || "").trim();
+    if (!quote || !lower.includes(quote.toLowerCase())) continue;
+    if (c.kind === "pledge" || c.kind === "gift") {
+      const m = quote.match(new RegExp(AMOUNT));
+      const amt = m ? parseAmount(m[1], m[2]) : null;
+      if (!amt || Math.abs(amt - Number(c.amount)) > 0.005) continue;
+      const payments = c.kind === "pledge" ? Math.max(1, Math.min(60, parseInt(c.payments, 10) || 1)) : undefined;
+      out.push(c.kind === "pledge"
+        ? { kind: "pledge", amount: amt, payments, label: `Pledge $${amt.toLocaleString("en-US")}${payments > 1 ? ` in ${payments} payments` : ""}`, quote }
+        : { kind: "gift", amount: amt, label: `Gift $${amt.toLocaleString("en-US")}`, quote });
+    } else if (c.kind === "fund") {
+      const f = fundIds.get(c.fundId);
+      if (!f) continue;
+      out.push({ kind: "fund", fundId: f.id, label: f.name, quote });
+    } else if (c.kind === "next") {
+      const t = String(c.text || quote).trim().replace(/\.$/, "").slice(0, 300);
+      if (t) out.push({ kind: "next", text: t, label: "Next step from your note", quote });
+    }
+  }
+  // One of each kind, the first the model gave: the form has one of each.
+  const seen = new Set();
+  return out.filter(c => (seen.has(c.kind) ? false : (seen.add(c.kind), true)));
+}
+
 export function suggestFromNote(note, ctx = {}) {
   const text = String(note || "");
   const low = text.toLowerCase();

@@ -2860,6 +2860,19 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </div>
             <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
           </div>
+        ):stripe?.onboardingStarted?(
+          <div data-testid="stripe-unfinished" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{stripe.checked?"Stripe setup isn't finished":"Steward couldn't check with Stripe just now"}</div>
+              <div style={{fontSize:13,color:T.ink2}}>{stripe.checked
+                ?"Your Stripe account exists, but Stripe can't take donations on it until onboarding is complete. Finish it on Stripe's site; it picks up where you left off."
+                :"Your Stripe account was set up on "+(stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
+            </div>
+            {isAdmin&&stripe.checked&&<button onClick={connectStripe} disabled={stripeLoading}
+              style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
+              {stripeLoading?"Opening…":"Finish setting up Stripe →"}
+            </button>}
+          </div>
         ):(
           <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:200}}>
@@ -3166,8 +3179,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"20px 24px"}}>
           <SectionLabel>Reading and drafting</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6,maxWidth:560}}>
-            Cheque photographs are read by Anthropic to suggest an amount, and Steward&apos;s agent drafts
-            from your records through Anthropic. Nothing is entered or sent until you confirm it.
+            Steward&apos;s AI features send what each one needs to Anthropic: cheque photographs to suggest an
+            amount, and your records for drafts, briefs, scores, board summaries and Ask Steward. Voice memos
+            are transcribed by OpenAI, which receives the recording only. Nothing is entered or sent until
+            you confirm it. This one switch covers all of them.
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <button data-testid="settings-ai-toggle"
@@ -3180,8 +3195,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </button>
             <span style={{fontSize:12.5,color:T.ink3}}>
               {aiStatus.enabled
-                ? "Turn this off and Steward stops sending anything to Anthropic. Cheque photographs still attach to each line."
-                : "Off. Cheque photographs still attach to each line; Steward will not read them or draft from your records."}
+                ? "Turn this off and Steward sends nothing to Anthropic or OpenAI. Cheque photographs still attach to each line."
+                : "AI is turned off for your organization. Cheque photographs still attach to each line, and nothing is sent to Anthropic or OpenAI."}
             </span>
           </div>
           {!isAdmin&&(
@@ -3400,11 +3415,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
           // BUILD-84 — the timed step reminder lives in the SAME list as the
           // nudge, per-user, default on. Not a second notification screen.
+          // FIX-12 Part 7a — off by default; to her own address only.
+          {key:"meetingBrief",label:"Your meetings today",hint:"Off unless you tick it. One morning email to you only, with the same meeting briefs Home shows. None on a day with no meetings."},
           {key:"stepReminder",label:"Next steps with a time",hint:"When you give a next step a time, one email arrives at that time with the donor and a button to log what happened. Steps with no time stay in The Thread email instead."},
         ].map(row=>(
           <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
             <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
-              checked={notifyPrefs?!!notifyPrefs[row.key]:true}
+              checked={notifyPrefs?!!notifyPrefs[row.key]:row.key!=="meetingBrief"}
               onChange={()=>toggleNotifyPref(row.key)}
               style={{width:16,height:16,marginTop:2,cursor:notifyPrefs?"pointer":"default",accentColor:T.greenMid}}/>
             <div>

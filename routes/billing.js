@@ -2326,21 +2326,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM custom_fields WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM custom_field_events WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM custom_field_defs WHERE org_id=?", [orgId]).catch(() => {});
-  // FIX-11 Part 1 — the audit log is append-only and the database enforces it
-  // (db.js: trg_audit_append_only). Closing an account erases the whole
-  // organisation, its history included, and that is the ONE path allowed to
-  // remove an audit row. It says so out loud: the flag below is what the
-  // trigger looks for, it is transaction-local, and no request-handling code
-  // sets it anywhere else.
-  // The flag and the delete must be ONE connection, which is the only reason
-  // this is a transaction: `set_config` is per-session and the pool hands out
-  // a different session per query, so a flag set by `run()` would land on a
-  // connection the delete never sees. `true` makes it transaction-local, so it
-  // unsets itself whatever happens next.
-  await withTransaction(async c => {
-    await c.query("SELECT set_config('steward.audit_purge','on',true)");
-    await c.query("DELETE FROM fin_audit_log WHERE org_id=$1", [orgId]);
-  }).catch(e => console.error("[close-account] audit rows not purged:", e.message));
+  // FIX-12 Part 5 — the audit rows are NOT deleted with the org. The log
+  // promises seven years, and the org's history is exactly what somebody may
+  // need after the org is gone. fin_audit_log has no foreign key to orgs any
+  // more, so the org row below can go while its history stays.
   await run("DELETE FROM budgets WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_transactions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM fin_funds WHERE org_id=?", [orgId]).catch(() => {});
@@ -2396,7 +2385,8 @@ const DANGLING_USER_REF_CHECKS = [
   { table: "milestone_drafts", col: "reviewed_by" },
   { table: "note_reminders", col: "sent_by" },
   { table: "board_reports", col: "generated_by" },
-  { table: "fin_audit_log", col: "user_id" },
+  // fin_audit_log is NOT here: a removed user's id in the log is the point of
+  // the log (FIX-12), and the append-only trigger would refuse the fix anyway.
   { table: "ai_log", col: "user_id" },
   { table: "invites", col: "invited_by" },
 ];

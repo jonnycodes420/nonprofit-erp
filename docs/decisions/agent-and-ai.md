@@ -3,6 +3,13 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **Every model call goes through `aiClient.js`, and it asks the org's AI switch first.** `anthropicFor(orgId)`
+  for Anthropic, `transcribeAudio(orgId, …)` for OpenAI. No `new Anthropic()`, `@anthropic-ai/sdk` or provider
+  URL anywhere else in the server; `tests/fix12-ai-switch.test.js` fails on one and proves zero calls with the
+  switch off. Off reads "AI is turned off for your organization" and takes the non-AI path where one exists. (FIX-12)
+- **A workflow recipe never emails a donor. Steward drafts it; a person sends it.** Recipe emails land in
+  `milestone_drafts` (Communications → Drafts to review: Send, Mark reviewed, Send all reviewed). A leftover
+  `send_email` action drafts too. Pinned by `tests/fix12-recipe-drafts.test.js`. (FIX-12)
 - **Every waiting item has a door, and the door is not a send.** `POST /agent/waiting/:kind/:id/
   approve` and `/skip` dispatch to the path that already exists for each kind, so there is no
   second place a thank-you can be marked sent. Approve on a thank-you logs the interaction in
@@ -97,7 +104,7 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
 - **Reserve the run row first (`ON CONFLICT (workflow_id, dedup_key) DO NOTHING`), keyed on the event's
   natural cycle id, and wrap each action so one failure does not abort the rest.** (BUILD-13)
 - **Fire workflows fire-and-forget from webhooks; `recurring_failed` fires only on a new failure cycle.**
-  Recipe #1's day-0 send advances `dunning_step` so dunning does not also send. (BUILD-13)
+  Recipe #1 now drafts rather than sends (FIX-12), so dunning's own day-0 email always goes. (BUILD-13)
 - **When automation gives up, hand over to a human with a thread, never silence.**
   `openSustainerLapseThread` opens one when the dunning cadence is exhausted. (Recurring recovery 2026-09-11)
 - **Do not build the visual workflow canvas without new direction.** (BUILD-13)

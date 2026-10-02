@@ -72,6 +72,8 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
 - **The demo is its own org.** Only `scripts/seed-demo.js` writes `org_b72demo`; no suite logs
   in to it or names it. `org_creo` is the boot-seed fixture org with a fabricated legal
   identity: never write to it on prod, and a real CREO onboards as a fresh org.
+- **Never kill processes by name or pattern** (no `pkill -f`, no `killall`). Stop only the PIDs
+  you started; another session's server or watcher may share the name.
 - **Separate database per worktree.** Each worktree gets its own database on the scratch
   Postgres (:5544) and its own port block. Never share a database or a suite-log folder with
   another session. Pass `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag>`.

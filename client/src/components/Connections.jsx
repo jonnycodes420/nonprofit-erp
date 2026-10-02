@@ -581,7 +581,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                 <button style={{ ...btn(true), marginLeft: "auto" }} data-testid="connection-connect"
                   data-action={c.action}
                   onClick={() => onNavigate && onNavigate("settings",
-                    c.action === "import" ? "imports" : "integrations")}>{c.actionLabel}</button>
+                    { section: c.action === "import" ? "imports" : "integrations" })}>{c.actionLabel}</button>
               ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
@@ -606,7 +606,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                   {!part.connected && part.action && !isReadOnly && isAdmin && (
                     <button style={{ ...btn(false), marginLeft: "auto" }}
                       data-testid="connection-part-connect" data-part-action={part.key}
-                      onClick={() => onNavigate && onNavigate("settings", "integrations")}>
+                      onClick={() => onNavigate && onNavigate("settings", { section: "integrations" })}>
                       {part.actionLabel || "Connect"}
                     </button>)}
                 </div>))}

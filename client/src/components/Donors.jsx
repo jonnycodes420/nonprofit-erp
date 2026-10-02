@@ -412,7 +412,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   };
 
   const deleteDonor=async(id)=>{
-    if(!window.confirm("Delete this donor? This cannot be undone."))return;
+    // FIX-12 (HELP-1 list): delete is a soft delete, so "cannot be undone" was untrue.
+    if(!window.confirm("Delete this donor? They come off your lists and totals now. Steward keeps the record, so support can bring it back if this was a mistake. To remove someone for good, use Erase on their profile."))return;
     try{
       await apiFetch(`/donors/${id}`,{method:"DELETE"});
       setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));

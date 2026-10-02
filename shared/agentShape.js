@@ -848,7 +848,7 @@ export function draftingState({ configured = false, enabled = true, paused = fal
   const who = namesInSentence(admins);
   const whoCan = who ? `Only an admin can turn drafting on: ${who}.` : "Only an admin can turn drafting on.";
   const sentence = reason === "ai_no_key" ? KEY_MISSING_SENTENCE
-    : reason === "ai_disabled" ? "Drafting is turned off here."
+    : reason === "ai_disabled" ? "AI is turned off for your organization."
     : reason === "agent_paused" ? "Steward is paused. Turn it back on in Guardrails."
     : "Drafting is on.";
   return { on: reason === null, reason, sentence, canNow: DRAFTING_CAN_NOW, adds: DRAFTING_ADDS,

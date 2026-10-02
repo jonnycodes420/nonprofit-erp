@@ -397,7 +397,15 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     // Connected means Stripe Connect is finished OR money has demonstrably come
     // through this path. A card that says "not connected" above forty gifts it
     // took last month is a card nobody believes again.
-    const connected = !!(org && org.stripe_connected && org.stripe_account_id) || b.gifts30 > 0;
+    // FIX-12 (HELP-1 list): stripe_connected is set when onboarding STARTS, so
+    // "finished" is asked of Stripe (charges_enabled). If Stripe cannot be
+    // reached the flag stands, as it did before.
+    let finished = !!(org && org.stripe_connected && org.stripe_account_id);
+    if (finished && stripe) {
+      try { finished = (await stripe.accounts.retrieve(org.stripe_account_id)).charges_enabled === true; }
+      catch (e) { /* unreachable: keep the flag */ }
+    }
+    const connected = finished || b.gifts30 > 0;
     cards.push(stripeCard = {
       id: "own_stripe", kind: "own_stripe", provider: "stripe", label: "Stripe",
       subtitle: "Two things live here: the gifts your giving pages take, and the history Stripe already holds.",

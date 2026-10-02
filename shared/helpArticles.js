@@ -16,6 +16,7 @@ export const HELP_ARTICLES = [
         `Home opens with today's date and a greeting. Below it are sections, in this order unless you change it: "Set up Steward" (a checklist while you are getting started), The Thread, Drift, monthly gifts that need you, thank-yous ready, Sequences, and "Tell Steward what to do".`,
         `The Thread shows "First thing": one person and their next step. Drift lists donors who have gone quiet past their own giving pattern. The right rail, "Today", has three tiles: "Open follow-ups", "Due today" and the monthly givers whose card failed this week. Click a tile to see the people behind it.`,
         `If you have connected a calendar and have meetings today, a short brief for each one appears at the top.`,
+        `After a meeting, type what happened and Steward reads your note for a pledge, a gift, a fund and a next step, shown under "Steward heard". Each one quotes your own words, and nothing is recorded until you press save. With AI turned off, a simpler reader does the same job and says so. You can also get these meeting briefs by email each morning: tick "Your meetings today" in Settings, under Account.`,
       ]},
       { h: `Work through The Thread`, steps: [
         `Read the person and the step under "First thing".`,
@@ -81,7 +82,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Act on several people at once`, steps: [
         `Click "Select" and tick the rows you want.`,
-        `Choose "Plan a follow-up". On the Team plan you also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete".`,
+        `Choose "Plan a follow-up". On the Team plan you also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete". "Delete" takes a donor off your lists and totals; Steward keeps the record, so support can bring it back. To remove a person for good, use Erase on their profile.`,
       ]},
       { h: `Good to know`, p: [
         `"Export CSV" exports what the search and the stage, owner and designation menus match. The advanced filters only narrow the page you are looking at, and a badge says so. To bring people in from a file, see Import donors.`,
@@ -125,7 +126,7 @@ export const HELP_ARTICLES = [
     summary: `Communications is where you write and send email campaigns, build sequences and approve milestone emails.`,
     sections: [
       { h: `What you see`, p: [
-        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool and Milestone Drafts. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
+        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool and Drafts to review. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
       ]},
       { h: `Send a campaign`, steps: [
         `Open Campaigns and click "+ New Campaign". Start from a template with "Use this →" or from blank.`,
@@ -143,8 +144,9 @@ export const HELP_ARTICLES = [
         `Click "Save, and leave it off".`,
         `Click "Preview" to read it, then "Turn on" and "Turn it on" when you are ready. "Turn off" stops it.`,
       ]},
-      { h: `Milestone Drafts`, p: [
-        `Nothing here sends until you approve it. Each draft has "Approve & Send", "Edit" and "Dismiss".`,
+      { h: `Drafts to review`, p: [
+        `Steward drafts it. You send it. Emails Steward drafts for a giving milestone, an anniversary or a workflow you turned on wait here, and nothing goes to a donor until somebody sends it.`,
+        `Each draft has "Send", "Mark reviewed", "Edit" and "Dismiss". Saving an edit also marks it reviewed. "Send all reviewed" sends every draft marked reviewed, and only those.`,
       ]},
       { h: `Good to know`, p: [
         `Your email tool reports on sends from Mailchimp or Constant Contact once connected. It cannot resend them. "Email This Segment →" on Audience opens a blank campaign, so pick the segment again in the campaign.`,
@@ -260,7 +262,7 @@ export const HELP_ARTICLES = [
         `Lists the open deadlines for the next twelve months. When one is near, a follow-up opens for the grant's officer. Admins can change how early that happens under "How early Steward reminds you" and "Save lead times".`,
       ]},
       { h: `Good to know`, p: [
-        `The board and the list use different stage names. Awarded and LOI can only be set by dragging a card on the board. "Delete" on a grant is for admins and removes it at once, with no confirm.`,
+        `The board and the list use different stage names. Awarded and LOI can only be set by dragging a card on the board. "Delete" on a grant is for admins. It asks you to confirm, then removes the grant for good.`,
         `There is no separate grant report tracker: you set a Report due deadline, and "✦ Report Outline" can draft an outline. To bring grants in from a file, use Donors, "↑ Import & tools ▾", "Import grants".`,
       ]},
     ],
@@ -306,7 +308,7 @@ export const HELP_ARTICLES = [
         `Finance is on the Team plan and is not shown on Core. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
       ]},
       { h: `What you see`, p: [
-        `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
+        `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts and the Deposit sheet, whose "Open the deposit sheet" button opens the slip right there. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
       ]},
       { h: `Log a transaction`, steps: [
         `Open Transactions and click "+ Add transaction".`,
@@ -321,7 +323,7 @@ export const HELP_ARTICLES = [
         `Click "Save".`,
       ]},
       { h: `Good to know`, p: [
-        `Budgets are edited by clicking a cell. In Month close, the download stays greyed out until the month's deposits balance. Year-end statements is a pointer: the run itself is in Settings, under Tax Receipts. To record a bank deposit, use Fundraising, Money in, Deposits, "Add a deposit".`,
+        `Budgets are edited by clicking a cell. In Month close, the download stays greyed out until the month's deposits balance. Year-end statements is a pointer: the run itself is in Settings, under Tax Receipts. To record a bank deposit, use "Open the deposit sheet" here, or Fundraising, Money in, Deposits, "Add a deposit". Both open the same sheet.`,
       ]},
     ],
   },
@@ -374,7 +376,8 @@ export const HELP_ARTICLES = [
         `Click "Approve", or "Skip" and say why if you want.`,
       ]},
       { h: `Workflows`, p: [
-        `Workflows are ready-made recipes you switch on, such as a follow-up when a monthly card fails. Each has "Turn on", its own settings and "View activity". Read a recipe before turning it on: some send a fixed email from your organisation when they fire, without asking each time.`,
+        `Workflows are ready-made recipes you switch on, such as a follow-up when a monthly card fails. Each has "Turn on", its own settings and "View activity".`,
+        `Steward drafts it. You send it. A recipe never emails a donor. When a recipe writes an email (the first-gift thank-you, the failed-card note, the optional re-engagement email), the draft waits in Communications under Drafts to review until somebody reads it and sends it.`,
       ]},
       { h: `Guardrails`, p: [
         `Guardrails lists what Steward may and may not do, every instruction you have given, and every change it made, each with "Undo" for thirty days. "Pause everything" stops it at once. Admins can use "Turn drafting off" or "Turn on drafting".`,
@@ -616,10 +619,10 @@ export const HELP_ARTICLES = [
         `When it says "Your export is ready.", the file downloads. "Download it again" fetches it a second time.`,
       ]},
       { h: `Other things on Your Data`, p: [
-        `"Reading and drafting" turns Steward's AI help on or off for your organisation. Only admins can change it. "Demo Data" loads or clears sample donors so you can try things safely.`,
+        `"Reading and drafting" is the one switch for all of Steward's AI: cheque reading, drafts, briefs, scores, board summaries, Ask Steward and voice memos. Only admins can change it. When it is off, nothing is sent to Anthropic or OpenAI, and each of those features says "AI is turned off for your organization" and shows what it can without AI. "Demo Data" loads or clears sample donors so you can try things safely.`,
       ]},
       { h: `Account`, p: [
-        `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder and The Thread. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,
+        `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder, The Thread, and "Your meetings today", which is off unless you tick it and sends you, and only you, the same meeting briefs Home shows. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,
       ]},
       { h: `Send from your own address`, steps: [
         `Under "Send from your own address", type the address you want mail to come from and click "Use this address". Admins only.`,
@@ -702,10 +705,10 @@ export const HELP_ARTICLES = [
         `On the "Payments" card, click "Set up Stripe →".`,
         `Stripe's own pages open. Fill in your organisation's details and bank account and finish every step.`,
         `Stripe sends you back to Steward's Home screen.`,
-        `Go back to Settings, Integrations. The "Payments" card shows "Stripe Connected" with your account number and the date.`,
+        `Go back to Settings, Integrations. Once Stripe says your account can take donations, the "Payments" card shows "Stripe Connected" with your account number and the date.`,
       ]},
-      { h: `Finish in one sitting`, p: [
-        `The card shows "Stripe Connected" as soon as you start, even if you leave Stripe's pages before the end, and the setup button is then gone. So set aside the time to finish Stripe's steps once you begin.`,
+      { h: `If you stop part way`, p: [
+        `Until Stripe has everything it needs, the card says "Stripe setup isn't finished" and offers "Finish setting up Stripe →", which picks up where you left off on the same account. The "Set this up" button on the Connections Stripe card opens Settings, Integrations, where this card is.`,
       ]},
       { h: `Check it is working`, steps: [
         `Open Settings, then Connections.`,

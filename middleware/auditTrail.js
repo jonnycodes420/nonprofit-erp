@@ -216,7 +216,97 @@ async function readRow(table, id, orgId) {
 // ONE insert, and the only place in the application that inserts an audit row
 // for a request. The DB trigger (db.js) refuses UPDATE and DELETE on this
 // table, so a row written here is a row that stays written.
-async function insertAuditRow(fields) {
+// ── FIX-12 Part 4 · A PERSON IS AN ID IN THIS LOG, NOT A NAME ─────────────
+// The log is append-only, so a name written into it can never be taken out
+// again, and a person who asks to be erased is erased everywhere but here. So
+// from FIX-12 a row stores WHO by id and the screen looks the name up when it
+// is read (resolveAuditNames below): a person erased later reads as "Erased
+// person", and nothing in the row has to change for that to be true.
+//   · the actor: a staff user's id, with no name or address beside it;
+//   · the record's label, when the record is a person;
+//   · person fields inside before/after (names, addresses, emails, phones)
+//     say only that they changed, the same way a secret does.
+// Rows written before FIX-12 keep their text; the trigger forbids rewriting them.
+const PERSON_ENTITY_RE = /^(donor|person|people|user|volunteer|member|contact|guest|attendee|household|organisation|organization)s?$/i;
+const PERSON_FIELD_RE = /(^|_)(email|email2|email_address|phone|phone2|mobile|address|address1|address2|address_line1|address_line2|street|street_address|postcode|postal_code|zip)$|^(first|last|middle|full|preferred|legal|display|donor|payer|attendee|member|contact|recipient|billing|honoree|tribute|spouse|partner|logged_by|created_by|reviewed_by|sent_by|assigned_to)_?name$|^(salutation|addressee|informal_name|formal_name|spouse)$/i;
+const PERSON_MARK = "[person]";
+function stripPeople(obj, personRow, depth = 0) {
+  if (!obj || typeof obj !== "object" || depth > 6) return obj;
+  if (Array.isArray(obj)) return obj.map(v => stripPeople(v, personRow, depth + 1));
+  const out = {};
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if ((PERSON_FIELD_RE.test(k) || (personRow && /^name$/i.test(k))) && typeof v === "string" && v !== "") {
+      out[k] = PERSON_MARK; continue;
+    }
+    out[k] = (v && typeof v === "object") ? stripPeople(v, personRow, depth + 1) : v;
+  }
+  return out;
+}
+async function personScrub(fields) {
+  const f = { ...fields };
+  const personRow = PERSON_ENTITY_RE.test(String(f.entityType || ""));
+  if (f.actorKind === "user") f.actorName = null;
+  else if (f.actorKind === "agent") f.actorName = "Agent";                       // id carries the approver
+  else if (f.actorKind === "donor") f.actorName = "A donor, through the portal";
+  else if (f.actorKind === "anonymous" && f.actorName && /@/.test(f.actorName)) {
+    // A failed sign-in names the address typed. It is somebody's address, so
+    // the row keeps their user id when there is one, and never the address.
+    try {
+      const [u] = await query("SELECT id FROM users WHERE LOWER(email)=LOWER(?) AND org_id=?", [f.actorName.trim(), f.orgId]);
+      f.actorId = u ? u.id : null;
+    } catch { f.actorId = null; }
+    f.actorName = f.actorId ? null : "An address with no account here";
+    if (f.actorId) f.actorKind = "user";
+  }
+  if (personRow && f.entityId) f.entityLabel = null;
+  else if (f.entityLabel && /@/.test(f.entityLabel)) f.entityLabel = null;
+  f.changes = stripPeople(f.changes, personRow);
+  f.before = stripPeople(f.before, personRow);
+  f.after = stripPeople(f.after, personRow);
+  return f;
+}
+
+// The read side of the same rule: fill in each row's names from the live
+// records, as the screen asks for them. A donor erased since reads "Erased
+// person"; one deleted outright reads "A person no longer in Steward".
+async function resolveAuditNames(rows, orgId) {
+  if (!rows || !rows.length) return rows;
+  const userIds = new Set(), personIds = new Set();
+  for (const r of rows) {
+    if (!r.user_name && r.user_id && !String(r.user_id).startsWith("system:")) {
+      userIds.add(String(r.user_id).replace(/^agent:approved_by:/, ""));
+    } else if (r.actor_kind === "agent" && r.user_id) userIds.add(String(r.user_id).replace(/^agent:approved_by:/, ""));
+    if (!r.entity_label && r.entity_id && PERSON_ENTITY_RE.test(String(r.entity_type || ""))) personIds.add(String(r.entity_id));
+  }
+  const users = new Map(), people = new Map();
+  if (userIds.size) {
+    const us = await query("SELECT id, name, email FROM users WHERE org_id=? AND id = ANY(?)", [orgId, [...userIds]]).catch(() => []);
+    for (const u of us) users.set(u.id, u.name || u.email);
+  }
+  if (personIds.size) {
+    const ds = await query("SELECT id, name, erased_at FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, [...personIds]]).catch(() => []);
+    for (const d of ds) people.set(d.id, d.erased_at ? "Erased person" : (d.name || "A person with no name"));
+    const us = await query("SELECT id, name, email FROM users WHERE org_id=? AND id = ANY(?)", [orgId, [...personIds]]).catch(() => []);
+    for (const u of us) if (!people.has(u.id)) people.set(u.id, u.name || u.email);
+  }
+  return rows.map(r => {
+    const out = { ...r };
+    if (r.actor_kind === "agent" && r.user_id) {
+      const uid = String(r.user_id).replace(/^agent:approved_by:/, "");
+      if (!r.user_name || r.user_name === "Agent") out.user_name = `Agent, approved by ${users.get(uid) || "a former team member"}`;
+    } else if (!r.user_name && r.user_id) {
+      out.user_name = users.get(String(r.user_id)) || "A former team member";
+    }
+    if (!r.entity_label && r.entity_id && PERSON_ENTITY_RE.test(String(r.entity_type || ""))) {
+      out.entity_label = people.get(String(r.entity_id)) || "A person no longer in Steward";
+    }
+    return out;
+  });
+}
+
+async function insertAuditRow(rawFields) {
+  const fields = await personScrub(rawFields);
   const id = "al_" + uuid().slice(0, 12);
   await run(
     `INSERT INTO fin_audit_log
@@ -495,5 +585,5 @@ function enrichFromLegacyCall(orgId, userId, userName, action, entityType, entit
 
 module.exports = {
   auditTrail, coversRoute, snapshottableTables, tableFor, tableCandidates, resolveActor, MUTATING,
-  auditContext, enrichFromLegacyCall, insertAuditRow,
+  auditContext, enrichFromLegacyCall, insertAuditRow, resolveAuditNames, personScrub,
 };

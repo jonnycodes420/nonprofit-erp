@@ -15,6 +15,8 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
+const { anthropicFor, AI_OFF_MESSAGE } = require("../aiClient");
 
 const routers = {
   r0: express.Router(),
@@ -22,7 +24,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
+  AGENT_MODEL, ALL_PIPELINE_STAGES, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
@@ -48,7 +50,9 @@ app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
   // Steward's state, not the org's). It is the same non-200 the client already
   // handles, so nothing downstream changes; with a key set, this is a no-op.
   { const g = await aiGate(req.user.orgId);
-    if (!g.ok) return res.status(503).json({ error: "ai_unavailable", reason: g.reason }); }
+    if (!g.ok) return g.reason === "ai_disabled"
+      ? res.status(403).json({ error: AI_OFF_MESSAGE, code: "ai_off", reason: g.reason })
+      : res.status(503).json({ error: "ai_unavailable", reason: g.reason }); }
 
   await run(
     "INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary) VALUES (?,?,?,?,?)",
@@ -59,8 +63,8 @@ app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  const client = new Anthropic();
-  const stream = client.messages.stream({
+  const client = anthropicFor(req.user.orgId);
+  const stream = await client.messages.stream({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 1024,
     system: systemPrompt || "You are a helpful nonprofit development assistant.",
@@ -81,7 +85,7 @@ app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
   const { headers, sample } = req.body;
   if (!headers?.length) return res.status(400).json({ error: "headers required" });
 
-  const client = new Anthropic();
+  const client = anthropicFor(req.user.orgId);
   const msg = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 512,
@@ -438,7 +442,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // The people a draft may never be written for are removed BEFORE the model
   // sees them (BUILD-83's rule: fiction and the no-ask family generate nothing).
   const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
-  const client = new Anthropic();
+  const client = anthropicFor(orgId);
   // The model is shown the persona's OWN tools, not the whole table. An
   // Analyst that is never offered set_stage rarely asks for it; the filter
   // below is what guarantees it, and this is what makes the plan sensible.
@@ -819,12 +823,13 @@ app.post("/help/ask", requireAuth, wrap(async (req, res) => {
   if (!found.length) return res.json({ covered: false, answer: null, articles: [],
     sentence: "The help centre does not cover that yet. Ask a person and we will answer " + REPLY_PROMISE() + "." });
   const gate = await aiGate(req.user.orgId);
-  if (!gate.ok) return res.json({ covered: true, answer: null, articles: cite, sentence: "Here is what the help centre says." });
+  if (!gate.ok) return res.json({ covered: true, answer: null, articles: cite, aiOff: gate.reason === "ai_disabled",
+    sentence: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE + ". Here is what the help centre says." : "Here is what the help centre says." });
   const PS = await agentPersonasMod();
   const prompt = HS.buildHelpPrompt(question, found, PS.HELP.systemPrompt);
   let answer = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(req.user.orgId);
     // No `tools`: the help persona has none, so the model has nothing to call.
     const r = await client.messages.create({ model: AGENT_MODEL, max_tokens: 700, system: prompt.system, messages: prompt.messages });
     answer = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || null;
@@ -1558,7 +1563,7 @@ app.get("/agent/daily-line", requireAuth, wrap(async (req, res) => {
       reason: gate.reason,
       line: null,
       message: gate.reason === "ai_disabled"
-        ? "Steward's drafting is turned off for this organisation."
+        ? AI_OFF_MESSAGE + "."
         : "Not enabled for this organization yet.",
     });
   }

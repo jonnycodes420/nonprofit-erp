@@ -15,6 +15,8 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-12 Part 7b: the after-meeting chips reach the model only through here.
+const { anthropicFor, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
 
 const routers = {
   r0: express.Router(),
@@ -24,9 +26,13 @@ const routers = {
 // tick can run the SAME sync the Check now button runs. TDZ rule: declared at
 // module scope, above every line that reads it.
 let sharedProcessEmailMarketing = null;
+// FIX-12 Part 7a — set by mount() to the composer behind Home's morning brief,
+// so the optional morning email is built from the very same rows.
+let sharedComposeTodayMeetings = null;
 
 function mount(ctx) {
 const {
+  AGENT_MODEL,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
@@ -1329,13 +1335,13 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
 }));
 
 // WHO AM I SEEING TODAY. Her own calendar only, each meeting with its brief.
-app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
+// FIX-12 Part 7a: one composer for Home and for the optional morning email.
+async function composeTodayMeetings(orgId, userId) {
   const { tz, today } = await meetingTz(orgId);
   const rows = await query(
     `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
       WHERE c.org_id=? AND c.owner_user_id=? AND (c.starts_at AT TIME ZONE ?)::date = ?::date
-      ORDER BY c.starts_at`, [orgId, req.user.userId, tz, today]);
+      ORDER BY c.starts_at`, [orgId, userId, tz, today]);
   const ids = [...new Set(rows.flatMap(r => r.person_ids || []))];
   const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
   const out = [];
@@ -1343,6 +1349,13 @@ app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
     out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
   }
+  return { today, tz, meetings: out };
+}
+sharedComposeTodayMeetings = composeTodayMeetings;
+
+app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { today, meetings: out } = await composeTodayMeetings(orgId, req.user.userId);
   const [conn] = await query(`SELECT provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' AND calendar_granted = true LIMIT 1`, [req.user.userId, orgId]);
   res.json({ today, meetings: out, provider: conn?.provider || null,
     sentence: "From your own calendar. Only meetings with people in Steward show here." });
@@ -1377,8 +1390,30 @@ app.post("/calendar/events/:id/suggest", requireAuth, wrap(async (req, res) => {
   const N = await meetingNoteMod();
   const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=?`, [req.user.orgId]);
   const brief = c.person_ids?.length === 1 ? await meetingBrief(req.user.orgId, c.person_ids[0], c.starts_at) : null;
-  res.json({ suggestions: N.suggestFromNote(String(req.body?.note || "").slice(0, 4000), { funds, openAsk: brief?.openAsk || null }),
-    sentence: "Read from your note. Nothing is recorded until you press save." });
+  const note = String(req.body?.note || "").slice(0, 4000);
+  const ctx = { funds, openAsk: brief?.openAsk || null };
+  // FIX-12 Part 7b: the Agent engine reads the note, through the one AI door;
+  // the simple reader is the fallback when AI is off or nothing it says holds.
+  let suggestions = null, source = "reader", aiOff = false;
+  if (note.trim()) {
+    try {
+      const PS = await import("../shared/agentPersonas.js");
+      const prompt = N.buildNoteChipPrompt(note, ctx, PS.MEETING_NOTE.systemPrompt);
+      const r = await anthropicFor(req.user.orgId).messages.create({
+        model: AGENT_MODEL, max_tokens: 800, system: prompt.system, messages: prompt.messages,
+        tools: [N.NOTE_CHIP_TOOL], tool_choice: { type: "tool", name: N.NOTE_CHIP_TOOL.name } });
+      const use = (r.content || []).find(c => c.type === "tool_use");
+      const chips = N.validateNoteChips(use && use.input && use.input.chips, note, ctx);
+      if (chips.length) { suggestions = chips; source = "agent"; }
+    } catch (e) {
+      if (e instanceof AiOffError) aiOff = e.reason === "ai_disabled";
+      else console.error("[meeting-chips] engine:", e.message);
+    }
+  }
+  if (!suggestions) suggestions = N.suggestFromNote(note, ctx);
+  res.json({ suggestions, source,
+    sentence: aiOff ? AI_OFF_MESSAGE + ". These come from Steward's simple reader. Nothing is recorded until you press save."
+      : "Read from your note. Nothing is recorded until you press save." });
 }));
 
 // SAVE. Her note goes on the meeting and on each person's record as a
@@ -3207,7 +3242,8 @@ app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
   if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
   sql += " ORDER BY created_at DESC LIMIT ?";
   params.push(parseInt(limit));
-  const rows = await query(sql, params);
+  // FIX-12 Part 4: names are looked up as the log is read, never stored.
+  const rows = await require("../middleware/auditTrail").resolveAuditNames(await query(sql, params), req.user.orgId);
   res.json(rows.map(r => ({
     ...r,
     changes: typeof r.changes === "string" ? JSON.parse(r.changes || "{}") : (r.changes || {}),
@@ -3219,6 +3255,10 @@ module.exports = {
   routers, mount,
   // The daily pull, published to routes/jobs.js. It rides the existing tick;
   // INT-3 adds no second scheduler.
+  composeTodayMeetings: (...args) => {
+    if (!sharedComposeTodayMeetings) throw new Error("composeTodayMeetings called before routes/finance mount()");
+    return sharedComposeTodayMeetings(...args);
+  },
   processEmailMarketing: (...args) => {
     if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
     return sharedProcessEmailMarketing(...args);

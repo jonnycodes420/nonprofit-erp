@@ -130,6 +130,8 @@ const ROUTE_OVERRIDES = [
   [/^\/auth\/register$/,                     { entity: "organisation", action: "created", actorFromBody: "email" }],
   [/^\/auth\/forgot-password$/,              { entity: "password", action: "reset requested", actionRefused: "reset request refused", logFailures: true, actorFromBody: "email" }],
   [/^\/auth\/reset-password$/,               { entity: "password", action: "reset", logFailures: true }],
+  // FIX-12 Part 5: a refused removal is the security event (user_admin_audit's old job).
+  [/^\/users\/:id$/,                        { entity: "user", actionRefused: "removal refused", logFailures: true }],
   [/^\/me\/password$/,                       { entity: "password", action: "changed" }],
   [/^\/me\/mfa/,                             { entity: "two-step sign-in", action: "changed" }],
   [/^\/donors\/import/,                      { entity: "import", action: "imported", bulk: true }],
