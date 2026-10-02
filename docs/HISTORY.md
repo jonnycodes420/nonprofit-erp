@@ -25,6 +25,17 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-13 · the website's dead ends, and the Zapier tail (2026-10-01)
+
+- **LANDING-3 had already merged** (PR #80, 4543366, and its fix #81), so this build ran on top of it.
+- **Lost & Found runs on its own page.** The audit lived only at /lost-and-found, and every marketing link went to /tools/lost-and-found, a hero with nothing to drop a file on. The drop zone is now `LostAndFoundAudit` in `pages/LostAndFound.jsx`, rendered on both. The page says "Your donor file never leaves your browser. Nothing is uploaded." That is true because the file goes through FileReader to a Web Worker that has no network path; lf1 checks the source and runs the audit with every network path stubbed.
+- **The demo form kept two of its answers and threw them away.** org_size and current_system are now stored on the lead, the mail says "Demo request: <org>", and a failed submit shows jonathan@stewardapp.dev. Super-admin got a Leads screen (there was none).
+- **The research strip is a static row**: the marquee drew three copies of every card. Forest says Talk to us. Yearly Start links now carry the interval. Leadership is `LEADERSHIP_SHOWN` in `marketing/data/team.js`.
+- **GET /api/v1/funds** behind a new read:funds scope. Owners can now pick scopes on a key (the panel had no checklist at all). Zapier 1.0.1: fundId is a dropdown, the baseUrl field is gone, and the host is pinned to the Railway API.
+- **One Connections page in Settings.** Integrations is gone and its links redirect, keeping the #anchor (`parseAppUrl` passes the hash through as the focus). The donation form embed and QR moved to Fundraising, Giving pages and forms.
+- **Real links.** Every tab and record has a URL (`lib/appUrls.js` builds and reads them, so they cannot drift). Donor names everywhere are `DonorLink`. A signed-out deep link goes through /login?next= and comes back to the same page. The Donors filters live in the query. Still onClick: events, campaigns, funds, journeys list, gift rows, households, and grant cards on the board.
+- **Volunteer reminders never sent**: the sweep checked `decision.allowed` on a result that only has `send`. The magic-link email had the same bug. The admins-must-use-two-factor rule now has its checkbox. The Terms subprocessor table is hand-written, so OpenAI is left for the attorney.
+
 ## FIX-12 · what HELP-1 turned up, and the loose ends (2026-10-01)
 
 - **Recipes draft, they never send.** First-gift thank-you, failed-card note and the lapse
