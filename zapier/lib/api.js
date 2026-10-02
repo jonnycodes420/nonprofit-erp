@@ -1,18 +1,19 @@
 // lib/api.js - small shared helpers for talking to the Steward public API.
 //
-// The API host is a field on the auth data (production by default), and the
-// key travels in the x-api-key header.
+// The key travels in the x-api-key header.
 //
-// THE HOST IS CHECKED BEFORE IT IS USED (D026). The host is typed by the
-// person setting up the Zap, so it is the one piece of this app that an
-// outsider controls. Left unchecked it is a request-forgery hole: a Zap could
-// be pointed at an internal address and Zapier's servers would dutifully send
-// the API key there. So every call goes through assertSafeHost, which demands
-// https, a real dotted hostname, and nothing that resolves to the machine
-// Zapier is running on or to a cloud metadata service. It does NOT demand a
-// stewardapp.dev host, because a self-hosted Steward is legitimate.
+// THE HOST IS FIXED (D026, FIX-13). Nobody self-hosts Steward, so there is no
+// API host field: every call goes to the one production API. That removes the
+// only thing in this app an outsider could type into a URL, which is what
+// D026 is about. stewardapp.dev does not serve /api/v1 (no rewrite in
+// vercel.json), so the Railway host is the API host.
+//
+// assertSafeHost STAYS, as a guard on the fixed host: https, a real dotted
+// hostname, nothing that resolves to the machine Zapier runs on or to a cloud
+// metadata service. If somebody ever edits API_BASE_URL into something unsafe,
+// every call fails loudly instead of sending the key there.
 
-const DEFAULT_BASE_URL = 'https://nonprofit-erp-production.up.railway.app';
+const API_BASE_URL = 'https://nonprofit-erp-production.up.railway.app';
 
 // Hostnames that must never be called, however they are spelled.
 const BLOCKED_HOSTS = new Set([
@@ -38,7 +39,7 @@ const isPrivateIpv4 = host => {
 // Throws a sentence the person can act on, or returns the cleaned-up origin.
 const assertSafeHost = raw => {
   const text = String(raw || '').trim();
-  if (!text) throw new Error('The API host is empty. Leave it at the default unless your Steward runs somewhere else.');
+  if (!text) throw new Error('The API host is empty.');
 
   let url;
   try {
@@ -75,9 +76,9 @@ const assertSafeHost = raw => {
   return `https://${host}${url.port ? ':' + url.port : ''}`;
 };
 
-const baseUrl = bundle =>
-  assertSafeHost((bundle && bundle.authData && bundle.authData.baseUrl) || DEFAULT_BASE_URL);
+// Takes the bundle only so every call site reads the same; the host is fixed.
+const baseUrl = () => assertSafeHost(API_BASE_URL);
 
 const headers = bundle => ({ 'x-api-key': bundle.authData.apiKey });
 
-module.exports = { baseUrl, headers, assertSafeHost, DEFAULT_BASE_URL };
+module.exports = { baseUrl, headers, assertSafeHost, API_BASE_URL };

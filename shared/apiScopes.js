@@ -42,6 +42,10 @@ export const SCOPES = {
     key: "write:gifts", verb: "write", thing: "gifts", label: "Record gifts",
     description: "Record a gift. It is written by the same function the app uses, so receipts, funds and totals all behave exactly as they would inside Steward.",
   },
+  "read:funds": {
+    key: "read:funds", verb: "read", thing: "funds", label: "Read funds",
+    description: "See the names of your funds, so a gift can be put in the right one.",
+  },
   "read:events": {
     key: "read:events", verb: "read", thing: "events", label: "Read events",
     description: "See events and who has registered for them.",

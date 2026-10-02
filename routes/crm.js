@@ -13265,6 +13265,15 @@ app.get("/api/v1/gifts", apiLimiter, requireApiKey, requireScope("read:gifts"), 
     paymentMethod: g.payment_method || null, fund: g.fund_name || null, campaign: g.campaign_name || null,
     sample: !!g.is_sample, createdAt: g.created_at })), limit, offset });
 }));
+// FIX-13: THE FUNDS A GIFT CAN GO TO, so an integration can offer a list of
+// names instead of asking for an id somebody has to go and find (the Zapier
+// fund dropdown). Id and name only, this org only, behind its own read scope.
+app.get("/api/v1/funds", apiLimiter, requireApiKey, requireScope("read:funds"), wrap(async (req, res) => {
+  const { limit, offset } = apiPage(req.query);
+  const rows = await query(`SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC, id ASC LIMIT ? OFFSET ?`,
+    [req.apiKey.orgId, limit, offset]);
+  res.json({ data: rows.map(f => ({ id: f.id, name: f.name })), limit, offset });
+}));
 
 // ── INT-5 · WEBHOOKS OUT ──────────────────────────────────────────────────
 //
