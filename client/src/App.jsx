@@ -1,4 +1,7 @@
 import { useState, useEffect } from "react";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { tabHref, parseAppUrl } from "./lib/appUrls";
+import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import { HelpPanel } from "./components/HelpPanel";
 import { useAuth } from "./main";
@@ -62,6 +65,11 @@ const DUE_BADGE={background:T.terracotta,color:T.white,fontSize:9,fontWeight:800
 function AppShell() {
   const { auth, logout } = useAuth();
   const [tab,setTab]=useState("dashboard");
+  // FIX-13 Part 6 — the tab lives in the URL (lib/appUrls.js), so every page
+  // opens in its own browser tab and Back/Forward walk the app.
+  const location=useLocation();
+  const navType=useNavigationType();
+  const routerNavigate=useNavigate();
 
   // ── GTM-1b 5 · THE SIDEBAR FOLDS ────────────────────────────────────────
   // 240px of nav is a lot of a 1280 laptop to spend on where you already are.
@@ -265,7 +273,7 @@ function AppShell() {
   // the target tab is already active (e.g. top-bar search for a grant while
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
-  const navigateTo=(t,opts)=>{
+  const navigateTo=(t,opts,how)=>{
     // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
     // activity (the thirty-day undo list). Every old way in lands there.
     if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
@@ -307,46 +315,38 @@ function AppShell() {
     // FIX-4 2 — the profile's journey chip lands on the journey it names,
     // open, rather than on a list somebody then has to find it in.
     setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
-    if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
+    const hasOpts=!!opts&&Object.keys(opts).some(k=>opts[k]!=null);
+    if(hasOpts||how?.fromUrl)setNavNonce(n=>n+1);
     setTab(t);
+    // FIX-13 Part 6 — and the address bar follows. A URL change that came
+    // FROM the address bar (a link, Back) is not pushed again, and a click
+    // on the tab already open keeps the URL of what is on screen.
+    if(!how?.fromUrl&&(hasOpts||t!==tab)){
+      const href=tabHref(t,opts);
+      if(href!==window.location.pathname+window.location.search)routerNavigate(href,{state:{internal:true}});
+    }
   };
+
+  // FIX-13 Part 6 — read the URL on load, on Back/Forward, and when a plain
+  // <Link> anywhere in the app changes it. Pushes the app made itself are
+  // marked `internal` and already on screen.
+  useEffect(()=>{
+    if(location.state?.internal&&navType!=="POP")return;
+    const r=parseAppUrl(location.pathname,location.search);
+    if(!r)return;
+    navigateTo(r.tab,r.opts,{fromUrl:true});
+    if(r.legacy){
+      const canon=r.tab==="pipeline"?tabHref("fundraising",{frSection:"pipeline"}):tabHref(r.tab,r.opts);
+      routerNavigate(canon,{replace:true,state:{internal:true}});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[location.key]);
 
 
   useEffect(()=>{
-    // D-1 (BUILD-45): a fresh load / cmd-click / open-in-new-tab on
-    // /donors/:id lands here — open that donor's profile, then normalize the
-    // URL back to /dashboard (the app doesn't otherwise sync tab↔URL).
-    const donorMatch=window.location.pathname.match(/^\/donors\/([^/]+)\/?$/);
-    if(donorMatch){
-      // BUILD-81 — the nudge email's links land here with ?conversation=1:
-      // a GET that changes nothing, opening the log-one-line flow after a
-      // real page load (Done/Skip happen there, as POSTs).
-      const wantsConversation=new URLSearchParams(window.location.search).get("conversation")==="1";
-      navigateTo("donors",{selectDonorId:decodeURIComponent(donorMatch[1]),openConversation:wantsConversation});
-      window.history.replaceState({},"","/dashboard");
-    }
+    // FIX-13 Part 6 — /donors/:id, ?report=, ?fr= and ?tab=settings are read
+    // by the URL reader above (lib/appUrls.js parseAppUrl), with every tab.
     const params=new URLSearchParams(window.location.search);
-    // BUILD-98 (switch) Part 3 — the weekly report email's one link. A GET
-    // that opens the report and changes nothing.
-    if(params.get("report")){
-      navigateTo("reports",{savedReport:params.get("report")});
-      window.history.replaceState({},"","/dashboard");
-    }
-    // FIX-1 §B — /dashboard?fr=<id> opens Fundraising on that section or part.
-    // Any old sub-tab id works, and `pipeline` goes through navigateTo("pipeline")
-    // exactly as the old sidebar item did. A GET that changes nothing.
-    if(params.get("fr")){
-      if(params.get("fr")==="pipeline")navigateTo("pipeline");
-      else navigateTo("fundraising",{frSection:params.get("fr")});
-      window.history.replaceState({},"","/dashboard");
-    }
-    // INT-BUILD-1 Part 0 — the OAuth landing sends the person back with
-    // ?tab=settings&sub=<section>. Nothing read it, so a finished connect
-    // dropped her on Home with no sign it had worked. A GET that changes nothing.
-    if(params.get("tab")==="settings"){
-      navigateTo("settings",{section:params.get("sub")||"connections"});
-      window.history.replaceState({},"","/dashboard");
-    }
     if(params.get("stripe_connected")==="true"){
       setStripeToast(true);
       window.history.replaceState({},"","/dashboard");
@@ -616,9 +616,10 @@ function AppShell() {
     const locked=TEAM_GATED.has(t.id)&&isCoreTier;
     // GTM-1b 5 — collapsed, the item is its icon and its title attribute.
     // `aria-label` carries the name so a screen reader still hears "Donors".
-    return <button key={t.id} className="side-nav-btn" data-nav-id={t.id} aria-current={active?"page":undefined}
+    // FIX-13 Part 6 — a real link to the tab, so it opens in a new browser tab.
+    return <RecordLink key={t.id} to={tabHref(t.id)} className="side-nav-btn" data-nav-id={t.id} aria-current={active?"page":undefined}
       aria-label={sidebarCollapsed?t.label:undefined} title={sidebarCollapsed?t.label:undefined}
-      onClick={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
+      onOpen={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
       {/* NAV-1 §3 — the literal icon, one size and one stroke width
           everywhere, in the colour the button already decided. */}
       {/* FIX-11 Part 6 — the box is NAV_ICON_SIZE, not a literal, so the span
@@ -630,7 +631,7 @@ function AppShell() {
       {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
         ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
         : <span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>)}
-    </button>;
+    </RecordLink>;
   };
 
   // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
@@ -1001,12 +1002,12 @@ function AppShell() {
           {g.items.map(i=>navById[i.id]).filter(Boolean).map(t=>{
             const active=tab===t.id;
             return(
-              <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
+              <RecordLink key={t.id} to={tabHref(t.id)} data-nav-id={t.id} onOpen={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
                 <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
                 <span style={{flex:1}}>{t.label}</span>
                 {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
                 {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
-              </button>
+              </RecordLink>
             );
           })}
         </div>)}
@@ -1039,10 +1040,10 @@ function AppShell() {
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
       {bottomTabs.map(t=>(
-        <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+        <RecordLink key={t.id} to={tabHref(t.id)} data-nav-id={t.id} onOpen={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
           <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={19}/></span>
           {t.label}
-        </button>
+        </RecordLink>
       ))}
       <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===tab)||moreOpen?" active":""}`}>
         <span className="mob-icon">⋯</span>

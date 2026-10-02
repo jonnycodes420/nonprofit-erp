@@ -5,6 +5,8 @@ import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType
 import { CHANGELOG, LAST_SEEN_KEY } from "../lib/changelog";
 import { HelpPanel } from "./HelpPanel";
 import { PRODUCT_WORDS } from "../../../shared/changelog.js";
+import { RecordLink } from "./RecordLink";
+import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -122,11 +124,11 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
       sub:[typeLabels(d).join(" · "), d.email||(personIsDonor(d)?fmtMoney(d.total_giving)+" lifetime":null)].filter(Boolean).join(" · "),
       drift:d.drift||null,   // BUILD-76 — server-computed badge field rides the search payload
       personId:d.id, personName:d.name, personKind:d.kind||null,  // BUILD-94 Part 1 — the face on the row
-      onSelect:()=>onNavigate("donors",{selectDonorId:d.id}),
+      onSelect:()=>onNavigate("donors",{selectDonorId:d.id}), href:donorHref(d.id),
     }));
     (results?.grants||[]).forEach(g=>out.push({
       group:"Grants", key:"g_"+g.id, title:g.funder, sub:[g.program,g.amount?fmtMoney(g.amount):null].filter(Boolean).join(" · "),
-      onSelect:()=>onNavigate("grants",{grantId:g.id}),
+      onSelect:()=>onNavigate("grants",{grantId:g.id}), href:tabHref("grants",{grantId:g.id}),
     }));
     navMatches.forEach(a=>out.push({
       group:"Go to", key:a.id, title:a.label, sub:a.hint,
@@ -190,8 +192,12 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
             flatIdx++;
             const active = flatIdx===sel;
             const i = flatIdx;
-            return <button key={item.key} data-testid="search-result"
-              onMouseDown={e=>{e.preventDefault();pick(item);}}
+            // FIX-13 Part 6 — a person or grant result is a real link, so
+            // Cmd/Ctrl/middle-click opens it in a new tab. A plain press still
+            // picks it on mousedown (before the field's blur closes the list).
+            const Row = item.href ? RecordLink : "button";
+            return <Row key={item.key} data-testid="search-result" {...(item.href?{to:item.href,onOpen:()=>{}}:{})}
+              onMouseDown={e=>{if(item.href&&!isPlainLeftClick(e))return;e.preventDefault();pick(item);}}
               onMouseEnter={()=>setSel(i)}
               style={{display:"block",width:"100%",textAlign:"left",background:active?T.bgElevated:"transparent",border:"none",borderLeft:`3px solid ${active?T.gold:"transparent"}`,padding:"7px 14px 7px 11px",cursor:"pointer",boxSizing:"border-box"}}>
               <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
@@ -206,7 +212,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
                   {item.sub && <div style={{fontSize:11.5,color:"rgba(240,237,230,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}
                 </div>
               </div>
-            </button>;
+            </Row>;
           })}
         </div>)}
       </div>}

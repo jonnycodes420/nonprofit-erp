@@ -79,7 +79,8 @@ ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communicat
 ok(has(comms, "onClick: () => setNav(\"campaigns\")"), "Comms 'Campaigns Sent' card → Campaigns subtab");
 ok(has(comms, 'interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}`'), "Comms 'Best Campaign' card → Campaigns subtab");
 // Donors entity rows already navigate (pre-existing) — spot-check they carry onSelectDonor.
-ok(has(donors, "onClick={()=>onSelectDonor(d)}"), "Donors TeamView rows open the donor profile");
+// FIX-13 Part 6 — the row opens through rowClick (a Cmd-click on it opens a new tab) and the name is a real link.
+ok(has(donors, "onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}"), "Donors TeamView rows open the donor profile");
 
 // ── Part 1: no page-subtitle blurb clutter (removed strings) ────────────────
 ok(!has(fund, "sub={narrative}") && !has(fund, "This is your fundraising command center"), "Fundraising subtitle blurb removed");

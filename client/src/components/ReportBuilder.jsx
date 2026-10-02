@@ -15,6 +15,7 @@ import { apiFetch, API } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows, splitHandlerRows } from "../lib/reportFormat";
+import { DonorLink } from "./RecordLink";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -56,8 +57,8 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
     const body = c.render ? c.render(r) : cellText(v, c.type === "price" ? "money" : c.type);
     const pid = c.person && personOf ? personOf(r) : null;
     return pid
-      ? <a href={`/donors/${encodeURIComponent(pid)}`} onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(pid); }}
-          style={{ color: T.ink, fontWeight: 700, textDecoration: "none" }}>{body}</a>
+      ? <DonorLink id={pid} onOpen={onOpen ? () => onOpen(pid) : undefined}
+          style={{ color: T.ink, fontWeight: 700, textDecoration: "none" }}>{body}</DonorLink>
       : body;
   };
   return <div className="reports-table-wrap" style={{ overflowX: "auto" }}>

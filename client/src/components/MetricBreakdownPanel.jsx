@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { T, Spin, Modal, fmtFull } from "./shared";
 import { apiFetch } from "../api";
+import { DonorLink } from "./RecordLink";
+import { donorHref, rowClick } from "../lib/appUrls";
 
 // THE ONE DRILL-THROUGH PANEL. Every number that opens, opens here.
 //
@@ -102,10 +104,12 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
         const rowStyle = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "11px 24px",
                            borderBottom: "1px solid " + T.bg, width: "100%", textAlign: "left", background: "transparent",
                            border: "none", borderTop: "none", font: "inherit" };
-        return r.donorId && onSelectDonor
-          ? <button type="button" key={r.id} data-figure-row data-person-row={r.donorId}
-              onClick={() => onSelectDonor({ donorId: r.donorId, donorName: r.name })}
-              title={`Open ${r.name}`} style={{ ...rowStyle, cursor: "pointer", borderBottom: "1px solid " + T.bg }}>{main}</button>
+        // FIX-13 Part 6 — a person's row is a real link to them even where the
+        // page gave no handler: a plain click then goes through the router.
+        return r.donorId
+          ? <DonorLink key={r.id} id={r.donorId} data-figure-row data-person-row={r.donorId}
+              onOpen={onSelectDonor ? () => onSelectDonor({ donorId: r.donorId, donorName: r.name }) : undefined}
+              title={`Open ${r.name}`} style={{ ...rowStyle, cursor: "pointer", borderBottom: "1px solid " + T.bg }}>{main}</DonorLink>
           : <div key={r.id} data-figure-row style={{ ...rowStyle, borderBottom: "1px solid " + T.bg }}>{main}</div>;
       })}
       {total > (data?.pageSize || PAGE_SIZE) && (
@@ -238,13 +242,13 @@ export default function MetricBreakdownPanel({ open, onClose, title, explanation
           ) : rows.map((r, i) => (
             <div
               key={r.id || r.donorId || i}
-              onClick={onSelectDonor ? () => onSelectDonor(r) : undefined}
+              onClick={onSelectDonor && r.donorId ? rowClick(donorHref(r.donorId), () => onSelectDonor(r)) : onSelectDonor ? () => onSelectDonor(r) : undefined}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "12px 24px", borderBottom: "1px solid " + T.bg, cursor: onSelectDonor ? "pointer" : "default" }}
             >
               <div style={{ minWidth: 0, display: "flex", alignItems: "baseline", gap: 8 }}>
                 <span style={{ fontSize: 10, fontWeight: 800, color: T.ink3 }}>#{i + 1}</span>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donorName}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donorId ? <DonorLink id={r.donorId} onOpen={onSelectDonor ? () => onSelectDonor(r) : undefined}>{r.donorName}</DonorLink> : r.donorName}</div>
                   {r.detail && <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>{r.detail}</div>}
                 </div>
               </div>

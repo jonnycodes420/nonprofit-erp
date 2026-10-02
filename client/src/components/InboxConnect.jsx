@@ -18,6 +18,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { Figure } from "./Figure";
+import { DonorLink } from "./RecordLink";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: "1px solid " + (primary ? T.greenDk : T.ink),
@@ -221,8 +222,8 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
                 {look.map(w => (
                   <div key={w.kind} style={{ display: "flex", justifyContent: "space-between", gap: 16, fontSize: 15, flexWrap: "wrap" }}>
                     <span>{lookLine(w)}</span>
-                    <button type="button" onClick={() => onNavigate && onNavigate("donors", { selectDonorId: w.donorId })}
-                      style={{ background: "none", border: "none", color: T.inkInverse, opacity: 0.7, cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>{w.action}</button>
+                    <DonorLink id={w.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: w.donorId }) : undefined}
+                      style={{ background: "none", border: "none", color: T.inkInverse, opacity: 0.7, cursor: "pointer", font: "inherit", padding: 0, textDecoration: "underline" }}>{w.action}</DonorLink>
                   </div>))}
               </div>
             )}

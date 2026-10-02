@@ -20,6 +20,7 @@ import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
+import { DonorLink } from "./RecordLink";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -917,13 +918,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-98 — a chip that names a person carries that person's face. `id` is
   // optional so a caller with only a name still renders (initials), rather
   // than the chip disappearing because a payload forgot to include an id.
-  const DonorChip=({id,name,detail,onClick})=>(
-    <button onClick={onClick} style={{display:"flex",alignItems:"center",gap:6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px 3px 3px",cursor:"pointer",fontSize:11,maxWidth:180}}>
+  // FIX-13 Part 6 — with an id the chip is a real link to the donor.
+  const DonorChip=({id,name,detail,onClick})=>{
+    const chipStyle={display:"flex",alignItems:"center",gap:6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px 3px 3px",cursor:"pointer",fontSize:11,maxWidth:180};
+    const inner=<>
       <PersonMark id={id} name={name} size={20}/>
       <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span>
       {detail&&<span style={{color:T.ink3,whiteSpace:"nowrap",flexShrink:0}}>{detail}</span>}
-    </button>
-  );
+    </>;
+    return id?<DonorLink id={id} onOpen={onClick} style={chipStyle}>{inner}</DonorLink>:<button onClick={onClick} style={chipStyle}>{inner}</button>;
+  };
   const MoreChip=({count,onClick})=>(
     <button onClick={onClick} style={{background:"transparent",border:"1px dashed "+T.bg3,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>
       +{count} more →
@@ -2167,7 +2171,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",
                     color:T.ink3,marginBottom:6}}>First thing</div>
                   <a href={`/donors/${first.donorId}`}
-                    onClick={e=>{e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
+                    onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button>0)return;e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
                     style={{display:"block",textDecoration:"none",color:"inherit"}}>
                     <div style={{fontFamily:"'DM Serif Display',serif",fontSize:20,lineHeight:1.35,color:T.ink,
                       maxWidth:"52ch"}}>
@@ -2179,12 +2183,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     </div>
                   </a>
                   <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap",alignItems:"center"}}>
-                    <button data-testid="home-first-open"
-                      onClick={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
+                    <DonorLink id={first.donorId} data-testid="home-first-open"
+                      onOpen={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
                       style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 15px",color:T.white,
                         fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
                       Open {firstNameOf(first.donorName)||first.donorName}
-                    </button>
+                    </DonorLink>
                     <button data-testid="home-first-done" disabled={isReadOnly}
                       onClick={()=>setConvoFor({donor:{id:first.donorId,name:first.donorName},thread:first})}
                       style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",
@@ -2321,8 +2325,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
               <PersonMark id={d.donorId} name={d.donorName} size={30}/>
               <div style={{flex:"1 1 180px",minWidth:0,display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <button onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}
-                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{d.donorName}</button>
+                <DonorLink id={d.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:d.donorId})}
+                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{d.donorName}</DonorLink>
                 <span style={{fontSize:13,color:T.ink2,fontVariantNumeric:"tabular-nums"}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
                 {d.giftDate&&<span style={{fontSize:12.5,color:T.ink3}}>{displayDateShort(d.giftDate,new Date())}</span>}
                 {d.opened&&<span style={{fontSize:11.5,color:T.ink3}}>opened</span>}
@@ -2669,10 +2673,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 Log a conversation
               </button>
             )}
-            <button onClick={()=>onNavigate("donors",{selectDonorId:railView.donorId})}
+            <DonorLink id={railView.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:railView.donorId})}
               style={{background:"transparent",border:"1px solid "+T.bg2,borderRadius:8,padding:"10px 14px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer"}}>
               Open the record
-            </button>
+            </DonorLink>
           </div>
         </div>
       );
@@ -2755,10 +2759,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                         {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
                       </div>
                     </a>
-                    <button onClick={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
+                    <DonorLink id={r.donor_id} onOpen={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
                       style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
                       Open
-                    </button>
+                    </DonorLink>
                   </li>);
               })}
             </ul>

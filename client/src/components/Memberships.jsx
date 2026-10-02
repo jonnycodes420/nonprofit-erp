@@ -15,6 +15,7 @@ import { apiFetch, API, getToken } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { isPlainLeftClick } from "../lib/appUrls";
 
 const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled", renewed: "Renewed" };
 const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3, renewed: T.ink3 };
@@ -248,7 +249,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
                 <tbody>{lapsed.members.map(m => (
                   <tr key={m.id} data-testid="lapsed-row" style={{ borderTop: "1px solid " + T.bg3 }}>
                     <td style={{ padding: "8px" }}>
-                      <a href={`/donors/${m.donor_id}`} onClick={e => { if (onNavigate && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onNavigate("donors", { selectDonorId: m.donor_id }); } }}
+                      <a href={`/donors/${m.donor_id}`} onClick={e => { if (onNavigate && isPlainLeftClick(e)) { e.preventDefault(); onNavigate("donors", { selectDonorId: m.donor_id }); } }}
                         style={{ color: T.ink, fontWeight: 600, textDecoration: "none" }}>{m.donor_name}</a>
                     </td>
                     <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>
@@ -270,7 +271,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
               <tbody>{list.members.map(m => (
                 <tr key={m.id} data-testid="member-row" style={{ borderTop: "1px solid " + T.bg3 }}>
                   <td style={{ padding: "8px" }}>
-                    <a href={`/donors/${m.donor_id}`} onClick={e => { if (onNavigate && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onNavigate("donors", { selectDonorId: m.donor_id }); } }}
+                    <a href={`/donors/${m.donor_id}`} onClick={e => { if (onNavigate && isPlainLeftClick(e)) { e.preventDefault(); onNavigate("donors", { selectDonorId: m.donor_id }); } }}
                       style={{ color: T.ink, fontWeight: 600, textDecoration: "none" }}>{m.donor_name}</a>
                   </td>
                   <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>

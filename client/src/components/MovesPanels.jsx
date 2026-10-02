@@ -8,21 +8,25 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
+import { DonorLink } from "./RecordLink";
 
 const LABEL = { fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 24px" };
 const field = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 13, background: T.white, color: T.ink, fontFamily: "inherit" };
 const isoDaysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
 
-export function NoRecentMeetingPanel({ officers = [], onSelectDonor, onClose }) {
-  const [owner, setOwner] = useState("");
-  const [min, setMin] = useState("");
+export function NoRecentMeetingPanel({ officers = [], onSelectDonor, onClose, initialOwner = "", initialMin = "", onFilterChange }) {
+  // FIX-13 Part 6 — the owner and amount come from, and go back to, the URL
+  // (Donors keeps them in its query) so this list opens the same in a new tab.
+  const [owner, setOwner] = useState(initialOwner);
+  const [min, setMin] = useState(initialMin);
   const [d, setD] = useState(null);
   const since = isoDaysAgo(90);
   const params = { since, ...(owner ? { owner } : {}), ...(/^\d+$/.test(min) ? { min } : {}) };
   useEffect(() => {
     setD(null);
     apiFetch(`/figures/no-recent-meeting/rows?${new URLSearchParams({ ...params, pageSize: 200 })}`).then(setD).catch(() => setD({ rows: [], totalRows: 0 }));
+    if (onFilterChange) onFilterChange({ owner, min });
   }, [owner, min]);
   return (
     <div data-testid="no-recent-meeting" style={{ ...card, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -46,13 +50,13 @@ export function NoRecentMeetingPanel({ officers = [], onSelectDonor, onClose }) 
       {d?.sentence && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{d.sentence}</div>}
       <div style={{ display: "flex", flexDirection: "column" }}>
         {(d?.rows || []).slice(0, 60).map(r => (
-          <button key={r.id} type="button" onClick={() => onSelectDonor && onSelectDonor(r.donorId || r.donor_id || r.id)}
+          <DonorLink key={r.id} id={r.donorId || r.donor_id || r.id} onOpen={() => onSelectDonor && onSelectDonor(r.donorId || r.donor_id || r.id)}
             style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 14, padding: "9px 2px", border: "none", borderTop: "1px solid " + T.bg2,
               background: "none", textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: 14, color: T.ink }}>
             <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}<span style={{ fontWeight: 400, color: T.ink3 }}> · {r.detail}</span></span>
             <span style={{ color: T.ink3 }}>{r.date ? `Last met ${r.date}` : "Never met"}</span>
             <span style={{ fontWeight: 600 }}>{fmtFull(Number(r.amount) || 0)}</span>
-          </button>
+          </DonorLink>
         ))}
         {d && (d.rows || []).length > 60 && <div style={{ fontSize: 12.5, color: T.ink3, paddingTop: 8 }}>Open the number above for all of them.</div>}
       </div>

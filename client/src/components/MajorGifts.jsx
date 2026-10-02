@@ -3,6 +3,7 @@ import { apiFetch, API } from "../api";
 import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
+import { DonorLink } from "./RecordLink";
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -526,8 +527,8 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
                                           padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 60,
                                           borderLeft: "3px solid " + (p.quiet ? T.gold500 : "transparent") }}>
               <div style={{ minWidth: 0 }}>
-                <a href={`/donors/${p.donorId}`} onClick={e => { if (onNavigate) { e.preventDefault(); onNavigate("donors", { selectDonorId: p.donorId }); } }}
-                  style={{ fontSize: 14, fontWeight: 600, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{p.name}</a>
+                <DonorLink id={p.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: p.donorId }) : undefined}
+                  style={{ fontSize: 14, fontWeight: 600, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{p.name}</DonorLink>
                 <div style={{ fontSize: 11, color: T.ink3 }}>{fmtFull(p.lifetime)} lifetime{p.stage ? " · " + p.stage : ""}</div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: p.openAskCents ? T.ink : T.ink3, fontFamily: "'DM Serif Display',serif" }}>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, interactive } from "./shared";
+import { DonorLink } from "./RecordLink";
 
 // BUILD-13 Part 3 — Workflows: retention recipes on a builder-ready trigger →
 // conditions → actions model. v1 exposes only the four pre-built recipes with
@@ -160,7 +161,7 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
                 <span style={{ flex: 1, color: T.ink, minWidth: 0 }}>
                   {(r.actions_taken || []).map(a => ACTION_LABEL[a.type] || a.type).join(" · ") || "ran"}
                 </span>
-                {r.donor_id && <span style={{ color: T.greenMid, fontWeight: 600, flexShrink: 0 }}>♦ donor</span>}
+                {r.donor_id && <DonorLink id={r.donor_id} onOpen={donorLink || undefined} style={{ color: T.greenMid, fontWeight: 600, flexShrink: 0 }}>♦ donor</DonorLink>}
               </div>
             );
           })}
