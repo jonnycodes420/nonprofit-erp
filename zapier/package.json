@@ -1,0 +1,19 @@
+{
+  "dependencies": {
+    "zapier-platform-core": "19.1.0"
+  },
+  "description": "Steward donor CRM: watch new gifts and people, and write back people, gifts and notes.",
+  "devDependencies": {
+    "mocha": "^11.0.0",
+    "nock": "^14.0.0",
+    "should": "^13.2.3",
+    "zapier-platform-cli": "^19.1.0"
+  },
+  "main": "index.js",
+  "name": "steward",
+  "private": true,
+  "scripts": {
+    "test": "mocha --timeout 10000"
+  },
+  "version": "1.0.0"
+}
