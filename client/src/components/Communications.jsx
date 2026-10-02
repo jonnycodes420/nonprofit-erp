@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { TemplateLibrary } from "./BrandKit";
 import { SurveysPanel } from "./Surveys";
 import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
@@ -2217,6 +2218,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "templates" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Templates</h2>
+            {/* COMMS-2 — the library of letters and thank-yous, in the brand kit. */}
+            <TemplateLibrary isReadOnly={isReadOnly} donors={data?.donors || []} onOpenDrafts={() => setNav("milestones")} />
+            <h3 style={{ margin: "8px 0 0", fontSize: 17, fontWeight: 800, color: T.ink }}>Campaign emails</h3>
             <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>
               The same six &ldquo;New Campaign&rdquo; opens on — finished emails in {previewOrgName}&rsquo;s words, not skeletons.
             </p>

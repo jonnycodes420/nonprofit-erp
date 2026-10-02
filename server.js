@@ -3249,8 +3249,24 @@ async function renderReceiptPdf(snapshot) {
       doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text("Total tax-deductible contributions", 50, y);
       doc.font("Helvetica-Bold").fontSize(13).fillColor(GREEN).text(fmtD(snapshot.totalDeductible), PW - 200, y - 2, { width: 150, align: "right" });
       y = doc.y + 18;
+      // COMMS-2 — when some of what was given bought something (a ticket's
+      // fair market value), the statement says both numbers.
+      if (snapshot.totalAmount != null && Math.round(snapshot.totalAmount * 100) !== Math.round(snapshot.totalDeductible * 100)) {
+        doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`Total given ${fmtD(snapshot.totalAmount)}. The difference is the value of goods or services you received, shown on each gift's own receipt.`, 50, y, { width: PW - 100 });
+        y = doc.y + 8;
+      }
       doc.font("Helvetica").fontSize(9).fillColor(INK).text("No goods or services were provided in exchange for these contributions, unless otherwise noted on the individual gift receipt for a specific contribution.", 50, y, { width: PW - 100, lineGap: 2 });
       y = doc.y + 16;
+      // COMMS-2 §3 — YOUR YEAR WITH US. Not money, and never part of a total:
+      // the hours they gave and the events they came to. The org can turn it off.
+      if (snapshot.yourYear) {
+        const yy = snapshot.yourYear, bits = [];
+        if (yy.volunteerHours > 0) bits.push(`You gave ${yy.volunteerHours % 1 ? yy.volunteerHours.toFixed(2) : yy.volunteerHours} hours as a volunteer, over ${yy.shifts} ${yy.shifts === 1 ? "shift" : "shifts"}.`);
+        if (yy.events && yy.events.length) bits.push(`You came to ${yy.events.length === 1 ? "one of our events" : yy.events.length + " of our events"}: ${yy.events.join(", ")}.`);
+        doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(`Your ${snapshot.taxYear} with us`, 50, y); y = doc.y + 4;
+        doc.font("Helvetica").fontSize(9).fillColor(INK).text(bits.join(" ") + " Thank you for all of it.", 50, y, { width: PW - 100, lineGap: 2 });
+        y = doc.y + 16;
+      }
     }
 
     if (snapshot.customMessage) {
@@ -3274,7 +3290,11 @@ async function renderReceiptPdf(snapshot) {
       // receipts may still carry snapshot.givingAccountUrl frozen in; we simply
       // no longer render it.
       doc.font("Helvetica").fontSize(7).fillColor("#9ca3af").text(
-        `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
+        // COMMS-2 — the org's own tax language from its brand kit, when it wrote
+        // one; the EIN always follows it.
+        snapshot.taxLanguage
+          ? `${snapshot.taxLanguage} EIN: ${snapshot.orgEin || "—"}.`
+          : `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
         50, doc.page.height - 40, { width: PW - 100, height: 30, align: "left" }
       );
     }
@@ -3319,7 +3339,10 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO }
   const existing = await query("SELECT * FROM receipts WHERE gift_id=? AND voided_at IS NULL AND type='gift'", [gift.id]);
   if (existing.length) return { skipped: "already_issued", receipt: existing[0] };
 
-  const deductibleAmount = gift.deductible_amount != null ? parseFloat(gift.deductible_amount) : parseFloat(gift.amount);
+  // COMMS-2 — the one rule (statementTotals.js): never more deductible than was
+  // given, so a partial refund cannot leave a receipt claiming the old figure.
+  const _line = require("./statementTotals").statementLines([{ ...gift, is_sample: false, dispute_status: null }]).lines[0];
+  const deductibleAmount = toDollars(_line.deductibleCents);
   const receiptNumber = await allocateReceiptNumber(org.id);
   // BUILD-64: the receipt's brand surface (band color + logo) comes from the
   // SAME resolver as the portal/give page — frozen into the snapshot at issue
@@ -3337,6 +3360,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO }
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
+    taxLanguage: org.tax_language || null,   // COMMS-2: the brand kit's tax language
     receiptNumber,
     // ORG_TZ_SEAM_OK — the issue date printed on a tax document is the org's
     // civil date, and the gift date is a stored civil date formatted from its
@@ -3687,6 +3711,7 @@ app.use(require("./routes/volunteer").routers.r0);
 // place; the catch-all /volunteer/:slug there defers to them by name.
 app.use(require("./routes/volunteerScheduling").routers.r0);
 app.use(require("./routes/surveys").routers.r0);   // SURVEY-1
+app.use(require("./routes/templates").routers.r0);   // COMMS-2
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -10260,6 +10285,9 @@ require("./routes/supporter").mount({
   donorFacingOrgName, fromWithDisplayName, orgSendingIdentity, orgToday, orgTz, publicAppUrl,
   query, requireAuth, resend, resolveOrgBrandTheme, run, sendDonorLifecycleEmail, stripe, testMode,
   uuid, volunteerSummary, withAdvisoryLock, wrap, writeAuditLog,
+});
+require("./routes/templates").mount({
+  actor, checkWriteAccess, money, orgTime, query, requireAdmin, requireAuth, run, uuid, volunteerSummary, wrap,
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,

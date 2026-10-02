@@ -6071,6 +6071,32 @@ async function initSchema() {
   // The volunteer survey whose personal link rides on the hours thank-you draft.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_survey_id TEXT`);
 
+  // COMMS-2 — the brand kit. The logo stays orgs.logo_data, the signer stays
+  // receipt_signature_name/title and the address stays receipt_address (one
+  // store each, already read by receipts); these are what was missing.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS brand_primary TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS brand_secondary TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS brand_signature_extra TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tax_language TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS statement_your_year BOOLEAN NOT NULL DEFAULT TRUE`);
+  // The org's own wording for each template kind (shared/brandKit.js). A row
+  // exists once somebody saved it, which is what "reviewed" means.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS message_templates (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      reviewed_at TIMESTAMPTZ,
+      reviewed_by_name TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, kind)
+    )`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
