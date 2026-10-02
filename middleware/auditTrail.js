@@ -324,6 +324,19 @@ async function insertAuditRow(rawFields) {
   return id;
 }
 
+// FIX-14 Part 2 — WHICH PERSON A CHANGE WAS ABOUT. An edit keeps only the
+// fields that moved, so the row would no longer say whose meeting it was. The
+// donor's id (never a name, per FIX-12) and the record's kind ride beside the
+// diff, so the log can read "Changed the meeting date ... (Octavian
+// Cobbleworth)" and a donor's History can find it.
+function recordContext(before, after) {
+  const r = after || before;
+  if (!r || typeof r !== "object" || !r.donor_id) return {};
+  const out = { donor_id: r.donor_id };
+  if (r.type && typeof r.type === "string") out.type = r.type;
+  return { record: out };
+}
+
 // ── IS THIS REQUEST LOGGED? ──────────────────────────────────────────────
 // Exported so the route-inventory test can ask the same question of every
 // route in the live router WITHOUT calling it: the test and the middleware
@@ -548,7 +561,7 @@ function auditTrail(opts = {}) {
           entityType, entityId, entityLabel: label,
           // What a legacy `writeAuditLog(...)` call said about this change,
           // alongside the before/after the middleware read off the row.
-          changes: { ...(changed || {}), ...(req.auditLegacyChanges || {}) },
+          changes: { ...(changed || {}), ...(req.auditLegacyChanges || {}), ...recordContext(before, after) },
           before: changed ? changed.before : (isCreate ? null : (before ? A.redact(before) : null)),
           after: changed ? changed.after : (isDelete ? null : (after ? A.redact(after) : null)),
           // isCreate keeps `after`; isDelete keeps `before`. Both are the

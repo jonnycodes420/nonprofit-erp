@@ -117,7 +117,7 @@ async function reset() {
       // with an FK violation that reads as a product bug. Named explicitly and
       // ordered BEFORE `grants`, which is the rule this list exists for.
       "grant_spend", "grant_milestones", "grant_documents",
-      "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
+      "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "deleted_records", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`
       // is NOT, and it is here because its absence is what made this suite
@@ -178,6 +178,10 @@ async function seedOrg(o, tag) {
     [`th_${o}`, o, `d_${o}`, TODAY, `u_${o}_admin`]);   // BUILD-81 — the Thread
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)`,
     [`i_${o}`, o, `d_${o}`, `${mark} interaction`, TODAY]);
+  // FIX-14 Part 2 — a deleted entry waiting for Undo. Org A must not be able
+  // to put org B's back (or learn that it exists).
+  await q(`INSERT INTO deleted_records (id,org_id,table_name,record_id,row_data,created_by) VALUES ($1,$2,'tasks',$3,$4,$5)`,
+    [`del_${o}`, o, `t_gone_${o}`, JSON.stringify({ id: `t_gone_${o}`, org_id: o, title: `${mark} deleted task` }), `u_${o}_admin`]);
   // BUILD-87 Part 1 — an import RUN is a readable row with its own id, so the
   // matrix gets a real one per org to probe across the wall.
   await q(`INSERT INTO imports (id,org_id,name,source_filename,shape,rows_in,gifts_created,donors_created,rows_set_aside,rows_errored,dollars_in,dollars_created,summary_json)
@@ -467,6 +471,8 @@ function bResolver(routePath, param) {
     connections: `gsrc_${B}`,
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
+    "deleted-records": `del_${B}`, // FIX-14 Part 2 — Undo of a delete
+    records: `i_${B}`,             // FIX-14 Part 2 — one record's edit history
     imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt
     "thank-yous": `ty_${B}`,       // BUILD-88b B.3 — the thank-you queue
     "giving-sources": `gsrc_${B}`,   // BUILD-89S 89a — a connected giving source

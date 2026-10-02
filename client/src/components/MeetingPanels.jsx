@@ -177,7 +177,7 @@ const ICON = {
 };
 const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2 };
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged }) {
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null }) {
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(12);
@@ -278,7 +278,10 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
               {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
               {extra}
             </div>
-            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}</div>
+            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}
+              {/* FIX-14 Part 2: Edit/Delete and "Edited" on a logged meeting. */}
+              {renderActions && (it.logged || (it.m && byId[it.m.interactionId])) && <div>{renderActions(it.logged || byId[it.m.interactionId])}</div>}
+            </div>
           </div>
         );
       })}

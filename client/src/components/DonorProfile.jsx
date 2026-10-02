@@ -21,6 +21,7 @@ import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
+import { ItemMenu, EditedMarker, useUndo, HistoryList } from "./EditHistory";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
@@ -148,7 +149,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
 // on the Giving tab, which is the same form "Record a gift" opens: one gift
 // path, a real fund, a real payment method, an acknowledgement flag, and the
 // one timeline entry recordGift already writes.
-function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
+function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
   const[type,setType]=useState("call");
   const[date,setDate]=useState(orgTodayCivil());
   const[loading,setLoading]=useState(false);
@@ -161,6 +162,30 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
   const[eventName,setEventName]=useState("");const[attended,setAttended]=useState("yes");const[observations,setObservations]=useState("");
   const[otherNotes,setOtherNotes]=useState("");
   const[orgEvents,setOrgEvents]=useState([]);
+  // FIX-14 Part 2 — EDIT OPENS THE SAME FORM, FILLED IN. The note this form
+  // wrote is "Label: value" lines, so they are read back into the fields they
+  // came from. A note that is not in that shape (a one-line conversation, a
+  // calendar meeting, a stewardship touch) is edited as the plain note it is.
+  const[plain,setPlain]=useState(null);
+  const editMeta=editing?(()=>{try{return typeof editing.metadata==="string"?JSON.parse(editing.metadata||"{}"):(editing.metadata||{});}catch{return {};}})():{};
+  const fromCalendar=!!editMeta.calendar_event_id;
+  useEffect(()=>{
+    if(!editing)return;
+    setDate(String(editing.date||"").slice(0,10));
+    const SET={"Answered":setAnswered,"Duration":setDuration,"Key Takeaway 1":setKt1,"Key Takeaway 2":setKt2,"Key Takeaway 3":setKt3,
+      "Objections / Concerns":setObjections,"Donor History":setHistory,"Spouse / Partner":setSpouse,"Next Step":setNextStep,
+      "Attendees":setAttendees,"Location":setLocation,"Donor Sentiment":setSentiment,"Asks Made":setAsksMade,"Subject":setSubject,
+      "Summary":setSummary,"Response Received":setResponded,"Event":setEventName,"Donor Attended":setAttended,
+      "Observations":setObservations,"Notes":setOtherNotes};
+    const lines=String(editing.note||"").split("\n");
+    const known=lines.filter(l=>{const i=l.indexOf(": ");return i>0&&SET[l.slice(0,i)];});
+    if(fromCalendar||!["call","meeting","email","event","other"].includes(editing.type)||known.length!==lines.filter(l=>l.trim()).length){
+      setType(editing.type);setPlain(String(editing.note||""));return;
+    }
+    setType(editing.type);
+    for(const l of known){const i=l.indexOf(": ");SET[l.slice(0,i)](l.slice(i+2));}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   // The Event type offers the org's events by name. The fund, account and
   // campaign reads that used to be here went with the gift fields: the gift
   // form asks for those, and asking twice in two places is how one of them
@@ -175,6 +200,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
   const handOffToGiftForm=()=>{ if(onRecordGift)onRecordGift({date}); onClose&&onClose(); };
 
   const buildNote=()=>{
+    if(plain!==null)return plain;
     const L=[];
     const add=(k,v)=>{if(v&&String(v).trim())L.push(`${k}: ${v.trim()}`);};
     if(type==="call"){
@@ -212,6 +238,16 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
     // nothing left to do.
     if(loading)return;
     setLoading(true);
+    if(editing){
+      try{
+        const body={note,type:plain!==null?editing.type:type};
+        if(!fromCalendar)body.date=date;
+        const row=await apiFetch(`/interactions/${editing.id}`,{method:"PUT",body:JSON.stringify(body)});
+        onSave(row);
+      }catch(e){alert(errorMessage(e,"That edit did not save."));}
+      setLoading(false);
+      return;
+    }
     try{
       const saveType=type==="meeting"?"meeting":type;
       // FIX-14 Part 1 — the template's own fields travel with the note, so the
@@ -232,14 +268,16 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
     <Modal onClose={onClose} width={520} zIndex={300} padding={24}
       ariaLabel="Log touchpoint" dialogStyle={{border:"1px solid "+T.bg3}}>
       <div>
-        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
+        <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>{editing?"Edit this entry":"Log Touchpoint"}</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
-          {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 13px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
+          {(editing?TYPES.filter(([v])=>v!=="gift"&&(!fromCalendar&&plain===null||v===type)):TYPES).map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 13px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
-        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
+        <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} disabled={fromCalendar} style={inp}/>
+          {fromCalendar&&<div style={{fontSize:12,color:T.ink3,marginTop:6}}>The time and place come from your calendar. <a href={`https://${editMeta.provider==="google"?"calendar.google.com/calendar/r/day/":"outlook.office.com/calendar/view/day/"}${String(editing.date||"").slice(0,10).replace(/-/g,"/")}`} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontWeight:700}}>Change it in your calendar</a>.</div>}</div>
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
-          {type==="call"&&<>
+          {plain!==null&&<TpField label="Note"><textarea value={plain} onChange={e=>setPlain(e.target.value)} rows={6} style={ta}/></TpField>}
+          {plain===null&&type==="call"&&<>
             <TpField label="Answered?"><TpYesNo val={answered} set={setAnswered}/></TpField>
             <TpField label="Duration"><input value={duration} onChange={e=>setDuration(e.target.value)} placeholder="e.g. 20 min" style={inp}/></TpField>
             <TpField label="Key Takeaway 1"><textarea value={kt1} onChange={e=>setKt1(e.target.value)} rows={2} style={ta}/></TpField>
@@ -250,7 +288,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
             <TpField label="Spouse / Partner"><input value={spouse} onChange={e=>setSpouse(e.target.value)} placeholder="Name and relevant details" style={inp}/></TpField>
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
-          {type==="meeting"&&<>
+          {plain===null&&type==="meeting"&&<>
             <TpField label="Attendees"><input value={attendees} onChange={e=>setAttendees(e.target.value)} placeholder="Names of everyone present" style={inp}/></TpField>
             <TpField label="Location"><input value={location} onChange={e=>setLocation(e.target.value)} style={inp}/></TpField>
             <TpField label="Key Takeaway 1"><textarea value={kt1} onChange={e=>setKt1(e.target.value)} rows={2} style={ta}/></TpField>
@@ -266,14 +304,14 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
             <TpField label="Asks Made"><textarea value={asksMade} onChange={e=>setAsksMade(e.target.value)} rows={2} style={ta}/></TpField>
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
-          {type==="email"&&<>
+          {plain===null&&type==="email"&&<>
             <TpField label="Subject"><input value={subject} onChange={e=>setSubject(e.target.value)} style={inp}/></TpField>
             <TpField label="Summary"><textarea value={summary} onChange={e=>setSummary(e.target.value)} rows={4} style={ta}/></TpField>
             <TpField label="Response Received?"><TpYesNo val={responded} set={setResponded}/></TpField>
             <TpField label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Context for this outreach…" rows={3} style={ta}/></TpField>
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
-          {type==="event"&&<>
+          {plain===null&&type==="event"&&<>
             <TpField label="Event">
               {orgEvents.length>0?(
                 <select value={eventName} onChange={e=>setEventName(e.target.value)} style={{...inp,cursor:"pointer"}}>
@@ -300,7 +338,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
               Open the gift form
             </button>
           </div>}
-          {type==="other"&&<>
+          {plain===null&&type==="other"&&<>
             <TpField label="Notes"><textarea value={otherNotes} onChange={e=>setOtherNotes(e.target.value)} rows={5} style={ta}/></TpField>
             <TpField label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Past relationship, context…" rows={3} style={ta}/></TpField>
             <TpField label="Spouse / Partner"><input value={spouse} onChange={e=>setSpouse(e.target.value)} placeholder="Name and relevant details" style={inp}/></TpField>
@@ -308,7 +346,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
           </>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          {type!=="gift"&&<button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>}
+          {type!=="gift"&&<button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":editing?"Save changes":"Save Touchpoint"}</button>}
           <button onClick={onClose} style={{flex:type==="gift"?1:undefined,background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
@@ -900,6 +938,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [dpThread,setDpThread]=useState(null);
   const [dpItems,setDpItems]=useState([]);
   const [convoOpen,setConvoOpen]=useState(initialOpenConversation);
+  // FIX-14 Part 2 — the entry being edited (opens the form it was made with),
+  // and the ten-second Undo after a delete.
+  const [editingInt,setEditingInt]=useState(null);
+  const [undoToast,offerUndo]=useUndo();
   const [planOpen,setPlanOpen]=useState(false);   // BUILD-85 — plan forward on this donor
   // BUILD-88a A.2 — EVERY OPEN ITEM FOR THIS DONOR, ranked by the one ranking.
   // The profile showed the thread and nothing else, so a task created by
@@ -1342,11 +1384,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     const prev=localInts??donor.interactions??[];
     setLocalInts(prev.filter(x=>x.id!==int.id));
     try{
-      await apiFetch(`/interactions/${int.id}`,{method:"DELETE"});
+      const r=await apiFetch(`/interactions/${int.id}`,{method:"DELETE"});
+      offerUndo(r,(int.type||"entry").replace(/_/g," "),()=>{loadGiftsFull();loadRel&&loadRel();});
     }catch(e){
       loadGiftsFull();
       alert("Could not delete this entry: "+(errorMessage(e, "unknown error")));
     }
+  };
+  // The card's menu: Edit (not for a gift's entry; a gift is changed on the
+  // gift) and Delete, which asks once and then offers Undo.
+  const intActions=int=>isReadOnly||!int||!int.id?null:(
+    <span style={{display:"inline-flex",alignItems:"center",gap:6}}>
+      <EditedMarker item={int}/>
+      <ItemMenu label={(int.type||"entry").replace(/_/g," ")}
+        onEdit={int.gift_id||int.type==="gift"?null:()=>setEditingInt(int)}
+        onDelete={()=>deleteInteraction(int)}/>
+    </span>
+  );
+  const onIntEdited=row=>{
+    if(row&&row.id)setLocalInts(prev=>(prev??donor.interactions??[]).map(x=>x.id===row.id?{...x,...row}:x));
+    setEditingInt(null);
+    loadRel&&loadRel();
   };
 
   const saveStewardship=async()=>{
@@ -1454,6 +1512,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   },[]);
 
   const saveGiftEdit=async(giftId)=>{
+    // FIX-14 Part 2 — a receipt is a document the donor already holds. Editing
+    // the amount does not change it, so the person editing is told first.
+    const rcpt=receiptForGift(giftId);
+    const was=giftsFull.find(g=>g.id===giftId);
+    if(rcpt&&was&&giftEditForm.amount!==undefined&&Number(giftEditForm.amount)!==Number(was.amount)
+      &&!window.confirm(`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`))return;
     setGiftSaving(true);
     try{
       const {customFields,...core}=giftEditForm;
@@ -1836,6 +1900,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>
           )}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
+          {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
+            return m.via==="thread_log"
+              ?<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} editing={editingInt} onSaved={onIntEdited} onClose={()=>setEditingInt(null)}/>
+              :<LogTouchpointModal donor={donor} editing={editingInt} onSave={onIntEdited} onClose={()=>setEditingInt(null)}/>;})()}
+          {undoToast}
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
               // FIX-14 Part 1 — every count on the record re-reads the one
@@ -1960,7 +2029,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   onInteractionAdded&&onInteractionAdded();}}/>
               </section>;
             })()}
-            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
@@ -2409,7 +2478,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
                 <button onClick={onLogTouchpoint} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:7,padding:"4px 11px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
               </div>
-              <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction}/>
+              <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction} renderActions={intActions}/>
             </div>
 
             {/* BUILD-41: Delete lives at the BOTTOM of the record, not in the
@@ -2936,7 +3005,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {dpTab==="activity"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
             {/* Mode toggle */}
             <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden",alignSelf:"flex-start"}}>
-              {[["log","Activity Log"],["timeline","Stewardship Timeline"]].map(([m,l])=>(
+              {[["log","Activity Log"],["timeline","Stewardship Timeline"],["history","History"]].map(([m,l])=>(
                 <button key={m} onClick={()=>setActMode(m)} style={{background:actMode===m?T.white:"transparent",border:"none",padding:"8px 16px",color:actMode===m?T.ink:T.ink3,fontSize:12,fontWeight:actMode===m?700:400,cursor:"pointer"}}>
                   {l}
                 </button>
@@ -2995,19 +3064,23 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         {/* BUILD-88a A.4 — a colleague is a FIRST NAME. "by Admin User"
                             is the software talking to itself. */}
                         {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(i.logged_by_name)}</span>}
+                        <EditedMarker item={i}/>
                       </div>
                       {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{giftTimelineLine(linkedGift,giftFundName(linkedGift))}</div>}
                       {(()=>{const txt=linkedGift?stripGiftAmountPrefix(i.note):i.note;
                         return txt?<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{txt}</div>:null;})()}
                     </div>
-                    {i.id&&<button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
-                      onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))deleteInteraction(i);}}
-                      style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",flexShrink:0,lineHeight:1}}>✕</button>}
+                    {i.id&&!isReadOnly&&<ItemMenu label={(i.type||"entry").replace(/_/g," ")}
+                      onEdit={i.gift_id||i.type==="gift"?null:()=>setEditingInt(i)} onDelete={()=>deleteInteraction(i)}/>}
                   </div>);
                 })}
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
               </div>
             </>}
+
+            {/* FIX-14 Part 2 — everything that happened to this record, from
+                the audit log, newest first, each a plain sentence. */}
+            {actMode==="history"&&<HistoryList donorId={donor.id}/>}
 
             {actMode==="timeline"&&(()=>{
               const ints=localInts??donor.interactions??[];

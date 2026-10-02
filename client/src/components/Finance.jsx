@@ -820,11 +820,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [showFundModal, setShowFundModal] = useState(false);
   const [editFund, setEditFund] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [auditLog, setAuditLog] = useState([]);
-  const [auditLoading, setAuditLoading] = useState(false);
-  const [auditActionFilter, setAuditActionFilter] = useState("");
-  const [auditEntityFilter, setAuditEntityFilter] = useState("");
-  const [expandedAuditRows, setExpandedAuditRows] = useState(new Set());
   // Persisted in localStorage so it survives page reloads
   const [yearMode, setYearMode] = useState(() => localStorage.getItem("steward_fin_yearmode") || "fiscal");
 
@@ -842,7 +837,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   useEffect(() => { loadAll(); }, []);
-  useEffect(() => { if (subtab === "audit") reloadAuditLog(); }, [subtab]);
 
   const reloadTxns = (yr) => apiFetch(`/finance/transactions?year=${yr}`).then(setTransactions);
   const reloadBudgets = (yr) => apiFetch(`/finance/budgets?year=${yr}`).then(setBudgets);
@@ -851,12 +845,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     localStorage.setItem("steward_fin_yearmode", v);
     setYearMode(v);
     reloadSummary(v); // pass explicitly to avoid stale closure
-  };
-  const reloadAuditLog = async () => {
-    setAuditLoading(true);
-    try { const rows = await apiFetch("/finance/audit-log?limit=200"); setAuditLog(rows); }
-    catch(e) { console.error(e); }
-    setAuditLoading(false);
   };
 
   // ── Reports & derived views (fund balances, monthly breakdown) ──
@@ -1005,30 +993,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     return pts.map(v => { running += v; return running; });
   };
 
-  const filteredAudit = auditLog
-    .filter(e => !auditActionFilter || e.action === auditActionFilter)
-    .filter(e => !auditEntityFilter || e.entity_type === auditEntityFilter);
-
-  const exportAuditCSV = () => {
-    const esc = v => `"${String(v == null ? "" : v).replace(/"/g,'""')}"`;
-    const rows = [
-      ["Timestamp","User","Action","Entity Type","Description","Entity ID"],
-      ...filteredAudit.map(e => [
-        new Date(e.created_at).toLocaleString(),
-        e.user_name || "",
-        e.action,
-        e.entity_type,
-        (typeof e.changes === "object" ? e.changes?.description : "") || "",
-        e.entity_id || "",
-      ])
-    ];
-    const csv = rows.map(r => r.map(esc).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type:"text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "finance-audit-log.csv"; a.click();
-    URL.revokeObjectURL(url);
-  };
 
   // BUILD-12: the page-subtitle blurb was removed (it duplicated the stat
   // cards). Its one non-duplicated number — the vs-prior-period delta — is
@@ -1520,113 +1484,20 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       </>}
 
       {/* ── Audit Log ── */}
-      {subtab === "audit" && <>
-        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }} className="filter-bar">
-          <select value={auditActionFilter} onChange={e => setAuditActionFilter(e.target.value)} style={{ ...inp, width:140, cursor:"pointer" }}>
-            <option value="">All actions</option>
-            <option value="created">Created</option>
-            <option value="updated">Updated</option>
-            <option value="deleted">Deleted</option>
-          </select>
-          <select value={auditEntityFilter} onChange={e => setAuditEntityFilter(e.target.value)} style={{ ...inp, width:160, cursor:"pointer" }}>
-            <option value="">All entity types</option>
-            <option value="transaction">Transaction</option>
-            <option value="account">Account</option>
-            <option value="fund">Fund</option>
-            <option value="budget">Budget</option>
-          </select>
-          <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>{filteredAudit.length} entries</span>
-          <button style={{ ...ghostBtn, marginLeft:"auto" }} onClick={exportAuditCSV}>Export CSV</button>
+      {/* FIX-14 Part 2 — THE AUDIT LOG LIVES IN SETTINGS. One log for the
+          whole organisation, at Settings, Audit log; the bookkeeper keeps a
+          way to it from here. Admins see it there. */}
+      {subtab === "audit" && <Card>
+        <div style={{ fontSize:14, fontWeight:700, color:T.ink, marginBottom:6 }}>The audit log is in Settings</div>
+        <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6, marginBottom:12, maxWidth:560 }}>
+          Every change anyone makes in Steward, gifts and funds included, with who, what and when, in one place. Your organization's admins can open it and export it as a CSV.
         </div>
-        <Card style={{ padding:0, overflow:"hidden" }}>
-          {auditLoading
-            ? <div style={{ padding:24, color:T.ink3, fontSize:13 }}>Loading audit log…</div>
-            : filteredAudit.length === 0
-              ? <EmptyState title="No changes recorded yet" message="Every edit to a transaction, account, fund, or budget is logged here with who, what, and when — your paper trail for the board and auditors."/>
-              : (
-                <div style={{ overflowX:"auto" }}>
-                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                    <thead>
-                      <tr style={{ background:T.bg2 }}>
-                        {["Timestamp","User","Action","Entity","Description"].map(h => (
-                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
-                        ))}
-                        <th style={{ padding:"10px 14px", width:40 }}/>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAudit.map((entry, i) => {
-                        const expanded = expandedAuditRows.has(entry.id);
-                        const changes = typeof entry.changes === "object" && entry.changes ? entry.changes : {};
-                        const hasOldNew = (changes.old && Object.keys(changes.old).length > 0) || (changes.new && Object.keys(changes.new).length > 0);
-                        const ACTION_STYLE = {
-                          created: { bg:T.bg2, color:T.ink },
-                          updated: { bg:T.gold+"26", color:T.gold700 },
-                          deleted: { bg:OUT+"20", color:OUT },
-                        };
-                        const as = ACTION_STYLE[entry.action] || { bg:T.bg2, color:T.ink3 };
-                        return (
-                          <Fragment key={entry.id}>
-                            <tr style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?"transparent":T.ink+"44" }}>
-                              <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap", fontSize:11, fontFamily:"'Fira Mono',monospace" }}>
-                                {new Date(entry.created_at).toLocaleString()}
-                              </td>
-                              <td style={{ padding:"10px 14px", fontSize:12, color:T.ink }}>{entry.user_name || "System"}</td>
-                              <td style={{ padding:"10px 14px" }}>
-                                <span style={{ fontSize:11, fontWeight:700, borderRadius:5, padding:"2px 8px", background:as.bg, color:as.color }}>{entry.action}</span>
-                              </td>
-                              <td style={{ padding:"10px 14px", color:T.ink3, fontSize:12 }}>{entry.entity_type}</td>
-                              <td style={{ padding:"10px 14px", fontSize:12, color:T.ink, maxWidth:320 }}>{changes.description || "—"}</td>
-                              <td style={{ padding:"10px 14px" }}>
-                                {hasOldNew && (
-                                  <button onClick={() => setExpandedAuditRows(prev => {
-                                    const next = new Set(prev);
-                                    expanded ? next.delete(entry.id) : next.add(entry.id);
-                                    return next;
-                                  })} style={{ background:"none", border:"none", cursor:"pointer", color:T.ink3, fontSize:11 }}>
-                                    {expanded ? "▲" : "▼"}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                            {expanded && hasOldNew && (
-                              <tr style={{ background:T.bg2 }}>
-                                <td colSpan={6} style={{ padding:"10px 24px 14px 24px" }}>
-                                  <div style={{ display:"flex", gap:32 }}>
-                                    {changes.old && Object.keys(changes.old).length > 0 && (
-                                      <div>
-                                        <div style={{ fontSize:10, fontWeight:700, color:OUT, marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>Before</div>
-                                        {Object.entries(changes.old).map(([k, v]) => (
-                                          <div key={k} style={{ fontSize:12, color:T.ink, marginBottom:2 }}>
-                                            <span style={{ color:T.ink3 }}>{k}:</span> {String(v ?? "—")}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                    {changes.new && Object.keys(changes.new).length > 0 && (
-                                      <div>
-                                        <div style={{ fontSize:10, fontWeight:700, color:T.ink3, marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>After</div>
-                                        {Object.entries(changes.new).map(([k, v]) => (
-                                          <div key={k} style={{ fontSize:12, color:T.ink, marginBottom:2 }}>
-                                            <span style={{ color:T.ink3 }}>{k}:</span> {String(v ?? "—")}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )
-          }
-        </Card>
-      </>}
+        <RecordLink to={tabHref("settings", { section:"audit" })} onOpen={onNavigate ? () => onNavigate("settings", { section:"audit" }) : undefined}
+          data-testid="finance-audit-link"
+          style={{ display:"inline-block", background:T.greenDk, color:T.white, borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:700 }}>
+          Open the audit log
+        </RecordLink>
+      </Card>}
     </div>
   );
 }

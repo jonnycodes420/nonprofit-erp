@@ -381,6 +381,66 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
   ok("§7 …and where a secret field DID change, the row says so without saying what to",
     redactedSeen || everything.length > 0, { redactedSeen });
 
+  // ── §8 · FIX-14 Part 2 — AN EDIT SAYS WHAT IT WAS ───────────────────────
+  // Jonathan logged a meeting on the wrong day and could not fix it: a logged
+  // conversation could not be edited. Now it can, and the edit is ONE audit
+  // row naming both fields that moved, with the old and the new value, which
+  // is the only copy of the old note anywhere once the edit is saved.
+  // HOW IT WOULD GO RED: drop the PUT route (the edit 404s); write the edit
+  // twice or audit it by hand (two rows); stop the middleware reading the
+  // before-snapshot (no old values); let the sentence fall back to a dash.
+  {
+    const conv = await mfetch("POST", `/donors/${donorId}/conversations`, token,
+      { touch: "meeting", line: "Coffee at the harbour. She asked for the impact report.", date: "2026-10-02", nextStep: { skipped: true } });
+    const intId = conv.body && conv.body.interactionId;
+    ok("§8 a meeting was logged", conv.status === 201 && !!intId, { status: conv.status, body: conv.body });
+    const logged = await waitForRow(ORG_A, r => r.entity_id === intId && r.action === "created",
+      "§8 logging the meeting leaves a row naming the meeting");
+    const t0 = new Date();
+    const ed = await mfetch("PUT", `/interactions/${intId}`, token,
+      { date: "2026-10-01", note: "Coffee at the harbour. She asked for the impact report by Friday." });
+    ok("§8 the meeting's date and note were edited", ed.status === 200 && ed.body.date === "2026-10-01", { status: ed.status, body: ed.body });
+    const uRow = await waitForRow(ORG_A, r => r.entity_id === intId && r.action === "updated",
+      "§8 the edit leaves a row");
+    await new Promise(r => setTimeout(r, 400));
+    const edits = (await rowsFor(ORG_A)).filter(r => r.entity_id === intId && r.action === "updated" && new Date(r.created_at) >= new Date(t0 - 2000));
+    ok("§8 …exactly ONE row for the one edit", edits.length === 1, { rows: edits.length });
+    if (uRow) {
+      const b = uRow.before_fields || {}, a2 = uRow.after_fields || {};
+      ok("§8 …naming both fields, each with its old and new value, and nothing else",
+        b.date === "2026-10-02" && a2.date === "2026-10-01"
+          && b.note === "Coffee at the harbour. She asked for the impact report."
+          && a2.note === "Coffee at the harbour. She asked for the impact report by Friday."
+          && Object.keys(a2).sort().join(",") === "date,note",
+        { before: b, after: a2 });
+      const shown = (await mfetch("GET", `/audit/log/${uRow.id}`, token)).body || {};
+      ok("§8 …and its Description is a plain sentence naming the change and the person",
+        shown.description === "Changed the meeting date from Oct 2 to Oct 1 and the note (Ada Petrossian)",
+        { description: shown.description });
+      if (logged) {
+        const lShown = (await mfetch("GET", `/audit/log/${logged.id}`, token)).body || {};
+        ok("§8 …the create reads \"Logged a meeting with Ada Petrossian\"", lShown.description === "Logged a meeting with Ada Petrossian",
+          { description: lShown.description });
+      }
+    }
+    const [now] = await q(`SELECT date, note, edited_by FROM interactions WHERE id=$1`, [intId]);
+    ok("§8 the meeting now shows the new values, marked edited by who", now && now.date === "2026-10-01"
+      && /by Friday/.test(now.note) && now.edited_by === `u_${ORG_A}_admin`, { now });
+    // §2 removed the seeded staff member, so a second one is added here.
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Lee Park','staff')`,
+      [`u_${ORG_A}_staff2`, ORG_A, "staff2-a@f11.local", PW]);
+    const staffTok = (await mfetch("POST", "/auth/login", null, { email: "staff2-a@f11.local", password: "loadtest1234" })).body.token;
+    const theirs = await mfetch("PUT", `/interactions/${intId}`, staffTok, { note: "not mine to change" });
+    ok("§8 somebody who did not log it, and is not an admin, cannot change it", theirs.status === 403, { status: theirs.status });
+    // DELETE, then UNDO: the same row comes back.
+    const del = await mfetch("DELETE", `/interactions/${intId}`, token);
+    ok("§8 deleting it offers an undo", del.status === 200 && !!del.body.undoId, { body: del.body });
+    const back = await mfetch("POST", `/deleted-records/${del.body.undoId}/restore`, token);
+    const [again] = await q(`SELECT date, note FROM interactions WHERE id=$1`, [intId]);
+    ok("§8 …and Undo puts it back exactly as it was", back.status === 200 && again && again.date === "2026-10-01" && /by Friday/.test(again.note),
+      { status: back.status, again });
+  }
+
   await wipe(ORG_A);
   await wipe(ORG_B);
   await closeDb();
