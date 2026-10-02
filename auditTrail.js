@@ -419,8 +419,10 @@ function auditPeopleIds(row) {
   return [...ids];
 }
 // "The Cobbleworth Household" reads "the Cobbleworth household" mid-sentence.
-function householdName(full) {
-  const n = String((full && full.name) || "").trim();
+// A household's name is a person's name, so the row holds "[person]" (FIX-12)
+// and the live name is looked up as the log is read, under "hh:<id>".
+function householdName(row, people) {
+  const n = String((people && people.get("hh:" + row.entity_id)) || "").trim();
   if (!n) return "the household";
   return "the " + n.replace(/^the\s+/i, "").replace(/\bHousehold$/, "household");
 }
@@ -523,7 +525,7 @@ function describeAuditRow(row, ctx = {}) {
     if (changed.length) return `Changed the relationship${pair}: ${fieldChanges()}`;
   }
   if (type === "household") {
-    const hh = householdName(full.name ? full : { name: row.entity_label });
+    const hh = householdName(row, people);
     const nameOf = id => people.get(String(id)) || "a person";
     if (action === "created") return `Created ${hh}`;
     if (action === "deleted") {
@@ -605,6 +607,7 @@ function auditRecordName(row, ctx = {}) {
   if (/^(thread|next step)$/.test(type)) return who ? `Next step for ${who}` : "Next step";
   if (type === "task") return full.title || (who ? `Task for ${who}` : "Task");
   if (type === "gift") return who ? `Gift from ${who}` : (row.entity_label || "Gift");
+  if (type === "household") return upperFirst(householdName(row, people));
   if (/^(donor|person|people|organisation|organization|stage)$/.test(type)) return who || row.entity_label || "A person";
   return row.entity_label || (who ? `${upperFirst(ENTITY_WORD[type] || type)} for ${who}` : upperFirst(ENTITY_WORD[type] || type || "Record"));
 }

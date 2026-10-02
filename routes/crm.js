@@ -13546,6 +13546,15 @@ async function auditPeople(rows, orgId) {
     const ds = await query("SELECT id, name, erased_at FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, [...ids]]).catch(() => []);
     for (const d of ds) people.set(d.id, d.erased_at ? "Erased person" : (d.name || "a person with no name"));
   }
+  // FIX-14 Part 2b: a household's name, live, or as it was when it was deleted.
+  const hhIds = [...new Set(rows.filter(r => r.entity_type === "household" && r.entity_id).map(r => String(r.entity_id)))];
+  if (hhIds.length) {
+    const hs = await query(
+      `SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)
+       UNION ALL SELECT record_id, row_data->>'name' FROM deleted_records WHERE org_id=? AND table_name='households' AND record_id = ANY(?)`,
+      [orgId, hhIds, orgId, hhIds]).catch(() => []);
+    for (const h of hs) if (h.name && !people.has("hh:" + h.id)) people.set("hh:" + h.id, h.name);
+  }
   return people;
 }
 async function auditDescribe(rows, orgId) {
