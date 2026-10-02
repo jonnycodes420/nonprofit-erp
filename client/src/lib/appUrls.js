@@ -17,6 +17,11 @@ const QUERY_KEYS = [
   ["agentView", "view"], ["scope", "scope"], ["subtab", "subtab"],
   ["highlightDraftId", "draft"], ["preset", "preset"], ["from", "from"],
   ["to", "to"], ["yearMode", "year"],
+  // FIX-14 Part 5: the records that open inside a tab: an event, a
+  // campaign, a fund, a volunteer. The tab reads its own key on mount
+  // (urlParam below), so a fresh tab opens on that record.
+  ["eventId", "event"], ["campaignId", "campaign"], ["fundId", "fund"],
+  ["volunteerId", "volunteer"],
 ];
 
 export function donorHref(id) {
@@ -29,6 +34,10 @@ export const DONOR_LIST_KEYS = [
   ["view", "view"], ["search", "q"], ["stage", "stage"], ["owner", "owner"],
   ["designation", "designation"], ["noMeeting", "nomeeting"],
   ["nmOwner", "nm_owner"], ["nmMin", "nm_min"],
+  // FIX-14 Part 5: the order the list is in (name, last_gift_date,
+  // total_giving; the server's DONOR_SORTS), and a household: the list of
+  // its members is the household's page.
+  ["sort", "sort"], ["household", "household"],
 ];
 
 export function donorsListHref(state) {
@@ -50,6 +59,25 @@ export function donorsListState(search) {
     out[k] = k === "noMeeting" ? qs.get(q) === "1" : qs.get(q);
   }
   return out;
+}
+
+// A gift has no page of its own: it lives on the donor who gave it. The
+// anchor names the gift, so the link is that gift's and not just the donor's.
+export function giftHref(donorId, giftId) {
+  return donorHref(donorId) + (giftId ? "#gift-" + encodeURIComponent(giftId) : "");
+}
+
+// The household's page: the Donors list, narrowed to its members.
+export function householdHref(id) {
+  return donorsListHref({ household: id });
+}
+
+// A query value, but only while the address bar is on that tab (/app/:tab),
+// so a record id meant for one tab is never read by another.
+export function urlParam(tab, key) {
+  if (typeof window === "undefined") return null;
+  if (window.location.pathname.replace(/\/+$/, "") !== "/app/" + tab) return null;
+  return new URLSearchParams(window.location.search).get(key);
 }
 
 export function tabHref(tab, opts) {

@@ -223,7 +223,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
     </Modal>
   );
 }
-function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false}){
+function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
@@ -387,6 +387,17 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <option value="">All designations</option>
           {DESIGNATION_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
         </select>
+        {/* FIX-14 Part 5: the order lives in the URL (?sort=), and the server
+            sorts, so page two continues page one. */}
+        {setSortBy&&<select value={sortBy||""} onChange={e=>setSortBy(e.target.value)} style={filterSel} data-testid="dir-sort" aria-label="Sort donors" title="The order of the list">
+          <option value="">Sort: total given</option>
+          <option value="last_gift_date">Sort: last gift</option>
+          <option value="name">Sort: name</option>
+        </select>}
+        {household&&<span data-testid="dir-household" style={{fontSize:12,color:T.ink,fontWeight:700,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",display:"inline-flex",gap:8,alignItems:"center"}}>
+          One household
+          {clearHousehold&&<button onClick={clearHousehold} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,fontSize:12,cursor:"pointer"}}>Show everyone</button>}
+        </span>}
         {/* BUILD-94 Part 2 — this list holds volunteers, staff and board now.
             It reads "donors" ONLY while every row on it is one: an org that
             has never imported a non-donor sees exactly what it saw before

@@ -944,7 +944,7 @@ function AppShell() {
           <JourneyBuilder key={navNonce} isAdmin={auth?.user?.role==="admin"} isReadOnly={isReadOnly} initialJourneyId={journeysIntent?.journeyId}/>
         </div>
       )}
-      {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
+      {tab==="events"&&<Events key={navNonce} data={data} isReadOnly={isReadOnly}/>}
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not
           revived: the file stays, unimported, like Events and Board. */}
@@ -956,7 +956,7 @@ function AppShell() {
           Removed for the reason the spec gives: a board member is a donor with
           a flag, and a board packet is a PDF export, not a module. Board.jsx,
           its routes and its table are untouched, like Events and Volunteers. */}
-      {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="finance"&&<Finance key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}

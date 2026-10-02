@@ -26,7 +26,8 @@ import { parseFileToSheets } from "./DonorImport";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref, urlParam } from "../lib/appUrls";
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -96,6 +97,13 @@ function useNarrow() {
   return n;
 }
 
+// FIX-14 Part 5: a volunteer's name is a real link to their panel,
+// /app/volunteers?volunteer=<id>, so it opens in a new tab as well as here.
+const volunteerHref = id => tabHref("volunteers", { volunteerId: id });
+function VolLink({ p, onOpen, style }) {
+  return <RecordLink to={volunteerHref(p.id)} onOpen={() => onOpen(p)} data-record-link="volunteer" style={style}>{p.name}</RecordLink>;
+}
+
 // The defining sentence for every figure, shown where the figure is.
 function Definitions({ items }) {
   const rows = items.filter(([, s]) => s);
@@ -112,7 +120,10 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
   const [partOf, setPartOf] = useState({ people: "roster", schedule: "opportunities", records: "shifts", reach: "signup" });
   const [roster, setRoster] = useState(null);
   const [err, setErr] = useState("");
-  const [open, setOpen] = useState(null);   // the person whose panel is open
+  const [open, setOpenRaw] = useState(null);   // the person whose panel is open
+  const goUrl = useUrlWriter();
+  const setOpen = p => { setOpenRaw(p); goUrl(p ? volunteerHref(p.id) : tabHref("volunteers")); };
+  const [wantId] = useState(() => urlParam("volunteers", "volunteer"));
   // VOL-2 item 1 — the two ways a volunteer gets onto the roster, held by the
   // hub rather than by the roster view, so they are the same two buttons
   // whether the roster is empty or full.
@@ -135,6 +146,13 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       .catch(e => setErr(errorMessage(e, "The roster did not load.")));
   }, []);
   useEffect(() => { loadRoster(); }, [loadRoster]);
+  // A link from another tab names the volunteer; the panel needs their name,
+  // which the roster has. Someone off the roster still opens, by id.
+  useEffect(() => {
+    if (!wantId || !roster) return;
+    const p = (roster.people || []).find(x => x.id === wantId);
+    setOpenRaw(o => o || (p ? { id: p.id, name: p.name } : { id: wantId, name: "Volunteer" }));
+  }, [roster, wantId]);
 
   const openRecord = id => onNavigate && onNavigate("donors", { selectDonorId: id });
   const sec = sections.find(x => x.id === section) || sections[0];
@@ -201,7 +219,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
           them, with this person carried across, rather than growing a second
           hours form inside a drawer. */}
       {open && <PersonPanel person={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onChanged={loadRoster}
-        onOpenRecord={id => { setOpen(null); openRecord(id); }}
+        onOpenRecord={id => { setOpenRaw(null); openRecord(id); }}
         onLogHours={() => { setOpen(null); setSection("records"); setPartOf(m => ({ ...m, records: "shifts" })); }}
         onAddToShift={() => { setOpen(null); setSection("schedule"); setPartOf(m => ({ ...m, schedule: "opportunities" })); }} />}
       {adding && <AddVolunteerModal onClose={() => setAdding(false)} onDone={loadRoster} />}
@@ -323,7 +341,7 @@ function RosterView({ roster, narrow, onOpen, onAdd, onImport, onSignupLink, isR
       {roster.people.map(p => (
         <div key={p.id} data-testid="vol-roster-row" style={{ display: "grid", gridTemplateColumns: cols, gap: 12, alignItems: "center", padding: "11px 4px", borderBottom: "1px solid " + T.bg2 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <button onClick={() => onOpen(p)} style={{ ...btnLink, color: T.ink, fontSize: 14 }}>{p.name}</button>
+            <VolLink p={p} onOpen={onOpen} style={{ ...btnLink, color: T.ink, fontSize: 14 }} />
             {narrow && <span style={{ fontSize: 12, color: T.ink3 }}>Last shift {p.lastShift || "none yet"}{p.alsoGives ? " · also gives" : ""}</span>}
           </div>
           {narrow
@@ -393,13 +411,13 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
             <div key={s.id} data-testid="vol-shift-row" style={{ display: "grid", gridTemplateColumns: narrow ? "1fr auto" : "96px minmax(140px,1.4fr) 64px 1.4fr 1.4fr auto", gap: 10, alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + T.bg2, fontSize: 13 }}>
               {narrow ? <>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-                  <button onClick={() => onOpen({ id: s.person_id, name: s.person_name })} style={{ ...btnLink, color: T.ink }}>{s.person_name}</button>
+                  <VolLink p={{ id: s.person_id, name: s.person_name }} onOpen={onOpen} style={{ ...btnLink, color: T.ink }} />
                   <span style={{ fontSize: 12, color: T.ink3 }}>{displayDate(s.date)}{s.role ? " · " + s.role : ""} · logged by {via(s)}</span>
                 </div>
                 <span style={{ fontWeight: 700, color: T.ink, whiteSpace: "nowrap" }}>{s.hours} h</span>
               </> : <>
                 <span style={{ color: T.ink3 }}>{displayDate(s.date)}</span>
-                <button onClick={() => onOpen({ id: s.person_id, name: s.person_name })} style={{ ...btnLink, color: T.ink }}>{s.person_name}</button>
+                <VolLink p={{ id: s.person_id, name: s.person_name }} onOpen={onOpen} style={{ ...btnLink, color: T.ink }} />
                 <span style={{ fontWeight: 700, color: T.ink }}>{s.hours} h</span>
                 <span style={{ color: T.ink }}>{s.role || ""}</span>
                 <span style={{ color: T.ink3 }}>Logged by {via(s)}</span>
@@ -476,7 +494,7 @@ function GiversView({ narrow, onOpenRecord, onOpen }) {
       {data.people.map(p => (
         <div key={p.id} data-testid="vol-giver-row" style={{ display: "grid", gridTemplateColumns: narrow ? "1fr auto" : "minmax(180px,2fr) 1fr 1fr auto", gap: 12, alignItems: "center", padding: "11px 0", borderBottom: "1px solid " + T.bg2, fontSize: 13 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <button onClick={() => onOpen(p)} style={{ ...btnLink, color: T.ink, fontSize: 14 }}>{p.name}</button>
+            <VolLink p={p} onOpen={onOpen} style={{ ...btnLink, color: T.ink, fontSize: 14 }} />
             {narrow && <span style={{ fontSize: 12, color: T.ink3 }}>{hrs(p.hundredths)} hours in all · last gift {p.lastGiftDate || "not recorded"}</span>}
           </div>
           {!narrow && <span style={{ color: T.ink }}>{hrs(p.hundredths)} hours in all</span>}
@@ -544,8 +562,8 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onL
               {view?.since ? `Volunteer since ${String(view.since).slice(0, 4)}` : "Volunteer"}
               {view && view.giving && <>
                 {" · "}
-                <button onClick={() => onOpenRecord(person.id)} data-testid="vol-person-also-gives"
-                  style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>Also gives</button>
+                <DonorLink id={person.id} onOpen={() => onOpenRecord(person.id)} data-testid="vol-person-also-gives"
+                  style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>Also gives</DonorLink>
               </>}
             </div>
           </div>

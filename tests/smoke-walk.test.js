@@ -270,6 +270,46 @@ const EXPECTED_5XX = /\/ai\/stream/;
   ok("the walk visited a DIFFERENT screen each time (not the dashboard N times)",
      new Set(seen).size === seen.length, seen);
 
+  // FIX-14 Part 5: THE OTHER RECORDS ARE LINKS TOO. One of each kind, on
+  // the screen that lists it, is an <a> (data-record-link names the kind)
+  // whose href is that record's own URL, naming a record that exists. A
+  // kind drawn as a <button> or a <span> has no anchor and fails here.
+  // Households are not in this list: the only place one is drawn is the
+  // donor profile, which this part did not touch (their URL is
+  // /donors?household=<id>, built by householdHref).
+  const ids = async (p, pick) => { const r = await api("GET", p, auth.token); try { return new Set(pick(r.body).map(x => x.id)); } catch { return new Set(); } };
+  const known = {
+    event: await ids("/events", b => b),
+    campaign: await ids("/fundraising/overview", b => b.goals),
+    fund: await ids("/finance/funds-detail", b => b.funds),
+    journey: await ids("/journeys", b => b.journeys),
+    gift: await ids("/acknowledgments/backlog", b => b.gifts),
+    grant: await ids("/grants", b => b),
+    volunteer: await ids("/volunteer-hub/roster", b => b.people),
+  };
+  const RECORDS = [
+    ["event", "/app/events", /^\/app\/events\?event=([^&#]+)$/],
+    ["campaign", "/app/fundraising?fr=campaigns", /^\/app\/fundraising\?fr=campaigns&campaign=([^&#]+)$/],
+    ["fund", "/app/finance?subtab=funds", /^\/app\/finance\?subtab=funds&fund=([^&#]+)$/],
+    ["journey", "/app/journeys", /^\/app\/journeys\?journey=([^&#]+)$/],
+    ["gift", "/app/fundraising?fr=acknowledgments", /^\/donors\/[^/?#]+#gift-([^&#]+)$/],
+    ["grant", "/app/grants", /^\/app\/grants\?grant=([^&#]+)$/],
+    ["volunteer", "/app/volunteers", /^\/app\/volunteers\?volunteer=([^&#]+)$/],
+  ];
+  for (const [kind, url, shape] of RECORDS) {
+    trouble = [];
+    await page.goto(`${APP}${url}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForSelector(`[data-record-link="${kind}"]`, { timeout: 10000 }).catch(() => {});
+    const r = await page.$$eval(`[data-record-link="${kind}"]`, els => els.map(e => ({ tag: e.tagName, href: e.getAttribute("href") })));
+    const bad = r.filter(x => {
+      const m = x.tag === "A" && shape.exec(x.href || "");
+      return !m || (known[kind].size > 0 && !known[kind].has(decodeURIComponent(m[1])));
+    });
+    ok(`${kind}: every ${kind} on ${url} is a link to its own URL (${r.length})`, r.length > 0 && bad.length === 0,
+       { found: r.length, bad: bad.slice(0, 3) });
+  }
+  trouble = [];
+
   for (const d of three) {
     for (const tab of PROFILE_TABS) {
       trouble = [];
