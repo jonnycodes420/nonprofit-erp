@@ -31,6 +31,7 @@ import { displayDate, displayDateShort } from "../../../shared/displayDate";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
+import { WhyPanel } from "./WhyAnswer";
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -1142,6 +1143,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // the person chose. Opening on the Gifts tab with the panel already open is
   // what makes the hand-off one step rather than two.
   const [dpTab,setDpTab]=useState(initialAddGift?"gifts":"overview");
+  const [whyStopOpen,setWhyStopOpen]=useState(false);
   const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
 
   // Full gift data for Gifts & Pledges tab
@@ -2038,6 +2040,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
                 [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
                 ["Brief me",()=>setBriefOpen(true),false],
+                // WHY-1 — only for a lapsed donor: the facts on their record
+                // before they stopped, and the one touch that fits.
+                ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
                 ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
                 [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
                 /* MEMBERS-2 — the one page this person has: their membership,
@@ -2056,6 +2061,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               ))}
             </div>
           )}
+          {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
           {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
             return m.via==="thread_log"

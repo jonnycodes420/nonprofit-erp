@@ -14,6 +14,7 @@ import { SavedDashboardView, DashboardBuilder, BoardPackPanel } from "./SavedDas
 import { useNavigate } from "react-router-dom";
 import { tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
+import { WhyLink } from "./WhyAnswer";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -426,6 +427,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"}</strong> this period
         {c && c.value > 0 && <> — {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year</>}.
+        {/* WHY-1 — a number down against last year asks why: the campaign's
+            own question when the report is filtered to one, else retention. */}
+        {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
         {" "}<strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave ({d.newDonors} new, {d.returningDonors} returning); the median gift was <strong>{fmtFull(d.medianGift)}</strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
@@ -477,8 +481,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     } else if (active === "retention") {
       empty = d.rows.every(r => r.priorDonors === 0);
       const latest = [...d.rows].reverse().find(r => r.retentionRate !== null);
+      const earlier = latest ? [...d.rows].reverse().filter(r => r.retentionRate !== null)[1] : null;
       narrative = latest
-        ? <>In <strong>{latest.label}</strong> you retained <strong>{latest.retentionRate}%</strong> of the prior year's donors ({latest.retainedDonors} of {latest.priorDonors}) and <strong>{pctStr(latest.dollarRetentionRate)}</strong> of their dollars.{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong>{latest.firstYearRetentionRate}%</strong> — that number is what stewardship moves.</>}</>
+        ? <>In <strong>{latest.label}</strong> you retained <strong>{latest.retentionRate}%</strong> of the prior year's donors ({latest.retainedDonors} of {latest.priorDonors}) and <strong>{pctStr(latest.dollarRetentionRate)}</strong> of their dollars.{earlier && latest.retentionRate < earlier.retentionRate && <WhyLink payload={{ key: "retention" }} />}{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong>{latest.firstYearRetentionRate}%</strong>; that number is what stewardship moves.</>}</>
         : <>Not enough multi-year giving history yet to compute retention.</>;
       // Each row is a different year's cohort; they do not add up, so no foot.
       table = <ReportTable foot={false} cols={[
@@ -529,6 +534,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       empty = d.giftCount === 0;
       narrative = <>In <strong>{d.label}</strong> you raised <strong>{fmtFull(d.total)}</strong> from <strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"}
         {d.growthPct !== null && <> — {d.growthPct >= 0 ? "up" : "down"} {Math.abs(d.growthPct)}% from {d.priorLabel}</>}.
+        {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
         {" "}{d.newDonors} new, {d.returningDonors} returning{d.retentionRate !== null && <>; you kept <strong>{d.retentionRate}%</strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>

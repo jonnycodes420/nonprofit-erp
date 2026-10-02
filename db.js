@@ -5304,6 +5304,14 @@ async function initSchema() {
       id BIGSERIAL PRIMARY KEY, surface TEXT NOT NULL, question TEXT NOT NULL, topic TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT question_log_surface CHECK (surface IN ('help','agent','analyst')))`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_question_log_created ON question_log (created_at)`);
+  // WHY-1 — Ask why logs here too (surface 'why'), with whether Steward could
+  // answer. The question text only, never donor data and never the answer.
+  await pool.query(`ALTER TABLE question_log ADD COLUMN IF NOT EXISTS answered BOOLEAN`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'question_log_surface' AND pg_get_constraintdef(oid) LIKE '%why%') THEN
+        ALTER TABLE question_log DROP CONSTRAINT IF EXISTS question_log_surface;
+        ALTER TABLE question_log ADD CONSTRAINT question_log_surface CHECK (surface IN ('help','agent','analyst','why'));
+      END IF; END $$`);
   await pool.query(`CREATE TABLE IF NOT EXISTS support_tickets (
       id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE, user_id TEXT NOT NULL, user_email TEXT NOT NULL, user_name TEXT,
       subject TEXT NOT NULL, screen TEXT, browser TEXT, status TEXT NOT NULL DEFAULT 'open',

@@ -908,7 +908,13 @@ app.get("/admin/questions", requireAuth, requireSuperAdmin, wrap(async (req, res
                                      (ARRAY_AGG(question ORDER BY created_at DESC))[1:5] AS recent
                                 FROM question_log WHERE created_at > NOW() - INTERVAL '12 months'
                                GROUP BY 1,2 ORDER BY n DESC LIMIT 200`);
-  res.json({ groups, sentence: "The question text people typed into Ask Steward, the Agent and the Analyst, grouped by topic, kept twelve months. Never answers, never donor data." });
+  // WHY-1 — the questions Steward could not answer, grouped by topic. This is
+  // the roadmap: what people asked "why" about that none of the seven covers.
+  const unanswered = await query(`SELECT surface, COALESCE(topic,'unsorted') AS topic, COUNT(*)::int AS n,
+                                         (ARRAY_AGG(question ORDER BY created_at DESC))[1:8] AS recent
+                                    FROM question_log WHERE created_at > NOW() - INTERVAL '12 months' AND answered = false
+                                   GROUP BY 1,2 ORDER BY n DESC LIMIT 100`);
+  res.json({ groups, unanswered, sentence: "The question text people typed into Ask Steward, Ask why, the Agent and the Analyst, grouped by topic, kept twelve months. Never answers, never donor data." });
 }));
 
 app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, res) => {

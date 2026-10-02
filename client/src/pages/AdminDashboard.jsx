@@ -1264,6 +1264,13 @@ function SupportAdmin() {
         <button onClick={() => reply(k.id, "closed")}>Close</button>
       </div>}
     </div>)}
+    <div style={{ fontWeight: 700, margin: "16px 0 8px" }}>What Steward could not answer</div>
+    <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>Questions asked that none of the answers covers yet, grouped by topic. This is the roadmap.</div>
+    {qs && !(qs.unanswered || []).length && <div style={box}>Nothing unanswered yet.</div>}
+    {(qs?.unanswered || []).map((g, i) => <div key={"u" + i} style={box} data-testid="admin-unanswered">
+      <div style={{ fontWeight: 700 }}>{g.surface} · {g.topic} · {g.n}</div>
+      {(g.recent || []).map((r, k) => <div key={k} style={{ fontSize: 13 }}>{r}</div>)}
+    </div>)}
     <div style={{ fontWeight: 700, margin: "16px 0 8px" }}>What people ask</div>
     {qs && <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>{qs.sentence}</div>}
     {(qs?.groups || []).map((g, i) => <div key={i} style={box}>
