@@ -84,6 +84,10 @@ export const DEFAULT_CONFIG = Object.freeze({
   designation: { mode: "none", fundId: null, fundIds: [] },
   showTribute: false,
   showEmployerMatch: false,
+  // PARITY-1 E: a once-per-visit reminder when a donor who has chosen an amount
+  // moves to leave the page. OFF by default, because a form that tugs at your
+  // sleeve is a choice an organisation makes, not one Steward makes for it.
+  exitNudge: false,
   questions: [],
   thankYou: { message: "", redirectUrl: "" },
   headline: "",
@@ -123,7 +127,7 @@ export function validateFormConfig(raw, { orgFundIds = [], existingQuestionKeys 
     const a = Array.isArray(input.amountsCents) ? input.amountsCents : null;
     if (!a) errors.push({ field: "amountsCents", message: "Suggested amounts are a list." });
     // AN EMPTY LIST IS A REAL FORM: just a box to type an amount into, which is
-    // what some orgs want and what Zeffy's form does. Refusing it here also made
+    // what some orgs want and what the leader's form does. Refusing it here also made
     // the "nobody can give" rule below UNREACHABLE — a guard that cannot fire,
     // which the suite caught on its first run.
     else if (!a.length) out.amountsCents = [];
@@ -185,7 +189,7 @@ export function validateFormConfig(raw, { orgFundIds = [], existingQuestionKeys 
     }
   }
 
-  for (const k of ["showTribute", "showEmployerMatch"]) {
+  for (const k of ["showTribute", "showEmployerMatch", "exitNudge"]) {
     if (input[k] !== undefined) {
       if (typeof input[k] !== "boolean") errors.push({ field: k, message: "That setting is yes or no." });
       else out[k] = input[k];
@@ -344,6 +348,7 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
       defaultFrequency: c.offerMonthly ? c.defaultFrequency : "once",
     },
     designation,
+    exitNudge: c.exitNudge === true,
     details: { tribute: c.showTribute, employerMatch: c.showEmployerMatch,
                questions: c.questions.map(q => ({ ...q, options: [...q.options] })) },
     thankYou: { ...c.thankYou },

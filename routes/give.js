@@ -5023,13 +5023,18 @@ app.get("/portal/:orgSlug/session", requirePortalSession, wrap(async (req, res) 
 app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, res) => {
   const { org, email } = req.portal;
   const donors = await portalDonorsFor(org.id, email);
-  if (!donors.length) return res.json({ arrangement: null });
+  // PARITY-1 E: the give form says who is signed in. The donor's OWN first
+  // name, read through their own session, or their email when no record has a
+  // name. Nothing here is anybody else's.
+  const firstName = donors.length ? String(donors[0].first_name || String(donors[0].name || "").split(" ")[0] || "").trim() : "";
+  const signedInAs = firstName || email;
+  if (!donors.length) return res.json({ arrangement: null, signedInAs });
   const rows = await query(
     `SELECT amount, cover_fee_amount, interval FROM recurring_subscriptions
      WHERE org_id = ? AND donor_id = ANY(?) AND status IN ('active','recovered','past_due','recovering')
      ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
     [org.id, donors.map(d => d.id)]);
-  if (!rows.length) return res.json({ arrangement: null });
+  if (!rows.length) return res.json({ arrangement: null, signedInAs });
   const s = rows[0];
   // BUILD-73 Part 2 — was Math.max(1, Math.round(amount - cover_fee_amount)).
   // This figure is shown to the DONOR as what they currently give, and it seeds
@@ -5037,7 +5042,7 @@ app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, 
   // $33 and would then have changed their subscription to exactly that. Cents
   // are kept; the floor stays $1.00, expressed in cents.
   const baseCentsNow = Math.max(100, (toCents(s.amount) || 0) - (toCents(s.cover_fee_amount) || 0));
-  res.json({ arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
+  res.json({ signedInAs, arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
 }));
 
 // ── §3 — the dashboard: every figure from the SAME gifts ledger the CRM

@@ -11,7 +11,7 @@ import { errorMessage } from "../lib/domainError";
 // live preview and the send all read ONE copy of the words. The server route
 // adds the org's colours, logo and vocabulary on top; this import is what keeps
 // the box from ever being blank if that call fails.
-import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor } from "../../../shared/emailTemplates";
+import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord } from "../../../shared/campaignKind";
 
@@ -156,6 +156,20 @@ function StatusBadge({ status, campaign, onFailed }) {
 // The hard-coded template list that used to live here is gone. The six now
 // come from shared/emailTemplates.js through GET /campaigns/templates, so the
 // gallery, the preview and the send read the same words. BUILD-88c C.2.
+
+// PARITY-1 E — STARTER COPY IS STEWARD'S UNTIL SOMEBODY HERE CHANGES IT. Brass,
+// the product's "look here", on the card and in the editor, until a campaign
+// made from that starter is saved with its words changed.
+function NotReviewedPill() {
+  return (
+    <span data-testid="starter-not-reviewed"
+      title="This is Steward's starter copy. It counts as reviewed once someone here saves it with their own changes."
+      style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 700, color: T.gold700, background: T.gold100,
+               border: "1px solid " + T.gold300, borderRadius: 99, padding: "2px 9px", whiteSpace: "nowrap" }}>
+      Not yet reviewed
+    </span>
+  );
+}
 
 // ── Segment helpers ───────────────────────────────────────────────────────────
 const STAGE_OPTS = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
@@ -1284,9 +1298,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // first thing a donor decides and she should see the same answer they will.
   const [sendingIdentity, setSendingIdentity] = useState(null);
   useEffect(() => {
-    apiFetch("/campaigns/templates").then(setGallery).catch(() => {});
     apiFetch("/org/sending-domain").then(setSendingIdentity).catch(() => {});
   }, []);
+  // Re-read whenever the builder closes, so a starter somebody just made their
+  // own stops saying "Not yet reviewed" without a reload.
+  useEffect(() => {
+    if (view === "builder") return;
+    apiFetch("/campaigns/templates").then(setGallery).catch(() => {});
+  }, [view]);
 
   const loadCampaigns = async () => {
     try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { console.error(e); }
@@ -1382,7 +1401,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const openTemplate = (tpl) => {
     const body = normalizeMergeFields(tpl.body || "");
     setForm({ name: tpl.label || tpl.name || "", subject: tpl.subject || "", bodyHtml: body,
-      seg: { mode: "all" }, scheduledAt: "" });
+      seg: { mode: "all" }, scheduledAt: "",
+      // PARITY-1 E — which starter this came from, so a save can say whether
+      // its words were changed (the server decides).
+      starterKey: tpl.key || "", starterReviewed: !!tpl.reviewed, starterBody: body });
     setEditingId(null); setLiveHtml(body); setTestState(null); setShowSchedule(false);
     setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
   };
@@ -1397,7 +1419,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const saveDraft = async () => {
     if (!form.name.trim()) return alert("Campaign name is required.");
     const body = editorRef.current?.innerHTML || "";
-    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft" };
+    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined };
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
@@ -1410,7 +1432,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     if (new Date(form.scheduledAt) <= new Date()) return alert("Scheduled time must be in the future.");
     if (!form.name.trim()) return alert("Campaign name is required.");
     const body = editorRef.current?.innerHTML || "";
-    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "scheduled", scheduledAt: form.scheduledAt };
+    const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "scheduled", scheduledAt: form.scheduledAt, starterKey: form.starterKey || undefined };
     try {
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
@@ -1423,7 +1445,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     if (!id) {
       if (!form.name.trim()) return alert("Campaign name is required.");
       const body = editorRef.current?.innerHTML || "";
-      const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft" };
+      const payload = { name: form.name, subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined };
       try {
         if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); id = editingId; }
         else { const s = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = s.id; }
@@ -1442,7 +1464,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // send — so a test never creates a second draft beside the one on screen.
   const saveForSend = async () => {
     const body = editorRef.current?.innerHTML || form.bodyHtml || "";
-    const payload = { name: form.name || "Untitled", subject: form.subject, body, segment: form.seg, status: "draft" };
+    const payload = { name: form.name || "Untitled", subject: form.subject, body, segment: form.seg, status: "draft", starterKey: form.starterKey || undefined };
     if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); return editingId; }
     const saved = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
     setEditingId(saved.id);
@@ -1557,6 +1579,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{brand?.displayName || previewOrgName}</span>}
                 </div>
                 <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 21, color: T.ink, lineHeight: 1.2 }}>{tpl.label}</div>
+                {!tpl.reviewed && <NotReviewedPill />}
                 <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>{tpl.blurb}</div>
                 <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{renderPreview(tpl.subject)}</div>
@@ -1608,6 +1631,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           {/* Left: settings */}
           <div style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
 
+            {form.starterKey && !form.starterReviewed && !starterEdited({ body: form.starterBody }, liveHtml || form.bodyHtml) ? (
+              <div data-testid="builder-not-reviewed" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <NotReviewedPill />
+                <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
+                  These are Steward&rsquo;s starter words. Read them and make them yours before anyone receives them.
+                </span>
+              </div>
+            ) : null}
             <div>
               <label style={S.label}>Campaign Name</label>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -2245,7 +2276,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <TemplateLibrary isReadOnly={isReadOnly} donors={data?.donors || []} onOpenDrafts={() => setNav("milestones")} />
             <h3 style={{ margin: "8px 0 0", fontSize: 17, fontWeight: 800, color: T.ink }}>Campaign emails</h3>
             <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>
-              The same six &ldquo;New Campaign&rdquo; opens on — finished emails in {previewOrgName}&rsquo;s words, not skeletons.
+              The same starters &ldquo;New Campaign&rdquo; opens on — finished emails in {previewOrgName}&rsquo;s words, not skeletons.
             </p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
               {templates.map(tpl => (
@@ -2258,6 +2289,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                       : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{brand?.displayName || previewOrgName}</span>}
                   </div>
                   <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, lineHeight: 1.2 }}>{tpl.label}</div>
+                  {!tpl.reviewed && <NotReviewedPill />}
                   <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>{tpl.blurb}</div>
                   <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, fontSize: 13, fontWeight: 700, color: T.ink }}>{renderPreview(tpl.subject)}</div>
                   {!isReadOnly && <span style={{ fontSize: 13, fontWeight: 700, color: T.greenDk }}>Use this &rarr;</span>}

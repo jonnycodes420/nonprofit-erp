@@ -9410,7 +9410,8 @@ const GIVE_THEME_COLS = `ps.display_name,
   ps.primary_color, ps.accent_color, ps.button_color, ps.background_tint,
   ps.type_pairing, ps.card_style,
   ps.footer_text AS give_footer, ps.contact_email AS give_contact, ps.ein_line AS give_ein,
-  ps.powered_by, ps.onetime_amounts, ps.monthly_amounts`;
+  ps.powered_by, ps.onetime_amounts, ps.monthly_amounts,
+  ps.enabled AS portal_enabled`;
 
 // ── Rate limits (P-3/S-5) ──────────────────────────────────────────────────
 // The x-test-* headers are honored ONLY under DISABLE_RATE_LIMIT=1 (the local
