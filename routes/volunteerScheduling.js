@@ -26,6 +26,7 @@
 //     by default per org, and the demo org never sends at all.
 //   · An hour milestone writes a DRAFT for the coordinator. It does not thank
 //     anybody. The line that is never crossed.
+const SL = require("../surveyLinks");   // SURVEY-1: the volunteer follow-up link
 const express = require("express");
 const routers = { r0: express.Router() };
 
@@ -1191,9 +1192,19 @@ async function noteMilestone(orgId, personId, previousHundredths) {
     const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
     const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
     const today = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK
+    // SURVEY-1 — the optional follow-up. When the org has chosen a volunteer
+    // survey (Communications, Surveys), this thank-you carries that person's
+    // own link to it. It is still a draft: the coordinator reads it and sends it.
+    const [vs] = await query(
+      `SELECT s.id, s.slug, s.mode, o.org_slug FROM orgs o JOIN surveys s ON s.id = o.volunteer_survey_id AND s.org_id = o.id
+        WHERE o.id=? AND s.status='open'`, [orgId]).catch(() => []);
+    const surveyLine = vs
+      ? `If you have two minutes, tell us how it has been: ${vs.mode === "named" ? SL.personalUrl(vs.org_slug, vs.slug, vs.id, personId) : SL.publicUrl(vs.org_slug, vs.slug)}\n\n`
+      : "";
     const body = `Dear ${String(d.name || "").split(/\s+/)[0]},\n\n`
       + `You have now given ${crossed} hours to ${orgName}.\n\n`
       + `That is a lot of Saturdays, and we notice. Thank you.\n\n`
+      + surveyLine
       + `With thanks,\n${orgName}`;
     // INTO `milestone_drafts`, which is the table the review queue already
     // reads — not a second drafts table nobody opens. `milestone_key` makes

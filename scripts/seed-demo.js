@@ -2776,6 +2776,62 @@ async function main() {
             WHERE org_id = $1
               AND LOWER(COALESCE(type,'')) NOT IN ('stock','in kind','in-kind','in_kind','securities')`, [ORG]);
 
+  // ── SURVEY-1 · TWO SURVEYS, ANSWERED ────────────────────────────────────
+  // "Why do you give?" to donors (named, twenty answers) and "How was
+  // volunteering this season?" to volunteers (named, ten). Each answer is on
+  // that person's timeline, as a real one would be, and counts as a touch.
+  {
+    const DS = "sv_b72demo_why", VS = "sv_b72demo_vol";
+    const why = [{ id: "s1", title: "", questions: [
+      { id: "why", type: "many", label: "Why do you give to Harborlight?", required: true,
+        options: ["I believe in the young people", "Someone I know is in the programme", "The arts matter to me", "I was asked by someone I trust", "It is close to home"] },
+      { id: "likely", type: "scale", label: "How likely are you to give again next year?", required: true },
+      { id: "hear", type: "one", label: "How would you like to hear from us?", required: false, options: ["Email", "Post", "A call now and then", "Only at year end"] },
+      { id: "visit", type: "yesno", label: "Would you like to visit a session?", required: false },
+      { id: "words", type: "long", label: "Anything you would like us to know?", required: false },
+    ] }];
+    const vol = [{ id: "s1", title: "", questions: [
+      { id: "enjoy", type: "scale", label: "How much did you enjoy volunteering this season?", required: true },
+      { id: "again", type: "yesno", label: "Would you volunteer again next season?", required: true },
+      { id: "role", type: "one", label: "Which role suited you best?", required: false, options: ["Workshop helper", "Mentor", "Events", "Driving"] },
+      { id: "better", type: "short", label: "One thing we could do better", required: false },
+    ] }];
+    await q(`INSERT INTO surveys (id,org_id,slug,title,intro,thank_you,mode,audience,sections,created_by,created_by_name)
+             VALUES ($1,$2,'why-do-you-give','Why do you give?','Five questions, about two minutes. It helps us thank you properly.','Thank you. Dana reads every one of these.','named','donors',$3::jsonb,'u_b72demo','Dana Reyes'),
+                    ($4,$2,'volunteer-season','How was volunteering this season?','Four questions. Be honest; it makes next season better.','Thank you for your time, this season and now.','named','volunteers',$5::jsonb,'u_b72demo','Dana Reyes')`,
+      [DS, ORG, JSON.stringify(why), VS, JSON.stringify(vol)]);
+    const WHY = ["I believe in the young people", "Someone I know is in the programme", "The arts matter to me", "I was asked by someone I trust", "It is close to home"];
+    const HEAR = ["Email", "Post", "A call now and then", "Only at year end"];
+    const WORDS = ["Keep sending the photos from the showcase.", "", "My niece went through the programme in 2019. It changed her.", "", "Please call rather than email.", ""];
+    const givers = donors.filter(d => (d.status === "mid" || d.status === "major") && !driftedIds.includes(d.id)).slice(40, 60);
+    for (const [i, d] of givers.entries()) {
+      const answers = { why: [WHY[i % 5], ...(i % 3 === 0 ? [WHY[(i + 2) % 5]] : [])], likely: [10, 9, 8, 10, 7, 9, 6, 10, 8, 9][i % 10],
+        hear: HEAR[i % 4], visit: i % 3 === 1 ? "yes" : "no", ...(WORDS[i % 6] ? { words: WORDS[i % 6] } : {}) };
+      const at = orgTime.addDays(TODAY, -(3 + i * 2));
+      await q(`INSERT INTO survey_responses (id,org_id,survey_id,anonymous,donor_id,answers,submitted_at,created_by,created_by_name)
+               VALUES ($1,$2,$3,false,$4,$5::jsonb,($6::date + time '15:00'),'system:survey','A survey answer')`,
+        [`svr_b72_why_${i}`, ORG, DS, d.id, JSON.stringify(answers), at]);
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata,created_by,logged_by_name)
+               VALUES ($1,$2,$3,'survey','Answered the survey "Why do you give?"',$4,$5,'system:survey','Survey')`,
+        [`int_b72_svw_${i}`, ORG, d.id, at, JSON.stringify({ survey_id: DS, response_id: `svr_b72_why_${i}` })]);
+    }
+    const vols = (await q(`SELECT DISTINCT person_id FROM volunteer_shifts WHERE org_id=$1 ORDER BY person_id LIMIT 10`, [ORG])).map(r => r.person_id);
+    const BETTER = ["More notice before a shift changes.", "", "A proper tea break.", "", "Parking at the boatyard."];
+    for (const [i, pid] of vols.entries()) {
+      const answers = { enjoy: [9, 10, 8, 7, 10, 9, 6, 8, 10, 9][i], again: i === 6 ? "no" : "yes",
+        role: ["Workshop helper", "Mentor", "Events", "Driving"][i % 4], ...(BETTER[i % 5] ? { better: BETTER[i % 5] } : {}) };
+      const at = orgTime.addDays(TODAY, -(2 + i * 3));
+      await q(`INSERT INTO survey_responses (id,org_id,survey_id,anonymous,donor_id,answers,submitted_at,created_by,created_by_name)
+               VALUES ($1,$2,$3,false,$4,$5::jsonb,($6::date + time '11:00'),'system:survey','A survey answer')`,
+        [`svr_b72_vol_${i}`, ORG, VS, pid, JSON.stringify(answers), at]);
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata,created_by,logged_by_name)
+               VALUES ($1,$2,$3,'survey','Answered the survey "How was volunteering this season?"',$4,$5,'system:survey','Survey')`,
+        [`int_b72_svv_${i}`, ORG, pid, at, JSON.stringify({ survey_id: VS, response_id: `svr_b72_vol_${i}` })]);
+    }
+    await q(`UPDATE orgs SET volunteer_survey_id=$1 WHERE id=$2`, [VS, ORG]);
+    console.log(`[seed] surveys: ${givers.length} donor answers, ${vols.length} volunteer answers`);
+  }
+
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
   // `?` placeholders; this adapter numbers them for this client.

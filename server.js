@@ -3686,6 +3686,7 @@ app.use(require("./routes/volunteer").routers.r0);
 // AFTER routes/volunteer so /volunteer/join and /volunteer/log keep their
 // place; the catch-all /volunteer/:slug there defers to them by name.
 app.use(require("./routes/volunteerScheduling").routers.r0);
+app.use(require("./routes/surveys").routers.r0);   // SURVEY-1
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -10259,6 +10260,9 @@ require("./routes/supporter").mount({
   donorFacingOrgName, fromWithDisplayName, orgSendingIdentity, orgToday, orgTz, publicAppUrl,
   query, requireAuth, resend, resolveOrgBrandTheme, run, sendDonorLifecycleEmail, stripe, testMode,
   uuid, volunteerSummary, withAdvisoryLock, wrap, writeAuditLog,
+});
+require("./routes/surveys").mount({
+  actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,
 });
 require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
