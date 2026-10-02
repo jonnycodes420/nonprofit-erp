@@ -25,6 +25,19 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-14 · meetings that count, edit everything, a calmer profile (2026-10-02)
+
+- **The date was UTC.** "Log a conversation" defaulted to `toISOString()`, so after 8pm New York a meeting logged tonight was tomorrow, and the server's "today" was UTC too. Fixed at about 30 sites in Part 1 and about 25 more in Part 2b. The client reads the org's today from `client/src/lib/orgToday.js`; the server uses `orgToday(orgTz)` and `civilDateIn`.
+- **One meetings source**, `meetings.js`: calendar meetings plus meetings logged by hand. Last met, the rhythm, the Meetings chip, Coming up, "No meeting in 90 days", meetings per staff and the morning brief all read it. Emails already counted every source.
+- **A logged conversation reads** as "Meeting at <place>", keeps its line breaks and shows "Label: value" lines as rows. The chips (next step, spouse to household, planned-giving prospect) do nothing without a yes.
+- **Edit everything.** Conversations, next steps, tasks, asks, pledges, relationships and households edit in the form they were made with. Deletes move the row into `deleted_records`, and Undo restores it with the same id. A pledge with payments applied refuses deletion. "Edited by" opens the previous versions. A calendar meeting sends time and place to the calendar.
+- **The audit log says what happened.** Sentences are built when the log is read (`describeAuditRow`), so old rows read too. Its home is Settings, Audit log. Each donor has History, visible to every member (Jonathan, 2026-10-02).
+- **The profile, one of each:** one timeline, one next step in the rail, one "The ask", one Rhythm panel (12 months of touches plus 6 planned), empty sections on one line, and Erase and Delete under More.
+- **Volunteer mail goes through donorMailDecision** (`volunteer_reminder`, `volunteer_link`). Volunteer reminders are a confirmed automatic send, opt-in per org.
+- **Real links finished** for events, campaigns, funds, journeys, gifts, households, grant cards and volunteers. Sort and sections live in the URL.
+- **import-messy was a time bomb.** Its key counted "stopped >60 days" against 2026-09-03 while the server counts against today, so the count drifted every day. It now checks the key's people, allows for future-dated gifts that have since arrived, and bounds anyone extra by date.
+- **Shard database names are shared across worktrees** (`steward_shard_<n>`). Another session's battery was holding them mid-build, and the run had to wait.
+
 ## FIX-13 · the website's dead ends, and the Zapier tail (2026-10-01)
 
 - **LANDING-3 had already merged** (PR #80, 4543366, and its fix #81), so this build ran on top of it.
