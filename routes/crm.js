@@ -9129,6 +9129,8 @@ function proposalRow(r, funds) {
     giftAmount: r.gift_amount == null ? null : toDollars(toCents(r.gift_amount) || 0),
     createdAt: r.created_at, closedAt: r.closed_at,
     createdByName: r.created_by_name || "",
+    // FIX-14 Part 3 — the profile's "Edited" marker reads these.
+    edited_at: r.edited_at || null, edited_by_name: r.edited_by_name || null,
   };
 }
 

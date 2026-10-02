@@ -274,9 +274,9 @@ const EXPECTED_5XX = /\/ai\/stream/;
   // the screen that lists it, is an <a> (data-record-link names the kind)
   // whose href is that record's own URL, naming a record that exists. A
   // kind drawn as a <button> or a <span> has no anchor and fails here.
-  // Households are not in this list: the only place one is drawn is the
-  // donor profile, which this part did not touch (their URL is
-  // /donors?household=<id>, built by householdHref).
+  // FIX-14 Part 3: a household is drawn on the donor profile, so its row
+  // opens the profile of the household's first person and its name must be
+  // a link to /donors?household=<id> (householdHref).
   const ids = async (p, pick) => { const r = await api("GET", p, auth.token); try { return new Set(pick(r.body).map(x => x.id)); } catch { return new Set(); } };
   const known = {
     event: await ids("/events", b => b),
@@ -286,7 +286,10 @@ const EXPECTED_5XX = /\/ai\/stream/;
     gift: await ids("/acknowledgments/backlog", b => b.gifts),
     grant: await ids("/grants", b => b),
     volunteer: await ids("/volunteer-hub/roster", b => b.people),
+    household: await ids("/households", b => b),
   };
+  const hhList = (await api("GET", "/households", auth.token)).body;
+  const hhPerson = Array.isArray(hhList) && hhList[0] ? hhList[0].primary_donor_id : null;
   const RECORDS = [
     ["event", "/app/events", /^\/app\/events\?event=([^&#]+)$/],
     ["campaign", "/app/fundraising?fr=campaigns", /^\/app\/fundraising\?fr=campaigns&campaign=([^&#]+)$/],
@@ -295,6 +298,7 @@ const EXPECTED_5XX = /\/ai\/stream/;
     ["gift", "/app/fundraising?fr=acknowledgments", /^\/donors\/[^/?#]+#gift-([^&#]+)$/],
     ["grant", "/app/grants", /^\/app\/grants\?grant=([^&#]+)$/],
     ["volunteer", "/app/volunteers", /^\/app\/volunteers\?volunteer=([^&#]+)$/],
+    ["household", `/donors/${hhPerson}`, /^\/donors\?household=([^&#]+)$/],
   ];
   for (const [kind, url, shape] of RECORDS) {
     trouble = [];

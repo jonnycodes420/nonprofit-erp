@@ -913,7 +913,7 @@ const RHYTHM_ORDER=["meeting","call","email","gift"];
 function RhythmStrip({rhythm}){
   if(!rhythm)return null;
   const monthName=m=>new Date(m+"-15T12:00:00Z").toLocaleDateString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
-  const usedKinds=RHYTHM_ORDER.filter(k=>rhythm.past.some(m=>m.kinds.includes(k)));
+  const usedKinds=RHYTHM_ORDER.filter(k=>rhythm.past.some(m=>RHYTHM_ORDER.find(x=>m.kinds.includes(x))===k));
   return <div style={{display:"flex",flexDirection:"column",gap:9}}>
     {!rhythm.empty&&<div role="img" aria-label={rhythm.sentence} data-testid="dp-rhythm-strip"
       style={{display:"grid",gridTemplateColumns:"repeat(12, minmax(0, 1fr)) 6px repeat(6, minmax(0, 1fr))",gap:4}}>
@@ -1040,8 +1040,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     setRelSaving(false);
   };
   const unlinkDonor=async(relId)=>{
-    try{await apiFetch(`/donor-relationships/${relId}`,{method:"DELETE"});loadRelationships();}
-    catch(e){console.error(e);}
+    try{const r=await apiFetch(`/donor-relationships/${relId}`,{method:"DELETE"});loadRelationships();offerUndo(r,"relationship",loadRelationships);}
+    catch(e){alert(errorMessage(e,"The relationship could not be removed."));}
+  };
+  // FIX-14 Part 3 — a relationship's kind is edited in place.
+  const retypeRelationship=async(relId,relationshipType)=>{
+    try{await apiFetch(`/donor-relationships/${relId}`,{method:"PUT",body:JSON.stringify({relationshipType})});loadRelationships();}
+    catch(e){alert(errorMessage(e,"The relationship could not be changed."));}
   };
   const linkedIds=new Set(relationships.map(r=>r.relatedDonorId));
   const relPickerResults=relSearch.trim()
@@ -1310,9 +1315,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(!household)return;
     const remaining=household.members.filter(m=>m.id!==donor.id).map(m=>m.id);
     try{
-      if(remaining.length<2)await apiFetch(`/households/${household.id}`,{method:"DELETE"});
+      let r=null;
+      if(remaining.length<2)r=await apiFetch(`/households/${household.id}`,{method:"DELETE"});
       else await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({memberIds:remaining})});
       setHousehold(null);refreshSoftCredit();
+      if(r)offerUndo(r,"household",refreshSoftCredit);
     }catch(e){alert(errorMessage(e, "Could not update household"));}
   };
 
@@ -1657,11 +1664,21 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const deletePledge=async(id)=>{
-    if(!confirm("Delete this pledge? This cannot be undone."))return;
+    if(!confirm("Delete this pledge? You can undo it for ten seconds."))return;
     try{
-      await apiFetch(`/pledges/${id}`,{method:"DELETE"});
+      const r=await apiFetch(`/pledges/${id}`,{method:"DELETE"});
       loadPledges();
-    }catch(e){console.error(e);}
+      offerUndo(r,"pledge",loadPledges);
+    }catch(e){alert(errorMessage(e,"The pledge could not be deleted."));}
+  };
+  // FIX-14 Part 3 — a pledge is edited in place: amount, due date, note.
+  const [pledgeEdit,setPledgeEdit]=useState(null);
+  const savePledgeEdit=async()=>{
+    if(!pledgeEdit)return;
+    try{
+      await apiFetch(`/pledges/${pledgeEdit.id}`,{method:"PUT",body:JSON.stringify({amount:Number(pledgeEdit.amount),dueDate:pledgeEdit.dueDate,notes:pledgeEdit.notes})});
+      setPledgeEdit(null);loadPledges();
+    }catch(e){alert(errorMessage(e,"The pledge could not be saved."));}
   };
 
   const resendPledgeReminder=async(id)=>{
@@ -2218,50 +2235,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 drafting, Suggested, Brief me, Erase and Delete are under More. */}
             {/* ── THE ASK ── the stage, the open ask and its history, in one place. */}
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
-              title="The ask" addLabel="+ New ask" testid="dp-the-ask">
-          {/* The stage, and the smart moves that argue for changing it. Both
-              are the major-gifts layer, so a Core org sees the one frosted
-              preview — and, until the plan is KNOWN, the pending state and
-              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
-          {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:14,paddingBottom:12,borderBottom:"1px solid "+T.bg3}}>
-            <div style={{fontSize:11.5,fontWeight:700,color:T.ink3,marginBottom:7}}>Stage</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {STAGES.map(s=>{
-                const on=(donor.stage||"cultivate")===s.id;
-                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
-                  style={{background:on?T.greenDk:T.bg,border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:8,padding:"6px 11px",color:on?T.white:T.ink,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
-                  {s.label}
-                </button>;
-              })}
-            </div>
-            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}}>
-              {STAGE_ACTION[donor.stage||"cultivate"]}
-            </div>
-            {(() => {
-              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
-              // Lapsed is set automatically elsewhere; these are the judgment
-              // moves the officer owns, offered one-click. They sit WITH the
-              // stage now, because that is the only thing they are about.
-              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
-              if(!shown.length) return null;
-              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
-                {shown.map(s=>(
-                  <div key={s.signal} style={{background:T.bg,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
-                    <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {s.toStage&&!isReadOnly&&(
-                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
-                        </button>
-                      )}
-                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
-                    </div>
-                  </div>
-                ))}
-              </div>;
-            })()}
-          </div>}
-
+              title="The ask" addLabel="+ New ask" testid="dp-the-ask" after={<div style={{marginTop:12}}>
               {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
                   panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
               {lockMajor(
@@ -2313,6 +2287,50 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </div>,
                 {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
               )}
+              </div>}>
+          {/* The stage, and the smart moves that argue for changing it. Both
+              are the major-gifts layer, so a Core org sees the one frosted
+              preview — and, until the plan is KNOWN, the pending state and
+              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
+          {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:12}}>
+            <div style={{fontSize:11.5,fontWeight:700,color:T.ink3,marginBottom:7}}>Stage</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {STAGES.map(s=>{
+                const on=(donor.stage||"cultivate")===s.id;
+                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
+                  style={{background:on?T.greenDk:T.bg,border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:8,padding:"6px 11px",color:on?T.white:T.ink,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
+                  {s.label}
+                </button>;
+              })}
+            </div>
+            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}}>
+              {STAGE_ACTION[donor.stage||"cultivate"]}
+            </div>
+            {(() => {
+              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
+              // Lapsed is set automatically elsewhere; these are the judgment
+              // moves the officer owns, offered one-click. They sit WITH the
+              // stage now, because that is the only thing they are about.
+              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
+              if(!shown.length) return null;
+              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+                {shown.map(s=>(
+                  <div key={s.signal} style={{background:T.bg,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {s.toStage&&!isReadOnly&&(
+                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
+                        </button>
+                      )}
+                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>;
+            })()}
+          </div>}
+
             </ProposalsPanel>)}
 
             {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
@@ -2371,6 +2389,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 {household
                   ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:12,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
                   :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
+                {household&&<EditedMarker item={household}/>}
+                {household&&!isReadOnly&&<button data-testid="dp-household-rename" onClick={async()=>{
+                    const name=window.prompt("Household name",household.name||"");
+                    if(!name||!name.trim()||name.trim()===household.name)return;
+                    try{await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({name:name.trim()})});refreshSoftCredit();}
+                    catch(e){alert(errorMessage(e,"The household could not be renamed."));}}}
+                  style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Rename</button>}
                 {household
                   ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
                   :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
@@ -2834,6 +2859,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           </div>
                           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {displayDate(pl.due_date)}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
+                          {pledgeEdit&&pledgeEdit.id===pl.id&&<div data-testid="pledge-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                            <input aria-label="Amount" value={pledgeEdit.amount} onChange={e=>setPledgeEdit({...pledgeEdit,amount:e.target.value})} style={{width:100,border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 8px",fontSize:12}}/>
+                            <input aria-label="Due" type="date" value={pledgeEdit.dueDate} onChange={e=>setPledgeEdit({...pledgeEdit,dueDate:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 8px",fontSize:12}}/>
+                            <input aria-label="Note" value={pledgeEdit.notes} onChange={e=>setPledgeEdit({...pledgeEdit,notes:e.target.value})} placeholder="Note" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 8px",fontSize:12}}/>
+                            <button onClick={savePledgeEdit} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                            <button onClick={()=>setPledgeEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                          </div>}
                         </div>
                         <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                           {pl.status==="open"&&<>
@@ -2844,7 +2876,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:T.green100,border:"1px solid "+T.greenDk,borderRadius:6,padding:"5px 9px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
                             <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
-                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                          <EditedMarker item={pl}/>
+                          {!isReadOnly&&<button onClick={()=>setPledgeEdit({id:pl.id,amount:String(pl.amount),dueDate:String(pl.due_date||"").slice(0,10),notes:pl.notes||""})} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit</button>}
+                          <button onClick={()=>deletePledge(pl.id)} aria-label="Delete this pledge" style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>
                     );
@@ -3018,7 +3052,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{fmtFull(r.relatedDonorTotalGiving)} lifetime</div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                        <Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
+                        {isReadOnly?<Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
+                          :<select aria-label="Relationship" value={r.relationshipType} onChange={e=>retypeRelationship(r.id,e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 8px",fontSize:11,color:T.ink}}>
+                            {DONOR_RELATIONSHIP_LABELS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                          </select>}
                         {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:7,padding:"4px 9px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Remove</button>}
                       </div>
                     </div>
@@ -3288,7 +3325,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
                           <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
                           {/* FIX-14 Part 3 — the one next step is edited and deleted here. */}
-                          {it.kind==="thread"&&!isReadOnly&&<ItemMenu label="next step" onEdit={()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})} onDelete={()=>deleteStep(it)}/>}
+                          {it.kind==="thread"&&!isReadOnly&&<span style={{display:"inline-flex",gap:10,alignItems:"center",width:"100%"}}>
+                            <EditedMarker item={it}/>
+                            <button type="button" data-testid="dp-step-edit-btn" onClick={()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
+                            <button type="button" data-testid="dp-step-delete" onClick={()=>{if(window.confirm("Delete this next step? You can undo it for ten seconds."))deleteStep(it);}} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+                          </span>}
                         </div>
                       )}
                     </div>

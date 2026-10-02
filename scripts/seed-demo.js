@@ -755,6 +755,12 @@ async function main() {
   }
 
   await writeAll(client, donors, gifts);
+  // FIX-14 Part 3 — the Stonebridges ARE a household (the comment above
+  // always said so; the row was never written), so the profile draws a
+  // household name and the smoke walk can check it is a real link.
+  await q(`INSERT INTO households (id,org_id,name,primary_donor_id,created_by,created_by_name)
+           VALUES ('hh_b72_stonebridge',$1,'The Stonebridges',$2,'system:seed-demo','The demo seed')`, [ORG, hh1]);
+  await q(`UPDATE donors SET household_id='hh_b72_stonebridge' WHERE org_id=$1 AND id IN ($2,$3)`, [ORG, hh1, hh2]);
   for (const [id, funderType] of orgDonors)
     await q(`UPDATE donors SET kind='organisation', funder_type=$3 WHERE id=$1 AND org_id=$2`, [id, ORG, funderType]);
 

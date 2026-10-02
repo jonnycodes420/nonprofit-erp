@@ -158,6 +158,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **A note's suggestion is a chip, never a write.** Next step, spouse to household and planned-giving
   prospect come from the after-meeting engine (AI switch, the simple reader as fallback) and change
   nothing until a person presses one (`POST /interactions/:id/chips`). (FIX-14)
+- **The profile has one of everything.** One timeline ("Everything with", calls and notes included),
+  one next step (the rail, with Edit/Delete/Undo), one ask ("The ask": stage, proposals, moves), one
+  Rhythm panel (past touches from the timeline's sources, planned journey steps and next steps, the
+  journey picked or changed there). An empty section is one line with its add button. Drafting,
+  Suggested, Brief me, Add a task, Erase and Delete are under More. (FIX-14 Part 3)
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy
