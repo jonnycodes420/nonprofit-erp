@@ -27,6 +27,8 @@ const auditMw = require("../middleware/auditTrail");
 // this router and routes/finance.js cannot disagree about any of them.
 const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
+// PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
+const IXF = require("../interactionFiles");
 
 const routers = {
   r0: express.Router(),
@@ -5512,7 +5514,7 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
     "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials",
     "planned_gifts", "custom_field_values", "sequence_enrollments",
     "payment_recovery_events", "recurring_subscriptions",
-    "tasks", "interactions", "gifts",
+    "tasks", "interaction_attachments", "interactions", "gifts",
   ];
   const { purged, children } = await withTransaction(async (client) => {
     await runTx(client, "UPDATE volunteers SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)", [orgId, ids]);
@@ -5559,6 +5561,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     "payment_recovery_events", "recurring_subscriptions", "tasks",
     "volunteers", "campaign_recipients",
     "tribute_notices",                       // BUILD-98 Part 1
+    "interaction_attachments",               // PARITY-1 Part B
   ];
   // UNIQUE(x, donor_id) tables: the primary's own row wins a conflict, the
   // secondary's duplicate is dropped, non-conflicting rows are reassigned.
@@ -13511,6 +13514,133 @@ app.get("/grant-documents/:id", wrap(async (req, res) => {
   res.set("X-Content-Type-Options", "nosniff");
   res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
   res.set("ETag", `"${asset.id}"`);
+  res.send(asset.buffer);
+}));
+
+// ── PARITY-1 Part B — A FILE ON A CONVERSATION OR A NOTE ──────────────────
+// interactionFiles.js holds the types, the byte checks and the signed door.
+// The bytes go through the asset seam (assetStore.js) under kind 'ixfile'.
+// There is NO virus scan (the host offers none): see that module's header and
+// docs/decisions/people-and-records.md. (IXF is required with the imports.)
+
+function ixAttachmentRow(r, orgId) {
+  return {
+    id: r.id, interactionId: r.interaction_id, donorId: r.donor_id,
+    fileName: r.filename, mime: r.mime, bytes: Number(r.bytes) || 0,
+    createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+    createdByName: r.created_by_name || "",
+    interactionType: r.interaction_type || null,
+    interactionDate: r.interaction_date ? String(r.interaction_date instanceof Date ? r.interaction_date.toISOString() : r.interaction_date).slice(0, 10) : null,
+    // Minted PER READ, thirty minutes. A stored URL outlives its reason.
+    url: IXF.signFileUrl({ orgId, assetId: r.asset_id }),
+  };
+}
+
+// POST /interactions/:id/attachments — one file, on an entry that exists.
+app.post("/interactions/:id/attachments", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [ix] = await query("SELECT id, donor_id FROM interactions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!ix || !ix.donor_id) return res.status(404).json({ error: "Interaction not found" });
+
+  const m = /^data:([a-zA-Z0-9.+/-]*);base64,(.+)$/s.exec(String(req.body.file || ""));
+  if (!m) return res.status(400).json({ code: "no_file", error: "Attach a file." });
+  const mime = IXF.resolveMime(m[1], req.body.fileName);
+  if (!IXF.mimeAllowed(mime)) {
+    return res.status(400).json({ code: "bad_file_type",
+      error: `Steward stores ${IXF.TYPES_SENTENCE}. It refuses anything that can carry a script.` });
+  }
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); }
+  catch { return res.status(400).json({ code: "no_file", error: "That file could not be read." }); }
+  if (!buffer.length) return res.status(400).json({ code: "no_file", error: "That file is empty." });
+  if (buffer.length > IXF.FILE_MAX_BYTES) {
+    return res.status(400).json({ code: "file_too_large",
+      error: `That file is ${(buffer.length / 1024 / 1024).toFixed(1)} MB, over the ${IXF.FILE_MAX_BYTES / 1024 / 1024} MB limit.` });
+  }
+  // THE BYTES DECIDE, before anything is stored.
+  if (!IXF.bytesMatchMime(buffer, mime)) {
+    return res.status(400).json({ code: "file_type_mismatch",
+      error: `That file does not look like a ${IXF.extensionFor(mime) || mime}. Check you attached what you meant to.` });
+  }
+  const asset = await putThemeAsset({ orgId, kind: IXF.FILE_ASSET_KIND, buffer, contentType: mime });
+  const id = "iatt_" + uuid().replace(/-/g, "").slice(0, 12);
+  const who = actor(req);
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
+  await run(
+    `INSERT INTO interaction_attachments (id,org_id,interaction_id,donor_id,asset_id,filename,mime,bytes,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, ix.id, ix.donor_id, asset.id, IXF.sanitizeFilename(req.body.fileName, mime), mime, buffer.length,
+     who.id, (u && u.name) || who.name]);
+  await recordAssetPointerHistory(orgId, "interaction.attachment", id, null, asset.id, req.user);
+  const [row] = await query("SELECT * FROM interaction_attachments WHERE id=?", [id]);
+  if (req.audit) { req.audit.entity("interaction_attachment", id, row.filename); req.audit.after({ ...row, asset_id: undefined }); }
+  res.status(201).json(ixAttachmentRow(row, orgId));
+}));
+
+// GET /donors/:id/attachments — every live file on this person's entries,
+// newest first. An entry in the trash hides its files until it is restored.
+app.get("/donors/:id/attachments", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  if (!(await orgOwns("donors", req.params.id, orgId))) return res.status(404).json({ error: "Donor not found" });
+  const rows = await query(
+    `SELECT a.*, i.type AS interaction_type, i.date AS interaction_date
+       FROM interaction_attachments a
+       JOIN interactions i ON i.id = a.interaction_id AND i.org_id = a.org_id
+      WHERE a.org_id=? AND a.donor_id=? AND a.deleted_at IS NULL
+      ORDER BY a.created_at DESC`, [orgId, req.params.id]);
+  const attachments = rows.map(r => ixAttachmentRow(r, orgId));
+  const n = attachments.length;
+  res.json({ attachments,
+    sentence: n ? `${n} ${n === 1 ? "file" : "files"} attached to conversations and notes with this person.`
+                : "No files attached to conversations or notes yet." });
+}));
+
+// DELETE /interactions/:id/attachments — body { attachmentId }. SOFT: the row
+// keeps who attached it and who removed it; the bytes age out of the asset
+// store's 90-day retention. Ungated, per the DELETE convention. Whoever logged
+// the entry, whoever attached the file, or an admin may remove it.
+app.delete("/interactions/:id/attachments", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [ix] = await query("SELECT id, created_by FROM interactions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!ix) return res.status(404).json({ error: "Interaction not found" });
+  const attId = String((req.body && req.body.attachmentId) || req.query.attachmentId || "");
+  const [a] = await query(
+    "SELECT * FROM interaction_attachments WHERE id=? AND interaction_id=? AND org_id=? AND deleted_at IS NULL",
+    [attId, ix.id, orgId]);
+  if (!a) return res.status(404).json({ error: "Attachment not found" });
+  if (a.created_by !== req.user.userId && !(await mayEditLogged(req, ix))) return res.status(403).json(NOT_YOURS);
+  await run("UPDATE interaction_attachments SET deleted_at=NOW(), deleted_by=? WHERE id=? AND org_id=?",
+    [actor(req).id, a.id, orgId]);
+  await recordAssetPointerHistory(orgId, "interaction.attachment", a.id, a.asset_id, null, req.user);
+  await pruneUnreferencedAssets(orgId, IXF.FILE_ASSET_KIND, []);
+  if (req.audit) { req.audit.entity("interaction_attachment", a.id, a.filename); req.audit.before({ ...a, asset_id: undefined }); }
+  res.json({ ok: true, id: a.id });
+}));
+
+// GET /interaction-files/:id — the signed, expiring, PRIVATE door. No auth
+// header (a browser fetches a file with none); the URL carries its signature,
+// minted only for signed-in staff of the org, and the org comes from the
+// STORED ROW. A removed attachment stops serving even inside its thirty minutes.
+app.get("/interaction-files/:id", wrap(async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
+  const [row] = await query(
+    `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`, [id, IXF.FILE_ASSET_KIND]);
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const v = IXF.verifyFileUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
+  if (!v.ok) return res.status(403).json({ error: "link_expired" });
+  const [meta] = await query(
+    "SELECT filename FROM interaction_attachments WHERE asset_id=? AND org_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    [id, row.org_id]);
+  if (!meta) return res.status(404).json({ error: "not_found" });
+  const asset = await getThemeAsset(id);
+  if (!asset) return res.status(404).json({ error: "not_found" });
+  res.set("Content-Type", asset.contentType);
+  // Never rendered inline in our origin: no scan has looked at these bytes.
+  const safeName = IXF.sanitizeFilename(meta.filename, asset.contentType);
+  res.set("Content-Disposition", `attachment; filename="${safeName.replace(/"/g, "")}"`);
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
   res.send(asset.buffer);
 }));
 

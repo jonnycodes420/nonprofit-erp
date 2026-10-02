@@ -15,6 +15,7 @@ import {
 import { displayDate } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
 import { orgTodayCivil } from "../lib/orgToday";
+import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
@@ -52,6 +53,8 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const [funds, setFunds] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // PARITY-1 Part B — an optional file, attached once the entry has an id.
+  const [file, setFile] = useState(null);
   const lineRef = useRef(null);
   useEffect(() => { lineRef.current?.focus(); }, []);
   useEffect(() => {
@@ -121,6 +124,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                 source: nsSource?.from || null },
         }),
       });
+      if (file && r && r.interactionId) {
+        try { await uploadAttachment(r.interactionId, file); }
+        catch (x) { window.alert("The conversation is saved. The file did not attach: " + errorMessage(x, "try Attach a file on the entry.")); }
+      }
       onSaved && onSaved({ ...r, touch, line: line.trim(), date, place: place.trim() || null });
       onClose && onClose();
     } catch (e) {
@@ -259,6 +266,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           </div>
         </div>}
 
+        {!editing && <AttachFileField file={file} setFile={setFile} labelStyle={lbl}/>}
         {err && <div style={{ fontSize: 12, color: T.terracotta, marginBottom: 10 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button onClick={() => save(false)} disabled={busy}

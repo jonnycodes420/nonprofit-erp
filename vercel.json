@@ -43,6 +43,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/grant-documents/:path*"
     },
     {
+      "source": "/interaction-files/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/interaction-files/:path*"
+    },
+    {
       "source": "/unsubscribe",
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },

@@ -18,7 +18,9 @@ import { renderCustomValue } from "../../../shared/customFieldShape";
 import { InboxNudge, useMailbox } from "./InboxConnect";
 import { RecordLink } from "./RecordLink";
 import { householdHref } from "../lib/appUrls";
-import { MeetingCard, RelationshipTimeline, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
+import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
+import { ProfileTimeline } from "./ProfileTimeline";
+import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
@@ -167,6 +169,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
   const[eventName,setEventName]=useState("");const[attended,setAttended]=useState("yes");const[observations,setObservations]=useState("");
   const[otherNotes,setOtherNotes]=useState("");
   const[orgEvents,setOrgEvents]=useState([]);
+  const[file,setFile]=useState(null);   // PARITY-1 Part B: an optional file, attached once the entry exists
   // FIX-14 Part 2 — EDIT OPENS THE SAME FORM, FILLED IN. The note this form
   // wrote is "Label: value" lines, so they are read back into the fields they
   // came from. A note that is not in that shape (a one-line conversation, a
@@ -260,6 +263,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
       // without re-parsing prose.
       const metadata=type==="meeting"&&location.trim()?{location:location.trim()}:undefined;
       const saved=await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date,...(metadata?{metadata}:{})})});
+      if(file&&saved&&saved.id){try{await uploadAttachment(saved.id,file);}catch(e){alert("The entry is saved. The file did not attach: "+errorMessage(e,"try Attach a file on the entry."));}}
       onSave({id:saved&&saved.id,type:saveType,note,date,amount:0,metadata:metadata||null});
     }catch(e){console.error(e);}
     setLoading(false);
@@ -350,6 +354,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift,editing=null}){
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
         </div>
+        {!editing&&type!=="gift"&&<AttachFileField file={file} setFile={setFile} labelStyle={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}/>}
         <div style={{display:"flex",gap:8}}>
           {type!=="gift"&&<button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":editing?"Save changes":"Save Touchpoint"}</button>}
           <button onClick={onClose} style={{flex:type==="gift"?1:undefined,background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -2200,7 +2205,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   onInteractionAdded&&onInteractionAdded();}}/>
               </section>;
             })()}
-            {rel&&<RelationshipTimeline inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&<ProfileTimeline canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}

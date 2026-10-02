@@ -539,6 +539,13 @@ app.use((req, res, next) =>
   /^\/grants\/[^/]+\/documents$/.test(req.path)
     ? express.json({ limit: "30mb" })(req, res, next)
     : next());
+// PARITY-1 Part B — a file on a conversation or a note is capped at 10MB of
+// DECODED file (interactionFiles.FILE_MAX_BYTES), ~13.7MB of base64 plus the
+// JSON around it. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
+app.use((req, res, next) =>
+  /^\/interactions\/[^/]+\/attachments$/.test(req.path) && req.method === "POST"
+    ? express.json({ limit: "16mb" })(req, res, next)
+    : next());
 // ── FIX-11 Part 5 — THE INBOUND WEBHOOK'S RAW BODY ────────────────────────
 // Resend signs its webhooks the way every other Resend webhook here is
 // verified: an Svix signature over the EXACT bytes. /inbound-email is mounted
