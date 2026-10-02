@@ -11669,7 +11669,7 @@ app.get("/campaigns/:id/how-did-it-do", requireAuth, wrap(async (req, res) => {
   const lastSide = { ...AW.summary(P.last) };
   const reasons = [
     { key: "notYet", label: "Last year's donors who have not given yet", people: P.notYet.length, cents: AW.sumC(P.notYet), words: "gave last time" },
-    { key: "less", label: "Gave less than last year", people: P.less.length, cents: AW.sumC(P.less), words: "less than last time" },
+    { key: "less", label: "Gave less than last year", people: P.less.length, cents: AW.sumC(P.less), words: "against last time" },
     { key: "more", label: "Gave more than last year", people: P.more.length, cents: AW.sumC(P.more), words: "more than last time" },
     { key: "newcomers", label: "New donors", people: P.newcomers.length, cents: AW.sumC(P.newcomers), words: "from people new to you" },
   ].map(r => ({ ...r, source: src(r.key) }))

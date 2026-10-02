@@ -2245,7 +2245,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* ── THE ASK ── the stage, the open ask and its history, in one place. */}
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
               title="The ask" addLabel="+ New ask" testid="dp-the-ask"
-              children={scores&&scores.suggestedAsk?<SuggestedAskLine ask={scores.suggestedAsk} style={{marginBottom:10}}/>:null} after={<div style={{marginTop:12}}>
+              after={<div style={{marginTop:12}}>
               {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
                   panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
               {lockMajor(
@@ -2340,7 +2340,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>;
             })()}
           </div>}
-
+            {/* ENGAGE-1 §3 — the suggested ask, from their own gifts only. */}
+            {scores&&scores.suggestedAsk&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:"0 0 10px"}}/>}
             </ProposalsPanel>)}
 
             {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
