@@ -30,14 +30,17 @@ import { donorHref, rowClick } from "../lib/appUrls";
 // the Dashboard's root retained a `transform` from `.fade-in`'s fill-mode,
 // which made it the containing block for every position:fixed descendant and
 // dropped this panel at the vertical middle of the whole tall page.
-<<<<<<< HEAD
-const UNITS = { months: "months", days: "days", points: "points" };
+const UNITS = { months: "months", days: "days", points: "points", hours: "hours" };
 // ENGAGE-1: points carry up to two decimals (a touch fades with age); months
 // and days are whole.
-const unitAmount = (v, unit) => unit === "points" ? `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })} points` : `${Math.round(v)} ${unit}`;
-=======
-const UNITS = { months: "months", days: "days", hours: "hours" };
->>>>>>> a0c9ca2 (REPORTS-3: saved dashboards and the board pack)
+// REPORTS-3: so do HOURS. A volunteer shift is recorded to the quarter hour,
+// and the rows behind the board pack's "Volunteer hours" have to add up to the
+// figure on it — rounding 6.5 to 7 here would make a drill-through that does
+// not foot, which is the one thing the panel exists to guarantee.
+const UNIT_DECIMALS = new Set(["points", "hours"]);
+const unitAmount = (v, unit) => UNIT_DECIMALS.has(unit)
+  ? `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`
+  : `${Math.round(v)} ${unit}`;
 const PAGE_SIZE = 50;
 const qs = params => Object.entries(params || {})
   .filter(([, v]) => v !== undefined && v !== null && v !== "")
