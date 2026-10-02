@@ -110,6 +110,7 @@ async function reset() {
       "form_events",
       "volunteer_group_members", "volunteer_signups", "volunteer_slots", "volunteer_opportunities", "volunteer_groups",
       "bookkeeping_deposits", "bookkeeping_connections", "pos_sales", "pos_item_mappings",
+      "matching_employers",
       "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
       // `grants` delete below would usually take them — but `grant_id` is
@@ -283,6 +284,12 @@ async function seedOrg(o, tag) {
     [`cf_${o}`, o, `${tag}_private_field`, `${mark} Field`]);
   await q(`UPDATE donors SET custom_fields=$1::jsonb WHERE id=$2`,
     [JSON.stringify({ [`${tag}_private_field`]: `${mark} custom value` }), `d_${o}`]);
+  // GIVE-2 §8 — a matching employer this org typed, with its own form link.
+  // `DELETE /matching-employers/:id` must answer 404 to the other org: a list
+  // one organisation built of the employers it knows match is not another's to
+  // take rows out of.
+  await q(`INSERT INTO matching_employers (id,org_id,name,form_url,ratio) VALUES ($1,$2,$3,$4,'1:1')`,
+    [`me_${o}`, o, `${mark} Employer`, `https://${tag}-employer.example.com/match`]);
   await q(`INSERT INTO impact_metrics (id,org_id,name,dollar_threshold,outcome_template,active) VALUES ($1,$2,$3,100,'{n} things',TRUE)`,
     [`im_${o}`, o, `${mark} Metric`]);
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status) VALUES ($1,$2,$3,'threshold_500',$4,$5,'pending_review')`,
@@ -458,6 +465,7 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
+    "matching-employers": `me_${B}`,  // GIVE-2 §8 — an employer on another org's own list
     // INT-3 — /email-marketing/campaigns/:id/people opens the people behind one
     // campaign's opens or clicks, which is donor data. Org A asking for org B's
     // campaign must get nothing, and this maps the probe onto a real org B row.
