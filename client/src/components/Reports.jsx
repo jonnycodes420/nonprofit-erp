@@ -11,6 +11,7 @@ import { Figure, FigureContext } from "./Figure";
 import { Dashboards } from "./Dashboards";
 import { useNavigate } from "react-router-dom";
 import { tabHref } from "../lib/appUrls";
+import { RecordLink } from "./RecordLink";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -147,13 +148,14 @@ function ReportsRail({ groups, active, activeLabel, onPick }) {
 
   const item = it => {
     const on = active === it.id;
-    return <button key={it.id} type="button" className="reports-rail-item" data-testid={`rail-item-${it.id}`} data-report-id={it.id}
-      aria-current={on ? "page" : undefined} onClick={() => onPick(it.id)}
+    // FIX-13 Part 6 — a real link to the report, so it opens in a new tab.
+    return <RecordLink key={it.id} to={tabHref("reports", { report: it.id })} className="reports-rail-item" data-testid={`rail-item-${it.id}`} data-report-id={it.id}
+      aria-current={on ? "page" : undefined} onOpen={() => onPick(it.id)}
       style={{ display: "block", width: "100%", textAlign: "left", background: on ? T.white : "transparent", border: "none",
         borderLeft: `3px solid ${on ? T.greenDk : "transparent"}`, borderRadius: "0 8px 8px 0", padding: "7px 10px",
         color: on ? T.ink : T.ink2, fontWeight: on ? 700 : 500, fontSize: 13, lineHeight: 1.35, cursor: "pointer" }}>
       {it.label}{it.sub ? <span style={{ color: T.ink3, fontWeight: 500 }}> · {it.sub}</span> : null}
-    </button>;
+    </RecordLink>;
   };
   const inPicker = shown.some(g => g.items.some(i => i.id === active));
   // While the builder is open its own Save is the screen's one emerald action,

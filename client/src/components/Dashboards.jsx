@@ -22,6 +22,7 @@ import { T, Spin, activeMark } from "./shared";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDate } from "../../../shared/displayDate";
 import { Figure, FigureContext } from "./Figure";
+import { DonorLink } from "./RecordLink";
 
 const DASH_CSS = `
 .dash-page{display:flex;gap:24px;align-items:flex-start}
@@ -242,9 +243,9 @@ export function PeopleBody({ get, openPerson }) {
           {(r, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "9px 0",
                                   borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
-              <button type="button" onClick={() => openPerson && openPerson(r.id)}
+              <DonorLink id={r.id} onOpen={openPerson ? () => openPerson(r.id) : undefined}
                 style={{ background: "none", border: "none", padding: 0, font: "inherit", fontSize: 13.5, color: T.ink, cursor: "pointer",
-                         textAlign: "left", minWidth: 0, overflowWrap: "anywhere" }}>{r.label}</button>
+                         textAlign: "left", minWidth: 0, overflowWrap: "anywhere" }}>{r.label}</DonorLink>
               <span style={{ fontSize: 14, flexShrink: 0 }}>
                 <Figure variant="cell" figureKey={"top-" + r.id} value={r.value} kind="money" label={`${r.label} · given this year`}
                   definition="Every gift this person gave this fiscal year." source={r.source} />

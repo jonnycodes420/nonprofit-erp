@@ -39,6 +39,7 @@ import { errorMessage } from "../lib/domainError";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDateShort } from "../../../shared/displayDate";
 import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING } from "../../../shared/agentShape";
+import { DonorLink } from "./RecordLink";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -264,8 +265,8 @@ function readPanel({ read, wide, onNavigate, onClose }) {
       {read.kind === "people" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
           {(read.people || []).map(p => (
-            <button key={p.id} onClick={() => go("donors", { selectDonorId: p.id })}
-              style={{ ...OUTLINE_BTN, textAlign: "left", fontWeight: 600, borderWidth: 1 }}>{p.name}</button>
+            <DonorLink key={p.id} id={p.id} onOpen={() => go("donors", { selectDonorId: p.id })}
+              style={{ ...OUTLINE_BTN, textAlign: "left", fontWeight: 600, borderWidth: 1 }}>{p.name}</DonorLink>
           ))}
         </div>
       )}
@@ -276,8 +277,8 @@ function readPanel({ read, wide, onNavigate, onClose }) {
             style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open {read.name}</button>
         )}
         {read.kind === "person" && (
-          <button data-testid="agent-read-open" onClick={() => go("donors", { selectDonorId: read.donorId })}
-            style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open the record</button>
+          <DonorLink id={read.donorId} data-testid="agent-read-open" onOpen={() => go("donors", { selectDonorId: read.donorId })}
+            style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open the record</DonorLink>
         )}
         {read.savedReport && (
           <button data-testid="agent-read-save" onClick={() => go("reports", { savedReport: read.savedReport })}
@@ -843,10 +844,10 @@ function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate,
   return (
     <div style={box}>
       {it.donorId && (
-        <button onClick={() => onNavigate && onNavigate("donors", { selectDonorId: it.donorId })}
+        <DonorLink id={it.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: it.donorId }) : undefined}
           style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
           Open the record
-        </button>
+        </DonorLink>
       )}
       <button data-testid="agent-skip" onClick={() => setAsking(true)} disabled={isReadOnly || !!busyId} style={quiet}>Skip</button>
       <button data-testid="agent-approve" onClick={() => onAct(it, "approve")} disabled={isReadOnly || !!busyId}

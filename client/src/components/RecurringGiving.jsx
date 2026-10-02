@@ -4,6 +4,7 @@ import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { DonorLink } from "./RecordLink";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
 // from. Two exports: RecurringView (the full Fundraising → Recurring page:
@@ -444,7 +445,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
         <input type="checkbox" checked={sel.has(u.donorId)} onChange={() => toggle(u.donorId)} style={{ width: 15, height: 15, cursor: "pointer" }} />
       )}
       <div {...interactive(() => onNavigate("donors", { selectDonorId: u.donorId }), { label: `Open ${u.donorName}` })} style={{ flex: 1, minWidth: 0, borderRadius: 6, padding: "2px 4px", margin: "-2px -4px" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{u.donorName}</span>
+        <DonorLink id={u.donorId} onOpen={() => onNavigate("donors", { selectDonorId: u.donorId })} style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{u.donorName}</DonorLink>
         <span style={{ fontSize: 12, color: T.ink3, marginLeft: 8 }}>{u.reason}</span>
       </div>
       {u.sentAt && !u.reconnectedAt && <span style={{ fontSize: 11, color: T.ink3, whiteSpace: "nowrap" }}>link sent</span>}
@@ -613,8 +614,8 @@ export function RecurringView({ onNavigate, isReadOnly }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             {invitations.map(inv => (
               <div key={inv.id} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 13, flexWrap: "wrap" }}>
-                <button onClick={() => onNavigate("donors", { selectDonorId: inv.donorId })}
-                  style={{ background: "transparent", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>{inv.donorName}</button>
+                <DonorLink id={inv.donorId} onOpen={() => onNavigate("donors", { selectDonorId: inv.donorId })}
+                  style={{ background: "transparent", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>{inv.donorName}</DonorLink>
                 <span style={{ color: T.ink3 }}>
                   {money(inv.proposedAmount)}{inv.proposedInterval === "year" ? "/yr" : "/mo"}{inv.fundName ? ` · ${inv.fundName}` : ""} · expires {fmtDate(inv.expiresAt)}
                 </span>
@@ -736,7 +737,7 @@ export function DashboardRecurring({ onNavigate }) {
   const donorRow = (item, detail, danger = false) => (
     <div key={(item.subId || item.id) + (item.date || "")} {...interactive(() => onNavigate("donors", { selectDonorId: item.donorId }), { label: `Open ${item.donorName}` })}
       style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "7px 10px", borderRadius: 8 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{item.donorName}</span>
+      <DonorLink id={item.donorId} onOpen={() => onNavigate("donors", { selectDonorId: item.donorId })} style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{item.donorName}</DonorLink>
       <span style={{ fontSize: 12, color: danger ? T.terra700 : T.ink3 }}>{detail}</span>
     </div>
   );

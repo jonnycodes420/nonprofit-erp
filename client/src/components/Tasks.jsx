@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { DonorLink } from "./RecordLink";
 
 // BUILD-13 Part 1 — Tasks: the daily-driver follow-up surface.
 // Answers "what do I need to do" via three time buckets (Overdue / Due today /
@@ -209,7 +210,7 @@ function TaskRow({ t, accent, onToggle, onDonor, isReadOnly }) {
           {t.due && <span style={{ fontSize: 11.5, color: overdue ? T.terracotta : T.ink3, fontWeight: overdue ? 700 : 400 }}>{overdue ? "Was due " : "Due "}{fmtDue(t.due)}</span>}
           {t.donor_name && (
             onDonor
-              ? <span {...interactive(onDonor, { label: `Open ${t.donor_name}` })} style={{ fontSize: 11.5, color: T.greenMid, fontWeight: 600, borderRadius: 6, padding: "1px 6px" }}>♦ {t.donor_name}</span>
+              ? <DonorLink id={t.donor_id} onOpen={onDonor} style={{ fontSize: 11.5, color: T.greenMid, fontWeight: 600, borderRadius: 6, padding: "1px 6px" }}>♦ {t.donor_name}</DonorLink>
               : <span style={{ fontSize: 11.5, color: T.ink3 }}>♦ {t.donor_name}</span>
           )}
           {t.assigned_to_name && <span style={{ fontSize: 11, color: T.ink3 }}>· {t.assigned_to_name}</span>}

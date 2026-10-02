@@ -5,6 +5,8 @@ import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
 import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
+import { RecordLink } from "./RecordLink";
+import { tabHref, rowClick } from "../lib/appUrls";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -599,10 +601,11 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     {data.grants.filter(g=>!statusFilter||g.status===statusFilter).map(g=>{
       const pct=g.amount>0?Math.round((g.received||0)/g.amount*100):0;
       const days=daysUntil(g.deadline);
-      return <Card key={g.id} accent={SC[g.status]} onClick={()=>setSelected(g)} style={{cursor:"pointer"}}>
+      // FIX-13 Part 6 — the funder's name is a real link to the grant.
+      return <Card key={g.id} accent={SC[g.status]} onClick={rowClick(tabHref("grants",{grantId:g.id}),()=>setSelected(g))} style={{cursor:"pointer"}}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{g.funder}</div>
+            <div style={{fontSize:15,fontWeight:700,color:T.ink}}><RecordLink to={tabHref("grants",{grantId:g.id})} onOpen={()=>setSelected(g)}>{g.funder}</RecordLink></div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{g.program}</div>
             {g.history&&g.history.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>History: {g.history.join(" · ")}</div>}
           </div>
