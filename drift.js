@@ -281,7 +281,7 @@ function composeReason(a, events, today) {
     const monthName = MONTHS_LONG[a.seasonal.month - 1];
     return steady
       ? `${fmtAmt(typical)} every ${monthName} since ${firstYear}. ${gapPhrase}`
-      : `Gave every ${monthName} since ${firstYear} — usually around ${fmtAmt(typical)}. ${gapPhrase}`;
+      : `Gave every ${monthName} since ${firstYear}, usually around ${fmtAmt(typical)}. ${gapPhrase}`;
   }
   if (a.seasonal && a.seasonal.kind === "quarter") {
     const typical = median(events.map(e => e.amount));
@@ -316,7 +316,7 @@ function composeReason(a, events, today) {
   const typical = median(events.map(e => e.amount));
   const spanYears = Math.max(1, Math.round(orgTime.daysBetween(a.firstGiftDate, a.lastGiftDate) / 365.25));
   const spanPhrase = spanYears >= 2 ? ` for ${spanYears} years` : "";
-  return `Gave ${humanCadence(a.cadenceDays)}${spanPhrase} — usually around ${fmtAmt(typical)}. ${gapPhrase}`;
+  return `Gave ${humanCadence(a.cadenceDays)}${spanPhrase}, usually around ${fmtAmt(typical)}. ${gapPhrase}`;
 }
 
 module.exports = { DRIFT, assessDrift, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
