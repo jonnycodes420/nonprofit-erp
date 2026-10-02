@@ -226,7 +226,7 @@ total_start=$(date +%s)
 # only ever drops the database it created, so cleanup touches only this
 # worktree's names. Explicit SHARD_DB_PREFIX / SHARD_PORT_BASE /
 # SUITE_LOG_DIR still win (CI's matrix sets nothing and gets the same shape).
-WT_TAG="${STEWARD_WT_TAG:-$(basename "$(pwd)" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '_' | sed 's/_*$//' | cut -c1-30)}"
+WT_TAG="${STEWARD_WT_TAG:-$(basename "$(pwd)" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '_' | sed 's/^steward_//; s/_*$//' | cut -c1-30)}"
 WT_TAG="${WT_TAG:-wt}"
 export STEWARD_WT_TAG="$WT_TAG"
 export SHARD_DB_PREFIX="${SHARD_DB_PREFIX:-steward_${WT_TAG}_shard_}"
