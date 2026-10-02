@@ -34,8 +34,7 @@ function childEnv(tag) {
   for (const k of Object.keys(env)) {
     if (/^(SHARD|SHARDS$|SUITES$|SUITE_LOG_DIR$|BASE$|APP_URL$|MATRIX_PORT$|AUDIT_PORT$|STEWARD_WT_TAG$)/.test(k)) delete env[k];
   }
-  // /tmp, not os.tmpdir(): inside a shard TMPDIR can arrive relative, and the
-  // copy then lands in the worktree.
+  // A copy, so the nested runs never rewrite this repo's timings file.
   const timings = path.join("/tmp", `fix15-timings-${tag}-${process.pid}.json`);
   fs.copyFileSync(path.join(root, "audit/suite-timings.json"), timings);
   Object.assign(env, {
@@ -80,6 +79,7 @@ const dbs = async () => (await q("SELECT datname FROM pg_database WHERE datname 
   })();
 
   const [ra, rb] = await Promise.all([run(A), run(B)]);
+  for (const t of [A, B]) fs.rmSync(path.join("/tmp", `fix15-timings-${t}-${process.pid}.json`), { force: true });
   done = true; await poll;
 
   ok("worktree A's battery passed", ra.rc === 0, ra.out.slice(-1500));

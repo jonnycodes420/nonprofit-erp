@@ -60,7 +60,7 @@ if (!names.length) { console.error("shard-plan: no suites given"); process.exit(
 
 let timings = {};
 try {
-  const raw = JSON.parse(fs.readFileSync(path.join(__dirname, "..", timingsPath), "utf8"));
+  const raw = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", timingsPath), "utf8"));
   timings = raw && raw.suites ? raw.suites : raw || {};
 } catch { /* no timings yet: every suite weighs the same, which is a fine first run */ }
 

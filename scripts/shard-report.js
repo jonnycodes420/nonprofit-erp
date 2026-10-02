@@ -84,7 +84,7 @@ console.log(`\nSuites: ${results.length - failed.length} passed, ${failed.length
 
 // Refresh the timings from this run so the next plan is balanced by fact.
 try {
-  const file = path.join(ROOT, TIMINGS);
+  const file = path.resolve(ROOT, TIMINGS);   // FIX-15: an absolute path (a test's copy) stays absolute
   let prev = {};
   try { prev = (JSON.parse(fs.readFileSync(file, "utf8")) || {}).suites || {}; } catch { /* first time */ }
   for (const r of results) if (!r.missing) prev[r.name] = r.secs;
