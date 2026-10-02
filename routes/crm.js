@@ -5021,6 +5021,15 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
 // Not admin-only, because "Edited" on a card has to open for whoever can see
 // the card; it shows only rows about this one record, never the whole log.
 app.get("/records/:id/history", requireAuth, wrap(async (req, res) => {
+  // The record must be this organisation's (live, or waiting in the trash);
+  // anything else is the same 404, so the route is no oracle for other orgs.
+  const [own] = await query(
+    `SELECT 1 FROM interactions WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM threads WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM tasks WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM deleted_records WHERE record_id = ? AND org_id = ? LIMIT 1`,
+    [req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId]);
+  if (!own) return res.status(404).json({ error: "Not found" });
   const rows = await auditMw.resolveAuditNames(await query(
     `SELECT id, created_at, user_id, user_name, actor_kind, action, entity_type, entity_id, entity_label, summary,
             record_count, request_method, request_path, changes, before_fields, after_fields

@@ -1491,6 +1491,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   },[]);
 
   const saveGiftEdit=async(giftId)=>{
+    // FIX-14 Part 2 — a receipt is a document the donor already holds. Editing
+    // the amount does not change it, so the person editing is told first.
+    const rcpt=receiptForGift(giftId);
+    const was=giftsFull.find(g=>g.id===giftId);
+    if(rcpt&&was&&giftEditForm.amount!==undefined&&Number(giftEditForm.amount)!==Number(was.amount)
+      &&!window.confirm(`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`))return;
     setGiftSaving(true);
     try{
       const {customFields,...core}=giftEditForm;

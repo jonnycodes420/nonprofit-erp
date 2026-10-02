@@ -369,7 +369,7 @@ function shortDate(v) {
 }
 const CONVERSATION_WORD = { call: "call", meeting: "meeting", email: "email", note: "note", visit: "visit",
   event: "event", letter: "letter", text: "text", voice_memo: "voice memo", stewardship: "stewardship touch",
-  ask: "ask", other: "conversation", gift: "gift" };
+  ask: "ask", other: "conversation", gift: "gift", stage_change: "stage change", planned_gift: "planned gift note" };
 const FIELD_WORD = {
   date: "date", note: "note", type: "type", donor_id: "person it is about", metadata: "details",
   next_step_label: "step", due_date: "due date", due_time: "time", title: "title", due: "due date",

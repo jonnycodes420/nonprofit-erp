@@ -78,6 +78,17 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   above the price is refused. The fair-market value is the org's number to enter, and Steward never
   estimates it. (BUILD-98)
 - **Record an unpaid sponsor as a pledge with one instalment, never as money.** (BUILD-98)
+- **Whoever logged an entry, or an admin, may edit or delete it** (`mayEditLogged`, routes/crm.js).
+  Conversations (`PUT /interactions/:id`), next steps (`PUT/DELETE /threads/:id`) and tasks. An edit
+  stamps `edited_at/edited_by/edited_by_name`; the previous values live only in the audit row, which
+  the "Edited" marker reads (`GET /records/:id/history`). A calendar meeting's time and place belong
+  to the calendar: Steward refuses to change them and links there (`PUT /calendar/events/:id` edits
+  only the note, next step and people). (FIX-14)
+- **A delete that offers Undo moves the row to `deleted_records`** (`trashRow`) and Undo puts it back
+  whole (`POST /deleted-records/:id/restore`). No reader learns a deleted_at column. (FIX-14)
+- **An audit row's Description is built on read** (`auditTrail.describeAuditRow`, names resolved by
+  id in `auditPeople`), and an edit carries `changes.record.donor_id` so it stays findable by person.
+  The log's home is Settings, Audit log; Finance, Exports links there. (FIX-14)
 - **A volunteer file is FOUR column families, not one.** `shared/volunteerImport.js` reads people,
   contact details, hours history, and the two dated things that decide whether somebody may work
   (waiver, background check) out of one file. Five presets: VolunteerHub, SignUpGenius, Wranglr,
