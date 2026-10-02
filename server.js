@@ -2854,7 +2854,7 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,?,?,?,?)",
       ["int_" + uuid().slice(0, 8), orgId, donorId, "stage_change",
        `Moved ${fromStage} → ${toStage}: ${description}`,
-       new Date().toISOString().slice(0, 10), AUTO_MOVE_OFFICER]);
+       orgToday(await orgTz(orgId)), AUTO_MOVE_OFFICER]);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   } catch (e) { console.error("[smart-move] interaction log:", e.message); }
 }
 
@@ -5549,7 +5549,7 @@ async function runMeetingBriefForOrg(org, { today, send = true }) {
     "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
   const fin = require("./routes/finance");
   for (const u of users) {
-    const { meetings } = await fin.composeTodayMeetings(org.id, u.id);
+    const { meetings } = await fin.composeTodayMeetings(org.id, u.id, { withLogged: true });
     if (!meetings.length) { out.skipped.push({ recipientUserId: u.id, reason: "no_meetings" }); continue; }
     if (!send) { out.sent.push({ recipientUserId: u.id, count: meetings.length }); continue; }
     if (!(await reserveDigest(org.id, "meeting_brief", "day:" + today, u.id, u.email, "user", { count: meetings.length }))) {
@@ -5561,7 +5561,7 @@ async function runMeetingBriefForOrg(org, { today, send = true }) {
       b && b.lastTime && `Last time: ${b.lastTime.text}`, b && b.unthanked && b.unthanked.text].filter(Boolean);
     const body = `<p style="color:#0f1a12;">Good morning${u.name ? ", " + escHtmlWf(u.name.split(" ")[0]) : ""}. Here ${meetings.length === 1 ? "is the meeting" : `are the ${meetings.length} meetings`} on your calendar today, with what Steward knows about each person.</p>`
       + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
-<p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(at(m.startsAt))}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
+<p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
 ${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
       + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Account. Untick "Your meetings today" there to stop it.</p>`;
     await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body);
@@ -5853,7 +5853,7 @@ async function processSequences() {
         // Only log donor interactions for non-onboarding sequences (donor_id is a user_id for onboarding)
         if (enr.seq_trigger !== "onboarding") {
           const intId = "i_" + uuid().slice(0, 8);
-          const today = new Date().toISOString().slice(0, 10);
+          const today = orgToday(await orgTz(enr.org_id));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
           await run(
             "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
             [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name} — Step ${enr.current_step + 1}: ${step.subject}`, today]
@@ -7730,7 +7730,7 @@ async function processPledgeReminders() {
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
           ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",
            `Pledge reminder sent — $${Number(p.amount).toLocaleString()} pledge due ${new Date(p.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
-           new Date().toISOString().split("T")[0], JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]
+           orgToday(await orgTz(p.org_id)), JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
         );
 
         const nextStep = p.reminder_step + 1;
@@ -8238,6 +8238,11 @@ async function syncMailbox(userId, orgId, providerKey) {
   const excludedIds = exRows.map(r => r.message_id).filter(Boolean);
 
   const messages = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()]);
+  // FIX-14 Part 1 — an email is filed under the day it arrived IN THE ORG's
+  // zone. The normalizers sliced the UTC day, so mail after 8pm in New York
+  // landed on tomorrow.
+  { const tzOrg = await orgTz(orgId);
+    for (const m of messages) if (m && m.receivedAt && !isNaN(new Date(m.receivedAt).getTime())) m.date = orgToday(tzOrg, new Date(m.receivedAt)); }   // ORG_TZ_SEAM_OK
   const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
   const actorId = `system:mailbox/${providerKey}/${userId}`;
   const [me] = await query(`SELECT name FROM users WHERE id=?`, [userId]);
@@ -9178,7 +9183,7 @@ async function portalTimeline(orgId, donorId, note, portalEvent) {
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name,metadata)
      VALUES (?,?,?,?,?,?,?,?)`,
     ["int_" + uuid().slice(0, 8), orgId, donorId, "note", note,
-     new Date().toISOString().slice(0, 10), "Donor portal", JSON.stringify({ portal_event: portalEvent })]
+     orgToday(await orgTz(orgId)), "Donor portal", JSON.stringify({ portal_event: portalEvent })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   ).catch(e => console.error("[portal] timeline:", e.message));
 }
 
@@ -9832,7 +9837,7 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
 }
 
 async function snapshotMetricsForOrg(orgId) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   const debt = await computeStewardshipDebt(orgId);
   const { avgDays } = await computeFirstTouchDelay(orgId);
   await run(
@@ -9983,7 +9988,7 @@ require("./routes/supporter").mount({
 });
 require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
-  insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, orgToday, orgTz,
+  insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, orgToday, orgTz,
   publicAppUrl, query, queryTx, requireAdmin, requireAuth, resend, resolveOrgBrandTheme, run, runTx, uuid,
   volunteerSummary, withTransaction, wrap,
   // The reminder sweep registers itself here so the background tick can call

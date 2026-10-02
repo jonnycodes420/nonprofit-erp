@@ -33,7 +33,7 @@ function mount(ctx) {
 const {
   actor, checkWriteAccess, crypto, donateLimiter, escapeHtml, insertShift, markVolunteer, requireAdmin,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, run, uuid,
-  volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, resend,
+  volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, resend,
   displayNameCase, donorFacingOrgName, supporterSession,
 } = ctx;
 
@@ -1031,10 +1031,18 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
         message: `Here is the link. Steward did not email it: ${decision.reason || "this organisation has email turned off"}.` });
     }
     if (!p.email) return res.json({ url, sent: false, message: "Here is the link. There is no email address on this record." });
+    // FIX-14 Part 4: the same per-person check as donor mail (deceased,
+    // bounced, complained, unreachable, the block list).
+    const person = await donorMailDecision("volunteer_link", p.email, orgId);
+    if (!person.send) {
+      return res.json({ url, sent: false,
+        message: `Here is the link. Steward did not email it: ${person.reason}.` });
+    }
     const brand = await brandOf(orgId);
     await resend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to: p.email,
+      _stewardOrgId: orgId, _stewardKind: "volunteer_link",
       subject: `Your volunteer page · ${brand.displayName}`,
       html: `<p>Here is your volunteer page. It shows the shifts you are signed up for, and you can cancel or log hours from it.</p>
              <p><a href="${url}">Open my volunteer page</a></p>
@@ -1450,6 +1458,11 @@ async function runVolunteerReminders() {
       [org.id, tomorrow]);
     const brand = await brandOf(org.id);
     for (const r of due) {
+      // FIX-14 Part 4: the same per-person check as donor mail. A deceased,
+      // bounced, complained or unreachable volunteer gets nothing, and the
+      // row is left unclaimed so the reason is re-asked, never remembered.
+      const person = await donorMailDecision("volunteer_reminder", r.email, org.id);
+      if (!person.send) { out.skipped++; continue; }
       // The row is CLAIMED first: a second run of the sweep finds it taken,
       // so a retry cannot mail somebody twice.
       const claimed = await query("UPDATE volunteer_signups SET reminded_at=NOW() WHERE id=? AND reminded_at IS NULL RETURNING id", [r.id]);

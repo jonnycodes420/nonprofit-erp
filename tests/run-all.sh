@@ -135,6 +135,7 @@ CORE=(
   int3-optout
   int4-mailbox
   intb1-calendar-store
+  fix14-meeting-counts
   sec1-two-factor
   trust2-erase
   help1-ask

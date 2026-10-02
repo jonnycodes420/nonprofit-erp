@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -462,6 +463,14 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   const [suggestion, setSuggestion] = useState(null);     // what a big gift is here
   const [affects, setAffects] = useState(null);           // who a save reaches
   const [undo, setUndo] = useState(null);                 // the deleted journey, restorable
+  // FIX-14 Part 5: a journey is /app/journeys?journey=<id>. On the Journeys
+  // tab the address bar names the one that is open (replaced, not pushed:
+  // opening a row is choosing, not going somewhere).
+  const goUrl = useUrlWriter();
+  const onJourneysTab = () => /^\/app\/journeys\/?$/.test(window.location.pathname);
+  useEffect(() => {
+    if (openId && onJourneysTab()) goUrl(tabHref("journeys", { journeyId: openId }), true);
+  }, [openId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async (keepOpen = true) => {
     try {
@@ -763,9 +772,9 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
           <div key={j.id} data-testid="journey-row" className="jb-card"
             style={{ background: T.white, border: "1px solid " + (j.id === openId ? T.greenDk : T.bg3), borderRadius: 12,
                      boxShadow: j.id === openId ? "0 6px 26px rgba(15,26,18,0.08)" : "none" }}>
-            <button onClick={() => (j.id === openId ? setOpenId(null) : openJourney(j))}
-              data-testid={"journey-open-" + j.id}
-              style={{ width: "100%", textAlign: "left", background: "none", border: "none", padding: "14px 16px",
+            <RecordLink to={tabHref("journeys", { journeyId: j.id })} onOpen={() => (j.id === openId ? setOpenId(null) : openJourney(j))}
+              data-testid={"journey-open-" + j.id} data-record-link="journey" aria-expanded={j.id === openId}
+              style={{ width: "100%", boxSizing: "border-box", textAlign: "left", background: "none", border: "none", padding: "14px 16px",
                        cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <span style={{ minWidth: 0 }}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: T.ink, display: "block" }}>{j.name}</span>
@@ -781,7 +790,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 </span>
                 <span style={{ fontSize: 12, color: T.ink3 }}>{j.inIt} in it</span>
               </span>
-            </button>
+            </RecordLink>
 
             {j.id === openId && draft && meta && (
               <div style={{ borderTop: "1px solid " + T.bg3 }}>

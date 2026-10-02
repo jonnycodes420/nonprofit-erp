@@ -23,6 +23,8 @@ import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
+import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
+import { noteFields } from "../../../shared/meetingNote.js";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -49,8 +51,11 @@ export function whenLabel(iso) {
 export function relDay(dateLike) {
   if (!dateLike) return "";
   const s = String(dateLike);
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T12:00:00") : new Date(s);
-  const days = Math.round((dayKey(d) - dayKey(Date.now())) / 864e5);
+  const civil = /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const d = civil ? new Date(s + "T12:00:00") : new Date(s);
+  // FIX-14 Part 1 — a civil date is compared with the ORG's today, as civil
+  // dates; only an instant is placed on the browser's clock.
+  const days = civil ? -civilDaysAgo(s) : Math.round((dayKey(d) - dayKey(Date.now())) / 864e5);
   if (days === 0) return "Today";
   if (days === -1) return "Yesterday";
   if (days === 1) return "Tomorrow";
@@ -170,9 +175,12 @@ const ICON = {
   email: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>,
   meeting: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>,
 };
-const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2 };
+const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2, talk: T.white };
+// FIX-14 Part 3 — calls, notes, asks and stewardship touches join the one
+// timeline (the old Touchpoint timeline is gone), with a speech-mark tile.
+ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged }) {
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null }) {
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(12);
@@ -183,17 +191,37 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   const loggedFromCalendar = new Set((rel.past || []).map(e => e.interactionId).filter(Boolean));
   const items = [];
   for (const t of rel.emailThreads || []) items.push({ kind: "email", id: "t:" + t.key, date: t.lastDate, t });
-  for (const m of rel.past || []) items.push({ kind: "meeting", id: "c:" + m.id, date: String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
-  for (const i of interactions || []) {
-    if (i.type !== "meeting" || calendarMeetingIds.has(i.id)) continue;
-    let meta = {}; try { meta = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch {}
-    if (meta.calendar_event_id) continue;    // shown as its calendar meeting
-    items.push({ kind: "meeting", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
+  if (Array.isArray(rel.meetings)) {
+    // FIX-14 Part 1 — the meetings are the server's ONE source (meetings.js),
+    // so this list, its chip, the rail and the header count the same rows.
+    for (const m of rel.meetings) {
+      if (m.kind === "calendar") items.push({ kind: "meeting", id: "c:" + m.id, date: m.date, m });
+      else items.push({ kind: "meeting", id: "i:" + m.id, date: m.date, logged: { ...m, ...(byId[m.id] || {}), date: m.date } });
+    }
+  } else {
+    for (const m of rel.past || []) items.push({ kind: "meeting", id: "c:" + m.id, date: m.date || String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
+    for (const i of interactions || []) {
+      if (i.type !== "meeting" || calendarMeetingIds.has(i.id)) continue;
+      let meta = {}; try { meta = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch {}
+      if (meta.calendar_event_id) continue;    // shown as its calendar meeting
+      items.push({ kind: "meeting", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
+    }
   }
   for (const g of gifts || []) items.push({ kind: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
+  // stewardship touch, an email typed in by hand) is on this one timeline too.
+  const inThreads = new Set((rel.emailThreads || []).flatMap(t => t.ids || []));
+  const meetingIds = new Set(items.filter(i => i.kind === "meeting" && i.logged).map(i => i.logged.id));
+  for (const i of interactions || []) {
+    if (!i || !i.id || i.type === "gift" || i.type === "meeting" || meetingIds.has(i.id) || inThreads.has(i.id)) continue;
+    items.push({ kind: "talk", id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
+  }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0),
-    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length };
+    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length,
+    talk: items.filter(i => i.kind === "talk").length };
+  // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
+  const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
   const shown = items.filter(i => filter === "all" || i.kind === filter);
   const chip = (key, label) => (
     <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key}
@@ -206,9 +234,12 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {chip("all", "All")}{chip("email", `Emails ${counts.email}`)}{chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
+          {chip("all", "All")}{counts.talk > 0 && chip("talk", `Conversations ${counts.talk}`)}{!quietInbox && chip("email", `Emails ${counts.email}`)}{!quietInbox && chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
         </div>
       </div>
+      {quietInbox && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
+        {onConnect ? <button type="button" onClick={onConnect} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Connect your inbox</button> : "Connect your inbox"} to see emails and meetings.
+      </div>}
       {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>Nothing here yet.</div>}
       {shown.slice(0, limit).map(it => {
         const isOpen = openId === it.id;
@@ -239,11 +270,18 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             <div>{whenLabel(m.startsAt)} · from {ownerFirst(m)}'s {PROVIDER_CAL[m.provider] || "calendar"}</div>
             {!m.loggedAt && onLog && <button type="button" onClick={e => { e.stopPropagation(); onLog(m); }} style={{ ...btnOutline, marginTop: 10, padding: "8px 14px", minHeight: 36, fontSize: 14 }}>Log how it went</button>}
           </div>;
-        } else if (it.kind === "meeting") {
+        } else if (it.kind === "talk") {
           const i = it.logged;
-          title = String(i.note || "Meeting").split("\n")[0];
-          body = String(i.note || "").split("\n").slice(1).join(" ").trim() || null;
-          meta = i.logged_by_name ? `Logged by ${i.logged_by_name}` : null;
+          title = conversationTitle(i);
+          body = <NoteBody note={i.note}/>;
+          meta = (i.logged_by_name || i.ownerName || i.created_by_name) ? `Logged by ${i.logged_by_name || i.ownerName || i.created_by_name}` : null;
+        } else if (it.kind === "meeting") {
+          // FIX-14 Part 1 — a logged meeting is titled by its type and place,
+          // and its note keeps its lines: "Label: value" lines are rows.
+          const i = it.logged;
+          title = conversationTitle(i);
+          body = <NoteBody note={i.note}/>;
+          meta = (i.logged_by_name || i.ownerName) ? `Logged by ${i.logged_by_name || i.ownerName}` : null;
         } else {
           const g = it.g;
           title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
@@ -251,18 +289,22 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
         }
         return (
-          <div key={it.id} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+          <div key={it.id} id={it.kind === "gift" ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
+              border: it.kind === "talk" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
               display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" ? "$" : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
-              {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3 }}>{body}</div>}
+              {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}
               {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
               {extra}
             </div>
-            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}</div>
+            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}
+              {/* FIX-14 Part 2: Edit/Delete and "Edited" on a logged meeting. */}
+              {renderActions && (it.logged || (it.m && byId[it.m.interactionId])) && <div>{renderActions(it.logged || byId[it.m.interactionId])}</div>}
+            </div>
           </div>
         );
       })}
@@ -271,8 +313,92 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   );
 }
 
+// ── FIX-14 Part 1 — A LOGGED CONVERSATION, READABLE ────────────────────────
+// Titled by what it was and where ("Meeting at Starbucks", or "Meeting"); the
+// first line of the note is not a title. The note keeps its own line breaks,
+// and a run of "Label: value" lines (the touchpoint form writes them) shows as
+// labelled rows.
+const KIND_WORD = { meeting: "Meeting", call: "Call", email: "Email", note: "Note", ask: "Ask", stewardship: "Stewardship" };
+function metaOf(i) {
+  try { return typeof i?.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i?.metadata || {}); } catch { return {}; }
+}
+export function conversationTitle(i) {
+  const meta = metaOf(i);
+  const word = meta.touch === "visit" ? "Visit" : KIND_WORD[i?.type || "meeting"] || "Meeting";
+  const place = i?.location || meta.location || (noteFields(i?.note).find(f => /^location$/i.test(f.label)) || {}).value || "";
+  return place ? `${word} at ${place}` : word;
+}
+export function NoteBody({ note }) {
+  const text = String(note || "").trim();
+  if (!text) return null;
+  const lines = text.split(/\r?\n/);
+  const fields = noteFields(text);
+  if (fields.length >= 2) {
+    const rows = lines.map((line, k) => {
+      const f = noteFields(line)[0];
+      return f ? { k, label: f.label, value: f.value } : line.trim() ? { k, text: line.trim() } : null;
+    }).filter(Boolean).filter(r => !(r.label && /^location$/i.test(r.label)));
+    return (
+      <dl data-testid="note-fields" style={{ margin: 0, display: "grid", gridTemplateColumns: "minmax(0, max-content) minmax(0, 1fr)", gap: "4px 14px" }}>
+        {rows.map(r => r.label
+          ? [<dt key={r.k + "l"} style={{ fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, paddingTop: 3 }}>{r.label}</dt>,
+             <dd key={r.k + "v"} style={{ margin: 0, color: T.ink, whiteSpace: "pre-wrap" }}>{r.value}</dd>]
+          : <dd key={r.k} style={{ margin: 0, gridColumn: "1 / -1", color: T.ink, whiteSpace: "pre-wrap" }}>{r.text}</dd>)}
+      </dl>
+    );
+  }
+  return <div style={{ whiteSpace: "pre-wrap", color: T.ink3 }}>{text}</div>;
+}
+
+// What Steward heard in a note, as chips. Each one does nothing until a person
+// presses it; "Not now" is remembered too. POSTs from this page only.
+export function ConversationChips({ interactionId, onChanged }) {
+  const [d, setD] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    let alive = true;
+    setD(null); setMsg("");
+    apiFetch(`/interactions/${interactionId}/suggest`, { method: "POST", body: "{}" })
+      .then(r => { if (alive) setD(r); }).catch(() => { if (alive) setD({ suggestions: [] }); });
+    return () => { alive = false; };
+  }, [interactionId]);
+  if (!d || !(d.suggestions || []).length) return msg ? <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div> : null;
+  const answer = async (c, yes) => {
+    setBusy(c.kind); setMsg("");
+    try {
+      const body = { kind: c.kind, answer: yes ? "yes" : "no" };
+      if (yes && c.kind === "next") Object.assign(body, { label: c.stepLabel || "Follow up", due: c.due });
+      if (yes && c.kind === "spouse") Object.assign(body, { name: c.fullName || c.name, matchId: c.matchId || undefined });
+      const r = await apiFetch(`/interactions/${interactionId}/chips`, { method: "POST", body: JSON.stringify(body) });
+      setD(prev => ({ ...prev, suggestions: prev.suggestions.filter(x => x.kind !== c.kind) }));
+      setMsg(r.sentence || "");
+      if (yes && onChanged) onChanged();
+    } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+    setBusy("");
+  };
+  return (
+    <div data-testid="conversation-chips" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ fontSize: 12, color: T.ink3 }}>{d.sentence}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {d.suggestions.map(c => (
+          <span key={c.kind} style={{ display: "inline-flex", alignItems: "center", border: "1px solid " + T.ink, borderRadius: 999, background: T.white }}>
+            <button type="button" data-chip={c.kind} disabled={!!busy} onClick={() => answer(c, true)} title={c.quote ? `From the note: "${c.quote}"` : undefined}
+              style={{ background: "none", border: "none", padding: "7px 6px 7px 14px", font: "600 14px 'DM Sans',sans-serif", color: T.ink, cursor: busy ? "wait" : "pointer" }}>
+              {busy === c.kind ? "Saving…" : c.label}
+            </button>
+            <button type="button" aria-label={`Not now: ${c.label}`} disabled={!!busy} onClick={() => answer(c, false)}
+              style={{ background: "none", border: "none", padding: "7px 12px 7px 6px", fontSize: 13, color: T.ink3, cursor: "pointer" }}>Not now</button>
+          </span>
+        ))}
+      </div>
+      {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
+    </div>
+  );
+}
+
 // ── THE RAIL ────────────────────────────────────────────────────────────────
-export function RelationshipRail({ rel, donor, onReload }) {
+export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythmSlot = null, inboxConnected = true }) {
   const [booking, setBooking] = useState(false);
   const [invite, setInvite] = useState(false);
   const [title, setTitle] = useState("");
@@ -283,7 +409,7 @@ export function RelationshipRail({ rel, donor, onReload }) {
   const first = firstNameOf(donor?.name) || "them";
   const y = rel.thisYear || {};
   const n = y.meetings?.value || 0;
-  const monthsElapsed = Math.max(1, new Date().getMonth() + 1);
+  const monthsElapsed = Math.max(1, Number(String(rel.today || "").slice(5, 7)) || new Date().getMonth() + 1);
   const next = (rel.upcoming || [])[0];
   const book = async body => {
     setBusy(true); setMsg("");
@@ -298,12 +424,12 @@ export function RelationshipRail({ rel, donor, onReload }) {
   const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
   return (
     <div data-testid="dp-rail-relationship" style={{ display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {nextSlot || <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <H gold>Next step</H>
         <div style={{ fontFamily: SERIF, fontSize: 26, lineHeight: 1.2 }}>{rel.nextStep?.label || "Nothing planned yet."}</div>
         {rel.nextStep?.due && <div style={{ fontSize: 14, color: T.sage400 }}>Due {relDay(rel.nextStep.due)}</div>}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      </div>}
+      {rhythmSlot || <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <H>Meeting rhythm · last 12 months</H>
         <div role="img" aria-label={rel.rhythmSentence} title={rel.rhythmSentence}
           style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 5 }}>
@@ -317,18 +443,19 @@ export function RelationshipRail({ rel, donor, onReload }) {
         </div>
         <div style={{ fontSize: 14, color: T.sage400, lineHeight: 1.5 }}>
           {n ? `${n} meeting${n === 1 ? "" : "s"} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} month${Math.round(monthsElapsed / n) === 1 ? "" : "s"}` : ""}.` : "No meetings yet this year."}
-          {next ? ` The next one is ${relDay(next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.startsAt)}.` : ""}
+          {next ? ` The next one is ${relDay(next.date || next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.date || next.startsAt)}.` : ""}
         </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      </div>}
+      {(inboxConnected || (rel.upcoming || []).length > 0) && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <H>Coming up</H>
-        {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.startsAt)}</span>}/>)}
-        {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing on a connected calendar.</div>}
-      </div>
+        {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.date || e.startsAt)}</span>}/>)}
+        {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing coming up, on a calendar or logged ahead.</div>}
+      </div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <H>This year</H>
-        <Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
-        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/>
+        {(inboxConnected || y.emails?.value || n) ? <><Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
+        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/></>
+          : <div data-testid="dp-rail-connect-inbox" style={{ fontSize: 14, color: T.sage400 }}>Connect your inbox to see emails and meetings.</div>}
         <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this year" definition="Every gift from this person this year, to the cent." source={y.given?.source} variant="inline"/>}/>
       </div>
       {!booking && <button type="button" data-testid="dp-book-visit" onClick={() => setBooking(true)}
@@ -352,7 +479,8 @@ export function RelationshipRail({ rel, donor, onReload }) {
 }
 
 // ── HOW DID IT GO ───────────────────────────────────────────────────────────
-const plus = (iso, days) => { const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+// FIX-14 Part 1 — the org's calendar (this was the UTC day of a local instant).
+const plus = (iso, days) => orgTodayPlus(days, new Date(iso));
 const FREQ_FOR = { 2: "semiannual", 4: "quarterly", 12: "monthly" };
 
 export function AfterMeetingForm({ meeting, onDone }) {
@@ -394,7 +522,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
     try {
       await apiFetch(`/calendar/events/${meeting.id}/log`, { method: "POST", body: JSON.stringify({ note, nextStep: next.trim() || null }) });
       const done = ["the note"];
-      const meetingDay = new Date(meeting.startsAt).toISOString().slice(0, 10);
+      const meetingDay = civilDayOf(meeting.startsAt);   // FIX-14 Part 1 — the org-local day, not the UTC day
       if (person && pledge) {
         const count = pledge.payments > 1 ? pledge.payments : null;
         await apiFetch(`/donors/${person.id}/pledges`, { method: "POST", body: JSON.stringify({

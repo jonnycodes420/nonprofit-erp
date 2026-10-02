@@ -1,4 +1,5 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
+import { setOrgTimezone } from "./lib/orgToday";
 
 export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -249,6 +250,8 @@ export function adaptDonor(d) {
 }
 
 export function adaptData({ org, donors, grants, volunteers, tasks, board, financials }) {
+  // FIX-14 Part 1 — the org's zone, for every client "today" (lib/orgToday.js).
+  setOrgTimezone(org && org.timezone);
   return {
     org: {
       id:         org.id,

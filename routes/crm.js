@@ -4513,7 +4513,7 @@ app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAcces
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "stage_change",
        `Stage moved from ${oldStage} → ${stage}`,
-       new Date().toISOString().split("T")[0], req.user.userId, userName]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Stage change log:", e.message); }
 
@@ -4729,7 +4729,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
 
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const userName = userRow[0]?.name || "";
-  const today = new Date().toISOString().split("T")[0];
+  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
 
   // Straight donor_id reassigns — no unique constraint on donor_id in these.
   const PLAIN_CHILD_TABLES = [
@@ -4855,7 +4855,8 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type, note || "",
-     date || new Date().toISOString().split("T")[0], req.user.userId,
+     // FIX-14 Part 1 — no date means the ORG's today (this was the UTC day).
+     /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? date : orgToday(await orgTz(req.user.orgId)), req.user.userId,   // ORG_TZ_SEAM_OK
      userName, metadata ? JSON.stringify(metadata) : null]
   );
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
@@ -4863,20 +4864,183 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   res.status(201).json(rows[0]);
 }));
 
+// ── FIX-14 Part 2 — EDIT WHAT YOU LOGGED, AND UNDO A DELETE ────────────────
+// Whoever logged an entry may change it, and so may an admin. A conversation
+// is edited through the same fields it was created with; the audit row the
+// middleware writes for this request holds the before and after of every
+// field that moved, so the previous version is never lost.
+async function mayEditLogged(req, row) {
+  if (row && row.created_by && row.created_by === req.user.userId) return true;
+  const [u] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  return !!(u && u.role === "admin");
+}
+const NOT_YOURS = { error: "not_yours", sentence: "Only the person who logged this, or an admin, can change it." };
+// A meeting from a connected calendar: its time and place belong to the
+// calendar. Steward never edits the event; it says where to change it.
+function calendarDayUrl(provider, date) {
+  const d = String(date || "").slice(0, 10).replace(/-/g, "/");
+  return provider === "outlook" || provider === "microsoft"
+    ? `https://outlook.office.com/calendar/view/day/${d}`
+    : `https://calendar.google.com/calendar/r/day/${d}`;
+}
+const parseMeta = m => { try { return (typeof m === "string" ? JSON.parse(m || "{}") : m) || {}; } catch { return {}; } };
+const EDITABLE_TYPES = new Set(["meeting", "call", "email", "note", "visit", "event", "other", "letter", "text", "stewardship", "ask"]);
+
+app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const [row] = await query("SELECT * FROM interactions WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
+  if (!row) return res.status(404).json({ error: "Interaction not found" });
+  if (!(await mayEditLogged(req, row))) return res.status(403).json(NOT_YOURS);
+  if (row.type === "gift" || row.gift_id) {
+    return res.status(409).json({ error: "gift_entry", sentence: "A gift is changed on the gift itself, in Giving." });
+  }
+  const meta = parseMeta(row.metadata);
+  const b = req.body || {};
+  const sets = [], vals = [];
+  const fromCalendar = !!meta.calendar_event_id;
+  if (b.type !== undefined && b.type !== row.type) {
+    if (fromCalendar) return res.status(409).json({ error: "calendar_owned", sentence: "This meeting came from a calendar. Change it in your calendar.", calendarUrl: calendarDayUrl(meta.provider, row.date) });
+    if (!EDITABLE_TYPES.has(String(b.type))) return res.status(400).json({ error: "Unknown conversation type" });
+    sets.push("type=?"); vals.push(String(b.type));
+  }
+  if (b.date !== undefined && b.date !== row.date) {
+    if (fromCalendar) return res.status(409).json({ error: "calendar_owned", sentence: "The time and place come from your calendar. Change it in your calendar.", calendarUrl: calendarDayUrl(meta.provider, row.date) });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date))) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+    sets.push("date=?"); vals.push(b.date);
+  }
+  if (b.note !== undefined && String(b.note) !== String(row.note || "")) {
+    if (!String(b.note).trim()) return res.status(400).json({ error: "The note cannot be empty. Delete the entry instead." });
+    sets.push("note=?"); vals.push(String(b.note).slice(0, 20000));
+  }
+  if (b.donorId !== undefined && b.donorId !== row.donor_id) {
+    if (!(await orgOwns("donors", b.donorId, orgId))) return res.status(404).json({ error: "Donor not found" });
+    sets.push("donor_id=?"); vals.push(b.donorId);
+  }
+  if (b.metadata && typeof b.metadata === "object") {
+    const next = { ...meta };
+    for (const k of ["location", "attendees", "next_step"]) {
+      if (b.metadata[k] === undefined) continue;
+      if (fromCalendar && k === "location" && String(b.metadata[k] || "") !== String(meta.location || "")) {
+        return res.status(409).json({ error: "calendar_owned", sentence: "The time and place come from your calendar. Change it in your calendar.", calendarUrl: calendarDayUrl(meta.provider, row.date) });
+      }
+      next[k] = b.metadata[k] === "" ? null : String(b.metadata[k]).slice(0, 500);
+    }
+    if (JSON.stringify(next) !== JSON.stringify(meta)) { sets.push("metadata=?"); vals.push(JSON.stringify(next)); }
+  }
+  if (!sets.length) return res.json({ ...row, unchanged: true });
+  const [u] = await query("SELECT name FROM users WHERE id=?", [userId]);
+  sets.push("edited_at=NOW()", "edited_by=?", "edited_by_name=?");
+  vals.push(userId, u?.name || req.user.email || "");
+  await run(`UPDATE interactions SET ${sets.join(", ")} WHERE id = ? AND org_id = ?`, [...vals, req.params.id, orgId]);
+  // A calendar meeting's note lives on the meeting too: keep the two saying
+  // the same thing (Steward's own part only; the event is never touched).
+  if (fromCalendar && b.note !== undefined) {
+    const title = String(row.note || "").split("\n\n")[0];
+    const own = String(b.note).startsWith(title + "\n\n") ? String(b.note).slice(title.length + 2) : String(b.note);
+    await run("UPDATE calendar_events SET note=?, updated_at=NOW() WHERE id=? AND org_id=?", [own || null, meta.calendar_event_id, orgId]).catch(() => {});
+  }
+  const [out] = await query("SELECT * FROM interactions WHERE id = ?", [req.params.id]);
+  if (out.donor_id) calcWealthScore(out.donor_id, orgId).catch(e => console.error("score recalc:", e.message));
+  res.json(out);
+}));
+
+// Move a row into deleted_records and out of its table, in one transaction.
+// Returns the trash id Undo needs, or null when there was no such row.
+const RESTORABLE = new Set(["interactions", "threads", "tasks", "donor_relationships",
+  "pledges", "opportunities", "households"]);
+// FIX-14 Part 2b — WHAT GOES WITH A ROW. Some rows take other rows with them
+// when they are deleted (a pledge's instalments cascade, a household's members
+// are unlinked, a calendar meeting points at its logged conversation). The
+// hook runs inside the delete's transaction, BEFORE the row goes, and returns
+// what Undo needs to put those back; RESTORE_WITH puts them back.
+const TRASH_WITH = {
+  interactions: async (client, id, orgId) => {
+    const ev = await queryTx(client, "SELECT id FROM calendar_events WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
+    if (!ev.length) return null;
+    await runTx(client, "UPDATE calendar_events SET interaction_id = NULL, updated_at = NOW() WHERE interaction_id = ? AND org_id = ?", [id, orgId]);
+    return { calendar_event_ids: ev.map(e => e.id) };
+  },
+  pledges: async (client, id) => ({
+    installments: await queryTx(client, "SELECT * FROM pledge_installments WHERE pledge_id = ?", [id]),
+  }),
+  households: async (client, id, orgId) => ({
+    member_ids: (await queryTx(client, "SELECT id FROM donors WHERE household_id = ? AND org_id = ?", [id, orgId])).map(d => d.id),
+  }),
+};
+const RESTORE_WITH = {
+  interactions: async (client, x, recordId, orgId) => {
+    if (x && Array.isArray(x.calendar_event_ids) && x.calendar_event_ids.length) {
+      await runTx(client, "UPDATE calendar_events SET interaction_id = ?, updated_at = NOW() WHERE id = ANY(?) AND org_id = ? AND interaction_id IS NULL",
+        [recordId, x.calendar_event_ids, orgId]);
+    }
+  },
+  pledges: async (client, x) => {
+    if (x && Array.isArray(x.installments) && x.installments.length) {
+      await runTx(client, "INSERT INTO pledge_installments SELECT * FROM jsonb_populate_recordset(NULL::pledge_installments, ?::jsonb)",
+        [JSON.stringify(x.installments)]);
+    }
+  },
+  // A member who joined another household since is left where they are.
+  households: async (client, x, recordId, orgId) => {
+    if (x && Array.isArray(x.member_ids) && x.member_ids.length) {
+      await runTx(client, "UPDATE donors SET household_id = ? WHERE id = ANY(?) AND org_id = ? AND household_id IS NULL",
+        [recordId, x.member_ids, orgId]);
+    }
+  },
+};
+const TRASH_ENTITY = { interactions: "interaction", threads: "next step", tasks: "task", donor_relationships: "relationship",
+  pledges: "pledge", opportunities: "proposal", households: "household" };
+// The audit row's picture of a record: a relationship carries its first
+// person as donor_id (so that person's History finds it) and a household
+// carries its members' ids, so "Removed X from the household" can be said.
+async function auditShape(table, row, orgId) {
+  if (!row) return row;
+  if (table === "donor_relationships") return { ...row, donor_id: row.donor_id_a };
+  if (table === "households") {
+    const m = await query("SELECT id FROM donors WHERE household_id = ? AND org_id = ? ORDER BY id", [row.id, orgId]);
+    return { ...row, member_ids: m.map(d => d.id) };
+  }
+  return row;
+}
+// Who edited, for the edited_by / edited_by_name stamp.
+async function editStamp(req) {
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  return [req.user.userId, u?.name || req.user.email || ""];
+}
+async function trashRow(table, id, req) {
+  if (!RESTORABLE.has(table)) throw new Error("not a restorable table: " + table);
+  const who = actor(req);
+  return withTransaction(async client => {
+    const rows = await queryTx(client, `SELECT * FROM ${table} WHERE id = ? AND org_id = ? FOR UPDATE`, [id, req.user.orgId]);
+    if (!rows.length) return null;
+    const trashId = "del_" + uuid().slice(0, 12);
+    const withRow = TRASH_WITH[table] ? await TRASH_WITH[table](client, id, req.user.orgId) : null;
+    // `__with` is not a column, so jsonb_populate_record ignores it on Undo.
+    await runTx(client,
+      `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+       SELECT ?, ?, ?, ?, to_jsonb(t) || ?::jsonb, ?, ? FROM ${table} t WHERE t.id = ? AND t.org_id = ?`,
+      [trashId, req.user.orgId, table, id, JSON.stringify(withRow ? { __with: withRow } : {}), who.id, who.name, id, req.user.orgId]);
+    await runTx(client, `DELETE FROM ${table} WHERE id = ? AND org_id = ?`, [id, req.user.orgId]);
+    return trashId;
+  });
+}
+const UNDO_SECONDS = 10;
+
 // DELETE /interactions/:id — remove a mis-logged touchpoint. Per convention,
 // DELETE routes get no checkWriteAccess. Gmail-synced rows are deliberately
 // deletable too: the message id is recorded in gmail_sync_exclusions first so
 // syncGmail's dedup step doesn't re-insert the same message on its next pass.
+// FIX-14 Part 2: only whoever logged it, or an admin; and the row is moved,
+// not destroyed, so Undo can put it back.
 app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
-    "SELECT id, metadata FROM interactions WHERE id = ? AND org_id = ?",
+    "SELECT id, metadata, created_by FROM interactions WHERE id = ? AND org_id = ?",
     [req.params.id, req.user.orgId]
   );
   if (!rows.length) return res.status(404).json({ error: "Interaction not found" });
+  if (!(await mayEditLogged(req, rows[0]))) return res.status(403).json(NOT_YOURS);
 
-  const meta = typeof rows[0].metadata === "string"
-    ? JSON.parse(rows[0].metadata || "null")
-    : rows[0].metadata;
+  const meta = parseMeta(rows[0].metadata);
   if (meta?.gmail_message_id) {
     await run(
       "INSERT INTO gmail_sync_exclusions (id, org_id, gmail_message_id) VALUES (?,?,?) ON CONFLICT (org_id, gmail_message_id) DO NOTHING",
@@ -4884,12 +5048,108 @@ app.delete("/interactions/:id", requireAuth, wrap(async (req, res) => {
     );
   }
 
-  const result = await run(
-    "DELETE FROM interactions WHERE id = ? AND org_id = ?",
-    [req.params.id, req.user.orgId]
-  );
-  if (!result.changes) return res.status(404).json({ error: "Interaction not found" });
-  res.json({ deleted: result.changes });
+  const undoId = await trashRow("interactions", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Interaction not found" });
+  res.json({ deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
+}));
+
+// UNDO. Puts the row back exactly as it was. Allowed to whoever deleted it,
+// or an admin, and only once.
+app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
+  const [t] = await query("SELECT * FROM deleted_records WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  if (t.restored_at) return res.status(409).json({ error: "already_restored", sentence: "That is already back." });
+  if (t.created_by !== req.user.userId && !(await mayEditLogged(req, {}))) return res.status(403).json(NOT_YOURS);
+  if (!RESTORABLE.has(t.table_name)) return res.status(400).json({ error: "Cannot restore this" });
+  try {
+    await withTransaction(async client => {
+      await runTx(client, `INSERT INTO ${t.table_name} SELECT * FROM jsonb_populate_record(NULL::${t.table_name}, ?::jsonb)`,
+        [JSON.stringify(t.row_data)]);
+      const data = typeof t.row_data === "string" ? JSON.parse(t.row_data) : t.row_data;
+      if (RESTORE_WITH[t.table_name]) await RESTORE_WITH[t.table_name](client, data && data.__with, t.record_id, req.user.orgId);
+      await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ?", [t.id]);
+    });
+  } catch (e) {
+    if (e.code === "23505") return res.status(409).json({ error: "conflict", sentence: "It could not come back, because something now stands in its place (an open next step, most likely)." });
+    throw e;
+  }
+  const [row] = await query(`SELECT * FROM ${t.table_name} WHERE id = ? AND org_id = ?`, [t.record_id, req.user.orgId]);
+  // The audit row is about the record that came back, not the trash row.
+  if (req.audit) {
+    req.audit.entity(TRASH_ENTITY[t.table_name], t.record_id);
+    req.audit.after(row ? await auditShape(t.table_name, row, req.user.orgId) : null);
+  }
+  res.json({ restored: true, table: t.table_name, record: row || null });
+}));
+
+// THE PREVIOUS VERSIONS of one logged entry: its audit rows, newest first.
+// Not admin-only, because "Edited" on a card has to open for whoever can see
+// the card; it shows only rows about this one record, never the whole log.
+app.get("/records/:id/history", requireAuth, wrap(async (req, res) => {
+  // The record must be this organisation's (live, or waiting in the trash);
+  // anything else is the same 404, so the route is no oracle for other orgs.
+  const [own] = await query(
+    `SELECT 1 FROM interactions WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM threads WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM tasks WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM pledges WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM opportunities WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM households WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM donor_relationships WHERE id = ? AND org_id = ?
+     UNION ALL SELECT 1 FROM deleted_records WHERE record_id = ? AND org_id = ? LIMIT 1`,
+    [req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId,
+     req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId, req.params.id, req.user.orgId]);
+  if (!own) return res.status(404).json({ error: "Not found" });
+  const rows = await auditMw.resolveAuditNames(await query(
+    `SELECT id, created_at, user_id, user_name, actor_kind, action, entity_type, entity_id, entity_label, summary,
+            record_count, request_method, request_path, changes, before_fields, after_fields
+       FROM fin_audit_log WHERE org_id = ? AND entity_id = ? AND (status_code IS NULL OR status_code < 400)
+      ORDER BY created_at DESC, id DESC LIMIT 100`, [req.user.orgId, req.params.id]), req.user.orgId);
+  const out = await auditDescribe(rows, req.user.orgId);
+  res.json({ timezone: await orgTzName(req.user.orgId), rows: out });
+}));
+
+// A NEXT STEP is edited the same way: its words, its date, its time. Whoever
+// set it (or owns it) may change it, and an admin.
+app.put("/threads/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const [t] = await query("SELECT * FROM threads WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Thread not found" });
+  if (t.owner_id !== userId && !(await mayEditLogged(req, t))) return res.status(403).json(NOT_YOURS);
+  const shape = await threadShapeMod();
+  const b = req.body || {};
+  const sets = [], vals = [];
+  if (b.label !== undefined) {
+    const label = shape.sanitizeStepLabel(b.label);
+    if (!label) return res.status(400).json({ error: "A next step needs a label." });
+    if (label !== t.next_step_label) { sets.push("next_step_label=?", "next_step_type=?"); vals.push(label, shape.nextStepTypeForLabel(label)); }
+  }
+  if (b.due !== undefined && b.due !== t.due_date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.due))) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
+    sets.push("due_date=?"); vals.push(b.due);
+  }
+  if (b.time !== undefined) {
+    const time = shape.sanitizeStepTime(b.time);
+    if (b.time && !time) return res.status(400).json({ error: "time must be a 24-hour HH:MM, or empty" });
+    if (time && !(await orgTz(orgId)).timezone_confirmed_at) return res.status(400).json({ error: "timezone_unset", message: "Set your organization's timezone in Settings before scheduling a reminder at a specific time." });
+    if ((time || null) !== (t.due_time || null)) { sets.push("due_time=?"); vals.push(time || null); }
+  }
+  if (!sets.length) return res.json({ thread: t, unchanged: true });
+  const [u] = await query("SELECT name FROM users WHERE id=?", [userId]);
+  sets.push("edited_at=NOW()", "edited_by=?", "edited_by_name=?");
+  vals.push(userId, u?.name || req.user.email || "");
+  await run(`UPDATE threads SET ${sets.join(", ")} WHERE id = ? AND org_id = ?`, [...vals, req.params.id, orgId]);
+  const [out] = await query("SELECT * FROM threads WHERE id = ?", [req.params.id]);
+  res.json({ thread: out });
+}));
+
+app.delete("/threads/:id", requireAuth, wrap(async (req, res) => {
+  const [t] = await query("SELECT id, owner_id, created_by FROM threads WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Thread not found" });
+  if (t.owner_id !== req.user.userId && !(await mayEditLogged(req, t))) return res.status(403).json(NOT_YOURS);
+  const undoId = await trashRow("threads", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Thread not found" });
+  res.json({ deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -5416,6 +5676,8 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   const existing = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Pledge not found" });
   const p = existing[0];
+  // FIX-14 Part 2b: whoever recorded the pledge, or an admin.
+  if (!(await mayEditLogged(req, p))) return res.status(403).json(NOT_YOURS);
   const { amount, dueDate, notes, status } = req.body;
   // Attribution FIX — set / change / clear (campaignId:"" → NULL), org-scoped.
   const campaignIdRaw = req.body.campaignId !== undefined ? req.body.campaignId
@@ -5477,6 +5739,12 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       req.params.id, req.user.orgId,
     ]
   );
+  // FIX-14 Part 2b — "Edited by, when", only when something a person typed moved.
+  if (!auditTrailMod.sameValue(p.amount, pledgeNewAmt) || !auditTrailMod.sameValue(p.due_date, dueDate || p.due_date)
+      || (notes !== undefined && !auditTrailMod.sameValue(p.notes, notes)) || newStatus !== p.status || newCampaignId !== p.campaign_id) {
+    await run("UPDATE pledges SET edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?",
+      [...(await editStamp(req)), req.params.id, req.user.orgId]);
+  }
   // ALWAYS recompute against the payment total — this is what closes drift (1).
   // A changed amount, or a write-off being lifted, re-derives open/fulfilled and
   // the surplus from the gifts actually linked to this pledge.
@@ -5485,10 +5753,25 @@ app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   res.json({ ...rows[0], ...(recomputed || {}) });
 }));
 
+// FIX-14 Part 2b — a pledge with money applied to it is not deleted: the
+// payments would point at nothing and the balance would lie. Write it off
+// instead. One with no payments is moved to the trash, so Undo can bring it
+// back with its instalments, exactly as it was.
 app.delete("/pledges/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ ok: true });
+  const [p] = await query("SELECT * FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!p) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+  if (!(await mayEditLogged(req, p))) return res.status(403).json(NOT_YOURS);
+  const [paid] = await query(
+    `SELECT (SELECT COUNT(*)::int FROM gifts WHERE pledge_id=? AND org_id=?)
+          + (SELECT COUNT(*)::int FROM pledge_installments WHERE pledge_id=? AND org_id=? AND paid_gift_id IS NOT NULL) AS n`,
+    [req.params.id, req.user.orgId, req.params.id, req.user.orgId]);
+  if (paid && paid.n > 0) {
+    return res.status(409).json({ error: "pledge_has_payments",
+      sentence: "This pledge has payments applied to it, so it cannot be deleted. Write it off instead." });
+  }
+  const undoId = await trashRow("pledges", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // ── Tax Receipting & Year-End Giving Statements ─────────────────────────────
@@ -7569,7 +7852,7 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "planned_gift",
        `Planned gift indicated: ${type.replace(/_/g," ")}${estimated_value ? " (est. $" + Number(estimated_value).toLocaleString() + ")" : ""}`,
-       new Date().toISOString().split("T")[0], req.user.userId, userName]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Planned gift log:", e.message); }
   res.status(201).json(rows[0]);
@@ -7655,7 +7938,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "material",
        `Material added: ${file_name} (${ext})`,
-       new Date().toISOString().split("T")[0], req.user.userId, userRow[0]?.name||""]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userRow[0]?.name||""]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Material log:", e.message); }
   res.status(201).json(rows[0]);
@@ -7797,6 +8080,10 @@ app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => 
 app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const hh = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!hh.length) return res.status(404).json({ error: "Household not found" });
+  // FIX-14 Part 2b: whoever made the household, or an admin. The audit row
+  // carries the members before and after, so it can say who was removed.
+  if (!(await mayEditLogged(req, hh[0]))) return res.status(403).json(NOT_YOURS);
+  const hhBefore = await auditShape("households", hh[0], req.user.orgId);
   const { name, memberIds, primaryDonorId, jointAcknowledgment } = req.body;
   let ids = null, primary = hh[0].primary_donor_id;
   if (memberIds !== undefined) {
@@ -7820,17 +8107,26 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
       [name && String(name).trim() ? String(name).trim() : null, primary,
        jointAcknowledgment === undefined ? null : (jointAcknowledgment !== false), req.params.id, req.user.orgId]);
   });
+  const [hhRow] = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const hhAfter = await auditShape("households", hhRow, req.user.orgId);
+  if (auditTrailMod.diffFields(hhBefore, hhAfter)) {
+    await run("UPDATE households SET edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?",
+      [...(await editStamp(req)), req.params.id, req.user.orgId]);
+  }
+  if (req.audit) { req.audit.before(hhBefore); req.audit.after(hhAfter); }
   res.json(await householdView(req.params.id, req.user.orgId));
 }));
 
+// FIX-14 Part 2b: the household goes to the trash with its member list, and
+// Undo re-links every member who has not joined another household since.
 app.delete("/households/:id", requireAuth, wrap(async (req, res) => {
-  const hh = await query("SELECT id FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const hh = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!hh.length) return res.status(404).json({ error: "Household not found" });
-  await withTransaction(async (client) => {
-    await runTx(client, "UPDATE donors SET household_id=NULL WHERE household_id=? AND org_id=?", [req.params.id, req.user.orgId]);
-    await runTx(client, "DELETE FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  });
-  res.json({ ok: true });
+  if (!(await mayEditLogged(req, hh[0]))) return res.status(403).json(NOT_YOURS);
+  if (req.audit) req.audit.before(await auditShape("households", hh[0], req.user.orgId));
+  const undoId = await trashRow("households", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Household not found" });
+  res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // Per-donor soft-credit breakdown: hard = own gifts, soft = other household
@@ -8675,7 +8971,7 @@ app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWrite
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_" + uuid().slice(0, 8), req.user.orgId, req.params.donorId, "stage_change",
        `Moved ${fromStage} → ${toStage}: ${String(description).trim()}`,
-       new Date().toISOString().split("T")[0], req.user.userId, officerName]);
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, officerName]);   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
   } catch (e) { console.error("move interaction log:", e.message); }
   res.status(201).json({ ok: true, moveId, stage: toStage, fromStage });
 }));
@@ -8833,6 +9129,8 @@ function proposalRow(r, funds) {
     giftAmount: r.gift_amount == null ? null : toDollars(toCents(r.gift_amount) || 0),
     createdAt: r.created_at, closedAt: r.closed_at,
     createdByName: r.created_by_name || "",
+    // FIX-14 Part 3 — the profile's "Edited" marker reads these.
+    edited_at: r.edited_at || null, edited_by_name: r.edited_by_name || null,
   };
 }
 
@@ -9009,6 +9307,8 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
   const orgId = req.user.orgId;
   const [existing] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!existing) return res.status(404).json({ error: "Proposal not found" });
+  // FIX-14 Part 2b: the ask's officer, whoever opened it, or an admin.
+  if (existing.officer_id !== req.user.userId && !(await mayEditLogged(req, existing))) return res.status(403).json(NOT_YOURS);
 
   const patch = {}, sets = [], params = [];
   const put = (col, val) => { sets.push(`${col}=?`); params.push(val); };
@@ -9135,14 +9435,28 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
   params.push(req.params.id, orgId);
   await run(`UPDATE opportunities SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
   const funds = await orgFundNames(orgId);
-  const [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [req.params.id]);
+  let [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [req.params.id]);
+  // FIX-14 Part 2b — the table is `opportunities`, which the middleware cannot
+  // find from /proposals, so the route hands it the before and after.
+  if (auditTrailMod.diffFields(existing, row)) {
+    await run("UPDATE opportunities SET edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?",
+      [...(await editStamp(req)), req.params.id, orgId]);
+    [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [req.params.id]);
+  }
+  if (req.audit) { req.audit.before(existing); req.audit.after(row); }
   res.json({ ...proposalRow(row, funds), wrote });
 }));
 
+// FIX-14 Part 2b: to the trash, so Undo can bring the ask back. A pledge or
+// gift it closed with is not touched: a commitment is not un-made here.
 app.delete("/proposals/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" });
-  res.json({ success: true });
+  const [o] = await query("SELECT * FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!o) return res.status(404).json({ error: "Not found" });
+  if (o.officer_id !== req.user.userId && !(await mayEditLogged(req, o))) return res.status(403).json(NOT_YOURS);
+  if (req.audit) req.audit.before(o);
+  const undoId = await trashRow("opportunities", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // GET /proposals — the Proposals screen under Fundraising. Pipeline by stage in
@@ -11083,7 +11397,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const from = req.query.from || new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
-  const to = req.query.to || new Date().toISOString().slice(0, 10);
+  const to = req.query.to || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   const officers = await query("SELECT id, name, portfolio_color FROM users WHERE org_id=? ORDER BY name", [orgId]);
   const moves = await query(
     "SELECT officer_id, COUNT(*)::int AS cnt FROM moves WHERE org_id=? AND created_at >= ? AND created_at < (?::date + 1) GROUP BY officer_id", [orgId, from, to]);
@@ -11182,16 +11496,50 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
 
   const id = "drel_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes) VALUES (?,?,?,?,?,?)",
-    [id, orgId, donorId, relatedDonorId, relationshipType, notes || null]
+    "INSERT INTO donor_relationships (id, org_id, donor_id_a, donor_id_b, relationship_type, notes, created_by, created_by_name) VALUES (?,?,?,?,?,?,?,?)",
+    [id, orgId, donorId, relatedDonorId, relationshipType, notes || null, actor(req).id, actor(req).name]
   );
+  if (req.audit) {
+    const [r] = await query("SELECT * FROM donor_relationships WHERE id = ?", [id]);
+    req.audit.after(await auditShape("donor_relationships", r, orgId));
+  }
   res.status(201).json({ id });
 }));
 
+// FIX-14 Part 2b — edit a relationship's kind and its note. Whoever linked
+// the two, or an admin.
+app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  const b = req.body || {};
+  const sets = [], vals = [];
+  if (b.relationshipType !== undefined && b.relationshipType !== r.relationship_type) {
+    if (!DONOR_RELATIONSHIP_TYPES.includes(b.relationshipType)) return res.status(400).json({ error: "A valid relationshipType is required" });
+    sets.push("relationship_type=?"); vals.push(b.relationshipType);
+  }
+  if (b.notes !== undefined && String(b.notes || "") !== String(r.notes || "")) {
+    sets.push("notes=?"); vals.push(String(b.notes || "").slice(0, 2000) || null);
+  }
+  if (!sets.length) return res.json({ ...r, unchanged: true });
+  sets.push("edited_at=NOW()", "edited_by=?", "edited_by_name=?");
+  vals.push(...(await editStamp(req)));
+  await run(`UPDATE donor_relationships SET ${sets.join(", ")} WHERE id = ? AND org_id = ?`, [...vals, req.params.id, orgId]);
+  const [out] = await query("SELECT * FROM donor_relationships WHERE id = ?", [req.params.id]);
+  if (req.audit) { req.audit.before(await auditShape("donor_relationships", r, orgId)); req.audit.after(await auditShape("donor_relationships", out, orgId)); }
+  res.json(out);
+}));
+
+// FIX-14 Part 2b: whoever linked them, or an admin; to the trash, so Undo works.
 app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
+  const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  if (!r) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  if (req.audit) req.audit.before(await auditShape("donor_relationships", r, req.user.orgId));
+  const undoId = await trashRow("donor_relationships", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // Wealth/capacity scoring is part of the Team major-gifts layer — Core sees a
@@ -12852,11 +13200,12 @@ app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
   const id = "gi_" + uuid().slice(0, 8);
+  const giDate = date || orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO grant_interactions (id, org_id, grant_id, type, note, date) VALUES (?,?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, type || "note", note.trim(), date || new Date().toISOString().slice(0, 10)]
+    [id, req.user.orgId, req.params.id, type || "note", note.trim(), giDate]
   );
-  res.status(201).json({ id, type: type || "note", note: note.trim(), date: date || new Date().toISOString().slice(0, 10) });
+  res.status(201).json({ id, type: type || "note", note: note.trim(), date: giDate });
 }));
 
 // The volunteer's own link — signed, expiring, and it names ONE person in ONE
@@ -13095,10 +13444,10 @@ const AUDIT_COVERAGE = "Every change anyone makes in Steward: gifts, pledges and
   + "keys and settings; and every action an agent took and who approved it. Rows cannot be edited or "
   + "removed, and they are kept for at least seven years.";
 
-async function auditQuery(req) {
-  const { actor, entityType, action, from, to, q: search } = req.query;
-  const limit = Math.max(1, Math.min(2000, parseInt(req.query.limit, 10) || 200));
-  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+async function auditQuery(req, q0 = req.query) {
+  const { actor, entityType, action, from, to, q: search } = q0;
+  const limit = Math.max(1, Math.min(2000, parseInt(q0.limit, 10) || 200));
+  const offset = Math.max(0, parseInt(q0.offset, 10) || 0);
   let sql = `SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE org_id = ?`;
   const params = [req.user.orgId];
   // FIX-12 Part 4: rows from FIX-12 on carry the actor's id, not a name, so a
@@ -13109,6 +13458,16 @@ async function auditQuery(req) {
   }
   if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
   if (action) { sql += " AND action = ?"; params.push(action); }
+  // FIX-14 Part 2 — BY PERSON OR BY RECORD. A person is everything about
+  // them: their own record, and every conversation, step, task and gift that
+  // carries their id. A record is one entity id exactly.
+  if (q0.person) {
+    sql += ` AND (entity_id = ? OR after_fields->>'donor_id' = ? OR before_fields->>'donor_id' = ?
+                  OR changes->'record'->>'donor_id' = ?)`;
+    const pid = String(q0.person);
+    params.push(pid, pid, pid, pid);
+  }
+  if (q0.record) { sql += " AND entity_id = ?"; params.push(String(q0.record)); }
   if (from) { sql += " AND created_at >= ?::date"; params.push(from); }
   // `to` is inclusive of the whole day somebody typed, which is what a person
   // filtering "up to the 30th" means. An exclusive bound silently drops that
@@ -13137,7 +13496,14 @@ function auditRecordLink(r) {
   const t = String(r.entity_type || "");
   const id = r.entity_id;
   if (!id) return null;
-  if (/^(donor|person|people|organisation|organization)$/.test(t)) return { tab: "donors", donorId: id };
+  // FIX-14 Part 2: a conversation, next step or task opens the person it is about.
+  const donorId = auditTrailMod.auditDonorId({ ...r, changes: auditJson(r.changes, {}),
+    before: auditJson(r.before_fields, null), after: auditJson(r.after_fields, null) });
+  if (/^(interaction|conversation|touchpoint|thread|next step|task|relationship|donor relationship|pledge|proposal)$/.test(t) && donorId) {
+    return { tab: "donors", donorId };
+  }
+  if (/^user_/.test(String(id))) return { tab: "settings", section: "team" };
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(t)) return { tab: "donors", donorId: id };
   if (/^(gift|pledge|receipt|refund|soft credit)$/.test(t)) return { tab: "donors", giftId: id };
   if (/^(user|invite|role)$/.test(t)) return { tab: "settings", section: "team" };
   if (/^(fund|account|transaction|budget)$/.test(t)) return { tab: "finance", recordId: id };
@@ -13150,14 +13516,53 @@ function auditRecordLink(r) {
   return { tab: "settings", section: "audit", recordId: id };
 }
 
-const auditRowOut = r => ({
-  ...r,
-  changes: typeof r.changes === "string" ? JSON.parse(r.changes || "{}") : (r.changes || {}),
-  before: typeof r.before_fields === "string" ? JSON.parse(r.before_fields || "null") : (r.before_fields || null),
-  after: typeof r.after_fields === "string" ? JSON.parse(r.after_fields || "null") : (r.after_fields || null),
-  sentence: auditTrailMod.rowSentence(r),
-  link: auditRecordLink(r),
-});
+function auditJson(v, dflt) {
+  if (typeof v === "string") { try { return JSON.parse(v || "null") ?? dflt; } catch { return dflt; } }
+  return v || dflt;
+}
+const auditRowOut = (r, people) => {
+  const o = {
+    ...r,
+    changes: auditJson(r.changes, {}),
+    before: auditJson(r.before_fields, null),
+    after: auditJson(r.after_fields, null),
+    sentence: auditTrailMod.rowSentence(r),
+    link: auditRecordLink(r),
+  };
+  // FIX-14 Part 2: the Description, in a plain sentence. Never a dash.
+  o.description = auditTrailMod.describeAuditRow(o, { people: people || new Map() });
+  o.record_name = auditTrailMod.auditRecordName(o, { people: people || new Map() });
+  return o;
+};
+// The names the sentences need, read live (FIX-12: the row holds ids). An
+// erased person reads "Erased person", as everywhere else in the log.
+async function auditPeople(rows, orgId) {
+  const ids = new Set();
+  for (const r of rows) {
+    // FIX-14 Part 2b: both sides of a relationship and a household's members too.
+    for (const id of auditTrailMod.auditPeopleIds({ ...r, changes: auditJson(r.changes, {}),
+      before: auditJson(r.before_fields, null), after: auditJson(r.after_fields, null) })) ids.add(String(id));
+  }
+  const people = new Map();
+  if (ids.size) {
+    const ds = await query("SELECT id, name, erased_at FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, [...ids]]).catch(() => []);
+    for (const d of ds) people.set(d.id, d.erased_at ? "Erased person" : (d.name || "a person with no name"));
+  }
+  // FIX-14 Part 2b: a household's name, live, or as it was when it was deleted.
+  const hhIds = [...new Set(rows.filter(r => r.entity_type === "household" && r.entity_id).map(r => String(r.entity_id)))];
+  if (hhIds.length) {
+    const hs = await query(
+      `SELECT id, name FROM households WHERE org_id=? AND id = ANY(?)
+       UNION ALL SELECT record_id, row_data->>'name' FROM deleted_records WHERE org_id=? AND table_name='households' AND record_id = ANY(?)`,
+      [orgId, hhIds, orgId, hhIds]).catch(() => []);
+    for (const h of hs) if (h.name && !people.has("hh:" + h.id)) people.set("hh:" + h.id, h.name);
+  }
+  return people;
+}
+async function auditDescribe(rows, orgId) {
+  const people = await auditPeople(rows, orgId);
+  return rows.map(r => auditRowOut(r, people));
+}
 
 app.get("/audit/log", requireAuth, requireAdmin, wrap(async (req, res) => {
   const rows = await auditQuery(req);
@@ -13174,7 +13579,9 @@ app.get("/audit/log", requireAuth, requireAdmin, wrap(async (req, res) => {
     [req.user.orgId, req.user.orgId, req.user.orgId, req.user.orgId, req.user.orgId]);
   res.json({
     coverage: AUDIT_COVERAGE,
-    rows: rows.map(auditRowOut),
+    // Times are shown in the organisation's zone, and the zone is named.
+    timezone: await orgTzName(req.user.orgId),
+    rows: await auditDescribe(rows, req.user.orgId),
     facets: {
       entityTypes: (facets?.types || []).filter(Boolean).sort(),
       actions: (facets?.actions || []).filter(Boolean).sort(),
@@ -13189,7 +13596,17 @@ app.get("/audit/log/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const rows = await auditMw.resolveAuditNames(await query(`SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE id=? AND org_id=?`,
     [req.params.id, req.user.orgId]), req.user.orgId);
   if (!rows.length) return res.status(404).json({ error: "Not found" });
-  res.json(auditRowOut(rows[0]));
+  res.json((await auditDescribe(rows, req.user.orgId))[0]);
+}));
+
+// FIX-14 Part 2 — ONE PERSON'S HISTORY, on their profile: every audit row
+// about them (their record, and every conversation, step, task and gift that
+// carries their id), newest first. Open to anyone who can open the profile,
+// because it shows only what happened to this one record.
+app.get("/donors/:id/history", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const rows = await auditQuery(req, { person: req.params.id, limit: req.query.limit || 200 });
+  res.json({ timezone: await orgTzName(req.user.orgId), rows: await auditDescribe(rows, req.user.orgId) });
 }));
 
 // The export of the log is itself a download of who-did-what, so it is logged
@@ -13202,14 +13619,15 @@ app.get("/audit/log.csv", requireAuth, requireAdmin, wrap(async (req, res) => {
       : typeof v === "object" ? JSON.stringify(v) : String(v);
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const head = ["When", "Who", "In what capacity", "Action", "Record type", "Record",
+  const people = await auditPeople(rows, req.user.orgId);
+  const head = ["When", "Who", "In what capacity", "Description", "Action", "Record type", "Record",
                 "Record id", "What changed (before)", "What changed (after)", "Summary",
                 "Records touched", "Request", "Result"];
   const lines = [head.join(",")];
   for (const r of rows) {
-    const o = auditRowOut(r);
+    const o = auditRowOut(r, people);
     lines.push([
-      new Date(r.created_at).toISOString(), r.user_name || "System", r.actor_kind || "",
+      new Date(r.created_at).toISOString(), r.user_name || "System", r.actor_kind || "", o.description,
       r.action || "", r.entity_type || "", r.entity_label || "", r.entity_id || "",
       o.before, o.after, r.summary || "", r.record_count == null ? "" : r.record_count,
       `${r.request_method || ""} ${r.request_path || ""}`.trim(), r.status_code == null ? "" : r.status_code,
@@ -13614,9 +14032,10 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
 }));
 
 app.delete("/tasks/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM tasks WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
+  // FIX-14 Part 2: moved, not destroyed, so the screen can offer Undo.
+  const undoId = await trashRow("tasks", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+  res.json({ success: true, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // ── Board ──────────────────────────────────────────────────────────────────
@@ -13651,11 +14070,13 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const now = new Date();
   const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-  const today = now.toISOString().split("T")[0];
+  // FIX-14 Part 1 — the org's civil today (this was the UTC date), and Visits
+  // YTD is the one meetings source (meetings.js) for this staff member.
+  const today = orgToday(await orgTz(orgId));                // ORG_TZ_SEAM_OK
 
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
-    query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
+    figureSources.figureValue(orgId, { key: "meetings", params: { from: fyStart, to: today, staff: userId } }, {}).then(f => [{ cnt: f.value || 0 }]),
     // "Moves Made" = every meaningful-contact interaction (call/meeting/
     // email/stewardship — the same MEANINGFUL_CONTACT_TYPES used by
     // Stewardship Debt/First-Touch Delay), NOT literally every interactions
@@ -13854,26 +14275,17 @@ app.get("/dashboard/my-stats/visits/breakdown", requireAuth, wrap(async (req, re
   const now = new Date();
   const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
-  const [rows, countRow] = await Promise.all([
-    query(
-      `SELECT i.id, i.donor_id, d.name AS donor_name, i.date FROM interactions i
-       JOIN donors d ON d.id = i.donor_id
-       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL
-       ORDER BY i.date DESC LIMIT ?`,
-      [orgId, userId, fyStart, PAGE_SIZE]
-    ),
-    query(
-      `SELECT COUNT(*) as cnt FROM interactions i JOIN donors d ON d.id=i.donor_id
-       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL`,
-      [orgId, userId, fyStart]
-    ),
-  ]);
+  // FIX-14 Part 1 — the same source as the count on Home (meetings.js).
+  const f = await figureSources.figure(orgId, { key: "meetings", params: { from: fyStart, to: orgToday(await orgTz(orgId)), staff: userId } }, {}, { pageSize: PAGE_SIZE });   // ORG_TZ_SEAM_OK
+  const { displayDateShort } = await import("../shared/displayDate.js");
+  const names = Object.fromEntries((await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)",
+    [orgId, [...new Set((f.rows || []).map(r => r.donorId || r.donor_id).filter(Boolean))]])).map(r => [r.id, r.name]));
   res.json({
-    count: parseInt(countRow[0]?.cnt || 0),
-    rows: rows.map(r => ({
-      id: r.id, donorId: r.donor_id, donorName: r.donor_name,
-      detail: "Meeting logged",
-      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    count: f.totalRows || 0,
+    rows: (f.rows || []).map(r => ({
+      id: r.id, donorId: r.donorId || r.donor_id, donorName: names[r.donorId || r.donor_id] || "",
+      detail: r.type === "meeting" ? "Meeting from a calendar" : "Meeting logged",
+      value: displayDateShort(r.date, r.date),
     })),
   });
 }));
@@ -14735,6 +15147,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       // numbers for one fact, on one screen. There is one now and both read it.
       overdueDays: t.due_date < today ? (orgTime.daysBetween(t.due_date, today) ?? 0) : 0,
       daysOpen, openedOn: t.opened_on,
+      // FIX-14: the rail's next step shows "Edited" from these.
+      edited_at: t.edited_at || null, edited_by_name: t.edited_by_name || null,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
@@ -14903,8 +15317,11 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const shape = await threadShapeMod();
   const touch = shape.touchTypeFor(String(req.body?.touch || ""));
   if (!touch) return res.status(400).json({ error: "Unknown touch type" });
-  const line = typeof req.body?.line === "string" ? req.body.line.trim() : "";
+  const line = typeof req.body?.line === "string" ? req.body.line.trim().slice(0, 8000) : "";
   if (!line) return res.status(400).json({ error: "The one line is required — what happened?" });
+  // FIX-14 Part 1 — where it happened, for a meeting or a visit. The card is
+  // titled by it ("Meeting at Starbucks").
+  const place = typeof req.body?.place === "string" ? req.body.place.trim().slice(0, 200) : "";
 
   const org = await orgTz(orgId);
   const today = orgToday(org);                          // ORG_TZ_SEAM_OK
@@ -14973,7 +15390,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     await runTx(client,
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
-       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set",
+       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(place ? { location: place } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}) })]);
 
     // An open thread on this donor closes on this conversation — the outcome.
@@ -15002,6 +15419,14 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   });
 
   calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
+  // FIX-14 Part 2 — the audit row names the conversation that was logged
+  // (the response's first object is the thread, which is the wrong record),
+  // and carries it, so the log can say "Logged a meeting with ...".
+  if (req.audit) {
+    const [logged] = await query("SELECT * FROM interactions WHERE id = ?", [out.interactionId]);
+    req.audit.entity("interaction", out.interactionId);
+    req.audit.after(logged ? { ...logged, next_step: step ? { label: step.label, due: step.due } : "skipped" } : null);
+  }
   // BUILD-99 Part 3 — A PLAN STEP IS DONE WHEN ITS THREAD CLOSES, and the next
   // one opens. Called AFTER the transaction, so the plan reads the thread rows
   // this conversation actually committed. It is idempotent and self-healing: if
@@ -15018,6 +15443,168 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
         fundId: giftWritten.fundId, paymentMethod: giftWritten.paymentMethod }
     : (giftWritten && giftWritten.duplicate ? { duplicate: true } : null);
   res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
+}));
+
+// ── FIX-14 Part 1 — WHAT STEWARD HEARD IN A LOGGED CONVERSATION ────────────
+// The FIX-12 after-meeting engine, for a conversation logged by hand: the
+// Agent engine reads the note through the one AI door (aiClient.js asks the
+// org's switch), and shared/meetingNote.js's simple reader is the fallback.
+// Three chips, and NOTHING is recorded until a person says yes:
+//   next     sets the profile's next step: the donor's one open Thread step
+//   spouse   links the spouse named in the note into one household, matching
+//            a person already on file by name or adding them (the one person
+//            record: a row in donors, person type "other")
+//   planned  marks the record a planned-giving prospect (the designation)
+// A chip answered either way is remembered on the interaction
+// (metadata.chips_done), so it is offered once.
+const CONVO_CHIP_TTL_MS = 10 * 60 * 1000;
+const _convoChipCache = new Map();   // interaction id + note → the engine's chips, briefly
+async function loggedConversation(orgId, id) {
+  const [i] = await query(
+    `SELECT i.id, i.donor_id, i.type, i.note, i.date, i.metadata, d.name AS donor_name, d.household_id
+       FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE i.id = ? AND i.org_id = ? AND d.deleted_at IS NULL`, [id, orgId]);
+  if (!i) return null;
+  i.meta = typeof i.metadata === "string" ? (() => { try { return JSON.parse(i.metadata); } catch { return {}; } })() : (i.metadata || {});
+  i.done = Array.isArray(i.meta.chips_done) ? i.meta.chips_done : [];
+  return i;
+}
+async function spouseCandidate(orgId, i, name) {
+  const given = String(name || "").trim();
+  const ln = lastName(i.donor_name);
+  const full = given.includes(" ") || !ln ? given : `${given} ${ln}`;
+  const rows = await query(
+    `SELECT id, name, household_id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND id <> ?
+        AND (LOWER(name) = LOWER(?) OR LOWER(name) = LOWER(?)) ORDER BY (LOWER(name) = LOWER(?)) DESC LIMIT 2`,
+    [orgId, i.donor_id, full, given, full]);
+  return { full, match: rows.length >= 1 && (rows.length === 1 || rows[0].name.toLowerCase() === full.toLowerCase()) ? rows[0] : null };
+}
+
+app.post("/interactions/:id/suggest", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  if (req.audit) req.audit.skip("reads a note and writes nothing");
+  const i = await loggedConversation(orgId, req.params.id);
+  if (!i) return res.status(404).json({ error: "Not found" });
+  const N = await import("../shared/meetingNote.js");
+  const note = String(i.note || "").slice(0, 4000);
+  const ctx = { date: String(i.date || "").slice(0, 10) };
+  let suggestions = null, source = "reader", aiOff = false;
+  const ck = i.id + "\u0000" + note;
+  const hit = _convoChipCache.get(ck);
+  if (hit && hit.until > Date.now()) { suggestions = hit.chips; source = "agent"; }
+  else if (note.trim()) {
+    try {
+      const r = await anthropicFor(orgId).messages.create({
+        model: AGENT_MODEL, max_tokens: 600, system: N.CONVERSATION_CHIP_SYSTEM,
+        messages: [{ role: "user", content: `Her note:\n"""${note}"""` }],
+        tools: [N.CONVERSATION_CHIP_TOOL], tool_choice: { type: "tool", name: N.CONVERSATION_CHIP_TOOL.name } });
+      const use = (r.content || []).find(c => c.type === "tool_use");
+      const chips = N.validateConversationChips(use && use.input && use.input.chips, note, ctx);
+      if (chips.length) { suggestions = chips; source = "agent"; _convoChipCache.set(ck, { chips, until: Date.now() + CONVO_CHIP_TTL_MS }); }
+    } catch (e) {
+      if (e instanceof AiOffError) aiOff = e.reason === "ai_disabled";
+      else console.error("[conversation-chips] engine:", e.message);
+    }
+  }
+  if (!suggestions) suggestions = N.suggestFromConversation(note, ctx);
+  // Only what is not already true, and not already answered.
+  const out = [];
+  for (const c of suggestions) {
+    if (i.done.includes(c.kind)) continue;
+    if (c.kind === "planned") {
+      const [has] = await query(`SELECT 1 FROM donor_designations WHERE org_id = ? AND donor_id = ? AND kind IN ('planned_prospect','planned_confirmed','estate')`, [orgId, i.donor_id]);
+      if (has) continue;
+    }
+    if (c.kind === "spouse") {
+      const { full, match } = await spouseCandidate(orgId, i, c.name);
+      if (match && i.household_id && match.household_id === i.household_id) continue;
+      out.push({ ...c, fullName: full, matchId: match ? match.id : null,
+        label: match ? `Link ${match.name} to the household` : `Add ${full} and link the household` });
+      continue;
+    }
+    if (c.kind === "next") {
+      const [open] = await query(`SELECT due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL`, [orgId, i.donor_id]);
+      if (open && open.due_date === c.due) continue;
+    }
+    out.push(c);
+  }
+  res.json({ suggestions: out, source,
+    sentence: aiOff ? AI_OFF_MESSAGE + ". These come from Steward's simple reader. Nothing changes until you say yes."
+      : "Read from the note. Nothing changes until you say yes." });
+}));
+
+app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const i = await loggedConversation(orgId, req.params.id);
+  if (!i) return res.status(404).json({ error: "Not found" });
+  const kind = String(req.body?.kind || "");
+  if (!["next", "spouse", "planned"].includes(kind)) return res.status(400).json({ error: "kind must be next, spouse or planned" });
+  const answer = req.body?.answer === "no" ? "no" : "yes";
+  const who = actor(req);
+  let sentence = "Fine. Steward will not offer that again for this note.";
+  if (answer === "yes" && kind === "next") {
+    const shape = await threadShapeMod();
+    const label = shape.sanitizeStepLabel(req.body?.label) || "Follow up";
+    const due = String(req.body?.due || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
+    const [donor] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ?", [i.donor_id, orgId]);
+    const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+    const [open] = await query("SELECT id FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL", [orgId, i.donor_id]);
+    if (open) {
+      // One open step per person: her yes replaces what it says and when.
+      await run("UPDATE threads SET next_step_type = ?, next_step_label = ?, due_date = ?, snoozed_until = NULL WHERE id = ? AND org_id = ?",
+        [shape.nextStepTypeForLabel(label), label, due, open.id, orgId]);
+    } else {
+      await withTransaction(client => openThreadTx(client, {
+        orgId, donorId: i.donor_id, step: { type: shape.nextStepTypeForLabel(label), label, due, time: null }, openedOn: today,
+        ownerId: donor?.assigned_to || userId, ownerName: donor?.assigned_to ? donor.assigned_to_name : who.name,
+        actorId: who.id, actorName: who.name, openingInteractionId: i.id,
+      }));
+    }
+    sentence = `Next step set: ${label}, due ${due}.`;
+  } else if (answer === "yes" && kind === "spouse") {
+    const name = String(req.body?.name || "").trim().slice(0, 120);
+    if (!name) return res.status(400).json({ error: "name is required" });
+    let spouseId = null;
+    if (req.body?.matchId) {
+      const [m] = await query("SELECT id, household_id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [String(req.body.matchId), orgId]);
+      if (!m) return res.status(404).json({ error: "That person is not on file." });
+      if (m.household_id && i.household_id && m.household_id !== i.household_id)
+        return res.status(400).json({ error: "That person is already in another household." });
+      spouseId = m.id;
+    }
+    await withTransaction(async client => {
+      if (!spouseId) {
+        // THE ONE PERSON RECORD: a spouse is a row in donors, not a field.
+        spouseId = "d_" + uuid().slice(0, 8);
+        await runTx(client,
+          `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,gift_count,tags,notes,created_by,created_by_name,person_types)
+           VALUES (?,?,?,'','','new','prospect',0,0,0,'[]','',?,?,?)`,
+          [spouseId, orgId, name, who.id, who.name, JSON.stringify(["other"])]);
+      }
+      let hh = i.household_id;
+      if (!hh) {
+        const [sp] = await queryTx(client, "SELECT household_id FROM donors WHERE id = ? AND org_id = ?", [spouseId, orgId]);
+        hh = sp && sp.household_id;
+      }
+      if (!hh) {
+        hh = "hh_" + uuid().slice(0, 8);
+        const ln = lastName(i.donor_name);
+        await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)",
+          [hh, orgId, ln ? `The ${ln} Household` : "Household", i.donor_id, true, who.id, who.name]);
+      }
+      await runTx(client, "UPDATE donors SET household_id = ? WHERE org_id = ? AND id = ANY(?)", [hh, orgId, [i.donor_id, spouseId]]);
+    });
+    sentence = `${name} is linked to ${i.donor_name}'s household.`;
+  } else if (answer === "yes" && kind === "planned") {
+    await run("INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES (?,?,?,?) ON CONFLICT (donor_id, kind) DO NOTHING",
+      ["dsg_" + uuid().slice(0, 8), orgId, i.donor_id, "planned_prospect"]);
+    sentence = `${i.donor_name} is marked as a planned-giving prospect.`;
+  }
+  await run(`UPDATE interactions SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('chips_done', ?::jsonb)
+              WHERE id = ? AND org_id = ?`, [JSON.stringify([...new Set([...i.done, kind])]), i.id, orgId]);
+  if (req.audit) { req.audit.entity("donor", i.donor_id); req.audit.action(answer === "yes" ? `confirmed the ${kind} suggestion` : `declined the ${kind} suggestion`); }
+  res.json({ ok: true, kind, answer, sentence });
 }));
 
 // POST /threads/:id/dismiss — the other way out. reason ∈ the short fixed
@@ -15855,7 +16442,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
   const cur = finPeriodBounds(yearMode, 0, _fpTz);
   const prior = finPeriodBounds(yearMode, -1, _fpTz);
-  const today = new Date().toISOString().split("T")[0];
+  const today = orgToday(_fpTz);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   // BUILD-32 Part 3 — the Home hero's "this week's giving" figure. A true
   // Monday-based calendar week (weekBounds), independent of the fiscal/calendar
   // period above, so the hero shows a number that genuinely moves week to week.
@@ -19258,7 +19845,7 @@ async function sendMilestoneDraft(req, draft) {
     "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=?, reviewed_by_name=COALESCE(reviewed_by_name, ?) WHERE id=?",
     [req.user.userId, who.name, draft.id]
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)",
     ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name]
@@ -19331,7 +19918,7 @@ app.post("/note-reminders/:id/send", requireAuth, wrap(async (req, res) => {
     "UPDATE note_reminders SET status='sent', sent_at=NOW(), sent_by=? WHERE id=?",
     [req.user.userId, reminder.id]
   );
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id, org_id, donor_id, type, note, date, metadata) VALUES (?, ?, ?, 'stewardship', ?, ?, ?)",
     ["i_" + uuid().slice(0, 8), req.user.orgId, reminder.donor_id, "Personal note sent", today,
@@ -19423,7 +20010,7 @@ app.post("/voice-memos/save", requireAuth, checkWriteAccess, wrap(async (req, re
   if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
   const donor = donorRows[0];
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)",
     ["i_" + uuid().slice(0, 8), req.user.orgId, donorId, "voice_memo", transcript, today, req.user.userId]
@@ -21605,7 +22192,7 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
     if (newStatus === 'attended' && att.donor_id) {
       const evtInfoRows = await query("SELECT name FROM events WHERE id=$1", [att.event_id]);
       const evtName = evtInfoRows[0]?.name || "event";
-      const today = new Date().toISOString().slice(0, 10);
+      const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
       await run(`UPDATE donors SET wealth_score = LEAST(COALESCE(wealth_score,0)+5, 99) WHERE id=$1 AND org_id=$2`, [att.donor_id, orgId]).catch(() => {});
       // BUILD-98 (switch) Part 4 — ONE attendance line per guest per event,
       // whichever door marked them: this PATCH and POST /events/:id/attendance

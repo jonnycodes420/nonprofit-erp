@@ -67,6 +67,16 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
     } catch (e) { setMsg(errorMessage(e, "That membership did not save.")); }
   };
   const chosen = form && levels.find(l => l.id === form.levelId);
+  // FIX-14 Part 3 — never a member and nothing being typed: one line and its add button.
+  if (!data.memberships.length && !form) return (
+    <div data-testid="membership-panel" data-empty="1" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "4px 2px" }}>
+      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>
+      <span style={{ fontSize: 12.5, color: T.ink3 }}>Not a member yet.</span>
+      {!isReadOnly && levels.length > 0 && <button style={{ ...quietBtn, marginLeft: "auto" }} data-testid="membership-add"
+        onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>Add a membership</button>}
+      {msg && <div style={{ fontSize: 12, color: T.ink3, width: "100%" }}>{msg}</div>}
+    </div>
+  );
   return (
     <div data-testid="membership-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
       <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>

@@ -272,8 +272,28 @@ async function reset() {
   const unlinked = (await api("GET", "/recurring/unlinked", tok)).body;
   ok(`the recurring surface counts the 34 imported sustainers (was zero)`,
     unlinked.counts.unlinked === KEY.sustainers.count, unlinked.counts);
-  ok(`…and separates the ${KEY.sustainers.stoppedOver60d.length} whose giving stopped >60 days ago`,
-    unlinked.counts.stopped === KEY.sustainers.stoppedOver60d.length, { got: unlinked.counts.stopped, expect: KEY.sustainers.stoppedOver60d.length });
+  // FIX-14 — the key counted "stopped >60 days" against its own day
+  // (todayUsed, 2026-09-03); the server counts against today, so a sustainer
+  // whose last gift was in early August crosses the line as the calendar
+  // moves (13 on 1 October, 14 on 2 October). What stays true on any day:
+  // every one the key called stopped is still stopped (unless a gift the key
+  // set aside as future-dated has since arrived for them), and anyone else the
+  // server calls stopped went quiet after the key's cutoff and more than 60
+  // days before today.
+  {
+    const cutoffToday = new Date(new Date(TODAY + "T12:00:00Z").getTime() - 60 * 86400000).toISOString().slice(0, 10);
+    const cutoffKey = new Date(new Date(KEY.todayUsed + "T12:00:00Z").getTime() - 60 * 86400000).toISOString().slice(0, 10);
+    const stoppedNow = unlinked.list.filter(u => u.stopped);
+    const keyStopped = new Set(KEY.sustainers.stoppedOver60d);
+    // A key row set aside as future-dated whose day has since come is a real
+    // gift now, so that sustainer gave again and is rightly not stopped.
+    const gaveSince = new Set(KEY.dispositions.filter(d => d.reason === "future_date" && d.date && d.date <= TODAY).map(d => String(d.name).toLowerCase()));
+    const missing = [...keyStopped].filter(n => !gaveSince.has(n.toLowerCase()) && !stoppedNow.some(u => u.donorName === n));
+    const extraBad = stoppedNow.filter(u => !keyStopped.has(u.donorName) && !(u.lastGift && u.lastGift >= cutoffKey && u.lastGift < cutoffToday));
+    ok(`…and separates the ${KEY.sustainers.stoppedOver60d.length} whose giving stopped >60 days ago (plus any who crossed since: ${unlinked.counts.stopped} today)`,
+      missing.length === 0 && extraBad.length === 0 && unlinked.counts.stopped === stoppedNow.length,
+      { got: unlinked.counts.stopped, missing, extraBad: extraBad.slice(0, 3).map(u => [u.donorName, u.lastGift]) });
+  }
   const stoppedRows = unlinked.list.filter(u => u.stopped);
   ok("a stopped sustainer's reason is their own story, never 'lapsed'",
     stoppedRows.length > 0 && stoppedRows.every(u => /a month/.test(u.reason) && !/lapsed/i.test(u.reason)),

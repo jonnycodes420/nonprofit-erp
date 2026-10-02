@@ -34,6 +34,7 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 const money = require("./money");
+const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9_.:\-]{1,120}$/;
@@ -409,24 +410,14 @@ const SOURCES = {
     params: { donor: "id:required", today: "date:required" },
     sentence: (p, dd) => `Every meeting with this person: the ones on a connected calendar that have happened, and the ones logged by hand, most recent first. The figure is the whole days from the most recent one to ${dd(p.today)}.`,
     js: async (orgId, p) => {
-      const rows = await query(
-        `SELECT * FROM (
-           SELECT c.id, ? AS donor_id, c.title AS note, TO_CHAR(c.starts_at, 'YYYY-MM-DD') AS date,
-                  u.name AS who, 'calendar' AS kind
-             FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
-            WHERE c.org_id = ? AND ? = ANY(c.person_ids) AND c.starts_at <= NOW() AND c.interaction_id IS NULL
-           UNION ALL
-           SELECT i.id, i.donor_id, i.note, i.date, i.logged_by_name AS who, 'logged' AS kind
-             FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
-            WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'meeting'
-              AND i.date IS NOT NULL AND i.date <> '') m
-          ORDER BY date DESC, id DESC LIMIT ?`,
-        [p.donor, orgId, p.donor, orgId, p.donor, CONTACT_ROWS_MAX]);
+      // FIX-14 Part 1 — the one source (meetings.js): held meetings only, each
+      // dated by its org-local day.
+      const rows = await meetings.meetingsWith(orgId, p.donor, { held: true, limit: CONTACT_ROWS_MAX });
       return rows.map((r, i) => {
         const date = String(r.date).slice(0, 10);
         const gap = Math.max(0, orgTime.daysBetween(date, p.today) ?? 0);
         return { id: r.id, type: r.kind === "calendar" ? "meeting" : "interaction", donor_id: r.donor_id,
-          name: r.note || "Meeting", date, amount: i === 0 ? gap : null,
+          name: r.kind === "calendar" ? (r.title || "Meeting") : (r.note || "Meeting"), date, amount: i === 0 ? gap : null,
           detail: [r.kind === "calendar" ? "From a calendar" : "Meeting", r.who ? `with ${r.who}` : null].filter(Boolean).join(" · ") };
       });
     },
@@ -467,27 +458,16 @@ const SOURCES = {
     params: { from: "date:required", to: "date:required", staff: "id", donor: "id" },
     sentence: (p, dd) => `Every meeting with someone on file from ${dd(p.from)} to ${dd(p.to)}${p.staff ? ", held by this staff member" : ""}${p.donor ? ", with this person" : ""}: meetings on a connected calendar, and meetings logged by hand. A calendar meeting that was logged afterwards is counted once.`,
     sql: (orgId, p) => {
-      const args = [orgId, p.from, p.to];
-      let wc = "", wi = "";
-      if (p.staff) { wc += " AND c.owner_user_id = ?"; args.push(p.staff); }
-      if (p.donor) { wc += " AND ? = ANY(c.person_ids)"; args.push(p.donor); }
-      args.push(orgId, p.from, p.to);
-      if (p.staff) { wi += " AND i.created_by = ?"; args.push(p.staff); }
-      if (p.donor) { wi += " AND i.donor_id = ?"; args.push(p.donor); }
+      // FIX-14 Part 1 — the one source (meetings.js), shaped as figure rows.
+      const m = meetings.meetingsSql(orgId, { from: p.from, to: p.to, staff: p.staff || null, donor: p.donor || null });
       return {
-        sql: `SELECT c.id, 'meeting' AS type, c.person_ids[1] AS donor_id, c.title AS name,
-                     TO_CHAR(c.starts_at, 'YYYY-MM-DD') AS date, NULL::numeric AS amount,
-                     COALESCE(u.name, 'A colleague') || ' · from a calendar' AS detail
-                FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
-               WHERE c.org_id = ? AND c.interaction_id IS NULL
-                 AND c.starts_at >= ?::date AND c.starts_at < (?::date + 1)${wc}
-              UNION ALL
-              SELECT i.id, 'interaction' AS type, i.donor_id, d.name || COALESCE(': ' || NULLIF(LEFT(i.note, 80), ''), '') AS name,
-                     i.date, NULL::numeric AS amount, COALESCE(i.logged_by_name, 'A colleague') || ' · logged' AS detail
-                FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
-               WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'meeting'
-                 AND i.date >= ? AND i.date <= ?${wi}`,
-        args, order: "date DESC, id",
+        sql: `SELECT m.id, CASE m.kind WHEN 'calendar' THEN 'meeting' ELSE 'interaction' END AS type, m.donor_id,
+                     CASE m.kind WHEN 'calendar' THEN m.title
+                          ELSE d.name || COALESCE(': ' || NULLIF(LEFT(m.note, 80), ''), '') END AS name,
+                     m.date, NULL::numeric AS amount,
+                     COALESCE(m.who, 'A colleague') || CASE m.kind WHEN 'calendar' THEN ' · from a calendar' ELSE ' · logged' END AS detail
+                FROM (${m.sql}) m LEFT JOIN donors d ON d.id = m.donor_id AND d.org_id = ?`,
+        args: [...m.args, orgId], order: "date DESC, id",
       };
     },
   },
@@ -517,8 +497,8 @@ const SOURCES = {
               FROM (SELECT i.donor_id, i.date FROM interactions i
                      WHERE i.org_id = ? AND i.type = 'email' AND i.metadata->>'logged_by' = ? AND i.date >= ?
                     UNION ALL
-                    SELECT unnest(c.person_ids), TO_CHAR(c.starts_at, 'YYYY-MM-DD') FROM calendar_events c
-                     WHERE c.org_id = ? AND c.owner_user_id = ? AND c.starts_at >= ?::date) x
+                    SELECT unnest(c.person_ids), ${meetings.CAL_DATE} FROM calendar_events c
+                     WHERE c.org_id = ? AND c.owner_user_id = ? AND ${meetings.CAL_DATE} >= ?) x
               JOIN donors d ON d.id = x.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
              GROUP BY d.id, d.name`,
       args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC, id",
@@ -566,20 +546,20 @@ const SOURCES = {
       let w = "";
       if (p.owner) { w += " AND d.assigned_to = ?"; args.push(p.owner); }
       if (p.min && /^\d+$/.test(p.min)) { w += " AND COALESCE(d.total_giving,0) >= ?"; args.push(Number(p.min)); }
-      args.push(orgId, p.since, orgId, p.since);
+      // FIX-14 Part 1 — "met" is the one source (meetings.js), held meetings
+      // only: a logged meeting dated ahead has not happened yet.
+      const all = meetings.meetingsSql(orgId, { held: true, eachPerson: true });
+      const since = meetings.meetingsSql(orgId, { held: true, from: p.since, eachPerson: true });
+      args.push(...since.args);
       return {
-        sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name,
-                     (SELECT MAX(x) FROM (SELECT MAX(i.date) AS x FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.type = 'meeting'
-                                            UNION ALL SELECT TO_CHAR(MAX(c.starts_at), 'YYYY-MM-DD') FROM calendar_events c
-                                             WHERE c.org_id = d.org_id AND d.id = ANY(c.person_ids) AND c.starts_at <= NOW()) m) AS date,
+        sql: `WITH met AS (SELECT m.donor_id, MAX(m.date) AS last_met FROM (${all.sql}) m GROUP BY m.donor_id)
+              SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, met.last_met AS date,
                      ROUND(COALESCE(d.total_giving,0)::numeric, 2) AS amount,
                      COALESCE(d.assigned_to_name, 'No owner') AS detail
-                FROM donors d
+                FROM donors d LEFT JOIN met ON met.donor_id = d.id
                WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.is_sample,false) = false${w}
-                 AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.org_id = ? AND i.donor_id = d.id AND i.type = 'meeting' AND i.date >= ?)
-                 AND NOT EXISTS (SELECT 1 FROM calendar_events c WHERE c.org_id = ? AND d.id = ANY(c.person_ids)
-                                   AND c.starts_at >= ?::date AND c.starts_at <= NOW())`,
-        args, order: "amount DESC, id",
+                 AND NOT EXISTS (SELECT 1 FROM (${since.sql}) s WHERE s.donor_id = d.id)`,
+        args: [...all.args, ...args], order: "amount DESC, id",
       };
     },
   },

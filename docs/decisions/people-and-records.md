@@ -78,6 +78,22 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   above the price is refused. The fair-market value is the org's number to enter, and Steward never
   estimates it. (BUILD-98)
 - **Record an unpaid sponsor as a pledge with one instalment, never as money.** (BUILD-98)
+- **Whoever logged an entry, or an admin, may edit or delete it** (`mayEditLogged`, routes/crm.js).
+  Conversations (`PUT /interactions/:id`), next steps (`PUT/DELETE /threads/:id`) and tasks. An edit
+  stamps `edited_at/edited_by/edited_by_name`; the previous values live only in the audit row, which
+  the "Edited" marker reads (`GET /records/:id/history`). A calendar meeting's time and place belong
+  to the calendar: Steward refuses to change them and links there (`PUT /calendar/events/:id` edits
+  only the note, next step and people). (FIX-14)
+- **A delete that offers Undo moves the row to `deleted_records`** (`trashRow`) and Undo puts it back
+  whole (`POST /deleted-records/:id/restore`). No reader learns a deleted_at column. (FIX-14)
+- **Pledges, asks, relationships and households follow the same rules** (owner or admin, `edited_*`,
+  delete via `trashRow` with an `undoId`). Rows that go with a row (a pledge's instalments, a
+  household's members, a calendar meeting's `interaction_id`) ride in `row_data.__with` and Undo puts
+  them back (`TRASH_WITH` / `RESTORE_WITH`). A pledge with any payment applied is never deleted: 409
+  with a sentence; write it off instead. (FIX-14 Part 2b)
+- **An audit row's Description is built on read** (`auditTrail.describeAuditRow`, names resolved by
+  id in `auditPeople`), and an edit carries `changes.record.donor_id` so it stays findable by person.
+  The log's home is Settings, Audit log; Finance, Exports links there. (FIX-14)
 - **A volunteer file is FOUR column families, not one.** `shared/volunteerImport.js` reads people,
   contact details, hours history, and the two dated things that decide whether somebody may work
   (waiver, background check) out of one file. Five presets: VolunteerHub, SignUpGenius, Wranglr,
@@ -133,6 +149,20 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   example) waits in Unmatched. (BUILD-87)
 - **Give each profile panel its own "couldn't load" state.** Do not swallow a failed fetch into an empty
   read (`.catch(()=>setX([]))`). Report a failed async stream in its panel. (BUILD-84, BUILD-98)
+- **"Meetings with this person" is `meetings.js` and nothing else.** Calendar meetings not logged
+  afterwards plus meeting interactions, each dated by its civil day in the ORG's zone (never the UTC
+  day), held when it has happened. Last met, Meetings this year, the rhythm strip, the timeline's
+  Meetings chip, Coming up, No meeting since, meetings per staff, Visits YTD and the meeting brief
+  all read it. A conversation date is the day the person chose, and a client "today" is
+  `client/src/lib/orgToday.js`, never `toISOString()`. (FIX-14, `tests/fix14-meeting-counts`)
+- **A note's suggestion is a chip, never a write.** Next step, spouse to household and planned-giving
+  prospect come from the after-meeting engine (AI switch, the simple reader as fallback) and change
+  nothing until a person presses one (`POST /interactions/:id/chips`). (FIX-14)
+- **The profile has one of everything.** One timeline ("Everything with", calls and notes included),
+  one next step (the rail, with Edit/Delete/Undo), one ask ("The ask": stage, proposals, moves), one
+  Rhythm panel (past touches from the timeline's sources, planned journey steps and next steps, the
+  journey picked or changed there). An empty section is one line with its add button. Drafting,
+  Suggested, Brief me, Add a task, Erase and Delete are under More. (FIX-14 Part 3)
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy

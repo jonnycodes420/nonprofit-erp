@@ -257,6 +257,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const routerNavigate = useNavigate();
   useEffect(() => {
     if (!active || !/^\/app\/reports\/?$/.test(window.location.pathname)) return;
+    // FIX-14 Part 5: the URL already on this report keeps its ?sort=.
+    if (new URLSearchParams(window.location.search).get("report") === active) return;
     const href = tabHref("reports", { report: active });
     if (href !== window.location.pathname + window.location.search) routerNavigate(href, { replace: true, state: { internal: true } });
   }, [active]);

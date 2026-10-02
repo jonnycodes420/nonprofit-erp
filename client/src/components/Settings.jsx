@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { useUrlWriter } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
@@ -17,6 +19,8 @@ import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
+import { RecordLink } from "./RecordLink";
+import { fmtInZone } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
@@ -2080,8 +2084,11 @@ function BccAddressCard() {
 // whole JSON of every change would hide the one change that mattered inside
 // forty that did not.
 function AuditLog({onNavigate}){
-  const [state,setState]=useState({loading:true,rows:[],facets:{entityTypes:[],actions:[],actors:[]},coverage:"",err:""});
-  const [filters,setFilters]=useState({actor:"",entityType:"",action:"",from:"",to:"",q:""});
+  const [state,setState]=useState({loading:true,rows:[],facets:{entityTypes:[],actions:[],actors:[]},coverage:"",timezone:null,err:""});
+  // FIX-14 Part 2: `person` and `record` narrow the log to one person (all
+  // their records) or one record; set from a row, cleared with Clear.
+  const [filters,setFilters]=useState({actor:"",entityType:"",action:"",from:"",to:"",q:"",person:"",record:""});
+  const [scopeName,setScopeName]=useState("");
   const [openRow,setOpenRow]=useState(null);
   const [limit,setLimit]=useState(200);
 
@@ -2095,7 +2102,7 @@ function AuditLog({onNavigate}){
   const load=()=>{
     setState(s=>({...s,loading:true,err:""}));
     apiFetch(`/audit/log?${qs()}`)
-      .then(r=>setState({loading:false,rows:r.rows||[],facets:r.facets||{entityTypes:[],actions:[],actors:[]},coverage:r.coverage||"",err:""}))
+      .then(r=>setState({loading:false,rows:r.rows||[],facets:r.facets||{entityTypes:[],actions:[],actors:[]},coverage:r.coverage||"",timezone:r.timezone||null,err:""}))
       .catch(e=>setState(s=>({...s,loading:false,err:errorMessage(e,"Could not load the audit log.")})));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2120,9 +2127,12 @@ function AuditLog({onNavigate}){
 
   const sel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",fontFamily:"inherit"};
   const anyFilter=Object.values(filters).some(v=>v&&String(v).trim());
-  const fmtWhen=iso=>{
-    const d=new Date(iso);
-    return d.toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"});
+  // In the organisation's zone, with the zone named ("Oct 1, 2026, 11:21 PM EDT").
+  const fmtWhen=iso=>fmtInZone(iso,state.timezone);
+  const linkHref=row=>{
+    if(!row.link)return null;
+    const {tab,...rest}=row.link;
+    return tabHref(tab,{...rest,selectDonorId:rest.donorId});
   };
   const openRecord=row=>{
     if(!row.link||!onNavigate)return;
@@ -2154,7 +2164,9 @@ function AuditLog({onNavigate}){
           </select>
           <input type="date" value={filters.from} onChange={e=>setFilters(f=>({...f,from:e.target.value}))} style={sel} aria-label="From"/>
           <input type="date" value={filters.to} onChange={e=>setFilters(f=>({...f,to:e.target.value}))} style={sel} aria-label="To"/>
-          {anyFilter&&<button onClick={()=>setFilters({actor:"",entityType:"",action:"",from:"",to:"",q:""})}
+          {(filters.person||filters.record)&&<span style={{fontSize:12,color:T.ink,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px"}}>
+            {filters.person?`Only ${scopeName||"this person"}`:`Only ${scopeName||"this record"}`}</span>}
+          {anyFilter&&<button onClick={()=>{setFilters({actor:"",entityType:"",action:"",from:"",to:"",q:"",person:"",record:""});setScopeName("");}}
             style={{background:"none",border:"none",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",padding:"6px 4px"}}>Clear</button>}
           <button onClick={downloadCsv}
             style={{marginLeft:"auto",background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>
@@ -2181,14 +2193,18 @@ function AuditLog({onNavigate}){
                       <div style={{display:"flex",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
                         <span style={{fontSize:11.5,color:T.ink3,minWidth:148}}>{fmtWhen(r.created_at)}</span>
                         <span style={{fontSize:13,color:T.ink,fontWeight:700}}>{r.user_name||"System"}</span>
-                        <span style={{fontSize:13,color:T.ink}}>{r.action}</span>
-                        <span style={{fontSize:13,color:T.ink3}}>{r.entity_type}</span>
-                        {(r.entity_label||r.entity_id)&&(r.link&&onNavigate
-                          ? <button onClick={()=>openRecord(r)}
-                              style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:13,fontWeight:700,color:T.greenDk,textDecoration:"underline dotted",cursor:"pointer"}}>
-                              {r.entity_label||r.entity_id}
-                            </button>
-                          : <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.entity_label||r.entity_id}</span>)}
+                        {/* FIX-14 Part 2 — the Description: what happened, in a sentence. Never a dash. */}
+                        <span data-testid="audit-description" style={{fontSize:13,color:T.ink,flex:"1 1 260px"}}>{r.description||r.sentence}</span>
+                        {(r.entity_label||r.entity_id)&&(r.link&&linkHref(r)
+                          ? <RecordLink to={linkHref(r)} onOpen={onNavigate?()=>openRecord(r):undefined} data-testid="audit-entity"
+                              style={{fontSize:13,fontWeight:700,color:T.greenDk,textDecoration:"underline dotted"}}>
+                              {r.record_name||r.entity_label||r.entity_type}
+                            </RecordLink>
+                          : <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.record_name||r.entity_label||r.entity_type}</span>)}
+                        {r.link&&r.link.donorId&&!filters.person&&<button onClick={()=>{setFilters(f=>({...f,person:r.link.donorId,record:""}));setScopeName(r.entity_label&&/^(donor|person|organisation|organization)$/.test(r.entity_type)?r.entity_label:"this person");}}
+                          style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>Only this person</button>}
+                        {r.entity_id&&!filters.record&&!(r.link&&r.link.donorId&&/^(donor|person|organisation|organization)$/.test(r.entity_type))&&<button onClick={()=>{setFilters(f=>({...f,record:r.entity_id,person:""}));setScopeName(r.entity_label||r.entity_type||"this record");}}
+                          style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>Only this record</button>}
                         {r.record_count!=null&&<span style={{fontSize:11.5,color:T.ink3}}>{r.record_count} records</span>}
                         {r.actor_kind&&r.actor_kind!=="user"&&<span style={{fontSize:10.5,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:6,padding:"1px 6px",textTransform:"uppercase",letterSpacing:"0.06em"}}>{r.actor_kind.replace(/_/g," ")}</span>}
                         {moved&&<button onClick={()=>setOpenRow(open?null:r.id)}
@@ -2196,7 +2212,7 @@ function AuditLog({onNavigate}){
                           {open?"Hide what changed":"What changed"}
                         </button>}
                       </div>
-                      {r.summary&&<div style={{fontSize:12.5,color:T.ink,marginTop:4}}>{r.summary}</div>}
+
                       {open&&<AuditRowDetail row={r}/>}
                     </div>
                   );
@@ -2224,7 +2240,7 @@ function AuditRowDetail({row}){
   const before=row.before||{};
   const after=row.after||{};
   const keys=[...new Set([...Object.keys(before),...Object.keys(after)])].sort();
-  const extra=Object.entries(row.changes||{}).filter(([k])=>k!=="before"&&k!=="after");
+  const extra=Object.entries(row.changes||{}).filter(([k])=>k!=="before"&&k!=="after"&&k!=="record");
   const cell={fontSize:12,color:T.ink,padding:"4px 10px 4px 0",verticalAlign:"top",lineHeight:1.5,wordBreak:"break-word"};
   // "not set" rather than a dash. A dash in a Was column is ambiguous between
   // "this field was empty" and "we did not record it", and the house rule is
@@ -2317,6 +2333,16 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const wantSection=SECTION_ALIAS[initialSection]?.section||initialSection;
   const wantFocus=initialFocus||SECTION_ALIAS[initialSection]?.focus||null;
   const [section,setSection]=useState(visibleTabs.some(t=>t.id===wantSection)?wantSection:"org");
+  // FIX-14 Part 5: the section on screen is in the address bar, replaced
+  // (a section switch is not a step Back should undo). A URL that already
+  // names this section keeps its #focus card.
+  const goUrl=useUrlWriter();
+  useEffect(()=>{
+    if(!/^\/app\/settings\/?$/.test(window.location.pathname))return;
+    const at=new URLSearchParams(window.location.search).get("section");
+    if(at===section||(!at&&section==="org"))return;
+    goUrl(tabHref("settings",{section}),true);
+  },[section]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const [team,setTeam]=useState([]);
   const [showInvite,setShowInvite]=useState(false);

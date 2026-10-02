@@ -14,15 +14,24 @@ import {
 } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
+import { orgTodayCivil } from "../lib/orgToday";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
-const todayLocal = () => new Date().toISOString().split("T")[0];
+// FIX-14 Part 1 — the ORG's today. This was `toISOString()`, the UTC day, so a
+// conversation logged after 8pm in New York defaulted to tomorrow.
+const todayLocal = () => orgTodayCivil();
 
-export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null }) {
-  const [touch, setTouch] = useState("call_reached");
-  const [line, setLine] = useState("");
-  const [date, setDate] = useState(todayLocal());
+export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null, editing = null }) {
+  // FIX-14 Part 2 — editing opens this same form, filled in: the touch, the
+  // line and the day. The next step and any gift are their own records and
+  // are changed where they live, so editing shows neither.
+  const editTouch = editing ? (() => { try { const m = typeof editing.metadata === "string" ? JSON.parse(editing.metadata || "{}") : (editing.metadata || {}); return m.touch || null; } catch { return null; } })() : null;
+  const [touch, setTouch] = useState(editTouch || (editing ? (TOUCH_TYPES.find(t => t.interactionType === editing.type)?.key || "note_only") : "call_reached"));
+  const [line, setLine] = useState(editing ? String(editing.note || "") : "");
+  // FIX-14 Part 1: where, for a meeting or a visit (filled in when editing)
+  const [place, setPlace] = useState(editing ? (() => { try { const m = typeof editing.metadata === "string" ? JSON.parse(editing.metadata || "{}") : (editing.metadata || {}); return m.location || ""; } catch { return ""; } })() : "");
+  const [date, setDate] = useState(editing ? String(editing.date || "").slice(0, 10) : todayLocal());
   const [nsLabel, setNsLabel] = useState("Follow up");
   const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 5));
   // BUILD-84 — the OPTIONAL time. Empty is the whole existing behaviour:
@@ -85,6 +94,16 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const save = async (skipped) => {
     if (busy) return;
     if (!line.trim()) { setErr("Write the one line first. What happened?"); return; }
+    if (editing) {
+      setBusy(true); setErr("");
+      try {
+        const type = TOUCH_TYPES.find(t => t.key === touch)?.interactionType || editing.type;
+        const row = await apiFetch(`/interactions/${editing.id}`, { method: "PUT", body: JSON.stringify({ type, note: line.trim(), date, ...((touch === "meeting" || touch === "visit") ? { metadata: { location: place.trim() } } : {}) }) });
+        onSaved && onSaved(row);
+        onClose && onClose();
+      } catch (e) { setErr(errorMessage(e, "That edit did not save. Try again.")); setBusy(false); }
+      return;
+    }
     if (!skipped && !sanitizeStepLabel(nsLabel)) { setErr("Say what the next step is, or skip it."); return; }
     setBusy(true); setErr("");
     try {
@@ -92,6 +111,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         method: "POST",
         body: JSON.stringify({
           touch, line: line.trim(), date,
+          ...((touch === "meeting" || touch === "visit") && place.trim() ? { place: place.trim() } : {}),
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
                                       fundId: fundId || (defaultFund ? defaultFund.id : null),
                                       paymentMethod: method || undefined } } : {}),
@@ -101,7 +121,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                 source: nsSource?.from || null },
         }),
       });
-      onSaved && onSaved({ ...r, touch, line: line.trim(), date });
+      onSaved && onSaved({ ...r, touch, line: line.trim(), date, place: place.trim() || null });
       onClose && onClose();
     } catch (e) {
       setErr(errorMessage(e, "That didn't save. Try again."));
@@ -120,11 +140,11 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
     <Modal onClose={onClose} width={460} zIndex={300} padding={24}
       ariaLabel="Log a conversation" dialogStyle={{ border: "1px solid " + T.bg3 }}>
       <div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>Log a conversation</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Edit this conversation" : "Log a conversation"}</div>
         <div style={{ fontSize: 12, color: T.ink3, marginBottom: 14 }}>{donor.name}</div>
 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
-          {TOUCH_TYPES.map(t => (
+          {TOUCH_TYPES.filter(t => !editing || t.key !== "gift").map(t => (
             <button key={t.key} aria-pressed={touch === t.key} onClick={() => { setTouch(t.key); }}
               style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 12px", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer", ...activeMark(touch === t.key, "bottom") }}>
               {t.label}
@@ -134,21 +154,32 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 
         <div style={{ marginBottom: 12 }}>
           <span style={lbl}>What happened?</span>
-          <input ref={lineRef} value={line} onChange={e => setLine(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && line.trim()) save(false); }}
-            placeholder="One line. She asked for the impact report." style={inp} />
+          {/* FIX-14 Part 1 — a textarea, so a note's own lines survive: an
+              <input> folded "Location:", "Next Step:" and the rest into one
+              unreadable paragraph. Cmd or Ctrl and Enter still saves. */}
+          <textarea ref={lineRef} value={line} onChange={e => setLine(e.target.value)} rows={3}
+            onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && line.trim()) save(false); }}
+            placeholder="She asked for the impact report." data-testid="conv-line"
+            style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
+        {(touch === "meeting" || touch === "visit") && (
+          <div style={{ marginBottom: 12 }}>
+            <span style={lbl}>Where (optional)</span>
+            <input value={place} onChange={e => setPlace(e.target.value)} maxLength={200}
+              aria-label="Where" data-testid="conv-place" placeholder="Starbucks on Main Street" style={inp} />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           <div style={{ flex: "0 1 170px" }}>
             <span style={lbl}>When</span>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
           </div>
-          <div style={{ flex: "0 1 150px" }}>
+          {!editing && <div style={{ flex: "0 1 150px" }}>
             <span style={lbl}>Gift (optional)</span>
             <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal"
               aria-label="Gift amount" data-testid="conv-gift-amount"
               placeholder="e.g. 250" style={inp} />
-          </div>
+          </div>}
         </div>
         {/* Fund and method are INLINE, revealed by the amount — a gift with no
             fund and no method is the thing A.7 spent a build fixing, and the
@@ -172,7 +203,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           </div>
         )}
 
-        <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 14, marginBottom: 16 }}>
+        {!editing && <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 14, marginBottom: 16 }}>
           <span style={lbl}>Next step</span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <input value={nsLabel} maxLength={NEXT_STEP_LABEL_MAX}
@@ -226,7 +257,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                 ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened, instead of the morning list. It fires on a weekend too.</>
                 : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}
           </div>
-        </div>
+        </div>}
 
         {err && <div style={{ fontSize: 12, color: T.terracotta, marginBottom: 10 }}>{err}</div>}
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -234,10 +265,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
             style={{ background: T.gold500, border: "none", borderRadius: 8, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 800, cursor: busy ? "wait" : "pointer" }}>
             {busy ? "Saving…" : "Save"}
           </button>
-          <button onClick={() => save(true)} disabled={busy}
+          {!editing && <button onClick={() => save(true)} disabled={busy}
             style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "10px 14px", color: T.ink3, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>
             Skip the next step
-          </button>
+          </button>}
           <span style={{ flexGrow: 1 }} />
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
         </div>

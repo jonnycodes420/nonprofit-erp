@@ -54,7 +54,9 @@ function redact(value, depth = 0) {
 // listed every column would be unreadable and would hide the one change that
 // mattered inside forty that did not. Timestamps the database maintains
 // itself are not changes anybody made.
-const NOISE_COLUMNS = new Set(["updated_at", "created_at", "search_vector", "tsv"]);
+// FIX-14 Part 2: the "Edited by, when" stamp is bookkeeping of the edit
+// itself, not a field anybody changed.
+const NOISE_COLUMNS = new Set(["updated_at", "created_at", "search_vector", "tsv", "edited_at", "edited_by", "edited_by_name"]);
 
 function sameValue(a, b) {
   if (a === b) return true;
@@ -350,8 +352,269 @@ function rowSentence(row) {
   return `${who} ${action} ${entity}`;
 }
 
+// ── FIX-14 Part 2 · WHAT HAPPENED, IN A PLAIN SENTENCE ────────────────────
+// The audit screen's Description is never a dash. Built from what the row
+// already holds (the action, the record, the fields that moved, their before
+// and after) plus the names of the people it is about, which are looked up
+// as the log is read (FIX-12: a row stores people by id). Pure, so the
+// screen, the CSV and a donor's History say the same words.
+//   "Logged a meeting with Octavian Cobbleworth"
+//   "Changed the meeting date from Oct 2 to Oct 1"
+//   "Created a next step for Octavian Cobbleworth: follow up around Nov 1"
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function shortDate(v) {
+  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return v == null || v === "" ? "no date" : String(v);
+  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}`;
+}
+const CONVERSATION_WORD = { call: "call", meeting: "meeting", email: "email", note: "note", visit: "visit",
+  event: "event", letter: "letter", text: "text", voice_memo: "voice memo", stewardship: "stewardship touch",
+  ask: "ask", other: "conversation", gift: "gift", stage_change: "stage change", planned_gift: "planned gift note" };
+const FIELD_WORD = {
+  date: "date", note: "note", type: "type", donor_id: "person it is about", metadata: "details",
+  next_step_label: "step", due_date: "due date", due_time: "time", title: "title", due: "due date",
+  done: "done", priority: "priority", amount: "amount", fund_id: "fund", payment_method: "payment method",
+  stage: "stage", status: "status", assigned_to: "owner", email: "email", phone: "phone", name: "name",
+  target_amount: "amount", expected_close: "expected close", proposal_stage: "stage", probability: "probability",
+  officer_name: "officer", relationship_type: "kind", notes: "note", campaign_id: "campaign",
+  primary_donor_id: "primary member", joint_acknowledgment: "joint thank-you",
+};
+const ENTITY_WORD = { thread: "next step", interaction: "conversation", "donor relationship": "relationship" };
+const lowerFirst = s => s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+const upperFirst = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+function usdShort(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
+}
+function showValue(field, v) {
+  if (v === null || v === undefined || v === "") return "nothing";
+  if (/date|^due$/.test(field)) return shortDate(v);
+  if (field === "amount" || field === "target_amount") return usdShort(v);
+  if (typeof v === "object") return "new details";
+  const s = String(v);
+  return s.length > 40 ? `"${s.slice(0, 37)}..."` : `"${s}"`;
+}
+// The donor a row is about, by id: the record itself when it is a person, or
+// the donor_id the record carries (on the row, or in the context the
+// middleware kept beside a diff).
+function auditDonorId(row) {
+  const t = String(row.entity_type || "");
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(t) && !/^user_/.test(String(row.entity_id || ""))) return row.entity_id || null;
+  const ctx = (row.changes && row.changes.record) || {};
+  return (row.after && row.after.donor_id) || (row.before && row.before.donor_id) || ctx.donor_id || null;
+}
+// Every person a row names, by id, so the log can look their names up in one
+// read: the donor it is about, both sides of a relationship, and the members
+// of a household before and after.
+function auditPeopleIds(row) {
+  const ids = new Set();
+  const d = auditDonorId(row);
+  if (d) ids.add(String(d));
+  for (const side of [row.before, row.after]) {
+    if (!side || typeof side !== "object") continue;
+    for (const k of ["donor_id_a", "donor_id_b", "primary_donor_id"]) if (side[k]) ids.add(String(side[k]));
+    if (Array.isArray(side.member_ids)) for (const m of side.member_ids) if (m) ids.add(String(m));
+  }
+  return [...ids];
+}
+// "The Cobbleworth Household" reads "the Cobbleworth household" mid-sentence.
+// A household's name is a person's name, so the row holds "[person]" (FIX-12)
+// and the live name is looked up as the log is read, under "hh:<id>".
+function householdName(row, people) {
+  const n = String((people && people.get("hh:" + row.entity_id)) || "").trim();
+  if (!n) return "the household";
+  return "the " + n.replace(/^the\s+/i, "").replace(/\bHousehold$/, "household");
+}
+const RELATIONSHIP_WORD = { spouse: "spouse", partner: "partner", parent: "parent", child: "child", sibling: "sibling",
+  employer: "employer", employee: "employee", soft_credit: "soft credit", matching_gift: "corporate match" };
+const nameList = names => names.length <= 1 ? (names[0] || "")
+  : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+function describeAuditRow(row, ctx = {}) {
+  const people = ctx.people || new Map();
+  const action = String(row.action || "changed");
+  const type = String(row.entity_type || "record");
+  const rec = (row.changes && row.changes.record) || {};
+  const full = row.after || row.before || {};
+  const donorId = auditDonorId(row);
+  const who = donorId ? (people.get(String(donorId)) || null) : null;
+  if (row.summary) return upperFirst(String(row.summary));
+  if (action === "downloaded") return `Downloaded ${row.entity_label || "a file"}`;
+  if (type === "session") return action === "signed out" ? "Signed out" : upperFirst(action);
+  const changed = row.before && row.after && action === "updated"
+    ? Object.keys({ ...row.before, ...row.after }).filter(k => !/^(edited_|updated_at|created_at)/.test(k)) : [];
+
+  // CONVERSATIONS: a call, a meeting, an email, a note, a visit.
+  if (/^(interaction|conversation|touchpoint)$/.test(type)) {
+    const word = CONVERSATION_WORD[full.type || rec.type] || "conversation";
+    const withWho = who ? ` with ${who}` : "";
+    if (action === "created") {
+      const ns = full.next_step && typeof full.next_step === "object" ? full.next_step : null;
+      return `Logged a ${word}${withWho}${ns && ns.label ? `, with a next step: ${lowerFirst(ns.label)} around ${shortDate(ns.due)}` : ""}`;
+    }
+    if (action === "deleted") return `Deleted a ${word}${withWho}${full.date ? ` from ${shortDate(full.date)}` : ""}`;
+    if (action === "restored") return `Restored a ${word}${withWho} (Undo)`;
+    if (changed.length) {
+      const parts = changed.map(k => {
+        if (k === "note") return "the note";
+        if (k === "donor_id") return `who it is about`;
+        if (k === "metadata") return "the details";
+        return `the ${FIELD_WORD[k] || k.replace(/_/g, " ")} from ${showValue(k, row.before[k])} to ${showValue(k, row.after[k])}`;
+      });
+      const first = parts[0].replace(/^the /, `the ${word} `);
+      return `Changed ${[first, ...parts.slice(1)].join(" and ")}${who ? ` (${who})` : ""}`;
+    }
+  }
+  // NEXT STEPS.
+  if (/^(thread|next step)$/.test(type)) {
+    const forWho = who ? ` for ${who}` : "";
+    const label = full.next_step_label || rec.label;
+    const due = full.due_date || rec.due;
+    if (action === "created") return `Created a next step${forWho}${label ? `: ${lowerFirst(label)}` : ""}${due ? ` around ${shortDate(due)}` : ""}`;
+    if (action === "deleted") return `Deleted the next step${forWho}${label ? `: ${lowerFirst(label)}` : ""}`;
+    if (action === "restored") return `Restored the next step${forWho} (Undo)`;
+    if (action === "dismissed") return `Dismissed the next step${forWho}`;
+    if (changed.length) {
+      return `Changed the next step${forWho}: ` + changed.map(k =>
+        `${FIELD_WORD[k] || k.replace(/_/g, " ")} from ${showValue(k, row.before[k])} to ${showValue(k, row.after[k])}`).join(", ");
+    }
+  }
+  // TASKS.
+  if (type === "task") {
+    const title = full.title || rec.title;
+    const forWho = who ? ` for ${who}` : "";
+    if (action === "created") return `Created a task${forWho}${title ? `: ${title}` : ""}${full.due ? ` due ${shortDate(full.due)}` : ""}`;
+    if (action === "deleted") return `Deleted a task${forWho}${title ? `: ${title}` : ""}`;
+    if (action === "restored") return `Restored a task${forWho} (Undo)`;
+    if (action === "completed" || (changed.length === 1 && changed[0] === "done")) {
+      return `${Number(row.after && row.after.done) ? "Completed" : "Reopened"} a task${forWho}${title ? `: ${title}` : ""}`;
+    }
+  }
+  // FIX-14 Part 2b — PLEDGES, ASKS, RELATIONSHIPS AND HOUSEHOLDS.
+  const fieldChanges = () => changed.map(k => {
+    const w = FIELD_WORD[k] || k.replace(/_/g, " ");
+    const bv = row.before[k], av = row.after[k];
+    return (typeof bv === "object" && bv) || (typeof av === "object" && av) || k === "notes" || k === "note" || /\[(redacted|person)\]/.test(String(av))
+      ? w : `${w} from ${showValue(k, bv)} to ${showValue(k, av)}`;
+  }).join(", ");
+  if (type === "pledge") {
+    const from = who ? ` from ${who}` : "";
+    const amt = full.amount != null ? `${usdShort(full.amount)} ` : "";
+    if (action === "created") return `Recorded a ${amt}pledge${from}`;
+    if (action === "deleted") return `Deleted a ${amt}pledge${from}`;
+    if (action === "restored") return `Restored a ${amt}pledge${from} (Undo)`;
+    if (changed.length) return `Changed the pledge${from}: ${fieldChanges()}`;
+  }
+  if (/^(proposal|opportunity|ask)$/.test(type)) {
+    const forWho = who ? ` for ${who}` : "";
+    const purpose = full.name ? `: ${full.name}` : "";
+    if (action === "created") return `Opened an ask${forWho}${full.target_amount != null ? ` of ${usdShort(full.target_amount)}` : ""}${purpose}`;
+    if (action === "deleted") return `Deleted the ask${forWho}${purpose}`;
+    if (action === "restored") return `Restored the ask${forWho} (Undo)`;
+    if (changed.length) return `Changed the ask${forWho}: ${fieldChanges()}`;
+  }
+  if (/^(relationship|donor relationship)$/.test(type)) {
+    const a = full.donor_id_a ? people.get(String(full.donor_id_a)) : null;
+    const b = full.donor_id_b ? people.get(String(full.donor_id_b)) : null;
+    const pair = a && b ? ` between ${a} and ${b}` : (who ? ` for ${who}` : "");
+    const kind = RELATIONSHIP_WORD[full.relationship_type] || String(full.relationship_type || "").replace(/_/g, " ");
+    if (action === "created") return a && b ? `Linked ${a} and ${b}${kind ? ` (${kind})` : ""}` : `Added a relationship${pair}`;
+    if (action === "deleted") return `Removed the relationship${pair}${kind ? ` (${kind})` : ""}`;
+    if (action === "restored") return `Restored the relationship${pair} (Undo)`;
+    if (changed.length) return `Changed the relationship${pair}: ${fieldChanges()}`;
+  }
+  if (type === "household") {
+    const hh = householdName(row, people);
+    const nameOf = id => people.get(String(id)) || "a person";
+    if (action === "created") return `Created ${hh}`;
+    if (action === "deleted") {
+      const n = Array.isArray(full.member_ids) ? full.member_ids.length : 0;
+      return `Deleted ${hh}${n ? ` (${n} members)` : ""}`;
+    }
+    if (action === "restored") return `Restored ${hh} (Undo)`;
+    if (changed.length) {
+      const parts = [];
+      const bm = (row.before && row.before.member_ids) || null, am = (row.after && row.after.member_ids) || null;
+      if (Array.isArray(bm) && Array.isArray(am)) {
+        const removed = bm.filter(x => !am.includes(x)), added = am.filter(x => !bm.includes(x));
+        if (removed.length) parts.push(`Removed ${nameList(removed.map(nameOf))} from ${hh}`);
+        if (added.length) parts.push(`${parts.length ? "added" : "Added"} ${nameList(added.map(nameOf))} to ${hh}`);
+      }
+      const rest = changed.filter(k => k !== "member_ids");
+      if (rest.length) {
+        const words = rest.map(k => k === "primary_donor_id"
+          ? `primary member from ${nameOf(row.before[k])} to ${nameOf(row.after[k])}`
+          : (FIELD_WORD[k] || k.replace(/_/g, " ")) + (k === "name" ? ` from ${showValue(k, row.before[k])} to ${showValue(k, row.after[k])}` : ""));
+        parts.push(parts.length ? `changed the ${words.join(", ")}` : `Changed ${hh}: ${words.join(", ")}`);
+      }
+      if (parts.length) return parts.join(", and ");
+    }
+  }
+  if (type === "gift") {
+    const from = who ? ` from ${who}` : "";
+    const amt = full.amount != null && !(row.before && row.after && action === "updated") ? `${usdShort(full.amount)} ` : "";
+    if (action === "created") return `Recorded a ${amt}gift${from}`;
+    if (action === "deleted") return `Deleted a ${amt}gift${from}`;
+    if (action === "voided") return `Voided a ${amt}gift${from}`;
+  }
+  if (/\/auth\/register$/.test(String(row.request_path || ""))) return "Created this organization's Steward account";
+  if (type === "stage" && row.before && row.after && row.after.stage !== undefined) {
+    return `Moved ${who || "a person"} from ${upperFirst(String(row.before.stage || "no stage"))} to ${upperFirst(String(row.after.stage || "no stage"))}`;
+  }
+  if (/^(donor|person|people|organisation|organization)$/.test(type)) {
+    const name = who || row.entity_label || "a person";
+    if (action === "created") return `Added ${name}`;
+    if (action === "deleted") return `Deleted ${name}`;
+    if (changed.length === 1 && changed[0] === "stage") {
+      return `Moved ${name} from ${upperFirst(String(row.before.stage || "no stage"))} to ${upperFirst(String(row.after.stage || "no stage"))}`;
+    }
+    if (changed.length) return `Changed ${name}: ${changed.map(k => FIELD_WORD[k] || k.replace(/_/g, " ")).join(", ")}`;
+    return `${upperFirst(action)} ${name}`;
+  }
+
+  // EVERYTHING ELSE: the action, the record, and what moved.
+  const noun = ENTITY_WORD[type] || type;
+  const label = row.entity_label && !/^\[person\]$/.test(row.entity_label) ? ` ${row.entity_label}` : "";
+  const forWho = who && !label ? ` for ${who}` : "";
+  const article = action === "created" ? (/^[aeiou]/i.test(noun) ? "an" : "a") : "the";
+  let s = `${upperFirst(action)} ${article} ${noun}${label}${forWho}`;
+  if (changed.length) {
+    const few = changed.slice(0, 3).map(k => {
+      const w = FIELD_WORD[k] || k.replace(/_/g, " ");
+      const bv = row.before[k], av = row.after[k];
+      return (typeof bv === "object" && bv) || (typeof av === "object" && av) || k === "note" || /\[(redacted|person)\]/.test(String(av))
+        ? w : `${w} from ${showValue(k, bv)} to ${showValue(k, av)}`;
+    });
+    s += `: ${few.join(", ")}${changed.length > 3 ? ` and ${changed.length - 3} more` : ""}`;
+  }
+  if (row.record_count != null && !row.summary) s += ` (${row.record_count} records)`;
+  return s;
+}
+
+// The Entity column's name for the record: what a person would call it.
+function auditRecordName(row, ctx = {}) {
+  const people = ctx.people || new Map();
+  const type = String(row.entity_type || "");
+  const rec = (row.changes && row.changes.record) || {};
+  const full = row.after || row.before || {};
+  const donorId = auditDonorId(row);
+  const who = donorId ? people.get(String(donorId)) : null;
+  if (/^(interaction|conversation|touchpoint)$/.test(type)) {
+    const word = upperFirst(CONVERSATION_WORD[full.type || rec.type] || "conversation");
+    return who ? `${word} with ${who}` : word;
+  }
+  if (/^(thread|next step)$/.test(type)) return who ? `Next step for ${who}` : "Next step";
+  if (type === "task") return full.title || (who ? `Task for ${who}` : "Task");
+  if (type === "gift") return who ? `Gift from ${who}` : (row.entity_label || "Gift");
+  if (type === "household") return upperFirst(householdName(row, people));
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(type)) return who || row.entity_label || "A person";
+  return row.entity_label || (who ? `${upperFirst(ENTITY_WORD[type] || type)} for ${who}` : upperFirst(ENTITY_WORD[type] || type || "Record"));
+}
+
 module.exports = {
+  auditRecordName,
   SECRET_KEY_RE, REDACTED, NOISE_COLUMNS, VERB_PAST, READ_ONLY_POSTS,
   redact, diffFields, sameValue, describeRoute, isReadOnlyPost, singular, prettify, rowSentence,
-  bulkSummary, usd,
+  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate,
 };

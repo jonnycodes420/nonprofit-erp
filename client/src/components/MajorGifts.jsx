@@ -4,6 +4,7 @@ import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { DonorLink } from "./RecordLink";
+import { ItemMenu, EditedMarker, useUndo } from "./EditHistory";
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -242,7 +243,7 @@ function MoveModal({ open, onClose, onSaved, meta, proposal }) {
   );
 }
 
-function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor }) {
+function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor, onDelete = null }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: showDonor ? "1.4fr 1.6fr 110px 96px 110px 120px" : "1.8fr 110px 96px 110px 120px",
                   gap: 12, alignItems: "center", padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 56 }}>
@@ -262,6 +263,8 @@ function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor }) {
               style={{ background: T.gold, border: "none", borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Move</button>
             <button onClick={() => onEdit(p)} title="Edit this proposal"
               style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 8px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Edit</button>
+            {/* FIX-14 Part 3 — on the profile's "The ask": Delete (with Undo) and Edited. */}
+            {onDelete && <><EditedMarker item={p} /><ItemMenu label="ask" onDelete={() => onDelete(p)} /></>}
           </>
         )}
       </div>
@@ -360,11 +363,12 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
 // ── THE PROFILE PANEL (above giving history) ───────────────────────────────
 // The brief puts proposals above giving history because an open ask is what an
 // officer is here to look at; the history is the evidence behind it.
-export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals }) {
+export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals, title = "Proposals", addLabel = "+ New proposal", testid = "donor-proposals-panel", children = null, after = null }) {
   const [d, setD] = useState(null);
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [undoToast, offerUndo] = useUndo();
   const load = useCallback(() => {
     apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
   }, [donorId]);
@@ -382,14 +386,15 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   const openOnes = d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage));
 
   return (
-    <div data-testid="donor-proposals-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
+    <div data-testid={testid} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Proposals</div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>{title}</div>
         {canWrite && !isReadOnly && (
           <button onClick={() => setAdding(true)}
-            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>+ New proposal</button>
+            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>{addLabel}</button>
         )}
       </div>
+      {children}
       {d.proposals.length === 0 ? (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
           No proposal open. A proposal is one ask: what it's for, how much, and when you expect an answer.
@@ -402,11 +407,17 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
           <div style={{ border: "1px solid " + T.bg3, borderRadius: 10, overflow: "hidden" }}>
             {d.proposals.map(p => (
               <ProposalRow key={p.id} p={p} isReadOnly={isReadOnly || !canWrite}
-                onMove={setMoving} onEdit={setEditing} />
+                onMove={setMoving} onEdit={setEditing}
+                onDelete={async x => {
+                  try { const r = await apiFetch(`/proposals/${x.id}`, { method: "DELETE" }); load(); offerUndo(r, "ask", load); }
+                  catch (e) { alert(errorMessage(e, "The ask could not be deleted.")); }
+                }} />
             ))}
           </div>
         </>
       )}
+      {after}
+      {undoToast}
       <ProposalForm open={adding} onClose={() => setAdding(false)} onSaved={load} meta={meta} donorId={donorId} donorName={donorName} />
       <ProposalForm open={!!editing} onClose={() => setEditing(null)} onSaved={load} meta={meta} donorId={donorId} existing={editing} donorName={donorName} />
       <MoveModal open={!!moving} onClose={() => setMoving(null)} onSaved={load} meta={meta} proposal={moving} />
