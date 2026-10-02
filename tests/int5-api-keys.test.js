@@ -190,6 +190,23 @@ async function callApi(method, path, key, body) {
   ok("§7 …and the actor names the key that wrote it",
     String(stamped.created_by || "").startsWith("system:api/"), String(stamped.created_by));
 
+  // ── §8 · FUNDS: ITS OWN SCOPE, ONE ORGANISATION (FIX-13) ────────────────
+  for (const o of [A, B]) await q(`INSERT INTO fin_funds (id,org_id,name) VALUES ($1,$2,$3)`, [`fund_${o}`, o, `Fund ${o}`]);
+  const noFunds = await callApi("GET", "/api/v1/funds", keyB.key);
+  ok("§8 a key without read:funds is refused the fund list",
+    noFunds.status === 403 && noFunds.body.required === "read:funds", `status ${noFunds.status} ${JSON.stringify(noFunds.body)}`);
+  const fundsKey = await makeKey(tokA, "Fund reader", ["read:funds"]);
+  const fl = await callApi("GET", "/api/v1/funds", fundsKey.key);
+  // Compared with the database, not a hand list: §7's gift made org A a default fund too.
+  const aFunds = (await q(`SELECT id FROM fin_funds WHERE org_id=$1 ORDER BY id`, [A])).map(r => r.id);
+  const got = (fl.body.data || []);
+  ok("§8 a key with read:funds sees exactly its own org's funds, as id and name",
+    fl.status === 200 && got.some(f => f.id === `fund_${A}` && f.name === `Fund ${A}`)
+      && !got.some(f => f.id === `fund_${B}`)
+      && got.map(f => f.id).sort().join(",") === aFunds.join(",")
+      && got.every(f => Object.keys(f).sort().join(",") === "id,name"),
+    `status ${fl.status} ${JSON.stringify(got)}`);
+
   for (const o of [A, B]) await purgeOrg(o);
   await closeDb();
   summary("INT-5 — a read-only key cannot write, and one key reaches one organisation");

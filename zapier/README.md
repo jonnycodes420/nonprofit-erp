@@ -9,6 +9,7 @@ Triggers (polling, newest-first, deduped by id):
 - **New Gift** (`triggers/newGift.js`) - GET `/api/v1/gifts`. Needs `read:gifts`.
 - **New Person** (`triggers/newPerson.js`) - GET `/api/v1/people`. Needs `read:people`.
 - **Person List** (`triggers/personList.js`) - hidden. Not a trigger anybody picks: it is the dropdown behind the Person field on Record Gift and Add Note, so an id does not have to be looked up by hand. Needs `read:people`, which a write-only key does not have, so a 403 there is caught and answered with the two ways out.
+- **Fund List** (`triggers/fundList.js`) - hidden. The dropdown behind the Fund field on Record Gift. GET `/api/v1/funds` (id and name, this org only). Needs `read:funds`; a 403 is caught and answered with the same two ways out as Person List.
 - **Stage Changed** (`triggers/stageChanged.js`) - GET `/api/v1/people`, deduped on person-plus-stage, so a stage change fires once. Needs `read:people`. Limitation, stated honestly in the code: the people list is newest-first by when the record was added, so stage changes on records far down the list only surface if the trigger pages deep enough. Stage changes on recently added people are caught reliably. A server-side "recently updated" ordering, or API-key-usable webhook subscriptions, would remove this.
 
 Actions:
@@ -17,9 +18,9 @@ Actions:
 - **Record Gift** (`creates/recordGift.js`) - POST `/api/v1/gifts`. Written through the one gift path (`recordGift`), so funds, rollups, receipts and thank-you follow-ups behave exactly as in the app. An idempotency key is generated per Zap run when the input is left blank, so a retry never records the gift twice. Needs `write:gifts`.
 - **Add Note** (`creates/addNote.js`) - POST `/api/v1/notes`. Adds a call, meeting, email or note; it cannot change giving. Needs `write:notes`.
 
-The API host is checked before it is used (`lib/api.js`, `assertSafeHost`): https only, a real dotted hostname, and never a loopback, private, link-local or cloud-metadata address. The host is the one thing an outsider types, so unchecked it is a request-forgery hole that would send the API key wherever a Zap pointed. A self-hosted Steward on a public https hostname still works.
+The API host is fixed (`lib/api.js`, `API_BASE_URL` = `https://nonprofit-erp-production.up.railway.app`). Nobody self-hosts Steward, so there is no host field for anybody to type into (FIX-13, which is what clears D026). `stewardapp.dev` does NOT serve the API (no `/api/v1` rewrite in `vercel.json`), so the Railway host is the API host. `assertSafeHost` still guards the fixed host: https only, a real dotted hostname, never a loopback, private, link-local or cloud-metadata address.
 
-Auth (`authentication.js`): paste a Steward API key (made in Steward under Settings, API keys, with exactly the permissions the Zap needs), plus the API host, defaulting to `https://nonprofit-erp-production.up.railway.app`. The connection check calls GET `/api/v1/me`, which needs no scope. `stewardapp.dev` does NOT serve the API (no `/api/v1` rewrite in `vercel.json`), so the Railway host is the right default.
+Auth (`authentication.js`): paste a Steward API key (made in Steward under Settings, API keys, with exactly the permissions the Zap needs). The connection check calls GET `/api/v1/me`, which needs no scope.
 
 A legacy `read` key expands to every read scope and no write scope, so the two read triggers work with old keys and no old key gains write power.
 
@@ -31,7 +32,7 @@ A legacy `read` key expands to every read scope and no write scope, so the two r
 | New Person     | `read:people`  |
 | Stage Changed  | `read:people`  |
 | Create Person  | `write:people` |
-| Record Gift    | `write:gifts`  |
+| Record Gift    | `write:gifts` (`read:funds` for the Fund dropdown, `read:people` for the Person dropdown) |
 | Add Note       | `write:notes`  |
 | Connection test| none           |
 
@@ -49,7 +50,7 @@ node node_modules/zapier-platform-cli/src/bin/run validate
 npm test
 ```
 
-One test file (`test/auth-and-triggers.js`, all HTTP mocked with nock): connection check plus scope read, gift list order and dedupe, stage-change dedupe, gift recording with an idempotency key. No real server, no real key, no production data.
+One test file (`test/auth-and-triggers.js`, all HTTP mocked with nock): connection check plus scope read, gift list order and dedupe, stage-change dedupe, gift recording with an idempotency key, the fixed host, and the people and fund dropdowns' scope errors. No real server, no real key, no production data.
 
 ## Pushed
 
@@ -69,5 +70,5 @@ npx zapier-platform-cli push
 
 - **Logo (M004).** A square PNG, 256x256 or larger, uploaded in the Developer Platform UI. The CLI cannot upload one.
 - **A connected account (A001), 3 users with live Zaps (S001), one live Zap per trigger and action (S002), and a successful task for each (T001-T005).** Real Zaps against a real Steward org, not something the CLI can fake. Invite link: `npx zapier-platform-cli users:links`.
-- **Fund dropdown (D004, a warning, not a blocker).** `fundId` cannot have one: there is no `/api/v1/funds`, and `/api/v1/gifts` returns the fund *name*, not its id. It needs a server-side `GET /api/v1/funds` plus a `read:funds` scope before the dropdown can exist.
-- **Host field (D026, a warning, not a blocker).** The check fires on the mere presence of a user-typed host field; it cannot see `assertSafeHost`. It clears for real only by dropping the API host field and pinning everyone to production, which would end self-hosting.
+- **Marketing description (M002).** Zapier wants the listing description to start with "Steward is a". Set in the Developer Platform UI.
+- D004 (fund dropdown) and D026 (host field) were cleared in 1.0.1 (FIX-13): `GET /api/v1/funds` with a `read:funds` scope backs a Fund dropdown, and the host field is gone.
