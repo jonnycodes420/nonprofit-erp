@@ -30,7 +30,7 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 - **A user id from the request belongs to the org.** `POST /donors/:id/threads` stored any `ownerId` it was
   handed. `orgUsers.js` is now the one check: an id that is not an active user of the caller's org is refused
   with a 400 (`user_not_in_org`) before anything is written. It covers donor create, assign and bulk assign,
-  tasks (create, update), threads, proposals (create, update), grants (create), and journey step owners
+  tasks (create, update), threads, proposals (`POST /donors/:id/proposals`, `PUT /proposals/:id`), grants (`POST /funders/:donorId/grants`), and journey step owners
   (create, update). The read filters (`GET /donors`, the CSV export, `/pipeline`, `/proposals`,
   `/grants/pipeline`) refuse a foreign id too but accept a deactivated colleague, so a former officer's old
   portfolio can still be looked at. The import's owner resolver now drops deactivated users as well. The
