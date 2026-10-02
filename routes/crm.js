@@ -11555,13 +11555,25 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   res.status(201).json({ id });
 }));
 
+// FIX-15 Part 4 — a relationship from BEFORE FIX-14, or one an import or the
+// system made, has no person who "linked them" to defer to. Those belong to
+// whoever can edit the donor (the same gate as PUT /donors/:id: signed in, with
+// write access). One made since FIX-14 by a person stays theirs, or an admin's.
+const FIX14_SHIPPED = "2026-10-02T05:09:42Z";
+async function mayEditRelationship(req, r) {
+  const humanMade = r.created_by && !String(r.created_by).startsWith("system:");
+  const legacy = !humanMade || (r.created_at && new Date(r.created_at) < new Date(FIX14_SHIPPED));
+  if (legacy) return true;
+  return mayEditLogged(req, r);
+}
+
 // FIX-14 Part 2b — edit a relationship's kind and its note. Whoever linked
-// the two, or an admin.
+// the two, or an admin (FIX-15: or anyone who can edit the donor, for a legacy one).
 app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { orgId } = req.user;
   const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
   if (!r) return res.status(404).json({ error: "Not found" });
-  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  if (!(await mayEditRelationship(req, r))) return res.status(403).json(NOT_YOURS);
   const b = req.body || {};
   const sets = [], vals = [];
   if (b.relationshipType !== undefined && b.relationshipType !== r.relationship_type) {
@@ -11581,10 +11593,10 @@ app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (r
 }));
 
 // FIX-14 Part 2b: whoever linked them, or an admin; to the trash, so Undo works.
-app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
+app.delete("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!r) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  if (!(await mayEditRelationship(req, r))) return res.status(403).json(NOT_YOURS);
   if (req.audit) req.audit.before(await auditShape("donor_relationships", r, req.user.orgId));
   const undoId = await trashRow("donor_relationships", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });
