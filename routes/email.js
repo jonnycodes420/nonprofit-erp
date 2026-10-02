@@ -203,6 +203,7 @@ const DONOR_MAIL_POLICY = {
   // send (org opt-in, off by default): Jonathan confirmed it on 2026-10-02.
   volunteer_reminder: "transactional",  // "Tomorrow: <shift>", the day before, once each
   volunteer_link:     "transactional",  // a staff member sends a volunteer their own page link
+  express_link:       "transactional",  // GIVE-2 §4 — the sign-in link a donor asked for, seconds ago
 };
 // ── INCIDENT 2026-09-22 — ONE ORG-LEVEL GATE, READ BY EVERY SEAM ──────────
 // Three different kinds of mail escaped that night — a donor reminder, a

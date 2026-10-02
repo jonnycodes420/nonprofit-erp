@@ -5802,6 +5802,99 @@ async function initSchema() {
   // only takes an org OUT. A new org inherits whatever the deployment does.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS inbound_email_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
 
+  // ── GIVE-2 §5 — THE ORG'S OWN PROCESSING RATE ────────────────────────────
+  // The donor-covers-fees gross-up was Stripe's published card rate, hard-coded
+  // in three places. It is wrong in the expensive direction for two of the ways
+  // money now arrives: a nonprofit on Stripe's discounted rate pays 2.2% and was
+  // asked to cover 2.9%, and an ACH gift pays 0.8% capped at $5 and was asked to
+  // cover a card rate.
+  //
+  // NULL means "I have not told Steward my rate", which is where every org
+  // starts, and `shared/processingRates.js` answers with the published default
+  // for it. So this migration changes no org's arithmetic by a cent until
+  // somebody types a number into Settings.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS fee_rate_card_pct NUMERIC(6,5)`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS fee_rate_card_flat_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS fee_rate_ach_pct NUMERIC(6,5)`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS fee_rate_ach_flat_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS fee_rate_ach_cap_cents INTEGER`);
+
+  // ── GIVE-2 §4 — THE CARD A RETURNING DONOR ALREADY GAVE ──────────────────
+  // Stripe's customer id for this donor ON THE ORG'S OWN CONNECTED ACCOUNT, so
+  // a donor who chose "Remember me" can give again in one tap. Steward stores
+  // the id and nothing else: no card number, no expiry, no CVC, ever. The card
+  // itself lives on the org's Stripe account and is read back by its id when a
+  // charge is made.
+  //
+  // It is per org by construction because `donors` is per org: the same human
+  // giving to two organisations is two donor rows and two Stripe customers on
+  // two accounts, which is right — one org may not charge a card saved with
+  // another.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_brand TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_last4 TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_saved_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_stripe_customer ON donors(org_id, stripe_customer_id) WHERE stripe_customer_id IS NOT NULL`);
+
+  // ── GIVE-2 §8 — THE EMPLOYERS THIS ORG KNOWS MATCH ───────────────────────
+  // Typed by staff, shown to a donor on the page their gift just landed on,
+  // with the company's OWN form link. No vendor, no lookup service, no contract:
+  // `shared/matchingGifts.js` has the adapter shape for one and names none.
+  await pool.query(`CREATE TABLE IF NOT EXISTS matching_employers (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    form_url TEXT,
+    ratio TEXT,
+    min_cents INTEGER,
+    max_cents INTEGER,
+    note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT,
+    created_by_name TEXT
+  )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_matching_employers_org_name ON matching_employers(org_id, lower(name))`);
+
+  // ── GIVE-2 §5 — WHERE THE FEE NUMBER CAME FROM ───────────────────────────
+  // `processor_fee_amount` has defaulted to 0 since BUILD-89S, which means a
+  // gift that nobody has read a fee for is indistinguishable from a gift that
+  // cost nothing. That was fine while the only gifts carrying a fee came from a
+  // connected giving source that always stated one. It stops being fine the
+  // moment a Fundraising panel shows "received" beside "charged": a cash gift
+  // nets its full amount, an online gift whose balance transaction could not be
+  // read does not, and a screen that shows the same zero for both is wrong
+  // about one of them.
+  //
+  // So the SOURCE is recorded beside the number. NULL means nobody has said.
+  //   'stripe_balance_transaction'  read off the charge itself
+  //   'provider'                    stated by a connected giving source
+  //   'none'                        there was no processor (cash, cheque)
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS processor_fee_source TEXT`);
+
+  // ── GIVE-2 §4 — ONE MAGIC-LINK TABLE, TWO PURPOSES ───────────────────────
+  // Express giving needs exactly what the portal's sign-in link already is: a
+  // single-use, hashed, fifteen-minute token tied to an org and an email, which
+  // a re-request supersedes. A second table would be a second place that
+  // expiry, single use and supersession could be got wrong, so it is the same
+  // table with the purpose written down.
+  //
+  // THE PURPOSE IS LOAD-BEARING AND BOTH CONSUMERS FILTER ON IT. An express
+  // link must never open the donor portal and a portal link must never charge a
+  // card. DEFAULT 'portal' is what every existing row is.
+  await pool.query(`ALTER TABLE portal_magic_links ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'portal'`);
+
+  // ── GIVE-2 §6 — THE MONTHLY SUGGESTION THE ORG NAMES ─────────────────────
+  // BUILD-102 made the THRESHOLD the org's and left the suggested monthly
+  // amount derived (a third of the gift). An org that knows its own sustainer
+  // tier should be able to name it. NULL keeps the derived third, which is what
+  // every org has today.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS form_upsell_monthly_cents INTEGER`);
+  // Every gift a giving source already imported DID state its fee, so the
+  // backfill is factual rather than a guess: those rows have a source.
+  await pool.query(`UPDATE gifts SET processor_fee_source='provider'
+                     WHERE processor_fee_source IS NULL AND giving_source_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

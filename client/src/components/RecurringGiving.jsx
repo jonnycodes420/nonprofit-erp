@@ -501,6 +501,113 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
   );
 }
 
+// ── GIVE-2 §7 · FAILED-CARD RECOVERY, SHOWN ────────────────────────────────
+// The recovery engine has been running since BUILD-63 and the only thing it
+// showed for its work was a RATE — a percentage, with nothing behind it. A
+// percentage is the one shape of number a fundraiser can neither act on nor
+// check.
+//
+// Three figures for the year, each one OPENING the rows it counted. The money
+// figure's rows are GIFTS — the same rows every other giving total counts — so
+// it foots against Reports rather than standing beside it. Every definition is
+// the server's, so the sentence on screen and the SQL behind it cannot drift.
+function RecoveryPanel({ onNavigate }) {
+  const [data, setData] = useState(null);
+  const [open, setOpen] = useState(null);     // "failed" | "recovered" | "dollars" | null
+
+  useEffect(() => {
+    apiFetch("/recurring/recovery").then(setData).catch(() => setData(false));
+  }, []);
+
+  if (data === false) return null;
+  if (!data) return null;
+  const { failed, recovered, dollars } = data;
+  // Nothing to say is said with nothing. An org whose cards have never failed
+  // does not need a panel of zeroes explaining what did not happen.
+  if (!failed.count && !recovered.count && !dollars.cents) return null;
+
+  const figure = (key, label, value, def) => (
+    <button onClick={() => setOpen(o => (o === key ? null : key))}
+      aria-expanded={open === key}
+      className={`rec-fig rec-fig-${key}`}
+      style={{ flex: "1 1 170px", textAlign: "left", background: "transparent",
+               border: `1px solid ${open === key ? T.ink : T.bg3}`, borderRadius: 10,
+               padding: "12px 14px", cursor: "pointer", font: "inherit" }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontVariantNumeric: "tabular-nums", marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{def}</div>
+    </button>
+  );
+
+  const row = (children, k) => (
+    <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap",
+                          padding: "6px 0", borderTop: `1px solid ${T.bg2}`, fontSize: 13 }}>
+      {children}
+    </div>
+  );
+  const donor = (id, name) => (
+    <DonorLink id={id} onOpen={() => onNavigate && onNavigate("donors", { selectDonorId: id })}
+      style={{ background: "transparent", border: "none", padding: 0, fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>
+      {name}
+    </DonorLink>
+  );
+
+  return (
+    <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "14px 18px" }}>
+      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
+        Cards that failed in {data.year}
+      </div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {figure("failed", "Failed", String(failed.count), failed.definition)}
+        {figure("recovered", "Came back", String(recovered.count), recovered.definition)}
+        {figure("dollars", "Recovered", money(dollars.cents / 100), dollars.definition)}
+      </div>
+
+      {open === "failed" && (
+        <div className="rec-rows" style={{ marginTop: 12 }}>
+          {failed.rows.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>No rows.</div> : failed.rows.map(r => row(<>
+            {donor(r.donorId, r.donorName)}
+            <span style={{ color: T.ink3 }}>{money(r.amount)}{per(r.interval)} · first failed {fmtDate(r.firstFailedAt)}
+              {r.failureCount > 1 ? ` · ${r.failureCount} attempts` : ""} · {STATUS_META[r.status]?.label || r.status}</span>
+          </>, r.subscriptionId))}
+        </div>
+      )}
+      {open === "recovered" && (
+        <div className="rec-rows" style={{ marginTop: 12 }}>
+          {recovered.rows.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>No rows.</div> : recovered.rows.map(r => row(<>
+            {donor(r.donorId, r.donorName)}
+            <span style={{ color: T.ink3 }}>{money(r.amount)}{per(r.interval)} · came back {fmtDate(r.recoveredAt)}</span>
+          </>, r.subscriptionId))}
+        </div>
+      )}
+      {open === "dollars" && (
+        <div className="rec-rows" style={{ marginTop: 12 }}>
+          {dollars.rows.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>No rows.</div> : <>
+            {dollars.rows.map(g => row(<>
+              {donor(g.donorId, g.donorName)}
+              <span style={{ color: T.ink3 }}>{fmtDate(g.date)} · {money(g.grossCents / 100)} charged
+                {g.coveredCents ? ` · ${money(g.coveredCents / 100)} of it covering the fee` : ""}
+                {/* GIVE-2 §5 — "nothing was taken" and "nobody has told us yet"
+                    are different facts and this is where they stop looking the
+                    same. `feeKnown` is `gifts.processor_fee_source`. */}
+                {g.feeKnown ? ` · ${money(g.feeCents / 100)} fee · ${money(g.netCents / 100)} received` : " · fee not yet read"}</span>
+            </>, g.id))}
+            {/* IT FOOTS. The figure above is the sum of these rows' charged
+                amounts, printed here rather than assumed. */}
+            <div style={{ display: "flex", gap: 10, padding: "8px 0 0", borderTop: `1px solid ${T.bg3}`,
+                          marginTop: 4, fontSize: 12.5, color: T.ink2, fontWeight: 700 }}>
+              <span>{dollars.rows.length} {dollars.rows.length === 1 ? "gift" : "gifts"}</span>
+              <span style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}>
+                {money(dollars.rows.reduce((a, g) => a + g.grossCents, 0) / 100)}
+              </span>
+            </div>
+          </>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function RecurringView({ onNavigate, isReadOnly }) {
   const [roster, setRoster] = useState(null);
   const [movement, setMovement] = useState(null);
@@ -606,6 +713,10 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       )}
 
       <MovementSummary movement={movement} />
+      {/* GIVE-2 §7 — what the recovery engine actually did this year, with the
+          rows behind every figure. Renders nothing at all for an org whose
+          cards have never failed. */}
+      <RecoveryPanel onNavigate={onNavigate} />
       <AtRiskQueue subs={atRisk} isReadOnly={isReadOnly} onAction={doAction} />
 
       {invitations.length > 0 && (

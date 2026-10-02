@@ -54,6 +54,9 @@ const {
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
+  // GIVE-2 — see routes/give.js's note on the same four.
+  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,
   grantDocs, grantMoneyRows, grantMsMod, hashApiKey, imageBytesMatchMime, inboundMod, insertShift,
   inviteeDisplayName, issueGiftReceipt, levelTaken, loadCfDefs, lookupMatchingGift,
@@ -1957,8 +1960,54 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
       await run(`UPDATE orgs SET form_upsell_threshold_cents=? WHERE id=?`, [c, req.params.id]);
     }
   }
+  // GIVE-2 §6 — the monthly amount the org suggests when it asks a one-time
+  // donor to make it monthly. NULL goes back to a third of the gift.
+  if (req.body.upsellMonthlyCents !== undefined) {
+    const F = await formConfigMod();
+    const raw = req.body.upsellMonthlyCents;
+    if (raw === null || raw === "") {
+      await run(`UPDATE orgs SET form_upsell_monthly_cents=NULL WHERE id=?`, [req.params.id]);
+    } else {
+      const c = Number(raw);
+      if (!Number.isInteger(c) || c < F.UPSELL_MIN_MONTHLY_CENTS) {
+        return res.status(400).json({ code: "bad_upsell_monthly",
+          error: `A suggested monthly amount is a whole number of cents, at least ${F.UPSELL_MIN_MONTHLY_CENTS}.` });
+      }
+      await run(`UPDATE orgs SET form_upsell_monthly_cents=? WHERE id=?`, [c, req.params.id]);
+    }
+  }
   if (req.body.coverFeesEnabled !== undefined) {
     await run(`UPDATE orgs SET cover_fees_enabled=? WHERE id=?`, [!!req.body.coverFeesEnabled, req.params.id]);
+  }
+
+  // ── GIVE-2 §5 — THE ORG'S OWN PROCESSING RATES ────────────────────────────
+  // What the cover-the-fee box ASKS for. Until this existed it was Stripe's
+  // published card rate hard-coded in three files, which is wrong in the
+  // expensive direction for an org on Stripe's nonprofit rate (2.2%) and for
+  // every bank transfer (0.8% capped at $5).
+  //
+  // A percentage is TYPED AS A PERCENTAGE and stored as a fraction — an org
+  // reads "2.2" off its Stripe dashboard, and a screen that took 2.2 to mean
+  // 220% would ask a donor to cover three times their gift. The conversion and
+  // the range check are both in `shared/processingRates.js`, which is also what
+  // the gross-up reads, so a rate the settings screen accepted cannot be a rate
+  // the form refuses.
+  //
+  // `null` for a kind means "go back to Stripe's published rate", which is where
+  // every org starts.
+  if (req.body.processingRates !== undefined) {
+    const R = await ratesMod();
+    const v = R.validateRates(req.body.processingRates);
+    if (!v.ok) return res.status(400).json({ code: "bad_processing_rate", error: v.errors[0].message, errors: v.errors });
+    for (const [kind, rate] of Object.entries(v.rates)) {
+      if (kind === "card") {
+        await run(`UPDATE orgs SET fee_rate_card_pct=?, fee_rate_card_flat_cents=? WHERE id=?`,
+          [rate ? rate.pct : null, rate ? rate.flatCents : null, req.params.id]);
+      } else if (kind === "ach") {
+        await run(`UPDATE orgs SET fee_rate_ach_pct=?, fee_rate_ach_flat_cents=?, fee_rate_ach_cap_cents=? WHERE id=?`,
+          [rate ? rate.pct : null, rate ? rate.flatCents : null, rate ? rate.capCents : null, req.params.id]);
+      }
+    }
   }
 
   // BUILD-81 — the thread-nudge weekend toggle (org-level; the nudge itself
@@ -17114,7 +17163,11 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // the org's white-label display name (portal_settings.display_name) when
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(
-    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
+    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+          o.form_upsell_monthly_cents,
+          o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
+          o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+          ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
     [req.params.orgSlug]
   );
@@ -17127,7 +17180,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // Listing is already public via the directory, so this reveals nothing new.
   const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
   // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!gaEntry, theme: giveThemePayload(org) }, funds });
+  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org) }, funds });
 }));
 
 // Public — org info + giving page + real live progress. Same shape as
@@ -17150,7 +17203,11 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
 }));
 
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+          o.form_upsell_monthly_cents,
+          o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
+          o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+          ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -17196,7 +17253,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -17221,10 +17278,23 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       // BUILD-102 Part 1 — THE FORM THE DONOR IS OFFERED, from the same
       // `formSpec` the editor's preview renders. Not a second shape derived from
       // the same row: the same function, so the two cannot drift.
-      form: (await formConfigMod()).specForVariant(page.form_config, page.ab_test, req.query.v, {
-        funds: funds.map(f => ({ id: f.id, name: f.name })),
-        orgName: org.donor_facing_name,
-      }),
+      // GIVE-2 §3 — AND THE AMOUNTS THE FORM OFFERS THIS VISITOR. The one
+      // place a computed ladder replaces a typed one, so the editor's preview,
+      // the embedded form and the page a stranger opens from a QR code cannot
+      // disagree about which answer the donor is reading. A form with
+      // `smartAmounts` off, or with too few gifts to tell, comes back
+      // byte-for-byte as `formSpec` built it.
+      //
+      // The browser walk caught this: `/forms/:id/public` had it and THIS
+      // payload did not, so the public giving page — the one a donor actually
+      // opens — still showed Steward's $25/$50/$100/$250 guess.
+      form: await withSmartAmounts(
+        (await formConfigMod()).specForVariant(page.form_config, page.ab_test, req.query.v, {
+          funds: funds.map(f => ({ id: f.id, name: f.name })),
+          orgName: org.donor_facing_name,
+        }),
+        { orgId: org.id, givingPageId: page.id,
+          personalToken: req.query.reconnect || req.query.r || null }),
       // BUILD-102 Part 6 — whether a test is running, so a first-time visitor can
       // be assigned a side WITHOUT a cookie being set on every form that has none.
       // A cookie nobody needs is a cookie somebody has to explain in a policy.
@@ -17235,6 +17305,10 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       upsellThresholdCents: org.form_upsell_threshold_cents != null
         ? Number(org.form_upsell_threshold_cents)
         : (await formConfigMod()).UPSELL_DEFAULT_THRESHOLD_CENTS,
+      // GIVE-2 §6 — and the monthly amount the org suggests, when it named one.
+      // Null keeps a third of the gift, which is what every org had before.
+      upsellMonthlyCents: org.form_upsell_monthly_cents != null
+        ? Number(org.form_upsell_monthly_cents) : null,
     },
     funds,
     peerFundraisers: {
@@ -17447,7 +17521,11 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
+          o.form_upsell_monthly_cents,
+          o.fee_rate_card_pct, o.fee_rate_card_flat_cents,
+          o.fee_rate_ach_pct, o.fee_rate_ach_flat_cents, o.fee_rate_ach_cap_cents,
+          ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -17469,7 +17547,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,

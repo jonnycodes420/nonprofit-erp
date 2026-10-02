@@ -72,6 +72,12 @@ export const DEFAULT_AMOUNTS_CENTS = [2500, 5000, 10000, 25000];
 
 export const DEFAULT_CONFIG = Object.freeze({
   amountsCents: [...DEFAULT_AMOUNTS_CENTS],
+  // GIVE-2 §3 — whether the form may compute its own amounts instead of showing
+  // the four above. OFF by default, because the four above are what a
+  // fundraiser typed and a median does not get to overrule somebody's decision.
+  // `shared/smartAmounts.js` holds the arithmetic and the sentence; this is only
+  // the switch. See DEFAULT_AMOUNTS_CENTS's own note.
+  smartAmounts: false,
   allowOther: true,
   defaultFrequency: DEFAULT_FREQUENCY,
   offerMonthly: true,
@@ -132,6 +138,10 @@ export function validateFormConfig(raw, { orgFundIds = [], existingQuestionKeys 
   if (input.allowOther !== undefined) {
     if (typeof input.allowOther !== "boolean") errors.push({ field: "allowOther", message: "Whether a donor may type their own amount is yes or no." });
     else out.allowOther = input.allowOther;
+  }
+  if (input.smartAmounts !== undefined) {
+    if (typeof input.smartAmounts !== "boolean") errors.push({ field: "smartAmounts", message: "Whether Steward chooses the amounts is yes or no." });
+    else out.smartAmounts = input.smartAmounts;
   }
   if (out.allowOther === false && (!out.amountsCents || !out.amountsCents.length)) {
     errors.push({ field: "amountsCents", message: "With no suggested amounts and no box to type one in, nobody can give." });
@@ -321,6 +331,14 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
     steps: STEPS.map(s => ({ ...s })),
     amount: {
       amountsCents: [...c.amountsCents],
+      // GIVE-2 §3 — the SWITCH travels in the spec, and the computed ladder
+      // does not: this module is pure and a donor's giving history is a fact
+      // about the database. `GET /forms/:id/public` replaces `amountsCents`
+      // when this is on and it has something honest to replace it with, and
+      // says in `amountsSource` which answer the donor is looking at.
+      smartAmounts: c.smartAmounts,
+      amountsSource: "form",
+      amountsSentence: "",
       allowOther: c.allowOther,
       frequencies: c.offerMonthly ? [...FREQUENCIES] : ["once"],
       defaultFrequency: c.offerMonthly ? c.defaultFrequency : "once",
@@ -432,8 +450,16 @@ export function monthlySuggestionCents(oneTimeCents) {
   return dollars * 100;
 }
 
+// GIVE-2 §6 — THE ORG MAY NAME THE SUGGESTION. A third of the gift is a good
+// default and it is still the default; it is not always the right ask. A
+// children's charity that knows $25 a month is the sustainer tier it actually
+// wants should be able to say $25 a month rather than have the form derive
+// $33 from a $100 gift. `suggestMonthlyCents` is that number when the org set
+// one, and it is used AS IS: it is a deliberate ask, so it is not re-rounded
+// and not scaled by the gift.
 export function upsellFor(oneTimeCents, { thresholdCents = UPSELL_DEFAULT_THRESHOLD_CENTS,
-                                          offerMonthly = true, frequency = "once" } = {}) {
+                                          offerMonthly = true, frequency = "once",
+                                          suggestMonthlyCents = null } = {}) {
   const c = Number(oneTimeCents);
   const threshold = Number.isInteger(Number(thresholdCents)) ? Number(thresholdCents) : UPSELL_DEFAULT_THRESHOLD_CENTS;
   // A MONTHLY GIFT IS NEVER UPSOLD. It is already the thing being asked for, and
@@ -441,9 +467,12 @@ export function upsellFor(oneTimeCents, { thresholdCents = UPSELL_DEFAULT_THRESH
   if (frequency !== "once") return { offer: false, why: "already_recurring" };
   if (!offerMonthly) return { offer: false, why: "monthly_not_offered" };
   if (!Number.isInteger(c) || c < threshold) return { offer: false, why: "below_threshold" };
-  const monthlyCents = monthlySuggestionCents(c);
+  const chosen = Number(suggestMonthlyCents);
+  const fromOrg = Number.isInteger(chosen) && chosen >= UPSELL_MIN_MONTHLY_CENTS;
+  const monthlyCents = fromOrg ? chosen : monthlySuggestionCents(c);
   if (!monthlyCents || monthlyCents < UPSELL_MIN_MONTHLY_CENTS) return { offer: false, why: "suggestion_too_small" };
-  return { offer: true, monthlyCents, annualCents: monthlyCents * 12, why: null };
+  return { offer: true, monthlyCents, annualCents: monthlyCents * 12,
+           from: fromOrg ? "org" : "a_third_of_the_gift", why: null };
 }
 
 // The sentence, which states the arithmetic rather than selling it. `fm` takes

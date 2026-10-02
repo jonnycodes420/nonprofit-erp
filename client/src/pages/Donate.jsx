@@ -1,4 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
+// GIVE-2 §5 — the one place the gross-up arithmetic lives, shared with the
+// server (`routes/give.js` reads the same module for the charge).
+import * as RATES from "../../../shared/processingRates.js";
 import { useParams } from "react-router-dom";
 import { API } from "../api";
 import { T, fmtMoney } from "./publicTheme";
@@ -45,17 +48,32 @@ function defaultTierIndex(ladder) {
   return ladder.length > 1 ? 1 : 0;
 }
 
+// `en-US`, NAMED — EVENTS-2's rule. `toLocaleString(undefined, …)` flips the
+// separator in half of Europe, and `$25.000` beside a dollar sign reads as
+// twenty-five dollars on the one page where that matters most.
 function fmtAmt(n) {
   const v = Math.round((Number(n) || 0) * 100) / 100;
-  return v % 1 === 0 ? "$" + v.toLocaleString() : "$" + v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const whole = v % 1 === 0;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD",
+    minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2,
+  }).format(v);
 }
 
-// Donor-covers-fees display math — MUST mirror coverFeesGrossUpCents in
-// server.js (2.9% + 30¢ standard card rate). Display only: the server
-// re-derives the charged amount from the base + boolean and never trusts
-// a client-computed total.
-function grossUpCents(baseCents) {
-  return Math.ceil((baseCents + 30) / (1 - 0.029));
+// ── GIVE-2 §5 — THE DISPLAY MATH IS THE ORG'S RATE NOW ────────────────────
+// This was a hand-copied mirror of two constants in server.js, which is how it
+// came to be wrong for every org not on Stripe's published card rate: an org on
+// the nonprofit rate pays 2.2% and this page asked the donor to cover 2.9%.
+//
+// The arithmetic now comes from `shared/processingRates.js`, the same module the
+// server grosses up with, and the RATE comes off the public payload
+// (`org.feeRate`). Still display only: the server re-derives the charge from the
+// base amount and the boolean, and never trusts a total a client computed.
+// A payload without a rate falls back to the published default, which is what
+// this function always used.
+function grossUpWith(feeRate) {
+  const rate = feeRate && Number.isFinite(Number(feeRate.pct)) ? feeRate : RATES.DEFAULT_RATES.card;
+  return baseCents => RATES.grossUpCents(baseCents, rate);
 }
 
 // Resolve the org's theme into concrete colors/fonts. Called with org?.theme,
@@ -342,6 +360,21 @@ export default function Donate() {
   const [showStartFundraiser, setShowStartFundraiser] = useState(false);
   const [justCreatedEmailSent, setJustCreatedEmailSent] = useState(null);
   const [justCreatedDemoNote, setJustCreatedDemoNote] = useState("");
+  // ── GIVE-2 §4 — EXPRESS GIVING ───────────────────────────────────────────
+  // A donor arriving on `?express=<token>` has already saved a card with THIS
+  // organisation and asked for a one-tap link. The token is consumed by a POST
+  // (a GET may never change state, and a mail client follows every link it is
+  // given), which hands back a twenty-minute claim and the donor's own ladder.
+  const [express, setExpress] = useState(null);      // null = not an express visit
+  const [expressErr, setExpressErr] = useState("");
+  const [expressAmt, setExpressAmt] = useState(null);
+  const [expressCover, setExpressCover] = useState(false);   // opt-in, never pre-ticked
+  const [expressBusy, setExpressBusy] = useState(false);
+  const [expressDone, setExpressDone] = useState("");
+  // ── GIVE-2 §8 — the employers this organisation knows match, shown on the
+  // page the gift just landed on. Public information (each company's own
+  // published policy and its own form link): no donor, no gift, no amount.
+  const [matchEmployers, setMatchEmployers] = useState(null);
 
   // BUILD-60 Part 2 — RECURRING IS THE HERO. Frequency comes first and Monthly
   // is pre-selected; the amount ladder is per-frequency; the second tier of the
@@ -398,6 +431,17 @@ export default function Donate() {
   // "Rendered more hooks than during the previous render" on the loading→loaded
   // transition — the BUILD-30 defect, and the `rules-of-hooks` gate caught this
   // exact line before it could reach a browser.
+  // GIVE-2 §8 — fetched only once a gift has landed, because it is only shown
+  // then. A page a stranger opens from a flyer does not need it and should not
+  // pay for it.
+  useEffect(() => {
+    if (!donated || matchEmployers !== null) return;
+    fetch(`${API}/org/${orgSlug}/matching-employers`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setMatchEmployers(d && Array.isArray(d.employers) ? d : { employers: [] }))
+      .catch(() => setMatchEmployers({ employers: [] }));
+  }, [donated, orgSlug, matchEmployers]);
+
   useEffect(() => {
     if (!donated || !thanks.redirectUrl) return;
     const t = setTimeout(() => { window.location.href = thanks.redirectUrl; }, 3000);
@@ -419,6 +463,25 @@ export default function Donate() {
     if (params.get("card_updated") === "true") {
       setCardUpdated(true);
       window.history.replaceState({}, "", basePath);
+    }
+    // GIVE-2 §4 — the one-tap link. The token leaves the URL immediately: it is
+    // single-use and already spent by the time this resolves, and a spent token
+    // sitting in somebody's history or in a referrer header is nobody's friend.
+    const ex = params.get("express");
+    if (ex) {
+      window.history.replaceState({}, "", basePath);
+      fetch(`${API}/express/${orgSlug}/open`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: ex }),
+      })
+        .then(r => r.json().then(d => ({ ok: r.ok, d })))
+        .then(({ ok, d }) => {
+          if (!ok) { setExpressErr(d.message || "That link has expired. Ask for a fresh one."); setExpress(false); return; }
+          setExpress(d);
+          const i = Number.isInteger(d.defaultIndex) ? d.defaultIndex : 0;
+          setExpressAmt((d.amountsCents || [])[i] ?? (d.amountsCents || [])[0] ?? null);
+        })
+        .catch(() => { setExpressErr("Steward could not reach the server. Please try the link again."); setExpress(false); });
     }
     if (params.get("fundraiser_created") === "true") {
       setJustCreatedEmailSent(params.get("email_sent") === "true");
@@ -520,6 +583,9 @@ export default function Donate() {
     setCustomAmt("");
   }
 
+  // GIVE-2 §5 — this org's own gross-up, from the rate the public payload
+  // carried. Declared above every line that reads it (the TDZ rule).
+  const grossUpCents = grossUpWith(org?.feeRate);
   const effectiveAmount = isCustom ? parseFloat(customAmt) || 0 : (preset || 0);
   const baseCents = Math.round(effectiveAmount * 100);
   const feeCents = baseCents >= 100 ? grossUpCents(baseCents) - baseCents : 0;
@@ -614,6 +680,116 @@ export default function Donate() {
     </div>
   );
 
+  // ── GIVE-2 §4 · THE ONE-TAP SCREEN ───────────────────────────────────────
+  // It REPLACES the form rather than sitting beside it. A donor who followed a
+  // one-tap link has already decided; a page that also shows them a three-step
+  // form is a page that has not read its own link. There is no card field here
+  // and there never will be: the card lives on the organisation's own Stripe
+  // account and is charged by its id.
+  if (express !== null && !donated) {
+    const ex = express || {};
+    const exBase = Math.round(Number(expressAmt) || 0);
+    const exFee = exBase >= 100 ? grossUpCents(exBase) - exBase : 0;
+    const exCharged = ex.coverFeesEnabled && expressCover ? exBase + exFee : exBase;
+    const give = async () => {
+      setExpressErr(""); setExpressBusy(true);
+      try {
+        const r = await fetch(`${API}/express/${orgSlug}/charge`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session: ex.session, amount: exBase / 100, coverFees: !!(ex.coverFeesEnabled && expressCover) }),
+        });
+        const d = await r.json();
+        if (!r.ok) { setExpressErr(d.message || "That did not go through."); return; }
+        setExpressDone(d.message || "Thank you.");
+      } catch { setExpressErr("Steward could not reach the server. Nothing has been charged."); }
+      finally { setExpressBusy(false); }
+    };
+    return (
+      <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
+        <div className="express-card" style={{ ...card, width: "100%", maxWidth: 420, padding: "26px 24px", textAlign: "left" }}>
+          {expressDone ? (
+            <>
+              <div style={{ fontSize: 24, fontWeight: 800, color: T.ink, fontFamily: th.serif, marginBottom: 8 }}>Thank you.</div>
+              <div className="express-done" style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6 }}>{expressDone}</div>
+              <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginTop: 10 }}>
+                A receipt is on its way to your email.
+              </div>
+            </>
+          ) : express === false ? (
+            <>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: th.serif, marginBottom: 8 }}>
+                That link has run out
+              </div>
+              <div className="express-expired" style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, marginBottom: 14 }}>
+                {expressErr || "One-tap links work once, for fifteen minutes."}
+              </div>
+              <a href={basePath} style={{ display: "inline-block", background: th.primary, color: th.primaryFg,
+                   textDecoration: "none", borderRadius: 8, padding: "11px 20px", fontSize: 14, fontWeight: 700 }}>
+                Give the usual way
+              </a>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: th.serif, marginBottom: 6 }}>
+                {ex.firstName ? `Welcome back, ${ex.firstName}.` : "Welcome back."}
+              </div>
+              <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, marginBottom: 16 }}>
+                One tap gives to {ex.orgName || org?.name || "this organisation"} using
+                {" "}{ex.card?.last4 ? `your ${ex.card.brand || "card"} ending ${ex.card.last4}` : "the card you saved"}.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 8, marginBottom: 8 }}>
+                {(ex.amountsCents || []).map(c => (
+                  <button key={c} type="button" className="express-amt" data-cents={c}
+                    aria-pressed={expressAmt === c} onClick={() => setExpressAmt(c)}
+                    style={{ padding: "12px 0", borderRadius: 8, cursor: "pointer", fontSize: 16, fontWeight: 700,
+                             border: "1px solid " + (expressAmt === c ? th.primary : "rgba(0,0,0,0.14)"),
+                             background: expressAmt === c ? th.primary : "transparent",
+                             color: expressAmt === c ? th.primaryFg : T.ink }}>
+                    {fmtAmt(c / 100)}
+                  </button>
+                ))}
+              </div>
+              {/* WHERE THESE AMOUNTS CAME FROM, in the server's words. */}
+              {ex.amountsSentence ? (
+                <div className="express-why" style={{ fontSize: 12, color: T.ink3, marginBottom: 12, lineHeight: 1.5 }}>
+                  {ex.amountsSentence}
+                </div>
+              ) : null}
+              {ex.coverFeesEnabled && exBase >= 100 ? (
+                <label className="express-cover" style={{ display: "block", fontSize: 13, color: T.ink2, marginBottom: 14 }}>
+                  <input type="checkbox" checked={expressCover} onChange={e => setExpressCover(e.target.checked)} />{" "}
+                  Add {fmtAmt(exFee / 100)} to cover the card fee.
+                  {ex.coverFeeRateSentence ? (
+                    <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 3, marginLeft: 22 }}>
+                      Card processing is {ex.coverFeeRateSentence}.
+                    </span>
+                  ) : null}
+                </label>
+              ) : null}
+              {expressErr ? (
+                <div className="express-err" style={{ fontSize: 13, color: T.gold, marginBottom: 10, lineHeight: 1.5 }}>{expressErr}</div>
+              ) : null}
+              <button type="button" className="express-give" onClick={give} disabled={expressBusy || !exBase}
+                style={{ width: "100%", padding: "14px 0", borderRadius: 10, border: "none",
+                         cursor: expressBusy ? "default" : "pointer", background: th.primary, color: th.primaryFg,
+                         fontSize: 16, fontWeight: 700, fontFamily: th.sans, opacity: expressBusy ? 0.6 : 1 }}>
+                {expressBusy ? "One moment…" : `Give ${fmtAmt(exCharged / 100)}`}
+              </button>
+              <a href={basePath} className="express-other" style={{ display: "block", marginTop: 12, fontSize: 13,
+                   color: th.primary, textAlign: "center" }}>
+                Use a different card or amount
+              </a>
+              <div style={{ fontSize: 12, color: T.ink3, marginTop: 14, lineHeight: 1.5 }}>
+                {ex.definition}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (donated) return (
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
@@ -645,6 +821,35 @@ export default function Donate() {
       {thanks.redirectUrl ? (
         <div className="thanks-redirect" style={{ marginTop: 18, fontSize: 13, color: T.ink3 }}>
           Taking you back to <a href={thanks.redirectUrl} style={{ color: T.greenDk }}>{new URL(thanks.redirectUrl).hostname}</a> in a moment.
+        </div>
+      ) : null}
+      {/* ── GIVE-2 §8 · DOES YOUR EMPLOYER MATCH? ─────────────────────────
+          The employers THIS organisation knows match, each with the company's
+          own form link. Typed by staff: no vendor, no lookup service, no
+          guessing, and nothing shown at all until an org has typed one.
+          A donor who works at one of these can double the gift they just made
+          in about two minutes, which is the highest-return thing this page can
+          possibly say to them. */}
+      {matchEmployers && matchEmployers.employers.length ? (
+        <div className="thanks-match" style={{ marginTop: 28, padding: "16px 22px", background: T.white,
+             border: `1px solid ${T.bg2}`, borderRadius: 12, maxWidth: 400, textAlign: "left" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 6 }}>
+            {matchEmployers.heading || "Your gift could be worth twice as much"}
+          </div>
+          <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6, marginBottom: 10 }}>
+            These employers match their staff&rsquo;s gifts to {org.name}. If yours is one of them, their own form takes a couple of minutes.
+          </div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {matchEmployers.employers.map(e => (
+              <li key={e.name} style={{ fontSize: 13, color: T.ink2, lineHeight: 1.7 }}>
+                {e.form_url ? (
+                  <a href={e.form_url} target="_blank" rel="noopener noreferrer"
+                     style={{ color: T.greenDk, fontWeight: 600 }}>{e.name}</a>
+                ) : <strong style={{ color: T.ink }}>{e.name}</strong>}
+                {e.ratio ? <span style={{ color: T.ink3 }}> &middot; matches {e.ratio}</span> : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
       {org.givingAccount && (
@@ -907,6 +1112,8 @@ export default function Donate() {
             theme={th}
             coverFeesEnabled={org?.coverFeesEnabled}
             upsellThresholdCents={givingPage?.upsellThresholdCents}
+            upsellMonthlyCents={givingPage?.upsellMonthlyCents}
+            feeRateSentence={org?.feeRateSentence}
             grossUpCents={grossUpCents}
             submitting={submitting}
             submitErr={submitErr}
