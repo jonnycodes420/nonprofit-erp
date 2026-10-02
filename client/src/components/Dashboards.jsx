@@ -97,7 +97,10 @@ export function GivingLine({ m }) {
   const pts = Array.isArray(m?.value) ? m.value : [];
   if (!pts.length) return null;
   const W = 640, H = 210, L = 12, R = 12, TOP = 14, BOT = 30;
-  const max = Math.max(1, ...pts.flatMap(p => [p.thisYear?.value || 0, p.lastYear?.value || 0]));
+  // PARITY-1 Part C — a third year (the year before last) when the series
+  // carries one, in ink's grey, dotted, under the other two.
+  const third = pts.some(p => p.yearBefore);
+  const max = Math.max(1, ...pts.flatMap(p => [p.thisYear?.value || 0, p.lastYear?.value || 0, p.yearBefore?.value || 0]));
   const x = i => L + (i * (W - L - R)) / Math.max(1, pts.length - 1);
   const y = v => TOP + (H - TOP - BOT) * (1 - (Number(v) || 0) / max);
   const line = key => pts.map((p, i) => (p[key] ? `${x(i)},${y(p[key].value)}` : null)).filter(Boolean).join(" ");
@@ -115,13 +118,21 @@ export function GivingLine({ m }) {
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 16, height: 3, background: T.gold, display: "inline-block", borderRadius: 2 }} />Last year
         </span>
+        {third && <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ width: 16, height: 0, borderTop: "2px dotted " + T.ink3, display: "inline-block" }} />The year before
+        </span>}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={m.definition} style={{ display: "block", overflow: "visible" }}>
         <line x1={L} x2={W - R} y1={H - BOT} y2={H - BOT} stroke={T.bg3} strokeWidth={1} />
+        {third && <polyline points={line("yearBefore")} fill="none" stroke={T.ink3} strokeWidth={2} strokeDasharray="2 4" />}
         <polyline points={line("lastYear")} fill="none" stroke={T.gold} strokeWidth={2.5} strokeDasharray="6 5" />
         <polyline points={line("thisYear")} fill="none" stroke={T.greenDk} strokeWidth={3} />
         {pts.map((p, i) => (
           <text key={p.month} x={x(i)} y={H - 10} textAnchor="middle" fontSize={12} fill={T.ink3}>{p.label}</text>
+        ))}
+        {pts.map((p, i) => p.yearBefore && (
+          <Figure key={"b" + p.month} variant="point" figureKey={"before-" + p.month} cx={x(i) + 2 * split(p)} cy={y(p.yearBefore.value)} r={4}
+            color={T.ink3} value={p.yearBefore.value} kind="money" label={p.yearBefore.label} definition={m.definition} source={p.yearBefore.source} />
         ))}
         {pts.map((p, i) => p.lastYear && (
           <Figure key={"l" + p.month} variant="point" figureKey={"last-" + p.month} cx={x(i) + split(p)} cy={y(p.lastYear.value)} r={4.5}
@@ -211,13 +222,103 @@ export function GoalRow({ r, first }) {
   );
 }
 
+// PARITY-1 Part C · GIVING BY LEVEL. One bar per level, its length the share
+// of the last 12 months' giving; the amount and the head count each open the
+// donors at that level.
+export function LevelBars({ m }) {
+  if (!m) return null;
+  const rows = Array.isArray(m.value) ? m.value : [];
+  const total = rows.reduce((t, r) => t + Math.max(0, Number(r.value) || 0), 0);
+  return (
+    <section className="dash-card" data-testid="dash-giving-level">
+      <Eyebrow>{m.label}<Def text={m.definition} /></Eyebrow>
+      {rows.length === 0 || total === 0
+        ? <div style={{ fontSize: 13, color: T.ink3 }}>Nobody has given in the last 12 months.</div>
+        : rows.map((r, i) => {
+          const n = (r.also || []).find(a => a.key === "count");
+          const w = total > 0 ? Math.max(0, Math.min(100, (Math.max(0, Number(r.value) || 0) / total) * 100)) : 0;
+          return (
+            <div key={r.key} style={{ padding: "10px 0", borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{r.label}</span>
+                <span style={{ fontSize: 13.5, color: T.ink }}>
+                  <Figure variant="cell" figureKey={"level-" + r.key} value={r.value} kind="money" label={`${r.label} · given in the last 12 months`}
+                    definition={r.definition} source={r.source} />
+                  {n && <> · <Figure variant="cell" figureKey={"level-n-" + r.key} value={n.value} kind="count" label={n.label}
+                    definition={n.definition} source={n.source} /> {n.value === 1 ? "person" : "people"}</>}
+                </span>
+              </div>
+              <div style={{ height: 8, background: T.bg2, borderRadius: 99, marginTop: 7, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: w + "%", background: T.greenDk, borderRadius: 99 }} />
+              </div>
+            </div>
+          );
+        })}
+    </section>
+  );
+}
+
+// PARITY-1 Part C · RETENTION, WITH A CHOICE OF DEFINITION. The server sends
+// all three; the selector only chooses which one is read. Each is a ratio
+// figure, and its two halves open their people.
+export function RetentionChoice({ m }) {
+  const opts = Array.isArray(m?.value) ? m.value : [];
+  const [pick, setPick] = useState(() => {
+    try { return localStorage.getItem("steward.dash.retention") || "calendar"; } catch { return "calendar"; }
+  });
+  if (!opts.length) return null;
+  const cur = opts.find(o => o.key === pick) || opts[0];
+  const choose = k => { setPick(k); try { localStorage.setItem("steward.dash.retention", k); } catch { /* per-viewer only */ } };
+  const kept = (cur.also || []).find(a => a.key === "kept"), prior = (cur.also || []).find(a => a.key === "prior");
+  return (
+    <section className="dash-card" data-testid="dash-retention-choice">
+      <Eyebrow>{m.label}<Def text={m.definition} /></Eyebrow>
+      <div role="radiogroup" aria-label="How retention is measured" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        {opts.map(o => {
+          const on = o.key === cur.key;
+          return (
+            <button key={o.key} role="radio" aria-checked={on} data-retention-def={o.key} onClick={() => choose(o.key)}
+              style={{ border: "1px solid " + (on ? T.greenDk : T.bg3), background: on ? T.bg2 : "transparent", color: on ? T.greenDk : T.ink,
+                       borderRadius: 99, padding: "5px 12px", fontSize: 12.5, fontWeight: on ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+      <div className="dash-tiles">
+        <Figure variant="tile" figureKey={"retention-" + cur.key} value={cur.value} kind="percent" label={`Retention · ${cur.label}`}
+          definition={cur.definition} source={cur.source} blank={cur.blank} blankShort={cur.blankShort}
+          sub={kept && prior && prior.value > 0 ? (
+            <>
+              <Figure variant="inline" figureKey={"ret-kept-" + cur.key} value={kept.value} kind="count" label={kept.label}
+                definition={kept.definition} source={kept.source} /> of the{" "}
+              <Figure variant="inline" figureKey={"ret-prior-" + cur.key} value={prior.value} kind="count" label={prior.label}
+                definition={prior.definition} source={prior.source} /> people gave again.
+            </>
+          ) : null} />
+      </div>
+      <div style={{ fontSize: 12, color: T.ink3, marginTop: 8, lineHeight: 1.5 }}>{cur.definition}</div>
+    </section>
+  );
+}
+
 export function FundraisingBody({ get }) {
   const funnel = get("pipelineFunnel");
+  const each = get("givingEachMonth");
   return (
     <>
       <div className="dash-tiles">
         <Tile m={get("pledgedOutstanding")} />
         <Tile m={get("pledgedPaid")} />
+      </div>
+      {each && Array.isArray(each.value) && each.value.length > 0 && (
+        <section className="dash-card" style={{ marginTop: 16 }}>
+          <GivingLine m={each} />
+        </section>
+      )}
+      <div className="dash-two even">
+        <LevelBars m={get("byGivingLevel")} />
+        <RetentionChoice m={get("retentionChoice")} />
       </div>
       <div className="dash-two">
         <RowsCard m={get("goals")} empty="No active goals. A goal set in Fundraising shows here with its pace.">

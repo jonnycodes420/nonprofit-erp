@@ -22,6 +22,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
+import { CallsToMake } from "./CallsToMake";
 import { AskWhy } from "./WhyAnswer";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
@@ -2719,6 +2720,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           ))}
         </div>
+        {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
+        <CallsToMake isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
       </div>
     );
   })();

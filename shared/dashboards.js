@@ -81,6 +81,14 @@ export const DASHBOARDS = [
     metrics: [
       { key: "goals", rowsAre: "money", label: "Goals and campaigns", kind: "breakdown",
         definition: "Every active goal with its target, what has been raised toward it, and whether that is ahead of or behind an even pace through the period." },
+      // PARITY-1 Part C · three charts: who gives at what level, each month
+      // against the two years before, and retention measured three ways.
+      { key: "byGivingLevel", rowsAre: "money", label: "Giving by level, last 12 months", kind: "breakdown",
+        definition: "What the people who gave in the last 12 months gave in that time, grouped by giving level (General, Mid, Major, on the cut points in Settings), with how many people are at each level." },
+      { key: "givingEachMonth", label: "Giving each month, against the two years before", kind: "series",
+        definition: "Each month's gifts through your fiscal year, added up on their own: this year to today, last year and the year before in full. Refunds come off the month they were made in." },
+      { key: "retentionChoice", label: "Retention", kind: "breakdown",
+        definition: "Of the people who gave in one period, the share who gave again in the next. Calendar year compares last calendar year with this one, fiscal year does the same for your fiscal years, and rolling 12 months compares the 12 months before the last 12 with the last 12." },
       { key: "pledgedOutstanding", label: "Pledged, not yet paid", kind: "money",
         definition: "The unpaid balance of open pledges. A pledge part-paid counts only the remainder." },
       { key: "pledgedPaid", label: "Pledged and paid", kind: "money",

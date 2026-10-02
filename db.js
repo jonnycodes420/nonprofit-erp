@@ -6184,6 +6184,22 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_video_thanks_donor ON video_thanks (org_id, donor_id, created_at DESC)`);
 
+  // PARITY-1 Part C · calls to make. The gift size that puts a gift on Home's
+  // "Calls to make" panel (null means WHY-1's $250 floor), and a snooze per
+  // gift: Snooze hides that one gift's row until the day in `until`.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS call_gift_floor_cents INTEGER`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS call_snoozes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      gift_id TEXT NOT NULL,
+      until TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, gift_id)
+    )`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

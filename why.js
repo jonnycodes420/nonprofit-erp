@@ -207,7 +207,16 @@ async function appeal(orgId, { campaign } = {}) {
 // Five names for the signed-in person (their donors, and the unassigned ones),
 // one reason each, ranked by dollars at stake. Somebody already on the Thread
 // with an open step is left off: they are already planned.
+// PARITY-1 Part C · the floor is the org's (Home's "Calls to make" setting,
+// $250 until somebody changes it), so this answer and the Home panel name the
+// same size of gift. The window is shared with the panel too.
 const BIG_GIFT_FLOOR_CENTS = 25000;
+const BIG_GIFT_DAYS = 60;
+async function orgCallFloorCents(orgId) {
+  const [o] = await query(`SELECT call_gift_floor_cents FROM orgs WHERE id = ?`, [orgId]);
+  const v = o && o.call_gift_floor_cents != null ? Number(o.call_gift_floor_cents) : null;
+  return v && v > 0 ? v : BIG_GIFT_FLOOR_CENTS;
+}
 async function call(orgId, { user } = {}, deps = {}) {
   const t = await today(orgId);
   const tomorrow = orgTime.addDays(t, 1);
@@ -225,10 +234,11 @@ async function call(orgId, { user } = {}, deps = {}) {
   // days, at least $250 and at least the org's own 75th percentile gift.
   const [p75] = await query(`SELECT COALESCE(PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY amount), 0) AS v FROM gifts
      WHERE org_id = ? AND amount > 0 AND LEFT(date,10) >= ?`, [orgId, orgTime.addDays(t, -730)]);
-  const floor = Math.max(BIG_GIFT_FLOOR_CENTS, toC(p75 && p75.v));
+  const orgFloor = await orgCallFloorCents(orgId);
+  const floor = Math.max(orgFloor, toC(p75 && p75.v));
   for (const g of await query(`SELECT id, donor_id, amount, LEFT(date,10) AS date FROM gifts
      WHERE org_id = ? AND import_id IS NULL AND COALESCE(acknowledgement_sent,false) = false AND amount * 100 >= ?
-       AND LEFT(date,10) >= ? AND LEFT(date,10) <= ?`, [orgId, floor, orgTime.addDays(t, -60), t]))
+       AND LEFT(date,10) >= ? AND LEFT(date,10) <= ?`, [orgId, floor, orgTime.addDays(t, -BIG_GIFT_DAYS), t]))
     push("thank", g.donor_id, toC(g.amount), g.date, `Gave ${fmt(toC(g.amount))} ${ago(g.date)} and hasn't been thanked yet.`);
   // An open ask past its expected date.
   for (const o of await query(`SELECT id, donor_id, name, target_amount, expected_close::text AS due FROM opportunities
@@ -279,7 +289,7 @@ async function call(orgId, { user } = {}, deps = {}) {
   five.sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name));
   const LABEL = { thank: "A big gift not yet thanked", ask: "An open ask past its expected date", card: "A monthly card that failed",
     meeting: "A meeting tomorrow", season: "Gave in this month last year, nothing since", drift: "Drifting from their own rhythm" };
-  const DEF = { thank: "A gift made in Steward (not imported) in the last 60 days, at least $250 and at least your own 75th percentile gift, with no thank-you marked. At stake: the gift.",
+  const DEF = { thank: `A gift made in Steward (not imported) in the last ${BIG_GIFT_DAYS} days, at least ${fmt(orgFloor)} and at least your own 75th percentile gift, with no thank-you marked. At stake: the gift.`,
     ask: "An open ask whose expected date has passed. At stake: the amount asked.",
     card: "A recurring gift whose card payment failed and has not recovered. At stake: a year of that gift.",
     meeting: "A meeting on your calendar tomorrow with this person. At stake: what they gave in the last twelve months.",
@@ -572,4 +582,4 @@ async function answer(orgId, key, ctx = {}, deps = {}) {
   return key === "lapse" ? fn(orgId, deps) : fn(orgId, ctx, deps);
 }
 
-module.exports = { answer, defaultCampaign, ANSWERS, sumRows };
+module.exports = { answer, defaultCampaign, ANSWERS, sumRows, BIG_GIFT_FLOOR_CENTS, BIG_GIFT_DAYS, orgCallFloorCents };
