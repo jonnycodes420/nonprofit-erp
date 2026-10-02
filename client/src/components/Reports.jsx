@@ -9,6 +9,8 @@ import { displayDate } from "../../../shared/displayDate";
 import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
 import { Dashboards } from "./Dashboards";
+import { useNavigate } from "react-router-dom";
+import { tabHref } from "../lib/appUrls";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -247,6 +249,15 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [autoDefault, setAutoDefault] = useState(null); // null = still resolving
 
   const setYearMode = v => { localStorage.setItem("steward_reports_yearmode", v); setYearModeState(v); setYear(null); };
+
+  // FIX-13 Part 6 — the open report is in the URL (/app/reports?report=lybunt),
+  // so a report opens, reloads and shares as itself.
+  const routerNavigate = useNavigate();
+  useEffect(() => {
+    if (!active || !/^\/app\/reports\/?$/.test(window.location.pathname)) return;
+    const href = tabHref("reports", { report: active });
+    if (href !== window.location.pathname + window.location.search) routerNavigate(href, { replace: true, state: { internal: true } });
+  }, [active]);
 
   const isTab = isTabReport(active);
   // NAV-1 §2 — a dashboard is neither a tab report, a standard one nor a saved

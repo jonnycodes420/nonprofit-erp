@@ -1,6 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { API } from "../api";
+import { safeNext } from "../lib/appUrls";
+// FIX-13 Part 6 — a deep link that needed a sign-in (or two-factor) returns
+// to that exact page afterwards: ?next= is set by the route guard and by the
+// expired-session handler, and only a same-origin path is honoured.
+function landingFor(user) {
+  if (user?.isSuperAdmin) return "/admin";
+  let next = null;
+  try { next = safeNext(new URLSearchParams(window.location.search).get("next")); } catch { /* no query */ }
+  return next || "/dashboard";
+}
 
 // Message set by api.js handleAuthFailure when a stale/invalid token is cleared.
 function popAuthNotice() {
@@ -90,7 +100,7 @@ export default function LoginPage() {
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
-      window.location.href = data.user.isSuperAdmin ? "/admin" : "/dashboard";
+      window.location.href = landingFor(data.user);
     } catch (err) {
       setError(err.message);
     }
@@ -111,7 +121,7 @@ export default function LoginPage() {
       localStorage.setItem("npe_token", d.token);
       localStorage.setItem("npe_user", JSON.stringify(d.user));
       localStorage.setItem("npe_org",  JSON.stringify(d.org));
-      window.location.href = d.user.isSuperAdmin ? "/admin" : "/dashboard";
+      window.location.href = landingFor(d.user);
     } catch (err) { setError(err.message); }
     setLoading(false);
   };
@@ -128,7 +138,7 @@ export default function LoginPage() {
     localStorage.setItem("npe_token", d.token);
     localStorage.setItem("npe_user", JSON.stringify(d.user));
     localStorage.setItem("npe_org",  JSON.stringify(d.org));
-    window.location.href = d.user.isSuperAdmin ? "/admin" : "/dashboard";
+    window.location.href = landingFor(d.user);
   };
 
   return (

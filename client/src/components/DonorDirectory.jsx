@@ -8,6 +8,8 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { DonorLink } from "./RecordLink";
+import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 
@@ -151,7 +153,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           return(
             <div key={d.id} className="reEngage-row" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"13px 18px",background:rowBg,borderBottom:idx<lapsed.length-1?`1px solid ${rowBorderColor}`:"none",alignItems:"center"}}>
               <div className="re-col-name">
-                <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><DonorLink id={d.id} onOpen={()=>onSelectDonor(d)}>{d.name}</DonorLink></div>
                 {d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
               </div>
               <div className="re-col-lifetime" style={{textAlign:"right",fontSize:13,fontWeight:700,color:T.ink}}>{fmtFull(d.total)}</div>
@@ -174,7 +176,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                <button onClick={()=>onSelectDonor(d)} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</DonorLink>
               </div>
             </div>
           );
@@ -566,7 +568,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
             const checked=selIds.has(d.id);
             const rowBg=checked?T.green100:idx%2===0?T.white:T.ground;
             return[
-              <div key={d.id} className="dir-donor-row" onClick={()=>onSelectDonor(d)}
+              <div key={d.id} className="dir-donor-row" onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}
                 style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:compact?"4px 18px":"11px 18px",background:rowBg,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",alignItems:"center",transition:"background 0.1s, padding 0.12s"}}
                 onMouseEnter={e=>e.currentTarget.style.background=checked?T.green100:T.bg}
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
@@ -584,7 +586,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     style={{transition:"width 0.12s,height 0.12s"}}/>
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span>
+                      <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} style={{overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</DonorLink>
                       <DriftBadge drift={d.drift}/>
                     </div>
                     {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
@@ -630,7 +632,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                  muted meta line, score badge centered right. Tapping opens
                  the donor; in Select mode tapping toggles selection. */
               <div key={d.id+"-m"} className="dir-row-mobile"
-                onClick={e=>selectMode?toggleOne(d.id,e):onSelectDonor(d)}
+                onClick={e=>selectMode?toggleOne(d.id,e):rowClick(donorHref(d.id),()=>onSelectDonor(d))(e)}
                 style={{display:"none",alignItems:"center",gap:12,padding:"13px 14px",background:checked?T.green100:idx%2===0?T.white:T.ground,borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",minHeight:64}}>
                 {selectMode&&<input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}} onClick={e=>e.stopPropagation()}
                   style={{width:20,height:20,cursor:"pointer",accentColor:T.greenDk,flexShrink:0}}/>}
@@ -638,7 +640,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   tint={T.bg2} tintFg={T.ink}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
-                    {d.name}
+                    <DonorLink id={d.id} onOpen={e=>selectMode?toggleOne(d.id,e):onSelectDonor(d)}>{d.name}</DonorLink>
                     <span style={{...stageChip(stage),borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
                     <DriftBadge drift={d.drift} style={{marginLeft:6,verticalAlign:"2px"}}/>
                   </div>
@@ -722,11 +724,11 @@ function TeamView({donors,orgTeam,onSelectDonor}){
               :md.slice(0,10).map((d,i)=>{
                 const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
                 return(
-                  <div key={d.id} onClick={()=>onSelectDonor(d)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
+                  <div key={d.id} onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
                     <PersonMark id={d.id} name={d.name} kind={d.kind} size={28}
                       tint={T.bg2} tintFg={T.ink}/>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
+                      <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><DonorLink id={d.id} onOpen={()=>onSelectDonor(d)}>{d.name}</DonorLink></div>
                       <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{stage.label} · {fmtFull(d.total)}</div>
                     </div>
                   </div>

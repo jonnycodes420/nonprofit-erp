@@ -71,7 +71,9 @@ export function handleAuthFailure(code) {
     // The flag is set only when a navigation is actually starting. On /login
     // there is nowhere to go, and a flag set there would strand the screen.
     _leavingForLogin = true;
-    window.location.replace("/login");
+    // FIX-13 Part 6 — come back to this exact page after signing in.
+    const here = window.location.pathname + window.location.search;
+    window.location.replace(here && here !== "/" ? "/login?next=" + encodeURIComponent(here) : "/login");
   }
 }
 

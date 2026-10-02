@@ -11,9 +11,9 @@
 //   3. a 5xx from anything the page fetched;
 //   4. a console error, including an uncaught exception or a failed request.
 //
-// HOW IT NAVIGATES, and why that matters. Only `/dashboard` and
-// `/donors/:id` are real routes (client/src/main.jsx); every other tab is
-// state inside <App/>, switched by `navigateTo(id)`. The first draft of this
+// HOW IT NAVIGATES, and why that matters. Until FIX-13 Part 6 only
+// `/dashboard` and `/donors/:id` were real routes; every other tab was
+// state inside <App/>, switched by `navigateTo(id)` (tabs are /app/:tab now). The first draft of this
 // suite walked `/tasks`, `/reports` and the rest as URLs, they all fell
 // through the router's catch-all to the dashboard, and it walked the SAME
 // screen fifteen times and passed. So it clicks the nav, opens the More
@@ -171,11 +171,25 @@ const EXPECTED_5XX = /\/ai\/stream/;
     trouble = [];
   };
 
+  // FIX-13 Part 6 — REAL LINKS. Every donor name on Home, Donors and a report
+  // is an <a href="/donors/:id"> to THAT donor, so Cmd-click, middle-click and
+  // "Open in new tab" work. `pick` returns, for each name on screen, the href
+  // of the anchor that carries it and the id that name belongs to (or null).
+  const namesAreLinks = async (what, pick) => {
+    const r = await page.evaluate(pick);
+    const bad = r.filter(x => !x.href || (x.id && x.href !== "/donors/" + encodeURIComponent(x.id)) || !/^\/donors\/[^/?#]+$/.test(x.href));
+    ok(`${what} — every donor name is a link to that donor's profile (${r.length} names)`, r.length > 0 && bad.length === 0,
+       { names: r.length, bad: bad.slice(0, 3) });
+  };
+
   // ── every tab, by clicking the nav ────────────────────────────────────
   trouble = [];
   await page.goto(`${APP}/dashboard`, { waitUntil: "domcontentloaded", timeout: 45000 });
   await page.waitForTimeout(1500);
   await look("/dashboard");
+  await namesAreLinks("Home", () => [...document.querySelectorAll(".attn-donor-name")].map(n => {
+    const a = n.closest("a"); return { href: a && a.getAttribute("href"), id: null };
+  }));
 
   // Two ids can share one nav entry (workflows deep-links into Agent), so the
   // walk visits each LABEL once.
@@ -219,6 +233,17 @@ const EXPECTED_5XX = /\/ai\/stream/;
        current.split("\n").some(l => l.trim().toLowerCase() === label.toLowerCase()), { asked: label, got: current });
     seen.push(current.trim().toLowerCase());
     await look(`tab ${id}`);
+    if (id === "donors") await namesAreLinks("Donors", () => [...document.querySelectorAll(".dir-donor-row")].map(row => {
+      const a = row.querySelector("a[href]"); return { href: a && a.getAttribute("href"), id: a && a.getAttribute("data-donor-link") };
+    }));
+    if (id === "reports") {
+      const lybunt = page.locator('[data-testid="reports-rail"] [data-report-id="lybunt"]').first();
+      if (await lybunt.count()) { await lybunt.click(); await page.waitForTimeout(1500); }
+      await namesAreLinks("Reports · LYBUNT", () => [...document.querySelectorAll('tr[data-testid="report-row"][data-person-id]')].map(tr => {
+        const a = tr.querySelector('a[href^="/donors/"]'); return { href: a && a.getAttribute("href"), id: tr.getAttribute("data-person-id") };
+      }));
+      trouble = [];
+    }
     // NAV-1 §2 — Dashboards is no longer a tab of its own; it is the first
     // group of the Reports rail. It still gets opened on every walk, from the
     // one place it now lives, so folding it in did not quietly stop walking it.
