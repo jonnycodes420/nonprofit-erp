@@ -269,7 +269,10 @@ if [ -z "${SHARDS:-}" ]; then
 fi
 TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
 
-if [ "$SHARDS" != "1" ]; then
+# FIX-15 — SHARD_SELF=1 runs even a single shard the sharded way: its own
+# database and its own server, instead of an already-booted $BASE. This is what
+# the pre-push hook uses when nothing is listening on $BASE.
+if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
   # THE PORT BLOCK. Shard n uses SHARD_PORT_BASE + 10n .. +9, so a run of
   # SHARDS shards needs 10*(SHARDS+1) ports from the base. The base is claimed
   # with an atomic `mkdir` lock holding this run's pid; a block whose lock is

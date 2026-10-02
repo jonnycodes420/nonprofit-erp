@@ -116,7 +116,20 @@ case "$mode" in
   list)
     echo "[pre-push] mode: affected suites only — $reason"
     echo "[pre-push] running: $selection"
-    if ! SUITES="$selection" bash tests/run-all.sh; then
+    # FIX-15 — the selected suites talk to a test server. FIX-13's good push was
+    # blocked because none was up and the suite failed to connect, which read
+    # as a broken build. If nothing answers on $BASE, the run starts its OWN
+    # server and database (SHARD_SELF=1, the same machinery as a battery
+    # shard), so the hook never depends on what happens to be running. The
+    # browser legs skip in that mode (no client build at push time); CI runs them.
+    hbase="${BASE:-http://localhost:5601}"
+    self=""
+    if ! curl -sf --max-time 3 "$hbase/health" >/dev/null 2>&1; then
+      echo "[pre-push] no test server on $hbase — starting one of its own for these suites"
+      echo "[pre-push] (browser legs skip without a client build; CI runs them)"
+      self="SHARD_SELF=1 SHARD_BUILD_DIST=0 SHARD_PREVIEW=0"
+    fi
+    if ! env $self SUITES="$selection" bash tests/run-all.sh; then
       echo ""
       echo "[pre-push] BLOCKED: tests failed. Fix them, or 'git push --no-verify' only if you truly mean to."
       exit 1
