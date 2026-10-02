@@ -139,6 +139,17 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   revoked session and a removed account really are refused end to end, and there is no
   allowlist left to fall behind. (FIX-AUTH)
 
+### The demo request form (LANDING-2, FIX-13; moved from BLOCKED-landing-2.md by FIX-19)
+
+- The marketing site's `/demo` form posts to `POST /lost-and-found/lead` (routes/billing.js)
+  with `ref: "book-a-demo"`. The row lands in `lost_and_found_leads`, which super admin's
+  Lost & Found view reads, with source `book-a-demo`.
+- Every field is picked out of the body by name: name, email, organization, ref, and (since
+  FIX-13) `org_size` and `current_system`. Never a spread.
+- The route emails Jonathan only (`FOUNDER_EMAIL`, reply-to set to the person). The person who
+  asked is never emailed. A demo request is named one in the subject and body; the "ran the
+  audit" sentence is for audit leads only.
+
 ## Gotchas
 - **`ADD COLUMN IF NOT EXISTS … DEFAULT x` does nothing when the column exists, including the default.**
   Follow it with `ALTER COLUMN … SET DEFAULT`. (BUILD-94)

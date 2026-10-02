@@ -1214,6 +1214,8 @@ async function orgStewardStart(orgId) {
 // figure leaves here carrying that `source`, and a blank carries the sentence
 // that says what is missing and when it will appear.
 const figureSources = require("../figureSources");
+// FIX-19: every user id that comes from the request is checked against the org here.
+const OU = require("../orgUsers");
 
 // The money in a sentence: whole dollars when there are no cents.
 function sentenceMoney(v) {
@@ -3344,6 +3346,7 @@ function buildDonorListFilter(req) {
 app.get("/donors", requireAuth, wrap(async (req, res) => {
   const filter = buildDonorListFilter(req);
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy } = filter;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
@@ -3516,6 +3519,7 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   const filter = buildDonorListFilter(req);
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy } = filter;
   const donors = await query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
@@ -3723,6 +3727,11 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     }
   }
 
+  // FIX-19: an assignee named here is an active user of this org, and the name
+  // beside the id is read off that users row, never the payload.
+  const named = await OU.orgUser(req.user.orgId, assignedTo);
+  if (!named.ok) return OU.refuse(res, "assignedTo");
+
   const id = "d_" + uuid().slice(0, 8);
   let selfName = assignedToName;
   if (!assignedTo && !selfName) {
@@ -3730,7 +3739,7 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     selfName = uRow[0]?.name || req.user.email;
   }
   const finalAssignedTo = assignedTo || req.user.userId;
-  const finalAssignedToName = assignedTo ? (assignedToName || "") : selfName;
+  const finalAssignedToName = assignedTo ? (named.user.name || assignedToName || "") : selfName;
   await run(
     `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -3765,7 +3774,7 @@ async function buildAssigneeResolver(donors, orgId, isTeam) {
 
   const validUsers = new Map();
   if (userIds.length) {
-    const rows = await query("SELECT id, name FROM users WHERE id = ANY(?) AND org_id = ?", [userIds, orgId]);
+    const rows = await query("SELECT id, name FROM users WHERE id = ANY(?) AND org_id = ? AND deactivated_at IS NULL", [userIds, orgId]);
     rows.forEach(r => validUsers.set(r.id, r.name));
   }
   const validInvites = new Map();
@@ -5309,8 +5318,8 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), 
   // the BUILD-75 rule this table was already inside.
   let officerId = null, officerName = null;
   if (assignedTo) {
-    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
-    if (!u) return res.status(404).json({ error: "Officer not found in your organisation" });
+    const { ok, user: u } = await OU.orgUser(req.user.orgId, assignedTo);
+    if (!ok) return OU.refuse(res, "assignedTo");
     officerId = u.id; officerName = u.name;
   }
   // THE NAME ON THE STAMP IS A NAME, NOT A LOGIN. `actor(req).name` is the
@@ -5387,9 +5396,9 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"),
     return res.json({ updated: result.changes, pending: true, assignedToName: pendingName });
   }
 
-  const userRow = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
-  if (!userRow.length) return res.status(400).json({ error: "User not found in your org" });
-  const assignedToName = userRow[0].name;
+  const named = await OU.orgUser(req.user.orgId, assignedTo);
+  if (!named.ok) return OU.refuse(res, "assignedTo");
+  const assignedToName = named.user.name;
   // BUILD-99 Part 2 — the stamp's NAME is a name; see /donors/:id/assign.
   const bulkByName = (await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]))[0]?.name
     || actor(req).name;
@@ -9585,6 +9594,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   const isAdmin = req.user.role === "admin";
   let scope = req.query.scope === "all" ? "all" : "mine";
   let assignedTo = req.query.assignedTo || null;
+  if (!(await OU.orgUser(orgId, assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   if (!isAdmin) {
     scope = "mine";
     if (assignedTo && assignedTo !== userId) assignedTo = null;
@@ -10009,8 +10019,8 @@ app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAc
   // to this org.
   let officerId = donor.assigned_to, officerName = donor.assigned_to_name;
   if (req.body.officerId) {
-    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [req.body.officerId, orgId]);
-    if (!u) return res.status(404).json({ error: "Officer not found" });
+    const { ok, user: u } = await OU.orgUser(orgId, req.body.officerId);
+    if (!ok) return OU.refuse(res, "officerId");
     officerId = u.id; officerName = u.name;
   }
   if (!officerId) { officerId = req.user.userId; officerName = (await query("SELECT name FROM users WHERE id=?", [req.user.userId]))[0]?.name || ""; }
@@ -10135,8 +10145,8 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
   if (req.body.notes !== undefined) put("notes", P.sanitizeNotes(req.body.notes));
   if (req.body.fundId !== undefined) put("fund_id", fundId);
   if (req.body.officerId !== undefined) {
-    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [req.body.officerId, orgId]);
-    if (!u) return res.status(404).json({ error: "Officer not found" });
+    const { ok, user: u } = await OU.orgUser(orgId, req.body.officerId);
+    if (!ok || !u) return OU.refuse(res, "officerId");
     put("officer_id", u.id); put("officer_name", u.name);
   }
 
@@ -10245,6 +10255,7 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
   const P = await proposalMod();
   const orgId = req.user.orgId;
   const where = ["o.org_id = ?", "d.deleted_at IS NULL"], args = [orgId];
+  if (!(await OU.orgUser(orgId, req.query.officerId, { allowInactive: true })).ok) return OU.refuse(res, "officerId");
   if (req.query.officerId) { where.push("o.officer_id = ?"); args.push(String(req.query.officerId)); }
   if (req.query.fundId) { where.push("o.fund_id = ?"); args.push(String(req.query.fundId)); }
   if (req.query.stage) {
@@ -10939,6 +10950,9 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   };
   const v = J.validateJourney(input);
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
+  // FIX-19: a step owned by a named person names an active user of this org.
+  const stepOwners = await OU.orgUsers(req.user.orgId, v.steps.map(st => st.ownerId));
+  if (!stepOwners.ok) return OU.refuse(res, "steps.ownerId");
 
   const id = "ct_" + uuid().slice(0, 10);
   await run(
@@ -11068,6 +11082,9 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
     steps: b.steps !== undefined ? b.steps : cur.steps,
   });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
+  // FIX-19: a step owned by a named person names an active user of this org.
+  const stepOwners = await OU.orgUsers(req.user.orgId, v.steps.map(st => st.ownerId));
+  if (!stepOwners.ok) return OU.refuse(res, "steps.ownerId");
   await run(
     `UPDATE cultivation_templates SET name=?, description=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
        priority=?, audience=?::jsonb, journey_enabled=?, updated_at=NOW() WHERE id=? AND org_id=?`,
@@ -12877,7 +12894,7 @@ app.post("/funders/:donorId/grants", requireAuth, requirePlan("team"), checkWrit
   const fund = await checkGrantFund(orgId, req.body.fundId || null);
   if (!fund.ok) return res.status(404).json({ error: "Fund not found" });
   const officer = await checkGrantOfficer(orgId, req.body.officerId || null);
-  if (!officer.ok) return res.status(404).json({ error: "Officer not found" });
+  if (!officer.ok) return OU.refuse(res, "officerId");
 
   const id = "gr_" + uuid().slice(0, 8);
   await run(
@@ -12903,9 +12920,9 @@ async function checkGrantFund(orgId, fundId) {
   return f ? { ok: true, fundId: f.id } : { ok: false };
 }
 async function checkGrantOfficer(orgId, officerId) {
-  if (!officerId) return { ok: true, officerId: null, officerName: null };
-  const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [officerId, orgId]);
-  return u ? { ok: true, officerId: u.id, officerName: u.name } : { ok: false };
+  const { ok, user: u } = await OU.orgUser(orgId, officerId);
+  if (!ok) return { ok: false };
+  return u ? { ok: true, officerId: u.id, officerName: u.name } : { ok: true, officerId: null, officerName: null };
 }
 
 // PUT /grants/:id/award — AWARDED WRITES THE AWARD AS A PLEDGE ON THE FUNDER.
@@ -13019,6 +13036,7 @@ app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
   const G = await grantShapeMod();
   const orgId = req.user.orgId;
   const where = ["g.org_id = ?", "g.is_sample IS NOT TRUE"], args = [orgId];
+  if (!(await OU.orgUser(orgId, req.query.officerId, { allowInactive: true })).ok) return OU.refuse(res, "officerId");
   if (req.query.officerId) { where.push("g.officer_id = ?"); args.push(String(req.query.officerId)); }
   if (req.query.cycle) { where.push("LOWER(COALESCE(g.cycle_name,'')) = LOWER(?)"); args.push(String(req.query.cycle)); }
   if (req.query.program) { where.push("LOWER(COALESCE(g.program,'')) LIKE LOWER(?)"); args.push("%" + String(req.query.program) + "%"); }
@@ -14822,9 +14840,9 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     return res.status(404).json({ error: "Donor not found" });
 
   // Owner defaults to the creator; may target a teammate (validated to the org).
+  if (!(await OU.orgUser(req.user.orgId, assignedTo)).ok) return OU.refuse(res, "assignedTo");
   const ownerTargetId = assignedTo || req.user.userId;
   const u = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [ownerTargetId, req.user.orgId]);
-  if (assignedTo && !u.length) return res.status(404).json({ error: "Assignee not found" });
   const ownerId = u.length ? u[0].id : req.user.userId;
   const ownerName = (u.length && u[0].name) || assignedToName || "";
 
@@ -14878,9 +14896,9 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   let newAssignee, newAssigneeName;
   if (assignedTo !== undefined) {
     if (assignedTo) {
-      const u = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
-      if (!u.length) return res.status(404).json({ error: "Assignee not found" });
-      newAssignee = u[0].id; newAssigneeName = u[0].name || "";
+      const { ok, user: u } = await OU.orgUser(req.user.orgId, assignedTo);
+      if (!ok) return OU.refuse(res, "assignedTo");
+      newAssignee = u.id; newAssigneeName = u.name || "";
     } else { newAssignee = null; newAssigneeName = null; }
   }
 
@@ -16596,13 +16614,17 @@ app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, 
     message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${open.due_date}.`,
     thread: { id: open.id, label: open.next_step_label, due: open.due_date } });
 
+  // FIX-19: an ownerId from the body is an active user of THIS org, or the
+  // request is refused before anything is written.
+  const named = await OU.orgUser(orgId, req.body?.ownerId);
+  if (!named.ok) return OU.refuse(res, "ownerId");
   const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRow[0]?.name || "";
   const step = { type: shape.nextStepTypeForLabel(label), label, due, time };
   const thread = await withTransaction(client => openThreadTx(client, {
     orgId, donorId: req.params.id, step, openedOn: today,
-    ownerId: req.body?.ownerId || donor.assigned_to || userId,
-    ownerName: req.body?.ownerId ? null : (donor.assigned_to ? donor.assigned_to_name : userName),
+    ownerId: named.user ? named.user.id : (donor.assigned_to || userId),
+    ownerName: named.user ? named.user.name : (donor.assigned_to ? donor.assigned_to_name : userName),
     actorId: userId, actorName: userName,
   }));
   res.status(201).json({ thread });

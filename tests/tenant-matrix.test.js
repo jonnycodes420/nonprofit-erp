@@ -1031,6 +1031,28 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
      Number(ev2After.n) === Number(ev2Before.n) && new RegExp(REFUSED, "i").test(decodeURIComponent(wrongPay.location) + wrongPay.text),
      { before: ev2Before.n, after: ev2After.n, location: wrongPay.location });
 
+  // ── §10 · A USER ID IN THE BODY BELONGS TO THE ORG · FIX-19 ───────────────
+  // POST /donors/:id/threads stored any ownerId it was handed, so org B's admin
+  // could be named the owner of org A's next step. Every route that takes a
+  // user id from the request now asks orgUsers.js first. The assertion is the
+  // refusal AND the database: no thread for this donor, none owned by B.
+  console.log("\n— §10 · a user id from org B on org A's thread —");
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,tags) VALUES ($1,$2,'Owner Probe','ownerprobe@mx.local','new','prospect','[]')
+           ON CONFLICT (id) DO NOTHING`, [`d_${A}_owner`, A]);
+  const crossOwner = await mfetch("POST", `/donors/d_${A}_owner/threads`, aAdmin,
+    { label: "Call to say thank you", due: TODAY, ownerId: `u_${B}_admin` });
+  const [ownThreads] = await q(`SELECT COUNT(*)::int n FROM threads WHERE org_id=$1 AND donor_id=$2`, [A, `d_${A}_owner`]);
+  const [bOwned] = await q(`SELECT COUNT(*)::int n FROM threads WHERE org_id=$1 AND owner_id LIKE $2`, [A, `u_${B}_%`]);
+  ok("§10 an ownerId from org B on org A's thread is refused with a 400",
+     crossOwner.status === 400 && /not an active user/i.test(crossOwner.text), { status: crossOwner.status, body: crossOwner.text.slice(0, 160) });
+  ok("§10 …and writes nothing: no thread for the donor, none in A owned by a B user",
+     Number(ownThreads.n) === 0 && Number(bOwned.n) === 0, { ownThreads: ownThreads.n, bOwned: bOwned.n });
+  // The same request with A's own staff user is accepted, so the refusal above
+  // is about the org, not the route.
+  const sameOrg = await mfetch("POST", `/donors/d_${A}_owner/threads`, aAdmin,
+    { label: "Call to say thank you", due: TODAY, ownerId: `u_${A}_staff` });
+  ok("§10 an ownerId from org A's own staff is accepted", sameOrg.status === 201, { status: sameOrg.status, body: sameOrg.text.slice(0, 160) });
+
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
   ok("org B's rows hash byte-identical before and after ~1,000 hostile probes", bBefore === bAfter, { bBefore: bBefore.slice(0, 12), bAfter: bAfter.slice(0, 12) });
