@@ -1,11 +1,11 @@
 {
- "generatedAt": "2026-10-01T21:36:36.412Z",
- "count": 850,
+ "generatedAt": "2026-10-02T00:04:21.752Z",
+ "count": 852,
  "routes": [
   {
    "method": "POST",
    "path": "/stripe/webhook",
-   "line": 2650,
+   "line": 2651,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
@@ -23,7 +23,7 @@
   {
    "method": "POST",
    "path": "/resend/webhook",
-   "line": 3907,
+   "line": 3910,
    "auth": [
     "resendWebhookLimiter"
    ],
@@ -43,7 +43,7 @@
   {
    "method": "GET",
    "path": "/mailchimp/webhook/:secret",
-   "line": 4046,
+   "line": 4049,
    "auth": [
     "mailchimpWebhookLimiter"
    ],
@@ -65,7 +65,7 @@
   {
    "method": "POST",
    "path": "/mailchimp/webhook/:secret",
-   "line": 4048,
+   "line": 4051,
    "auth": [
     "mailchimpWebhookLimiter"
    ],
@@ -87,7 +87,7 @@
   {
    "method": "POST",
    "path": "/paypal/webhook",
-   "line": 4110,
+   "line": 4113,
    "auth": [
     "paypalWebhookLimiter"
    ],
@@ -107,7 +107,7 @@
   {
    "method": "POST",
    "path": "/billing/webhook",
-   "line": 4217,
+   "line": 4220,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
@@ -125,7 +125,7 @@
   {
    "method": "GET",
    "path": "/campaigns/templates",
-   "line": 6314,
+   "line": 6317,
    "auth": [
     "requireAuth"
    ],
@@ -145,7 +145,7 @@
   {
    "method": "POST",
    "path": "/campaigns/segment-preview",
-   "line": 6337,
+   "line": 6340,
    "auth": [
     "requireAuth"
    ],
@@ -167,7 +167,7 @@
   {
    "method": "POST",
    "path": "/campaigns/:id/test",
-   "line": 6371,
+   "line": 6374,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -192,7 +192,7 @@
   {
    "method": "GET",
    "path": "/org/sending-domain",
-   "line": 6452,
+   "line": 6455,
    "auth": [
     "requireAuth"
    ],
@@ -212,7 +212,7 @@
   {
    "method": "POST",
    "path": "/org/sending-domain",
-   "line": 6460,
+   "line": 6463,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -234,7 +234,7 @@
   {
    "method": "POST",
    "path": "/org/sending-domain/check",
-   "line": 6524,
+   "line": 6527,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -255,7 +255,7 @@
   {
    "method": "DELETE",
    "path": "/org/sending-domain",
-   "line": 6559,
+   "line": 6562,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -277,7 +277,7 @@
   {
    "method": "GET",
    "path": "/thank-yous",
-   "line": 6577,
+   "line": 6580,
    "auth": [
     "requireAuth"
    ],
@@ -297,7 +297,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/opened",
-   "line": 6610,
+   "line": 6613,
    "auth": [
     "requireAuth"
    ],
@@ -321,7 +321,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/sent",
-   "line": 6620,
+   "line": 6623,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -346,7 +346,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/skip",
-   "line": 6652,
+   "line": 6655,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -371,7 +371,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/mark-all-sent",
-   "line": 6659,
+   "line": 6662,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -392,7 +392,7 @@
   {
    "method": "PUT",
    "path": "/org/voice-samples",
-   "line": 6691,
+   "line": 6694,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -416,7 +416,7 @@
   {
    "method": "GET",
    "path": "/org/voice-samples",
-   "line": 6702,
+   "line": 6705,
    "auth": [
     "requireAuth"
    ],
@@ -436,7 +436,7 @@
   {
    "method": "POST",
    "path": "/pledges/run-reminders",
-   "line": 6714,
+   "line": 6717,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -459,7 +459,7 @@
   {
    "method": "GET",
    "path": "/health",
-   "line": 6746,
+   "line": 6749,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -477,7 +477,7 @@
   {
    "method": "GET",
    "path": "/status/summary",
-   "line": 6864,
+   "line": 6870,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -495,7 +495,7 @@
   {
    "method": "GET",
    "path": "/changelog/hidden",
-   "line": 6891,
+   "line": 6897,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -513,7 +513,7 @@
   {
    "method": "POST",
    "path": "/admin/changelog/:id/hide",
-   "line": 6895,
+   "line": 6901,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -538,7 +538,7 @@
   {
    "method": "GET",
    "path": "/legal/dpa",
-   "line": 6913,
+   "line": 6919,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -556,7 +556,7 @@
   {
    "method": "GET",
    "path": "/legal/dpa.pdf",
-   "line": 6920,
+   "line": 6926,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -574,7 +574,7 @@
   {
    "method": "POST",
    "path": "/admin/status/run-checks",
-   "line": 6943,
+   "line": 6949,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -595,7 +595,7 @@
   {
    "method": "POST",
    "path": "/admin/incidents",
-   "line": 6947,
+   "line": 6953,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -618,7 +618,7 @@
   {
    "method": "POST",
    "path": "/admin/incidents/:id/update",
-   "line": 6958,
+   "line": 6964,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -645,7 +645,7 @@
   {
    "method": "POST",
    "path": "/invitation-request",
-   "line": 6976,
+   "line": 6982,
    "auth": [
     "invitationLimiter"
    ],
@@ -678,7 +678,7 @@
   {
    "method": "POST",
    "path": "/admin/notifications/retry",
-   "line": 7019,
+   "line": 7025,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -701,7 +701,7 @@
   {
    "method": "POST",
    "path": "/admin/debug/sentry-test",
-   "line": 7030,
+   "line": 7036,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -724,7 +724,7 @@
   {
    "method": "POST",
    "path": "/auth/login",
-   "line": 7616,
+   "line": 7622,
    "auth": [
     "loginIpLimiter",
     "loginAccountLimiter"
@@ -753,7 +753,7 @@
   {
    "method": "POST",
    "path": "/auth/logout",
-   "line": 7711,
+   "line": 7717,
    "auth": [
     "requireAuth"
    ],
@@ -773,7 +773,7 @@
   {
    "method": "POST",
    "path": "/auth/register",
-   "line": 7933,
+   "line": 7939,
    "auth": [
     "registerLimiter"
    ],
@@ -804,7 +804,7 @@
   {
    "method": "POST",
    "path": "/auth/forgot-password",
-   "line": 7978,
+   "line": 7984,
    "auth": [
     "passwordResetLimiter"
    ],
@@ -828,7 +828,7 @@
   {
    "method": "POST",
    "path": "/auth/reset-password",
-   "line": 8056,
+   "line": 8062,
    "auth": [
     "passwordResetLimiter"
    ],
@@ -853,7 +853,7 @@
   {
    "method": "POST",
    "path": "/auth/register-org",
-   "line": 8082,
+   "line": 8088,
    "auth": [
     "registerLimiter"
    ],
@@ -884,7 +884,7 @@
   {
    "method": "POST",
    "path": "/auth/invite",
-   "line": 9719,
+   "line": 9717,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -910,7 +910,7 @@
   {
    "method": "GET",
    "path": "/auth/invite/:token",
-   "line": 9791,
+   "line": 9789,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -932,7 +932,7 @@
   {
    "method": "POST",
    "path": "/auth/invite/accept",
-   "line": 9805,
+   "line": 9803,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -965,7 +965,7 @@
   {
    "method": "GET",
    "path": "/admin/observability",
-   "line": 30244,
+   "line": 30293,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -986,7 +986,7 @@
   {
    "method": "POST",
    "path": "/admin/observability/run-checks",
-   "line": 30301,
+   "line": 30350,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1007,7 +1007,7 @@
   {
    "method": "POST",
    "path": "/admin/reconcile/run",
-   "line": 41291,
+   "line": 41422,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1028,7 +1028,7 @@
   {
    "method": "POST",
    "path": "/admin/webhook-subscriptions/check",
-   "line": 41298,
+   "line": 41429,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1049,7 +1049,7 @@
   {
    "method": "GET",
    "path": "/admin/billing-diagnostic",
-   "line": 43414,
+   "line": 43548,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1070,7 +1070,7 @@
   {
    "method": "GET",
    "path": "/billing/status",
-   "line": 43425,
+   "line": 43559,
    "auth": [
     "requireAuth"
    ],
@@ -1090,7 +1090,7 @@
   {
    "method": "POST",
    "path": "/billing/create-checkout",
-   "line": 43532,
+   "line": 43666,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1113,7 +1113,7 @@
   {
    "method": "POST",
    "path": "/billing/create-portal",
-   "line": 43612,
+   "line": 43746,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1134,7 +1134,7 @@
   {
    "method": "POST",
    "path": "/admin/close-links",
-   "line": 43881,
+   "line": 44015,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1155,7 +1155,7 @@
   {
    "method": "GET",
    "path": "/billing/donor-band",
-   "line": 44067,
+   "line": 44201,
    "auth": [
     "requireAuth"
    ],
@@ -1177,7 +1177,7 @@
   {
    "method": "POST",
    "path": "/billing/donor-band/dismiss",
-   "line": 44105,
+   "line": 44239,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1198,7 +1198,7 @@
   {
    "method": "GET",
    "path": "/public/pricing",
-   "line": 44130,
+   "line": 44264,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1216,7 +1216,7 @@
   {
    "method": "GET",
    "path": "/public/agreement",
-   "line": 44148,
+   "line": 44282,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1234,7 +1234,7 @@
   {
    "method": "POST",
    "path": "/public/signup",
-   "line": 44157,
+   "line": 44291,
    "auth": [
     "registerLimiter"
    ],
@@ -1254,7 +1254,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/reconcile-subscription",
-   "line": 44351,
+   "line": 44485,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1279,7 +1279,7 @@
   {
    "method": "POST",
    "path": "/lost-and-found/lead",
-   "line": 44446,
+   "line": 44580,
    "auth": [
     "registerLimiter"
    ],
@@ -1299,7 +1299,7 @@
   {
    "method": "POST",
    "path": "/lost-and-found/benchmark",
-   "line": 44494,
+   "line": 44628,
    "auth": [
     "registerLimiter"
    ],
@@ -1319,7 +1319,7 @@
   {
    "method": "GET",
    "path": "/admin/lost-and-found",
-   "line": 44521,
+   "line": 44655,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1340,7 +1340,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/internal-test-price",
-   "line": 44552,
+   "line": 44686,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1365,7 +1365,7 @@
   {
    "method": "GET",
    "path": "/admin/close-links",
-   "line": 44602,
+   "line": 44736,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1386,7 +1386,7 @@
   {
    "method": "POST",
    "path": "/billing/cancel",
-   "line": 44919,
+   "line": 45053,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1407,7 +1407,7 @@
   {
    "method": "GET",
    "path": "/billing/cancel/:token",
-   "line": 44960,
+   "line": 45094,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1429,7 +1429,7 @@
   {
    "method": "POST",
    "path": "/billing/cancel/:token",
-   "line": 44975,
+   "line": 45109,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1451,7 +1451,7 @@
   {
    "method": "POST",
    "path": "/billing/trial-reminders/run",
-   "line": 45088,
+   "line": 45222,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1475,7 +1475,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs",
-   "line": 45643,
+   "line": 45777,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1496,7 +1496,7 @@
   {
    "method": "GET",
    "path": "/admin/metrics",
-   "line": 45667,
+   "line": 45801,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1517,7 +1517,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs/:id",
-   "line": 45721,
+   "line": 45855,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1542,7 +1542,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/extend-trial",
-   "line": 45747,
+   "line": 45881,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1569,7 +1569,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/change-plan",
-   "line": 45769,
+   "line": 45903,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1597,7 +1597,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/email-switch",
-   "line": 45813,
+   "line": 45947,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1626,7 +1626,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs/:id/sample-data",
-   "line": 45868,
+   "line": 46002,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1651,7 +1651,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/clear-sample-data",
-   "line": 45883,
+   "line": 46017,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1678,7 +1678,7 @@
   {
    "method": "DELETE",
    "path": "/admin/orgs/:id",
-   "line": 45935,
+   "line": 46069,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1705,7 +1705,7 @@
   {
    "method": "GET",
    "path": "/admin/data-integrity",
-   "line": 46036,
+   "line": 46160,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1726,7 +1726,7 @@
   {
    "method": "POST",
    "path": "/admin/data-integrity/fix",
-   "line": 46082,
+   "line": 46206,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1747,7 +1747,7 @@
   {
    "method": "GET",
    "path": "/admin/network/applications",
-   "line": 51747,
+   "line": 51871,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1770,7 +1770,7 @@
   {
    "method": "POST",
    "path": "/admin/network/applications/:id/decide",
-   "line": 51776,
+   "line": 51900,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1795,7 +1795,7 @@
   {
    "method": "POST",
    "path": "/admin/network/run-gate-sweep",
-   "line": 51868,
+   "line": 51992,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -1818,7 +1818,7 @@
   {
    "method": "GET",
    "path": "/me/mfa",
-   "line": 7732,
+   "line": 7738,
    "auth": [
     "requireAuth"
    ],
@@ -1838,7 +1838,7 @@
   {
    "method": "POST",
    "path": "/me/mfa/setup",
-   "line": 7743,
+   "line": 7749,
    "auth": [
     "requireAuth"
    ],
@@ -1858,7 +1858,7 @@
   {
    "method": "POST",
    "path": "/me/mfa/enable",
-   "line": 7770,
+   "line": 7776,
    "auth": [
     "requireAuth"
    ],
@@ -1880,7 +1880,7 @@
   {
    "method": "POST",
    "path": "/me/mfa/email-code",
-   "line": 7799,
+   "line": 7805,
    "auth": [
     "requireAuth"
    ],
@@ -1900,7 +1900,7 @@
   {
    "method": "POST",
    "path": "/me/mfa/disable",
-   "line": 7808,
+   "line": 7814,
    "auth": [
     "requireAuth"
    ],
@@ -1922,7 +1922,7 @@
   {
    "method": "POST",
    "path": "/me/mfa/recovery-codes",
-   "line": 7822,
+   "line": 7828,
    "auth": [
     "requireAuth"
    ],
@@ -1944,7 +1944,7 @@
   {
    "method": "PUT",
    "path": "/org/security",
-   "line": 7833,
+   "line": 7839,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1965,7 +1965,7 @@
   {
    "method": "POST",
    "path": "/org/users/:id/mfa/reset",
-   "line": 7855,
+   "line": 7861,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1990,7 +1990,7 @@
   {
    "method": "POST",
    "path": "/org/users/:id/sign-out-everywhere",
-   "line": 7874,
+   "line": 7880,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2015,7 +2015,7 @@
   {
    "method": "GET",
    "path": "/me/sessions",
-   "line": 7886,
+   "line": 7892,
    "auth": [
     "requireAuth"
    ],
@@ -2035,7 +2035,7 @@
   {
    "method": "POST",
    "path": "/me/sessions/:id/sign-out",
-   "line": 7895,
+   "line": 7901,
    "auth": [
     "requireAuth"
    ],
@@ -2059,7 +2059,7 @@
   {
    "method": "POST",
    "path": "/me/sessions/sign-out-others",
-   "line": 7903,
+   "line": 7909,
    "auth": [
     "requireAuth"
    ],
@@ -2079,7 +2079,7 @@
   {
    "method": "POST",
    "path": "/me/password",
-   "line": 7917,
+   "line": 7923,
    "auth": [
     "requireAuth"
    ],
@@ -2099,7 +2099,7 @@
   {
    "method": "GET",
    "path": "/me",
-   "line": 8214,
+   "line": 8220,
    "auth": [
     "requireAuth"
    ],
@@ -2119,7 +2119,7 @@
   {
    "method": "PUT",
    "path": "/me/notification-prefs",
-   "line": 8228,
+   "line": 8234,
    "auth": [
     "requireAuth"
    ],
@@ -2139,7 +2139,7 @@
   {
    "method": "GET",
    "path": "/me/home-layout",
-   "line": 8264,
+   "line": 8270,
    "auth": [
     "requireAuth"
    ],
@@ -2159,7 +2159,7 @@
   {
    "method": "PUT",
    "path": "/me/home-layout",
-   "line": 8272,
+   "line": 8278,
    "auth": [
     "requireAuth"
    ],
@@ -2179,7 +2179,7 @@
   {
    "method": "DELETE",
    "path": "/me/home-layout",
-   "line": 8281,
+   "line": 8287,
    "auth": [
     "requireAuth"
    ],
@@ -2199,7 +2199,7 @@
   {
    "method": "GET",
    "path": "/me/nav-layout",
-   "line": 8311,
+   "line": 8317,
    "auth": [
     "requireAuth"
    ],
@@ -2219,7 +2219,7 @@
   {
    "method": "PUT",
    "path": "/me/nav-layout",
-   "line": 8319,
+   "line": 8325,
    "auth": [
     "requireAuth"
    ],
@@ -2239,7 +2239,7 @@
   {
    "method": "DELETE",
    "path": "/me/nav-layout",
-   "line": 8326,
+   "line": 8332,
    "auth": [
     "requireAuth"
    ],
@@ -2259,7 +2259,7 @@
   {
    "method": "POST",
    "path": "/onboarding/complete",
-   "line": 8332,
+   "line": 8338,
    "auth": [
     "requireAuth"
    ],
@@ -2279,7 +2279,7 @@
   {
    "method": "GET",
    "path": "/org",
-   "line": 8339,
+   "line": 8345,
    "auth": [
     "requireAuth"
    ],
@@ -2299,7 +2299,7 @@
   {
    "method": "GET",
    "path": "/dashboards/:key",
-   "line": 8694,
+   "line": 8700,
    "auth": [
     "requireAuth"
    ],
@@ -2321,7 +2321,7 @@
   {
    "method": "GET",
    "path": "/dashboards/:key/pdf",
-   "line": 8798,
+   "line": 8804,
    "auth": [
     "requireAuth"
    ],
@@ -2343,7 +2343,7 @@
   {
    "method": "GET",
    "path": "/dashboards",
-   "line": 8812,
+   "line": 8818,
    "auth": [
     "requireAuth"
    ],
@@ -2363,7 +2363,7 @@
   {
    "method": "GET",
    "path": "/figures/:source/rows",
-   "line": 8825,
+   "line": 8831,
    "auth": [
     "requireAuth"
    ],
@@ -2389,7 +2389,7 @@
   {
    "method": "GET",
    "path": "/org/welcome",
-   "line": 8853,
+   "line": 8859,
    "auth": [
     "requireAuth"
    ],
@@ -2409,7 +2409,7 @@
   {
    "method": "POST",
    "path": "/org/welcome/seen",
-   "line": 8889,
+   "line": 8895,
    "auth": [
     "requireAuth"
    ],
@@ -2429,7 +2429,7 @@
   {
    "method": "GET",
    "path": "/org/vocabulary",
-   "line": 8894,
+   "line": 8900,
    "auth": [
     "requireAuth"
    ],
@@ -2449,7 +2449,7 @@
   {
    "method": "PUT",
    "path": "/org/vocabulary",
-   "line": 8915,
+   "line": 8921,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -2473,7 +2473,7 @@
   {
    "method": "GET",
    "path": "/org/setup-status",
-   "line": 8937,
+   "line": 8943,
    "auth": [
     "requireAuth"
    ],
@@ -2493,7 +2493,7 @@
   {
    "method": "POST",
    "path": "/org/setup-confirm-no-gifts",
-   "line": 9032,
+   "line": 9038,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2514,7 +2514,7 @@
   {
    "method": "PUT",
    "path": "/org/setup-card",
-   "line": 9037,
+   "line": 9043,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2537,7 +2537,7 @@
   {
    "method": "PATCH",
    "path": "/orgs/:id",
-   "line": 9047,
+   "line": 9053,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2587,7 +2587,7 @@
   {
    "method": "PUT",
    "path": "/orgs/branding",
-   "line": 9232,
+   "line": 9238,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -2613,7 +2613,7 @@
   {
    "method": "GET",
    "path": "/org/ai-status",
-   "line": 9275,
+   "line": 9281,
    "auth": [
     "requireAuth"
    ],
@@ -2633,7 +2633,7 @@
   {
    "method": "PATCH",
    "path": "/org/ai-settings",
-   "line": 9293,
+   "line": 9299,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2656,7 +2656,7 @@
   {
    "method": "GET",
    "path": "/org/sample-data-status",
-   "line": 9306,
+   "line": 9312,
    "auth": [
     "requireAuth"
    ],
@@ -2676,7 +2676,7 @@
   {
    "method": "POST",
    "path": "/org/load-sample-data",
-   "line": 9319,
+   "line": 9325,
    "auth": [
     "requireAuth"
    ],
@@ -2696,7 +2696,7 @@
   {
    "method": "POST",
    "path": "/org/clear-sample-data",
-   "line": 9598,
+   "line": 9604,
    "auth": [
     "requireAuth"
    ],
@@ -2716,7 +2716,7 @@
   {
    "method": "GET",
    "path": "/org/team",
-   "line": 9624,
+   "line": 9630,
    "auth": [
     "requireAuth"
    ],
@@ -2736,7 +2736,7 @@
   {
    "method": "DELETE",
    "path": "/users/:id",
-   "line": 9656,
+   "line": 9653,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2761,7 +2761,7 @@
   {
    "method": "GET",
    "path": "/donors",
-   "line": 9918,
+   "line": 9916,
    "auth": [
     "requireAuth"
    ],
@@ -2784,7 +2784,7 @@
   {
    "method": "GET",
    "path": "/donors/summaries",
-   "line": 9973,
+   "line": 9971,
    "auth": [
     "requireAuth"
    ],
@@ -2804,7 +2804,7 @@
   {
    "method": "GET",
    "path": "/donors/duplicates",
-   "line": 10020,
+   "line": 10018,
    "auth": [
     "requireAuth"
    ],
@@ -2824,7 +2824,7 @@
   {
    "method": "GET",
    "path": "/donors/export/csv",
-   "line": 10090,
+   "line": 10088,
    "auth": [
     "requireAuth"
    ],
@@ -2844,7 +2844,7 @@
   {
    "method": "GET",
    "path": "/donors/custom-field-values/all",
-   "line": 10116,
+   "line": 10114,
    "auth": [
     "requireAuth"
    ],
@@ -2864,7 +2864,7 @@
   {
    "method": "GET",
    "path": "/donors/stage-counts",
-   "line": 10132,
+   "line": 10130,
    "auth": [
     "requireAuth"
    ],
@@ -2884,7 +2884,7 @@
   {
    "method": "GET",
    "path": "/donors/:id",
-   "line": 10227,
+   "line": 10225,
    "auth": [
     "requireAuth"
    ],
@@ -2908,7 +2908,7 @@
   {
    "method": "POST",
    "path": "/donors",
-   "line": 10285,
+   "line": 10283,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2943,7 +2943,7 @@
   {
    "method": "POST",
    "path": "/donors/import",
-   "line": 10565,
+   "line": 10563,
    "auth": [
     "requireAuth"
    ],
@@ -2967,7 +2967,7 @@
   {
    "method": "POST",
    "path": "/donors/import-combined",
-   "line": 10810,
+   "line": 10808,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3007,7 +3007,7 @@
   {
    "method": "PUT",
    "path": "/donors/:id",
-   "line": 11794,
+   "line": 11792,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3048,7 +3048,7 @@
   {
    "method": "PATCH",
    "path": "/donors/:id/stage",
-   "line": 11859,
+   "line": 11857,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -3077,7 +3077,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id",
-   "line": 11893,
+   "line": 11891,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3102,7 +3102,7 @@
   {
    "method": "PATCH",
    "path": "/donors/:id/assign",
-   "line": 11902,
+   "line": 11900,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3131,7 +3131,7 @@
   {
    "method": "PATCH",
    "path": "/donors/bulk-stage",
-   "line": 11947,
+   "line": 11945,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -3158,7 +3158,7 @@
   {
    "method": "PATCH",
    "path": "/donors/bulk-assign",
-   "line": 11967,
+   "line": 11965,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3186,7 +3186,7 @@
   {
    "method": "POST",
    "path": "/donors/bulk-delete",
-   "line": 12017,
+   "line": 12015,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3211,7 +3211,7 @@
   {
    "method": "POST",
    "path": "/donors/purge-trash",
-   "line": 12045,
+   "line": 12043,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3232,7 +3232,7 @@
   {
    "method": "POST",
    "path": "/donors/merge",
-   "line": 12085,
+   "line": 12083,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3259,7 +3259,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/interactions",
-   "line": 12208,
+   "line": 12206,
    "auth": [
     "requireAuth"
    ],
@@ -3288,7 +3288,7 @@
   {
    "method": "DELETE",
    "path": "/interactions/:id",
-   "line": 12236,
+   "line": 12234,
    "auth": [
     "requireAuth"
    ],
@@ -3312,7 +3312,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/gifts",
-   "line": 12337,
+   "line": 12335,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3360,7 +3360,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id",
-   "line": 12502,
+   "line": 12500,
    "auth": [
     "requireAuth"
    ],
@@ -3399,7 +3399,7 @@
   {
    "method": "DELETE",
    "path": "/gifts/:id",
-   "line": 12584,
+   "line": 12582,
    "auth": [
     "requireAuth"
    ],
@@ -3423,7 +3423,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/pledges",
-   "line": 12679,
+   "line": 12677,
    "auth": [
     "requireAuth"
    ],
@@ -3447,7 +3447,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/pledges",
-   "line": 12707,
+   "line": 12705,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3484,7 +3484,7 @@
   {
    "method": "GET",
    "path": "/pledges/:id/installments",
-   "line": 12821,
+   "line": 12819,
    "auth": [
     "requireAuth"
    ],
@@ -3508,7 +3508,7 @@
   {
    "method": "PUT",
    "path": "/pledges/:id/installments",
-   "line": 12837,
+   "line": 12835,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3538,7 +3538,7 @@
   {
    "method": "PUT",
    "path": "/pledges/:id",
-   "line": 12857,
+   "line": 12855,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3572,7 +3572,7 @@
   {
    "method": "DELETE",
    "path": "/pledges/:id",
-   "line": 12930,
+   "line": 12928,
    "auth": [
     "requireAuth"
    ],
@@ -3596,7 +3596,7 @@
   {
    "method": "GET",
    "path": "/receipts/preview",
-   "line": 13360,
+   "line": 13358,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3617,7 +3617,7 @@
   {
    "method": "POST",
    "path": "/receipts/year-end-run",
-   "line": 13402,
+   "line": 13400,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3642,7 +3642,7 @@
   {
    "method": "GET",
    "path": "/receipts/:id/pdf",
-   "line": 13444,
+   "line": 13442,
    "auth": [
     "requireAuth"
    ],
@@ -3666,7 +3666,7 @@
   {
    "method": "POST",
    "path": "/receipts/:id/void",
-   "line": 13459,
+   "line": 13457,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3693,7 +3693,7 @@
   {
    "method": "POST",
    "path": "/gifts/:id/receipt",
-   "line": 13473,
+   "line": 13471,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3720,7 +3720,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/receipts",
-   "line": 13500,
+   "line": 13498,
    "auth": [
     "requireAuth"
    ],
@@ -3744,7 +3744,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/year-end-statement",
-   "line": 13510,
+   "line": 13508,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3772,7 +3772,7 @@
   {
    "method": "GET",
    "path": "/org/import-health",
-   "line": 13553,
+   "line": 13551,
    "auth": [
     "requireAuth"
    ],
@@ -3792,7 +3792,7 @@
   {
    "method": "POST",
    "path": "/org/import-health/confirm-gift",
-   "line": 13559,
+   "line": 13557,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3816,7 +3816,7 @@
   {
    "method": "POST",
    "path": "/donors/import-semantics",
-   "line": 13572,
+   "line": 13570,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3844,7 +3844,7 @@
   {
    "method": "POST",
    "path": "/imports",
-   "line": 13945,
+   "line": 13943,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3865,7 +3865,7 @@
   {
    "method": "GET",
    "path": "/statement-mappings",
-   "line": 14762,
+   "line": 14768,
    "auth": [
     "requireAuth"
    ],
@@ -3885,7 +3885,7 @@
   {
    "method": "POST",
    "path": "/statement-mappings",
-   "line": 14771,
+   "line": 14777,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3906,7 +3906,7 @@
   {
    "method": "POST",
    "path": "/statement-mappings/match",
-   "line": 14809,
+   "line": 14815,
    "auth": [
     "requireAuth"
    ],
@@ -3928,7 +3928,7 @@
   {
    "method": "DELETE",
    "path": "/statement-mappings/:id",
-   "line": 14821,
+   "line": 14827,
    "auth": [
     "requireAuth"
    ],
@@ -3952,7 +3952,7 @@
   {
    "method": "GET",
    "path": "/imports",
-   "line": 15311,
+   "line": 15317,
    "auth": [
     "requireAuth"
    ],
@@ -3972,7 +3972,7 @@
   {
    "method": "GET",
    "path": "/imports/:id",
-   "line": 15344,
+   "line": 15350,
    "auth": [
     "requireAuth"
    ],
@@ -3996,7 +3996,7 @@
   {
    "method": "GET",
    "path": "/move",
-   "line": 15413,
+   "line": 15419,
    "auth": [
     "requireAuth"
    ],
@@ -4016,7 +4016,7 @@
   {
    "method": "GET",
    "path": "/move/sources",
-   "line": 15437,
+   "line": 15443,
    "auth": [
     "requireAuth"
    ],
@@ -4036,7 +4036,7 @@
   {
    "method": "POST",
    "path": "/move/start",
-   "line": 15451,
+   "line": 15457,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4057,7 +4057,7 @@
   {
    "method": "POST",
    "path": "/move/complete",
-   "line": 15465,
+   "line": 15471,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -4079,7 +4079,7 @@
   {
    "method": "POST",
    "path": "/move/undo",
-   "line": 15483,
+   "line": 15489,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -4101,7 +4101,7 @@
   {
    "method": "GET",
    "path": "/imports/:id/move-report",
-   "line": 15578,
+   "line": 15584,
    "auth": [
     "requireAuth"
    ],
@@ -4125,7 +4125,7 @@
   {
    "method": "GET",
    "path": "/imports/:id/move-report/pdf",
-   "line": 15721,
+   "line": 15727,
    "auth": [
     "requireAuth"
    ],
@@ -4149,7 +4149,7 @@
   {
    "method": "POST",
    "path": "/imports/:id/old-system-totals",
-   "line": 15747,
+   "line": 15753,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4178,7 +4178,7 @@
   {
    "method": "POST",
    "path": "/deposits/read-cheques",
-   "line": 15834,
+   "line": 15840,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4201,7 +4201,7 @@
   {
    "method": "POST",
    "path": "/deposits/plan",
-   "line": 15927,
+   "line": 15933,
    "auth": [
     "requireAuth"
    ],
@@ -4221,7 +4221,7 @@
   {
    "method": "POST",
    "path": "/deposits/commit",
-   "line": 15940,
+   "line": 15946,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4242,7 +4242,7 @@
   {
    "method": "POST",
    "path": "/imports/:id/reverse",
-   "line": 16148,
+   "line": 16154,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4267,7 +4267,7 @@
   {
    "method": "GET",
    "path": "/import-merges",
-   "line": 16198,
+   "line": 16204,
    "auth": [
     "requireAuth"
    ],
@@ -4287,7 +4287,7 @@
   {
    "method": "POST",
    "path": "/import-merges/:id/undo",
-   "line": 16208,
+   "line": 16214,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4312,7 +4312,7 @@
   {
    "method": "POST",
    "path": "/gifts/import-history",
-   "line": 16240,
+   "line": 16246,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4338,7 +4338,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/planned-gifts",
-   "line": 16518,
+   "line": 16524,
    "auth": [
     "requireAuth"
    ],
@@ -4362,7 +4362,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/planned-gifts",
-   "line": 16524,
+   "line": 16530,
    "auth": [
     "requireAuth"
    ],
@@ -4391,7 +4391,7 @@
   {
    "method": "PUT",
    "path": "/planned-gifts/:id",
-   "line": 16557,
+   "line": 16563,
    "auth": [
     "requireAuth"
    ],
@@ -4420,7 +4420,7 @@
   {
    "method": "DELETE",
    "path": "/planned-gifts/:id",
-   "line": 16572,
+   "line": 16578,
    "auth": [
     "requireAuth"
    ],
@@ -4444,7 +4444,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/materials",
-   "line": 16579,
+   "line": 16585,
    "auth": [
     "requireAuth"
    ],
@@ -4468,7 +4468,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/materials",
-   "line": 16612,
+   "line": 16618,
    "auth": [
     "requireAuth"
    ],
@@ -4498,7 +4498,7 @@
   {
    "method": "DELETE",
    "path": "/materials/:id",
-   "line": 16643,
+   "line": 16649,
    "auth": [
     "requireAuth"
    ],
@@ -4522,7 +4522,7 @@
   {
    "method": "GET",
    "path": "/households",
-   "line": 16690,
+   "line": 16696,
    "auth": [
     "requireAuth"
    ],
@@ -4542,7 +4542,7 @@
   {
    "method": "GET",
    "path": "/households/:id",
-   "line": 16702,
+   "line": 16708,
    "auth": [
     "requireAuth"
    ],
@@ -4566,7 +4566,7 @@
   {
    "method": "POST",
    "path": "/households",
-   "line": 16762,
+   "line": 16768,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4595,7 +4595,7 @@
   {
    "method": "PUT",
    "path": "/households/:id",
-   "line": 16782,
+   "line": 16788,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4627,7 +4627,7 @@
   {
    "method": "DELETE",
    "path": "/households/:id",
-   "line": 16811,
+   "line": 16817,
    "auth": [
     "requireAuth"
    ],
@@ -4651,7 +4651,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/soft-credit",
-   "line": 16823,
+   "line": 16829,
    "auth": [
     "requireAuth"
    ],
@@ -4675,7 +4675,7 @@
   {
    "method": "GET",
    "path": "/gifts/:id/extras",
-   "line": 17143,
+   "line": 17149,
    "auth": [
     "requireAuth"
    ],
@@ -4699,7 +4699,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id/extras",
-   "line": 17170,
+   "line": 17176,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4724,7 +4724,7 @@
   {
    "method": "GET",
    "path": "/tribute-notices",
-   "line": 17186,
+   "line": 17192,
    "auth": [
     "requireAuth"
    ],
@@ -4744,7 +4744,7 @@
   {
    "method": "POST",
    "path": "/tribute-notices/:id/sent",
-   "line": 17194,
+   "line": 17200,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4769,7 +4769,7 @@
   {
    "method": "POST",
    "path": "/tribute-notices/:id/skip",
-   "line": 17200,
+   "line": 17206,
    "auth": [
     "requireAuth"
    ],
@@ -4793,7 +4793,7 @@
   {
    "method": "GET",
    "path": "/acknowledgments/templates",
-   "line": 17350,
+   "line": 17356,
    "auth": [
     "requireAuth"
    ],
@@ -4813,7 +4813,7 @@
   {
    "method": "POST",
    "path": "/acknowledgments/templates",
-   "line": 17359,
+   "line": 17365,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4834,7 +4834,7 @@
   {
    "method": "PUT",
    "path": "/acknowledgments/templates/:id",
-   "line": 17374,
+   "line": 17380,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4859,7 +4859,7 @@
   {
    "method": "DELETE",
    "path": "/acknowledgments/templates/:id",
-   "line": 17389,
+   "line": 17395,
    "auth": [
     "requireAuth"
    ],
@@ -4883,7 +4883,7 @@
   {
    "method": "GET",
    "path": "/acknowledgments/backlog",
-   "line": 17396,
+   "line": 17402,
    "auth": [
     "requireAuth"
    ],
@@ -4903,7 +4903,7 @@
   {
    "method": "PUT",
    "path": "/acknowledgments/settings",
-   "line": 17420,
+   "line": 17426,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -4925,7 +4925,7 @@
   {
    "method": "POST",
    "path": "/acknowledgments/letters/preview",
-   "line": 17428,
+   "line": 17434,
    "auth": [
     "requireAuth"
    ],
@@ -4945,7 +4945,7 @@
   {
    "method": "POST",
    "path": "/acknowledgments/letters/pdf",
-   "line": 17439,
+   "line": 17445,
    "auth": [
     "requireAuth"
    ],
@@ -4965,7 +4965,7 @@
   {
    "method": "POST",
    "path": "/acknowledgments/labels/pdf",
-   "line": 17457,
+   "line": 17463,
    "auth": [
     "requireAuth"
    ],
@@ -4985,7 +4985,7 @@
   {
    "method": "POST",
    "path": "/acknowledgments/mark",
-   "line": 17473,
+   "line": 17479,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5010,7 +5010,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/designations",
-   "line": 17503,
+   "line": 17509,
    "auth": [
     "requireAuth"
    ],
@@ -5034,7 +5034,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/designations",
-   "line": 17510,
+   "line": 17516,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5061,7 +5061,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id/designations/:kind",
-   "line": 17520,
+   "line": 17526,
    "auth": [
     "requireAuth"
    ],
@@ -5086,7 +5086,7 @@
   {
    "method": "GET",
    "path": "/portfolio/officers",
-   "line": 17530,
+   "line": 17536,
    "auth": [
     "requireAuth"
    ],
@@ -5106,7 +5106,7 @@
   {
    "method": "PUT",
    "path": "/portfolio/officers/:userId/color",
-   "line": 17565,
+   "line": 17571,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5135,7 +5135,7 @@
   {
    "method": "GET",
    "path": "/pipeline",
-   "line": 17583,
+   "line": 17589,
    "auth": [
     "requireAuth"
    ],
@@ -5162,7 +5162,7 @@
   {
    "method": "POST",
    "path": "/pipeline/add",
-   "line": 17736,
+   "line": 17742,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5188,7 +5188,7 @@
   {
    "method": "POST",
    "path": "/pipeline/remove",
-   "line": 17758,
+   "line": 17764,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5214,7 +5214,7 @@
   {
    "method": "POST",
    "path": "/pipeline/:donorId/move",
-   "line": 17772,
+   "line": 17778,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5243,7 +5243,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/move-suggestions",
-   "line": 17799,
+   "line": 17805,
    "auth": [
     "requireAuth"
    ],
@@ -5267,7 +5267,7 @@
   {
    "method": "POST",
    "path": "/pipeline/run-auto-lapse",
-   "line": 17808,
+   "line": 17814,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -5288,7 +5288,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/moves",
-   "line": 17814,
+   "line": 17820,
    "auth": [
     "requireAuth"
    ],
@@ -5312,7 +5312,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/opportunities",
-   "line": 17823,
+   "line": 17829,
    "auth": [
     "requireAuth"
    ],
@@ -5336,7 +5336,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/opportunities",
-   "line": 17831,
+   "line": 17837,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5366,7 +5366,7 @@
   {
    "method": "PUT",
    "path": "/opportunities/:id",
-   "line": 17861,
+   "line": 17867,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5401,7 +5401,7 @@
   {
    "method": "DELETE",
    "path": "/opportunities/:id",
-   "line": 17901,
+   "line": 17907,
    "auth": [
     "requireAuth"
    ],
@@ -5425,7 +5425,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/proposals",
-   "line": 17995,
+   "line": 18001,
    "auth": [
     "requireAuth"
    ],
@@ -5449,7 +5449,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/proposals",
-   "line": 18020,
+   "line": 18026,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5490,7 +5490,7 @@
   {
    "method": "PUT",
    "path": "/proposals/:id",
-   "line": 18120,
+   "line": 18126,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5539,7 +5539,7 @@
   {
    "method": "DELETE",
    "path": "/proposals/:id",
-   "line": 18255,
+   "line": 18261,
    "auth": [
     "requireAuth"
    ],
@@ -5563,7 +5563,7 @@
   {
    "method": "GET",
    "path": "/proposals",
-   "line": 18265,
+   "line": 18271,
    "auth": [
     "requireAuth"
    ],
@@ -5592,7 +5592,7 @@
   {
    "method": "GET",
    "path": "/portfolio/unassigned-prospects",
-   "line": 18339,
+   "line": 18345,
    "auth": [
     "requireAuth"
    ],
@@ -5614,7 +5614,7 @@
   {
    "method": "GET",
    "path": "/portfolio/:officerId",
-   "line": 18373,
+   "line": 18379,
    "auth": [
     "requireAuth"
    ],
@@ -5638,7 +5638,7 @@
   {
    "method": "PUT",
    "path": "/portfolio/:officerId/target",
-   "line": 18464,
+   "line": 18470,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5668,7 +5668,7 @@
   {
    "method": "PUT",
    "path": "/orgs/major-prospect-threshold",
-   "line": 18515,
+   "line": 18521,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5692,7 +5692,7 @@
   {
    "method": "GET",
    "path": "/cultivation-templates",
-   "line": 18742,
+   "line": 18748,
    "auth": [
     "requireAuth"
    ],
@@ -5712,7 +5712,7 @@
   {
    "method": "POST",
    "path": "/cultivation-templates",
-   "line": 18755,
+   "line": 18761,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5737,7 +5737,7 @@
   {
    "method": "PUT",
    "path": "/cultivation-templates/:id",
-   "line": 18767,
+   "line": 18773,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -5766,7 +5766,7 @@
   {
    "method": "DELETE",
    "path": "/cultivation-templates/:id",
-   "line": 18784,
+   "line": 18790,
    "auth": [
     "requireAuth"
    ],
@@ -5790,7 +5790,7 @@
   {
    "method": "GET",
    "path": "/journeys",
-   "line": 18802,
+   "line": 18808,
    "auth": [
     "requireAuth"
    ],
@@ -5810,7 +5810,7 @@
   {
    "method": "GET",
    "path": "/journeys/suggest-big-gift",
-   "line": 18871,
+   "line": 18877,
    "auth": [
     "requireAuth"
    ],
@@ -5830,7 +5830,7 @@
   {
    "method": "POST",
    "path": "/journeys",
-   "line": 18916,
+   "line": 18922,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5852,7 +5852,7 @@
   {
    "method": "POST",
    "path": "/journeys/:id/duplicate",
-   "line": 18984,
+   "line": 18990,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5878,7 +5878,7 @@
   {
    "method": "DELETE",
    "path": "/journeys/:id",
-   "line": 19014,
+   "line": 19020,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5904,7 +5904,7 @@
   {
    "method": "POST",
    "path": "/journeys/:id/restore",
-   "line": 19030,
+   "line": 19036,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5930,7 +5930,7 @@
   {
    "method": "GET",
    "path": "/journeys/:id/affects",
-   "line": 19047,
+   "line": 19053,
    "auth": [
     "requireAuth"
    ],
@@ -5954,7 +5954,7 @@
   {
    "method": "PATCH",
    "path": "/journeys/:id",
-   "line": 19076,
+   "line": 19082,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5980,7 +5980,7 @@
   {
    "method": "GET",
    "path": "/journeys/:id/qualifying",
-   "line": 19139,
+   "line": 19145,
    "auth": [
     "requireAuth"
    ],
@@ -6007,7 +6007,7 @@
   {
    "method": "GET",
    "path": "/journeys/:id/preview",
-   "line": 19174,
+   "line": 19180,
    "auth": [
     "requireAuth"
    ],
@@ -6031,7 +6031,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/journey-preview",
-   "line": 19286,
+   "line": 19292,
    "auth": [
     "requireAuth"
    ],
@@ -6058,7 +6058,7 @@
   {
    "method": "GET",
    "path": "/journeys/:id/stats",
-   "line": 19323,
+   "line": 19329,
    "auth": [
     "requireAuth"
    ],
@@ -6082,7 +6082,7 @@
   {
    "method": "GET",
    "path": "/journeys/:id/rows",
-   "line": 19333,
+   "line": 19339,
    "auth": [
     "requireAuth"
    ],
@@ -6108,7 +6108,7 @@
   {
    "method": "POST",
    "path": "/journeys/:id/apply",
-   "line": 19534,
+   "line": 19540,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6139,7 +6139,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/plan",
-   "line": 19565,
+   "line": 19571,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6168,7 +6168,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/plan",
-   "line": 19636,
+   "line": 19642,
    "auth": [
     "requireAuth"
    ],
@@ -6192,7 +6192,7 @@
   {
    "method": "POST",
    "path": "/plan-steps/:id/done",
-   "line": 19656,
+   "line": 19662,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6220,7 +6220,7 @@
   {
    "method": "POST",
    "path": "/plan-steps/:id/skip",
-   "line": 19707,
+   "line": 19713,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6248,7 +6248,7 @@
   {
    "method": "POST",
    "path": "/plans/:id/stop",
-   "line": 19744,
+   "line": 19750,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6274,7 +6274,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/brief-rows",
-   "line": 19896,
+   "line": 19902,
    "auth": [
     "requireAuth",
     "requirePlan(team)"
@@ -6299,7 +6299,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/brief",
-   "line": 19906,
+   "line": 19912,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6325,7 +6325,7 @@
   {
    "method": "GET",
    "path": "/briefs/:runId",
-   "line": 19983,
+   "line": 19990,
    "auth": [
     "requireAuth"
    ],
@@ -6349,7 +6349,7 @@
   {
    "method": "GET",
    "path": "/briefs/:runId/pdf",
-   "line": 19997,
+   "line": 20004,
    "auth": [
     "requireAuth"
    ],
@@ -6373,7 +6373,7 @@
   {
    "method": "GET",
    "path": "/major-gifts/dashboard",
-   "line": 20080,
+   "line": 20087,
    "auth": [
     "requireAuth"
    ],
@@ -6393,7 +6393,7 @@
   {
    "method": "GET",
    "path": "/pipeline/officer-activity",
-   "line": 20195,
+   "line": 20202,
    "auth": [
     "requireAuth"
    ],
@@ -6416,7 +6416,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/relationships",
-   "line": 20230,
+   "line": 20237,
    "auth": [
     "requireAuth"
    ],
@@ -6440,7 +6440,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/relationships",
-   "line": 20271,
+   "line": 20278,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6470,7 +6470,7 @@
   {
    "method": "DELETE",
    "path": "/donor-relationships/:id",
-   "line": 20303,
+   "line": 20310,
    "auth": [
     "requireAuth"
    ],
@@ -6494,7 +6494,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/score",
-   "line": 20311,
+   "line": 20318,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6520,7 +6520,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/fund-affinity",
-   "line": 20317,
+   "line": 20324,
    "auth": [
     "requireAuth"
    ],
@@ -6544,7 +6544,7 @@
   {
    "method": "GET",
    "path": "/grants",
-   "line": 20370,
+   "line": 20377,
    "auth": [
     "requireAuth"
    ],
@@ -6567,7 +6567,7 @@
   {
    "method": "POST",
    "path": "/grants",
-   "line": 20412,
+   "line": 20419,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6603,7 +6603,7 @@
   {
    "method": "PUT",
    "path": "/grants/:id",
-   "line": 20440,
+   "line": 20447,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6647,7 +6647,7 @@
   {
    "method": "GET",
    "path": "/funders",
-   "line": 20625,
+   "line": 20632,
    "auth": [
     "requireAuth"
    ],
@@ -6667,7 +6667,7 @@
   {
    "method": "PUT",
    "path": "/funders/:donorId",
-   "line": 20657,
+   "line": 20664,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6697,7 +6697,7 @@
   {
    "method": "GET",
    "path": "/funders/:donorId/grants",
-   "line": 20712,
+   "line": 20719,
    "auth": [
     "requireAuth"
    ],
@@ -6721,7 +6721,7 @@
   {
    "method": "POST",
    "path": "/funders/:donorId/grants",
-   "line": 20736,
+   "line": 20743,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6760,7 +6760,7 @@
   {
    "method": "PUT",
    "path": "/grants/:id/award",
-   "line": 20802,
+   "line": 20809,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6795,7 +6795,7 @@
   {
    "method": "PUT",
    "path": "/grants/:id/decline",
-   "line": 20873,
+   "line": 20880,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6825,7 +6825,7 @@
   {
    "method": "GET",
    "path": "/grants/pipeline",
-   "line": 20897,
+   "line": 20904,
    "auth": [
     "requireAuth"
    ],
@@ -6853,7 +6853,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/milestones",
-   "line": 21065,
+   "line": 21072,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6883,7 +6883,7 @@
   {
    "method": "PUT",
    "path": "/grants/milestones/:msId",
-   "line": 21112,
+   "line": 21119,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6912,7 +6912,7 @@
   {
    "method": "POST",
    "path": "/grants/milestones/:msId/done",
-   "line": 21163,
+   "line": 21170,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -6938,7 +6938,7 @@
   {
    "method": "GET",
    "path": "/grants/deadlines",
-   "line": 21179,
+   "line": 21186,
    "auth": [
     "requireAuth"
    ],
@@ -6960,7 +6960,7 @@
   {
    "method": "PUT",
    "path": "/org/grant-lead-days",
-   "line": 21226,
+   "line": 21233,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -6984,7 +6984,7 @@
   {
    "method": "POST",
    "path": "/grants/milestones/run",
-   "line": 21244,
+   "line": 21251,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7007,7 +7007,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/documents",
-   "line": 21279,
+   "line": 21286,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -7038,7 +7038,7 @@
   {
    "method": "GET",
    "path": "/grants/:id/documents",
-   "line": 21343,
+   "line": 21350,
    "auth": [
     "requireAuth"
    ],
@@ -7062,7 +7062,7 @@
   {
    "method": "DELETE",
    "path": "/grants/documents/:docId",
-   "line": 21360,
+   "line": 21367,
    "auth": [
     "requireAuth"
    ],
@@ -7086,7 +7086,7 @@
   {
    "method": "GET",
    "path": "/funders/:donorId/documents",
-   "line": 21373,
+   "line": 21380,
    "auth": [
     "requireAuth"
    ],
@@ -7110,7 +7110,7 @@
   {
    "method": "GET",
    "path": "/grant-documents/:id",
-   "line": 21406,
+   "line": 21413,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7135,7 +7135,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/spend",
-   "line": 21479,
+   "line": 21486,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -7165,7 +7165,7 @@
   {
    "method": "DELETE",
    "path": "/grants/spend/:spendId",
-   "line": 21504,
+   "line": 21511,
    "auth": [
     "requireAuth"
    ],
@@ -7189,7 +7189,7 @@
   {
    "method": "GET",
    "path": "/grants/:id/restricted",
-   "line": 21514,
+   "line": 21521,
    "auth": [
     "requireAuth"
    ],
@@ -7213,7 +7213,7 @@
   {
    "method": "POST",
    "path": "/grants/import/preview",
-   "line": 24111,
+   "line": 24147,
    "auth": [
     "requireAuth"
    ],
@@ -7233,7 +7233,7 @@
   {
    "method": "POST",
    "path": "/grants/import",
-   "line": 24233,
+   "line": 24269,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -7255,7 +7255,7 @@
   {
    "method": "GET",
    "path": "/grants/import/sources",
-   "line": 24328,
+   "line": 24364,
    "auth": [
     "requireAuth"
    ],
@@ -7275,7 +7275,7 @@
   {
    "method": "GET",
    "path": "/grants/:id/outline-rows",
-   "line": 24506,
+   "line": 24542,
    "auth": [
     "requireAuth"
    ],
@@ -7302,7 +7302,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/report-outline",
-   "line": 24517,
+   "line": 24553,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -7330,7 +7330,7 @@
   {
    "method": "GET",
    "path": "/grant-outlines/:runId",
-   "line": 24621,
+   "line": 24658,
    "auth": [
     "requireAuth"
    ],
@@ -7354,7 +7354,7 @@
   {
    "method": "GET",
    "path": "/grants/:id/manual-match",
-   "line": 24627,
+   "line": 24664,
    "auth": [
     "requireAuth"
    ],
@@ -7378,7 +7378,7 @@
   {
    "method": "DELETE",
    "path": "/grants/:id",
-   "line": 24649,
+   "line": 24686,
    "auth": [
     "requireAuth"
    ],
@@ -7402,7 +7402,7 @@
   {
    "method": "GET",
    "path": "/grants/:id",
-   "line": 24655,
+   "line": 24692,
    "auth": [
     "requireAuth"
    ],
@@ -7426,7 +7426,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/interactions",
-   "line": 24668,
+   "line": 24705,
    "auth": [
     "requireAuth"
    ],
@@ -7454,7 +7454,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/volunteer-hours",
-   "line": 24743,
+   "line": 24780,
    "auth": [
     "requireAuth"
    ],
@@ -7478,7 +7478,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/volunteer-hours",
-   "line": 24768,
+   "line": 24805,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -7503,7 +7503,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/volunteer-link",
-   "line": 24785,
+   "line": 24822,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -7528,7 +7528,7 @@
   {
    "method": "GET",
    "path": "/api-keys",
-   "line": 25343,
+   "line": 25380,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7549,7 +7549,7 @@
   {
    "method": "POST",
    "path": "/api-keys",
-   "line": 25349,
+   "line": 25386,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7573,7 +7573,7 @@
   {
    "method": "GET",
    "path": "/api-keys/scopes",
-   "line": 25373,
+   "line": 25410,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7594,7 +7594,7 @@
   {
    "method": "GET",
    "path": "/api-keys/:id/calls",
-   "line": 25385,
+   "line": 25422,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7619,7 +7619,7 @@
   {
    "method": "DELETE",
    "path": "/api-keys/:id",
-   "line": 25404,
+   "line": 25441,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7653,7 +7653,7 @@
   {
    "method": "GET",
    "path": "/audit/log",
-   "line": 25490,
+   "line": 25534,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7674,7 +7674,7 @@
   {
    "method": "GET",
    "path": "/audit/log/:id",
-   "line": 25513,
+   "line": 25560,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7699,7 +7699,7 @@
   {
    "method": "GET",
    "path": "/audit/log.csv",
-   "line": 25523,
+   "line": 25570,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7720,7 +7720,7 @@
   {
    "method": "GET",
    "path": "/api/v1/me",
-   "line": 25565,
+   "line": 25612,
    "auth": [
     "apiLimiter"
    ],
@@ -7740,7 +7740,7 @@
   {
    "method": "GET",
    "path": "/api/v1/people",
-   "line": 25569,
+   "line": 25616,
    "auth": [
     "apiLimiter"
    ],
@@ -7760,7 +7760,7 @@
   {
    "method": "GET",
    "path": "/api/v1/people/:id",
-   "line": 25575,
+   "line": 25622,
    "auth": [
     "apiLimiter"
    ],
@@ -7784,7 +7784,7 @@
   {
    "method": "GET",
    "path": "/api/v1/gifts",
-   "line": 25580,
+   "line": 25627,
    "auth": [
     "apiLimiter"
    ],
@@ -7804,7 +7804,7 @@
   {
    "method": "GET",
    "path": "/webhooks",
-   "line": 25601,
+   "line": 25648,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7825,7 +7825,7 @@
   {
    "method": "POST",
    "path": "/webhooks",
-   "line": 25627,
+   "line": 25674,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7847,7 +7847,7 @@
   {
    "method": "DELETE",
    "path": "/webhooks/:id",
-   "line": 25644,
+   "line": 25691,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7872,7 +7872,7 @@
   {
    "method": "POST",
    "path": "/webhooks/:id/resume",
-   "line": 25651,
+   "line": 25698,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7898,7 +7898,7 @@
   {
    "method": "GET",
    "path": "/webhooks/:id/deliveries",
-   "line": 25663,
+   "line": 25710,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7923,7 +7923,7 @@
   {
    "method": "POST",
    "path": "/webhooks/deliveries/:id/resend",
-   "line": 25684,
+   "line": 25731,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7949,7 +7949,7 @@
   {
    "method": "POST",
    "path": "/api/v1/people",
-   "line": 25706,
+   "line": 25753,
    "auth": [
     "apiLimiter"
    ],
@@ -7969,7 +7969,7 @@
   {
    "method": "POST",
    "path": "/api/v1/gifts",
-   "line": 25745,
+   "line": 25792,
    "auth": [
     "apiLimiter"
    ],
@@ -7989,7 +7989,7 @@
   {
    "method": "POST",
    "path": "/api/v1/notes",
-   "line": 25780,
+   "line": 25827,
    "auth": [
     "apiLimiter"
    ],
@@ -8011,7 +8011,7 @@
   {
    "method": "GET",
    "path": "/tasks",
-   "line": 26141,
+   "line": 26188,
    "auth": [
     "requireAuth"
    ],
@@ -8033,7 +8033,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/tasks",
-   "line": 26159,
+   "line": 26206,
    "auth": [
     "requireAuth"
    ],
@@ -8057,7 +8057,7 @@
   {
    "method": "POST",
    "path": "/tasks",
-   "line": 26170,
+   "line": 26217,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8089,7 +8089,7 @@
   {
    "method": "PUT",
    "path": "/tasks/:id",
-   "line": 26220,
+   "line": 26267,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8123,7 +8123,7 @@
   {
    "method": "POST",
    "path": "/tasks/:id/complete",
-   "line": 26260,
+   "line": 26307,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8150,7 +8150,7 @@
   {
    "method": "DELETE",
    "path": "/tasks/:id",
-   "line": 26272,
+   "line": 26319,
    "auth": [
     "requireAuth"
    ],
@@ -8174,7 +8174,7 @@
   {
    "method": "GET",
    "path": "/board",
-   "line": 26279,
+   "line": 26326,
    "auth": [
     "requireAuth"
    ],
@@ -8194,7 +8194,7 @@
   {
    "method": "POST",
    "path": "/board",
-   "line": 26284,
+   "line": 26331,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8223,7 +8223,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats",
-   "line": 26354,
+   "line": 26401,
    "auth": [
     "requireAuth"
    ],
@@ -8243,7 +8243,7 @@
   {
    "method": "GET",
    "path": "/dashboard/home",
-   "line": 26411,
+   "line": 26458,
    "auth": [
     "requireAuth"
    ],
@@ -8265,7 +8265,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/visits/breakdown",
-   "line": 26555,
+   "line": 26602,
    "auth": [
     "requireAuth"
    ],
@@ -8285,7 +8285,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/moves/breakdown",
-   "line": 26585,
+   "line": 26632,
    "auth": [
     "requireAuth"
    ],
@@ -8305,7 +8305,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/gifts/breakdown",
-   "line": 26616,
+   "line": 26663,
    "auth": [
     "requireAuth"
    ],
@@ -8325,7 +8325,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/pipeline/breakdown",
-   "line": 26650,
+   "line": 26697,
    "auth": [
     "requireAuth"
    ],
@@ -8345,7 +8345,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/lapsed/breakdown",
-   "line": 26678,
+   "line": 26725,
    "auth": [
     "requireAuth"
    ],
@@ -8365,7 +8365,7 @@
   {
    "method": "GET",
    "path": "/dashboard/today",
-   "line": 26703,
+   "line": 26750,
    "auth": [
     "requireAuth"
    ],
@@ -8387,7 +8387,7 @@
   {
    "method": "GET",
    "path": "/drift",
-   "line": 27143,
+   "line": 27190,
    "auth": [
     "requireAuth"
    ],
@@ -8410,7 +8410,7 @@
   {
    "method": "POST",
    "path": "/drift/:donorId/done",
-   "line": 27244,
+   "line": 27291,
    "auth": [
     "requireAuth"
    ],
@@ -8437,7 +8437,7 @@
   {
    "method": "GET",
    "path": "/threads/:id/calendar",
-   "line": 27684,
+   "line": 27731,
    "auth": [
     "requireAuth"
    ],
@@ -8461,7 +8461,7 @@
   {
    "method": "GET",
    "path": "/threads/:id/calendar.ics",
-   "line": 27701,
+   "line": 27748,
    "auth": [
     "requireAuth"
    ],
@@ -8485,7 +8485,7 @@
   {
    "method": "GET",
    "path": "/threads",
-   "line": 27714,
+   "line": 27761,
    "auth": [
     "requireAuth"
    ],
@@ -8511,7 +8511,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/conversations",
-   "line": 27733,
+   "line": 27780,
    "auth": [
     "requireAuth"
    ],
@@ -8541,7 +8541,7 @@
   {
    "method": "POST",
    "path": "/threads/:id/dismiss",
-   "line": 27863,
+   "line": 27910,
    "auth": [
     "requireAuth"
    ],
@@ -8565,7 +8565,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/threads",
-   "line": 27914,
+   "line": 27961,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8592,7 +8592,7 @@
   {
    "method": "POST",
    "path": "/threads/plan",
-   "line": 27962,
+   "line": 28009,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8617,7 +8617,7 @@
   {
    "method": "GET",
    "path": "/threads/health",
-   "line": 28058,
+   "line": 28105,
    "auth": [
     "requireAuth"
    ],
@@ -8639,7 +8639,7 @@
   {
    "method": "GET",
    "path": "/goals/active",
-   "line": 28064,
+   "line": 28111,
    "auth": [
     "requireAuth"
    ],
@@ -8659,7 +8659,7 @@
   {
    "method": "POST",
    "path": "/goals",
-   "line": 28150,
+   "line": 28197,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8687,7 +8687,7 @@
   {
    "method": "POST",
    "path": "/metrics/reset-baselines",
-   "line": 28177,
+   "line": 28224,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8708,7 +8708,7 @@
   {
    "method": "GET",
    "path": "/metrics/stewardship-summary",
-   "line": 28183,
+   "line": 28230,
    "auth": [
     "requireAuth"
    ],
@@ -8730,7 +8730,7 @@
   {
    "method": "GET",
    "path": "/dashboard/stewardship-debt/breakdown",
-   "line": 28245,
+   "line": 28292,
    "auth": [
     "requireAuth"
    ],
@@ -8752,7 +8752,7 @@
   {
    "method": "GET",
    "path": "/dashboard/retention/breakdown",
-   "line": 28270,
+   "line": 28317,
    "auth": [
     "requireAuth"
    ],
@@ -8774,7 +8774,7 @@
   {
    "method": "GET",
    "path": "/dashboard",
-   "line": 28304,
+   "line": 28351,
    "auth": [
     "requireAuth"
    ],
@@ -8794,7 +8794,7 @@
   {
    "method": "GET",
    "path": "/campaigns",
-   "line": 29336,
+   "line": 29385,
    "auth": [
     "requireAuth"
    ],
@@ -8814,7 +8814,7 @@
   {
    "method": "GET",
    "path": "/campaigns/sent",
-   "line": 29361,
+   "line": 29410,
    "auth": [
     "requireAuth"
    ],
@@ -8834,7 +8834,7 @@
   {
    "method": "GET",
    "path": "/campaigns/:id",
-   "line": 29395,
+   "line": 29444,
    "auth": [
     "requireAuth"
    ],
@@ -8858,7 +8858,7 @@
   {
    "method": "POST",
    "path": "/campaigns",
-   "line": 29411,
+   "line": 29460,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8886,7 +8886,7 @@
   {
    "method": "PUT",
    "path": "/campaigns/:id",
-   "line": 29427,
+   "line": 29476,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8919,7 +8919,7 @@
   {
    "method": "DELETE",
    "path": "/campaigns/:id",
-   "line": 29451,
+   "line": 29500,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8944,7 +8944,7 @@
   {
    "method": "PUT",
    "path": "/campaigns/:id/briefing",
-   "line": 29465,
+   "line": 29514,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8974,7 +8974,7 @@
   {
    "method": "GET",
    "path": "/campaigns/:id/progress",
-   "line": 29477,
+   "line": 29526,
    "auth": [
     "requireAuth"
    ],
@@ -8998,7 +8998,7 @@
   {
    "method": "GET",
    "path": "/fundraising/overview",
-   "line": 29727,
+   "line": 29776,
    "auth": [
     "requireAuth"
    ],
@@ -9020,7 +9020,7 @@
   {
    "method": "GET",
    "path": "/fundraising/campaigns",
-   "line": 29905,
+   "line": 29954,
    "auth": [
     "requireAuth"
    ],
@@ -9040,7 +9040,7 @@
   {
    "method": "GET",
    "path": "/fundraising/goals",
-   "line": 29910,
+   "line": 29959,
    "auth": [
     "requireAuth"
    ],
@@ -9060,7 +9060,7 @@
   {
    "method": "POST",
    "path": "/fundraising/campaigns",
-   "line": 29953,
+   "line": 30002,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9091,7 +9091,7 @@
   {
    "method": "PUT",
    "path": "/fundraising/campaigns/:id",
-   "line": 29985,
+   "line": 30034,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9125,7 +9125,7 @@
   {
    "method": "GET",
    "path": "/audiences",
-   "line": 31806,
+   "line": 31849,
    "auth": [
     "requireAuth"
    ],
@@ -9145,7 +9145,7 @@
   {
    "method": "POST",
    "path": "/audiences",
-   "line": 31810,
+   "line": 31853,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9169,7 +9169,7 @@
   {
    "method": "PATCH",
    "path": "/audiences/:id",
-   "line": 31829,
+   "line": 31872,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9200,7 +9200,7 @@
   {
    "method": "DELETE",
    "path": "/audiences/:id",
-   "line": 31857,
+   "line": 31900,
    "auth": [
     "requireAuth"
    ],
@@ -9224,7 +9224,7 @@
   {
    "method": "GET",
    "path": "/communications/hub",
-   "line": 31869,
+   "line": 31912,
    "auth": [
     "requireAuth"
    ],
@@ -9244,7 +9244,7 @@
   {
    "method": "POST",
    "path": "/campaigns/:id/send",
-   "line": 31971,
+   "line": 32014,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9270,7 +9270,7 @@
   {
    "method": "GET",
    "path": "/programs",
-   "line": 32225,
+   "line": 32268,
    "auth": [
     "requireAuth"
    ],
@@ -9290,7 +9290,7 @@
   {
    "method": "POST",
    "path": "/programs",
-   "line": 32243,
+   "line": 32286,
    "auth": [
     "requireAuth"
    ],
@@ -9322,7 +9322,7 @@
   {
    "method": "PUT",
    "path": "/programs/:id",
-   "line": 32260,
+   "line": 32303,
    "auth": [
     "requireAuth"
    ],
@@ -9358,7 +9358,7 @@
   {
    "method": "DELETE",
    "path": "/programs/:id",
-   "line": 32280,
+   "line": 32323,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9383,7 +9383,7 @@
   {
    "method": "POST",
    "path": "/programs/:id/grants",
-   "line": 32286,
+   "line": 32329,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9412,7 +9412,7 @@
   {
    "method": "DELETE",
    "path": "/programs/:id/grants/:grantId",
-   "line": 32312,
+   "line": 32355,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9439,7 +9439,7 @@
   {
    "method": "GET",
    "path": "/annual-fund",
-   "line": 32322,
+   "line": 32365,
    "auth": [
     "requireAuth"
    ],
@@ -9461,7 +9461,7 @@
   {
    "method": "POST",
    "path": "/annual-fund/goal",
-   "line": 32401,
+   "line": 32444,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9485,7 +9485,7 @@
   {
    "method": "GET",
    "path": "/org/public-list",
-   "line": 32504,
+   "line": 32565,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -9503,7 +9503,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/public",
-   "line": 32510,
+   "line": 32571,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -9525,7 +9525,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/event/:eventId/public",
-   "line": 33173,
+   "line": 33234,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -9549,7 +9549,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/giving-page/:pageSlug/public",
-   "line": 33186,
+   "line": 33247,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -9574,7 +9574,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/giving-page/:pageSlug/teams",
-   "line": 33341,
+   "line": 33402,
    "auth": [
     "donateLimiter"
    ],
@@ -9599,7 +9599,7 @@
   {
    "method": "POST",
    "path": "/org/:orgSlug/giving-page/:pageSlug/fundraisers",
-   "line": 33378,
+   "line": 33439,
    "auth": [
     "donateLimiter"
    ],
@@ -9635,7 +9635,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
-   "line": 33503,
+   "line": 33564,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -9660,7 +9660,7 @@
   {
    "method": "GET",
    "path": "/reports/board",
-   "line": 34984,
+   "line": 35046,
    "auth": [
     "requireAuth"
    ],
@@ -9680,7 +9680,7 @@
   {
    "method": "GET",
    "path": "/reports/board/:id/pdf",
-   "line": 34997,
+   "line": 35059,
    "auth": [
     "requireAuth"
    ],
@@ -9704,7 +9704,7 @@
   {
    "method": "POST",
    "path": "/reports/board",
-   "line": 35015,
+   "line": 35077,
    "auth": [
     "requireAuth"
    ],
@@ -9724,7 +9724,7 @@
   {
    "method": "GET",
    "path": "/report-builder/catalogue",
-   "line": 36786,
+   "line": 36851,
    "auth": [
     "requireAuth"
    ],
@@ -9744,7 +9744,7 @@
   {
    "method": "POST",
    "path": "/report-builder/run",
-   "line": 36801,
+   "line": 36866,
    "auth": [
     "requireAuth"
    ],
@@ -9764,7 +9764,7 @@
   {
    "method": "GET",
    "path": "/saved-reports",
-   "line": 36807,
+   "line": 36872,
    "auth": [
     "requireAuth"
    ],
@@ -9784,7 +9784,7 @@
   {
    "method": "POST",
    "path": "/saved-reports",
-   "line": 36819,
+   "line": 36884,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9805,7 +9805,7 @@
   {
    "method": "PUT",
    "path": "/saved-reports/:id",
-   "line": 36838,
+   "line": 36903,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9833,7 +9833,7 @@
   {
    "method": "DELETE",
    "path": "/saved-reports/:id",
-   "line": 36852,
+   "line": 36917,
    "auth": [
     "requireAuth"
    ],
@@ -9857,7 +9857,7 @@
   {
    "method": "GET",
    "path": "/saved-reports/:id/run",
-   "line": 36858,
+   "line": 36923,
    "auth": [
     "requireAuth"
    ],
@@ -9881,7 +9881,7 @@
   {
    "method": "GET",
    "path": "/saved-reports/:id/csv",
-   "line": 36874,
+   "line": 36939,
    "auth": [
     "requireAuth"
    ],
@@ -9905,7 +9905,7 @@
   {
    "method": "GET",
    "path": "/saved-reports/:id/pdf",
-   "line": 36883,
+   "line": 36948,
    "auth": [
     "requireAuth"
    ],
@@ -9929,7 +9929,7 @@
   {
    "method": "POST",
    "path": "/saved-reports/run-schedule",
-   "line": 36963,
+   "line": 37028,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9952,7 +9952,7 @@
   {
    "method": "GET",
    "path": "/reports/activity",
-   "line": 36978,
+   "line": 37043,
    "auth": [
     "requireAuth"
    ],
@@ -9976,7 +9976,7 @@
   {
    "method": "GET",
    "path": "/reports/:key",
-   "line": 36991,
+   "line": 37056,
    "auth": [
     "requireAuth"
    ],
@@ -10001,7 +10001,7 @@
   {
    "method": "POST",
    "path": "/digests/run-daily",
-   "line": 37516,
+   "line": 37581,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10025,7 +10025,7 @@
   {
    "method": "POST",
    "path": "/photos/run",
-   "line": 37776,
+   "line": 37841,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10046,7 +10046,7 @@
   {
    "method": "POST",
    "path": "/geocode/run",
-   "line": 37783,
+   "line": 37848,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10069,7 +10069,7 @@
   {
    "method": "GET",
    "path": "/geocode/status",
-   "line": 37793,
+   "line": 37858,
    "auth": [
     "requireAuth"
    ],
@@ -10089,7 +10089,7 @@
   {
    "method": "POST",
    "path": "/nudges/run",
-   "line": 38107,
+   "line": 38207,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10113,7 +10113,7 @@
   {
    "method": "POST",
    "path": "/step-reminders/run",
-   "line": 38251,
+   "line": 38351,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10138,7 +10138,7 @@
   {
    "method": "GET",
    "path": "/digests/preview",
-   "line": 38265,
+   "line": 38365,
    "auth": [
     "requireAuth"
    ],
@@ -10160,7 +10160,7 @@
   {
    "method": "POST",
    "path": "/digests/run",
-   "line": 38293,
+   "line": 38393,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10186,7 +10186,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/impact-summary/pdf",
-   "line": 39032,
+   "line": 39132,
    "auth": [
     "requireAuth"
    ],
@@ -10210,7 +10210,7 @@
   {
    "method": "GET",
    "path": "/impact-metrics",
-   "line": 40041,
+   "line": 40141,
    "auth": [
     "requireAuth"
    ],
@@ -10230,7 +10230,7 @@
   {
    "method": "POST",
    "path": "/impact-metrics",
-   "line": 40046,
+   "line": 40146,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10256,7 +10256,7 @@
   {
    "method": "PUT",
    "path": "/impact-metrics/:id",
-   "line": 40058,
+   "line": 40158,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10287,7 +10287,7 @@
   {
    "method": "DELETE",
    "path": "/impact-metrics/:id",
-   "line": 40069,
+   "line": 40169,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10312,7 +10312,7 @@
   {
    "method": "GET",
    "path": "/milestone-drafts",
-   "line": 40077,
+   "line": 40177,
    "auth": [
     "requireAuth"
    ],
@@ -10334,7 +10334,7 @@
   {
    "method": "PUT",
    "path": "/milestone-drafts/:id",
-   "line": 40090,
+   "line": 40190,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10362,7 +10362,7 @@
   {
    "method": "POST",
    "path": "/milestone-drafts/:id/dismiss",
-   "line": 40102,
+   "line": 40203,
    "auth": [
     "requireAuth"
    ],
@@ -10386,7 +10386,7 @@
   {
    "method": "POST",
    "path": "/milestone-drafts/:id/send",
-   "line": 40111,
+   "line": 40250,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10410,9 +10410,56 @@
    }
   },
   {
+   "method": "POST",
+   "path": "/milestone-drafts/:id/reviewed",
+   "line": 40262,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/milestone-drafts",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/milestone-drafts/send-reviewed",
+   "line": 40273,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/milestone-drafts/send-reviewed",
+    "referenced": true
+   }
+  },
+  {
    "method": "GET",
    "path": "/note-reminders",
-   "line": 40155,
+   "line": 40287,
    "auth": [
     "requireAuth"
    ],
@@ -10434,7 +10481,7 @@
   {
    "method": "POST",
    "path": "/note-reminders/:id/send",
-   "line": 40170,
+   "line": 40302,
    "auth": [
     "requireAuth"
    ],
@@ -10458,7 +10505,7 @@
   {
    "method": "POST",
    "path": "/note-reminders/:id/dismiss",
-   "line": 40193,
+   "line": 40325,
    "auth": [
     "requireAuth"
    ],
@@ -10482,7 +10529,7 @@
   {
    "method": "POST",
    "path": "/voice-memos/transcribe",
-   "line": 40210,
+   "line": 40342,
    "auth": [
     "requireAuth"
    ],
@@ -10508,7 +10555,7 @@
   {
    "method": "POST",
    "path": "/voice-memos/save",
-   "line": 40271,
+   "line": 40400,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10538,7 +10585,7 @@
   {
    "method": "GET",
    "path": "/import-field-mappings",
-   "line": 40333,
+   "line": 40462,
    "auth": [
     "requireAuth"
    ],
@@ -10560,7 +10607,7 @@
   {
    "method": "GET",
    "path": "/custom-fields",
-   "line": 40344,
+   "line": 40473,
    "auth": [
     "requireAuth"
    ],
@@ -10583,7 +10630,7 @@
   {
    "method": "GET",
    "path": "/custom-fields/kept-raw",
-   "line": 40357,
+   "line": 40486,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10604,7 +10651,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/kept-raw/:donorId",
-   "line": 40382,
+   "line": 40511,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10633,7 +10680,7 @@
   {
    "method": "POST",
    "path": "/custom-fields",
-   "line": 40398,
+   "line": 40527,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10662,7 +10709,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/reorder",
-   "line": 40437,
+   "line": 40566,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10689,7 +10736,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/:id",
-   "line": 40448,
+   "line": 40577,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10722,7 +10769,7 @@
   {
    "method": "POST",
    "path": "/custom-fields/:id/archive",
-   "line": 40491,
+   "line": 40620,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10748,7 +10795,7 @@
   {
    "method": "POST",
    "path": "/custom-fields/:id/restore",
-   "line": 40502,
+   "line": 40631,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10774,7 +10821,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/custom-fields",
-   "line": 40516,
+   "line": 40645,
    "auth": [
     "requireAuth"
    ],
@@ -10798,7 +10845,7 @@
   {
    "method": "PUT",
    "path": "/donors/:id/custom-fields",
-   "line": 40524,
+   "line": 40653,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10825,7 +10872,7 @@
   {
    "method": "GET",
    "path": "/gifts/:id/custom-fields",
-   "line": 40535,
+   "line": 40664,
    "auth": [
     "requireAuth"
    ],
@@ -10849,7 +10896,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id/custom-fields",
-   "line": 40543,
+   "line": 40672,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10876,7 +10923,7 @@
   {
    "method": "GET",
    "path": "/impact",
-   "line": 42873,
+   "line": 43007,
    "auth": [
     "requireAuth"
    ],
@@ -10896,7 +10943,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/recurring-subscription",
-   "line": 43086,
+   "line": 43220,
    "auth": [
     "requireAuth"
    ],
@@ -10920,7 +10967,7 @@
   {
    "method": "POST",
    "path": "/pledges/process-reminders",
-   "line": 43224,
+   "line": 43358,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10941,7 +10988,7 @@
   {
    "method": "POST",
    "path": "/pledges/:id/resend",
-   "line": 43233,
+   "line": 43367,
    "auth": [
     "requireAuth"
    ],
@@ -10965,7 +11012,7 @@
   {
    "method": "GET",
    "path": "/gmail/callback",
-   "line": 46159,
+   "line": 46283,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -10983,7 +11030,7 @@
   {
    "method": "GET",
    "path": "/gmail/status",
-   "line": 46165,
+   "line": 46289,
    "auth": [
     "requireAuth"
    ],
@@ -11003,7 +11050,7 @@
   {
    "method": "POST",
    "path": "/gmail/sync",
-   "line": 46187,
+   "line": 46311,
    "auth": [
     "requireAuth"
    ],
@@ -11023,7 +11070,7 @@
   {
    "method": "DELETE",
    "path": "/gmail/disconnect",
-   "line": 46176,
+   "line": 46300,
    "auth": [
     "requireAuth"
    ],
@@ -11043,7 +11090,7 @@
   {
    "method": "GET",
    "path": "/gmail/thread/:donorId",
-   "line": 46200,
+   "line": 46324,
    "auth": [
     "requireAuth"
    ],
@@ -11067,7 +11114,7 @@
   {
    "method": "GET",
    "path": "/membership-levels",
-   "line": 46410,
+   "line": 46534,
    "auth": [
     "requireAuth"
    ],
@@ -11087,7 +11134,7 @@
   {
    "method": "POST",
    "path": "/membership-levels",
-   "line": 46420,
+   "line": 46544,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -11109,7 +11156,7 @@
   {
    "method": "PUT",
    "path": "/membership-levels/:id",
-   "line": 46431,
+   "line": 46555,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -11137,7 +11184,7 @@
   {
    "method": "DELETE",
    "path": "/membership-levels/:id",
-   "line": 46447,
+   "line": 46571,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11162,7 +11209,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/memberships",
-   "line": 46515,
+   "line": 46639,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11190,7 +11237,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/memberships",
-   "line": 46532,
+   "line": 46656,
    "auth": [
     "requireAuth"
    ],
@@ -11214,7 +11261,7 @@
   {
    "method": "GET",
    "path": "/memberships/:id/card.pdf",
-   "line": 46563,
+   "line": 46687,
    "auth": [
     "requireAuth"
    ],
@@ -11238,7 +11285,7 @@
   {
    "method": "GET",
    "path": "/memberships/lapsed",
-   "line": 46580,
+   "line": 46704,
    "auth": [
     "requireAuth"
    ],
@@ -11258,7 +11305,7 @@
   {
    "method": "GET",
    "path": "/memberships",
-   "line": 46600,
+   "line": 46724,
    "auth": [
     "requireAuth"
    ],
@@ -11284,7 +11331,7 @@
   {
    "method": "POST",
    "path": "/memberships/:id/cancel",
-   "line": 46627,
+   "line": 46751,
    "auth": [
     "requireAuth"
    ],
@@ -11308,7 +11355,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/membership/:levelId/public",
-   "line": 46710,
+   "line": 46834,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -11332,7 +11379,7 @@
   {
    "method": "POST",
    "path": "/memberships/:id/renew",
-   "line": 46838,
+   "line": 46962,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11359,7 +11406,7 @@
   {
    "method": "POST",
    "path": "/memberships/run-sweep",
-   "line": 46915,
+   "line": 47039,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11382,7 +11429,7 @@
   {
    "method": "GET",
    "path": "/org/membership-settings",
-   "line": 46920,
+   "line": 47044,
    "auth": [
     "requireAuth"
    ],
@@ -11402,7 +11449,7 @@
   {
    "method": "PUT",
    "path": "/org/membership-settings",
-   "line": 46926,
+   "line": 47050,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -11424,7 +11471,7 @@
   {
    "method": "GET",
    "path": "/events/:id/levels",
-   "line": 46942,
+   "line": 47066,
    "auth": [
     "requireAuth"
    ],
@@ -11448,7 +11495,7 @@
   {
    "method": "POST",
    "path": "/events/:id/levels",
-   "line": 46951,
+   "line": 47075,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11473,7 +11520,7 @@
   {
    "method": "PUT",
    "path": "/event-levels/:id",
-   "line": 46964,
+   "line": 47088,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11498,7 +11545,7 @@
   {
    "method": "DELETE",
    "path": "/event-levels/:id",
-   "line": 46977,
+   "line": 47101,
    "auth": [
     "requireAuth"
    ],
@@ -11522,7 +11569,7 @@
   {
    "method": "POST",
    "path": "/events/:id/register",
-   "line": 46987,
+   "line": 47111,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11549,7 +11596,7 @@
   {
    "method": "GET",
    "path": "/events/:id/guests",
-   "line": 47031,
+   "line": 47155,
    "auth": [
     "requireAuth"
    ],
@@ -11573,7 +11620,7 @@
   {
    "method": "POST",
    "path": "/events/:id/tables",
-   "line": 47059,
+   "line": 47183,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11598,7 +11645,7 @@
   {
    "method": "PUT",
    "path": "/events/:id/tables/:tableId",
-   "line": 47091,
+   "line": 47215,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11629,7 +11676,7 @@
   {
    "method": "DELETE",
    "path": "/events/:id/tables/:tableId",
-   "line": 47132,
+   "line": 47256,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11656,7 +11703,7 @@
   {
    "method": "PUT",
    "path": "/events/:id/attendees/:attendeeId/table",
-   "line": 47213,
+   "line": 47337,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11683,7 +11730,7 @@
   {
    "method": "POST",
    "path": "/events/:id/seat",
-   "line": 47219,
+   "line": 47343,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11712,7 +11759,7 @@
   {
    "method": "POST",
    "path": "/events/:id/seat-everyone",
-   "line": 47247,
+   "line": 47371,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11737,7 +11784,7 @@
   {
    "method": "POST",
    "path": "/events/:id/attendance",
-   "line": 47266,
+   "line": 47390,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11765,7 +11812,7 @@
   {
    "method": "GET",
    "path": "/e/:slug",
-   "line": 47375,
+   "line": 47499,
    "auth": [
     "donateLimiter"
    ],
@@ -11792,7 +11839,7 @@
   {
    "method": "GET",
    "path": "/e/:slug/thanks",
-   "line": 47481,
+   "line": 47605,
    "auth": [
     "donateLimiter"
    ],
@@ -11818,7 +11865,7 @@
   {
    "method": "GET",
    "path": "/ticket/:code.png",
-   "line": 47551,
+   "line": 47675,
    "auth": [
     "donateLimiter"
    ],
@@ -11841,7 +11888,7 @@
   {
    "method": "GET",
    "path": "/e/:slug/calendar.ics",
-   "line": 47583,
+   "line": 47707,
    "auth": [
     "donateLimiter"
    ],
@@ -11865,7 +11912,7 @@
   {
    "method": "POST",
    "path": "/e/:slug/waitlist",
-   "line": 47601,
+   "line": 47725,
    "auth": [
     "donateLimiter"
    ],
@@ -11889,7 +11936,7 @@
   {
    "method": "POST",
    "path": "/e/:slug/register",
-   "line": 47630,
+   "line": 47754,
    "auth": [
     "donateLimiter"
    ],
@@ -11913,7 +11960,7 @@
   {
    "method": "GET",
    "path": "/events/:id/report",
-   "line": 47739,
+   "line": 47863,
    "auth": [
     "requireAuth"
    ],
@@ -11937,7 +11984,7 @@
   {
    "method": "GET",
    "path": "/events/:id/rows",
-   "line": 47783,
+   "line": 47907,
    "auth": [
     "requireAuth"
    ],
@@ -11963,7 +12010,7 @@
   {
    "method": "POST",
    "path": "/events/:id/sponsor-thanks",
-   "line": 47799,
+   "line": 47923,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11988,7 +12035,7 @@
   {
    "method": "GET",
    "path": "/events/:id/kiosk",
-   "line": 47842,
+   "line": 47966,
    "auth": [
     "requireAuth"
    ],
@@ -12012,7 +12059,7 @@
   {
    "method": "POST",
    "path": "/events/:id/check-in",
-   "line": 47859,
+   "line": 47983,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12037,7 +12084,7 @@
   {
    "method": "POST",
    "path": "/events/:id/scan",
-   "line": 47884,
+   "line": 48008,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12062,7 +12109,7 @@
   {
    "method": "GET",
    "path": "/events/:id/waitlist",
-   "line": 47942,
+   "line": 48066,
    "auth": [
     "requireAuth"
    ],
@@ -12086,7 +12133,7 @@
   {
    "method": "POST",
    "path": "/events/:id/waitlist/:wid/offer",
-   "line": 47957,
+   "line": 48081,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12113,7 +12160,7 @@
   {
    "method": "GET",
    "path": "/events",
-   "line": 47983,
+   "line": 48107,
    "auth": [
     "requireAuth"
    ],
@@ -12133,7 +12180,7 @@
   {
    "method": "POST",
    "path": "/events",
-   "line": 48013,
+   "line": 48137,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12164,7 +12211,7 @@
   {
    "method": "PUT",
    "path": "/events/:id",
-   "line": 48031,
+   "line": 48155,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12201,7 +12248,7 @@
   {
    "method": "DELETE",
    "path": "/events/:id",
-   "line": 48057,
+   "line": 48181,
    "auth": [
     "requireAuth"
    ],
@@ -12225,7 +12272,7 @@
   {
    "method": "GET",
    "path": "/events/:id",
-   "line": 48065,
+   "line": 48189,
    "auth": [
     "requireAuth"
    ],
@@ -12249,7 +12296,7 @@
   {
    "method": "POST",
    "path": "/events/:id/attendees",
-   "line": 48090,
+   "line": 48214,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12281,7 +12328,7 @@
   {
    "method": "PATCH",
    "path": "/events/:id/attendees/:attendeeId",
-   "line": 48127,
+   "line": 48251,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12315,7 +12362,7 @@
   {
    "method": "DELETE",
    "path": "/events/:id/attendees/:attendeeId",
-   "line": 48200,
+   "line": 48324,
    "auth": [
     "requireAuth"
    ],
@@ -12341,7 +12388,7 @@
   {
    "method": "POST",
    "path": "/events/:id/follow-up",
-   "line": 48208,
+   "line": 48332,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12370,7 +12417,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/events",
-   "line": 48234,
+   "line": 48358,
    "auth": [
     "requireAuth"
    ],
@@ -12394,7 +12441,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/export-data",
-   "line": 48255,
+   "line": 48379,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12419,7 +12466,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/erase",
-   "line": 48263,
+   "line": 48387,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12445,7 +12492,7 @@
   {
    "method": "GET",
    "path": "/org/export",
-   "line": 48274,
+   "line": 48398,
    "auth": [
     "requireAuth"
    ],
@@ -12465,7 +12512,7 @@
   {
    "method": "GET",
    "path": "/org/export/full",
-   "line": 48367,
+   "line": 48491,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12486,7 +12533,7 @@
   {
    "method": "GET",
    "path": "/org/export/csv",
-   "line": 48388,
+   "line": 48512,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12511,7 +12558,7 @@
   {
    "method": "GET",
    "path": "/person-photos/:id",
-   "line": 49510,
+   "line": 49634,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -12536,7 +12583,7 @@
   {
    "method": "GET",
    "path": "/people/photos",
-   "line": 49542,
+   "line": 49666,
    "auth": [
     "requireAuth"
    ],
@@ -12556,7 +12603,7 @@
   {
    "method": "GET",
    "path": "/people",
-   "line": 49610,
+   "line": 49734,
    "auth": [
     "requireAuth"
    ],
@@ -12578,7 +12625,7 @@
   {
    "method": "GET",
    "path": "/people/:id",
-   "line": 49635,
+   "line": 49759,
    "auth": [
     "requireAuth"
    ],
@@ -12602,7 +12649,7 @@
   {
    "method": "PUT",
    "path": "/people/:id/roles",
-   "line": 49650,
+   "line": 49774,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12627,7 +12674,7 @@
   {
    "method": "POST",
    "path": "/gifts/:id/cheque",
-   "line": 49783,
+   "line": 49907,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12654,7 +12701,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/photo",
-   "line": 49794,
+   "line": 49918,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12681,7 +12728,7 @@
   {
    "method": "POST",
    "path": "/photos/bulk",
-   "line": 49817,
+   "line": 49941,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12704,7 +12751,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id/photo",
-   "line": 49884,
+   "line": 50008,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12729,7 +12776,7 @@
   {
    "method": "GET",
    "path": "/settings/inbound-email",
-   "line": 52078,
+   "line": 52202,
    "auth": [
     "requireAuth"
    ],
@@ -12749,7 +12796,7 @@
   {
    "method": "POST",
    "path": "/settings/inbound-email/assign",
-   "line": 52122,
+   "line": 52246,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12776,7 +12823,7 @@
   {
    "method": "POST",
    "path": "/settings/inbound-email/discard",
-   "line": 52145,
+   "line": 52269,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12801,7 +12848,7 @@
   {
    "method": "GET",
    "path": "/giving-sources/providers",
-   "line": 14009,
+   "line": 14007,
    "auth": [
     "requireAuth"
    ],
@@ -12821,7 +12868,7 @@
   {
    "method": "GET",
    "path": "/pos/mapping",
-   "line": 14047,
+   "line": 14045,
    "auth": [
     "requireAuth"
    ],
@@ -12841,7 +12888,7 @@
   {
    "method": "PUT",
    "path": "/pos/mapping",
-   "line": 14079,
+   "line": 14077,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12865,7 +12912,7 @@
   {
    "method": "POST",
    "path": "/pos/sales",
-   "line": 14111,
+   "line": 14109,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12887,7 +12934,7 @@
   {
    "method": "GET",
    "path": "/pos/buys-never-given",
-   "line": 14123,
+   "line": 14121,
    "auth": [
     "requireAuth"
    ],
@@ -12907,7 +12954,7 @@
   {
    "method": "GET",
    "path": "/pos/attendance-drift",
-   "line": 14149,
+   "line": 14147,
    "auth": [
     "requireAuth"
    ],
@@ -12927,7 +12974,7 @@
   {
    "method": "GET",
    "path": "/pos/event/:id/revenue",
-   "line": 14169,
+   "line": 14167,
    "auth": [
     "requireAuth"
    ],
@@ -12951,7 +12998,7 @@
   {
    "method": "GET",
    "path": "/connections",
-   "line": 14202,
+   "line": 14200,
    "auth": [
     "requireAuth"
    ],
@@ -12971,7 +13018,7 @@
   {
    "method": "GET",
    "path": "/connections/:id/gifts",
-   "line": 14547,
+   "line": 14553,
    "auth": [
     "requireAuth"
    ],
@@ -12995,7 +13042,7 @@
   {
    "method": "GET",
    "path": "/connections/:id/sales",
-   "line": 14574,
+   "line": 14580,
    "auth": [
     "requireAuth"
    ],
@@ -13019,7 +13066,7 @@
   {
    "method": "GET",
    "path": "/connections/:id/log",
-   "line": 14598,
+   "line": 14604,
    "auth": [
     "requireAuth"
    ],
@@ -13043,7 +13090,7 @@
   {
    "method": "GET",
    "path": "/giving-sources",
-   "line": 14625,
+   "line": 14631,
    "auth": [
     "requireAuth"
    ],
@@ -13063,7 +13110,7 @@
   {
    "method": "GET",
    "path": "/giving-sources/duplicates",
-   "line": 14834,
+   "line": 14840,
    "auth": [
     "requireAuth"
    ],
@@ -13083,7 +13130,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/duplicates/:id/same-gift",
-   "line": 14860,
+   "line": 14866,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13109,7 +13156,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/duplicates/:id/keep-both",
-   "line": 14878,
+   "line": 14884,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13135,7 +13182,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/other",
-   "line": 14927,
+   "line": 14933,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13157,7 +13204,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/test",
-   "line": 14943,
+   "line": 14949,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13178,7 +13225,7 @@
   {
    "method": "POST",
    "path": "/giving-sources",
-   "line": 14968,
+   "line": 14974,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13200,7 +13247,7 @@
   {
    "method": "PATCH",
    "path": "/giving-sources/:id",
-   "line": 15071,
+   "line": 15077,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13232,7 +13279,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/:id/sync",
-   "line": 15113,
+   "line": 15119,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13258,7 +13305,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/:id/sync-fixture",
-   "line": 15128,
+   "line": 15134,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13285,7 +13332,7 @@
   {
    "method": "DELETE",
    "path": "/giving-sources/:id",
-   "line": 15144,
+   "line": 15150,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13311,7 +13358,7 @@
   {
    "method": "GET",
    "path": "/giving-recurring",
-   "line": 15160,
+   "line": 15166,
    "auth": [
     "requireAuth"
    ],
@@ -13331,7 +13378,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/:id/confirm",
-   "line": 15200,
+   "line": 15206,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -13356,7 +13403,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/:id/dismiss",
-   "line": 15213,
+   "line": 15219,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -13381,7 +13428,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/run-schedule",
-   "line": 15287,
+   "line": 15293,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13402,7 +13449,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/sweep",
-   "line": 15295,
+   "line": 15301,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13423,7 +13470,7 @@
   {
    "method": "POST",
    "path": "/connections/sweep",
-   "line": 15304,
+   "line": 15310,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13444,7 +13491,7 @@
   {
    "method": "GET",
    "path": "/track/:recipientId/open.gif",
-   "line": 32165,
+   "line": 32208,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -13466,7 +13513,7 @@
   {
    "method": "GET",
    "path": "/giving-pages",
-   "line": 32553,
+   "line": 32614,
    "auth": [
     "requireAuth"
    ],
@@ -13486,7 +13533,7 @@
   {
    "method": "POST",
    "path": "/giving-pages",
-   "line": 32590,
+   "line": 32651,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13521,7 +13568,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id",
-   "line": 32620,
+   "line": 32681,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13560,7 +13607,7 @@
   {
    "method": "POST",
    "path": "/forms/:id/event",
-   "line": 32745,
+   "line": 32806,
    "auth": [
     "donateLimiter"
    ],
@@ -13587,7 +13634,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/funnel",
-   "line": 32763,
+   "line": 32824,
    "auth": [
     "requireAuth"
    ],
@@ -13613,7 +13660,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id/ab-test",
-   "line": 32817,
+   "line": 32878,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13641,7 +13688,7 @@
   {
    "method": "GET",
    "path": "/forms/:id/public",
-   "line": 32839,
+   "line": 32900,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -13665,7 +13712,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/embed",
-   "line": 32882,
+   "line": 32943,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13690,7 +13737,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/form",
-   "line": 32922,
+   "line": 32983,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13717,7 +13764,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id/form",
-   "line": 32954,
+   "line": 33015,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13745,7 +13792,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/page",
-   "line": 33021,
+   "line": 33082,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13770,7 +13817,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id/page/draft",
-   "line": 33038,
+   "line": 33099,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13796,7 +13843,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/starter",
-   "line": 33063,
+   "line": 33124,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13822,7 +13869,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/publish",
-   "line": 33077,
+   "line": 33138,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13848,7 +13895,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/revert",
-   "line": 33088,
+   "line": 33149,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13874,7 +13921,7 @@
   {
    "method": "DELETE",
    "path": "/giving-pages/:id",
-   "line": 33100,
+   "line": 33161,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13899,7 +13946,7 @@
   {
    "method": "GET",
    "path": "/peer-fundraisers/manage/:token",
-   "line": 33543,
+   "line": 33604,
    "auth": [
     "fundraiserManageLimiter"
    ],
@@ -13923,7 +13970,7 @@
   {
    "method": "POST",
    "path": "/peer-fundraisers/manage/:token/thanked",
-   "line": 33619,
+   "line": 33680,
    "auth": [
     "fundraiserManageLimiter"
    ],
@@ -13947,7 +13994,7 @@
   {
    "method": "PUT",
    "path": "/peer-fundraisers/manage/:token",
-   "line": 33632,
+   "line": 33693,
    "auth": [
     "fundraiserManageLimiter"
    ],
@@ -13976,7 +14023,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/fundraisers",
-   "line": 33664,
+   "line": 33725,
    "auth": [
     "requireAuth"
    ],
@@ -14000,7 +14047,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/teams",
-   "line": 33680,
+   "line": 33741,
    "auth": [
     "requireAuth"
    ],
@@ -14024,7 +14071,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/teams",
-   "line": 33696,
+   "line": 33757,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14049,7 +14096,7 @@
   {
    "method": "PUT",
    "path": "/p2p-teams/:id",
-   "line": 33723,
+   "line": 33784,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -14075,7 +14122,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/p2p",
-   "line": 33740,
+   "line": 33801,
    "auth": [
     "requireAuth"
    ],
@@ -14099,7 +14146,7 @@
   {
    "method": "PUT",
    "path": "/peer-fundraisers/:id",
-   "line": 33806,
+   "line": 33867,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -14152,7 +14199,7 @@
   {
    "method": "POST",
    "path": "/donate/:orgSlug",
-   "line": 34233,
+   "line": 34294,
    "auth": [
     "donateLimiter"
    ],
@@ -14176,7 +14223,7 @@
   {
    "method": "POST",
    "path": "/e/:slug/checkout",
-   "line": 34249,
+   "line": 34310,
    "auth": [
     "donateLimiter"
    ],
@@ -14200,7 +14247,7 @@
   {
    "method": "POST",
    "path": "/demo-request",
-   "line": 34930,
+   "line": 34992,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -14228,7 +14275,7 @@
   {
    "method": "POST",
    "path": "/recurring/check-cards",
-   "line": 40814,
+   "line": 40943,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -14253,7 +14300,7 @@
   {
    "method": "POST",
    "path": "/recurring/process-dunning",
-   "line": 41808,
+   "line": 41942,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -14274,7 +14321,7 @@
   {
    "method": "GET",
    "path": "/recurring/update-card",
-   "line": 41831,
+   "line": 41965,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -14299,7 +14346,7 @@
   {
    "method": "GET",
    "path": "/recurring/roster",
-   "line": 41908,
+   "line": 42042,
    "auth": [
     "requireAuth"
    ],
@@ -14319,7 +14366,7 @@
   {
    "method": "GET",
    "path": "/recurring/movement",
-   "line": 41980,
+   "line": 42114,
    "auth": [
     "requireAuth"
    ],
@@ -14339,7 +14386,7 @@
   {
    "method": "GET",
    "path": "/recurring/exceptions",
-   "line": 42056,
+   "line": 42190,
    "auth": [
     "requireAuth"
    ],
@@ -14359,7 +14406,7 @@
   {
    "method": "GET",
    "path": "/recurring/unlinked",
-   "line": 42160,
+   "line": 42294,
    "auth": [
     "requireAuth"
    ],
@@ -14379,7 +14426,7 @@
   {
    "method": "POST",
    "path": "/recurring/unlinked/send-reconnect",
-   "line": 42244,
+   "line": 42378,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -14405,7 +14452,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/pause",
-   "line": 42304,
+   "line": 42438,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14432,7 +14479,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/resume",
-   "line": 42338,
+   "line": 42472,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14457,7 +14504,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/cancel",
-   "line": 42361,
+   "line": 42495,
    "auth": [
     "requireAuth"
    ],
@@ -14481,7 +14528,7 @@
   {
    "method": "PUT",
    "path": "/recurring/subs/:subId/fund",
-   "line": 42385,
+   "line": 42519,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14506,7 +14553,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposals",
-   "line": 42413,
+   "line": 42547,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14534,7 +14581,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposals/:id/resend",
-   "line": 42495,
+   "line": 42629,
    "auth": [
     "requireAuth"
    ],
@@ -14558,7 +14605,7 @@
   {
    "method": "GET",
    "path": "/recurring/proposal",
-   "line": 42557,
+   "line": 42691,
    "auth": [
     "donateLimiter"
    ],
@@ -14582,7 +14629,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposal/confirm",
-   "line": 42602,
+   "line": 42736,
    "auth": [
     "donateLimiter"
    ],
@@ -14606,7 +14653,7 @@
   {
    "method": "GET",
    "path": "/recurring/health",
-   "line": 42755,
+   "line": 42889,
    "auth": [
     "requireAuth"
    ],
@@ -14626,7 +14673,7 @@
   {
    "method": "POST",
    "path": "/recurring/:donorId/resend",
-   "line": 43056,
+   "line": 43190,
    "auth": [
     "requireAuth"
    ],
@@ -14650,7 +14697,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/config",
-   "line": 48915,
+   "line": 49039,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -14672,7 +14719,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/request-link",
-   "line": 48928,
+   "line": 49052,
    "auth": [
     "portalLinkIpLimiter",
     "portalLinkEmailLimiter"
@@ -14697,7 +14744,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/verify",
-   "line": 48954,
+   "line": 49078,
    "auth": [
     "portalLinkIpLimiter"
    ],
@@ -14721,7 +14768,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/logout",
-   "line": 48994,
+   "line": 49118,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -14743,7 +14790,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/session",
-   "line": 49001,
+   "line": 49125,
    "auth": [
     "requirePortalSession"
    ],
@@ -14767,7 +14814,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/give-default",
-   "line": 49012,
+   "line": 49136,
    "auth": [
     "requirePortalSession"
    ],
@@ -14791,7 +14838,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/me",
-   "line": 49034,
+   "line": 49158,
    "auth": [
     "requirePortalSession"
    ],
@@ -14815,7 +14862,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/impact/:updateId/viewed",
-   "line": 49262,
+   "line": 49386,
    "auth": [
     "requirePortalSession"
    ],
@@ -14841,7 +14888,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/receipts/:id/pdf",
-   "line": 49272,
+   "line": 49396,
    "auth": [
     "requirePortalSession"
    ],
@@ -14869,7 +14916,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/pause",
-   "line": 49307,
+   "line": 49431,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -14898,7 +14945,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/resume",
-   "line": 49344,
+   "line": 49468,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -14925,7 +14972,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/amount",
-   "line": 49368,
+   "line": 49492,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -14952,7 +14999,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/cancel",
-   "line": 49418,
+   "line": 49542,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -14979,7 +15026,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/update-card",
-   "line": 49446,
+   "line": 49570,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -15006,7 +15053,7 @@
   {
    "method": "GET",
    "path": "/portal-assets/:id",
-   "line": 49471,
+   "line": 49595,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -15030,7 +15077,7 @@
   {
    "method": "POST",
    "path": "/assets/run-purge",
-   "line": 49897,
+   "line": 50021,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -15051,7 +15098,7 @@
   {
    "method": "GET",
    "path": "/portal-settings",
-   "line": 49901,
+   "line": 50025,
    "auth": [
     "requireAuth"
    ],
@@ -15071,7 +15118,7 @@
   {
    "method": "GET",
    "path": "/portal-page",
-   "line": 50462,
+   "line": 50586,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -15092,7 +15139,7 @@
   {
    "method": "PUT",
    "path": "/portal-page/draft",
-   "line": 50472,
+   "line": 50596,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15114,7 +15161,7 @@
   {
    "method": "POST",
    "path": "/portal-page/publish",
-   "line": 50486,
+   "line": 50610,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15136,7 +15183,7 @@
   {
    "method": "POST",
    "path": "/portal-page/revert",
-   "line": 50495,
+   "line": 50619,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15158,7 +15205,7 @@
   {
    "method": "POST",
    "path": "/portal-page/starter",
-   "line": 50504,
+   "line": 50628,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15180,7 +15227,7 @@
   {
    "method": "PUT",
    "path": "/portal-settings",
-   "line": 50519,
+   "line": 50643,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15202,7 +15249,7 @@
   {
    "method": "GET",
    "path": "/impact-updates",
-   "line": 50663,
+   "line": 50787,
    "auth": [
     "requireAuth"
    ],
@@ -15222,7 +15269,7 @@
   {
    "method": "POST",
    "path": "/impact-updates",
-   "line": 50683,
+   "line": 50807,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15244,7 +15291,7 @@
   {
    "method": "PUT",
    "path": "/impact-updates/:id",
-   "line": 50715,
+   "line": 50839,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -15270,7 +15317,7 @@
   {
    "method": "GET",
    "path": "/portal-engagement",
-   "line": 50753,
+   "line": 50877,
    "auth": [
     "requireAuth"
    ],
@@ -15290,7 +15337,7 @@
   {
    "method": "DELETE",
    "path": "/impact-updates/:id",
-   "line": 50774,
+   "line": 50898,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -15315,7 +15362,7 @@
   {
    "method": "GET",
    "path": "/portal-audit",
-   "line": 50785,
+   "line": 50909,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -15336,7 +15383,7 @@
   {
    "method": "POST",
    "path": "/account/signup",
-   "line": 50938,
+   "line": 51062,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -15357,7 +15404,7 @@
   {
    "method": "POST",
    "path": "/account/verify",
-   "line": 50974,
+   "line": 51098,
    "auth": [
     "accountIpLimiter"
    ],
@@ -15377,7 +15424,7 @@
   {
    "method": "POST",
    "path": "/account/login",
-   "line": 50989,
+   "line": 51113,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -15398,7 +15445,7 @@
   {
    "method": "POST",
    "path": "/account/logout",
-   "line": 51018,
+   "line": 51142,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
@@ -15416,7 +15463,7 @@
   {
    "method": "POST",
    "path": "/account/request-link",
-   "line": 51032,
+   "line": 51156,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -15437,7 +15484,7 @@
   {
    "method": "POST",
    "path": "/account/link-verify",
-   "line": 51069,
+   "line": 51193,
    "auth": [
     "accountIpLimiter"
    ],
@@ -15457,7 +15504,7 @@
   {
    "method": "POST",
    "path": "/account/request-reset",
-   "line": 51088,
+   "line": 51212,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -15478,7 +15525,7 @@
   {
    "method": "POST",
    "path": "/account/reset",
-   "line": 51110,
+   "line": 51234,
    "auth": [
     "accountIpLimiter"
    ],
@@ -15498,7 +15545,7 @@
   {
    "method": "POST",
    "path": "/account/change-password",
-   "line": 51137,
+   "line": 51261,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15518,7 +15565,7 @@
   {
    "method": "POST",
    "path": "/account/change-email",
-   "line": 51155,
+   "line": 51279,
    "auth": [
     "requireDonorAccount",
     "accountIpLimiter"
@@ -15539,7 +15586,7 @@
   {
    "method": "POST",
    "path": "/account/change-email/confirm",
-   "line": 51173,
+   "line": 51297,
    "auth": [
     "accountIpLimiter"
    ],
@@ -15559,7 +15606,7 @@
   {
    "method": "POST",
    "path": "/account/aliases",
-   "line": 51202,
+   "line": 51326,
    "auth": [
     "requireDonorAccount",
     "accountIpLimiter",
@@ -15581,7 +15628,7 @@
   {
    "method": "POST",
    "path": "/account/aliases/verify",
-   "line": 51229,
+   "line": 51353,
    "auth": [
     "accountIpLimiter"
    ],
@@ -15601,7 +15648,7 @@
   {
    "method": "DELETE",
    "path": "/account/aliases/:id",
-   "line": 51245,
+   "line": 51369,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15625,7 +15672,7 @@
   {
    "method": "POST",
    "path": "/account/links/:id/unlink",
-   "line": 51253,
+   "line": 51377,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15649,7 +15696,7 @@
   {
    "method": "POST",
    "path": "/account/links/:id/relink",
-   "line": 51261,
+   "line": 51385,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15673,7 +15720,7 @@
   {
    "method": "DELETE",
    "path": "/account",
-   "line": 51272,
+   "line": 51396,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15693,7 +15740,7 @@
   {
    "method": "GET",
    "path": "/account/me",
-   "line": 51285,
+   "line": 51409,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15713,7 +15760,7 @@
   {
    "method": "GET",
    "path": "/account/dashboard",
-   "line": 51322,
+   "line": 51446,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15733,7 +15780,7 @@
   {
    "method": "GET",
    "path": "/account/recurring",
-   "line": 51467,
+   "line": 51591,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15753,7 +15800,7 @@
   {
    "method": "GET",
    "path": "/account/tax-summary",
-   "line": 51489,
+   "line": 51613,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15773,7 +15820,7 @@
   {
    "method": "GET",
    "path": "/network/directory",
-   "line": 51541,
+   "line": 51665,
    "auth": [
     "requireDonorAccount",
     "directorySearchLimiter"
@@ -15797,7 +15844,7 @@
   {
    "method": "POST",
    "path": "/account/orgs/add",
-   "line": 51600,
+   "line": 51724,
    "auth": [
     "requireDonorAccount",
     "addOrgLimiter"
@@ -15818,7 +15865,7 @@
   {
    "method": "DELETE",
    "path": "/account/follows/:id",
-   "line": 51626,
+   "line": 51750,
    "auth": [
     "requireDonorAccount"
    ],
@@ -15842,7 +15889,7 @@
   {
    "method": "GET",
    "path": "/network/config",
-   "line": 51657,
+   "line": 51781,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -15860,7 +15907,7 @@
   {
    "method": "POST",
    "path": "/network/signup",
-   "line": 51662,
+   "line": 51786,
    "auth": [
     "networkSignupLimiter"
    ],
@@ -15889,7 +15936,7 @@
   {
    "method": "GET",
    "path": "/network/application",
-   "line": 51731,
+   "line": 51855,
    "auth": [
     "requireAuth"
    ],
@@ -15909,7 +15956,7 @@
   {
    "method": "GET",
    "path": "/finance/restricted",
-   "line": 21546,
+   "line": 21553,
    "auth": [
     "requireAuth"
    ],
@@ -15929,7 +15976,7 @@
   {
    "method": "GET",
    "path": "/finance/overview",
-   "line": 21670,
+   "line": 21677,
    "auth": [
     "requireAuth"
    ],
@@ -15949,7 +15996,7 @@
   {
    "method": "GET",
    "path": "/finance/overview/rows",
-   "line": 21766,
+   "line": 21773,
    "auth": [
     "requireAuth"
    ],
@@ -15971,7 +16018,7 @@
   {
    "method": "GET",
    "path": "/finance/overview/month",
-   "line": 21813,
+   "line": 21820,
    "auth": [
     "requireAuth"
    ],
@@ -15993,7 +16040,7 @@
   {
    "method": "GET",
    "path": "/finance/funds-detail",
-   "line": 21833,
+   "line": 21840,
    "auth": [
     "requireAuth"
    ],
@@ -16013,7 +16060,7 @@
   {
    "method": "GET",
    "path": "/finance/funds-detail/rows",
-   "line": 21915,
+   "line": 21922,
    "auth": [
     "requireAuth"
    ],
@@ -16037,7 +16084,7 @@
   {
    "method": "GET",
    "path": "/oauth/status",
-   "line": 21996,
+   "line": 22003,
    "auth": [
     "requireAuth"
    ],
@@ -16059,7 +16106,7 @@
   {
    "method": "POST",
    "path": "/oauth/:provider/start",
-   "line": 22060,
+   "line": 22067,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16082,7 +16129,7 @@
   {
    "method": "GET",
    "path": "/oauth/:provider/callback",
-   "line": 22105,
+   "line": 22112,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -16102,7 +16149,7 @@
   {
    "method": "POST",
    "path": "/oauth/:provider/complete",
-   "line": 22117,
+   "line": 22124,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16125,7 +16172,7 @@
   {
    "method": "POST",
    "path": "/oauth/xero/tenant",
-   "line": 22367,
+   "line": 22374,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16147,7 +16194,7 @@
   {
    "method": "POST",
    "path": "/oauth/:provider/disconnect",
-   "line": 22471,
+   "line": 22478,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16172,7 +16219,7 @@
   {
    "method": "GET",
    "path": "/mailbox",
-   "line": 22533,
+   "line": 22540,
    "auth": [
     "requireAuth"
    ],
@@ -16192,7 +16239,7 @@
   {
    "method": "POST",
    "path": "/mailbox/:provider/pause",
-   "line": 22614,
+   "line": 22621,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16215,7 +16262,7 @@
   {
    "method": "POST",
    "path": "/mailbox/never-log",
-   "line": 22632,
+   "line": 22639,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16236,7 +16283,7 @@
   {
    "method": "DELETE",
    "path": "/mailbox/never-log/:id",
-   "line": 22646,
+   "line": 22653,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16261,7 +16308,7 @@
   {
    "method": "POST",
    "path": "/mailbox/forget",
-   "line": 22656,
+   "line": 22663,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16282,7 +16329,7 @@
   {
    "method": "POST",
    "path": "/mailbox/:provider/sync",
-   "line": 22686,
+   "line": 22693,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16307,7 +16354,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/relationship",
-   "line": 22756,
+   "line": 22763,
    "auth": [
     "requireAuth"
    ],
@@ -16331,7 +16378,7 @@
   {
    "method": "GET",
    "path": "/calendar/today",
-   "line": 22833,
+   "line": 22858,
    "auth": [
     "requireAuth"
    ],
@@ -16351,7 +16398,7 @@
   {
    "method": "GET",
    "path": "/calendar/to-log",
-   "line": 22854,
+   "line": 22868,
    "auth": [
     "requireAuth"
    ],
@@ -16375,7 +16422,7 @@
   {
    "method": "POST",
    "path": "/calendar/events/:id/suggest",
-   "line": 22876,
+   "line": 22890,
    "auth": [
     "requireAuth"
    ],
@@ -16399,7 +16446,7 @@
   {
    "method": "POST",
    "path": "/calendar/events/:id/log",
-   "line": 22890,
+   "line": 22926,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16424,7 +16471,7 @@
   {
    "method": "POST",
    "path": "/calendar/events/:id/dismiss",
-   "line": 22917,
+   "line": 22953,
    "auth": [
     "requireAuth"
    ],
@@ -16448,7 +16495,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/book-visit",
-   "line": 22940,
+   "line": 22976,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16473,7 +16520,7 @@
   {
    "method": "POST",
    "path": "/calendar/events/:id/move",
-   "line": 22970,
+   "line": 23006,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -16498,7 +16545,7 @@
   {
    "method": "GET",
    "path": "/calendar/first-sync",
-   "line": 22990,
+   "line": 23026,
    "auth": [
     "requireAuth"
    ],
@@ -16518,7 +16565,7 @@
   {
    "method": "GET",
    "path": "/meetings/by-staff",
-   "line": 23030,
+   "line": 23066,
    "auth": [
     "requireAuth"
    ],
@@ -16538,7 +16585,7 @@
   {
    "method": "GET",
    "path": "/email-marketing",
-   "line": 23212,
+   "line": 23248,
    "auth": [
     "requireAuth"
    ],
@@ -16558,7 +16605,7 @@
   {
    "method": "POST",
    "path": "/email-marketing/:provider/preview",
-   "line": 23263,
+   "line": 23299,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -16583,7 +16630,7 @@
   {
    "method": "POST",
    "path": "/email-marketing/:provider/mapping",
-   "line": 23291,
+   "line": 23327,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16607,7 +16654,7 @@
   {
    "method": "GET",
    "path": "/email-marketing/:provider/audiences",
-   "line": 23313,
+   "line": 23349,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -16630,7 +16677,7 @@
   {
    "method": "POST",
    "path": "/email-marketing/:provider/sync",
-   "line": 23337,
+   "line": 23373,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16654,7 +16701,7 @@
   {
    "method": "GET",
    "path": "/email-marketing/campaigns",
-   "line": 23652,
+   "line": 23688,
    "auth": [
     "requireAuth"
    ],
@@ -16674,7 +16721,7 @@
   {
    "method": "GET",
    "path": "/email-marketing/campaigns/:id/people",
-   "line": 23693,
+   "line": 23729,
    "auth": [
     "requireAuth"
    ],
@@ -16700,7 +16747,7 @@
   {
    "method": "GET",
    "path": "/bookkeeping",
-   "line": 23746,
+   "line": 23782,
    "auth": [
     "requireAuth"
    ],
@@ -16720,7 +16767,7 @@
   {
    "method": "PUT",
    "path": "/bookkeeping/:id/mapping",
-   "line": 23789,
+   "line": 23825,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16746,7 +16793,7 @@
   {
    "method": "POST",
    "path": "/bookkeeping/:id/send",
-   "line": 23819,
+   "line": 23855,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16774,7 +16821,7 @@
   {
    "method": "GET",
    "path": "/bookkeeping/:id/agreement",
-   "line": 23942,
+   "line": 23978,
    "auth": [
     "requireAuth"
    ],
@@ -16800,7 +16847,7 @@
   {
    "method": "POST",
    "path": "/bookkeeping/:id/disconnect",
-   "line": 23980,
+   "line": 24016,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16826,7 +16873,7 @@
   {
    "method": "GET",
    "path": "/finance/bookkeeper-flavours",
-   "line": 24006,
+   "line": 24042,
    "auth": [
     "requireAuth"
    ],
@@ -16846,7 +16893,7 @@
   {
    "method": "GET",
    "path": "/finance/month-close",
-   "line": 24023,
+   "line": 24059,
    "auth": [
     "requireAuth"
    ],
@@ -16868,7 +16915,7 @@
   {
    "method": "GET",
    "path": "/financials",
-   "line": 26299,
+   "line": 26346,
    "auth": [
     "requireAuth"
    ],
@@ -16888,7 +16935,7 @@
   {
    "method": "POST",
    "path": "/financials/month",
-   "line": 26327,
+   "line": 26374,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -16922,7 +16969,7 @@
   {
    "method": "GET",
    "path": "/finance/accounts",
-   "line": 34333,
+   "line": 34394,
    "auth": [
     "requireAuth"
    ],
@@ -16942,7 +16989,7 @@
   {
    "method": "POST",
    "path": "/finance/accounts",
-   "line": 34341,
+   "line": 34402,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16969,7 +17016,7 @@
   {
    "method": "PUT",
    "path": "/finance/accounts/:id",
-   "line": 34357,
+   "line": 34418,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -16999,7 +17046,7 @@
   {
    "method": "GET",
    "path": "/finance/funds",
-   "line": 34376,
+   "line": 34437,
    "auth": [
     "requireAuth"
    ],
@@ -17019,7 +17066,7 @@
   {
    "method": "POST",
    "path": "/finance/funds",
-   "line": 34394,
+   "line": 34455,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -17045,7 +17092,7 @@
   {
    "method": "PUT",
    "path": "/finance/funds/:id",
-   "line": 34410,
+   "line": 34471,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -17076,7 +17123,7 @@
   {
    "method": "GET",
    "path": "/finance/transactions",
-   "line": 34439,
+   "line": 34500,
    "auth": [
     "requireAuth"
    ],
@@ -17105,7 +17152,7 @@
   {
    "method": "POST",
    "path": "/finance/transactions",
-   "line": 34459,
+   "line": 34520,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17140,7 +17187,7 @@
   {
    "method": "DELETE",
    "path": "/finance/transactions/:id",
-   "line": 34489,
+   "line": 34550,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -17165,7 +17212,7 @@
   {
    "method": "GET",
    "path": "/finance/budgets",
-   "line": 34526,
+   "line": 34587,
    "auth": [
     "requireAuth"
    ],
@@ -17188,7 +17235,7 @@
   {
    "method": "POST",
    "path": "/finance/budgets",
-   "line": 34583,
+   "line": 34644,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -17218,7 +17265,7 @@
   {
    "method": "DELETE",
    "path": "/finance/budgets/:id",
-   "line": 34617,
+   "line": 34678,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -17244,7 +17291,7 @@
   {
    "method": "GET",
    "path": "/finance/summary",
-   "line": 34674,
+   "line": 34735,
    "auth": [
     "requireAuth"
    ],
@@ -17266,7 +17313,7 @@
   {
    "method": "GET",
    "path": "/finance/stripe-summary",
-   "line": 34770,
+   "line": 34831,
    "auth": [
     "requireAuth"
    ],
@@ -17286,7 +17333,7 @@
   {
    "method": "GET",
    "path": "/finance/payout-lines",
-   "line": 34840,
+   "line": 34901,
    "auth": [
     "requireAuth"
    ],
@@ -17308,7 +17355,7 @@
   {
    "method": "GET",
    "path": "/finance/audit-log",
-   "line": 34914,
+   "line": 34975,
    "auth": [
     "requireAuth"
    ],
@@ -17627,7 +17674,7 @@
   {
    "method": "DELETE",
    "path": "/volunteer-shifts/:id",
-   "line": 24778,
+   "line": 24815,
    "auth": [
     "requireAuth"
    ],
@@ -17651,7 +17698,7 @@
   {
    "method": "GET",
    "path": "/volunteer/log",
-   "line": 24801,
+   "line": 24838,
    "auth": [
     "donateLimiter"
    ],
@@ -17675,7 +17722,7 @@
   {
    "method": "POST",
    "path": "/volunteer/log",
-   "line": 24821,
+   "line": 24858,
    "auth": [
     "donateLimiter"
    ],
@@ -17699,7 +17746,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hours/import",
-   "line": 24837,
+   "line": 24874,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17722,7 +17769,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/people",
-   "line": 24906,
+   "line": 24943,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17743,7 +17790,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/import/presets",
-   "line": 24933,
+   "line": 24970,
    "auth": [
     "requireAuth"
    ],
@@ -17763,7 +17810,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/import/preview",
-   "line": 24950,
+   "line": 24987,
    "auth": [
     "requireAuth"
    ],
@@ -17783,7 +17830,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/import",
-   "line": 25022,
+   "line": 25059,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17804,7 +17851,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/import/:id/undo",
-   "line": 25119,
+   "line": 25156,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17829,7 +17876,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/person/:id",
-   "line": 25174,
+   "line": 25211,
    "auth": [
     "requireAuth"
    ],
@@ -17853,7 +17900,7 @@
   {
    "method": "GET",
    "path": "/volunteers",
-   "line": 25799,
+   "line": 25846,
    "auth": [
     "requireAuth"
    ],
@@ -17873,7 +17920,7 @@
   {
    "method": "POST",
    "path": "/volunteers",
-   "line": 25807,
+   "line": 25854,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17904,7 +17951,7 @@
   {
    "method": "PUT",
    "path": "/volunteers/:id",
-   "line": 25822,
+   "line": 25869,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -17938,7 +17985,7 @@
   {
    "method": "GET",
    "path": "/volunteers/donor-prospects",
-   "line": 25861,
+   "line": 25908,
    "auth": [
     "requireAuth"
    ],
@@ -17958,7 +18005,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/roster",
-   "line": 25934,
+   "line": 25981,
    "auth": [
     "requireAuth"
    ],
@@ -17978,7 +18025,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/givers",
-   "line": 25957,
+   "line": 26004,
    "auth": [
     "requireAuth"
    ],
@@ -17998,7 +18045,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/shifts",
-   "line": 25974,
+   "line": 26021,
    "auth": [
     "requireAuth"
    ],
@@ -18020,7 +18067,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/notes",
-   "line": 25992,
+   "line": 26039,
    "auth": [
     "requireAuth"
    ],
@@ -18044,7 +18091,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/notes",
-   "line": 26000,
+   "line": 26047,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -18065,7 +18112,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/notes/delete",
-   "line": 26020,
+   "line": 26067,
    "auth": [
     "requireAuth"
    ],
@@ -18085,7 +18132,7 @@
   {
    "method": "GET",
    "path": "/volunteer-hub/signup-link",
-   "line": 26060,
+   "line": 26107,
    "auth": [
     "requireAuth"
    ],
@@ -18105,7 +18152,7 @@
   {
    "method": "POST",
    "path": "/volunteer-hub/signup-link/regenerate",
-   "line": 26067,
+   "line": 26114,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -18126,7 +18173,7 @@
   {
    "method": "GET",
    "path": "/volunteer/join",
-   "line": 26079,
+   "line": 26126,
    "auth": [
     "donateLimiter"
    ],
@@ -18150,7 +18197,7 @@
   {
    "method": "POST",
    "path": "/volunteer/join",
-   "line": 26100,
+   "line": 26147,
    "auth": [
     "donateLimiter"
    ],
@@ -18991,7 +19038,7 @@
   {
    "method": "POST",
    "path": "/ai/stream",
-   "line": 28328,
+   "line": 28375,
    "auth": [
     "requireAuth"
    ],
@@ -19016,7 +19063,7 @@
   {
    "method": "POST",
    "path": "/ai/column-map",
-   "line": 28368,
+   "line": 28417,
    "auth": [
     "requireAuth"
    ],
@@ -19039,7 +19086,7 @@
   {
    "method": "GET",
    "path": "/agent/status",
-   "line": 30978,
+   "line": 31020,
    "auth": [
     "requireAuth"
    ],
@@ -19059,7 +19106,7 @@
   {
    "method": "GET",
    "path": "/agent/personas",
-   "line": 31000,
+   "line": 31042,
    "auth": [
     "requireAuth"
    ],
@@ -19079,7 +19126,7 @@
   {
    "method": "POST",
    "path": "/help/ask",
-   "line": 31037,
+   "line": 31079,
    "auth": [
     "requireAuth"
    ],
@@ -19099,7 +19146,7 @@
   {
    "method": "GET",
    "path": "/help/settings",
-   "line": 31061,
+   "line": 31104,
    "auth": [
     "requireAuth"
    ],
@@ -19119,7 +19166,7 @@
   {
    "method": "POST",
    "path": "/help/feedback",
-   "line": 31066,
+   "line": 31109,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -19139,7 +19186,7 @@
   {
    "method": "POST",
    "path": "/help/tickets",
-   "line": 31082,
+   "line": 31125,
    "auth": [
     "requireAuth"
    ],
@@ -19159,7 +19206,7 @@
   {
    "method": "GET",
    "path": "/admin/tickets",
-   "line": 31099,
+   "line": 31142,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -19180,7 +19227,7 @@
   {
    "method": "POST",
    "path": "/admin/tickets/:id/reply",
-   "line": 31104,
+   "line": 31147,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -19207,7 +19254,7 @@
   {
    "method": "GET",
    "path": "/admin/questions",
-   "line": 31118,
+   "line": 31161,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -19228,7 +19275,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions",
-   "line": 31126,
+   "line": 31169,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19251,7 +19298,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/confirm",
-   "line": 31282,
+   "line": 31325,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19276,7 +19323,7 @@
   {
    "method": "GET",
    "path": "/agent/instructions",
-   "line": 31348,
+   "line": 31391,
    "auth": [
     "requireAuth"
    ],
@@ -19296,7 +19343,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/pause",
-   "line": 31363,
+   "line": 31406,
    "auth": [
     "requireAuth"
    ],
@@ -19320,7 +19367,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/resume",
-   "line": 31370,
+   "line": 31413,
    "auth": [
     "requireAuth"
    ],
@@ -19344,7 +19391,7 @@
   {
    "method": "POST",
    "path": "/agent/pause-all",
-   "line": 31379,
+   "line": 31422,
    "auth": [
     "requireAuth"
    ],
@@ -19364,7 +19411,7 @@
   {
    "method": "POST",
    "path": "/agent/resume-all",
-   "line": 31384,
+   "line": 31427,
    "auth": [
     "requireAuth"
    ],
@@ -19384,7 +19431,7 @@
   {
    "method": "GET",
    "path": "/agent/activity",
-   "line": 31392,
+   "line": 31435,
    "auth": [
     "requireAuth"
    ],
@@ -19404,7 +19451,7 @@
   {
    "method": "POST",
    "path": "/agent/writes/:id/undo",
-   "line": 31421,
+   "line": 31464,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19429,7 +19476,7 @@
   {
    "method": "GET",
    "path": "/agent/runs/:id",
-   "line": 31448,
+   "line": 31491,
    "auth": [
     "requireAuth"
    ],
@@ -19453,7 +19500,7 @@
   {
    "method": "GET",
    "path": "/agent/plans",
-   "line": 31461,
+   "line": 31504,
    "auth": [
     "requireAuth"
    ],
@@ -19473,7 +19520,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/discard",
-   "line": 31540,
+   "line": 31583,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19498,7 +19545,7 @@
   {
    "method": "GET",
    "path": "/agent/waiting",
-   "line": 31551,
+   "line": 31594,
    "auth": [
     "requireAuth"
    ],
@@ -19518,7 +19565,7 @@
   {
    "method": "POST",
    "path": "/agent/waiting/:kind/:id/approve",
-   "line": 31744,
+   "line": 31787,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19544,7 +19591,7 @@
   {
    "method": "POST",
    "path": "/agent/waiting/:kind/:id/skip",
-   "line": 31755,
+   "line": 31798,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19570,7 +19617,7 @@
   {
    "method": "GET",
    "path": "/agent/drafts",
-   "line": 31767,
+   "line": 31810,
    "auth": [
     "requireAuth"
    ],
@@ -19590,7 +19637,7 @@
   {
    "method": "GET",
    "path": "/agent/daily-line",
-   "line": 31777,
+   "line": 31820,
    "auth": [
     "requireAuth"
    ],
@@ -19610,7 +19657,7 @@
   {
    "method": "GET",
    "path": "/sequences/builder",
-   "line": 39598,
+   "line": 39698,
    "auth": [
     "requireAuth"
    ],
@@ -19630,7 +19677,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked",
-   "line": 39673,
+   "line": 39773,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -19652,7 +19699,7 @@
   {
    "method": "PUT",
    "path": "/sequences/tracked/:id",
-   "line": 39674,
+   "line": 39774,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -19678,7 +19725,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id",
-   "line": 39676,
+   "line": 39776,
    "auth": [
     "requireAuth"
    ],
@@ -19702,7 +19749,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id/turn-on-preview",
-   "line": 39688,
+   "line": 39788,
    "auth": [
     "requireAuth"
    ],
@@ -19726,7 +19773,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/turn-on",
-   "line": 39704,
+   "line": 39804,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -19752,7 +19799,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/turn-off",
-   "line": 39739,
+   "line": 39839,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -19778,7 +19825,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id/preview",
-   "line": 39749,
+   "line": 39849,
    "auth": [
     "requireAuth"
    ],
@@ -19806,7 +19853,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/enroll/:donorId",
-   "line": 39788,
+   "line": 39888,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19833,7 +19880,7 @@
   {
    "method": "DELETE",
    "path": "/sequences/tracked/:id/enroll/:donorId",
-   "line": 39834,
+   "line": 39934,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -19860,7 +19907,7 @@
   {
    "method": "GET",
    "path": "/sequences/home",
-   "line": 39851,
+   "line": 39951,
    "auth": [
     "requireAuth"
    ],
@@ -19880,7 +19927,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/run",
-   "line": 39878,
+   "line": 39978,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -19903,7 +19950,7 @@
   {
    "method": "POST",
    "path": "/sequences/process",
-   "line": 39893,
+   "line": 39993,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -19924,7 +19971,7 @@
   {
    "method": "GET",
    "path": "/sequences",
-   "line": 39899,
+   "line": 39999,
    "auth": [
     "requireAuth"
    ],
@@ -19944,7 +19991,7 @@
   {
    "method": "POST",
    "path": "/sequences",
-   "line": 39912,
+   "line": 40012,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -19970,7 +20017,7 @@
   {
    "method": "GET",
    "path": "/sequences/:id/steps",
-   "line": 39931,
+   "line": 40031,
    "auth": [
     "requireAuth"
    ],
@@ -19994,7 +20041,7 @@
   {
    "method": "GET",
    "path": "/sequences/:id/enrollments",
-   "line": 39938,
+   "line": 40038,
    "auth": [
     "requireAuth"
    ],
@@ -20018,7 +20065,7 @@
   {
    "method": "POST",
    "path": "/sequences/:id/enroll",
-   "line": 39956,
+   "line": 40056,
    "auth": [
     "requireAuth",
     "requirePlan(team)"
@@ -20046,7 +20093,7 @@
   {
    "method": "POST",
    "path": "/sequences/:id/unenroll",
-   "line": 39989,
+   "line": 40089,
    "auth": [
     "requireAuth"
    ],
@@ -20073,7 +20120,7 @@
   {
    "method": "PUT",
    "path": "/sequences/:id",
-   "line": 39999,
+   "line": 40099,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20104,7 +20151,7 @@
   {
    "method": "PATCH",
    "path": "/sequences/:id/status",
-   "line": 40021,
+   "line": 40121,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20131,7 +20178,7 @@
   {
    "method": "DELETE",
    "path": "/sequences/:id",
-   "line": 40032,
+   "line": 40132,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20156,7 +20203,7 @@
   {
    "method": "GET",
    "path": "/workflows",
-   "line": 41730,
+   "line": 41864,
    "auth": [
     "requireAuth"
    ],
@@ -20176,7 +20223,7 @@
   {
    "method": "GET",
    "path": "/workflows/:id/runs",
-   "line": 41763,
+   "line": 41897,
    "auth": [
     "requireAuth"
    ],
@@ -20200,7 +20247,7 @@
   {
    "method": "PUT",
    "path": "/workflows/:id",
-   "line": 41772,
+   "line": 41906,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -20229,7 +20276,7 @@
   {
    "method": "POST",
    "path": "/workflows/simulate",
-   "line": 41797,
+   "line": 41931,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20258,7 +20305,7 @@
   {
    "method": "POST",
    "path": "/workflows/run-sweeps",
-   "line": 41817,
+   "line": 41951,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20279,7 +20326,7 @@
   {
    "method": "GET",
    "path": "/unsubscribe",
-   "line": 28984,
+   "line": 29033,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -20301,7 +20348,7 @@
   {
    "method": "POST",
    "path": "/unsubscribe",
-   "line": 28995,
+   "line": 29044,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -20323,7 +20370,7 @@
   {
    "method": "POST",
    "path": "/stripe/connect",
-   "line": 32416,
+   "line": 32459,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -20344,7 +20391,7 @@
   {
    "method": "POST",
    "path": "/stripe/donation-page",
-   "line": 32461,
+   "line": 32509,
    "auth": [
     "requireAuth"
    ],
@@ -20371,7 +20418,7 @@
   {
    "method": "GET",
    "path": "/stripe/status",
-   "line": 32493,
+   "line": 32546,
    "auth": [
     "requireAuth"
    ],
@@ -20391,7 +20438,7 @@
   {
    "method": "POST",
    "path": "/stripe/campaign-link",
-   "line": 34298,
+   "line": 34359,
    "auth": [
     "requireAuth"
    ],
@@ -20417,7 +20464,7 @@
   {
    "method": "POST",
    "path": "/inbound-email",
-   "line": 51955,
+   "line": 52079,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
