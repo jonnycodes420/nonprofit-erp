@@ -22,7 +22,7 @@ const {
   resolveCampaignRecipients, retryFailedNotifications, run, runCampaignSend,
   runDailyTaskRemindersForOrg, runDigestsForOrg, runSavedReportScheduleForOrg,
   runStepRemindersForOrg, runThreadNudgesForOrg, snapshotMetricsForOrg, syncGmail, threadNudgeDayOk,
-  weekBounds,
+  weekBounds, recomputeAllScores,
 } = ctx;
 
 // Scheduled sweep — runs on the existing 5-min cadence (same pattern as
@@ -393,6 +393,12 @@ async function snapshotAllOrgMetrics() {
       try { await snapshotMetricsForOrg(o.id); } catch (e) { console.error(`[metrics] snapshot failed for org ${o.id}:`, e.message); }
     }
   } catch (e) { console.error("[metrics] snapshotAllOrgMetrics error:", e.message); }
+}
+// ENGAGE-1 — every org's engagement and generosity scores, from what is on
+// file. A gift or a touch also recomputes its own org within seconds.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => recordTick("recomputeScores", recomputeAllScores).catch(console.error), 45000);
+  setInterval(() => recordTick("recomputeScores", recomputeAllScores).catch(console.error), 6 * 60 * 60 * 1000);
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => snapshotAllOrgMetrics(), 20000);

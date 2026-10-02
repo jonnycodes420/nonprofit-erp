@@ -40,6 +40,8 @@ export const DONOR_LIST_KEYS = [
   // total_giving; the server's DONOR_SORTS), and a household: the list of
   // its members is the household's page.
   ["sort", "sort"], ["household", "household"],
+  // ENGAGE-1: the "Warm but not asked this year" panel is open.
+  ["warmUnasked", "warm"],
 ];
 
 export function donorsListHref(state) {
@@ -58,7 +60,7 @@ export function donorsListState(search) {
   const out = {};
   for (const [k, q] of DONOR_LIST_KEYS) {
     if (!qs.has(q)) continue;
-    out[k] = k === "noMeeting" ? qs.get(q) === "1" : qs.get(q);
+    out[k] = k === "noMeeting" || k === "warmUnasked" ? qs.get(q) === "1" : qs.get(q);
   }
   return out;
 }

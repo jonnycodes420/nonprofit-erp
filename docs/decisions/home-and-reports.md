@@ -207,3 +207,13 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - Board.jsx subtabs: "members" | "reports"; raw fetch() for binary PDF download (not apiFetch)
 - **`GET /donors/:id/impact-summary/pdf`** (requireAuth) — one-page printable/mailable per-donor PDF: cumulative giving, milestones reached, org-configured impact translations from `impact_metrics`. Reuses the same pdfkit pattern as `/reports/board` (buffer-to-Promise, page-footer loop) rather than a new rendering system.
 - **pdfkit footer bug, fixed in both routes**: footer text drawn at `y = page.height - 28` sits below pdfkit's default `maxY` (page.height − bottom margin), which silently auto-triggers a page break on each footer `.text()` call — the Impact Summary PDF was spilling onto 3 pages instead of 1, found via a live download test against the demo account (`fac46d4`), then the identical latent bug was proactively fixed in the older Board Report PDF too (`6159672`). Fix: pass an explicit `height` option on the footer `.text()` calls so pdfkit doesn't treat it as overflow.
+
+## The two scores (ENGAGE-1)
+
+- Engagement and generosity are computed only by `engagement.js` from the weights in
+  `shared/engagementWeights.js`, stored in `donor_scores`, and recomputed on the six-hour tick and a
+  few seconds after any write to a person, gift, conversation, event, shift or meeting.
+- A score's parts always add to the score (largest remainder), and each part opens the rows it
+  counted (`donor-engagement-part`, `donor-generosity-part`). Change a weight and its sentence together.
+- Never from wealth or capacity data. No "hot" labels: a number, Close / Warm / Distant, and the reason.
+- "Asked this year" means an `ask`/`solicitation` interaction, or a proposal opened or moved, since 1 January.

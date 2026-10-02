@@ -30,7 +30,10 @@ import { donorHref, rowClick } from "../lib/appUrls";
 // the Dashboard's root retained a `transform` from `.fade-in`'s fill-mode,
 // which made it the containing block for every position:fixed descendant and
 // dropped this panel at the vertical middle of the whole tall page.
-const UNITS = { months: "months", days: "days" };
+const UNITS = { months: "months", days: "days", points: "points" };
+// ENGAGE-1: points carry up to two decimals (a touch fades with age); months
+// and days are whole.
+const unitAmount = (v, unit) => unit === "points" ? `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })} points` : `${Math.round(v)} ${unit}`;
 const PAGE_SIZE = 50;
 const qs = params => Object.entries(params || {})
   .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -68,7 +71,7 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
   // that day" instead of "this row is not what the number counts".
   const unit = UNITS[data?.amountKind];
   const amount = r => r.amount === null || r.amount === undefined ? ""
-    : unit ? `${Math.round(r.amount)} ${unit}` : fmtFull(r.amount);
+    : unit ? unitAmount(r.amount, unit) : fmtFull(r.amount);
   return (
     <div data-figure-part={heading ? heading.role : undefined}>
       {heading && (
@@ -158,7 +161,7 @@ export function Foot({ data, figure }) {
   }
   const totUnit = UNITS[data.amountKind];
   const word = data.measure === "sum" ? "Total of every row" : data.measure === "avg" ? "Average of every row" : "Rows";
-  const shown = data.measure === "sum" ? (totUnit ? `${Math.round(data.value)} ${totUnit}` : fmtFull(data.value))
+  const shown = data.measure === "sum" ? (totUnit ? unitAmount(data.value, totUnit) : fmtFull(data.value))
     : data.measure === "avg" ? `${data.value}${totUnit ? " " + totUnit : ""}`
     : Number(data.value).toLocaleString("en-US");
   const matches = figure && figure.value !== null && figure.value !== undefined

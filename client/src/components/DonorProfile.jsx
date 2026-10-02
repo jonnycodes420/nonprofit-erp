@@ -3,6 +3,7 @@
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
 import { useState, useEffect, useRef, useContext, useMemo } from "react";
+import { ScoreCard, useScores, SuggestedAskLine } from "./ScoreWhy";
 import { FunderPanel } from "./FunderPanel";
 import { VolunteerPanel } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
@@ -950,6 +951,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [figs,setFigs]=useState(null);
   // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
   const [rel,setRel]=useState(null);
+  // ENGAGE-1 — the two scores and the suggested ask, one read.
+  const scores=useScores(donor.id);
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
@@ -2241,7 +2244,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 drafting, Suggested, Brief me, Erase and Delete are under More. */}
             {/* ── THE ASK ── the stage, the open ask and its history, in one place. */}
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
-              title="The ask" addLabel="+ New ask" testid="dp-the-ask" after={<div style={{marginTop:12}}>
+              title="The ask" addLabel="+ New ask" testid="dp-the-ask"
+              after={<div style={{marginTop:12}}>
               {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
                   panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
               {lockMajor(
@@ -2336,7 +2340,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>;
             })()}
           </div>}
-
+            {/* ENGAGE-1 §3 — the suggested ask, from their own gifts only. */}
+            {scores&&scores.suggestedAsk&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:"0 0 10px"}}/>}
             </ProposalsPanel>)}
 
             {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
@@ -3303,6 +3308,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                       <div style={{flex:"1 1 240px",minWidth:0}}>
                         <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{it.nextStep.label}</div>
+                        {it.suggestedAsk&&<SuggestedAskLine ask={it.suggestedAsk} style={{marginBottom:4}}/>}
                         <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
                           {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
                           {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
@@ -3379,7 +3385,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </div>
                 </div>
               )}
-
+              {/* ENGAGE-1 — how close they are, and how much they give. Inside
+                  the Next step panel: no new layout. */}
+              <ScoreCard donorId={donor.id} scores={scores}/>
             </div>;
             const rhythmNode=<div data-testid="dp-rail-rhythm" style={{display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.sage400}}>Rhythm</div>

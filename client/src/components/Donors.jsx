@@ -1,4 +1,4 @@
-import { NoRecentMeetingPanel } from "./MovesPanels";
+import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
 import { useState, useEffect, useMemo, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import Papa from "papaparse";
@@ -96,6 +96,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirSort,setDirSort]=useState(urlList.sort||"");
   const[dirHousehold,setDirHousehold]=useState(urlList.household||"");   // BUILD-14 planned-giving/estate segment
   const[noMeetingOpen,setNoMeetingOpen]=useState(!!urlList.noMeeting);
+  const[warmOpen,setWarmOpen]=useState(!!urlList.warmUnasked);
   const[nmFilter,setNmFilter]=useState({owner:urlList.nmOwner||"",min:urlList.nmMin||""});   // INT-BUILD-1 Part 6
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
   const[portfolioMeta,setPortfolioMeta]=useState({tier:PLAN_UNKNOWN,single_user:true}); // unknown until it loads, never "core" (FIX-3 finding 9)
@@ -414,13 +415,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // Opening or closing a profile is a step Back undoes; a filter or a
   // keystroke in search replaces the entry rather than piling up history.
   useEffect(()=>{
-    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,household:dirHousehold});
+    const href=selected?.id?donorHref(selected.id):donorsListHref({view,search,stage:dirStage,owner:dirAssignee,designation:dirDesignation,noMeeting:noMeetingOpen,warmUnasked:warmOpen,nmOwner:noMeetingOpen?nmFilter.owner:"",nmMin:noMeetingOpen?nmFilter.min:"",sort:dirSort,household:dirHousehold});
     const here=window.location.pathname+window.location.search;
     if(href===here)return;
     const step=selected?.id?!here.startsWith(donorHref(selected.id)):here.startsWith("/donors/");
     routerNavigate(href,{replace:!step,state:{internal:true}});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,nmFilter.owner,nmFilter.min,dirSort,dirHousehold]);
+  },[selected?.id,view,search,dirStage,dirAssignee,dirDesignation,noMeetingOpen,warmOpen,nmFilter.owner,nmFilter.min,dirSort,dirHousehold]);
 
   const handleEditSaved=(raw)=>{
     // Reuse the same single-donor adapter adaptData() uses for the initial
@@ -491,7 +492,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <button type="button" data-testid="filter-no-meeting" aria-pressed={noMeetingOpen} onClick={()=>setNoMeetingOpen(o=>!o)}
           style={{background:noMeetingOpen?T.ink:T.white,color:noMeetingOpen?T.inkInverse:T.ink,border:"1px solid "+(noMeetingOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>No meeting in 90 days</button>
+        {/* ENGAGE-1 — the people closest to giving more who have not been asked. */}
+        <button type="button" data-testid="filter-warm-not-asked" aria-pressed={warmOpen} onClick={()=>setWarmOpen(o=>!o)}
+          style={{background:warmOpen?T.ink:T.white,color:warmOpen?T.inkInverse:T.ink,border:"1px solid "+(warmOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>Warm but not asked this year</button>
       </div>
+      {warmOpen&&<WarmNotAskedPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setWarmOpen(false)}/>}
       {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}
         initialOwner={nmFilter.owner} initialMin={nmFilter.min} onFilterChange={setNmFilter}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}

@@ -15,6 +15,7 @@ import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
+import { SuggestedAskLine } from "./ScoreWhy";
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
@@ -427,7 +428,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // at all. includeMedium=1 is that path, and it is the ONLY fetch either
   // entry point uses, so the expanded list and the quiet line agree.
   const openEarlySigns=()=>{
-    apiFetch("/drift?all=1&includeMedium=1").then(r=>{
+    apiFetch(`/drift?all=1&includeMedium=1${driftQs(driftSort)?"&"+driftQs(driftSort):""}`).then(r=>{
       setDriftAllData(r);
       // React has to paint the rows before the section can be scrolled to.
       requestAnimationFrame(()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"}));
@@ -438,7 +439,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // never shown: a proposal nobody can see is a proposal nobody can correct.
   const [driftStep,setDriftStep]=useState(null);      // {label,due,source}
   const [driftStepDirty,setDriftStepDirty]=useState(false);
-  const loadDrift=()=>apiFetch("/drift").then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
+  // ENGAGE-1 — the Drift list can be put in engagement order (closest first).
+  const [driftSort,setDriftSort]=useState("");
+  const driftQs=s=>s==="engagement"?"sort=engagement":"";
+  const loadDrift=(s=driftSort)=>apiFetch(`/drift${driftQs(s)?"?"+driftQs(s):""}`).then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
 
   // BUILD-96 Part 2 — SAMPLE DATA, SAID ON THE SCREEN SHE READS.
   //
@@ -1634,6 +1638,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
             </span>
           </span>
+          <select aria-label="Order the drift list" data-testid="drift-sort" value={driftSort}
+            onChange={e=>{const v=e.target.value;setDriftSort(v);if(driftAllData){apiFetch(`/drift?all=1&includeMedium=1${driftQs(v)?"&"+driftQs(v):""}`).then(setDriftAllData).catch(()=>{});}else loadDrift(v);}}
+            style={{marginLeft:"auto",marginRight:10,border:"1px solid "+T.bg3,borderRadius:8,padding:"4px 8px",fontSize:12,background:T.white,color:T.ink,fontFamily:"inherit"}}>
+            <option value="">Most at risk first</option>
+            <option value="engagement">Closest first</option>
+          </select>
           {(driftData.total>driftData.list.length||driftCounts(driftData).medium>0)&&!driftAllData&&(
             <button onClick={openEarlySigns} style={sLink}>
               See all {driftCounts(driftData).total} →
@@ -1680,6 +1690,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     <div style={{flex:1,minWidth:0}}>
                       <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donorName}</div>
                       <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
+                      {/* ENGAGE-1 — engagement on the row; an early sign says when they have gone quiet too. */}
+                      {r.engagement!=null&&<div style={{fontSize:11.5,color:r.earlySign?T.gold700:T.ink3,marginTop:2}}>{r.earlySign||`Engagement ${r.engagement}`}</div>}
                     </div>
                     {/* BUILD-83 Part 4 — the figure is the donor's USUAL gift, the
                         amount their own sentence names, and it carries its label.
@@ -1905,6 +1917,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
             {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}.</span>
           </div>
+          {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
+          {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
           {/* BUILD-85 — the row still answers "why this one first?", and F.3.3's
               record still arrives on hover. Both live under the sentence now
               rather than competing with it on the right. */}

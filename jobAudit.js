@@ -52,6 +52,7 @@ const JOB_READS_ONLY = {
   refreshReconcileDenominator: "recomputes a denominator",
   reconcileStripeVsGifts: "compares two numbers and reports the difference",
   snapshotMetrics:        "writes a metric snapshot of figures already computed",
+  recomputeScores:        "ENGAGE-1: recomputes the engagement and generosity scores from gifts and touches already on file; no field a person entered changes",
 };
 
 function jobKind(name) {

@@ -91,3 +91,48 @@ export function MeetingsByStaffCard() {
     </div>
   );
 }
+
+// ENGAGE-1 — WARM BUT NOT ASKED THIS YEAR. The same shape as the panel above:
+// one number that opens its rows, then the people, closest first.
+export function WarmNotAskedPanel({ officers = [], onSelectDonor, onClose }) {
+  const [owner, setOwner] = useState("");
+  const [d, setD] = useState(null);
+  const since = `${new Date().getFullYear()}-01-01`;
+  const params = { since, ...(owner ? { owner } : {}) };
+  useEffect(() => {
+    setD(null);
+    apiFetch(`/figures/warm-not-asked/rows?${new URLSearchParams({ ...params, pageSize: 200 })}`).then(setD).catch(() => setD({ rows: [], totalRows: 0 }));
+  }, [owner]);
+  return (
+    <div data-testid="warm-not-asked" style={{ ...card, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={LABEL}>Warm but not asked this year</div>
+          <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 28, color: T.ink, lineHeight: 1.1, marginTop: 4 }}>
+            {d ? <Figure value={d.value ?? d.totalRows ?? 0} kind="count" label="Warm but not asked this year" definition={d.sentence} source={{ key: "warm-not-asked", params }} variant="inline"/> : "…"}
+            <span style={{ fontFamily: "'DM Sans',sans-serif", fontSize: 14, color: T.ink3 }}> people</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select aria-label="Relationship owner" value={owner} onChange={e => setOwner(e.target.value)} style={field}>
+            <option value="">Every owner</option>
+            {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          {onClose && <button type="button" onClick={onClose} style={{ ...field, cursor: "pointer" }}>Close</button>}
+        </div>
+      </div>
+      {d?.sentence && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{d.sentence}</div>}
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {(d?.rows || []).slice(0, 60).map(r => (
+          <DonorLink key={r.id} id={r.donorId || r.id} onOpen={() => onSelectDonor && onSelectDonor(r.donorId || r.id)}
+            style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 14, padding: "9px 2px", borderTop: "1px solid " + T.bg2,
+              textAlign: "left", cursor: "pointer", fontFamily: "inherit", fontSize: 14, color: T.ink }}>
+            <span style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}<span style={{ fontWeight: 400, color: T.ink3 }}> · {r.detail}</span></span>
+            <span style={{ color: T.ink3 }}>{r.dateLabel ? `Last touch ${r.dateLabel}` : ""}</span>
+          </DonorLink>
+        ))}
+        {d && !d.rows?.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody. Everyone Warm or Close has been asked this year.</div>}
+      </div>
+    </div>
+  );
+}

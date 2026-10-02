@@ -5938,6 +5938,29 @@ async function initSchema() {
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_campaign ON tasks(org_id, campaign_id) WHERE campaign_id IS NOT NULL`);
 
+  // ENGAGE-1 — the two scores, as last computed (engagement.js). Derived data:
+  // an org's rows are replaced as one set by the compute, never edited by a
+  // person. Stored so the Donors list can sort by them.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_scores (
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      engagement INTEGER NOT NULL DEFAULT 0,
+      generosity INTEGER NOT NULL DEFAULT 0,
+      band TEXT NOT NULL DEFAULT 'distant',
+      reason TEXT,
+      last_touch TEXT,
+      parts JSONB,
+      computed_for TEXT,
+      computed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      PRIMARY KEY (org_id, donor_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_scores_eng ON donor_scores(org_id, engagement DESC)`);
+  // APPEAL-WHY: the campaign a campaign is compared with, when the user chose one.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS compare_campaign_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
