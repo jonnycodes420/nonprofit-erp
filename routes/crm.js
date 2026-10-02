@@ -6580,14 +6580,30 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
     [org.id, donor.id, year]
   );
 
-  const lineItems = gifts.map(g => ({
-    date: g.date ? orgTime.formatCivil(g.date) : "", // civil date formatted from its own Y/M/D — never round-tripped through new Date()
-    amount: parseFloat(g.amount),
-    deductibleAmount: g.deductible_amount != null ? parseFloat(g.deductible_amount) : parseFloat(g.amount),
-    paymentMethod: g.payment_method || "",
+  // COMMS-2 — the money is statementTotals.js's, in cents: deductible never
+  // above what was given (a partial refund), a lost dispute off the statement.
+  const ST = require("../statementTotals").statementLines(gifts);
+  const lineItems = ST.lines.map(l => ({
+    date: l.date ? orgTime.formatCivil(l.date) : "", // civil date formatted from its own Y/M/D — never round-tripped through new Date()
+    amount: toDollars(l.amountCents),
+    deductibleAmount: toDollars(l.deductibleCents),
+    paymentMethod: l.paymentMethod,
   }));
-  const totalAmount = lineItems.reduce((s, i) => s + i.amount, 0);
-  const totalDeductible = lineItems.reduce((s, i) => s + i.deductibleAmount, 0);
+  const totalAmount = ST.totalAmount;
+  const totalDeductible = ST.totalDeductible;
+  // COMMS-2 §3 — "your year with us": hours given and events attended that
+  // year, unless the org turned the section off. Facts, not money: nothing in
+  // it touches a total.
+  let yourYear = null;
+  if (org.statement_your_year !== false) {
+    const [h] = await query(`SELECT COALESCE(SUM(ROUND(hours * 100)), 0)::int AS hh, COUNT(*)::int AS n FROM volunteer_shifts
+                               WHERE org_id=? AND person_id=? AND LEFT(date, 4) = ?`, [org.id, donor.id, String(year)]);
+    const evs = await query(`SELECT e.name, e.date::text AS date FROM event_attendees a JOIN events e ON e.id = a.event_id
+                               WHERE a.org_id=? AND a.donor_id=? AND (a.status='attended' OR a.checked_in_at IS NOT NULL)
+                                 AND EXTRACT(YEAR FROM e.date) = ? ORDER BY e.date`, [org.id, donor.id, year]);
+    const hours = (h && h.hh) ? h.hh / 100 : 0;
+    if (hours > 0 || evs.length) yourYear = { volunteerHours: hours, shifts: h ? h.n : 0, events: evs.map(e => e.name) };
+  }
 
   const receiptNumber = await allocateReceiptNumber(org.id);
   const brand = await resolveOrgBrandTheme(org.id).catch(() => null); // BUILD-64: shared resolver, frozen at issue
@@ -6602,11 +6618,13 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, donor),
+    taxLanguage: org.tax_language || null,   // COMMS-2: the brand kit's tax language
     receiptNumber,
     issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))), // ORG_TZ_SEAM_OK
     donorName: donor.name,
     taxYear: year,
     lineItems, totalAmount, totalDeductible,
+    yourYear,
   };
   // BUILD-65 Part 5: the "create your free giving account" CTA has LEFT the PDF.
   // A year-end statement may be handed to an accountant or attached to a filing;
@@ -6663,6 +6681,7 @@ app.get("/receipts/preview", requireAuth, requireAdmin, wrap(async (req, res) =>
     signatureName: org.receipt_signature_name || "",
     signatureTitle: org.receipt_signature_title || "",
     customMessage: applyReceiptTokens(org.receipt_custom_message, org, fakeDonor),
+    taxLanguage: org.tax_language || null,
     receiptNumber: `${orgToday(await orgTz(org.id)).slice(0, 4)}-PREVIEW`, // ORG_TZ_SEAM_OK — the preview shows the number an issue would mint
     issueDate: orgTime.formatCivil(orgToday(await orgTz(org.id))),
     donorName: fakeDonor.name,

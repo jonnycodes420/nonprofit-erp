@@ -185,6 +185,7 @@ const READ_ONLY_POSTS = [
   /^\/search$/,
   /^\/geocode\/preview$/,
   /^\/bookkeeper\/preview$/,
+  /^\/templates\/[^/]+\/preview$/,   // COMMS-2: a template rendered against a person, nothing saved
 ];
 
 function isReadOnlyPost(pattern) {

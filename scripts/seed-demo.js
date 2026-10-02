@@ -2776,6 +2776,31 @@ async function main() {
             WHERE org_id = $1
               AND LOWER(COALESCE(type,'')) NOT IN ('stock','in kind','in-kind','in_kind','securities')`, [ORG]);
 
+  // ── COMMS-2 · THE BRAND KIT, AND THREE TEMPLATES IN HARBORLIGHT'S WORDS ──
+  // Emerald and brass, Dana's signature, the boatyard address and the tax
+  // sentence; the first-gift letter, the monthly thank-you and the year-end
+  // cover reviewed (rewritten by Dana), the other seven still in Steward's
+  // starting words and saying so.
+  await q(`UPDATE orgs SET brand_primary='#0d5c3a', brand_secondary='#c9a84c',
+             receipt_signature_name=COALESCE(receipt_signature_name,'Dana Reyes'),
+             receipt_signature_title=COALESCE(receipt_signature_title,'Executive Director'),
+             brand_signature_extra='Harborlight Youth Collective · (978) 555-0142',
+             receipt_address=COALESCE(receipt_address,'12 Wharf Street, Salem, MA 01970'),
+             receipts_enabled=true, legal_name=COALESCE(legal_name,'Harborlight Youth Collective, Inc.'), ein=COALESCE(ein,'00-0000000'),
+             tax_language='Harborlight Youth Collective is a 501(c)(3) public charity. No goods or services were provided in exchange for your gift unless this receipt says so. Please keep this for your tax records.'
+           WHERE id=$1`, [ORG]);
+  for (const [kind, subject, body] of [
+    ["thanks_first", "Welcome aboard, {{first_name}}",
+     "Dear {{first_name}},\n\nThank you for your first gift to Harborlight, {{gift_amount}} on {{gift_date}}. This autumn it helps put twelve young people in the boatyard workshop every Thursday.\n\nI will write in the spring to tell you how they got on.\n\nWith thanks,\n{{signature}}"],
+    ["thanks_monthly", "Thank you for every month",
+     "Dear {{first_name}},\n\nYour {{monthly_amount}} a month is the gift we plan the year around. It is why the workshop doors open every week, not just when an appeal goes well.\n\nThank you,\n{{signature}}"],
+    ["year_end", "Your {{year}} with Harborlight",
+     "Dear {{first_name}},\n\nThank you for everything you gave this year. Your statement is attached: {{year_total}} in {{year}}.\n\n{{tax_language}}\n\nWith gratitude,\n{{signature}}"],
+  ]) {
+    await q(`INSERT INTO message_templates (id,org_id,kind,subject,body,reviewed_at,reviewed_by_name,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,NOW(),'Dana Reyes','u_b72demo','Dana Reyes')`, [`mt_b72_${kind}`, ORG, kind, subject, body]);
+  }
+
   // ── SURVEY-1 · TWO SURVEYS, ANSWERED ────────────────────────────────────
   // "Why do you give?" to donors (named, twenty answers) and "How was
   // volunteering this season?" to volunteers (named, ten). Each answer is on

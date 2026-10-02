@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { BrandKitManager } from "./BrandKit";
 import { useUrlWriter } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
@@ -2355,6 +2356,8 @@ const SETTINGS_TABS=[
   // section and is untouched.
   {id:"portal",label:"Donor Portal",portalTierOnly:true},
   {id:"receipts",label:"Tax Receipts"},
+  // COMMS-2 — colours, signature, address and tax language for every template.
+  {id:"brandkit",label:"Brand kit"},
   // BUILD-87 Part 1 — every import run, newest first, with the receipt it
   // showed when it committed. Read only: this build does not undo an import.
   {id:"imports",label:"Imports"},
@@ -3459,6 +3462,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Tax Receipts ──────────────────────────────────────────────────── */}
       {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
+      {section==="brandkit"&&<BrandKitManager isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 
