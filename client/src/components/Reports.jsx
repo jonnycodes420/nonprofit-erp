@@ -4,11 +4,13 @@ import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID } from "../lib/reportsRail";
 import { displayDate } from "../../../shared/displayDate";
 import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
 import { Dashboards } from "./Dashboards";
+// REPORTS-3 — a dashboard she saved, the tile picker, and the board pack.
+import { SavedDashboardView, DashboardBuilder, BoardPackPanel } from "./SavedDashboards";
 import { useNavigate } from "react-router-dom";
 import { tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
@@ -224,6 +226,10 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   // does not appear: Reports is not broken by a dashboard list that would not
   // load.
   const [dashboards, setDashboards] = useState([]);
+  // REPORTS-3 — the org's own saved dashboards, filled from the server the
+  // same way, so the rail's first group holds exactly what exists.
+  const [savedDashboards, setSavedDashboards] = useState([]);
+  const [editingDash, setEditingDash] = useState(null);   // a dashboard id, or "" for a new one
   const [yearMode, setYearModeState] = useState(() => initialParams?.yearMode || localStorage.getItem("steward_reports_yearmode") || "fiscal");
   const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
   const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
@@ -268,6 +274,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   // one; it is the Dashboards screen. Declared beside isTab so every branch
   // below reads one word instead of a prefix test.
   const onDashboard = isDashboard(active);
+  // REPORTS-3 — the three other things that live in the Dashboards group: one
+  // she saved, the board pack, and the tile picker. Declared beside isTab for
+  // the same reason, so every branch below reads one word.
+  const onSavedDashboard = isSavedDashboard(active);
+  const onBoardPack = active === BOARD_PACK_ID;
+  const onNewDashboard = active === NEW_DASH_ID;
   const fsm = fiscalStart || 7;
   const CUR_FY = fyOf(fsm);
   const PRESETS = presetsFor(CUR_FY, fsm);
@@ -287,9 +299,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   };
 
   const loadList = () => apiFetch("/saved-reports").then(setList).catch(() => setList({ standard: [], saved: [] }));
+  const loadSavedDashboards = () => apiFetch("/saved-dashboards")
+    .then(r => setSavedDashboards(r.dashboards || [])).catch(() => setSavedDashboards([]));
   useEffect(() => {
     loadList();
     apiFetch("/dashboards").then(r => setDashboards(r.dashboards || [])).catch(() => {});
+    loadSavedDashboards();
     apiFetch("/finance/funds").then(setFunds).catch(() => {});
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
     const fiscal = yearMode === "fiscal";
@@ -636,8 +651,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   }
 
   const standard = list?.standard || [], saved = list?.saved || [];
-  const groups = railGroups(REPORT_DEFS, standard, saved, dashboards);
-  const label = reportLabel(active, REPORT_DEFS, standard, saved, dashboards);
+  const groups = railGroups(REPORT_DEFS, standard, saved, dashboards, savedDashboards);
+  const label = reportLabel(active, REPORT_DEFS, standard, saved, dashboards, savedDashboards);
   const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
   return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
@@ -666,7 +681,23 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             the whole point of the fold (FIX-2 B — Reports has ONE way in). */}
         {onDashboard && <Dashboards data={appData} onNavigate={onNavigate} dashKey={dashKeyOf(active)} />}
 
-        {!isTab && !onDashboard && active !== BUILD_ID && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
+        {/* REPORTS-3 — a dashboard she built. Editing it is the tile picker
+            over the same screen, so "edit" is not a second destination. */}
+        {onSavedDashboard && (editingDash === savedDashIdOf(active)
+          ? <DashboardBuilder editId={savedDashIdOf(active)} onCancel={() => setEditingDash(null)}
+              onSaved={id => { setEditingDash(null); loadSavedDashboards().then(() => setActive(SDASH_PREFIX + id)); }} />
+          : <SavedDashboardView id={savedDashIdOf(active)} onNavigate={onNavigate}
+              onEdit={() => setEditingDash(savedDashIdOf(active))}
+              onDeleted={() => { loadSavedDashboards(); pick(""); }} />)}
+
+        {onNewDashboard && <DashboardBuilder onCancel={() => pick("")}
+          onSaved={id => { loadSavedDashboards().then(() => setActive(SDASH_PREFIX + id)); }} />}
+
+        {onBoardPack && <BoardPackPanel onNavigate={onNavigate}
+          onOpenSettings={() => onNavigate && onNavigate("settings", { section: "org", focus: "board-pack" })} />}
+
+        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && active !== BUILD_ID
+          && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
 
         {isTab && <Card style={{ padding: "18px 22px" }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 12 }}>{label}</div>

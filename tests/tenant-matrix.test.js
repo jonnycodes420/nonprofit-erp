@@ -220,6 +220,15 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO imports (id,org_id,name,shape,rows_in) VALUES ($1,$2,$3,'volunteers',1)`,
     [`vimp_${o}`, o, `${mark} Volunteer import`]);
   await q(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash) VALUES ($1,$2,'Zapier','stw_xxxxxx',$3)`, [`ak_${o}`, o, `hash_${o}`]);
+  // REPORTS-3 — a SAVED DASHBOARD per org, and it is deliberately SHARED.
+  // Shared is the harder case: within an org it means "the team may open
+  // this", and the read is `shared OR mine`, so a bug that forgot the org
+  // predicate would let org A open org B's shared dashboard — and running one
+  // returns that org's gifts, givers and donor names. Org A reading it,
+  // rewriting its tiles or deleting it must each answer 404.
+  await q(`INSERT INTO saved_dashboards (id,org_id,name,tiles,filters,shared,owner_id,owner_name)
+           VALUES ($1,$2,$3,$4,'{}'::jsonb,true,$5,'Owner')`,
+    [`sdash_${o}`, o, `${mark} Dashboard`, JSON.stringify([{ kind: "figure", source: "gifts", params: {} }]), `u_${o}`]).catch(() => {});
   // FIX-11 Part 1 — one audit row per org, with a known id, so GET
   // /audit/log/:id is probed against a REAL row of the other org's history
   // rather than against a missing one (which would 404 for the wrong reason
@@ -548,6 +557,11 @@ function bResolver(routePath, param) {
   // APPLY a journey to people, which is the most consequential of the set:
   // org A reaching org B's journey could start seven steps against org B's
   // donors. They answer 404.
+  // REPORTS-3 — org B's own saved dashboard. `/board-pack` and
+  // `/dashboard-tiles` carry no row id (the board pack's `dashboard` is a
+  // query parameter, probed by §6 of reports3-board-pack), so the only
+  // row-shaped param in this build is a dashboard's own id.
+  if (routePath.startsWith("/saved-dashboards/")) return `sdash_${B}`;
   if (routePath.startsWith("/journeys/")) return `ct_${B}`;
   if (routePath.startsWith("/plan-steps/")) return `cs_${B}`;
   if (routePath.startsWith("/plans/")) return `cp_${B}`;
@@ -589,6 +603,10 @@ const PARAM_EXEMPT = [
   // an unknown name is a 404. Cross-org rows are proven directly in
   // tests/fix2-a-footing.test.js §2 (org B asking for org A's donor gets none).
   [/^\/figures\/:source\/rows$/, "param is a figure SOURCE NAME from a fixed registry, not a row id — see fix2-a-footing.test.js §2"],
+  // REPORTS-3 — the param is a figure SOURCE NAME, exactly as above: the
+  // dashboard-tile catalogue is built from figureSources.js's own registry and
+  // an unknown name is refused. There is no cross-org value to probe.
+  [/^\/dashboard-tiles$/, "no parameters — the catalogue of a fixed registry"],
   [/^\/portfolio\/officers\/:userId\/color$/, "cross-org userId probed via bResolver userId map"], // resolved, listed for clarity
   // INT-OAUTH — the param is a PROVIDER KEY from the fixed registry in
   // shared/oauth.js (xero · intuit · square), never a row id, and an unknown

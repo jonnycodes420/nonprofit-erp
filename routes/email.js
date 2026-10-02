@@ -514,6 +514,39 @@ async function sendGiftAlertEmail(org, toEmail, subject, bodyHtml) {
   } catch (e) { console.error("[notify] gift-alert email threw:", e.message); return false; }
 }
 
+// ── REPORTS-3 — THE BOARD PACK, AS A FILE ────────────────────────────────────
+// Staff and board mail, exactly like sendGiftAlertEmail: the org's branded
+// header, and NO donor unsubscribe/CAN-SPAM footer, because this never reaches
+// a donor. It is the one sender in this file that carries an attachment.
+//
+// It is not a donor send and does not touch donorMailDecision — that gate
+// takes a donor and asks whether THAT PERSON may be mailed, and there is no
+// donor here. What governs the recipients is the caller: the org's own
+// board_pack_emails list, checked against the mail block, and nothing else.
+//
+// Returns TRUE only when the provider accepted it (FIX-15 Part 3's honest
+// "sent"): a scheduled send releases its ledger row on false, so a pack that
+// did not go out can go out on the next tick.
+async function sendBoardPackEmail(org, toEmail, subject, bodyHtml, pdf, filename) {
+  if (!toEmail) return false;
+  // mailBlock.js, from any org, for any reason — the same wall every other
+  // send in this file is behind.
+  if (isBlockedAddress(toEmail)) { console.error("[board-pack] refused a blocked address"); return false; }
+  const html = await brandEmailHeaderHtml(org.id) + bodyHtml;
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (!process.env.RESEND_API_KEY) return true; // email not configured — nothing to deliver
+  try {
+    const { error } = await resend.emails.send({
+      from, to: toEmail, subject, html, _stewardOrgId: org.id,
+      attachments: pdf && pdf.length
+        ? [{ filename: filename || "board-pack.pdf", content: pdf.toString("base64") }]
+        : undefined,
+    });
+    if (error) { console.error("[board-pack] email error:", error.message); return false; }
+    return true;
+  } catch (e) { console.error("[board-pack] email threw:", e.message); return false; }
+}
+
 // ── BUILD-36 A4: internal-notification dedup + per-user email toggles ────────
 // prefKind → the users.notify_* column. NULL / missing column is treated as ON
 // (default true) — a pre-existing user keeps hearing about their donors/tasks.
@@ -673,6 +706,7 @@ module.exports = {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
   demoMailNote,
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
+  sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
   trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
 };

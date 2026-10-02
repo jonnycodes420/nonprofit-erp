@@ -35,6 +35,7 @@ const JOB_WRITES = {
   processMembershipRenewals:         "renews a membership and charges or drafts for it",
   processPledgeInstallmentReminders: "reminds a donor about a pledge instalment",
   processSavedReportSchedule:        "sends a saved report on its schedule",
+  processBoardPackSchedule:          "sends the board pack to the org's staff and board addresses",
   processWorkflowSweeps:             "runs the workflow recipes that are due",
   deliverWebhooks:                   "delivers a queued webhook to the org's endpoint",
   retryFailedNotifications:          "retries a notification that failed to send",

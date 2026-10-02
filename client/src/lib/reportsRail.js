@@ -52,6 +52,20 @@ export const DASH_PREFIX = "dash:";
 export const isDashboard = id => String(id || "").startsWith(DASH_PREFIX);
 export const dashKeyOf = id => isDashboard(id) ? String(id).slice(DASH_PREFIX.length) : null;
 
+// REPORTS-3 — A DASHBOARD SHE SAVED sits in the same group as the four
+// Steward ships, because it is the same kind of thing and the rail is the one
+// way in: a second list of "my dashboards" beside the list of dashboards is
+// exactly what FIX-2 B took out of Reports. Its ids are prefixed `sdash:`, the
+// board pack and the new-dashboard screen are two more items in that group,
+// and all four kinds resolve through resolveReportId like everything else.
+export const SDASH_PREFIX = "sdash:";
+export const isSavedDashboard = id => String(id || "").startsWith(SDASH_PREFIX);
+export const savedDashIdOf = id => isSavedDashboard(id) ? String(id).slice(SDASH_PREFIX.length) : null;
+export const BOARD_PACK_ID = "board-pack";
+export const NEW_DASH_ID = "new-dashboard";
+export const isDashboardGroupId = id =>
+  isDashboard(id) || isSavedDashboard(id) || id === BOARD_PACK_ID || id === NEW_DASH_ID;
+
 export const RAIL_GROUPS = [
   { id: "dashboards", question: "Dashboards", items: [] },
   { id: "saved", question: "Your saved reports", items: [] },
@@ -83,7 +97,7 @@ export function resolveReportId(raw) {
   if (!id) return { id: DEFAULT_REPORT };
   if (id === BUILD_ID) return { id: BUILD_ID };
   if (ALIASES[id]) return { ...ALIASES[id] };
-  if (isDashboard(id)) return { id };
+  if (isDashboardGroupId(id)) return { id };
   if (PLACED.has(id)) return { id };
   if (id.startsWith("std:")) return { id: DEFAULT_REPORT };   // a standard report that no longer exists
   return { id, saved: true };
@@ -97,13 +111,17 @@ export const PDF_TWIN = { lybunt: "std:lybunt", sybunt: "std:sybunt", retention:
 
 // The rail's rows, with names: tab reports from `tabDefs` ({key,label,team}),
 // standard reports by the server's name, saved reports from the org's list.
-export function railGroups(tabDefs = [], standard = [], saved = [], dashboards = []) {
+export function railGroups(tabDefs = [], standard = [], saved = [], dashboards = [], savedDashboards = []) {
   const tab = id => tabDefs.find(r => r.key === id);
   const name = id => (tab(id) || {}).label || (standard.find(s => s.id === id) || {}).name || null;
   return RAIL_GROUPS.map(g => ({
     ...g,
     items: g.id === "dashboards"
-      ? dashboards.map(d => ({ id: DASH_PREFIX + d.key, label: d.label, sub: null }))
+      ? [...dashboards.map(d => ({ id: DASH_PREFIX + d.key, label: d.label, sub: null })),
+         ...savedDashboards.map(d => ({ id: SDASH_PREFIX + d.id, label: d.name,
+           sub: d.mine && !d.shared ? "just you" : (d.shared && !d.mine ? d.ownerName || "shared" : null) })),
+         { id: BOARD_PACK_ID, label: "Board pack", sub: null },
+         { id: NEW_DASH_ID, label: "New dashboard", sub: null }]
       : g.id === "saved"
       ? saved.map(s => ({ id: s.id, label: s.name, sub: s.schedule === "weekly" ? "weekly" : (s.mine && !s.shared ? "just you" : null) }))
       : g.items.map(id => ({ id, label: name(id), team: !!(tab(id) || {}).team })).filter(i => i.label),
@@ -111,7 +129,10 @@ export function railGroups(tabDefs = [], standard = [], saved = [], dashboards =
 }
 
 // The label of any report id, for a heading.
-export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboards = []) {
+export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboards = [], savedDashboards = []) {
+  if (id === BOARD_PACK_ID) return "Board pack";
+  if (id === NEW_DASH_ID) return "New dashboard";
+  if (isSavedDashboard(id)) return (savedDashboards.find(d => SDASH_PREFIX + d.id === id) || {}).name || null;
   if (isDashboard(id)) return (dashboards.find(d => DASH_PREFIX + d.key === id) || {}).label || null;
   return (tabDefs.find(r => r.key === id) || {}).label
     || (standard.find(s => s.id === id) || {}).name
@@ -124,7 +145,7 @@ export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboa
 export function groupOfReport(raw) {
   const r = resolveReportId(raw);
   if (r.id === BUILD_ID) return null;
-  if (isDashboard(r.id)) return "dashboards";
+  if (isDashboardGroupId(r.id)) return "dashboards";
   if (r.saved) return "saved";
   const g = RAIL_GROUPS.find(x => x.items.includes(r.id));
   return g ? g.id : null;

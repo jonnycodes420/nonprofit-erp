@@ -24,6 +24,10 @@ const QUERY_KEYS = [
   ["volunteerId", "volunteer"],
   // FIX-15 Part 5: a volunteer shift's "Who is coming" and a volunteer group.
   ["slotId", "slot"], ["groupId", "group"],
+  // REPORTS-3: a saved dashboard's filters live in the URL, so a dashboard
+  // opens, reloads and shares as the same numbers. from/to/fund/campaign are
+  // already here; `owner` is the officer a donor is assigned to.
+  ["owner", "owner"],
 ];
 
 export function donorHref(id) {

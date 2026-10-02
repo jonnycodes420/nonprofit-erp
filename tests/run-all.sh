@@ -161,6 +161,7 @@ CORE=(
   reconciliation
   fix11-deposits
   fix2-a-footing
+  reports3-board-pack
   gtm1a-internal-price
   gtm1b-band-notice
   thread2a-no-send

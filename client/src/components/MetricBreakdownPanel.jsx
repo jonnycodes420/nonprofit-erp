@@ -30,10 +30,14 @@ import { donorHref, rowClick } from "../lib/appUrls";
 // the Dashboard's root retained a `transform` from `.fade-in`'s fill-mode,
 // which made it the containing block for every position:fixed descendant and
 // dropped this panel at the vertical middle of the whole tall page.
+<<<<<<< HEAD
 const UNITS = { months: "months", days: "days", points: "points" };
 // ENGAGE-1: points carry up to two decimals (a touch fades with age); months
 // and days are whole.
 const unitAmount = (v, unit) => unit === "points" ? `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })} points` : `${Math.round(v)} ${unit}`;
+=======
+const UNITS = { months: "months", days: "days", hours: "hours" };
+>>>>>>> a0c9ca2 (REPORTS-3: saved dashboards and the board pack)
 const PAGE_SIZE = 50;
 const qs = params => Object.entries(params || {})
   .filter(([, v]) => v !== undefined && v !== null && v !== "")

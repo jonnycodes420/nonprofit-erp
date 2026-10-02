@@ -59,7 +59,7 @@ const {
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,
   grantDocs, grantMoneyRows, grantMsMod, hashApiKey, imageBytesMatchMime, inboundMod, insertShift,
-  inviteeDisplayName, issueGiftReceipt, levelTaken, loadCfDefs, lookupMatchingGift,
+  inviteeDisplayName, isBlockedAddress, issueGiftReceipt, levelTaken, loadCfDefs, lookupMatchingGift,
   makeOAuth2Client, mbCents, membershipSettings, mergeCustomValues, mfaVerifyForUser, money,
   monthBounds, normalizeAccent, normalizeUploadImage, notifyTaskAssignment, openGiftThread,
   openThreadTx, orgDaysOverdue, orgFiscalYearStart, orgLeadDays, orgOwns, orgPeriodBounds,
@@ -75,7 +75,7 @@ const {
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
-  seedOrgData, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
+  seedOrgData, sendBoardPackEmail, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
   scheduleScores, recomputeScoresForOrg, engagementMod,
   snapshotMetricsForOrg, solicitableSql, sustainerFileFacts, syncGmail, testMode, threadNudgeDayOk,
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
@@ -1641,6 +1641,665 @@ app.get("/dashboards", requireAuth, wrap(async (req, res) => {
   res.json({ dashboards: D.DASHBOARDS.map(d => ({ key: d.key, label: d.label, question: d.question, blurb: d.blurb })) });
 }));
 
+// ══ REPORTS-3 — SAVED DASHBOARDS AND THE BOARD PACK ════════════════════════
+//
+// The ED stops rebuilding the same report every month, and the board gets the
+// same numbers on the same day without anyone exporting anything.
+//
+// ONE COMPOSITION. composeBoardPack builds the pack as DATA — every number
+// with the figure source it was computed from, its definition and its sentence
+// — and renderBoardPackPdf draws that data. The screen and the paper read the
+// same object, so a number cannot be one thing on one and another on the
+// other. Every number in it is a figureSources.js source, which is what makes
+// the one test possible: each can be re-asked of /figures/:source/rows and
+// footed to the cent against the live report.
+let BP = null;
+const BP_READY = import("../shared/boardPack.js").then(m => { BP = m; return m; });
+
+// THE PERIOD A PACK COVERS. Either the dates she chose, or — for a schedule —
+// the last COMPLETE month or quarter, through orgPeriodBounds, which is the
+// one place a period boundary is decided anywhere in the product. A pack sent
+// on the 5th is about the month that finished, never the five days of the one
+// running.
+async function boardPackWindow(org, opts = {}) {
+  const B = await BP_READY;
+  const DD = await import("../shared/displayDate.js");
+  if (opts.from && opts.to) {
+    return { from: opts.from, to: opts.to, periodKey: `custom:${opts.from}:${opts.to}`, frequency: null,
+             label: `${DD.displayDate(opts.from)} to ${DD.displayDate(opts.to)}` };
+  }
+  const frequency = B.PACK_FREQUENCIES.includes(opts.frequency) ? opts.frequency : "quarterly";
+  const b = orgTime.orgPeriodBounds(org, B.PACK_PERIOD[frequency], -1);   // ORG_TZ_SEAM_OK
+  const label = frequency === "monthly"
+    ? DD.displayMonth(b.start)
+    : `${DD.displayMonth(b.start).replace(/ \d{4}$/, "")} to ${DD.displayMonth(b.end)}`;
+  return { from: b.start, to: b.end, periodKey: b.key, frequency, label };
+}
+
+// A figure, composed: its value through its source, the source it carries, the
+// definition the pack declares for it and the sentence figureSources composed
+// from the parameters the value was really computed with.
+async function packFigure(orgId, def, source, deps, filters) {
+  const B = await BP_READY;
+  if (!source) {
+    return { key: def.key, label: def.label, kind: def.kind, value: null, cents: null,
+             definition: def.definition, sentence: null, source: null,
+             blank: "There is no earlier year on file to compare this period with, so there is nothing to show yet." };
+  }
+  const sDef = figureSources.sourceDef(source.key);
+  const f = await figureSources.figure(orgId, source, deps, { rows: false });
+  if (!f) return null;
+  const { ignored } = B.filtersHonoured(sDef && sDef.params, filters);
+  return { key: def.key, label: def.label, kind: def.kind, suffix: def.suffix || null,
+           value: f.value, cents: f.cents, definition: def.definition, sentence: f.sentence,
+           source, blank: f.blank || null, blankShort: f.blankShort || null,
+           amountKind: f.amountKind || null, note: B.ignoredFilterSentence(ignored) };
+}
+
+// THE ACTIVE GOALS, through the three sources the Fundraising dashboard reads.
+// A goal keeps its own period, so these figures do not move with the pack's
+// period and the section's definition says so.
+async function packGoalRows(orgId, deps) {
+  const out = await fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null);
+  const goals = ((out && out.goals) || []).filter(g => g.active !== false);
+  const fig = async source => ({ ...(await figureSources.figure(orgId, source, deps, { rows: false })), source });
+  return Promise.all(goals.map(async g => {
+    const [raised, target, pct] = await Promise.all([
+      fig({ key: "goal-raised", params: { campaign: g.id } }),
+      fig({ key: "campaign-goal", params: { campaign: g.id } }),
+      fig({ key: "goal-progress", params: { campaign: g.id } }),
+    ]);
+    return { label: g.name, raised: { value: raised.value, cents: raised.cents, source: raised.source, sentence: raised.sentence },
+             target: { value: target.value, cents: target.cents, source: target.source, sentence: target.sentence },
+             percent: { value: pct.value, source: pct.source, sentence: pct.sentence, blank: pct.blank || null },
+             pace: g.paceState || null };
+  }));
+}
+
+// A TILE ON A SAVED DASHBOARD. The dashboard's filters are authoritative and
+// the tile's own saved params are the fallback, so a tile that fixes something
+// (a count rather than a sum) keeps it while the dashboard still narrows what
+// it can narrow. A filter the tile's source cannot honour is SAID on the tile
+// (`note`), never silently dropped under a heading that claims otherwise.
+function tileSourceParams(sDef, tileParams, filters, fallbackWindow) {
+  const params = {};
+  const declared = (sDef && sDef.params) || {};
+  for (const name of Object.keys(declared)) {
+    if (name === "from") { params.from = filters.from || (tileParams && tileParams.from) || fallbackWindow.from; continue; }
+    if (name === "to") { params.to = filters.to || (tileParams && tileParams.to) || fallbackWindow.to; continue; }
+    const byFilter = Object.entries({ fund: "fund", campaign: "campaign", owner: "assigned" })
+      .find(([, pname]) => pname === name);
+    if (byFilter && filters[byFilter[0]]) { params[name] = filters[byFilter[0]]; continue; }
+    if (tileParams && tileParams[name] !== undefined) params[name] = tileParams[name];
+  }
+  return params;
+}
+
+// WHAT KIND OF NUMBER A SOURCE PRODUCES. Not every source has a `measure`
+// function: a ratio (retention, the change on last year) and a difference (the
+// Board's sentence) are computed from their two parts, and the engine never
+// asks them for one. Calling `sDef.measure(...)` on a ratio threw, and because
+// one tile's crash is the whole composition's crash it took the entire
+// dashboard down — a blank screen with a 500 behind it, found by opening the
+// seeded dashboard in a browser and not by any server test, because the
+// default board pack never puts a tile over a ratio.
+function tileFigureKind(sDef, params) {
+  if (sDef.ratio) return "percent";
+  if (sDef.difference) return "money";
+  if (sDef.amountKind && sDef.amountKind !== "money") return "count";
+  return typeof sDef.measure === "function" && sDef.measure(params) === "sum" ? "money" : "count";
+}
+
+async function composeDashboardTiles(orgId, dash, window, deps, userId) {
+  const B = await BP_READY;
+  const filters = window.filters || {};
+  const sections = [];
+  for (const [i, tile] of (dash.tiles || []).entries()) {
+    if (tile.kind === "figure") {
+      const sDef = figureSources.sourceDef(tile.source);
+      if (!sDef) { sections.push({ key: `tile${i}`, kind: "missing", title: "A number Steward no longer has",
+        definition: `This tile asks for "${tile.source}", which is not a figure Steward knows any more. Edit the dashboard to replace it.` }); continue; }
+      const params = tileSourceParams(sDef, tile.params, filters, window);
+      let f;
+      try {
+        f = await packFigure(orgId, { key: `tile${i}`, label: sDef.label, kind: tileFigureKind(sDef, params),
+          suffix: sDef.amountKind && sDef.amountKind !== "money" ? sDef.amountKind : null,
+          definition: sDef.label }, { key: tile.source, params }, deps, filters);
+      } catch (e) {
+        // ONE TILE'S FAILURE COSTS THAT TILE. It used to cost the whole
+        // dashboard: a single source that could not be read threw out of the
+        // composition and the screen went blank with a 500 behind it. A tile
+        // that cannot be drawn says so where it sits, and everything else on
+        // the dashboard still draws.
+        if (!(e instanceof figureSources.FigureParamError)) console.error("[dashboard-tile]", tile.source, e.message);
+        sections.push({ key: `tile${i}`, kind: "missing", title: sDef.label,
+          definition: e instanceof figureSources.FigureParamError ? e.message
+            : "Steward could not work this number out just now. Everything else on this dashboard is unaffected." });
+        continue;
+      }
+      // The DEFINITION of a tile's number is the source's own sentence: it is
+      // the one string that states exactly which rows were counted and over
+      // which dates, and it is the string the drill-through shows too.
+      sections.push({ key: `tile${i}`, kind: "figures", title: sDef.label,
+        figures: [{ ...f, definition: f.sentence, kind: f.kind }] });
+    } else if (tile.kind === "chart") {
+      try {
+        const points = await packGivingByMonth(orgId, deps);
+        sections.push({ key: `tile${i}`, kind: "chart", title: "Giving this year against last year", points,
+          definition: "Giving added up month by month through your fiscal year: this year to today, and last year in full." });
+      } catch (e) {
+        console.error("[dashboard-tile] chart", e.message);
+        sections.push({ key: `tile${i}`, kind: "missing", title: "Giving this year against last year",
+          definition: "Steward could not draw this chart just now. Everything else on this dashboard is unaffected." });
+      }
+    } else if (tile.kind === "list") {
+      try {
+        const list = await packReportList(orgId, tile.report, tile.limit || 10, userId);
+        sections.push({ key: `tile${i}`, kind: "report", title: list.name, columns: list.columns, rows: list.rows,
+          totalRows: list.totalRows, definition: list.question || `Every row the report "${list.name}" returns.` });
+      } catch (e) {
+        console.error("[dashboard-tile] list", tile.report, e.message);
+        sections.push({ key: `tile${i}`, kind: "missing", title: "A list Steward could not run",
+          definition: "Steward could not run this report just now. Everything else on this dashboard is unaffected." });
+      }
+    }
+  }
+  return sections;
+}
+
+// THE BOARD'S LINE, for a chart tile: the board dashboard's own series, read
+// from the one place it is computed.
+async function packGivingByMonth(orgId, deps) {
+  const board = await computeDashboard(orgId, "board", { isTeam: false });
+  const m = ((board && board.metrics) || []).find(x => x.key === "givingByMonth");
+  return Array.isArray(m && m.value) ? m.value : [];
+}
+
+// A LIST TILE: a standard or saved report, run through the ONE path that runs
+// a report anywhere (savedReportFor + runSaved), so a list on a dashboard is
+// the same rows the report tab shows.
+// `userId` is WHOSE reports this may read: a private saved report belongs to
+// one person, and a dashboard carrying a list tile of it is read as its OWNER
+// would read it — on a scheduled send too, where nobody is signed in.
+async function packReportList(orgId, reportId, limit, userId) {
+  const rep = await savedReportFor(orgId, userId || null, reportId);
+  if (!rep) return { name: "A report Steward no longer has", columns: [], rows: [], totalRows: 0,
+                     question: `This tile asks for a report ("${reportId}") that is not there any more. Edit the dashboard to replace it.` };
+  const out = await runSaved(orgId, rep);
+  if (out.errors) return { name: rep.name, columns: [], rows: [], totalRows: 0, question: out.errors.join(" ") };
+  return { name: rep.name, question: rep.question || null, columns: out.columns,
+           rows: (out.rows || []).slice(0, limit), totalRows: (out.totals && out.totals.count) || (out.rows || []).length };
+}
+
+// ── THE ONE COMPOSITION ────────────────────────────────────────────────────
+async function composeBoardPack(orgId, opts = {}) {
+  const B = await BP_READY;
+  const DD = await import("../shared/displayDate.js");
+  const org = await orgForYears(orgId);
+  const [row] = await query("SELECT id, name, logo_data FROM orgs WHERE id=?", [orgId]);
+  const today = orgToday(org);                                   // ORG_TZ_SEAM_OK
+  const w = await boardPackWindow(org, opts);
+  const sp = orgTime.samePointLastYear(w.from, w.to, today);
+  const filters = {};
+  for (const k of ["fund", "campaign", "owner"]) if (opts[k]) filters[k] = String(opts[k]);
+  if (opts.from && opts.to) { filters.from = opts.from; filters.to = opts.to; }
+  const window = { from: w.from, to: w.to, prev: sp ? { from: sp.from, to: sp.to } : null, filters };
+  const deps = { computeRetentionRate, computeDriftForDonors };
+
+  let dashboard = null, sections;
+  if (opts.dashboardId) {
+    dashboard = await savedDashboardFor(orgId, opts.userId, opts.dashboardId);
+    if (!dashboard) return null;
+    sections = await composeDashboardTiles(orgId, dashboard, window, deps, dashboard.owner_id || opts.userId || null);
+  } else {
+    sections = [];
+    for (const s of B.PACK_SECTIONS) {
+      if (s.kind === "figures") {
+        const figures = [];
+        for (const def of s.figures) figures.push(await packFigure(orgId, def, def.source(window), deps, filters));
+        sections.push({ key: s.key, kind: "figures", title: s.title, figures: figures.filter(Boolean) });
+      } else if (s.kind === "list") {
+        const source = s.source(window);
+        const f = await figureSources.figure(orgId, source, deps, { page: 1, pageSize: s.limit });
+        sections.push({ key: s.key, kind: "list", title: s.title, definition: s.definition, source,
+          rows: f.rows || [], total: f.value, cents: f.cents, totalRows: f.totalRows, sentence: f.sentence, label: f.label });
+      } else if (s.kind === "goals") {
+        sections.push({ key: s.key, kind: "goals", title: s.title, definition: s.definition, goals: await packGoalRows(orgId, deps) });
+      }
+    }
+  }
+
+  // THE DEFINITIONS PAGE. Every number that got printed, with the sentence
+  // that defines it and the sentence that says which rows it counted. A
+  // number without both does not reach the page, because the page is the
+  // reason a board can read the rest of the pack at all.
+  const definitions = [];
+  const seen = new Set();
+  const addDef = (label, definition, sentence) => {
+    const k = `${label}|${definition}`;
+    if (!label || !definition || seen.has(k)) return;
+    seen.add(k); definitions.push({ label, definition, sentence: sentence || null });
+  };
+  for (const s of sections) {
+    if (s.kind === "figures") for (const f of s.figures) addDef(f.label, f.definition, f.sentence);
+    if (s.kind === "list") addDef(s.title, s.definition, s.sentence);
+    if (s.kind === "report" || s.kind === "chart" || s.kind === "missing") addDef(s.title, s.definition, null);
+    if (s.kind === "goals") {
+      addDef(s.title, s.definition, null);
+      for (const g of s.goals) {
+        addDef(`${g.label} · raised`, "Every gift given to this goal, less any fee the donor covered, and every grant awarded toward it.", g.raised.sentence);
+        addDef(`${g.label} · the goal`, "The target set on this goal's record.", g.target.sentence);
+      }
+    }
+  }
+
+  return {
+    orgId, orgName: displayNameCase(row && row.name || "") || "", logo: row ? row.logo_data : null,
+    title: dashboard ? dashboard.name : "Board pack",
+    dashboard: dashboard ? { id: dashboard.id, name: dashboard.name } : null,
+    period: { from: w.from, to: w.to, label: w.label, key: w.periodKey, frequency: w.frequency },
+    comparison: window.prev,
+    filters, producedOn: today, producedOnLabel: DD.displayDate(today),
+    sections, definitions,
+  };
+}
+
+// ── THE PDF ────────────────────────────────────────────────────────────────
+// The org's name and logo, page numbers, the period and the date it was
+// produced, and the definitions page. `compress: false` is deliberate: it
+// keeps the text literal in the file, which is what lets the one test read
+// every number back OUT of the PDF rather than trust the composer that made
+// it. A board pack is a handful of pages; the bytes do not matter.
+async function renderBoardPackPdf(pack) {
+  const PDFDocument = require("pdfkit");
+  const DD = await import("../shared/displayDate.js");
+  const doc = new PDFDocument({ size: "LETTER", margin: 50, bufferPages: true, compress: false });
+  const chunks = []; doc.on("data", c => chunks.push(c));
+  const done = new Promise(r => doc.on("end", r));
+  const INK = "#0f1a12", GREY = "#5a554f", EMERALD = "#0d5c3a", BRASS = "#c9a84c", RULE = "#e8e4db";
+  const PW = doc.page.width, L = 50, W = PW - 100;
+  const fmtMoney = v => "$" + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtVal = (kind, v, suffix) => {
+    if (v === null || v === undefined) return "—";
+    if (kind === "money") return fmtMoney(v);
+    if (kind === "percent") return `${v}%`;
+    return Number(v).toLocaleString("en-US") + (suffix ? ` ${suffix}` : "");
+  };
+  let logo = null;
+  if (pack.logo && /^data:image\/(png|jpe?g);base64,/.test(pack.logo)) {
+    try { logo = Buffer.from(pack.logo.split(",")[1], "base64"); } catch { logo = null; }
+  }
+
+  // ── the cover band, on page one only ──
+  if (logo) { try { doc.image(logo, PW - L - 60, 46, { fit: [60, 46] }); } catch { /* a logo that will not draw costs the logo, not the pack */ } }
+  doc.font("Helvetica-Bold").fontSize(11).fillColor(GREY).text(pack.orgName, L, 50, { width: W - 90 });
+  doc.font("Helvetica-Bold").fontSize(23).fillColor(INK).text(pack.title, L, doc.y + 6, { width: W - 90 });
+  doc.font("Helvetica").fontSize(11).fillColor(GREY)
+    .text(`${pack.period.label} · produced ${pack.producedOnLabel}`, L, doc.y + 4, { width: W - 90 });
+  const filterWords = Object.entries(pack.filters).filter(([k]) => ["fund", "campaign", "owner"].includes(k));
+  if (filterWords.length) {
+    doc.font("Helvetica").fontSize(9).fillColor(GREY)
+      .text(`Narrowed by ${filterWords.map(([k]) => k).join(", ")}.`, L, doc.y + 2, { width: W });
+  }
+  let y = doc.y + 16;
+  doc.moveTo(L, y).lineTo(L + W, y).strokeColor(RULE).stroke();
+  y += 16;
+
+  const room = need => { if (y > doc.page.height - need) { doc.addPage(); y = 56; } };
+  const heading = t => { room(110); doc.font("Helvetica-Bold").fontSize(12.5).fillColor(INK).text(t, L, y, { width: W }); y = doc.y + 7; };
+
+  for (const s of pack.sections) {
+    heading(s.title);
+    if (s.kind === "figures") {
+      for (const f of s.figures) {
+        room(70);
+        doc.font("Helvetica").fontSize(10).fillColor(GREY).text(f.label, L + 8, y, { width: W * 0.55 });
+        doc.font("Helvetica-Bold").fontSize(13.5).fillColor(INK)
+          .text(fmtVal(f.kind, f.value, f.suffix), L + W * 0.58, y - 2, { width: W * 0.42, align: "right" });
+        y = Math.max(doc.y, y + 18);
+        // A BLANK IS PRINTED AS A BLANK, with the sentence saying why.
+        if (f.value === null && f.blank) {
+          doc.font("Helvetica").fontSize(8.5).fillColor(GREY).text(f.blank, L + 8, y, { width: W - 16 });
+          y = doc.y + 6;
+        }
+        if (f.note) {
+          doc.font("Helvetica").fontSize(8.5).fillColor(BRASS).text(f.note, L + 8, y, { width: W - 16 });
+          y = doc.y + 6;
+        }
+      }
+      y += 8;
+    } else if (s.kind === "list") {
+      for (const [i, r] of s.rows.entries()) {
+        room(60);
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(`${i + 1}. ${r.name || "(no name)"}`, L + 8, y, { width: W * 0.5 });
+        doc.font("Helvetica").fontSize(9).fillColor(GREY).text(r.dateLabel || "", L + W * 0.5, y, { width: W * 0.22 });
+        doc.font("Helvetica-Bold").fontSize(9.5).fillColor(EMERALD)
+          .text(r.amount == null ? "" : fmtMoney(r.amount), L + W * 0.72, y, { width: W * 0.28, align: "right" });
+        y = Math.max(doc.y, y + 14);
+      }
+      room(40);
+      doc.moveTo(L + 8, y + 2).lineTo(L + W, y + 2).strokeColor(RULE).stroke();
+      y += 8;
+      doc.font("Helvetica-Bold").fontSize(9.5).fillColor(INK).text(`${s.label} · every gift in the period`, L + 8, y, { width: W * 0.6 });
+      doc.font("Helvetica-Bold").fontSize(10.5).fillColor(INK).text(fmtMoney(s.total), L + W * 0.62, y - 1, { width: W * 0.38, align: "right" });
+      y = Math.max(doc.y, y + 16) + 10;
+    } else if (s.kind === "goals") {
+      if (!s.goals.length) { doc.font("Helvetica").fontSize(9.5).fillColor(GREY).text("No active goals.", L + 8, y, { width: W }); y = doc.y + 14; }
+      for (const g of s.goals) {
+        room(60);
+        doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(g.label, L + 8, y, { width: W * 0.5 });
+        const right = `${fmtMoney(g.raised.value)} of ${fmtMoney(g.target.value)}${g.percent.value == null ? "" : ` · ${g.percent.value}%`}`;
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(right, L + W * 0.5, y, { width: W * 0.5, align: "right" });
+        y = Math.max(doc.y, y + 16);
+      }
+      y += 10;
+    } else if (s.kind === "chart") {
+      for (const p of s.points) {
+        room(40);
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(DD.displayMonth(p.month), L + 8, y, { width: W * 0.34 });
+        doc.font("Helvetica").fontSize(9.5).fillColor(EMERALD)
+          .text(p.thisYear ? `${fmtMoney(p.thisYear.value)} this year` : "", L + W * 0.34, y, { width: W * 0.33, align: "right" });
+        doc.font("Helvetica").fontSize(9.5).fillColor(GREY)
+          .text(p.lastYear ? `${fmtMoney(p.lastYear.value)} last year` : "", L + W * 0.67, y, { width: W * 0.33, align: "right" });
+        y = Math.max(doc.y, y + 13);
+      }
+      y += 10;
+    } else if (s.kind === "report") {
+      const n = Math.max(1, (s.columns || []).length), cw = W / n;
+      room(60);
+      (s.columns || []).forEach((c, i) => doc.font("Helvetica-Bold").fontSize(8).fillColor(GREY)
+        .text(c.label, L + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
+      y = doc.y + 4;
+      doc.moveTo(L, y).lineTo(L + W, y).strokeColor(RULE).stroke(); y += 5;
+      for (const r of (s.rows || [])) {
+        room(40);
+        (s.columns || []).forEach((c, i) => doc.font("Helvetica").fontSize(8.5).fillColor(INK)
+          .text(rbFormatCell(r[c.key], c.type), L + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
+        y += 12;
+      }
+      if (s.totalRows > (s.rows || []).length) {
+        doc.font("Helvetica").fontSize(8.5).fillColor(GREY)
+          .text(`${(s.totalRows - s.rows.length).toLocaleString("en-US")} more rows in the report.`, L, y + 2, { width: W });
+        y = doc.y + 4;
+      }
+      y += 10;
+    } else if (s.kind === "missing") {
+      doc.font("Helvetica").fontSize(9.5).fillColor(BRASS).text(s.definition, L + 8, y, { width: W - 16 });
+      y = doc.y + 14;
+    }
+  }
+
+  // ── WHAT EACH NUMBER MEANS ──
+  doc.addPage();
+  doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text("What each number means", L, 56, { width: W });
+  let dy = doc.y + 10;
+  for (const d of pack.definitions) {
+    if (dy > doc.page.height - 90) { doc.addPage(); dy = 56; }
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(INK).text(d.label, L, dy, { width: W });
+    dy = doc.y + 2;
+    doc.font("Helvetica").fontSize(8.5).fillColor(GREY).text(d.definition, L, dy, { width: W, lineGap: 1.4 });
+    dy = doc.y + 2;
+    if (d.sentence) { doc.font("Helvetica-Oblique").fontSize(8).fillColor(GREY).text(d.sentence, L, dy, { width: W, lineGap: 1.2 }); dy = doc.y + 2; }
+    dy += 8;
+  }
+
+  // ── PAGE NUMBERS, on every page, once the count is known ──
+  const range = doc.bufferedPageRange();
+  for (let i = 0; i < range.count; i++) {
+    doc.switchToPage(range.start + i);
+    doc.font("Helvetica").fontSize(8).fillColor(GREY)
+      .text(`${pack.orgName} · ${pack.title} · ${pack.period.label} · page ${i + 1} of ${range.count}`,
+        L, doc.page.height - 34, { width: W, align: "center" });
+  }
+  doc.end(); await done;
+  return Buffer.concat(chunks);
+}
+
+// ── SAVED DASHBOARDS ───────────────────────────────────────────────────────
+// Private to its owner unless shared with the team, exactly as a saved report
+// is. The read is `shared OR mine`; only the owner edits or deletes.
+async function savedDashboardFor(orgId, userId, id) {
+  const [r] = await query(
+    "SELECT * FROM saved_dashboards WHERE id=? AND org_id=? AND (shared = true OR owner_id = ?)",
+    [id, orgId, userId || null]);
+  if (!r) return null;
+  return { ...r, tiles: asJson(r.tiles, []), filters: asJson(r.filters, {}) };
+}
+
+// THE TILE CATALOGUE — what she can put on a dashboard, built from the
+// registries that already exist rather than a list typed beside them: every
+// figure source, the one chart, and every standard and saved report. A source
+// added to figureSources.js appears here without this route being touched,
+// which is the same reason the Reports rail is filled from the server.
+app.get("/dashboard-tiles", requireAuth, wrap(async (req, res) => {
+  await RB_READY;
+  const B = await BP_READY;
+  const figures = Object.entries(figureSources.SOURCES)
+    // A source that needs a particular record (one donor, one grant, one
+    // campaign) is not a dashboard tile: a dashboard is about the
+    // organisation, and a tile that demanded an id would have nothing to put
+    // in it.
+    .filter(([, d]) => !Object.entries(d.params || {}).some(([k, spec]) =>
+      spec.endsWith(":required") && !["from", "to"].includes(k)))
+    .map(([key, d]) => ({ key, label: d.label,
+      filters: ["fund", "campaign", "owner"].filter(f => (d.params || {})[B.FILTER_PARAM[f]]),
+      period: !!(d.params || {}).from }));
+  const saved = await query(
+    "SELECT id, name FROM saved_reports WHERE org_id=? AND (shared = true OR owner_id = ?) ORDER BY name",
+    [req.user.orgId, req.user.userId]);
+  res.json({
+    figures,
+    charts: B.CHART_KEYS.map(k => ({ key: k, label: "Giving this year against last year" })),
+    reports: [...RB.STANDARD_REPORTS.map(r => ({ id: "std:" + r.key, name: r.name })),
+              ...saved.map(r => ({ id: r.id, name: r.name }))],
+    filterKeys: B.FILTER_KEYS, maxTiles: B.MAX_TILES,
+  });
+}));
+
+app.get("/saved-dashboards", requireAuth, wrap(async (req, res) => {
+  const mine = await query(
+    `SELECT id, name, shared, owner_id, owner_name, updated_at, tiles FROM saved_dashboards
+      WHERE org_id=? AND (shared = true OR owner_id = ?) ORDER BY name`, [req.user.orgId, req.user.userId]);
+  res.json({ dashboards: mine.map(r => ({ id: r.id, name: r.name, shared: r.shared, mine: r.owner_id === req.user.userId,
+    ownerName: r.owner_name, tileCount: asJson(r.tiles, []).length, updatedAt: r.updated_at })) });
+}));
+
+app.post("/saved-dashboards", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const B = await BP_READY;
+  const v = B.validateDashboard(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" "), errors: v.errors });
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const id = "dash_" + uuid().slice(0, 10);
+  await run(`INSERT INTO saved_dashboards (id,org_id,name,tiles,filters,shared,owner_id,owner_name,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, v.value.name, JSON.stringify(v.value.tiles), JSON.stringify(v.value.filters),
+     v.value.shared, req.user.userId, u ? u.name : null, actor(req).id, actor(req).name]);
+  res.status(201).json({ id });
+}));
+
+app.put("/saved-dashboards/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const B = await BP_READY;
+  const [r] = await query("SELECT * FROM saved_dashboards WHERE id=? AND org_id=? AND owner_id=?",
+    [req.params.id, req.user.orgId, req.user.userId]);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  const v = B.validateDashboard({ name: req.body && req.body.name !== undefined ? req.body.name : r.name,
+    tiles: req.body && req.body.tiles !== undefined ? req.body.tiles : asJson(r.tiles, []),
+    filters: req.body && req.body.filters !== undefined ? req.body.filters : asJson(r.filters, {}),
+    shared: typeof (req.body || {}).shared === "boolean" ? req.body.shared : r.shared });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" "), errors: v.errors });
+  await run(`UPDATE saved_dashboards SET name=?, tiles=?, filters=?, shared=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [v.value.name, JSON.stringify(v.value.tiles), JSON.stringify(v.value.filters), v.value.shared, r.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.delete("/saved-dashboards/:id", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM saved_dashboards WHERE id=? AND org_id=? AND owner_id=?",
+    [req.params.id, req.user.orgId, req.user.userId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// Run one: the tiles with their values, each carrying the figure source it was
+// computed from, so every number on the screen opens its rows.
+app.get("/saved-dashboards/:id/run", requireAuth, wrap(async (req, res) => {
+  const pack = await composeBoardPack(req.user.orgId, {
+    dashboardId: req.params.id, userId: req.user.userId,
+    from: req.query.from, to: req.query.to, fund: req.query.fund, campaign: req.query.campaign, owner: req.query.owner,
+  });
+  if (!pack) return res.status(404).json({ error: "Not found" });
+  res.json(pack);
+}));
+
+// ── THE BOARD PACK ─────────────────────────────────────────────────────────
+// GET, so a board pack is a read: it writes nothing and survives HEAD.
+const boardPackOpts = (req) => ({
+  dashboardId: req.query.dashboard || null, userId: req.user.userId,
+  frequency: req.query.frequency, from: req.query.from, to: req.query.to,
+  fund: req.query.fund, campaign: req.query.campaign, owner: req.query.owner,
+});
+
+app.get("/board-pack", requireAuth, wrap(async (req, res) => {
+  const pack = await composeBoardPack(req.user.orgId, boardPackOpts(req));
+  if (!pack) return res.status(404).json({ error: "Not found" });
+  res.json(pack);
+}));
+
+app.get("/board-pack/pdf", requireAuth, wrap(async (req, res) => {
+  const pack = await composeBoardPack(req.user.orgId, boardPackOpts(req));
+  if (!pack) return res.status(404).json({ error: "Not found" });
+  const pdf = await renderBoardPackPdf(pack);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${boardPackFilename(pack)}"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.end(pdf);
+}));
+
+function boardPackFilename(pack) {
+  const slug = String(pack.title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "board-pack";
+  return `${slug}-${pack.period.from}.pdf`;
+}
+
+// ── THE SCHEDULE ───────────────────────────────────────────────────────────
+// One per organisation, OFF until somebody turns it on. The recipients are the
+// org's own staff and board addresses from Settings; a scheduled pack is never
+// sent anywhere else, and never to a donor.
+async function boardPackRecipients(orgId) {
+  const [o] = await query("SELECT board_pack_emails FROM orgs WHERE id=?", [orgId]);
+  const list = asJson(o && o.board_pack_emails, []);
+  return (Array.isArray(list) ? list : []).map(String).filter(Boolean);
+}
+
+app.get("/board-pack/schedule", requireAuth, wrap(async (req, res) => {
+  const B = await BP_READY;
+  const [s] = await query("SELECT * FROM board_pack_schedules WHERE org_id=?", [req.user.orgId]);
+  const sends = s ? await query(
+    "SELECT period_key, period_label, recipients, created_at FROM board_pack_sends WHERE schedule_id=? ORDER BY created_at DESC LIMIT 12",
+    [s.id]) : [];
+  res.json({
+    schedule: s ? { id: s.id, dashboardId: s.dashboard_id, frequency: s.frequency, dayOfMonth: s.day_of_month,
+      enabled: s.enabled, lastSentAt: s.last_sent_at } : null,
+    recipients: await boardPackRecipients(req.user.orgId),
+    frequencies: B.PACK_FREQUENCIES, dayMin: B.SCHEDULE_DAY_MIN, dayMax: B.SCHEDULE_DAY_MAX,
+    offSentence: B.SCHEDULE_OFF_SENTENCE,
+    sends: sends.map(r => ({ periodKey: r.period_key, periodLabel: r.period_label, recipients: r.recipients, at: r.created_at })),
+  });
+}));
+
+app.put("/board-pack/schedule", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const B = await BP_READY;
+  const v = B.validateSchedule(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" "), errors: v.errors });
+  // Turning it ON with nobody to send it to would schedule a send that can
+  // only fail, so it is refused with the thing to do about it.
+  if (v.value.enabled && !(await boardPackRecipients(req.user.orgId)).length) {
+    return res.status(400).json({ error: "Add the staff and board addresses in Settings before turning the schedule on." });
+  }
+  if (v.value.dashboardId && !(await savedDashboardFor(req.user.orgId, req.user.userId, v.value.dashboardId))) {
+    return res.status(400).json({ error: "That dashboard is not one you can open." });
+  }
+  const [existing] = await query("SELECT id FROM board_pack_schedules WHERE org_id=?", [req.user.orgId]);
+  if (existing) {
+    await run(`UPDATE board_pack_schedules SET dashboard_id=?, frequency=?, day_of_month=?, enabled=?, updated_at=NOW() WHERE id=?`,
+      [v.value.dashboardId, v.value.frequency, v.value.dayOfMonth, v.value.enabled, existing.id]);
+    return res.json({ id: existing.id });
+  }
+  const id = "bps_" + uuid().slice(0, 10);
+  await run(`INSERT INTO board_pack_schedules (id,org_id,dashboard_id,frequency,day_of_month,enabled,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, v.value.dashboardId, v.value.frequency, v.value.dayOfMonth, v.value.enabled, actor(req).id, actor(req).name]);
+  res.status(201).json({ id });
+}));
+
+// "Send a test to me" — to the CALLER's own address and nowhere else. It is
+// not a dress rehearsal of the schedule: it reserves nothing and logs no send,
+// because nothing went to the board.
+app.post("/board-pack/schedule/test", requireAuth, wrap(async (req, res) => {
+  const [me] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  if (!me || !me.email) return res.status(400).json({ error: "Your account has no email address on it." });
+  const [s] = await query("SELECT * FROM board_pack_schedules WHERE org_id=?", [req.user.orgId]);
+  const pack = await composeBoardPack(req.user.orgId, {
+    dashboardId: (s && s.dashboard_id) || null, userId: req.user.userId,
+    frequency: (s && s.frequency) || "quarterly",
+  });
+  if (!pack) return res.status(400).json({ error: "The dashboard this schedule names is not there any more." });
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.user.orgId]);
+  const pdf = await renderBoardPackPdf(pack);
+  const sent = await sendBoardPackEmail(org, me.email, `Test · ${pack.title} · ${pack.period.label}`,
+    boardPackEmailHtml(pack, { test: true }), pdf, boardPackFilename(pack));
+  // FIX-15 Part 3 — the provider's answer, not an optimistic one.
+  res.json({ sent, to: me.email, period: pack.period.label });
+}));
+
+function boardPackEmailHtml(pack, { test = false } = {}) {
+  return `<div style="font-family:Arial,sans-serif;color:#0f1a12">
+    ${test ? `<p style="font-size:13px;color:#5a554f">This is the test copy you asked for. Nobody else was sent it.</p>` : ""}
+    <p style="font-size:15px"><strong>${escapeHtml(pack.title)}</strong> for ${escapeHtml(pack.period.label)} is attached.</p>
+    <p style="font-size:13px;color:#5a554f">Produced ${escapeHtml(pack.producedOnLabel)}. Every number in it is defined on the last page.</p>
+  </div>`;
+}
+
+// THE SCHEDULED SEND. The digest_sends discipline: the ledger row is RESERVED
+// before the first send and released if nothing went out, so a board never
+// gets the same pack twice and a failed run can go again on the next tick.
+async function runBoardPackScheduleForOrg(org, { today, force = false } = {}) {
+  const B = await BP_READY;
+  const [s] = await query("SELECT * FROM board_pack_schedules WHERE org_id=? AND enabled = true", [org.id]);
+  if (!s) return { sent: 0, skipped: 0, reason: "no enabled schedule" };
+  if (!force && !B.isSendDay({ frequency: s.frequency, dayOfMonth: s.day_of_month }, today)) {
+    return { sent: 0, skipped: 0, reason: "not the day" };
+  }
+  const to = await boardPackRecipients(org.id);
+  if (!to.length) return { sent: 0, skipped: 0, reason: "no recipients" };
+  const pack = await composeBoardPack(org.id, {
+    dashboardId: s.dashboard_id, userId: null, frequency: s.frequency,
+  });
+  if (!pack) return { sent: 0, skipped: 0, reason: "dashboard gone" };
+  const periodKey = B.periodKeyFor(s.frequency, pack.period.key);
+  const reserved = await query(
+    "INSERT INTO board_pack_sends (id,org_id,schedule_id,period_key,period_label,recipients) VALUES (?,?,?,?,?,?) ON CONFLICT (schedule_id, period_key) DO NOTHING RETURNING id",
+    ["bpk_" + uuid().slice(0, 10), org.id, s.id, periodKey, pack.period.label, to.length]);
+  if (!reserved.length) return { sent: 0, skipped: 1, reason: "already sent for this period" };
+  const pdf = await renderBoardPackPdf(pack);
+  let sent = 0;
+  for (const addr of to) {
+    if (await sendBoardPackEmail(org, addr, `${pack.title} · ${pack.period.label}`, boardPackEmailHtml(pack), pdf, boardPackFilename(pack))) sent++;
+  }
+  if (!sent) {
+    await run("DELETE FROM board_pack_sends WHERE id=?", [reserved[0].id]);
+    return { sent: 0, skipped: to.length, reason: "nothing was accepted" };
+  }
+  await run("UPDATE board_pack_sends SET recipients=? WHERE id=?", [sent, reserved[0].id]);
+  await run("UPDATE board_pack_schedules SET last_sent_at=NOW() WHERE id=?", [s.id]);
+  return { sent, skipped: to.length - sent, periodKey, period: pack.period.label };
+}
+
+// Ops/test hook: drive the exact scheduled path for the caller's org.
+app.post("/board-pack/schedule/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name, timezone FROM orgs WHERE id=?", [req.user.orgId]);
+  const today = /^\d{4}-\d{2}-\d{2}$/.test(String((req.body || {}).today || "")) ? req.body.today : orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+  res.json(await runBoardPackScheduleForOrg(org, { today, force: (req.body || {}).force === true }));
+}));
+
 // ── FIX-2 A — THE ROWS BEHIND A FIGURE ─────────────────────────────────────
 // One endpoint shape for every number Steward shows. The caller's org only
 // (req.user.orgId is the first argument of every source's query), read-only
@@ -2039,6 +2698,42 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
       await run(`UPDATE orgs SET other_income_this_year=? WHERE id=?`, [toDollars(cents), req.params.id]);
     }
   }
+  // ── REPORTS-3 — THE STAFF AND BOARD ADDRESSES A BOARD PACK GOES TO ──────
+  // The organisation's OWN leadership. Three things are refused rather than
+  // accepted and worked around later: an address that is not one, an address
+  // on the mail block (mailBlock.js, from any org, for any reason) and an
+  // address belonging to a DONOR of this org. The last is the one that
+  // matters: "the org's own leadership, never donors" is the rule this list
+  // exists under, and a typo that put a major donor's address here would mail
+  // them the org's retention figures. Steward can check that, so it does.
+  if (req.body.boardPackEmails !== undefined) {
+    const raw = Array.isArray(req.body.boardPackEmails) ? req.body.boardPackEmails : [];
+    if (raw.length > 50) return res.status(400).json({ error: "That is more than fifty addresses." });
+    const seen = new Set(), list = [];
+    for (const v of raw) {
+      const addr = String(v || "").trim();
+      if (!addr) continue;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(addr)) return res.status(400).json({ error: `"${addr}" is not an email address.` });
+      const key = addr.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key); list.push(addr);
+    }
+    for (const addr of list) {
+      if (isBlockedAddress(addr)) return res.status(400).json({ error: `Steward does not send to ${addr}.` });
+    }
+    if (list.length) {
+      const donors = await query(
+        `SELECT name, email FROM donors
+          WHERE org_id = ? AND deleted_at IS NULL AND LOWER(email) = ANY(?) LIMIT 1`,
+        [req.params.id, list.map(a => a.toLowerCase())]);
+      if (donors.length) {
+        return res.status(400).json({
+          error: `${donors[0].email} is on file as a donor. A board pack goes to your staff and board, never to a donor.` });
+      }
+    }
+    await run(`UPDATE orgs SET board_pack_emails=? WHERE id=?`, [JSON.stringify(list), req.params.id]);
+  }
+
   // BUILD-88a A.1 — the BUILD-83 posting rule as a switch. Imported history
   // never posts whatever this says; a LIVE gift posts while it is on.
   if (req.body.ledgerPostingEnabled !== undefined) {
@@ -23337,6 +24032,10 @@ reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, pars
 // else in this file, so it is handed out the way `run` is rather than exported
 // from module scope, where it does not exist.
 reportHooks.sendCsv = sendReportCsv;
+// REPORTS-3 — the scheduled board pack, for routes/jobs.js's 5-minute tick.
+// Handed out here rather than exported from module scope, where it does not
+// exist: everything in this file is declared inside mount().
+reportHooks.runBoardPackSchedule = runBoardPackScheduleForOrg;
 }
 
 module.exports = { routers, mount, giftHooks, reportHooks };
