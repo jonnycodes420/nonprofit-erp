@@ -815,7 +815,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [txnFilter, setTxnFilter] = useState("");
   const [txnType, setTxnType] = useState("");     // "" | income | expense
   const [txnSource, setTxnSource] = useState("");  // "" | online | gift | manual | import
-  const [txnFund, setTxnFund] = useState("");      // "" | fundId
+  // FIX-15 Part 5: /app/finance?subtab=transactions&fund=<id> opens the
+  // transactions narrowed to that fund ("View txns" is a real link now).
+  const [txnFund, setTxnFund] = useState(() => (urlPart === "transactions" && urlParam("finance", "fund")) || "");      // "" | fundId
   const [showTxnModal, setShowTxnModal] = useState(false);
   const [showFundModal, setShowFundModal] = useState(false);
   const [editFund, setEditFund] = useState(null);
@@ -1373,7 +1375,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                   <Sparkline values={sparkVals}/>
                   <span style={{ fontSize:9, color:T.ink3, textTransform:"uppercase", letterSpacing:".05em" }}>8 wks</span>
                 </div>
-                <button style={ghostBtn} onClick={() => gotoTxns({ fund: f.id })}>View txns →</button>
+                <RecordLink to={tabHref("finance", { subtab: "transactions", fundId: f.id })} data-record-link="fund-txns"
+                  style={{ ...ghostBtn, display:"inline-flex", alignItems:"center" }} onOpen={() => gotoTxns({ fund: f.id })}>View txns →</RecordLink>
                 <button style={ghostBtn} onClick={() => setEditFund(f)}>Edit</button>
               </div>
             );
