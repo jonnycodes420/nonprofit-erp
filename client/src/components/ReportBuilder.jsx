@@ -15,7 +15,7 @@ import { apiFetch, API } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows, splitHandlerRows } from "../lib/reportFormat";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, useUrlWriter } from "./RecordLink";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = (primary) => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -36,9 +36,28 @@ async function download(path, name) {
 // personOf(r) → the person id a row opens, or null (a month, a fund).
 // foot: draw the totals row (every `sum` column: money in cents, counts).
 export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLabel = "Total", testid = "report-table" }) {
-  const [sort, setSort] = useState(null);
+  // FIX-14 Part 5: on Reports the sort is in the URL (?sort=-total is
+  // descending, ?sort=name ascending), so a sorted report reloads, and opens
+  // in a new tab, sorted. Rows are all loaded, so the table sorts them here.
+  const goUrl = useUrlWriter();
+  const onReports = () => /^\/app\/reports\/?$/.test(window.location.pathname);
+  const urlSort = () => {
+    if (!onReports()) return null;
+    const v = new URLSearchParams(window.location.search).get("sort");
+    const key = v && v.replace(/^-/, "");
+    return key && cols.some(c => c.key === key) ? { key, dir: v.startsWith("-") ? "desc" : "asc" } : null;
+  };
+  const [sort, setSortRaw] = useState(urlSort);
   const colKey = cols.map(c => c.key).join(",");
-  useEffect(() => { setSort(null); }, [colKey, rows]);
+  useEffect(() => { setSortRaw(urlSort()); }, [colKey, rows]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const setSort = n => {
+    setSortRaw(n);
+    if (!onReports()) return;
+    const q = new URLSearchParams(window.location.search);
+    if (n) q.set("sort", (n.dir === "desc" ? "-" : "") + n.key); else q.delete("sort");
+    const qs = q.toString();
+    goUrl(window.location.pathname + (qs ? "?" + qs : ""), true);
+  };
   const valueOf = (r, key) => { const c = cols.find(x => x.key === key); return c.sortVal ? c.sortVal(r) : sortValue(c.value ? c.value(r) : r[key], c.type); };
   const sorted = useMemo(() => sortRows(rows, sort, valueOf), [rows, sort, colKey]);
   const raw = (c, r) => (c.value ? c.value(r) : r[c.key]);
@@ -68,7 +87,7 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
           {cols.map(c => {
             const on = sort?.key === c.key;
             return <th key={c.key} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} style={{ ...th, textAlign: align(c) }}>
-              <button type="button" data-sort-key={c.key} onClick={() => setSort(s => nextSort(s, c.key))}
+              <button type="button" data-sort-key={c.key} onClick={() => setSort(nextSort(sort, c.key))}
                 style={{ all: "unset", cursor: "pointer", font: "inherit", letterSpacing: "inherit", textTransform: "inherit", color: on ? T.ink : T.ink3 }}>
                 {c.label}{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
               </button>

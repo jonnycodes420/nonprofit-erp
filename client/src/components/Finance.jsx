@@ -7,7 +7,8 @@ import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref, urlParam } from "../lib/appUrls";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
@@ -794,8 +795,11 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // lines below read it and every deep link names one. What is new is the
   // section above it; setting a part sets the section it lives in, so the
   // two can never disagree.
-  const [subtab, setSubtabRaw] = useState("overview");
-  const [section, setSection] = useState("overview");
+  // FIX-14 Part 5: /app/finance?subtab=funds&fund=<id> opens on that part
+  // (and FinFundCards on that fund), so a fund link works in a fresh tab.
+  const [urlPart] = useState(() => { const p = urlParam("finance", "subtab"); return PART_SECTION[p] ? p : null; });
+  const [subtab, setSubtabRaw] = useState(urlPart || "overview");
+  const [section, setSection] = useState(urlPart ? PART_SECTION[urlPart] : "overview");
   const setSubtab = id => { setSubtabRaw(id); if (PART_SECTION[id]) setSection(PART_SECTION[id]); };
   const [openPayout, setOpenPayout] = useState(null);
   const [accounts, setAccounts] = useState([]);
@@ -1824,13 +1828,22 @@ function FinFundCards() {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);
+  const goUrl = useUrlWriter();
+  const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id || null });
   useEffect(() => {
     let alive = true;
-    apiFetch("/finance/funds-detail").then(r => { if (alive) setD(r); })
+    const want = urlParam("finance", "fund");
+    apiFetch("/finance/funds-detail").then(r => {
+      if (!alive) return;
+      setD(r);
+      const f = want && (r.funds || []).find(x => x.id === want);
+      if (f) openFund(f, true);
+    })
       .catch(e => { if (alive) setErr(errorMessage(e, "The funds did not load.")); });
     return () => { alive = false; };
   }, []);
-  async function openFund(f) {
+  async function openFund(f, fromUrl) {
+    if (!fromUrl) goUrl(fundHref(f.id));
     setOpen({ loading: true, label: f.name });
     try { setOpen({ ...(await apiFetch(`/finance/funds-detail/rows?fund=${encodeURIComponent(f.id)}`)), label: f.name }); }
     catch (e) { setOpen({ label: f.name, error: errorMessage(e, "Those rows did not open.") }); }
@@ -1846,8 +1859,8 @@ function FinFundCards() {
       <div style={{ fontSize:13, color:T.ink3 }}>{d.sentence} Figures in and out are for {d.periodLabel}.</div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
         {d.funds.map(f => (
-          <button key={f.id} data-testid="fin-fund-card" onClick={() => openFund(f)}
-            style={{ background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"16px 17px",
+          <RecordLink key={f.id} to={fundHref(f.id)} data-testid="fin-fund-card" data-record-link="fund" onOpen={() => openFund(f)}
+            style={{ display:"block", color:"inherit", background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"16px 17px",
                      textAlign:"left", cursor:"pointer", fontFamily:"inherit",
                      borderLeft:"3px solid "+(f.restricted ? T.gold500 : T.greenDk) }}>
             <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"baseline", flexWrap:"wrap" }}>
@@ -1865,12 +1878,12 @@ function FinFundCards() {
               In {fmtFull(f.inPeriod)} · out {fmtFull(f.outPeriod)} this period
             </div>
             <div style={{ fontSize:12.5, color:T.ink2, marginTop:8, lineHeight:1.55 }}>{f.sentence}</div>
-          </button>
+          </RecordLink>
         ))}
       </div>
       <Definitions4 items={Object.entries(d.definitions || {})}/>
       {open && (
-        <Modal onClose={() => setOpen(null)} title={open.label + (open.net != null ? ` · ${fmtFull(open.net)} net` : "")}>
+        <Modal onClose={() => { setOpen(null); goUrl(fundHref(null)); }} title={open.label + (open.net != null ? ` · ${fmtFull(open.net)} net` : "")}>
           {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}
           {open.loading && <div style={{ fontSize:13, color:T.ink3 }}>Opening the rows…</div>}
           {open.sentence && <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>{open.sentence}</div>}

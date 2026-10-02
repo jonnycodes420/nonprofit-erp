@@ -5,7 +5,7 @@ import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
 import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
-import { RecordLink } from "./RecordLink";
+import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
@@ -417,7 +417,9 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
                     onClick={() => onSelectGrant(g)}
                     style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s,box-shadow 0.12s", boxShadow:"0 1px 3px rgba(10,10,10,0.06)" }}
                   >
-                    <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>{g.funder}</div>
+                    <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>
+                      <RecordLink to={tabHref("grants",{grantId:g.id})} onOpen={() => onSelectGrant(g)} draggable={false} data-record-link="grant">{g.funder}</RecordLink>
+                    </div>
                     {g.program && <div style={{ fontSize:11, color:T.ink3, marginBottom:6 }}>{g.program}</div>}
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
                       <div style={{ fontSize:13, fontWeight:800, color:T.greenMid }}>{fmt(g.amount)}</div>
@@ -441,10 +443,22 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
 export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSection,onIntentConsumed}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
-  const [subTab,setSubTab]=useState(initialSection==="deadlines"?"deadlines":"pipeline");
+  const [subTab,setSubTab]=useState(initialSection==="deadlines"||initialSection==="findgrants"?initialSection:"pipeline");
   const [openMiss,setOpenMiss]=useState("");
+  const [selected,setSelectedRaw]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
+  // FIX-14 Part 5: a grant is /app/grants?grant=<id> and a section is
+  // ?gsection=. Opening or closing a grant is a step (pushed); switching the
+  // section replaces the entry.
+  const goUrl=useUrlWriter();
+  const sectionHref=st=>tabHref("grants",st&&st!=="pipeline"?{grantsSection:st}:undefined);
+  const setSelected=g=>{setSelectedRaw(g);goUrl(g?tabHref("grants",{grantId:g.id}):sectionHref(subTab));};
   const openGrant=id=>{const g=data.grants.find(x=>x.id===id); if(g){setOpenMiss("");setSelected(g);} else setOpenMiss("That grant is not in the list yet. Reload the page to see it.");};
-  const [selected,setSelected]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
+  useEffect(()=>{
+    if(selected||!/^\/app\/grants\/?$/.test(window.location.pathname))return;
+    const q=new URLSearchParams(window.location.search);
+    if(q.get("grant"))return;
+    if((q.get("gsection")||"pipeline")!==subTab)goUrl(sectionHref(subTab),true);
+  },[subTab]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(()=>{
     if(initialGrantId&&onIntentConsumed)onIntentConsumed();

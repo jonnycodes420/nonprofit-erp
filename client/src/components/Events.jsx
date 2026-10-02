@@ -3,6 +3,8 @@ import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref, urlParam } from "../lib/appUrls";
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 const EVENT_TYPES = {
@@ -149,7 +151,9 @@ function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: 22, flexShrink: 0, lineHeight: 1 }}>{t.icon}</span>
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{event.name}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <RecordLink to={tabHref("events", { eventId: event.id })} onOpen={() => onManage(event)} data-record-link="event">{event.name}</RecordLink>
+              </div>
               <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
                 {fmtDate(event.date)}{event.location ? ` · ${event.location}` : ""}
               </div>
@@ -1309,7 +1313,11 @@ export function Events({ data, isReadOnly }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("upcoming");
-  const [selectedId, setSelectedId] = useState(null);
+  // FIX-14 Part 5: an event is /app/events?event=<id>, so a fresh tab opens
+  // on it, and opening or closing one here moves the address bar with it.
+  const [selectedId, setSelectedIdRaw] = useState(() => urlParam("events", "event"));
+  const goUrl = useUrlWriter();
+  const setSelectedId = id => { setSelectedIdRaw(id); goUrl(tabHref("events", id ? { eventId: id } : undefined)); };
   const [showNew, setShowNew] = useState(false);
   const [addTarget, setAddTarget] = useState(null);
   // EVENTS-1 item 1 — every number on a card opens its rows.

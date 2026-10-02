@@ -10,6 +10,8 @@ import { apiFetch } from "../api";
 import { T, fmtFull, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref, urlParam } from "../lib/appUrls";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = primary => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -149,10 +151,19 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
 
 export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
   const [events, setEvents] = useState(null);
-  const [open, setOpen] = useState(null);
+  const [open, setOpenRaw] = useState(null);
   const [form, setForm] = useState({ name: "", date: "", location: "" });
   const [msg, setMsg] = useState("");
-  const load = () => apiFetch("/events").then(r => setEvents((Array.isArray(r) ? r : r.events || []).filter(e => !e.is_sample))).catch(e => setMsg(errorMessage(e, "Could not load your events.")));
+  // FIX-14 Part 5: an event here is /app/fundraising?fr=events&event=<id>.
+  const goUrl = useUrlWriter();
+  const hrefOf = e => tabHref("fundraising", { frSection: "events", eventId: e ? e.id : null });
+  const setOpen = e => { setOpenRaw(e); goUrl(hrefOf(e)); };
+  const [wantId] = useState(() => urlParam("fundraising", "event"));
+  const load = () => apiFetch("/events").then(r => {
+    const list = (Array.isArray(r) ? r : r.events || []).filter(e => !e.is_sample);
+    setEvents(list);
+    if (wantId) setOpenRaw(o => o || list.find(e => e.id === wantId) || null);
+  }).catch(e => setMsg(errorMessage(e, "Could not load your events.")));
   useEffect(() => { load(); }, []);
   const create = async () => {
     setMsg("");
@@ -175,10 +186,10 @@ export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
       {!events ? <div style={{ color: T.ink3, fontSize: 13 }}>Loading…</div> : events.length === 0
         ? <div style={{ color: T.ink3, fontSize: 13 }}>No events yet. Create one above and add its tickets.</div>
         : events.map(e => (
-          <button key={e.id} onClick={() => setOpen(e)} style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", cursor: "pointer", color: T.ink }}>
+          <RecordLink key={e.id} to={hrefOf(e)} onOpen={() => setOpen(e)} data-record-link="event" style={{ display: "block", textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", cursor: "pointer", color: T.ink }}>
             <div style={{ fontWeight: 800, fontSize: 14 }}>{e.name}</div>
             <div style={{ fontSize: 12, color: T.ink3 }}>{displayDate(e.date)}{e.location ? ` · ${e.location}` : ""}</div>
-          </button>))}
+          </RecordLink>))}
     </div>
   );
 }

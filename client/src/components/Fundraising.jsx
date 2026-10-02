@@ -17,7 +17,14 @@ import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { PeerToPeerView } from "./PeerToPeer";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
+import { tabHref, urlParam, giftHref } from "../lib/appUrls";
+
+// FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
+// the Campaigns part, scrolled to that campaign's card and marked.
+// A fund's page is its card in Finance → Funds, opened on its rows.
+const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id });
+const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", campaignId: id });
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -112,6 +119,8 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
   // Peer-to-peer tab, on its own page, with Add a team and the public link
   // already there. Nobody has to go looking for the switch they just set.
   const [p2pOpenPageId, setP2pOpenPageId] = useState("");
+  const [focusCampaign, setFocusCampaign] = useState(() => urlParam("fundraising", "campaign"));
+  const goUrl = useUrlWriter();
   const orgSlug = data?.org?.org_slug || "";
 
   const load = () => {
@@ -131,6 +140,17 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
   const sec = FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0];
   const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
   const setSubtab = goto;
+  const openCampaign = id => { setFocusCampaign(id); goUrl(campaignHref(id)); goto("campaigns"); };
+
+  // FIX-14 Part 5: the part on screen is in the address bar. A switch
+  // replaces the entry (it is not a step Back should undo); a record opened
+  // inside the part pushes its own URL, which this leaves alone.
+  useEffect(() => {
+    if (!/^\/app\/fundraising\/?$/.test(window.location.pathname)) return;
+    const fr = new URLSearchParams(window.location.search).get("fr");
+    if (fr === subtab || (!fr && subtab === "overview")) return;
+    goUrl(tabHref("fundraising", { frSection: subtab }), true);
+  }, [subtab]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Counts on a part (never money — the figures live on the parts themselves).
   const PART_BADGE = {
@@ -200,7 +220,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       {!loading && subtab === "overview" && (
         <>
           <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
-            onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+            onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} onOpenCampaign={openCampaign} />
           {fundraisingIndex(setSubtab, isCoreTier)}
         </>
       )}
@@ -249,7 +269,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       )}
 
       {!loading && subtab === "campaigns" && (
-        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip}
+        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} focusId={focusCampaign} onOpenCampaign={openCampaign}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
       )}
@@ -336,7 +356,7 @@ function CategoryBadge({ g, style }) {
   return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>{cat.label}</span>;
 }
 
-function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
+function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory } = overview;
   const gp = givingPages;
@@ -424,7 +444,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>Your goals</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
             {topGoals.map(g => (
-              <GoalCard key={g.id} g={g} allGoals={goals} onClick={() => onGoto && onGoto("campaigns")} />
+              <GoalCard key={g.id} g={g} allGoals={goals} onClick={() => onOpenCampaign ? onOpenCampaign(g.id) : onGoto && onGoto("campaigns")} />
             ))}
           </div>
         </div>
@@ -557,7 +577,9 @@ function GoalCard({ g, allGoals, onClick }) {
     <div {...interactive(onClick, { label: `View ${g.name}` })}
       style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${accent}`, borderRadius: 16, padding: "18px 20px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>{g.name}</div>
+        <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>
+          <RecordLink to={campaignHref(g.id)} onOpen={onClick} data-record-link="campaign">{g.name}</RecordLink>
+        </div>
         <CategoryBadge g={g} />
       </div>
       <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceSentence={paceSentence} />
@@ -607,7 +629,7 @@ function GoalThermometerDark({ goal }) {
 // children nested under their umbrella) — NOT the flat campaign rows — so an
 // umbrella shows its roll-up here too, never "$0 · Behind pace" while its
 // children fund it. Top-level count == cards shown.
-function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit }) {
+function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpenCampaign }) {
   const editBtn = c => !isReadOnly ? (
     <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
   ) : null;
@@ -629,7 +651,7 @@ function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit }) {
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }}>
           {topGoals.map(g => (
-            <CampaignCard key={g.id} g={g} allGoals={goals} editBtn={editBtn} />
+            <CampaignCard key={g.id} g={g} allGoals={goals} editBtn={editBtn} focusId={focusId} onOpenCampaign={onOpenCampaign} />
           ))}
         </div>
       )}
@@ -640,15 +662,19 @@ function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit }) {
 // One top-level campaign card. An umbrella shows its ROLL-UP thermometer (raised
 // = Σ children, pace off that total) + its children nested beneath, each still
 // editable. A standalone goal shows its own SUM(gifts).
-function CampaignCard({ g, allGoals, editBtn }) {
+function CampaignCard({ g, allGoals, editBtn, focusId, onOpenCampaign }) {
   const over = g.isOverarching;
   const children = over ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
+  // The campaign a link named is scrolled to and marked in emerald.
+  const focused = !!focusId && (focusId === g.id || children.some(c => c.id === focusId));
+  const name = (c, body) => <RecordLink to={campaignHref(c.id)} onOpen={onOpenCampaign ? () => onOpenCampaign(c.id) : undefined} data-record-link="campaign">{body}</RecordLink>;
   return (
-    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+    <div data-campaign-id={g.id} ref={el => { if (el && focused && !el.dataset.scrolled) { el.dataset.scrolled = "1"; el.scrollIntoView({ block: "center" }); } }}
+      style={{ background: T.white, border: "1px solid " + (focused ? T.greenDk : T.bg3), outline: focused ? "2px solid " + T.greenDk : "none", borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{g.name}</div>
+            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{name(g, g.name)}</div>
             <CategoryBadge g={g} />
           </div>
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
@@ -672,7 +698,7 @@ function CampaignCard({ g, allGoals, editBtn }) {
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
                     <span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name(c, c.name)}</span>
                   </div>
                   <span style={{ fontSize: 11.5, color: T.ink3 }}>{fmtFull(c.raised)} of {fmtFull(c.goalAmount)} · {c.rawPercent ?? c.percent ?? 0}%</span>
                 </div>
@@ -984,7 +1010,9 @@ function FundsView({ data, onNavigate }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
           {funds.map(f => (
             <div key={f.id || f.name} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.bg3}` }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{f.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>
+                {f.id ? <RecordLink to={fundHref(f.id)} onOpen={onNavigate ? () => onNavigate("finance", { subtab: "funds", fundId: f.id }) : undefined} data-record-link="fund">{f.name}</RecordLink> : f.name}
+              </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmt(parseFloat(f.balance) || 0)}</div>
               <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
             </div>
@@ -1146,7 +1174,9 @@ function AcknowledgmentsView({ isReadOnly, roTip }) {
           {gifts.map(g => (
             <label key={g.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderTop: "1px solid " + T.bg3, fontSize: 13, color: T.ink, cursor: "pointer" }}>
               <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} style={{ accentColor: T.greenDk }} />
-              <span style={{ fontWeight: 700, minWidth: 160 }}>{g.name}</span>
+              <span style={{ fontWeight: 700, minWidth: 160 }}>{g.donorId
+                ? <RecordLink to={giftHref(g.donorId, g.id)} data-record-link="gift" title={`Open ${g.name}`}>{g.name}</RecordLink>
+                : g.name}</span>
               <span style={{ color: T.ink3, minWidth: 90 }}>{displayDate(g.date)}</span>
               <span>{fmtFull(g.amount)}</span>
               {g.fund && <span style={{ color: T.ink3 }}>{g.fund}</span>}

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { useUrlWriter } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
@@ -2317,6 +2319,16 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const wantSection=SECTION_ALIAS[initialSection]?.section||initialSection;
   const wantFocus=initialFocus||SECTION_ALIAS[initialSection]?.focus||null;
   const [section,setSection]=useState(visibleTabs.some(t=>t.id===wantSection)?wantSection:"org");
+  // FIX-14 Part 5: the section on screen is in the address bar, replaced
+  // (a section switch is not a step Back should undo). A URL that already
+  // names this section keeps its #focus card.
+  const goUrl=useUrlWriter();
+  useEffect(()=>{
+    if(!/^\/app\/settings\/?$/.test(window.location.pathname))return;
+    const at=new URLSearchParams(window.location.search).get("section");
+    if(at===section||(!at&&section==="org"))return;
+    goUrl(tabHref("settings",{section}),true);
+  },[section]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const [team,setTeam]=useState([]);
   const [showInvite,setShowInvite]=useState(false);
