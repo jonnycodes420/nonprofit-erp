@@ -4546,6 +4546,9 @@ async function initSchema() {
   // reviews, edits and sends each one. `source` says which recipe wrote it;
   // `reviewed_at` is the person saying the words are right, which is what
   // "Send all reviewed" sends and nothing else.
+  // FIX-12 Part 7a — the optional morning email of today's meetings. OFF by
+  // default: a new email nobody asked for is the thing this column prevents.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_meeting_brief BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS source TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS workflow_run_id TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);

@@ -3415,11 +3415,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
           // BUILD-84 — the timed step reminder lives in the SAME list as the
           // nudge, per-user, default on. Not a second notification screen.
+          // FIX-12 Part 7a — off by default; to her own address only.
+          {key:"meetingBrief",label:"Your meetings today",hint:"Off unless you tick it. One morning email to you only, with the same meeting briefs Home shows. None on a day with no meetings."},
           {key:"stepReminder",label:"Next steps with a time",hint:"When you give a next step a time, one email arrives at that time with the donor and a button to log what happened. Steps with no time stay in The Thread email instead."},
         ].map(row=>(
           <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
             <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
-              checked={notifyPrefs?!!notifyPrefs[row.key]:true}
+              checked={notifyPrefs?!!notifyPrefs[row.key]:row.key!=="meetingBrief"}
               onChange={()=>toggleNotifyPref(row.key)}
               style={{width:16,height:16,marginTop:2,cursor:notifyPrefs?"pointer":"default",accentColor:T.greenMid}}/>
             <div>

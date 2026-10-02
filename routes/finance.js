@@ -24,6 +24,9 @@ const routers = {
 // tick can run the SAME sync the Check now button runs. TDZ rule: declared at
 // module scope, above every line that reads it.
 let sharedProcessEmailMarketing = null;
+// FIX-12 Part 7a — set by mount() to the composer behind Home's morning brief,
+// so the optional morning email is built from the very same rows.
+let sharedComposeTodayMeetings = null;
 
 function mount(ctx) {
 const {
@@ -1329,13 +1332,13 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
 }));
 
 // WHO AM I SEEING TODAY. Her own calendar only, each meeting with its brief.
-app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
-  const orgId = req.user.orgId;
+// FIX-12 Part 7a: one composer for Home and for the optional morning email.
+async function composeTodayMeetings(orgId, userId) {
   const { tz, today } = await meetingTz(orgId);
   const rows = await query(
     `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
       WHERE c.org_id=? AND c.owner_user_id=? AND (c.starts_at AT TIME ZONE ?)::date = ?::date
-      ORDER BY c.starts_at`, [orgId, req.user.userId, tz, today]);
+      ORDER BY c.starts_at`, [orgId, userId, tz, today]);
   const ids = [...new Set(rows.flatMap(r => r.person_ids || []))];
   const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
   const out = [];
@@ -1343,6 +1346,13 @@ app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
     out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
   }
+  return { today, tz, meetings: out };
+}
+sharedComposeTodayMeetings = composeTodayMeetings;
+
+app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { today, meetings: out } = await composeTodayMeetings(orgId, req.user.userId);
   const [conn] = await query(`SELECT provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' AND calendar_granted = true LIMIT 1`, [req.user.userId, orgId]);
   res.json({ today, meetings: out, provider: conn?.provider || null,
     sentence: "From your own calendar. Only meetings with people in Steward show here." });
@@ -3220,6 +3230,10 @@ module.exports = {
   routers, mount,
   // The daily pull, published to routes/jobs.js. It rides the existing tick;
   // INT-3 adds no second scheduler.
+  composeTodayMeetings: (...args) => {
+    if (!sharedComposeTodayMeetings) throw new Error("composeTodayMeetings called before routes/finance mount()");
+    return sharedComposeTodayMeetings(...args);
+  },
   processEmailMarketing: (...args) => {
     if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
     return sharedProcessEmailMarketing(...args);

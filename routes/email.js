@@ -511,6 +511,7 @@ const NOTIFY_PREF_COLUMN = {
   daily_tasks: "notify_daily_tasks",
   thread_nudge: "notify_thread_nudge",   // BUILD-81 — the Thread's morning email
   step_reminder: "notify_step_reminder", // BUILD-84 — a step with a time on it
+  meeting_brief: "notify_meeting_brief", // FIX-12 Part 7a — OFF by default (column DEFAULT false)
 };
 async function userWantsEmail(userId, prefKind) {
   const col = NOTIFY_PREF_COLUMN[prefKind];

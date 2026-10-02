@@ -1031,7 +1031,7 @@ app.post("/me/password", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
@@ -1046,7 +1046,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 // about: portfolio gifts / task assignments / daily task reminder". Default on.
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder" };
+  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder", meetingBrief: "notify_meeting_brief" };
   const sets = [], params = [];
   for (const [k, col] of Object.entries(map)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
@@ -1054,7 +1054,7 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
-  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id=?", [req.user.userId]);
+  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder, notify_meeting_brief FROM users WHERE id=?", [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
@@ -19696,6 +19696,7 @@ function mapNotifyPrefs(row) {
     dailyTasks: row?.notify_daily_tasks !== false,
     threadNudge: row?.notify_thread_nudge !== false,
     stepReminder: row?.notify_step_reminder !== false,
+    meetingBrief: row?.notify_meeting_brief === true,   // FIX-12 Part 7a: off unless she turns it on
   };
 }
 

@@ -621,7 +621,7 @@ export const HELP_ARTICLES = [
         `"Reading and drafting" is the one switch for all of Steward's AI: cheque reading, drafts, briefs, scores, board summaries, Ask Steward and voice memos. Only admins can change it. When it is off, nothing is sent to Anthropic or OpenAI, and each of those features says "AI is turned off for your organization" and shows what it can without AI. "Demo Data" loads or clears sample donors so you can try things safely.`,
       ]},
       { h: `Account`, p: [
-        `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder and The Thread. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,
+        `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder, The Thread, and "Your meetings today", which is off unless you tick it and sends you, and only you, the same meeting briefs Home shows. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,
       ]},
       { h: `Send from your own address`, steps: [
         `Under "Send from your own address", type the address you want mail to come from and click "Use this address". Admins only.`,

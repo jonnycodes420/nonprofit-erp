@@ -5529,11 +5529,46 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body);
     out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
   }
+  // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
+  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send }); }
+  catch (e) { console.error("[meeting-brief]", org.id, e.message); }
   return out;
 }
 
 // Kept as the name the ops route and the suites call. One sender underneath.
 async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
+
+// ── FIX-12 Part 7a — "YOUR MEETINGS TODAY", BY EMAIL, IF SHE ASKS ──────────
+// The same meetings and the same briefs Home shows (routes/finance.js
+// composeTodayMeetings), to the staff member's OWN sign-in address and nobody
+// else. Off unless she ticks it in Settings → Account. One a day (the
+// meeting_brief ledger), and none on a day with no meetings.
+async function runMeetingBriefForOrg(org, { today, send = true }) {
+  const out = { sent: [], skipped: [] };
+  const users = await query(
+    "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
+  const fin = require("./routes/finance");
+  for (const u of users) {
+    const { meetings } = await fin.composeTodayMeetings(org.id, u.id);
+    if (!meetings.length) { out.skipped.push({ recipientUserId: u.id, reason: "no_meetings" }); continue; }
+    if (!send) { out.sent.push({ recipientUserId: u.id, count: meetings.length }); continue; }
+    if (!(await reserveDigest(org.id, "meeting_brief", "day:" + today, u.id, u.email, "user", { count: meetings.length }))) {
+      out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue;
+    }
+    const tz = org.timezone || "America/New_York";
+    const at = iso => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
+    const lines = b => [b && b.giving && `Giving: ${b.giving.text}`, b && b.openAsk && `Open ask: ${b.openAsk.text}`,
+      b && b.lastTime && `Last time: ${b.lastTime.text}`, b && b.unthanked && b.unthanked.text].filter(Boolean);
+    const body = `<p style="color:#0f1a12;">Good morning${u.name ? ", " + escHtmlWf(u.name.split(" ")[0]) : ""}. Here ${meetings.length === 1 ? "is the meeting" : `are the ${meetings.length} meetings`} on your calendar today, with what Steward knows about each person.</p>`
+      + meetings.map(m => `<div style="margin:14px 0;padding:12px 14px;background:#F0EDE6;border-radius:8px;">
+<p style="margin:0;color:#0f1a12;"><strong>${escHtmlWf(at(m.startsAt))}</strong> · ${escHtmlWf(m.title || "Meeting")}${(m.people || []).length ? " with " + escHtmlWf(m.people.map(p => p.name).join(", ")) : ""}</p>
+${lines(m.brief).map(l => `<p style="margin:4px 0 0;color:#3a4a3f;font-size:14px;">${escHtmlWf(l)}</p>`).join("")}</div>`).join("")
+      + `<p style="color:#6b7d70;font-size:13px;">You asked for this email in Settings, under Account. Untick "Your meetings today" there to stop it.</p>`;
+    await sendDigestEmail(org, u.email, meetings.length === 1 ? "Your meeting today" : `Your ${meetings.length} meetings today`, body);
+    out.sent.push({ recipientUserId: u.id, count: meetings.length });
+  }
+  return out;
+}
 
 // ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ─────────
 //
