@@ -516,8 +516,10 @@ function GiftLinkModal({donor,orgName,onClose}){
             {sent?(
               <div style={{textAlign:"center",padding:"20px 0"}}>
                 <div style={{fontSize:28,marginBottom:10}}>✓</div>
-                <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Email sent!</div>
-                <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} has been sent.</div>
+                {/* FIX-15 Part 3: the route QUEUES the send (it goes out in the
+                    background), so at this moment nothing is known about delivery. */}
+                <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Queued to send</div>
+                <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} is on its way out. Communications shows whether it was delivered.</div>
                 <button onClick={onClose} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"11px 24px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
               </div>
             ):(
@@ -916,14 +918,14 @@ function RhythmStrip({rhythm}){
   const usedKinds=RHYTHM_ORDER.filter(k=>rhythm.past.some(m=>RHYTHM_ORDER.find(x=>m.kinds.includes(x))===k));
   return <div style={{display:"flex",flexDirection:"column",gap:9}}>
     {!rhythm.empty&&<div role="img" aria-label={rhythm.sentence} data-testid="dp-rhythm-strip"
-      style={{display:"grid",gridTemplateColumns:"repeat(12, minmax(0, 1fr)) 6px repeat(6, minmax(0, 1fr))",gap:4}}>
+      style={{display:"grid",gridTemplateColumns:`repeat(12, minmax(0, 1fr)) 6px repeat(${rhythm.future.length}, minmax(0, 1fr))`,gap:4}}>
       {rhythm.past.map(m=>{const k=RHYTHM_ORDER.find(x=>m.kinds.includes(x));const st=k?RHYTHM_KIND[k]:null;
         return <div key={m.month} data-month={m.month} data-kind={k||""} data-past="1"
           title={`${monthName(m.month)}: ${m.kinds.length?m.kinds.map(x=>RHYTHM_KIND[x].label.toLowerCase()).join(", "):"no touch"}`}
           style={{height:26,borderRadius:4,boxSizing:"border-box",background:st?st.bg:"rgba(240,237,230,0.10)",border:st&&st.edge?"1.5px solid "+st.edge:"none"}}/>;})}
       <div/>
       {rhythm.future.map(m=>(
-        <div key={m.month} data-month={m.month} data-planned={m.planned.length?"1":"0"}
+        <div key={"f"+m.month} data-month={m.month} data-planned={m.planned.length?"1":"0"} data-current={m.current?"1":undefined}
           title={`${monthName(m.month)}: ${m.planned.length?m.planned.map(x=>x.label).join(", "):"nothing planned"}`}
           style={{height:26,borderRadius:4,boxSizing:"border-box",background:"transparent",
             border:m.planned.length?"1.5px solid #C9A84C":"1px dashed rgba(240,237,230,0.18)"}}/>
@@ -1834,7 +1836,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(journey&&journey.status==="active")for(const st of journey.steps||[])
       if((st.status==="open"||st.status==="pending")&&st.dueDate)planned.push({date:String(st.dueDate).slice(0,10),label:st.label||"A journey step"});
     for(const it of dpItems)if(it.nextStep&&it.nextStep.due)planned.push({date:String(it.nextStep.due).slice(0,10),label:it.nextStep.label||"A next step"});
-    for(const pl of planned){const f=future.find(x=>x.month===pl.date.slice(0,7));if(f)f.planned.push(pl);}
+    // FIX-15 Part 4 — a step planned for later THIS month belongs in the
+    // planned part too: the current month leads it, as well as closing the past.
+    const thisMonth=today.slice(0,7);
+    if(planned.some(pl=>pl.date.slice(0,7)===thisMonth&&pl.date>=today))future.unshift({month:thisMonth,planned:[],current:true});
+    for(const pl of planned){const f=future.find(x=>x.month===pl.date.slice(0,7)&&(!x.current||pl.date>=today));if(f)f.planned.push(pl);}
     const ahead=planned.filter(x=>x.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0];
     const touched=past.filter(m=>m.kinds.length).length;
     const inJourney=!!(journey&&journey.status==="active");
@@ -2366,7 +2372,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 rail, with the rest of how-we-manage-them. The reading column
                 keeps what she came to read. */}
 
-            <div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+            {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
+                other empty sections (FIX-14 Part 3), instead of an empty chart. */}
+            {!giftLoading&&!(giftsFull.length||gifts.length)
+            ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
+              <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
+              {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>{setDpTab("gifts");setAddGiftOpen(true);}}
+                style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
+            </div>
+            :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
               {giftLoading
                 ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
@@ -2374,7 +2389,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
                 Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
               </div>
-            </div>
+            </div>}
             {yearDrill&&(
               <MetricBreakdownPanel open onClose={()=>setYearDrill(null)}
                 title={`Giving in ${yearDrill}`}
@@ -2788,7 +2803,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {(()=>{
                                 const r=receiptForGift(g.id);
-                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
+                                // FIX-15 Part 3: a tick means EMAILED. A receipt the provider refused is
+                                // issued (it has a number and a PDF) but not sent, and says so in brass.
+                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} title={r.sent_at?undefined:"Issued, but the email did not go. Download the PDF to send it yourself."} style={{background:"none",border:"none",color:r.sent_at?T.greenDk:T.gold700,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>{r.sent_at?`Receipt ✓ #${r.receipt_number}`:`Receipt #${r.receipt_number}, not emailed`}</button>;
                                 if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:12}}>Off</span>;
                                 const busy=receiptBusyId===g.id;
                                 return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;

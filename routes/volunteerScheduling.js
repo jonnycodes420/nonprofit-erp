@@ -1039,7 +1039,10 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
         message: `Here is the link. Steward did not email it: ${person.reason}.` });
     }
     const brand = await brandOf(orgId);
-    await resend.emails.send({
+    // FIX-15 Part 3 — HONEST "SENT". The provider answers a refusal with
+    // { error } and does not throw, so this route said "Sent to x" for mail
+    // the provider had turned away. It now reports what the provider said.
+    const out = await resend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to: p.email,
       _stewardOrgId: orgId, _stewardKind: "volunteer_link",
@@ -1047,7 +1050,13 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
       html: `<p>Here is your volunteer page. It shows the shifts you are signed up for, and you can cancel or log hours from it.</p>
              <p><a href="${url}">Open my volunteer page</a></p>
              <p style="font-size:13px;color:#5a554f">The link works for ${VOL_LINK_DAYS} days.</p>`,
-    }).catch(e => console.error("[volunteer] magic link mail:", e.message));
+    }).catch(e => ({ error: { message: e.message } }));
+    if (!out || out.error) {
+      const why = (out && out.error && out.error.message) || "no answer";
+      console.error("[volunteer] magic link mail:", why);
+      return res.json({ url, sent: false, providerError: why,
+        message: `Here is the link. The email to ${p.email} did not go: the email provider said "${why}". Copy the link and send it yourself.` });
+    }
     return res.json({ url, sent: true, message: `Sent to ${p.email}.` });
   }
   res.json({ url, sent: false, message: `Copy this and send it however you talk to ${p.name}. It works for ${VOL_LINK_DAYS} days.` });

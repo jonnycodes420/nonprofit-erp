@@ -243,11 +243,13 @@ function MoveModal({ open, onClose, onSaved, meta, proposal }) {
   );
 }
 
-function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor, onDelete = null }) {
+function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor, onDelete = null, onNavigate = null }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: showDonor ? "1.4fr 1.6fr 110px 96px 110px 120px" : "1.8fr 110px 96px 110px 120px",
                   gap: 12, alignItems: "center", padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 56 }}>
-      {showDonor && <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, overflowWrap: "anywhere" }}>{p.donorName}</div>}
+      {showDonor && <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, overflowWrap: "anywhere" }}>
+        <DonorLink id={p.donorId} onOpen={onNavigate ? () => onNavigate("donors", { selectDonorId: p.donorId }) : undefined}
+          style={{ color: T.ink, fontWeight: 600 }}>{p.donorName}</DonorLink></div>}
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, color: T.ink, overflowWrap: "anywhere" }}>{p.purpose}</div>
         <div style={{ fontSize: 11, color: T.ink3 }}>{p.fundName || "No particular fund"}{p.officerName ? " · " + p.officerName : ""}</div>
@@ -264,9 +266,11 @@ function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor, onDelete = null
             <button onClick={() => onEdit(p)} title="Edit this proposal"
               style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 8px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Edit</button>
             {/* FIX-14 Part 3 — on the profile's "The ask": Delete (with Undo) and Edited. */}
-            {onDelete && <><EditedMarker item={p} /><ItemMenu label="ask" onDelete={() => onDelete(p)} /></>}
+            {onDelete && <ItemMenu label="ask" onDelete={() => onDelete(p)} />}
           </>
         )}
+        {/* "Edited" is history, so a read-only seat sees it too (FIX-15). */}
+        <EditedMarker item={p} />
       </div>
     </div>
   );
@@ -282,6 +286,9 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
   const [stageFilter, setStageFilter] = useState("");
   const [moving, setMoving] = useState(null);
   const [editing, setEditing] = useState(null);
+  // FIX-15 Part 4 — the same Edit, Delete-with-Undo and "Edited" history the
+  // profile's "The ask" has (FIX-14 Part 3), on the screen that lists them all.
+  const [undoToast, offerUndo] = useUndo();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -347,12 +354,17 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
             <div>Person</div><div>What the ask is for</div><div>Ask</div><div>Probability</div><div>Expected</div><div style={{ textAlign: "right" }}>Stage</div>
           </div>
           {d.proposals.map(p => (
-            <ProposalRow key={p.id} p={p} showDonor isReadOnly={isReadOnly}
-              onMove={setMoving} onEdit={setEditing} />
+            <ProposalRow key={p.id} p={p} showDonor isReadOnly={isReadOnly} onNavigate={onNavigate}
+              onMove={setMoving} onEdit={setEditing}
+              onDelete={isReadOnly ? null : async x => {
+                try { const r = await apiFetch(`/proposals/${x.id}`, { method: "DELETE" }); load(); offerUndo(r, "ask", load); }
+                catch (e) { alert(errorMessage(e, "The ask could not be deleted.")); }
+              }} />
           ))}
         </div>
       )}
 
+      {undoToast}
       <MoveModal open={!!moving} onClose={() => setMoving(null)} onSaved={load} meta={meta} proposal={moving} />
       <ProposalForm open={!!editing} onClose={() => setEditing(null)} onSaved={load} meta={meta}
         donorId={editing?.donorId} existing={editing} donorName={editing?.donorName} />

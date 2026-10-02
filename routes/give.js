@@ -3637,10 +3637,10 @@ app.post("/recurring/subs/:subId/pause", requireAuth, checkWriteAccess, wrap(asy
       { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
     await noteRecurringAction(org.id, sub.donor_id,
       `Paused their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? ` until ${resumeAt.toISOString().slice(0, 10)}` : ""}`, actorName);
-    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+    const donorNotified = await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
       "Your recurring gift is paused",
       `${displayNameCase(org.name)} has paused your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift${resumeAt ? `; it will resume automatically on ${resumeAt.toISOString().slice(0, 10)}` : ""}. No charges will occur while it's paused.`);
-    res.json({ ok: true, status: "paused", resumeAt: resumeAt ? resumeAt.toISOString() : null });
+    res.json({ ok: true, status: "paused", resumeAt: resumeAt ? resumeAt.toISOString() : null, donorNotified });
   });
 }));
 
@@ -3660,10 +3660,10 @@ app.post("/recurring/subs/:subId/resume", requireAuth, checkWriteAccess, wrap(as
       { newAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
     await noteRecurringAction(org.id, sub.donor_id,
       `Resumed their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift`, actorName);
-    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+    const donorNotified = await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
       "Your recurring gift has resumed",
       `${displayNameCase(org.name)} has resumed your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift. Your next charge will occur on the normal schedule.`);
-    res.json({ ok: true, status: "active" });
+    res.json({ ok: true, status: "active", donorNotified });
   });
 }));
 
@@ -3684,10 +3684,10 @@ app.post("/recurring/subs/:subId/cancel", requireAuth, wrap(async (req, res) => 
       { oldAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
     await noteRecurringAction(org.id, sub.donor_id,
       `Canceled their $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift at their request`, actorName);
-    await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+    const donorNotified = await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
       "Your recurring gift is canceled",
       `${displayNameCase(org.name)} has canceled your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift. You won't be charged again. Thank you for everything you've given.`);
-    res.json({ ok: true, status: "canceled" });
+    res.json({ ok: true, status: "canceled", donorNotified });
   });
 }));
 
@@ -3710,12 +3710,12 @@ app.put("/recurring/subs/:subId/fund", requireAuth, checkWriteAccess, wrap(async
     { oldAmount: parseFloat(sub.amount) || null, newAmount: parseFloat(sub.amount) || null, interval: sub.interval, actor: "staff", actorName });
   await noteRecurringAction(orgId, sub.donor_id,
     fundId ? `Changed their recurring gift's designation to ${fundName}` : "Cleared their recurring gift's fund designation", actorName);
-  await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
+  const donorNotified = await sendRecurringDonorEmail(org, { email: sub.donor_email, name: sub.donor_name },
     "Your recurring gift's designation changed",
     fundId
       ? `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} now supports ${fundName}. Future charges will be designated there.`
       : `Your $${Number(sub.amount).toLocaleString()}/${sub.interval || "month"} recurring gift to ${displayNameCase(org.name)} is no longer designated to a specific fund; it will support the organization's general work.`);
-  res.json({ ok: true, fundId, fundName });
+  res.json({ ok: true, fundId, fundName, donorNotified });
 }));
 
 // ── Proposals: the invitation path for anything that can move money ────────
@@ -3798,6 +3798,8 @@ app.post("/recurring/proposals", requireAuth, checkWriteAccess, wrap(async (req,
     id, donorId, kind, subscriptionId: sub?.id || null,
     proposedAmount, proposedInterval, proposedFundId,
     status: "pending", expiresAt: expiresAt.toISOString(), resendCount: 0,
+    // FIX-15 Part 3: the screen says "sent" only when it was.
+    delivered: !!proposalDelivered,
   });
 }));
 
@@ -3819,10 +3821,16 @@ app.post("/recurring/proposals/:id/resend", requireAuth, wrap(async (req, res) =
     [hash, expiresAt.toISOString(), p.id]);
   const org = await staffRecurringOrg(orgId);
   const url = `${publicAppUrl()}/recurring/proposal?token=${token}`;
-  await sendRecurringDonorEmail(org, { email: p.donor_email, name: p.donor_name },
+  const delivered = await sendRecurringDonorEmail(org, { email: p.donor_email, name: p.donor_name },
     `A reminder from ${displayNameCase(org.name)}`,
     `A reminder about the proposed change to your recurring giving (${PROPOSAL_KIND_LABELS[p.kind]}). Nothing changes unless you complete it — the link below expires in ${PROPOSAL_EXPIRY_DAYS} days.`,
     { actionUrl: url, actionLabel: "Review and complete" });
+  // FIX-15 Part 3: a resend the provider refused does not spend the one
+  // allowed resend, and the screen is told it did not go.
+  if (!delivered) {
+    await run(`UPDATE recurring_proposals SET resend_count=0, updated_at=NOW() WHERE id=?`, [p.id]);
+    return res.status(502).json({ error: "not_delivered", message: "The email provider did not take the reminder, so it was not sent. You can try again." });
+  }
   res.json({ ok: true, resendCount: 1, expiresAt: expiresAt.toISOString() });
 }));
 
@@ -4793,7 +4801,7 @@ app.post("/express/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailL
 // an https link with no bearer token and lands on a page; the page then calls
 // the API. (INT-OAUTH learned this the hard way in the other direction.)
 async function sendExpressLinkEmail(org, donor, token) {
-  if (!process.env.RESEND_API_KEY) return true;
+  if (!process.env.RESEND_API_KEY) return false;
   const decision = await donorMailDecision("express_link", donor.email, org.id);
   if (!decision.send) { console.log(`[give] express link refused (${decision.reason})`); return false; }
   const orgName = await donorFacingOrgName(org.id, org.name);
@@ -4804,8 +4812,11 @@ async function sendExpressLinkEmail(org, donor, token) {
     : "the card you saved";
   const body = `Hello ${first},\n\nHere is your one-tap giving link for ${orgName}. It uses the ${card}, and it works once, for the next fifteen minutes.\n\n${url}\n\nIf you did not ask for this, nothing has happened and you can ignore it.`;
   try {
-    await resend.emails.send({
-      ...donorSendOpts(await orgSendingIdentity(org.id)),
+    // FIX-15 Part 3: this spread a Promise (donorSendOpts is async and takes
+    // the org id, not an identity), so the message carried no From and no org
+    // tag, and the provider refused every one while the result went unread.
+    const out = await resend.emails.send({
+      ...(await donorSendOpts(org.id, donor.email, "express_link")),
       to: donor.email,
       subject: `Your one-tap giving link for ${orgName}`,
       html: `${await brandEmailHeaderHtml(org.id)}<div style="font-family:Georgia,serif;font-size:16px;line-height:1.6;color:#0F1A12">
@@ -4816,6 +4827,7 @@ async function sendExpressLinkEmail(org, donor, token) {
       </div>`,
       text: body,
     });
+    if (out && out.error) { console.error("[give] express link refused:", out.error.message); return false; }
     return true;
   } catch (e) { console.error("[give] express link email failed:", e.message); return false; }
 }

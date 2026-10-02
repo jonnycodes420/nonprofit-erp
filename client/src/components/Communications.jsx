@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { RecordLink } from "./RecordLink";
+import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
@@ -1215,7 +1217,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // Campaigns
   const [campaigns, setCampaigns]     = useState([]);
   const [loading, setLoading]         = useState(true);
-  const [expandedId, setExpandedId]   = useState(null);
+  // FIX-15 Part 5: /app/communications?subtab=campaigns&campaign=<id> opens
+  // with that campaign expanded, so a campaign's name is a real link.
+  const [expandedId, setExpandedId]   = useState(() => urlParam("communications", "campaign"));
   // FIX-6 item 5 — which figure is open, and the rows behind it.
   const [statRows, setStatRows] = useState(null);
   const [sendResult, setSendResult]   = useState(null);
@@ -1437,7 +1441,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try {
       const id = await saveForSend();
       const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({}) });
-      setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
+      // FIX-15 Part 3: a 200 with sent:false (no mail key configured) is not a send.
+      if (r && r.sent === false) setTestState({ state: "error", message: r.message || r.error || "The test was not sent: email is not set up on this server." });
+      else setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
       await loadCampaigns();
     } catch (e) { setTestState({ state: "error", message: errorMessage(e) }); }
   };
@@ -2012,7 +2018,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     <tbody>
                       {sentRows.map(r => (
                         <tr key={r.id} style={{ borderTop: "1px solid " + T.bg2 }}>
-                          <td style={{ padding: "10px 16px", color: T.ink, fontWeight: 600 }}>{r.name}</td>
+                          <td style={{ padding: "10px 16px", color: T.ink, fontWeight: 600 }}>
+                            <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: r.id })} data-record-link="email-campaign"
+                              onOpen={() => setExpandedId(r.id)}>{r.name}</RecordLink></td>
                           <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.delivered}{r.failed ? <span style={{ color: T.gold700 }}> · {r.failed} failed</span> : null}</td>
                           <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.opened}{r.openRate != null ? ` (${r.openRate}%)` : ""}</td>
                           <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.unsubscribed}</td>
@@ -2109,7 +2117,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         onMouseLeave={e => { e.currentTarget.style.background = "transparent"; setHoveredRowId(null); }}
                       >
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? T.greenDk : T.ink, transition: "color 0.1s" }}>{c.name}</div>
+                          <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: c.id })} data-record-link="email-campaign"
+                            onOpen={() => setExpandedId(isOpen ? null : c.id)}
+                            style={{ display: "block", fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? T.greenDk : T.ink, transition: "color 0.1s" }}>{c.name}</RecordLink>
                           <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>

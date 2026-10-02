@@ -849,7 +849,8 @@ app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
   const u = await meRow(req.user.userId);
   if (req.body?.method === "email") {
     const r = await TF.sendEmailCode(u, resend, "turn on two-factor");
-    if (!r.sent) return res.status(429).json({ error: "too_soon", message: "A code was sent a moment ago. Check your inbox, or try again in a minute." });
+    if (!r.sent && r.reason === "too_soon") return res.status(429).json({ error: "too_soon", message: "A code was sent a moment ago. Check your inbox, or try again in a minute." });
+    if (!r.sent) return res.status(502).json({ error: "not_delivered", message: `Steward could not email a code to ${u.email} just now. Try again in a minute, or use an authenticator app.` });
     return res.json({ method: "email", sentence: `We emailed a six-digit code to ${u.email}. Type it here to finish.` });
   }
   const { seal, credentialsConfigured } = await import("../shared/secretBox.js");
@@ -904,7 +905,9 @@ app.post("/me/mfa/email-code", requireAuth, wrap(async (req, res) => {
   if (!u || u.mfa_method !== "email") return res.status(400).json({ error: "Your two-factor uses an authenticator app." });
   const r = await TF.sendEmailCode(u, resend, "confirm a change to two-factor");
   req.audit.skip("a code sent to oneself");
-  res.json({ sent: r.sent, sentence: r.sent ? `We emailed a code to ${u.email}.` : "A code was sent a moment ago. Check your inbox." });
+  res.json({ sent: r.sent, sentence: r.sent ? `We emailed a code to ${u.email}.`
+    : r.reason === "too_soon" ? "A code was sent a moment ago. Check your inbox."
+    : `Steward could not email a code to ${u.email} just now. Try again in a minute.` });
 }));
 
 // Turning it off takes a current code, and is refused where it is required.
@@ -967,10 +970,11 @@ app.post("/org/users/:id/mfa/reset", requireAuth, requireAdmin, wrap(async (req,
   await TF.revokeSessions("user_id=?", [t.id], req.user.userId);
   require("../sessionCache").sessionCache.evict(t.id);
   const when = new Date().toUTCString();
-  await TF.mailUser(t, resend, "Your Steward two-factor was reset",
+  const mailed = await TF.mailUser(t, resend, "Your Steward two-factor was reset",
     `${me?.name || me?.email || "An owner"} reset two-factor on your Steward account on ${when}. You will be asked to set it up again the next time you sign in. If you did not expect this, reply to your team's owner.`);
   req.audit.action("two-factor reset by an owner"); req.audit.entity("user", t.id, t.email);
-  res.json({ ok: true, sentence: `Reset. ${t.name || t.email} sets two-factor up again at their next sign-in, and was emailed to say you did this.` });
+  res.json({ ok: true, emailed: mailed, sentence: `Reset. ${t.name || t.email} sets two-factor up again at their next sign-in, `
+    + (mailed ? "and was emailed to say you did this." : "but Steward could not email them about it, so tell them yourself.") });
 }));
 
 // SIGN A TEAMMATE OUT EVERYWHERE, OWNER.
@@ -11555,13 +11559,25 @@ app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async 
   res.status(201).json({ id });
 }));
 
+// FIX-15 Part 4 — a relationship from BEFORE FIX-14, or one an import or the
+// system made, has no person who "linked them" to defer to. Those belong to
+// whoever can edit the donor (the same gate as PUT /donors/:id: signed in, with
+// write access). One made since FIX-14 by a person stays theirs, or an admin's.
+const FIX14_SHIPPED = "2026-10-02T05:09:42Z";
+async function mayEditRelationship(req, r) {
+  const humanMade = r.created_by && !String(r.created_by).startsWith("system:");
+  const legacy = !humanMade || (r.created_at && new Date(r.created_at) < new Date(FIX14_SHIPPED));
+  if (legacy) return true;
+  return mayEditLogged(req, r);
+}
+
 // FIX-14 Part 2b — edit a relationship's kind and its note. Whoever linked
-// the two, or an admin.
+// the two, or an admin (FIX-15: or anyone who can edit the donor, for a legacy one).
 app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { orgId } = req.user;
   const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, orgId]);
   if (!r) return res.status(404).json({ error: "Not found" });
-  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  if (!(await mayEditRelationship(req, r))) return res.status(403).json(NOT_YOURS);
   const b = req.body || {};
   const sets = [], vals = [];
   if (b.relationshipType !== undefined && b.relationshipType !== r.relationship_type) {
@@ -11581,10 +11597,10 @@ app.put("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (r
 }));
 
 // FIX-14 Part 2b: whoever linked them, or an admin; to the trash, so Undo works.
-app.delete("/donor-relationships/:id", requireAuth, wrap(async (req, res) => {
+app.delete("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const [r] = await query("SELECT * FROM donor_relationships WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!r) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  if (!(await mayEditLogged(req, r))) return res.status(403).json(NOT_YOURS);
+  if (!(await mayEditRelationship(req, r))) return res.status(403).json(NOT_YOURS);
   if (req.audit) req.audit.before(await auditShape("donor_relationships", r, req.user.orgId));
   const undoId = await trashRow("donor_relationships", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" });
@@ -20654,7 +20670,9 @@ app.post("/pledges/:id/resend", requireAuth, wrap(async (req, res) => {
   const orgRows = await query(
     "SELECT id, name, org_slug, pledge_reminder_subject, pledge_reminder_body FROM orgs WHERE id=?", [req.user.orgId]
   );
-  await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
+  // FIX-15 Part 3: the provider's answer, not an assumed "Sent".
+  const sent = await sendPledgeReminderEmail(orgRows[0], { name: p.donor_name, email: p.donor_email }, p);
+  if (!sent) return res.status(502).json({ sent: false, error: "The email provider did not accept the reminder, so it was not sent. Try again in a few minutes." });
   res.json({ sent: true });
 }));
 
@@ -22089,13 +22107,18 @@ app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(
       <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#0d5c3a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Take the place</a></p>
       <p style="font-size:13px;color:#555;">Nothing is held for you, so it is first come. If somebody else gets there first, you stay on the list.</p>
     </div>`;
-  await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
-    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => console.error("[event] waitlist offer:", e.message));
+  // FIX-15 Part 3: the provider's answer decides the sentence (a refused
+  // offer is queued for retry by the lifecycle helper).
+  const offerSent = await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
+    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => { console.error("[event] waitlist offer:", e.message); return false; });
   // FIX-7 Part 6.2 — the demonstration org sends no ticket email; the screen
   // says what would have gone out and to whom rather than implying it did.
   const demoNote = await demoMailNote(orgId, { what: "the offer of a place, with the event's link", to: w.email });
   res.json({ ok: true, demo: !!demoNote,
-    sentence: demoNote || `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.` });
+    sent: !demoNote && !!offerSent,
+    sentence: demoNote || (offerSent
+      ? `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.`
+      : `Marked as offered to ${w.name}, but the email provider did not take the message just now. Steward will try again in a few minutes.`) });
 }));
 
 app.get("/events", requireAuth, async (req, res) => {

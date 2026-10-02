@@ -403,15 +403,33 @@ export default function Donate() {
   // a widget that drew differently on the two surfaces would eventually show
   // two different numbers for the same fund.
   const formPosition = givingPage?.formPosition === "bottom" ? "bottom" : "top";
-  const builtPage = useMemo(() => {
-    const w = givingPage?.page;
-    if (!Array.isArray(w) || !w.length) return null;
+  // FIX-15 Part 6 — A CAMPAIGN PAGE LEADS WITH THE NUMBER. Its title, its goal
+  // bar and a give button sit together at the top, above the fold at 1440 and
+  // at 390, and the story follows. The page's first hero widget IS its title,
+  // so it is drawn in that top block and not a second time below.
+  const isCampaignPage = !!givingPage?.campaignId;
+  const [heroWidgets, restWidgets] = useMemo(() => {
+    const w = Array.isArray(givingPage?.page) ? givingPage.page : [];
+    if (!isCampaignPage) return [[], w];
+    const i = w.findIndex(x => x && x.type === "hero");
+    return i < 0 ? [[], w] : [[w[i]], w.filter((_, k) => k !== i)];
+  }, [givingPage, isCampaignPage]);
+  const builtHero = useMemo(() => {
+    if (!heroWidgets.length) return null;
     return (
-      <div className="pt-page" style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
-        <PageRenderer page={{ widgets: w }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
+      <div className="pt-page" style={{ width: "100%", marginBottom: 14 }}>
+        <PageRenderer page={{ widgets: heroWidgets }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
       </div>
     );
-  }, [givingPage, th, org]);
+  }, [heroWidgets, th, org]);
+  const builtPage = useMemo(() => {
+    if (!restWidgets.length) return null;
+    return (
+      <div className="pt-page" style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
+        <PageRenderer page={{ widgets: restWidgets }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
+      </div>
+    );
+  }, [restWidgets, th, org]);
 
   // BUILD-102 Part 2 — the form the server says this page offers. Declared HERE,
   // above every line that reads it: the TDZ class has cost this repo four builds,
@@ -899,6 +917,43 @@ export default function Donate() {
   if (ticketEventId) return <TicketsPage orgSlug={orgSlug} eventId={ticketEventId} th={th} BASE={BASE} card={card} />;
   if (membershipLevelId) return <MembershipPage orgSlug={orgSlug} levelId={membershipLevelId} th={th} BASE={BASE} card={card} />;
 
+  // The goal bar, drawn once: at the top of a campaign page, or under the
+  // story on any other giving page (FIX-15 Part 6).
+  const goalBar = () => {
+              const linked = !!givingPage.campaignId;
+              const shownRaised = linked && givingPage.campaignRaised != null ? givingPage.campaignRaised : givingPage.raisedAmount;
+              const shownGoal = linked ? givingPage.campaignGoal : givingPage.goalAmount;
+              return (
+                <div style={{ ...card, padding: "18px 22px" }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: th.primary, fontFamily: th.serif }}>{fmtMoney(shownRaised)}</div>
+                    {shownGoal > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(shownGoal)} goal</div>}
+                  </div>
+                  {shownGoal > 0 && (
+                    <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
+                      <div style={{
+                        height: "100%",
+                        width: `${Math.min(100, Math.round((shownRaised / shownGoal) * 100))}%`,
+                        background: th.primary, borderRadius: 99, transition: "width 0.6s ease",
+                      }} />
+                    </div>
+                  )}
+                  {linked && givingPage.campaignName && (
+                    <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>Gifts here count toward <strong style={{ color: T.ink2 }}>{givingPage.campaignName}</strong>.</div>
+                  )}
+                  {/* CAMPAIGN-2 — WHAT THE BAR COUNTS, in the server's words.
+                      A thermometer is the number a stranger is most likely to
+                      doubt, and the two things people assume it leaves out are
+                      the two it names: a cheque somebody posted, and a gift
+                      given through a supporter's own fundraising page. */}
+                  {givingPage.goalSentence && (
+                    <div className="goal-sentence" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.55 }}>
+                      {givingPage.goalSentence}
+                    </div>
+                  )}
+                </div>
+              );
+  };
   return (
     <div style={BASE}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
@@ -971,6 +1026,24 @@ export default function Donate() {
             </div>
           </div>
         ) : givingPage ? (
+          <>
+          {isCampaignPage && (
+            <div data-testid="campaign-top" style={{ width: "100%", maxWidth: 480, marginBottom: 20, order: 0 }}>
+              {builtHero || (
+                <div style={{ textAlign: "center", marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
+                  <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>{givingPage.title}</h1>
+                </div>
+              )}
+              {goalBar()}
+              <a href="#give-form" data-testid="campaign-give"
+                onClick={e => { const f = document.getElementById("give-form"); if (f) { e.preventDefault(); f.scrollIntoView({ behavior: "smooth", block: "start" }); } }}
+                style={{ display: "block", textAlign: "center", marginTop: 12, background: th.button, color: th.buttonFg, borderRadius: 10,
+                         padding: "13px 0", fontSize: 16, fontWeight: 700, textDecoration: "none", fontFamily: th.sans }}>
+                Give now
+              </a>
+            </div>
+          )}
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 28, order: 2 }}>
             {builtPage}
             {!builtPage && givingPage.imageUrl && (
@@ -981,50 +1054,18 @@ export default function Donate() {
             )}
             {!builtPage && (
               <div style={{ textAlign: "center", marginBottom: 18 }}>
+                {!isCampaignPage && <>
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
                 <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
                   {givingPage.title}
                 </h1>
+                </>}
                 {givingPage.story && (
                   <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{givingPage.story}</p>
                 )}
               </div>
             )}
-            {(() => {
-              const linked = !!givingPage.campaignId;
-              const shownRaised = linked && givingPage.campaignRaised != null ? givingPage.campaignRaised : givingPage.raisedAmount;
-              const shownGoal = linked ? givingPage.campaignGoal : givingPage.goalAmount;
-              return (
-                <div style={{ ...card, padding: "18px 22px" }}>
-                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                    <div style={{ fontSize: 20, fontWeight: 800, color: th.primary, fontFamily: th.serif }}>{fmtMoney(shownRaised)}</div>
-                    {shownGoal > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(shownGoal)} goal</div>}
-                  </div>
-                  {shownGoal > 0 && (
-                    <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
-                      <div style={{
-                        height: "100%",
-                        width: `${Math.min(100, Math.round((shownRaised / shownGoal) * 100))}%`,
-                        background: th.primary, borderRadius: 99, transition: "width 0.6s ease",
-                      }} />
-                    </div>
-                  )}
-                  {linked && givingPage.campaignName && (
-                    <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>Gifts here count toward <strong style={{ color: T.ink2 }}>{givingPage.campaignName}</strong>.</div>
-                  )}
-                  {/* CAMPAIGN-2 — WHAT THE BAR COUNTS, in the server's words.
-                      A thermometer is the number a stranger is most likely to
-                      doubt, and the two things people assume it leaves out are
-                      the two it names: a cheque somebody posted, and a gift
-                      given through a supporter's own fundraising page. */}
-                  {givingPage.goalSentence && (
-                    <div className="goal-sentence" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.55 }}>
-                      {givingPage.goalSentence}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {!isCampaignPage && goalBar()}
 
             <div style={{ background: th.primary + "10", border: "1px solid " + th.primary + "30", borderRadius: 16, padding: "16px 20px", marginTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
               <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
@@ -1052,6 +1093,7 @@ export default function Donate() {
               </div>
             )}
           </div>
+          </>
         ) : (
           // Org-wide page identity. There is ALWAYS a designed identity band —
           // the org's banner (with its focal point), or, on day one when an org
@@ -1114,8 +1156,8 @@ export default function Donate() {
           the whole switch, and it is false for every giving page that existed
           before this build. */}
       {giveSpec && giveSpec.configured ? (
-        <div style={{ width: "100%", maxWidth: 480, order: formPosition === "top" ? 1 : 3,
-                      display: "flex", justifyContent: "center" }}>
+        <div id="give-form" style={{ width: "100%", maxWidth: 480, order: formPosition === "top" ? 1 : 3,
+                      display: "flex", justifyContent: "center", scrollMarginTop: 16 }}>
           <GiveSteps
             spec={giveSpec}
             formId={givingPage?.id}
@@ -1145,7 +1187,7 @@ export default function Donate() {
       {/* Form. FIXED — it is not a widget and cannot be removed, because a
           giving page that stopped taking gifts says nothing on screen. She
           chooses only whether it leads the page or follows the story. */}
-      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: giveSpec && giveSpec.configured ? "none" : "flex",
+      <form id={giveSpec && giveSpec.configured ? undefined : "give-form"} onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, scrollMarginTop: 16, display: giveSpec && giveSpec.configured ? "none" : "flex",
                                             flexDirection: "column", gap: 20,
                                             order: formPosition === "top" ? 1 : 3 }}>
 

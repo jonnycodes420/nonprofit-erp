@@ -106,8 +106,9 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
   `npx vite build`, because it skips the brand guard. Rebuild after any client edit.
 - **The battery:** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
   (= `npm test`). It SHARDS three ways by default — each shard builds its own database
-  (`steward_shard_<n>`), boots its own server on its own port block, and the run prints one
-  summary. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
+  (`steward_<worktree>_shard_<n>`), boots its own server on a port block it claims, and the
+  run prints one summary. Two tabs can run batteries side by side: the names, ports and logs
+  come from the worktree folder, and a run drops only its own databases. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
   change the width. Balance comes from `audit/suite-timings.json`, which the run refreshes.
   CI runs the same three shards as a matrix and `combine` is the one gate the deploys wait
   on: it fails on a dead shard and on any suite whose pass count dropped.

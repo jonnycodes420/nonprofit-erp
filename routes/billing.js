@@ -137,11 +137,13 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
         message: `Too many wrong codes. Code entry opens again at ${until.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}.` });
       const code = String(req.body.code || "").trim();
       if (!code) {
-        if (user.mfa_method === "email") await TF.sendEmailCode(user, resend, "sign in");
+        // FIX-15 Part 3: the sentence follows what actually happened to the code.
+        const ec = user.mfa_method === "email" ? await TF.sendEmailCode(user, resend, "sign in") : null;
         return res.status(401).json({ error: "mfa_required", method: user.mfa_method || "totp",
-          message: user.mfa_method === "email"
-            ? `We emailed a six-digit code to ${user.email}. It works for ${TF.EMAIL_CODE_MINUTES} minutes.`
-            : "Enter the six-digit code from your authenticator app." });
+          message: !ec ? "Enter the six-digit code from your authenticator app."
+            : ec.sent ? `We emailed a six-digit code to ${user.email}. It works for ${TF.EMAIL_CODE_MINUTES} minutes.`
+            : ec.reason === "too_soon" ? `A code went to ${user.email} a moment ago. Use that one; it works for ${TF.EMAIL_CODE_MINUTES} minutes.`
+            : `Steward could not email a code to ${user.email} just now. Try again in a minute, or use a recovery code.` });
       }
       let how = null;
       if (TF.looksLikeRecovery(code) && await TF.useRecoveryCode(user, code)) how = "recovery";
@@ -149,7 +151,7 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
       if (!how) {
         const f = await TF.recordFailure(user, resend);
         if (f.locked) { say("two-factor locked after wrong codes"); return res.status(429).json({ error: "mfa_locked",
-          message: `That was the ${TF.LOCK_AFTER}th wrong code. Code entry is paused for ${TF.LOCK_MINUTES} minutes, and we emailed you.` }); }
+          message: `That was the ${TF.LOCK_AFTER}th wrong code. Code entry is paused for ${TF.LOCK_MINUTES} minutes${f.mailed ? ", and we emailed you" : ""}.` }); }
         return res.status(401).json({ error: "mfa_invalid", message: user.mfa_method === "email"
           ? "That code did not match, or it has expired." : "That code did not match. Codes change every 30 seconds." });
       }

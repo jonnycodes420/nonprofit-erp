@@ -855,8 +855,13 @@ async function mailSupport(to, subject, text) {
   if (!process.env.RESEND_API_KEY) { console.warn("[help] RESEND_API_KEY not set; not sent:", subject); return false; }
   const { isBlockedAddress } = require("../mailBlock");
   if (isBlockedAddress(to)) return false;
-  try { await resend.emails.send({ from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, reply_to: SUPPORT_EMAIL(), subject, text }); return true; }
-  catch (e) { console.error("[help] mail:", e.message); return false; }
+  // FIX-15 Part 3: a refusal comes back as { error }, not a throw. (And the
+  // SDK's field is `replyTo`; `reply_to` was silently dropped.)
+  try {
+    const out = await resend.emails.send({ from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, replyTo: SUPPORT_EMAIL(), subject, text });
+    if (out && out.error) { console.error("[help] mail refused:", out.error.message); return false; }
+    return true;
+  } catch (e) { console.error("[help] mail:", e.message); return false; }
 }
 app.post("/help/tickets", requireAuth, wrap(async (req, res) => {
   const body = String(req.body?.body || "").trim().slice(0, 6000);
@@ -871,8 +876,11 @@ app.post("/help/tickets", requireAuth, wrap(async (req, res) => {
     [id, req.user.orgId, u.id, u.email, u.name, subject, screen, browser, who.id, who.name]);
   await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
     ["tkm_" + uuid().slice(0, 10), id, "customer", body, who.id, who.name]);
-  await mailSupport(SUPPORT_EMAIL(), `[${id}] ${subject}`,
+  // The ticket is stored either way, so "Sent" is true of the ticket; the
+  // alert to support is what can fail, and that is logged where support looks.
+  const alerted = await mailSupport(SUPPORT_EMAIL(), `[${id}] ${subject}`,
     `${u.name || u.email} at ${o?.name || req.user.orgId} asked:\n\n${body}\n\nScreen: ${screen || "not given"}\nBrowser: ${browser}\nReply from the super-admin ticket list so it reaches them.`);
+  if (!alerted) console.error(`[help] ticket ${id} stored, but the alert email to support was not delivered`);
   res.status(201).json({ id, sentence: `Sent. A person will reply to ${u.email} ${REPLY_PROMISE()}.` });
 }));
 app.get("/admin/tickets", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -886,13 +894,14 @@ app.post("/admin/tickets/:id/reply", requireAuth, requireSuperAdmin, wrap(async 
   const body = String(req.body?.body || "").trim().slice(0, 6000);
   const status = ["open", "waiting", "closed"].includes(req.body?.status) ? req.body.status : (body ? "waiting" : t.status);
   const who = actor(req);
+  let emailed = null;   // null: no reply text, so nothing to email
   if (body) {
     await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
       ["tkm_" + uuid().slice(0, 10), t.id, "support", body, who.id, who.name]);
-    await mailSupport(t.user_email, `Re: ${t.subject}`, `${body}\n\nReply to this email and it reaches us.`);
+    emailed = await mailSupport(t.user_email, `Re: ${t.subject}`, `${body}\n\nReply to this email and it reaches us.`);
   }
   await run(`UPDATE support_tickets SET status=?, updated_at=NOW() WHERE id=?`, [status, t.id]);
-  res.json({ ok: true, status });
+  res.json({ ok: true, status, emailed });
 }));
 app.get("/admin/questions", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const groups = await query(`SELECT surface, COALESCE(topic,'unsorted') AS topic, COUNT(*)::int AS n,

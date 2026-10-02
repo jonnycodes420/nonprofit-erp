@@ -22,6 +22,8 @@ const QUERY_KEYS = [
   // (urlParam below), so a fresh tab opens on that record.
   ["eventId", "event"], ["campaignId", "campaign"], ["fundId", "fund"],
   ["volunteerId", "volunteer"],
+  // FIX-15 Part 5: a volunteer shift's "Who is coming" and a volunteer group.
+  ["slotId", "slot"], ["groupId", "group"],
 ];
 
 export function donorHref(id) {

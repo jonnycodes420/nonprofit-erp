@@ -144,6 +144,7 @@ CORE=(
   fix11-inbound-resend
   int5-api-keys
   script-guards
+  fix15-two-worktrees
   build96-ai-gate
   incident-mail-gate
   mail-block
@@ -215,7 +216,21 @@ fi
 pass=0; fail=0; failed=()
 total_start=$(date +%s)
 
-LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs}"
+# ── FIX-15 · WORKTREE IDENTITY: TWO TABS, TWO BATTERIES, NO COLLISION ──────
+# Every shard used to be `steward_shard_<n>` on ports 5700+, in EVERY worktree,
+# so a second session's battery dropped the first one's databases mid-run and
+# fought it for the ports (FIX-14 had to wait on GIVE-2's). Now the worktree
+# names its own: the tag is the worktree folder's name, the databases are
+# `steward_<tag>_shard_<n>`, the suite logs are /tmp/steward-suite-logs-<tag>,
+# and the port block is claimed (see below) instead of assumed. Each shard
+# only ever drops the database it created, so cleanup touches only this
+# worktree's names. Explicit SHARD_DB_PREFIX / SHARD_PORT_BASE /
+# SUITE_LOG_DIR still win (CI's matrix sets nothing and gets the same shape).
+WT_TAG="${STEWARD_WT_TAG:-$(basename "$(pwd)" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9\n' '_' | sed 's/^steward_//; s/_*$//' | cut -c1-30)}"
+WT_TAG="${WT_TAG:-wt}"
+export STEWARD_WT_TAG="$WT_TAG"
+export SHARD_DB_PREFIX="${SHARD_DB_PREFIX:-steward_${WT_TAG}_shard_}"
+LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs-${WT_TAG}}"
 mkdir -p "$LOGDIR"
 rm -f "$LOGDIR"/*.log 2>/dev/null || true
 
@@ -252,9 +267,43 @@ if [ -z "${SHARDS:-}" ]; then
   # running.
   if [ ${#RUN[@]} -ge "$SHARD_MIN" ]; then SHARDS=3; else SHARDS=1; fi
 fi
-TIMINGS="audit/suite-timings.json"
+TIMINGS="${SHARD_TIMINGS:-audit/suite-timings.json}"
 
-if [ "$SHARDS" != "1" ]; then
+# FIX-15 — SHARD_SELF=1 runs even a single shard the sharded way: its own
+# database and its own server, instead of an already-booted $BASE. This is what
+# the pre-push hook uses when nothing is listening on $BASE.
+if [ "$SHARDS" != "1" ] || [ "${SHARD_SELF:-}" = "1" ]; then
+  # THE PORT BLOCK. Shard n uses SHARD_PORT_BASE + 10n .. +9, so a run of
+  # SHARDS shards needs 10*(SHARDS+1) ports from the base. The base is claimed
+  # with an atomic `mkdir` lock holding this run's pid; a block whose lock is
+  # held by a live pid, or with any port already listening, is skipped. A stale
+  # lock (its pid is gone) is reclaimed. The first block tried is a hash of the
+  # worktree tag, so the same worktree usually lands on the same ports.
+  if [ -z "${SHARD_PORT_BASE:-}" ]; then
+    span=$(( 10 * (SHARDS + 1) ))
+    slots=30   # bases 6000..8900 in steps of 100 (clear of 5544, 56xx, 59xx)
+    start=$(( $(printf '%s' "$WT_TAG" | cksum | cut -d' ' -f1) % slots ))
+    for k in $(seq 0 $((slots - 1))); do
+      base=$(( 6000 + 100 * ((start + k) % slots) ))
+      lock="/tmp/steward-portblock-$base.lock"
+      if ! mkdir "$lock" 2>/dev/null; then
+        held=$(cat "$lock/pid" 2>/dev/null || echo "")
+        if [ -n "$held" ] && kill -0 "$held" 2>/dev/null; then continue; fi
+        rm -rf "$lock"; mkdir "$lock" 2>/dev/null || continue
+      fi
+      echo $$ >"$lock/pid"
+      busy=0
+      for p in $(seq "$base" $((base + span - 1))); do
+        if (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then busy=1; break; fi
+      done
+      if [ "$busy" -eq 1 ]; then rm -rf "$lock"; continue; fi
+      SHARD_PORT_BASE="$base"; PORT_LOCK="$lock"; break
+    done
+    [ -z "${SHARD_PORT_BASE:-}" ] && { echo "ERROR: no free port block for the shards" >&2; exit 2; }
+    trap '[ -n "${PORT_LOCK:-}" ] && rm -rf "$PORT_LOCK"' EXIT
+  fi
+  export SHARD_PORT_BASE
+  echo "[run-all] worktree '$WT_TAG' · databases ${SHARD_DB_PREFIX}<n> · ports from $SHARD_PORT_BASE · logs $LOGDIR"
   SHARD_OUT="${SHARD_OUT:-/tmp/steward-shards-$$}"
   export SHARD_OUT SUITE_LOG_DIR="$LOGDIR"
   rm -rf "$SHARD_OUT"; mkdir -p "$SHARD_OUT"

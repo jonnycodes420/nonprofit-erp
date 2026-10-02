@@ -415,11 +415,13 @@ async function issueAndSend(org, person, { who }) {
       <p style="font-size:13px;color:#555;">The link works once and expires in ${LINK_MINUTES} minutes. Once you are in, the page stays open on this device for ${SESSION_DAYS} days, and you can add it to your home screen.</p>
       <p style="font-size:13px;color:#555;">If you did not ask for this, you can ignore it.</p>
     </div>`;
-  await sendDonorLifecycleEmail("your_page_link", person.email,
+  // FIX-15 Part 3: the provider's answer. A refused send is queued for retry
+  // by the lifecycle helper, and the record is not stamped as sent.
+  const sent = await sendDonorLifecycleEmail("your_page_link", person.email,
     `Your page at ${brand.displayName || org.name}`,
     html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()));
-  await run(`UPDATE donors SET your_page_sent_at=NOW() WHERE id=? AND org_id=?`, [person.id, org.id]).catch(() => {});
-  return link;
+  if (sent) await run(`UPDATE donors SET your_page_sent_at=NOW() WHERE id=? AND org_id=?`, [person.id, org.id]).catch(() => {});
+  return { link, sent };
 }
 
 // ── Spending the link ────────────────────────────────────────────────────
@@ -701,8 +703,8 @@ app.post("/donors/:id/your-page-link", requireAuth, checkWriteAccess, wrap(async
   if (!org || !person) return res.status(404).json({ error: "Not found" });
   if (!person.email) return res.status(400).json({ error: "no_email", message: `${person.name} has no email address on file, so there is nowhere to send the link.` });
   const who = actor(req);
-  const link = await issueAndSend(org, person, { who });
-  await writeAuditLog(orgId, who.id, who.name, "your_page_link_sent", "donor", person.id, {}).catch(() => {});
+  const { link, sent } = await issueAndSend(org, person, { who });
+  if (sent) await writeAuditLog(orgId, who.id, who.name, "your_page_link_sent", "donor", person.id, {}).catch(() => {});
   // The link itself comes back ONLY under TEST_MODE. On any real deployment
   // the token reaches one place, the person's own mailbox: a staff member who
   // could read it could open somebody else's page, and the whole point of
@@ -710,9 +712,11 @@ app.post("/donors/:id/your-page-link", requireAuth, checkWriteAccess, wrap(async
   // FIX-7 Part 6.2 — on the demonstration org nothing leaves the building, and
   // the screen says so instead of claiming a send that did not happen.
   const demo = await demoMailNote(orgId, { what: "a link to their own page", to: person.email });
-  res.json({ ok: true, ...(testMode() ? { link } : {}), demo: !!demo,
+  res.json({ ok: true, sent, ...(testMode() ? { link } : {}), demo: !!demo,
     message: demo
-      || `Sent to ${person.email}. The link works once and lasts ${LINK_MINUTES} minutes; their page then stays open on that device for ${SESSION_DAYS} days.` });
+      || (sent
+        ? `Sent to ${person.email}. The link works once and lasts ${LINK_MINUTES} minutes; their page then stays open on that device for ${SESSION_DAYS} days.`
+        : `The email provider did not take the link for ${person.email} just now. Steward will try again in a few minutes; nothing else is needed.`) });
 }));
 }
 

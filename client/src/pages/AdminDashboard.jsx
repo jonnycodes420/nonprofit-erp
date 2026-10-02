@@ -1248,7 +1248,7 @@ function SupportAdmin() {
   };
   useEffect(() => { load(); }, []);
   const reply = (id, status) => adminFetch(`/admin/tickets/${id}/reply`, { method: "POST", body: JSON.stringify({ body: draft[id] || "", status }) })
-    .then(() => { setDraft(d => ({ ...d, [id]: "" })); setMsg("Saved."); load(); }).catch(e => setMsg(errorMessage(e, "That did not send.")));
+    .then(r => { setDraft(d => ({ ...d, [id]: "" })); setMsg(r && r.emailed === false ? "Saved, but the email to the customer did not go. They will see it only if they open the ticket." : r && r.emailed ? "Saved and emailed." : "Saved."); load(); }).catch(e => setMsg(errorMessage(e, "That did not send.")));
   const box = { background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 16 };
   const STATUS = { open: "Open", waiting: "Waiting on customer", closed: "Closed" };
   return <div>

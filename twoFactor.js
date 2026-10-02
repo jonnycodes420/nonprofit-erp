@@ -136,9 +136,11 @@ async function sendEmailCode(user, resend, purpose = "sign in") {
   const code = String(crypto.randomInt(0, 1e6)).padStart(6, "0");
   await run(`INSERT INTO mfa_email_codes (id,user_id,code_hash,expires_at) VALUES (?,?,?, NOW() + INTERVAL '${EMAIL_CODE_MINUTES} minutes')`,
     ["mec_" + crypto.randomBytes(8).toString("hex"), user.id, sha(user.id + ":" + code)]);
-  await mailUser(user, resend, `Your Steward code: ${code}`,
+  // FIX-15 Part 3: what the provider said, so no screen says "we emailed a
+  // code" that never left.
+  const sent = await mailUser(user, resend, `Your Steward code: ${code}`,
     `Your code to ${purpose} is <strong style="font-size:22px;letter-spacing:0.12em">${code}</strong>. It works for ${EMAIL_CODE_MINUTES} minutes. If you did not just try to ${purpose}, change your password.`);
-  return { sent: true };
+  return sent ? { sent: true } : { sent: false, reason: "not_delivered" };
 }
 async function useEmailCode(user, code) {
   const c = String(code || "").replace(/\D/g, "");
@@ -172,9 +174,9 @@ async function recordFailure(user, resend) {
   const n = r ? Number(r.mfa_failed_count) : 0;
   if (n >= LOCK_AFTER) {
     await run(`UPDATE users SET mfa_failed_count=0, mfa_locked_until=NOW() + INTERVAL '${LOCK_MINUTES} minutes' WHERE id=?`, [user.id]);
-    await mailUser(user, resend, "Steward paused sign-in codes on your account",
+    const mailed = await mailUser(user, resend, "Steward paused sign-in codes on your account",
       `Someone entered ${LOCK_AFTER} wrong two-factor codes for your Steward account. Code entry is paused for ${LOCK_MINUTES} minutes. If it was not you, change your password now; your password alone does not open your account.`);
-    return { locked: true };
+    return { locked: true, mailed };
   }
   return { locked: false, left: LOCK_AFTER - n };
 }
@@ -189,7 +191,7 @@ async function mailUser(user, resend, subject, sentenceHtml) {
   if (!user || !user.email || isBlockedAddress(user.email)) return false;
   if (!process.env.RESEND_API_KEY || !resend) { console.warn("[2fa] RESEND_API_KEY not set; not sent:", subject); return false; }
   try {
-    await resend.emails.send({
+    const out = await resend.emails.send({
       from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
       to: user.email, subject,
       html: `<!DOCTYPE html><html><body style="margin:0;padding:32px 16px;background:#f0ede6;font-family:Helvetica,Arial,sans-serif;color:#0f1a12">
@@ -199,6 +201,8 @@ async function mailUser(user, resend, subject, sentenceHtml) {
 <tr><td style="padding-top:16px;text-align:center;font-size:12px;color:#5a554f">Sent to ${user.email} because it is the sign-in address for this Steward account.</td></tr>
 </table></td></tr></table></body></html>`,
     });
+    // The client answers a refusal with { error }, it does not throw.
+    if (out && out.error) { console.error("[2fa] mail refused:", out.error.message); return false; }
     return true;
   } catch (e) { console.error("[2fa] mail failed:", e.message); return false; }
 }

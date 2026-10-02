@@ -116,8 +116,10 @@ function Definitions({ items }) {
 }
 
 export function VolunteersHub({ isReadOnly, onNavigate, role }) {
-  const [section, setSection] = useState("people");
-  const [partOf, setPartOf] = useState({ people: "roster", schedule: "opportunities", records: "shifts", reach: "signup" });
+  // FIX-15 Part 5: ?slot= and ?group= open Schedule on that shift or group,
+  // so "Who is coming" and a group row work as real links in a new tab.
+  const [section, setSection] = useState(() => (urlParam("volunteers", "slot") || urlParam("volunteers", "group")) ? "schedule" : "people");
+  const [partOf, setPartOf] = useState(() => ({ people: "roster", schedule: urlParam("volunteers", "group") ? "groups" : "opportunities", records: "shifts", reach: "signup" }));
   const [roster, setRoster] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpenRaw] = useState(null);   // the person whose panel is open
@@ -750,7 +752,9 @@ function OpportunitiesView({ isReadOnly, narrow }) {
   const [data, reload, err] = useLoad("/volunteer-hub/opportunities");
   const [newOpp, setNewOpp] = useState(null);
   const [newSlot, setNewSlot] = useState(null);   // opportunity id
-  const [openSlot, setOpenSlot] = useState(null); // slot id whose people are shown
+  const [openSlot, setOpenSlotRaw] = useState(() => urlParam("volunteers", "slot")); // slot id whose people are shown
+  const goUrl = useUrlWriter();
+  const setOpenSlot = id => { setOpenSlotRaw(id); goUrl(tabHref("volunteers", { slotId: id || null })); };
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
 
@@ -818,7 +822,8 @@ function OpportunitiesView({ isReadOnly, narrow }) {
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{s.when}</div>
                 <div style={{ fontSize: 12.5, color: s.full ? T.gold700 : T.ink3 }} title="Capacity is decided when somebody signs up, not when this page was drawn.">{s.sentence}</div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button data-testid={"vol-slot-open-" + s.id} onClick={() => setOpenSlot(s.id)} style={{ ...btnQuiet, padding: "6px 11px", fontSize: 12 }}>Who is coming</button>
+                  <RecordLink to={tabHref("volunteers", { slotId: s.id })} data-testid={"vol-slot-open-" + s.id} data-record-link="slot"
+                    onOpen={() => setOpenSlot(s.id)} style={{ ...btnQuiet, padding: "6px 11px", fontSize: 12, display: "inline-block" }}>Who is coming</RecordLink>
                 </div>
               </div>
             ))}
@@ -957,7 +962,9 @@ function SlotPeopleModal({ slotId, onClose, isReadOnly }) {
 // waiting list, and the answer says which.
 function GroupsView({ isReadOnly, narrow, onOpenRecord }) {
   const [data, reload, err] = useLoad("/volunteer-hub/groups");
-  const [openGroup, setOpenGroup] = useState(null);
+  const [openGroup, setOpenGroupRaw] = useState(() => urlParam("volunteers", "group"));
+  const goUrl = useUrlWriter();
+  const setOpenGroup = id => { setOpenGroupRaw(id); goUrl(tabHref("volunteers", { groupId: id || null })); };
   const [opps] = useLoad("/volunteer-hub/opportunities");
   const [form, setForm] = useState(null);      // {slotId, groupName, kind, people}
   const [out, setOut] = useState(null);
@@ -1071,15 +1078,15 @@ function GroupsView({ isReadOnly, narrow, onOpenRecord }) {
         <div style={{ ...eyebrow, marginBottom: 10 }}>Groups on file</div>
         {!data.groups.length && <div style={{ fontSize: 13, color: T.ink3 }}>No groups yet.</div>}
         {data.groups.map(g => (
-          <button key={g.id} data-testid="vol-group-row" onClick={() => setOpenGroup(g.id)}
-            style={{ display: "flex", width: "100%", textAlign: "left", gap: 12, alignItems: "baseline",
-              padding: "10px 2px", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap",
-              background: "none", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontFamily: "inherit" }}>
+          <RecordLink key={g.id} to={tabHref("volunteers", { groupId: g.id })} data-testid="vol-group-row" data-record-link="group"
+            onOpen={() => setOpenGroup(g.id)}
+            style={{ display: "flex", width: "100%", boxSizing: "border-box", textAlign: "left", gap: 12, alignItems: "baseline",
+              padding: "10px 2px", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap", cursor: "pointer", fontFamily: "inherit" }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{g.name}</span>
             <span style={{ fontSize: 12.5, color: T.ink3 }}>{(data.kinds.find(k => k.key === g.kind) || {}).label || g.kind}</span>
             <span style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700, marginLeft: "auto" }}>
               {g.people} {g.people === 1 ? "person" : "people"}</span>
-          </button>
+          </RecordLink>
         ))}
       </div>
       {openGroup && <GroupPanel groupId={openGroup} isReadOnly={isReadOnly} onOpenRecord={onOpenRecord}
