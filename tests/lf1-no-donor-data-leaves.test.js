@@ -172,6 +172,57 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
     const lead = await post("/lost-and-found/lead",
       { name: "Rosa Vale", email: "rosa@example.org", organization: "Harbour Trust", ref: "a-newsletter" });
     ok("§4 the lead route takes the three fields she typed", lead.status === 201, lead);
+    // ── §5 · BOOK A DEMO (FIX-13) ──────────────────────────────────────
+    // The demo form posts to the same lead route with ref book-a-demo and two
+    // more answers. One post must store ONE lead with every field filled, and
+    // the notification to jonathan@stewardapp.dev must name it a demo request
+    // (it used to arrive titled "Lost & Found", read as an audit download).
+    // Fails if: the route drops orgSize or currentSystem, the insert forgets a
+    // column, the subject stops saying Demo request, or the mail goes elsewhere.
+    {
+      const http = require("http");
+      const { q, SINK_PORT } = require("./helpers");
+      const captured = [];
+      const sink = http.createServer((req, res) => {
+        let body = ""; req.on("data", c => (body += c));
+        req.on("end", () => { try { captured.push({ path: req.url, body: JSON.parse(body) }); } catch {} res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ id: "mock_demo" })); });
+      });
+      const up = await new Promise(res => { sink.once("error", () => res(false)); sink.listen(SINK_PORT, () => res(true)); });
+      ok("§5 the mail sink is up on " + SINK_PORT, up);
+      const stamp = Date.now();
+      const demo = { name: "Ada Marsh", email: `ada.demo.${stamp}@example.org`, organization: `Marsh Arts ${stamp}`,
+        orgSize: "1,000 to 5,000", currentSystem: "A spreadsheet and an old CRM", ref: "book-a-demo" };
+      const r = await post("/lost-and-found/lead", demo);
+      ok("§5 the demo form's post is accepted", r.status === 201, r);
+      const rows = await q(`SELECT name, email, organization, ref, org_size, current_system FROM lost_and_found_leads WHERE email=$1`, [demo.email]);
+      ok("§5 …and stores ONE lead", rows.length === 1, rows.length);
+      const row = rows[0] || {};
+      ok("§5 …with every field filled, source book-a-demo",
+        row.name === demo.name && row.organization === demo.organization && row.ref === "book-a-demo"
+          && row.org_size === demo.orgSize && row.current_system === demo.currentSystem, row);
+      const billing = fs.readFileSync(path.join(ROOT, "routes", "billing.js"), "utf8");
+      ok("§5 …and super-admin's lead list reads both new fields",
+        /SELECT id, name, email, organization, ref, org_size, current_system, created_at FROM lost_and_found_leads/.test(billing));
+      let mail = null;
+      for (let i = 0; i < 40 && !mail; i++) {
+        await new Promise(res => setTimeout(res, 100));
+        mail = (captured.find(c => c.path === "/emails" && c.body && c.body.reply_to && String(c.body.reply_to).includes(demo.email))
+          || captured.find(c => c.path === "/emails" && c.body && JSON.stringify(c.body).includes(demo.organization)) || {}).body || null;
+      }
+      ok("§5 the notification went to jonathan@stewardapp.dev", !!mail && [].concat(mail.to).includes("jonathan@stewardapp.dev"), mail && mail.to);
+      ok("§5 …and names it a demo request, from book-a-demo, with every answer",
+        !!mail && /^Demo request: /.test(mail.subject) && mail.subject.includes(demo.organization)
+          && ["book-a-demo", demo.orgSize, demo.currentSystem, demo.email].every(x => mail.html.includes(x)), mail && { subject: mail.subject });
+      await post("/lost-and-found/lead", { name: "Rosa Vale", email: `rosa.${stamp}@example.org`, organization: `Harbour Trust ${stamp}`, ref: "a-newsletter" });
+      let lfMail = null;
+      for (let i = 0; i < 40 && !lfMail; i++) {
+        await new Promise(res => setTimeout(res, 100));
+        lfMail = (captured.find(c => c.body && String(c.body.subject || "").includes(`Harbour Trust ${stamp}`)) || {}).body || null;
+      }
+      ok("§5 …while an audit lead is still titled Lost & Found", !!lfMail && /^Lost & Found: /.test(lfMail.subject), lfMail && lfMail.subject);
+      await new Promise(res => sink.close(res));
+    }
+
     const okBench = await post("/lost-and-found/benchmark", bench);
     ok("§4 the benchmark route takes the four aggregates", okBench.status === 201, okBench);
 

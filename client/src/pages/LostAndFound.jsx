@@ -34,11 +34,114 @@ const WHITE = "#ffffff", EDGE = "#e8e4db", GREY = "#5a554f";
 const EMERALD = "#0d5c3a", BRASS = "#c9a84c";
 const WASH = "#f3e9cc", WASH_INK = "#5c4710";
 const SERIF = "'DM Serif Display',Georgia,serif";
-const CAL = "https://calendly.com/xjca2006/new-meeting";
 
 const fmtPct = v => (v === null || v === undefined ? "—" : v + "%");
 
 export default function LostAndFound() {
+  // The page owns its ground: index.html paints `body` ink, and an
+  // overscroll on a phone showed a black bar above a cream page.
+  useEffect(() => {
+    const prev = document.body.style.background;
+    document.body.style.background = GROUND;
+    return () => { document.body.style.background = prev; };
+  }, []);
+
+  return (
+    <div style={{ minHeight: "100vh", background: GROUND, color: INK, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+
+      <nav className="lf-nav" style={{ position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center",
+        justifyContent: "space-between", gap: 12, padding: "0 32px", height: 56,
+        background: GROUND, borderBottom: `1px solid ${EDGE}` }}>
+        <Link to="/" style={{ textDecoration: "none", flexShrink: 0 }}>
+          <span style={{ fontSize: 20, color: INK, fontFamily: SERIF, letterSpacing: "-0.02em" }}>Steward</span>
+        </Link>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+          <Link to="/pricing" className="lf-hide-sm" style={{ fontSize: 13, color: GREY, textDecoration: "none" }}>Pricing</Link>
+          <Link to="/signup" style={{ fontSize: 13, color: CREAM, background: INK, borderRadius: 8,
+            padding: "7px 16px", textDecoration: "none", fontWeight: 700, whiteSpace: "nowrap" }}>Start now</Link>
+        </div>
+      </nav>
+
+      <section style={{ maxWidth: 1080, margin: "0 auto", padding: "72px 24px 72px" }}>
+        {/* ── THE HERO ─────────────────────────────────────────────── */}
+        <div style={{ textAlign: "center", maxWidth: 820, margin: "0 auto" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
+            Lost &amp; Found
+          </span>
+          <h1 className="lf-h1" data-testid="lf-hero"
+            style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.04, fontWeight: 600, letterSpacing: "-1.4px", margin: "18px 0 20px" }}>
+            A paid-caliber donor audit. Free.
+          </h1>
+          <p style={{ fontSize: 19, lineHeight: 1.55, color: GREY, margin: "0 auto", maxWidth: 640 }}>
+            Consultants charge $500 to $2,000 to tell you which donors are slipping away.
+            Upload the export your database already makes and know in two minutes.
+            Free forever. No account. Your file never leaves your browser.
+          </p>
+        </div>
+
+        <LostAndFoundAudit />
+
+        {/* ── THE CLOSE: THIS WAS THE SNAPSHOT ─────────────────────── */}
+        <div data-testid="lf-close" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
+          padding: "40px 32px", marginTop: 46, maxWidth: 860, marginLeft: "auto", marginRight: "auto",
+          textAlign: "center" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
+            The next step
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: 38, lineHeight: 1.12, margin: "12px 0 14px", letterSpacing: "-0.5px" }}>
+            This was the snapshot.<br/>Steward is the movie.
+          </div>
+          <p style={{ fontSize: 16.5, lineHeight: 1.6, color: GREY, margin: "0 auto 24px", maxWidth: 600 }}>
+            Lost &amp; Found looks backward once. Steward watches your donors every week, drafts the
+            next right thing, and waits for your approval. Want it running automatically, with next
+            steps attached? That&apos;s Steward.
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <Link to="/signup" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 30px",
+              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
+              Start free
+            </Link>
+            <Link to="/demo" style={{ background: "transparent", color: INK,
+              border: `1.5px solid ${INK}`, borderRadius: 12, padding: "15px 30px",
+              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
+              Book a demo
+            </Link>
+          </div>
+        </div>
+
+        {/* ── WHY FREE ─────────────────────────────────────────────── */}
+        <div data-testid="lf-why-free" style={{ marginTop: 40, maxWidth: 720, marginLeft: "auto", marginRight: "auto",
+          textAlign: "center" }}>
+          <div style={{ fontFamily: SERIF, fontSize: 26, marginBottom: 10 }}>Why is this free?</div>
+          <p style={{ fontSize: 16, lineHeight: 1.65, color: GREY, margin: 0 }}>
+            We sell a CRM. But we believe every nonprofit deserves to know which donors are drifting,
+            customer or not. So Lost &amp; Found is free, forever. If you want someone watching it
+            automatically every week, that&apos;s what Steward does. No catch.
+          </p>
+        </div>
+      </section>
+
+      <style>{`
+        @media (max-width: 760px){
+          .lf-h1{ font-size: 40px !important; letter-spacing: -0.8px !important; }
+          .lf-nav{ padding: 0 16px !important; }
+          .lf-hide-sm{ display: none !important; }
+          .lf-rails{ grid-template-columns: 1fr !important; }
+          .lf-rail-right{ order: -1 !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ── THE AUDIT ITSELF: the drop, the results and the PDF form ─────────────
+// FIX-13 · one component, rendered by this page AND by the marketing site's
+// /tools/lost-and-found, so every Lost & Found link opens a page that can
+// run the audit. `compact` is the marketing layout: the drop zone alone
+// (no left rail), under the site's own hero. Everything this file promises
+// about what leaves the browser holds for both, because it is the same code.
+export function LostAndFoundAudit({ compact = false }) {
   const [state, setState] = useState("idle");   // idle | reading | done | error
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -50,13 +153,6 @@ export default function LostAndFound() {
   const fileRef = useRef(null);
   const workerRef = useRef(null);
 
-  // The page owns its ground: index.html paints `body` ink, and an
-  // overscroll on a phone showed a black bar above a cream page.
-  useEffect(() => {
-    const prev = document.body.style.background;
-    document.body.style.background = GROUND;
-    return () => { document.body.style.background = prev; };
-  }, []);
 
   // ?ref= , so an affiliate gets credit. Read once, kept in memory, and sent
   // ONLY with the lead — never appended to anything else.
@@ -136,44 +232,14 @@ export default function LostAndFound() {
   const reset = () => { setState("idle"); setResult(null); setError(""); setFormState(""); };
 
   return (
-    <div style={{ minHeight: "100vh", background: GROUND, color: INK, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
-
-      <nav className="lf-nav" style={{ position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center",
-        justifyContent: "space-between", gap: 12, padding: "0 32px", height: 56,
-        background: GROUND, borderBottom: `1px solid ${EDGE}` }}>
-        <Link to="/" style={{ textDecoration: "none", flexShrink: 0 }}>
-          <span style={{ fontSize: 20, color: INK, fontFamily: SERIF, letterSpacing: "-0.02em" }}>Steward</span>
-        </Link>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
-          <Link to="/pricing" className="lf-hide-sm" style={{ fontSize: 13, color: GREY, textDecoration: "none" }}>Pricing</Link>
-          <Link to="/signup" style={{ fontSize: 13, color: CREAM, background: INK, borderRadius: 8,
-            padding: "7px 16px", textDecoration: "none", fontWeight: 700, whiteSpace: "nowrap" }}>Start now</Link>
-        </div>
-      </nav>
-
-      <section style={{ maxWidth: 1080, margin: "0 auto", padding: "72px 24px 72px" }}>
-        {/* ── THE HERO ─────────────────────────────────────────────── */}
-        <div style={{ textAlign: "center", maxWidth: 820, margin: "0 auto" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
-            Lost &amp; Found
-          </span>
-          <h1 className="lf-h1" data-testid="lf-hero"
-            style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.04, fontWeight: 600, letterSpacing: "-1.4px", margin: "18px 0 20px" }}>
-            A paid-caliber donor audit. Free.
-          </h1>
-          <p style={{ fontSize: 19, lineHeight: 1.55, color: GREY, margin: "0 auto", maxWidth: 640 }}>
-            Consultants charge $500 to $2,000 to tell you which donors are slipping away.
-            Upload the export your database already makes and know in two minutes.
-            Free forever. No account. Your file never leaves your computer.
-          </p>
-        </div>
-
+    <>
         {/* ── THE RAILS: what you learn (left) · the upload (right) ── */}
         {state !== "done" && (
-        <div className="lf-rails" style={{ display: "grid", gridTemplateColumns: "minmax(300px, 380px) 1fr",
+        <div className={compact ? "lf-compact" : "lf-rails"} style={compact
+          ? { marginTop: 30, maxWidth: 640 }
+          : { display: "grid", gridTemplateColumns: "minmax(300px, 380px) 1fr",
           gap: 20, alignItems: "start", marginTop: 44, maxWidth: 1000, marginLeft: "auto", marginRight: "auto" }}>
-          <div className="lf-rail-left" style={{ display: "grid", gap: 12 }}>
+          {!compact && <div className="lf-rail-left" style={{ display: "grid", gap: 12 }}>
             {[
               ["01", "The dollars walking away", "The exact figure your lapsed and drifting donors represent."],
               ["02", "Your real retention rate", "What share of last year's donors gave again. Most orgs guess wrong."],
@@ -185,38 +251,42 @@ export default function LostAndFound() {
                 <div style={{ fontSize: 14, color: GREY, lineHeight: 1.55 }}>{d}</div>
               </div>
             ))}
-          </div>
+          </div>}
           <div className="lf-rail-right">
             <div data-testid="lf-drop"
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
               onDragLeave={() => setDrag(false)}
               onDrop={e => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files && e.dataTransfer.files[0]); }}
               style={{ background: WHITE, border: `2px dashed ${drag ? EMERALD : EDGE}`, borderRadius: 18,
-                       padding: "38px 24px", textAlign: "center", transition: "border-color .15s" }}>
-              <div style={{ fontFamily: SERIF, fontSize: 26, marginBottom: 8 }}>
+                       padding: compact ? "24px 20px" : "38px 24px", textAlign: "center", transition: "border-color .15s" }}>
+              <div style={{ fontFamily: SERIF, fontSize: compact ? 23 : 26, marginBottom: 8 }}>
                 {state === "reading" ? "Reading your file…" : "Drop your donor export here"}
               </div>
-              <p style={{ fontSize: 15, color: GREY, margin: "0 0 18px", lineHeight: 1.55 }}>
-                A CSV or an Excel file with a donor, an amount and a date on each row. Whatever your
-                database already exports is fine; nothing needs tidying first.
+              <p style={{ fontSize: compact ? 14.5 : 15, color: GREY, margin: compact ? "0 0 14px" : "0 0 18px", lineHeight: 1.55 }}>
+                {compact
+                  ? "A CSV or Excel file with a donor, an amount and a date on each row."
+                  : <>A CSV or an Excel file with a donor, an amount and a date on each row. Whatever your
+                database already exports is fine; nothing needs tidying first.</>}
               </p>
               <input ref={fileRef} data-testid="lf-file" type="file" accept=".csv,.xlsx,.xls,text/csv"
                 onChange={e => handleFile(e.target.files && e.target.files[0])} style={{ display: "none" }}/>
-              <button data-testid="lf-choose" onClick={() => fileRef.current && fileRef.current.click()}
+              {/* FIX-13 · the button says what it does. Picking a file (or
+                  dropping one on this box) runs the audit straight away. */}
+              <button type="button" data-testid="lf-choose" onClick={() => fileRef.current && fileRef.current.click()}
                 disabled={state === "reading"}
                 style={{ background: EMERALD, color: WHITE, border: "none", borderRadius: 12, padding: "15px 30px",
                          fontSize: 16, fontWeight: 700, cursor: state === "reading" ? "wait" : "pointer", fontFamily: "inherit" }}>
-                {state === "reading" ? "Working…" : "Choose a file"}
+                {state === "reading" ? "Working…" : "Run the free audit"}
               </button>
               <div data-testid="lf-privacy" style={{ display: "inline-flex", alignItems: "center", gap: 8,
-                marginTop: 18, fontSize: 14, fontWeight: 600, color: WASH_INK, background: WASH,
+                marginTop: compact ? 14 : 18, fontSize: 14, fontWeight: 600, color: WASH_INK, background: WASH,
                 borderRadius: 99, padding: "8px 16px" }}>
                 <LockGlyph/> {PRIVACY_LINE}
               </div>
-              <p style={{ fontSize: 13, color: GREY, margin: "12px 0 0", lineHeight: 1.55 }}>
+              {!compact && <p style={{ fontSize: 13, color: GREY, margin: "12px 0 0", lineHeight: 1.55 }}>
                 The whole audit runs in this browser tab. Your results are free and complete with no
                 email address. We only ask who you are if you want the board-ready PDF.
-              </p>
+              </p>}
             </div>
             {state === "error" && (
               <div role="alert" data-testid="lf-error" style={{ background: "#f6ece8", border: "1px solid #e0a893",
@@ -364,57 +434,7 @@ export default function LostAndFound() {
             </div>
           </div>
         )}
-
-        {/* ── THE CLOSE: THIS WAS THE SNAPSHOT ─────────────────────── */}
-        <div data-testid="lf-close" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
-          padding: "40px 32px", marginTop: 46, maxWidth: 860, marginLeft: "auto", marginRight: "auto",
-          textAlign: "center" }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
-            The next step
-          </div>
-          <div style={{ fontFamily: SERIF, fontSize: 38, lineHeight: 1.12, margin: "12px 0 14px", letterSpacing: "-0.5px" }}>
-            This was the snapshot.<br/>Steward is the movie.
-          </div>
-          <p style={{ fontSize: 16.5, lineHeight: 1.6, color: GREY, margin: "0 auto 24px", maxWidth: 600 }}>
-            Lost &amp; Found looks backward once. Steward watches your donors every week, drafts the
-            next right thing, and waits for your approval. Want it running automatically, with next
-            steps attached? That&apos;s Steward.
-          </p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-            <Link to="/signup" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 30px",
-              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
-              Start now
-            </Link>
-            <a href={CAL} target="_blank" rel="noreferrer" style={{ background: "transparent", color: INK,
-              border: `1.5px solid ${INK}`, borderRadius: 12, padding: "15px 30px",
-              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
-              Book a call
-            </a>
-          </div>
-        </div>
-
-        {/* ── WHY FREE ─────────────────────────────────────────────── */}
-        <div data-testid="lf-why-free" style={{ marginTop: 40, maxWidth: 720, marginLeft: "auto", marginRight: "auto",
-          textAlign: "center" }}>
-          <div style={{ fontFamily: SERIF, fontSize: 26, marginBottom: 10 }}>Why is this free?</div>
-          <p style={{ fontSize: 16, lineHeight: 1.65, color: GREY, margin: 0 }}>
-            We sell a CRM. But we believe every nonprofit deserves to know which donors are drifting,
-            customer or not. So Lost &amp; Found is free, forever. If you want someone watching it
-            automatically every week, that&apos;s what Steward does. No catch.
-          </p>
-        </div>
-      </section>
-
-      <style>{`
-        @media (max-width: 760px){
-          .lf-h1{ font-size: 40px !important; letter-spacing: -0.8px !important; }
-          .lf-nav{ padding: 0 16px !important; }
-          .lf-hide-sm{ display: none !important; }
-          .lf-rails{ grid-template-columns: 1fr !important; }
-          .lf-rail-right{ order: -1 !important; }
-        }
-      `}</style>
-    </div>
+    </>
   );
 }
 

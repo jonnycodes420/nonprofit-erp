@@ -390,16 +390,20 @@
 .mk .stage .photo{min-height:0;max-width:100%}
 /* ---------- lean homepage ---------- */
 .mk .marq-s{padding-block:20px 90px}
-.mk .marq{margin-top:28px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent);mask-image:linear-gradient(90deg,transparent,#000 5%,#000 95%,transparent)}
-/* LANDING-3 · the track's own layout lives HERE now. It used to come from the
-   people reel's `.mk .track` rule, and `.marq .track` only overrode the
-   duration; deleting the reel in part 5b took the display:flex, the
-   width:max-content and the keyframes with it, and the research strip
-   collapsed into a single narrow column. The marquee is the only thing that
-   scrolls now, so it owns the rule and the animation is named for it. */
-.mk .marq .track{display:flex;gap:28px;width:max-content;animation:mk-marq 60s linear infinite}
-.mk .marq:hover .track{animation-play-state:paused}
-@keyframes mk-marq{from{transform:translateX(0)}to{transform:translateX(calc(-100% / 3))}}
+/* FIX-13 · the research strip is a STATIC row: each of the seven cards is
+   rendered once and never moves. The marquee it replaced drew three copies
+   and scrolled them, so the same card could be on screen twice at once.
+   Four across at desktop, two on a tablet, and on a phone one row the
+   reader swipes inside the strip (the page itself never scrolls sideways). */
+.mk .marq{margin-top:28px}
+.mk .marq .track{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:28px}
+.mk .marq .sc{width:auto}
+@media (max-width:1000px){.mk .marq .track{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:600px){
+  .mk .marq{overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;margin-inline:-24px;padding-inline:24px}
+  .mk .marq .track{display:flex;gap:16px;width:max-content}
+  .mk .marq .sc{width:78vw;scroll-snap-align:start}
+}
 .mk .sc{width:320px;flex:none;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:28px 28px 24px}
 .mk .sc b{display:block;font:400 54px/1 var(--serif);color:var(--emerald)}
 .mk .sc p{font-size:17px;margin-top:12px;min-height:78px}
@@ -460,13 +464,6 @@
 .mk .form .pill[disabled]{opacity:.7;cursor:progress}
 .mk .tmpl .pill{border:0}
 .mk .burger{color:var(--ink)}
-/* Reduced motion: the research marquee stops and shows one copy. The track
-   rule came back with the marquee above, so its stopped state comes back too:
-   without it the cards stay in one max-content row and run off the page. */
-@media (prefers-reduced-motion:reduce){
-  .mk .marq .track{animation:none;flex-wrap:wrap;width:auto;padding-inline:24px}
-  .mk [data-dup]{display:none!important}
-}
 /* The reference's template cards have a 380px minimum, wider than a 390
    phone's content box; one column there instead of a sideways scroll. */
 @media (max-width:480px){.mk .tmpls{grid-template-columns:minmax(0,1fr)}}

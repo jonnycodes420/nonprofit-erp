@@ -222,8 +222,21 @@ const ALL = Object.values(SRC_TEXT).join("\n");
   {
     const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
     const body = why.match(/const body = (\{[^}]*\});/);
-    ok("the demo form builds its body from exactly name, email, organization and ref",
-      !!body && JSON.stringify([...body[1].matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "email", "organization", "ref"]), body && body[1]);
+    // FIX-13: every field on the form is sent, by name (the size band and
+    // where the donors are today were typed and then dropped before).
+    ok("the demo form builds its body from exactly name, email, organization, orgSize, currentSystem and ref",
+      !!body && JSON.stringify([...body[1].matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "email", "organization", "orgSize", "currentSystem", "ref"]), body && body[1]);
+    // FIX-13: every field has a label tied to it, a name and an id, so a
+    // screen reader announces it and a browser can autofill it.
+    const demoForm = (why.match(/<form className="form" onSubmit=\{submit\}[^]*?<\/form>/) || [""])[0];
+    const fields = [...demoForm.matchAll(/<(input|select|textarea)\b[^>]*>/g)].map(m => m[0]);
+    const labelled = fields.filter(f => {
+      const id = (f.match(/\bid="([^"]+)"/) || [])[1];
+      return id && /\bname="[^"]+"/.test(f) && new RegExp('<label htmlFor="' + id + '"').test(demoForm);
+    });
+    ok("every demo form field has a label (htmlFor), a name and an id (" + fields.length + " fields)", fields.length === 5 && labelled.length === fields.length, fields.filter(f => !labelled.includes(f)));
+    ok("…and a failed submit shows a plain error naming jonathan@stewardapp.dev, never nothing",
+      /DEMO_FALLBACK = "[^"]*jonathan@stewardapp\.dev/.test(why) && /setErr\(/.test(why) && /role="alert"/.test(demoForm));
     ok("…and posts it to the Lost & Found lead route, the table super-admin lists", /fetch\(API \+ "\/lost-and-found\/lead"/.test(why) && /DEMO_REF = "book-a-demo"/.test(why));
     // TRUST-2 — the trust pages READ four public endpoints and send nothing:
     // the status summary, which What's new entries are hidden, and the DPA
@@ -272,19 +285,16 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     const css = SRC_TEXT["client/src/marketing/site.css"];
     ok("the people reel component is deleted", !/TeamReel/.test(ALL));
     ok("…and so are its CSS rules", !/\.mk \.reel\b/.test(css) && !/\.mk \.tm\{/.test(css));
-    // This one was too weak and it cost a regression. It proved the selector
-    // still existed, not that the strip still LAID OUT: `.marq .track` only
-    // set the duration, and the display:flex, the width:max-content and the
-    // keyframes all came from the reel's `.mk .track`. Deleting the reel
-    // collapsed the research strip into one narrow column and this passed.
-    ok("the research marquee is untouched", /\.mk \.marq/.test(css) && /className="marq"/.test(ALL));
+    // FIX-13 turned this around. The strip used to be a marquee of three
+    // copies, and a visitor saw the same card twice at once. It is a static
+    // row now: each stat rendered once, nothing animates, and it still LAYS
+    // OUT (the LANDING-3 regression was a strip that collapsed to a column).
+    const home = SRC_TEXT["client/src/marketing/pages/home.jsx"];
+    const strip = (home.match(/function StatStrip\(\) \{[^]*?\n\}/) || [""])[0];
+    ok("the research strip renders STATS exactly once", (strip.match(/STATS\.map\(/g) || []).length === 1 && !/data-dup/.test(ALL), strip.slice(0, 200));
     const trackRule = (css.match(/\.mk \.marq \.track\{([^}]*)\}/) || [, ""])[1];
-    ok("…and the marquee track still lays out as a strip",
-      /display:\s*flex/.test(trackRule) && /width:\s*max-content/.test(trackRule) && /animation:/.test(trackRule), trackRule);
-    const anim = (trackRule.match(/animation:\s*([a-z-]+)/) || [])[1];
-    ok("…and the animation it names has keyframes", !!anim && new RegExp("@keyframes " + anim + "\\b").test(css), anim);
-    ok("…and reduced motion stops it and lets the cards wrap",
-      /@media \(prefers-reduced-motion:reduce\)\{[^}]*\.mk \.marq \.track\{[^}]*flex-wrap:\s*wrap/.test(css.replace(/\s*\n\s*/g, "")));
+    ok("…and lays out as a grid row of cards", /display:\s*grid/.test(trackRule) && /grid-template-columns/.test(trackRule), trackRule);
+    ok("…and nothing in it animates or scrolls on its own", !/\.marq[^{]*\{[^}]*animation/.test(css) && !/@keyframes mk-marq/.test(css));
 
     // 13 · no stock photograph of a person on the three people pages.
     const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
@@ -310,6 +320,82 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     ok("Donorbox is honestly Coming (there is no Donorbox adapter)",
       CONNECTIONS.some(c => c[0] === "Donorbox" && c[2] === "Coming") && !/key: "donorbox"/.test(src));
     ok("the retired label is gone from every page", !/Set up with you/.test(ALL.replace(/^\s*\/\/.*$/gm, "")));
+  }
+
+  console.log("\n— FIX-13 · Lost & Found runs, Forest talks, plans carry —");
+  {
+    // Every link to Lost & Found resolves to a route that renders the audit's
+    // file input. A marketing route is followed to its page component in
+    // pages/index.js and that component's source; the app route is followed
+    // through main.jsx to its page file. Either must render LostAndFoundAudit,
+    // and LostAndFoundAudit must render the file input.
+    const lfSrc = fs.readFileSync(path.join(ROOT, "client", "src", "pages", "LostAndFound.jsx"), "utf8");
+    const auditFn = (lfSrc.match(/export function LostAndFoundAudit\([^]*?\n\}/) || [""])[0];
+    ok("LostAndFoundAudit renders the audit's file input and the Run the free audit button",
+      /<input[^>]*data-testid="lf-file"[^>]*type="file"/.test(auditFn) && /Run the free audit/.test(auditFn) && /onDrop=/.test(auditFn));
+    const main = fs.readFileSync(path.join(ROOT, "client", "src", "main.jsx"), "utf8");
+    const pagesIdx = SRC_TEXT["client/src/marketing/pages/index.js"];
+    const rendersAudit = p => {
+      const r = ROUTES.find(x => x.path === p);
+      if (r) {
+        const comp = (pagesIdx.match(new RegExp("\\b" + r.page + ": (\\w+)")) || [])[1];
+        if (!comp) return false;
+        for (const t of Object.values(SRC_TEXT)) {
+          const i = t.indexOf("export function " + comp + "(");
+          if (i < 0) continue;
+          const j = t.indexOf("\nexport ", i + 10);
+          return /<LostAndFoundAudit\b/.test(t.slice(i, j < 0 ? undefined : j)) && /import\("\.\.\/\.\.\/pages\/LostAndFound"\)/.test(t);
+        }
+        return false;
+      }
+      const el = (main.match(new RegExp('<Route path="' + p + '" element=\\{<(\\w+)')) || [])[1];
+      const file = el && (main.match(new RegExp("const " + el + "\\s*=\\s*React\\.lazy\\(\\(\\) => import\\(\"\\./pages/(\\w+)\"\\)")) || [])[1];
+      if (file !== "LostAndFound") return false;
+      const deflt = (lfSrc.match(/export default function LostAndFound\(\)[^]*?\n\}/) || [""])[0];
+      return /<LostAndFoundAudit\b/.test(deflt);
+    };
+    const lfLinks = [];
+    for (const [f, t] of Object.entries(SRC_TEXT)) for (const m of t.matchAll(/["'`]((?:\/tools)?\/lost-and-found)(?:[#?][^"'`]*)?["'`]/g)) lfLinks.push([f, m[1]]);
+    const broken = lfLinks.filter(([, v]) => !rendersAudit(v));
+    ok("every Lost & Found link on the site (" + lfLinks.length + ") opens a page that renders the audit's file input",
+      lfLinks.length >= 4 && broken.length === 0 && rendersAudit("/lost-and-found"), broken);
+    // A card or menu entry that NAMES Lost & Found points at one of those.
+    const named = [];
+    // Three shapes carry a title: a card tuple ["/path", "Title", …], a menu
+    // item <Mi href="/path" … b="Title">, and a feature-finder extra
+    // { n: "Title", …, h: "/path" }. Whichever titles Lost & Found must link to it.
+    for (const [f, t] of Object.entries(SRC_TEXT)) {
+      for (const m of t.matchAll(/\["([^"]+)", "[^"]*Lost & Found[^"]*"/g)) named.push([f, m[1]]);
+      for (const m of t.matchAll(/href="([^"]+)"[^>\n]*\bb="[^"]*Lost & Found/g)) named.push([f, m[1]]);
+      for (const m of t.matchAll(/\bn: "[^"]*Lost & Found[^"]*"[^}\n]*\bh: "([^"]+)"/g)) named.push([f, m[1]]);
+    }
+    ok("every menu entry or card that names Lost & Found links to it", named.length >= 3 && named.every(([, h]) => /^(\/tools)?\/lost-and-found$/.test(h)), named);
+
+    // No "Book a call" anywhere a visitor can reach: the marketing source, the
+    // audit page, the signup page and the price list they both read.
+    const reach = { ...SRC_TEXT,
+      "client/src/pages/LostAndFound.jsx": lfSrc,
+      "client/src/pages/SignupPage.jsx": fs.readFileSync(path.join(ROOT, "client", "src", "pages", "SignupPage.jsx"), "utf8"),
+      "pricing.json": fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8") };
+    const calls = Object.entries(reach).filter(([, t]) => /Book a call/i.test(t)).map(([f]) => f);
+    ok("no \"Book a call\" anywhere on the site", calls.length === 0, calls);
+    const PRICING = JSON.parse(reach["pricing.json"]);
+    const pricing = SRC_TEXT["client/src/marketing/pages/pricing.jsx"];
+    ok("the Forest card's button says Talk to us and opens Book a demo",
+      PRICING.talkToUs.name === "Forest" && PRICING.talkToUs.cta === "Talk to us" && /<Pill kind="soft" href="\/demo">\{TALK\.cta\}<\/Pill>/.test(pricing));
+
+    // Every plan's Start link carries plan= (and the interval) into /signup,
+    // and /signup preselects both.
+    const fn = (pricing.match(/export const signupHref = (\([^)]*\) => [^;]+);/) || [])[1];
+    const signupHref = fn ? vm.runInNewContext(fn) : null;
+    const hrefs = signupHref ? PRICING.tiers.flatMap(t => [[t.id, false, signupHref(t.id, false)], [t.id, true, signupHref(t.id, true)]]) : [];
+    ok("each tier's Start link carries its own plan=, monthly and yearly (" + hrefs.length + ")",
+      hrefs.length === 6 && hrefs.every(([id, y, h]) => h === "/signup?plan=" + id + (y ? "&interval=yearly" : "")) && /href=\{signupHref\(t\.id, yearly\)\}/.test(pricing), hrefs);
+    const sp = reach["client/src/pages/SignupPage.jsx"];
+    const bandFor = n => PRICING.tiers.find(t => n <= t.maxDonors) || null;
+    ok("/signup preselects the tier from plan= and the interval from interval=",
+      /TIERS\.find\(x => x\.id === params\.get\("plan"\)\)/.test(sp) && /params\.get\("interval"\) === "yearly"/.test(sp)
+        && PRICING.tiers.every(t => bandFor(t.maxDonors) === t));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
