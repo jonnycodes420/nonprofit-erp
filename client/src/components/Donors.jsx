@@ -356,7 +356,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     catch(e){
       // The status code and the real cause are already in the console
       // (api.js). What she reads is one sentence and a button.
-      console.warn("[suggest] "+key+" failed:",errorMessage(e,"no reason given"));
+      console.warn("[suggest] %s failed: %s",String(key),errorMessage(e,"no reason given"));
       setAiErr(p=>({...p,[key]:"Suggestions aren't available right now."}));
     }
     finally{setLoadingKey(null);}

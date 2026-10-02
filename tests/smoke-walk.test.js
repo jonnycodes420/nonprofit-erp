@@ -156,6 +156,11 @@ const EXPECTED_5XX = /\/ai\/stream/;
   // right thing in it" — has anything at all, which is the difference between
   // a screen and a white rectangle.
   const look = async what => {
+    // Give a slow runner (CI) up to 8s to draw; a blank screen still fails.
+    await page.waitForFunction(() => {
+      const m = document.querySelector(".app-content") || document.querySelector("main") || document.body;
+      return (m.innerText || "").trim().length > 0 && m.querySelectorAll("*").length > 8;
+    }, null, { timeout: 8000 }).catch(() => {});
     const state = await page.evaluate(() => {
       // `.app-content` IS the page body — the sidebar and the top bar are
       // outside it — so a screen that renders nothing leaves it nearly
@@ -238,7 +243,10 @@ const EXPECTED_5XX = /\/ai\/stream/;
     }));
     if (id === "reports") {
       const lybunt = page.locator('[data-testid="reports-rail"] [data-report-id="lybunt"]').first();
-      if (await lybunt.count()) { await lybunt.click(); await page.waitForTimeout(1500); }
+      if (await lybunt.count()) {
+        await lybunt.click();
+        await page.waitForSelector('tr[data-testid="report-row"][data-person-id]', { timeout: 10000 }).catch(() => {});
+      }
       await namesAreLinks("Reports · LYBUNT", () => [...document.querySelectorAll('tr[data-testid="report-row"][data-person-id]')].map(tr => {
         const a = tr.querySelector('a[href^="/donors/"]'); return { href: a && a.getAttribute("href"), id: tr.getAttribute("data-person-id") };
       }));

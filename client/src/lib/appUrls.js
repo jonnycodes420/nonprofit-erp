@@ -126,5 +126,10 @@ export function rowClick(href, open) {
 export function safeNext(next) {
   if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return null;
   if (/^\/(login|signup|welcome)\b/.test(next)) return null;
-  return next;
+  // Rebuilt from a parsed URL on this origin, so only a path ever leaves.
+  try {
+    const u = new URL(next, window.location.origin);
+    if (u.origin !== window.location.origin) return null;
+    return u.pathname + u.search + u.hash;
+  } catch { return null; }
 }
