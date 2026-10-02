@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { SurveysPanel } from "./Surveys";
 import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
@@ -1741,6 +1742,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     // could resend one from here.
     { id: "emailtool",  label: "Your email tool", icon: "◌" },
     { id: "milestones", label: "Drafts to review", icon: "✦" },
+    // SURVEY-1 — ask donors and volunteers; "Send this survey" fills Drafts to review.
+    { id: "surveys",    label: "Surveys",    icon: "?" },
   ];
 
   // ── Audience tab segments ───────────────────────────────────────────────────
@@ -2378,6 +2381,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}
+        {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>
   );

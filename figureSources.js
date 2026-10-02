@@ -593,6 +593,43 @@ const SOURCES = {
       };
     },
   },
+  // SURVEY-1 — every number on a survey's results opens the responses behind
+  // it: all of them, the ones that answered a question, or the ones that gave
+  // one answer. A named response carries its person (a link on the screen);
+  // an anonymous one is "Anonymous" and carries nobody, because it has nobody.
+  "survey-answers": {
+    label: "Survey responses",
+    measure: () => "count",
+    params: { survey: "id:required", question: "word", bucket: "word" },
+    sentence: p => p.bucket ? "Each response that gave this answer." : p.question ? "Each response that answered this question." : "Every response to this survey.",
+    js: async (orgId, p) => {
+      const S = await import("./shared/surveyShape.js");
+      const [sv] = await query(`SELECT sections FROM surveys WHERE id = ? AND org_id = ?`, [p.survey, orgId]);
+      if (!sv) return [];
+      const qs = S.allQuestions({ sections: typeof sv.sections === "string" ? JSON.parse(sv.sections) : sv.sections });
+      const q = p.question ? qs.find(x => x.id === p.question) : null;
+      if (p.question && !q) return [];
+      const rows = await query(
+        `SELECT r.id, r.anonymous, r.answers, r.submitted_at, r.donor_id, COALESCE(d.name, r.respondent_name) AS person
+           FROM survey_responses r LEFT JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
+          WHERE r.org_id = ? AND r.survey_id = ? ORDER BY r.submitted_at DESC, r.id`, [orgId, p.survey]);
+      const out = [];
+      for (const r of rows) {
+        const a = (typeof r.answers === "string" ? JSON.parse(r.answers) : r.answers) || {};
+        if (q) {
+          const v = a[q.id];
+          const has = v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && !v.length);
+          if (!has) continue;
+          if (p.bucket && !S.answerHits(q, v, p.bucket)) continue;
+        }
+        const ans = q ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : String(a[q.id])) : null;
+        out.push({ id: r.id, type: "survey_response", donor_id: r.anonymous ? null : r.donor_id,
+          name: r.anonymous ? "Anonymous" : (r.person || "Not matched to a record"),
+          date: new Date(r.submitted_at).toISOString().slice(0, 10), amount: null, detail: ans });
+      }
+      return out;
+    },
+  },
   // A person's emails in a range, and how many of them she wrote.
   "donor-emails": {
     label: "Emails",

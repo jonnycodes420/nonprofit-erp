@@ -137,6 +137,7 @@ CORE=(
   intb1-calendar-store
   fix14-meeting-counts
   engage1-score-breakdown
+  survey1-anonymous
   sec1-two-factor
   trust2-erase
   help1-ask

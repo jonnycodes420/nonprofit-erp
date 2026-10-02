@@ -382,6 +382,10 @@ function auditTrail(opts = {}) {
       action(verb) { extra.action = verb; },
       org(orgId) { req.auditOrgId = orgId; },
       actor(a) { req.auditActor = a; },
+      // SURVEY-1 — an ANONYMOUS answer is recorded like any other change, but
+      // without the internet address: "anonymous" means no IP anywhere, the
+      // audit log included.
+      withoutIp() { extra.noIp = true; },
       // ONE row for a bulk action, naming the records it touched. "Imported
       // 243 gifts, $240,853, from bookkeeper.csv" is one line of history; two
       // hundred and forty-three lines is a wall nobody reads.
@@ -569,7 +573,7 @@ function auditTrail(opts = {}) {
           // change and there is no other copy of it in the log.
           summary: bulk ? bulk.text : null,
           recordCount: extra.recordCount,
-          method, path: req.originalUrl || req.path, status, ip: req.ip,
+          method, path: req.originalUrl || req.path, status, ip: extra.noIp ? null : req.ip,
         });
       } catch (e) {
         console.error("[audit] CRITICAL: a change was not recorded:", req.method, req.originalUrl, e.message);

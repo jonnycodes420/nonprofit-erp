@@ -6026,6 +6026,51 @@ async function initSchema() {
   // APPEAL-WHY: the campaign a campaign is compared with, when the user chose one.
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS compare_campaign_id TEXT`);
 
+  // SURVEY-1 — surveys and their answers. A survey's questions live in
+  // `sections` (shared/surveyShape.js normalises them). A response is NAMED
+  // (linked to a person by a personal link or a matched email, or carrying the
+  // name and email they typed when no record matched) or ANONYMOUS. The CHECK
+  // is the promise the anonymous page makes, held by the database: an
+  // anonymous row has no person, no name and no email, whatever code wrote it.
+  // Neither table has an IP column.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS surveys (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      slug TEXT NOT NULL,
+      title TEXT NOT NULL,
+      intro TEXT,
+      thank_you TEXT,
+      mode TEXT NOT NULL DEFAULT 'named',
+      audience TEXT NOT NULL DEFAULT 'anyone',
+      sections JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, slug)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS survey_responses (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      survey_id TEXT NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+      anonymous BOOLEAN NOT NULL,
+      donor_id TEXT REFERENCES donors(id) ON DELETE SET NULL,
+      respondent_name TEXT,
+      respondent_email TEXT,
+      answers JSONB NOT NULL DEFAULT '{}'::jsonb,
+      submitted_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      CONSTRAINT survey_anonymous_is_anonymous CHECK (NOT anonymous OR (donor_id IS NULL AND respondent_name IS NULL AND respondent_email IS NULL))
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_survey_responses ON survey_responses(org_id, survey_id, submitted_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_survey_responses_donor ON survey_responses(org_id, donor_id) WHERE donor_id IS NOT NULL`);
+  // The volunteer survey whose personal link rides on the hours thank-you draft.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_survey_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
