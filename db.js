@@ -5601,11 +5601,16 @@ async function initSchema() {
   // An edited conversation, next step or task says so: who and when. The
   // previous versions are not kept here; they are in the audit log, which
   // already holds the before and after of every edit and can never lose them.
-  for (const t of ["interactions", "threads", "tasks"]) {
+  // FIX-14 Part 2b: pledges, asks, households and relationships too.
+  for (const t of ["interactions", "threads", "tasks", "pledges", "opportunities", "households", "donor_relationships"]) {
     await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS edited_by TEXT`);
     await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS edited_by_name TEXT`);
   }
+  // A relationship says who linked the two, so "whoever made it, or an admin"
+  // can be asked of it like everything else.
+  await pool.query(`ALTER TABLE donor_relationships ADD COLUMN IF NOT EXISTS created_by TEXT`);
+  await pool.query(`ALTER TABLE donor_relationships ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
   // A DELETE THAT CAN BE UNDONE without every reader learning a deleted_at
   // column: the row is moved here whole, and Undo puts it back exactly as it
   // was (same id, same columns). Seventy queries read `interactions`; none of

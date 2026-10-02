@@ -1354,18 +1354,33 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
 
 // WHO AM I SEEING TODAY. Her own calendar only, each meeting with its brief.
 // FIX-12 Part 7a: one composer for Home and for the optional morning email.
-async function composeTodayMeetings(orgId, userId) {
+// FIX-14 Part 2b — `withLogged` (the morning email): today's meetings from the
+// one source (meetings.js), so a meeting she logged ahead for today is in the
+// list too, after the calendar's, with no time. A calendar meeting that was
+// logged is still listed once, as the calendar meeting.
+async function composeTodayMeetings(orgId, userId, { withLogged = false } = {}) {
   const { tz, today } = await meetingTz(orgId);
   const rows = await query(
     `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
       WHERE c.org_id=? AND c.owner_user_id=? AND (c.starts_at AT TIME ZONE ?)::date = ?::date
       ORDER BY c.starts_at`, [orgId, userId, tz, today]);
-  const ids = [...new Set(rows.flatMap(r => r.person_ids || []))];
+  let logged = [];
+  if (withLogged) {
+    const { sql, args } = meetingsSrc.meetingsSql(orgId, { staff: userId, from: today, to: today });
+    const fromCal = new Set(rows.map(r => r.interaction_id).filter(Boolean));
+    logged = (await query(`SELECT * FROM (${sql}) m WHERE m.kind = 'logged' ORDER BY m.id`, args)).filter(m => !fromCal.has(m.id));
+  }
+  const ids = [...new Set([...rows.flatMap(r => r.person_ids || []), ...logged.map(m => m.donor_id)])];
   const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
   const out = [];
   for (const r of rows) {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
     out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
+  }
+  for (const m of logged) {
+    const people = names[m.donor_id] ? [{ id: m.donor_id, name: names[m.donor_id] }] : [];
+    out.push({ id: m.id, kind: "logged", title: "Meeting", startsAt: null, location: m.location || null, personIds: [m.donor_id],
+      people, brief: people.length ? await meetingBrief(orgId, m.donor_id, new Date().toISOString()) : null });
   }
   return { today, tz, meetings: out };
 }

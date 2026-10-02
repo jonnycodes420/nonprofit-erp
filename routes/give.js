@@ -1418,7 +1418,7 @@ app.get("/track/:recipientId/open.gif", wrap(async (req, res) => {
           ? (await query("SELECT id FROM donors WHERE org_id=? AND email ILIKE ?", [rec.org_id, rec.email]))[0]?.id
           : null);
         if (!donorId) return;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = orgToday(await orgTz(rec.org_id));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
         await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'email',?,?)",
           ["i_"+uuid().slice(0,8), rec.org_id, donorId, `Opened campaign: ${rec.campaign_name}`, today]);
         // Check last 3 email interactions for engagement signals
@@ -2937,7 +2937,7 @@ async function staffRecurringOrg(orgId) {
 }
 
 async function noteRecurringAction(orgId, donorId, text, actorName) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,'note',?,?,?)",
     ["i_" + uuid().slice(0, 8), orgId, donorId, text, today, actorName]).catch(() => {});

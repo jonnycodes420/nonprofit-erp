@@ -432,13 +432,77 @@ async function waitForRow(orgId, pred, label, ms = 4000) {
     const staffTok = (await mfetch("POST", "/auth/login", null, { email: "staff2-a@f11.local", password: "loadtest1234" })).body.token;
     const theirs = await mfetch("PUT", `/interactions/${intId}`, staffTok, { note: "not mine to change" });
     ok("§8 somebody who did not log it, and is not an admin, cannot change it", theirs.status === 403, { status: theirs.status });
-    // DELETE, then UNDO: the same row comes back.
+    // DELETE, then UNDO: the same row comes back. FIX-14 Part 2b: a calendar
+    // meeting that points at it is unpointed by the delete and re-pointed by Undo.
+    await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,interaction_id,created_by)
+             VALUES ($1,$2,$3,'google','gev_f11',$4,NOW(),NOW(),$5,$6,$3)`,
+      [`cal_${ORG_A}_1`, ORG_A, `u_${ORG_A}_admin`, "Coffee", [donorId], intId]);
     const del = await mfetch("DELETE", `/interactions/${intId}`, token);
     ok("§8 deleting it offers an undo", del.status === 200 && !!del.body.undoId, { body: del.body });
+    const [calGone] = await q(`SELECT interaction_id FROM calendar_events WHERE id=$1`, [`cal_${ORG_A}_1`]);
+    ok("§8 …and the calendar meeting no longer points at the deleted entry", calGone && calGone.interaction_id === null, { calGone });
     const back = await mfetch("POST", `/deleted-records/${del.body.undoId}/restore`, token);
     const [again] = await q(`SELECT date, note FROM interactions WHERE id=$1`, [intId]);
     ok("§8 …and Undo puts it back exactly as it was", back.status === 200 && again && again.date === "2026-10-01" && /by Friday/.test(again.note),
       { status: back.status, again });
+    const [calBack] = await q(`SELECT interaction_id FROM calendar_events WHERE id=$1`, [`cal_${ORG_A}_1`]);
+    ok("§8 …with the calendar meeting pointing at it again", calBack && calBack.interaction_id === intId, { calBack });
+  }
+
+  // ── §8b · FIX-14 Part 2b — ASKS AND PLEDGES SAY WHAT HAPPENED, AND COME BACK ──
+  // HOW IT WOULD GO RED: the proposal route stops handing the middleware its
+  // before/after (the table is `opportunities`, which /proposals cannot find),
+  // so the row has no old amount; the sentence falls back to the generic one;
+  // a pledge delete destroys the row (no undoId) or Undo drops its instalments;
+  // a pledge with a payment applied is deleted.
+  {
+    const askId = `opp_${ORG_A}_1`;
+    await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,proposal_stage,status,created_by,created_by_name)
+             VALUES ($1,$2,$3,'Scholarship fund',5000,'asked','open',$4,'Dana Reyes')`, [askId, ORG_A, donorId, `u_${ORG_A}_admin`]);
+    const t0 = new Date();
+    const ed = await mfetch("PUT", `/proposals/${askId}`, token, { askAmount: 7500 });
+    ok("§8b the ask's amount was changed", ed.status === 200, { status: ed.status, body: ed.body });
+    const aRow = await waitForRow(ORG_A, r => r.entity_id === askId && r.action === "updated", "§8b the ask edit leaves a row");
+    await new Promise(r => setTimeout(r, 400));
+    const askEdits = (await rowsFor(ORG_A)).filter(r => r.entity_id === askId && r.action === "updated" && new Date(r.created_at) >= new Date(t0 - 2000));
+    ok("§8b …exactly ONE row for the one edit", askEdits.length === 1, { rows: askEdits.length });
+    if (aRow) {
+      const b = aRow.before_fields || {}, a2 = aRow.after_fields || {};
+      ok("§8b …with the amount before and after", Number(b.target_amount) === 5000 && Number(a2.target_amount) === 7500, { before: b, after: a2 });
+      const shown = (await mfetch("GET", `/audit/log/${aRow.id}`, token)).body || {};
+      ok("§8b …and a sentence: \"Changed the ask for Ada Petrossian: amount from $5,000 to $7,500\"",
+        shown.description === "Changed the ask for Ada Petrossian: amount from $5,000 to $7,500", { description: shown.description });
+    }
+    const [askNow] = await q(`SELECT edited_by FROM opportunities WHERE id=$1`, [askId]);
+    ok("§8b …and the ask is marked edited by who", askNow && askNow.edited_by === `u_${ORG_A}_admin`, { askNow });
+
+    // A pledge with no payments: delete, then Undo brings it back with its instalment.
+    const plId = `pl_${ORG_A}_1`;
+    await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,created_by,created_by_name)
+             VALUES ($1,$2,$3,1200,'2026-12-31','open',$4,'Dana Reyes')`, [plId, ORG_A, donorId, `u_${ORG_A}_admin`]);
+    await q(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES ($1,$2,$3,1,'2026-12-31',1200)`,
+      [`pli_${ORG_A}_1`, ORG_A, plId]);
+    const pdel = await mfetch("DELETE", `/pledges/${plId}`, token);
+    const [plGone] = await q(`SELECT COUNT(*)::int AS n FROM pledges WHERE id=$1`, [plId]);
+    ok("§8b deleting a pledge with no payments offers an undo, and it is gone", pdel.status === 200 && !!pdel.body.undoId && plGone.n === 0, { body: pdel.body });
+    const pback = await mfetch("POST", `/deleted-records/${pdel.body.undoId}/restore`, token);
+    const [plBack] = await q(`SELECT amount::float AS amount, due_date FROM pledges WHERE id=$1`, [plId]);
+    const [instBack] = await q(`SELECT COUNT(*)::int AS n FROM pledge_installments WHERE pledge_id=$1`, [plId]);
+    ok("§8b …and Undo puts the pledge back with its instalment", pback.status === 200 && plBack && plBack.amount === 1200
+      && plBack.due_date === "2026-12-31" && instBack.n === 1, { status: pback.status, plBack, instBack });
+    const delRow = (await rowsFor(ORG_A)).find(r => r.entity_id === plId && r.action === "deleted");
+    if (delRow) {
+      const shown = (await mfetch("GET", `/audit/log/${delRow.id}`, token)).body || {};
+      ok("§8b …the delete reads \"Deleted a $1,200 pledge from Ada Petrossian\"",
+        shown.description === "Deleted a $1,200 pledge from Ada Petrossian", { description: shown.description });
+    } else ok("§8b …the delete left a row", false);
+    // With a payment applied, it is refused with a sentence, and nothing moves.
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,pledge_id,created_by) VALUES ($1,$2,$3,100,'2026-10-01',$4,'system:test')`,
+      [`g_${ORG_A}_pl`, ORG_A, donorId, plId]);
+    const refused = await mfetch("DELETE", `/pledges/${plId}`, token);
+    const [plStill] = await q(`SELECT COUNT(*)::int AS n FROM pledges WHERE id=$1`, [plId]);
+    ok("§8b a pledge with a payment applied cannot be deleted, and says why", refused.status === 409
+      && /payments applied/.test(refused.body.sentence || "") && plStill.n === 1, { status: refused.status, body: refused.body });
   }
 
   await wipe(ORG_A);

@@ -510,7 +510,7 @@ app.post("/volunteers", requireAuth, checkWriteAccess, wrap(async (req, res) => 
     "INSERT INTO volunteers (id,org_id,name,email,hours,skills,employer,notes,convert_potential,last_active,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, name, email || "", hours || 0,
      JSON.stringify(skills || []), employer || "", notes || "",
-     convertPotential || "medium", new Date().toISOString().split("T")[0], actor(req).id, actor(req).name]
+     convertPotential || "medium", orgToday(await orgTz(req.user.orgId)), actor(req).id, actor(req).name]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   );
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -546,7 +546,7 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
       await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
         ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
     }
-    const dueDate = new Date(Date.now() + 7*24*60*60*1000).toISOString().slice(0, 10);
+    const dueDate = orgToday(await orgTz(orgId), new Date(Date.now() + 7*24*60*60*1000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
     await run("INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'high',0,?,?,?)",
       ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
   }
