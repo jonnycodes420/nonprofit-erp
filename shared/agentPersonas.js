@@ -134,6 +134,18 @@ export const HELP = P("help", "Ask Steward",
   [],
   "No tools. It reads help articles and writes an answer; nothing else.");
 
+// FIX-12 Part 7b — AFTER THE MEETING. The engine reads her note for the chips
+// the record has a place for. NO tools: it returns suggestions, and every chip
+// must quote her own words (shared/meetingNote.js validateNoteChips refuses
+// one that does not). Not in PERSONAS: it is not a card anyone plans with.
+export const MEETING_NOTE = P("meeting_note", "After the meeting",
+  "Reads a meeting note for a pledge, a gift, a fund and a next step.",
+  "Reads only the note she typed, the names of the organisation's funds and the open ask. It suggests chips; she confirms each one.",
+  "You read a short note a fundraiser typed after meeting a donor, and pick out only what the note itself says: a pledge (an amount promised, and how many payments), a gift (an amount given), which of the listed funds it is for, and the next step she wrote down. For every item, quote the exact words from the note it comes from. If the note does not say it, leave it out. Never guess an amount, a fund or a step.",
+  [],
+  [],
+  "No tools. Suggestions only; nothing is recorded until she presses save.");
+
 export const PERSONA_IDS = PERSONAS.map(p => p.id);
 
 export function isValidPersona(id) {

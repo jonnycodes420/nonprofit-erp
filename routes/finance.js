@@ -15,6 +15,8 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-12 Part 7b: the after-meeting chips reach the model only through here.
+const { anthropicFor, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
 
 const routers = {
   r0: express.Router(),
@@ -30,6 +32,7 @@ let sharedComposeTodayMeetings = null;
 
 function mount(ctx) {
 const {
+  AGENT_MODEL,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
@@ -1387,8 +1390,30 @@ app.post("/calendar/events/:id/suggest", requireAuth, wrap(async (req, res) => {
   const N = await meetingNoteMod();
   const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=?`, [req.user.orgId]);
   const brief = c.person_ids?.length === 1 ? await meetingBrief(req.user.orgId, c.person_ids[0], c.starts_at) : null;
-  res.json({ suggestions: N.suggestFromNote(String(req.body?.note || "").slice(0, 4000), { funds, openAsk: brief?.openAsk || null }),
-    sentence: "Read from your note. Nothing is recorded until you press save." });
+  const note = String(req.body?.note || "").slice(0, 4000);
+  const ctx = { funds, openAsk: brief?.openAsk || null };
+  // FIX-12 Part 7b: the Agent engine reads the note, through the one AI door;
+  // the simple reader is the fallback when AI is off or nothing it says holds.
+  let suggestions = null, source = "reader", aiOff = false;
+  if (note.trim()) {
+    try {
+      const PS = await import("../shared/agentPersonas.js");
+      const prompt = N.buildNoteChipPrompt(note, ctx, PS.MEETING_NOTE.systemPrompt);
+      const r = await anthropicFor(req.user.orgId).messages.create({
+        model: AGENT_MODEL, max_tokens: 800, system: prompt.system, messages: prompt.messages,
+        tools: [N.NOTE_CHIP_TOOL], tool_choice: { type: "tool", name: N.NOTE_CHIP_TOOL.name } });
+      const use = (r.content || []).find(c => c.type === "tool_use");
+      const chips = N.validateNoteChips(use && use.input && use.input.chips, note, ctx);
+      if (chips.length) { suggestions = chips; source = "agent"; }
+    } catch (e) {
+      if (e instanceof AiOffError) aiOff = e.reason === "ai_disabled";
+      else console.error("[meeting-chips] engine:", e.message);
+    }
+  }
+  if (!suggestions) suggestions = N.suggestFromNote(note, ctx);
+  res.json({ suggestions, source,
+    sentence: aiOff ? AI_OFF_MESSAGE + ". These come from Steward's simple reader. Nothing is recorded until you press save."
+      : "Read from your note. Nothing is recorded until you press save." });
 }));
 
 // SAVE. Her note goes on the meeting and on each person's record as a

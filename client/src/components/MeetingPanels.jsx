@@ -360,6 +360,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
   const first = firstNameOf(person?.name) || "them";
   const [note, setNote] = useState("");
   const [chips, setChips] = useState([]);
+  const [chipNote, setChipNote] = useState("");   // FIX-12 Part 7b: says so when AI is off
   const [removed, setRemoved] = useState({});
   const [confirmed, setConfirmed] = useState({});
   const [next, setNext] = useState("");
@@ -375,6 +376,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
       apiFetch(`/calendar/events/${meeting.id}/suggest`, { method: "POST", body: JSON.stringify({ note }) })
         .then(r => {
           setChips(r.suggestions || []);
+          setChipNote(/AI is turned off/.test(r.sentence || "") ? r.sentence : "");
           const n = (r.suggestions || []).find(c => c.kind === "next");
           if (n && !nextTouched) setNext(n.text);
         }).catch(() => {});
@@ -431,6 +433,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
         {live.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Steward heard</span>
+            {chipNote && <span data-testid="chips-ai-off" style={{ fontSize: 13, color: T.ink3 }}>{chipNote}</span>}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {live.map(c => { const i = chips.indexOf(c); const on = !!confirmed[i]; return (
                 <span key={i} data-chip={c.kind} data-confirmed={on ? "1" : "0"} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 999,

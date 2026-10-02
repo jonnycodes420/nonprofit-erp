@@ -56,12 +56,14 @@ function serverFiles() {
   ok("no server file but aiClient.js reaches a model directly", leaks.length === 0, leaks.join(", "));
 
   // §2 — the live zero.
-  for (const t of ["gifts", "donors", "grants", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
+  for (const t of ["calendar_events", "gifts", "donors", "grants", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,ai_enabled) VALUES ($1,'Fix Twelve AI Org','fix-twelve-ai',1,'active','team',false)`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix12ai',$1,'staff@fix12ai.local',$2,'AI Switch Staff','admin')`, [ORG, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name) VALUES ('d_fix12ai',$1,'Ottoline Brackwater','ottoline@fix12.invalid','active',500,'system:test','test')`, [ORG]);
   await q(`INSERT INTO grants (id,org_id,funder,amount,status) VALUES ('g_fix12ai',$1,'Tidewater Fund',5000,'active')`, [ORG]).catch(() => {});
+  await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by,created_by_name)
+           VALUES ('ce_fix12ai',$1,'u_fix12ai','google','ce_fix12ai','Coffee',NOW() - INTERVAL '2 hours',NOW() - INTERVAL '1 hour',ARRAY['d_fix12ai'],'system:test','test')`, [ORG]);
 
   const heard = [];
   const mock = http.createServer((req, res) => {
@@ -110,6 +112,7 @@ function serverFiles() {
       ["/donors/d_fix12ai/score", {}],
       ["/grants/g_fix12ai/report-outline", {}],
       ["/reports/board", { quarter: 1, year: 2026 }],
+      ["/calendar/events/ce_fix12ai/suggest", { note: "She pledged $5,000 over two years. Send the gala invite." }],
       ["/voice-memos/transcribe", { donorId: "d_fix12ai", audioBase64: Buffer.from("not really audio").toString("base64"), mimeType: "audio/webm" }],
     ];
     const statuses = [];
@@ -126,6 +129,9 @@ function serverFiles() {
     ok("AI off: Ask Steward says AI is off and shows the articles instead", /AI is turned off for your organization/.test(help.sentence || "") && (help.articles || []).length > 0, JSON.stringify(help).slice(0, 200));
     const vm = await post("/voice-memos/transcribe", { donorId: "d_fix12ai", audioBase64: "AAAA", mimeType: "audio/webm" });
     ok("AI off: the voice memo says AI is turned off for your organization", vm.status === 403 && /AI is turned off for your organization/.test(vm.body), vm.body.slice(0, 160));
+    const chips = JSON.parse((await post("/calendar/events/ce_fix12ai/suggest", { note: "She pledged $5,000 over two years." })).body);
+    ok("AI off: after-meeting chips fall back to the simple reader and say AI is off",
+      chips.source === "reader" && (chips.suggestions || []).some(c => c.kind === "pledge") && /AI is turned off/.test(chips.sentence || ""), JSON.stringify(chips).slice(0, 200));
 
     // The positive control: the stand-in is reachable, so the zero above is real.
     await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
@@ -135,7 +141,7 @@ function serverFiles() {
   } finally {
     child.kill();
     mock.close();
-    for (const t of ["gifts", "donors", "grants", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
+    for (const t of ["calendar_events", "gifts", "donors", "grants", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
     await closeDb();
   }

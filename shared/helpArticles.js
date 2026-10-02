@@ -16,6 +16,7 @@ export const HELP_ARTICLES = [
         `Home opens with today's date and a greeting. Below it are sections, in this order unless you change it: "Set up Steward" (a checklist while you are getting started), The Thread, Drift, monthly gifts that need you, thank-yous ready, Sequences, and "Tell Steward what to do".`,
         `The Thread shows "First thing": one person and their next step. Drift lists donors who have gone quiet past their own giving pattern. The right rail, "Today", has three tiles: "Open follow-ups", "Due today" and the monthly givers whose card failed this week. Click a tile to see the people behind it.`,
         `If you have connected a calendar and have meetings today, a short brief for each one appears at the top.`,
+        `After a meeting, type what happened and Steward reads your note for a pledge, a gift, a fund and a next step, shown under "Steward heard". Each one quotes your own words, and nothing is recorded until you press save. With AI turned off, a simpler reader does the same job and says so. You can also get these meeting briefs by email each morning: tick "Your meetings today" in Settings, under Account.`,
       ]},
       { h: `Work through The Thread`, steps: [
         `Read the person and the step under "First thing".`,

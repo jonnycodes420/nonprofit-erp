@@ -9946,6 +9946,7 @@ require("./routes/billing").mount({
   checkActiveDonorBand,
 });
 require("./routes/finance").mount({
+  AGENT_MODEL,   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
   // INT-BUILD-1 — the first sync after a connect, and the calendar.
   syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
