@@ -37,7 +37,7 @@ module.exports = {
   noun: 'Stage Change',
   display: {
     label: 'Stage Changed',
-    description: 'Runs when a person moves to a new stage in Steward, for example from prospect to donor. Watches recently added records.',
+    description: 'Triggers when a person moves to a new stage in Steward, for example from prospect to donor. Watches recently added records.',
   },
   operation: {
     perform,

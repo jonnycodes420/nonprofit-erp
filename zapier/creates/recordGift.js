@@ -46,7 +46,11 @@ module.exports = {
   operation: {
     perform,
     inputFields: [
-      { key: 'personId', label: 'Person ID', type: 'string', required: true, helpText: 'The Steward person ID, from a New Person trigger or a Find step.' },
+      {
+        key: 'personId', label: 'Person', type: 'string', required: true,
+        dynamic: 'personList.id.name',
+        helpText: 'Pick the person, or switch to Custom and map a Person ID from an earlier step. Listing people needs the "Read people" permission on your API key; mapping an id does not.',
+      },
       { key: 'amount', label: 'Amount', type: 'number', required: true, helpText: 'Dollars and cents, for example 250.00.' },
       {
         key: 'date', label: 'Gift Date', type: 'string', required: true,

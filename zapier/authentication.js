@@ -34,7 +34,7 @@ module.exports = {
       label: 'API key',
       type: 'password',
       required: true,
-      helpText: 'Made in Steward under Settings, API keys. Tick the permissions the Zap needs: reading gifts for the New Gift trigger, writing gifts to record them, and so on.',
+      helpText: 'Made in Steward under Settings, API keys. Tick the permissions the Zap needs: reading gifts for the New Gift trigger, writing gifts to record them, and so on. The key is shown once, so copy it then. [How to make a Steward API key](https://stewardapp.dev/connections#api)',
     },
     {
       key: 'baseUrl',
@@ -42,7 +42,7 @@ module.exports = {
       type: 'string',
       required: true,
       default: 'https://nonprofit-erp-production.up.railway.app',
-      helpText: 'Where your Steward API lives. This is the production host for almost everyone; only change it if your Steward runs somewhere else.',
+      helpText: 'Where your Steward API lives. This is the production host for almost everyone; only change it if your Steward runs somewhere else. It must be an https address Zapier can reach on the public internet. [About the Steward API](https://stewardapp.dev/connections#api)',
     },
   ],
   test: testAuth,

@@ -4,13 +4,16 @@
 // It proves the security door (the auth check passes a key and reads the
 // key's scopes), the money path (new gifts list newest-first with stable
 // ids for dedupe), and the donor-data path (a stage change is a new dedupe
-// id, so the trigger fires exactly once per change).
+// id, so the trigger fires exactly once per change). It also proves the API
+// host cannot be pointed at an address inside Zapier's own network, and that
+// the people dropdown says what to do when the key lacks read:people.
 
 const should = require('should');
 const nock = require('nock');
 const zapier = require('zapier-platform-core');
 
 const App = require('../index');
+const { assertSafeHost } = require('../lib/api');
 const appTester = zapier.createAppTester(App);
 
 const BASE = 'https://steward-test.example.com';
@@ -87,5 +90,49 @@ describe('Steward Zapier app', () => {
     result.id.should.equal('g_3');
     result.duplicate.should.equal(false);
     result.idempotencyKey.should.be.a.String();
+  });
+
+  it('refuses an API host that would send the key somewhere private', () => {
+    // The host is the one field an outsider types, so these are the request
+    // forgery cases: each must throw rather than be called.
+    for (const host of [
+      'http://steward.example.org',      // not https
+      'https://localhost',
+      'https://127.0.0.1',
+      'https://10.0.0.5',
+      'https://192.168.1.9',
+      'https://169.254.169.254',         // cloud metadata
+      'https://metadata.google.internal',
+      'https://steward.local',
+      'https://user:pw@steward.example.org',
+      'not a url',
+      '',
+    ]) {
+      should.throws(() => assertSafeHost(host), /.+/, `expected ${host} to be refused`);
+    }
+
+    // And a real one, self-hosted or not, still works, trimmed to its origin.
+    assertSafeHost('https://steward.example.org/api/').should.equal('https://steward.example.org');
+    assertSafeHost('https://nonprofit-erp-production.up.railway.app')
+      .should.equal('https://nonprofit-erp-production.up.railway.app');
+  });
+
+  it('tells a write-only key how to fix the people dropdown', async () => {
+    nock(BASE, { reqheaders: { 'x-api-key': KEY } })
+      .get('/api/v1/people')
+      .query(true)
+      .reply(403, { error: 'insufficient_scope', message: 'That key cannot read people.' });
+
+    const b = bundle();
+    b.meta = { page: 0 };
+    let message = '';
+    try {
+      await appTester(App.triggers.personList.operation.perform, b);
+    } catch (e) {
+      message = e.message;
+    }
+    // Not Zapier's opaque 403: the two ways out, named.
+    message.should.match(/Read people/);
+    message.should.match(/Custom/);
   });
 });

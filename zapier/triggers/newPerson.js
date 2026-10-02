@@ -34,7 +34,7 @@ module.exports = {
   noun: 'Person',
   display: {
     label: 'New Person',
-    description: 'Runs when a new person record is created in Steward, from an import, a giving page, or the API.',
+    description: 'Triggers when a new person record is created in Steward, from an import, a giving page, or the API.',
   },
   operation: {
     perform,

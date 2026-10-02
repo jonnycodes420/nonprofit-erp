@@ -31,7 +31,7 @@ module.exports = {
   noun: 'Gift',
   display: {
     label: 'New Gift',
-    description: 'Runs when a gift is recorded in Steward, however it arrived: online, a cheque, an import, or the API.',
+    description: 'Triggers when a gift is recorded in Steward, however it arrived: online, a cheque, an import, or the API.',
   },
   operation: {
     perform,
