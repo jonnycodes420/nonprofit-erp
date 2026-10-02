@@ -13,12 +13,11 @@ import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
-import { ConnectionsView } from "./Connections";
+import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
-import { InboxConnectCard } from "./InboxConnect";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -1651,7 +1650,7 @@ function GivingSourceTile({title,logoKey,state,statusLine,note,error,actions,onO
   );
 }
 
-export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
+export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect}){
   const [sources,setSources]=useState(null);
   const [providers,setProviders]=useState([]);
   const [credState,setCredState]=useState({ready:true,problem:null});
@@ -1703,6 +1702,13 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
   };
 
   const startConnect=(p)=>setConnect({provider:p,values:{},testing:false,tested:null,error:""});
+  // FIX-13 Part 5 — a Connect on a Connections card opens THIS panel for that
+  // provider: the same panel, the same Test and Connect, one click sooner.
+  useEffect(()=>{
+    if(!autoConnect||!credState.ready||!isAdmin||isReadOnly) return;
+    const p=providers.find(x=>x.key===autoConnect);
+    if(p) startConnect(p);
+  },[autoConnect,providers.length,credState.ready]); // eslint-disable-line
   const testConnect=async()=>{
     setConnect(c=>({...c,testing:true,error:"",tested:null}));
     try{
@@ -1972,14 +1978,11 @@ const SETTINGS_TABS=[
   // two different tabs, with the Home checklist deep-linking to a THIRD (the
   // page builder). The copy promised both and the link delivered neither.
   //
-  // `sources` survives as a deep-link alias below rather than a tab, so every
-  // saved link and every nav intent still lands somewhere real.
-  {id:"integrations",label:"Integrations"},
-  // INT-1 — CONNECTIONS is its own tab, beside Integrations rather than
-  // inside it, because they answer two different questions. Integrations is
-  // "set this up"; Connections is "is it still working, and does the money
-  // match" — which is a thing somebody opens on a Tuesday morning, not once
-  // during onboarding.
+  // FIX-13 Part 5 — and then there were two again: Integrations ("set this
+  // up") and Connections ("is it still working") covered the same ground and
+  // things were scattered between them. ONE page now, Connections. The old
+  // ids are aliases (SECTION_ALIAS below), so every saved link, nav intent
+  // and ?sub= URL still lands, on the right card when it names one.
   {id:"connections",label:"Connections"},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
@@ -2011,6 +2014,10 @@ const SETTINGS_TABS=[
   // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
   {id:"security",label:"Security"},
 ];
+
+// FIX-13 Part 5 — a retired section id opens the section that took it over,
+// and the focus it implies when the caller did not name one.
+const SECTION_ALIAS={integrations:{section:"connections"},sources:{section:"connections",focus:"giving"}};
 
 // ── FIX-11 Part 5 — THE BCC ADDRESS ───────────────────────────────────────
 // One address for the organisation, said plainly, with a copy button, and the
@@ -2307,7 +2314,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const isAdmin=userRole==="admin";
   const isPortalTier=auth?.org?.plan==="portal";
   const visibleTabs=SETTINGS_TABS.filter(t=>(!t.portalTierOnly||isPortalTier)&&(!t.adminOnly||isAdmin));
-  const [section,setSection]=useState(visibleTabs.some(t=>t.id===initialSection)?initialSection:"org");
+  const wantSection=SECTION_ALIAS[initialSection]?.section||initialSection;
+  const wantFocus=initialFocus||SECTION_ALIAS[initialSection]?.focus||null;
+  const [section,setSection]=useState(visibleTabs.some(t=>t.id===wantSection)?wantSection:"org");
 
   const [team,setTeam]=useState([]);
   const [showInvite,setShowInvite]=useState(false);
@@ -2530,7 +2539,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     finally{ setPortalLoading(false); }
   }
 
-  const donationUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}` : "";
 
   async function loadSampleData(){
     setSampleLoading(true);
@@ -2751,7 +2759,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           onboarding hour, and a banner about platform fees above it argues
           with it (and renders an em dash while it does). Every other section
           keeps it. */}
-      {impact&&section!=="integrations"&&(()=>{
+      {impact&&section!=="connections"&&(()=>{
         // BUILD-73 Part 3 — this banner leads with MONEY AT RISK, not with
         // anything Steward claims to have done. The value math describes the
         // size of the problem; it never describes Steward's results. Same
@@ -2846,8 +2854,15 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         {team.length===0&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
       </div>}
 
-      {/* ── Integrations ──────────────────────────────────────────────────── */}
-      {(section==="integrations"||section==="sources")&&<>
+      {/* ── FIX-13 Part 5 · Connections, the one page ─────────────────────────
+          What Integrations held is on it: Payments is the Stripe card's
+          Manage, the BCC card and the inbox card are under Email and calendar,
+          "Where giving comes in" opens from the Giving cards, API keys is a
+          card under Build your own. The QR code and the embed form are not
+          connections and moved to Fundraising, Giving pages and forms. */}
+      {section==="connections"&&<ConnectionsPage isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}
+        focus={wantFocus} stripe={stripe} stripeLoading={stripeLoading} onConnectStripe={connectStripe}
+        paymentsPanel={<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
@@ -2886,61 +2901,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         )}
       </div>
-
-      {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Donation QR Code</SectionLabel>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
-          Print this QR code and put it in your bulletin, on a sign, or anywhere donors can scan it to give.
-        </div>
-        <div style={{marginBottom:14}}>
-          <UrlLinkButtons url={donationUrl}/>
-        </div>
-        <QrCodeBlock url={donationUrl} filenameBase={orgName.toLowerCase().replace(/[^a-z0-9]+/g,"-")}/>
-      </div>}
-
-      {orgSlug&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Embed Donation Form</SectionLabel>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
-          Paste this anywhere on your website to let donors give without leaving your site.
-        </div>
-        <div style={{marginBottom:10}}>
-          <EmbedCodeBlock url={donationUrl}/>
-        </div>
-        <div style={{fontSize:11,color:T.ink3,marginBottom:16}}>Width and height are customizable. Use <code style={{background:T.bg3,padding:"1px 5px",borderRadius:4}}>height="700"</code> for the full form without scrolling.</div>
-        <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Live Preview</div>
-        <div style={{border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden",background:T.bg}}>
-          <iframe
-            src={donationUrl}
-            width="100%"
-            height="560"
-            frameBorder="0"
-            title="Donation form preview"
-            style={{display:"block"}}
-          />
-        </div>
-      </div>}
-
-      <InboundEmailCard isReadOnly={isReadOnly}/>
-
-      {/* INT-BUILD-1 Part 0 — the one inbox card, Gmail AND Outlook. It used
-          to be a Gmail-only card here and nowhere else. */}
-      <InboxConnectCard isReadOnly={isReadOnly} onNavigate={onNavigate}/>
-
-      {/* BUILD-95 §4 — the OTHER half of setting up online giving, on the same
-          screen as the processor rather than a tab away. The two answer the
-          same question from opposite ends: money reaching you THROUGH Steward,
-          and money reaching you somewhere else that Steward should see. */}
-      <div style={{marginTop:20}}>
-        <GivingSourcesManager isReadOnly={isReadOnly} isAdmin={isAdmin}/>
-      </div>
-      {isAdmin&&<div style={{marginTop:20}}><ApiKeysPanel isReadOnly={isReadOnly}/></div>}
-      </>}
-
-      {/* ── INT-1 · Connections ───────────────────────────────────────────── */}
-      {section==="connections"&&<>
-        <InboxConnectCard isReadOnly={isReadOnly} focused={initialFocus==="inbox"} onNavigate={onNavigate}/>
-        <ConnectionsView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}/>
-      </>}
+        </>}
+        renderGivingSources={(k,n)=><GivingSourcesManager key={n} isReadOnly={isReadOnly} isAdmin={isAdmin} autoConnect={k}/>}
+        bccPanel={<InboundEmailCard isReadOnly={isReadOnly}/>}
+        apiKeysPanel={<ApiKeysPanel isReadOnly={isReadOnly}/>}/>}
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}
       {section==="giving"&&<>

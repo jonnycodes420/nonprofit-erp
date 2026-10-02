@@ -344,7 +344,10 @@ function AppShell() {
     // ?tab=settings&sub=<section>. Nothing read it, so a finished connect
     // dropped her on Home with no sign it had worked. A GET that changes nothing.
     if(params.get("tab")==="settings"){
-      navigateTo("settings",{section:params.get("sub")||"connections"});
+      // FIX-13 Part 5 — the anchor rides along as the focus, so
+      // ?sub=integrations#api lands on the API card of the one Connections
+      // page (Settings resolves the retired id) instead of losing the #api.
+      navigateTo("settings",{section:params.get("sub")||"connections",focus:decodeURIComponent((window.location.hash||"").slice(1))||params.get("focus")||null});
       window.history.replaceState({},"","/dashboard");
     }
     if(params.get("stripe_connected")==="true"){

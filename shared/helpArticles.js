@@ -391,7 +391,7 @@ export const HELP_ARTICLES = [
     summary: `Settings is where your organisation, team, connections, receipts, data and security are set up.`,
     sections: [
       { h: `The sections`, p: [
-        `Organization: your name, mission, staff and board, and your brand. Team: who can sign in, and invites. Integrations: Stripe, your QR code and embed form, the BCC address, email and calendar, and where giving comes in. Connections: whether each connection is still working. Giving Pages: your time zone, donor-covers-fees and your giving pages. Customization: custom fields and impact metrics. Your words: what you call donors and gifts. Journeys. Tax Receipts. Imports. Audit log (admins). Your Data. Account. Security.`,
+        `Organization: your name, mission, staff and board, and your brand. Team: who can sign in, and invites. Connections: every outside service in one place, from Stripe and PayPal to your inbox, your books and API keys, and whether each one is still working. Giving Pages: your time zone, donor-covers-fees and your giving pages. Customization: custom fields and impact metrics. Your words: what you call donors and gifts. Journeys. Tax Receipts. Imports. Audit log (admins). Your Data. Account. Security.`,
         `Organisations on the Portal plan also see a Donor Portal section.`,
       ]},
       { h: `Find a setting`, steps: [
@@ -468,25 +468,26 @@ export const HELP_ARTICLES = [
     ],
   },
   {
-    slug: `settings-integrations-connections`,
-    title: `Integrations and Connections`,
-    screens: [`settings:integrations`, `settings:connections`],
-    summary: `Integrations is where you set up outside services; Connections is where you check they are still working.`,
+    slug: `settings-connections`,
+    title: `Connections`,
+    screens: [`settings:connections`, `settings:integrations`],
+    summary: `Connections is the one page for every outside service: setting it up, and checking it is still working.`,
     sections: [
-      { h: `Integrations`, p: [
-        `The cards, top to bottom: "Payments" (Stripe), "Donation QR Code", "Embed Donation Form" with a live preview, "Log an email by BCC", "Email and calendar", "Where giving comes in" for the other places you take gifts, and API keys for admins.`,
+      { h: `What you see`, p: [
+        `At the top, one line says how many services are connected and how many need attention. Click either number to see just those cards; click "Show every connection" to go back.`,
+        `Then six sections, always in this order: Giving (Stripe, PayPal, Givebutter, Donorbox, Zeffy, Cash App, Venmo and statement imports), Email and calendar (Gmail and Outlook, and the BCC address), Email marketing (Mailchimp, Constant Contact), Books (QuickBooks, Xero and the bookkeeper file), Point of sale (Square, Toast) and Build your own (API keys, webhooks and Zapier).`,
+        `Every card says the same things: what the service does, and its status. "Connected" shows when it last synced, "Not connected" means nothing comes through it, and "Needs attention" is in brass with the reason.`,
       ]},
-      { h: `Connect another giving source`, steps: [
-        `Under "Where giving comes in", find the service, such as PayPal.`,
-        `Click "Connect" and follow its steps.`,
-        `Click "Test" or "Check now" to make sure gifts come through. If a service has no connection, use "Upload a statement".`,
-      ]},
-      { h: `Connections`, p: [
-        `Connections shows each link with its state and one sentence about it, plus "Sync log" and "Check now". This is where you look when a number does not match, such as gifts in Stripe that are not in Steward.`,
-        `For a bookkeeping tool, click "Review" and "Save the mapping" to say which account each fund goes to. For an email tool, "Preview" then "Save and keep in step".`,
+      { h: `Connect, manage or fix`, steps: [
+        `Find the service's card.`,
+        `Click "Connect" to set it up. Some open the service's own sign-in page; others ask for a key, with "Test" to try it before you save.`,
+        `Click "Manage" on a connected card to see what came through it, open its "Sync log", or "Check now".`,
+        `Click "Fix" on a card that needs attention. It opens the same detail with the reason at the top.`,
       ]},
       { h: `Good to know`, p: [
-        `The "Email and calendar" card appears on both tabs and is the same card. See Connect Stripe and Connect your inbox and calendar for those two.`,
+        `Donorbox has no direct connection yet, so its card offers "Import a file": its gift export comes in as a statement.`,
+        `For a bookkeeping tool, "Manage" opens "Where the money posts", where "Save the mapping" says which account each fund goes to. For an email tool, "Preview" then "Save and keep in step".`,
+        `Your donation form's QR code and embed code are not connections. They are in Fundraising, under Giving pages and forms. Settings used to have a separate Integrations section; it is part of this page now, and old links to it land here.`,
       ]},
     ],
   },
@@ -701,14 +702,14 @@ export const HELP_ARTICLES = [
         `Steward creates a Stripe Express account for your organisation and Stripe pays you directly. Steward never touches your money. Only an admin can do this. Have your bank details to hand.`,
       ]},
       { h: `Connect`, steps: [
-        `Open Settings, then Integrations.`,
-        `On the "Payments" card, click "Set up Stripe →".`,
+        `Open Settings, then Connections.`,
+        `On the Stripe card under Giving, click "Connect".`,
         `Stripe's own pages open. Fill in your organisation's details and bank account and finish every step.`,
         `Stripe sends you back to Steward's Home screen.`,
-        `Go back to Settings, Integrations. Once Stripe says your account can take donations, the "Payments" card shows "Stripe Connected" with your account number and the date.`,
+        `Go back to Settings, Connections. Once Stripe says your account can take donations, the Stripe card says "Connected". Click "Manage" to see your account number and the date.`,
       ]},
       { h: `If you stop part way`, p: [
-        `Until Stripe has everything it needs, the card says "Stripe setup isn't finished" and offers "Finish setting up Stripe →", which picks up where you left off on the same account. The "Set this up" button on the Connections Stripe card opens Settings, Integrations, where this card is.`,
+        `Until Stripe has everything it needs, the Stripe card says "Needs attention" and "Stripe setup isn't finished". Click "Fix" to pick up where you left off on the same account.`,
       ]},
       { h: `Check it is working`, steps: [
         `Open Settings, then Connections.`,
@@ -731,7 +732,7 @@ export const HELP_ARTICLES = [
         `Each person connects their own inbox.`,
       ]},
       { h: `Connect`, steps: [
-        `Open Settings, then Integrations or Connections, and find "Email and calendar".`,
+        `Open Settings, then Connections, and find the "Gmail and Outlook" card under "Email and calendar". Click "Connect".`,
         `Click "Connect Gmail and Google Calendar" or "Connect Outlook and Microsoft 365".`,
         `Sign in to Google or Microsoft and allow access.`,
         `Back in Steward, you see what was logged: emails from the last two years, meetings from a month back to two months ahead, and how many people now have a history.`,
