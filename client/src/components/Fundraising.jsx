@@ -877,6 +877,35 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   );
 }
 
+// ── FIX-13 Part 5 · The organisation's own donation form ─────────────────
+// Moved here from Settings, Integrations: the QR code and the embed code are
+// not connections, they are the org-wide giving page's share tools, and they
+// belong beside the giving pages and forms. Same blocks, same URL.
+function OrgDonationShare({ orgSlug, orgName }) {
+  const [open, setOpen] = useState("");
+  if (!orgSlug) return null;
+  const url = `${window.location.origin}/give/${orgSlug}`;
+  const quiet = { background: T.white, border: "1px solid " + T.ink, borderRadius: 9, padding: "7px 13px", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+  return (
+    <div data-testid="org-donation-share" style={{ background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 260px", minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Your donation form</div>
+          <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2, overflowWrap: "anywhere" }}>{url.replace(/^https?:\/\//, "")}: print its QR code, or embed it on your website.</div>
+        </div>
+        <a href={url} target="_blank" rel="noreferrer" style={{ ...quiet, textDecoration: "none" }}>Open</a>
+        <button type="button" data-testid="org-share-qr" aria-expanded={open === "qr"} onClick={() => setOpen(o => o === "qr" ? "" : "qr")} style={quiet}>QR code</button>
+        <button type="button" data-testid="org-share-embed" aria-expanded={open === "embed"} onClick={() => setOpen(o => o === "embed" ? "" : "embed")} style={quiet}>Embed code</button>
+      </div>
+      {open === "qr" && <div style={{ marginTop: 14 }}><QrCodeBlock url={url} filenameBase={(orgName || "donate").toLowerCase().replace(/[^a-z0-9]+/g, "-")} /></div>}
+      {open === "embed" && <div style={{ marginTop: 14 }}>
+        <EmbedCodeBlock url={url} />
+        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>Width and height are yours to change. A height of 700 shows the whole form without scrolling.</div>
+      </div>}
+    </div>
+  );
+}
+
 // ── Giving Pages ────────────────────────────────────────────────────────────
 function PagesView({ pages, orgSlug, onNavigate }) {
   const [shareId, setShareId] = useState(null);
@@ -884,6 +913,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
   if (active.length === 0) {
     return (
       <>
+        <OrgDonationShare orgSlug={orgSlug} />
         <StartHere line="Giving pages are your public, shareable donate pages — one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
         <div style={{ marginTop: 20 }}>
           <EmptyState title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
@@ -893,6 +923,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
   }
   return (
     <div>
+      <OrgDonationShare orgSlug={orgSlug} />
       <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <button onClick={() => onNavigate && onNavigate("settings", { section: "giving" })} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Manage in Settings →</button>
       </div>

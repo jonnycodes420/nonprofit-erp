@@ -68,8 +68,11 @@ export function tabHref(tab, opts) {
 // The inverse: a location -> { tab, opts }, or null when the path is not an
 // app path. Old links (/dashboard?report=, ?fr=, ?tab=settings&sub=) keep
 // working and are reported as `legacy` so App can replace them.
-export function parseAppUrl(pathname, search) {
+export function parseAppUrl(pathname, search, hash) {
   const qs = new URLSearchParams(search || "");
+  // FIX-13 Part 5: a #anchor (?sub=integrations#api) rides along as the
+  // Settings focus, so the one Connections page opens on that card.
+  const anchor = decodeURIComponent((hash || "").replace(/^#/, "")) || null;
   const path = (pathname || "").replace(/\/+$/, "") || "/";
   const donor = path.match(/^\/donors\/([^/]+)$/);
   if (donor) {
@@ -85,6 +88,7 @@ export function parseAppUrl(pathname, search) {
   if (tabMatch) {
     const opts = {};
     for (const [k, q] of QUERY_KEYS) if (qs.get(q) != null) opts[k] = qs.get(q);
+    if (anchor && opts.focus == null) opts.focus = anchor;
     return { tab: decodeURIComponent(tabMatch[1]), opts };
   }
   if (path === "/dashboard") {
@@ -92,7 +96,7 @@ export function parseAppUrl(pathname, search) {
     if (qs.get("fr")) return qs.get("fr") === "pipeline"
       ? { tab: "pipeline", opts: {}, legacy: true }
       : { tab: "fundraising", opts: { frSection: qs.get("fr") }, legacy: true };
-    if (qs.get("tab") === "settings") return { tab: "settings", opts: { section: qs.get("sub") || "connections" }, legacy: true };
+    if (qs.get("tab") === "settings") return { tab: "settings", opts: { section: qs.get("sub") || "connections", focus: anchor || qs.get("focus") || null }, legacy: true };
     return { tab: "dashboard", opts: {} };
   }
   return null;

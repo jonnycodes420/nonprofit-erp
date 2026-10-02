@@ -332,7 +332,7 @@ function AppShell() {
   // marked `internal` and already on screen.
   useEffect(()=>{
     if(location.state?.internal&&navType!=="POP")return;
-    const r=parseAppUrl(location.pathname,location.search);
+    const r=parseAppUrl(location.pathname,location.search,location.hash);
     if(!r)return;
     navigateTo(r.tab,r.opts,{fromUrl:true});
     if(r.legacy){
