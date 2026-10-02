@@ -3,6 +3,10 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **No workflow recipe sends to a donor (FIX-12).** It writes a draft to Drafts to review. The automatic
+  donor-facing sends that remain are listed in the FIX-12 entry of `docs/HISTORY.md`; a new one needs Jonathan.
+- **"Your meetings today" is opt-in (`users.notify_meeting_brief`, default false) and goes to the staff
+  member's own address only**, built by the same `composeTodayMeetings` as Home. (FIX-12)
 - **Decide every donor-facing send through `donorMailDecision(kind, email, orgId)`, and add a new kind to
   `DONOR_MAIL_POLICY` before it can send.** An unclassified kind fails closed; `getSuppressionReason` may be
   called only from there (source-scan pinned in `tests/mail-suppression.test.js`). (BUILD-58)
