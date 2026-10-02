@@ -902,45 +902,6 @@ function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="H
   );
 }
 
-// ── FIX-14 Part 3 — RHYTHM ────────────────────────────────────────────────
-// One strip: the last 12 months (a filled box is a month with any touch,
-// coloured by its kind) and the next 6 (an outlined box is a planned step).
-// Four colours only, on the ink rail: a meeting or visit is cream, a call is
-// emerald, an email is a cream tint, a gift is brass. The legend says so.
-const RHYTHM_KIND={
-  meeting:{label:"Meeting or visit",bg:"#F0EDE6"},
-  call:{label:"Call",bg:"#0D5C3A",edge:"rgba(240,237,230,0.55)"},
-  email:{label:"Email",bg:"rgba(240,237,230,0.42)"},
-  gift:{label:"Gift",bg:"#C9A84C"},
-};
-const RHYTHM_ORDER=["meeting","call","email","gift"];
-function RhythmStrip({rhythm}){
-  if(!rhythm)return null;
-  const monthName=m=>new Date(m+"-15T12:00:00Z").toLocaleDateString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
-  const usedKinds=RHYTHM_ORDER.filter(k=>rhythm.past.some(m=>RHYTHM_ORDER.find(x=>m.kinds.includes(x))===k));
-  return <div style={{display:"flex",flexDirection:"column",gap:9}}>
-    {!rhythm.empty&&<div role="img" aria-label={rhythm.sentence} data-testid="dp-rhythm-strip"
-      style={{display:"grid",gridTemplateColumns:`repeat(12, minmax(0, 1fr)) 6px repeat(${rhythm.future.length}, minmax(0, 1fr))`,gap:4}}>
-      {rhythm.past.map(m=>{const k=RHYTHM_ORDER.find(x=>m.kinds.includes(x));const st=k?RHYTHM_KIND[k]:null;
-        return <div key={m.month} data-month={m.month} data-kind={k||""} data-past="1"
-          title={`${monthName(m.month)}: ${m.kinds.length?m.kinds.map(x=>RHYTHM_KIND[x].label.toLowerCase()).join(", "):"no touch"}`}
-          style={{height:26,borderRadius:4,boxSizing:"border-box",background:st?st.bg:"rgba(240,237,230,0.10)",border:st&&st.edge?"1.5px solid "+st.edge:"none"}}/>;})}
-      <div/>
-      {rhythm.future.map(m=>(
-        <div key={"f"+m.month} data-month={m.month} data-planned={m.planned.length?"1":"0"} data-current={m.current?"1":undefined}
-          title={`${monthName(m.month)}: ${m.planned.length?m.planned.map(x=>x.label).join(", "):"nothing planned"}`}
-          style={{height:26,borderRadius:4,boxSizing:"border-box",background:"transparent",
-            border:m.planned.length?"1.5px solid #C9A84C":"1px dashed rgba(240,237,230,0.18)"}}/>
-      ))}
-    </div>}
-    {!rhythm.empty&&<div data-testid="dp-rhythm-legend" style={{display:"flex",gap:"6px 12px",flexWrap:"wrap",fontSize:11.5,color:"rgba(240,237,230,0.72)"}}>
-      {(usedKinds.length?usedKinds:RHYTHM_ORDER).map(k=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:5}}>
-        <span style={{width:10,height:10,borderRadius:2,boxSizing:"border-box",background:RHYTHM_KIND[k].bg,border:RHYTHM_KIND[k].edge?"1.5px solid "+RHYTHM_KIND[k].edge:"none"}}/>{RHYTHM_KIND[k].label}</span>)}
-      <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,boxSizing:"border-box",border:"1.5px solid #C9A84C"}}/>Planned</span>
-    </div>}
-    <div data-testid="dp-rhythm-sentence" style={{fontSize:14,color:"rgba(240,237,230,0.72)",lineHeight:1.5}}>{rhythm.sentence}</div>
-  </div>;
-}
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
@@ -1517,6 +1478,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [addPick,setAddPick]=useState("");             // the one being considered
   const [addPreview,setAddPreview]=useState(null);     // its first step, for this person
   const [addErr,setAddErr]=useState("");
+  // WHY-1 Part 7 — the suggested journey, the "..." menu, and the inline stop.
+  const [journeySuggest,setJourneySuggest]=useState(null);
+  const [journeyMenu,setJourneyMenu]=useState(false);
+  const [stopAsk,setStopAsk]=useState(null);   // "stop" | "change" | null
   useEffect(()=>{
     let live=true;
     if(!donor?.id)return undefined;
@@ -1528,6 +1493,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     let live=true;
     if(!donor?.id||journey?.status==="active")return undefined;
     apiFetch("/journeys").then(d=>{ if(live)setJourneyList(d?.journeys||[]); }).catch(()=>{ if(live)setJourneyList([]); });
+    const ex=journey&&journey.status==="done"?`?exclude=${encodeURIComponent(journey.templateId||"")}`:"";
+    apiFetch(`/donors/${donor.id}/journey-suggestion${ex}`).then(d=>{ if(live)setJourneySuggest(d?.suggestion||null); }).catch(()=>{ if(live)setJourneySuggest(null); });
     return ()=>{live=false;};
   },[donor?.id,journey?.status]);
   // Picking one asks the server what it would actually do to THIS person on
@@ -1817,46 +1784,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       offerUndo(r,"next step",()=>{loadDpThread();loadRel&&loadRel();});
     }catch(e){alert(errorMessage(e,"The next step could not be deleted."));}
   };
-  // FIX-14 Part 3 — RHYTHM, from the same sources as the timeline: the one
-  // meetings source (rel.meetings), the interactions and the gifts.
-  const rhythm=useMemo(()=>{
-    const today=orgTodayCivil();
-    const y0=Number(today.slice(0,4)),m0=Number(today.slice(5,7))-1;
-    const mk=off=>new Date(Date.UTC(y0,m0+off,15)).toISOString().slice(0,7);
-    const past=[];for(let k=-11;k<=0;k++)past.push({month:mk(k),kinds:[]});
-    const future=[];for(let k=1;k<=6;k++)future.push({month:mk(k),planned:[]});
-    const add=(date,kind)=>{const d=String(date||"").slice(0,10);if(!d||d>today)return;const m=past.find(x=>x.month===d.slice(0,7));if(m&&!m.kinds.includes(kind))m.kinds.push(kind);};
-    const ints=localInts??donor.interactions??[];
-    const meetingIds=new Set();
-    for(const m of (rel&&Array.isArray(rel.meetings)?rel.meetings:[])){add(m.date,"meeting");if(m.kind!=="calendar")meetingIds.add(m.id);}
-    for(const i of ints){
-      if(!i||meetingIds.has(i.id))continue;
-      const t=String(i.type||"");
-      if(t==="meeting"||t==="visit"||t==="site_visit")add(i.date,"meeting");
-      else if(t.startsWith("call"))add(i.date,"call");
-      else if(t==="email")add(i.date,"email");
-    }
-    for(const g of giftsFull||[])add(g.date,"gift");
-    const planned=[];
-    if(journey&&journey.status==="active")for(const st of journey.steps||[])
-      if((st.status==="open"||st.status==="pending")&&st.dueDate)planned.push({date:String(st.dueDate).slice(0,10),label:st.label||"A journey step"});
-    for(const it of dpItems)if(it.nextStep&&it.nextStep.due)planned.push({date:String(it.nextStep.due).slice(0,10),label:it.nextStep.label||"A next step"});
-    // FIX-15 Part 4 — a step planned for later THIS month belongs in the
-    // planned part too: the current month leads it, as well as closing the past.
-    const thisMonth=today.slice(0,7);
-    if(planned.some(pl=>pl.date.slice(0,7)===thisMonth&&pl.date>=today))future.unshift({month:thisMonth,planned:[],current:true});
-    for(const pl of planned){const f=future.find(x=>x.month===pl.date.slice(0,7)&&(!x.current||pl.date>=today));if(f)f.planned.push(pl);}
-    const ahead=planned.filter(x=>x.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0];
-    const touched=past.filter(m=>m.kinds.length).length;
-    const inJourney=!!(journey&&journey.status==="active");
-    const empty=!touched&&!inJourney&&!planned.length;
-    // "Coffee tomorrow. Bring the schedule." reads as "coffee tomorrow" in the sentence.
-    const lower=w=>{const t=String(w||"").split(/(?<=[.!?])\s/)[0].replace(/[.!?]+$/,"");return /^[A-Z][a-z]/.test(t)?t.charAt(0).toLowerCase()+t.slice(1):t;};
-    const sentence=empty?"No touches yet. Pick a journey to plan them."
-      :`Touched ${touched} of the last 12 months.${ahead?` Next planned: ${lower(ahead.label)} in ${new Date(ahead.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"long",timeZone:"UTC"})}.`:" Nothing planned yet."}`;
-    return {past,future,sentence,empty};
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[rel,localInts,donor.interactions,giftsFull,journey,dpItems]);
   // FIX-14 Part 3 (from Part 5) — /donors/<id>#gift-<gid> scrolls to that gift
   // and marks it; a gift older than the timeline's first page opens Gifts.
   useEffect(()=>{
@@ -3395,9 +3322,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   the Next step panel: no new layout. */}
               <ScoreCard donorId={donor.id} scores={scores}/>
             </div>;
-            const rhythmNode=<div data-testid="dp-rail-rhythm" style={{display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.sage400}}>Rhythm</div>
-              <RhythmStrip rhythm={rhythm}/>
+            // WHY-1 Part 7 — JOURNEY, NOT RHYTHM. The twelve-month touch
+            // strip is gone from the profile (the timeline is where touch
+            // history lives); this panel is the plan for the next touches.
+            const rhythmNode=<div data-testid="dp-rail-journey-panel" style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.sage400}}>Journey</div>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
               "Step 3 of 7 · Impact report · due Jan 3" and a small
               done / today / upcoming timeline, exactly as the direction
@@ -3434,13 +3363,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     due {new Date(cur.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}
                   </div>
                 )}
-                {/* the small done / today / upcoming timeline */}
-                <div data-testid="dp-journey-timeline" style={{display:"flex",gap:5,marginTop:9}}>
-                  {steps.map(x=>(
-                    <span key={x.id} title={`${x.label} · ${x.status}`} style={{width:20,height:4,borderRadius:99,
-                      background:x.status==="done"?T.greenMid:x.status==="skipped"?RAIL.line
-                        :x.id===(cur||{}).id?(late?T.gold500:T.white):RAIL.line}}/>
-                  ))}
+                {/* the progress bar: steps done or skipped, of all of them */}
+                <div data-testid="dp-journey-progress" role="img" aria-label={`${doneCount} of ${steps.length} steps done`}
+                  style={{height:5,borderRadius:99,background:RAIL.line,marginTop:9,overflow:"hidden"}}>
+                  <div style={{width:`${steps.length?Math.round(100*doneCount/steps.length):0}%`,height:"100%",background:T.greenMid}}/>
                 </div>
                 {cur&&(
                   <div style={{display:"flex",gap:7,marginTop:12}}>
@@ -3457,9 +3383,47 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </div>
                 )}
               </div>
-              <div style={{fontSize:11.5,color:RAIL.dim,marginTop:9,lineHeight:1.5}}>
-                {journey.templateName} · started {journey.appliedOn}
+              {/* the next two steps, faded: what is coming after this one */}
+              {cur&&steps.filter(x=>x.seq>cur.seq&&x.status==="pending").slice(0,2).map(x=>(
+                <div key={x.id} data-testid="dp-journey-next" style={{display:"flex",justifyContent:"space-between",gap:8,padding:"6px 12px 0",opacity:0.55,fontSize:12.5,color:RAIL.text}}>
+                  <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</span>
+                  {x.dueDate&&<span style={{flexShrink:0,color:RAIL.dim}}>{new Date(x.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}</span>}
+                </div>
+              ))}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:9}}>
+                <div style={{fontSize:11.5,color:RAIL.dim,lineHeight:1.5}}>{journey.templateName} · started {journey.appliedOn}</div>
+                {!isReadOnly&&<span style={{position:"relative",flexShrink:0}}>
+                  <button type="button" data-testid="dp-journey-more" aria-haspopup="menu" aria-expanded={journeyMenu} aria-label="Journey options"
+                    onClick={()=>setJourneyMenu(o=>!o)}
+                    style={{background:"none",border:"1px solid "+RAIL.line,borderRadius:7,padding:"2px 9px",color:RAIL.text,fontSize:14,lineHeight:1.2,cursor:"pointer",fontFamily:"inherit"}}>…</button>
+                  {journeyMenu&&<div role="menu" style={{position:"absolute",right:0,top:"calc(100% + 4px)",zIndex:30,background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:4,minWidth:170,boxShadow:"0 10px 26px rgba(15,26,18,0.25)"}}>
+                    {[["Change journey","change","dp-journey-change"],["Stop","stop","dp-journey-stop"]].map(([label,kind,tid])=>(
+                      <button key={kind} role="menuitem" type="button" data-testid={tid} onClick={()=>{setJourneyMenu(false);setStopAsk(kind);}}
+                        style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"8px 10px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+                    ))}
+                  </div>}
+                </span>}
               </div>
+              {/* Stopping asks once, here, not in a browser dialog. Change
+                  journey is the same stop, then the picker. */}
+              {stopAsk&&(
+                <div data-testid="dp-journey-stop-ask" style={{marginTop:10,background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
+                  <div style={{fontSize:12.5,color:RAIL.text,lineHeight:1.5}}>
+                    Stop {journey.templateName} for {firstNameOf(donor.name)||donor.name}? The steps already done stay on the record.
+                  </div>
+                  <div style={{display:"flex",gap:7,marginTop:9}}>
+                    <button type="button" data-testid="dp-journey-stop-confirm" disabled={journeyBusy} onClick={async()=>{
+                        setJourneyBusy(true);
+                        try{await apiFetch(`/plans/${journey.id}/stop`,{method:"POST",body:JSON.stringify({})});setJourney(null);setStopAsk(null);}
+                        catch(e){setAddErr(errorMessage(e,"The journey could not be stopped."));}
+                        setJourneyBusy(false);}}
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 13px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
+                      {stopAsk==="change"?"Stop it and choose another":"Stop it"}
+                    </button>
+                    <button type="button" onClick={()=>setStopAsk(null)} style={{background:"none",border:"none",color:RAIL.dim,fontSize:12.5,cursor:"pointer"}}>Keep it</button>
+                  </div>
+                </div>
+              )}
 
               {/* MARK DONE ASKS FOR ONE LINE. It is not paperwork: the line
                   becomes a real conversation on the record, which is what
@@ -3530,24 +3494,56 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </div>
                 </div>
               )}
-              {/* FIX-14 Part 3 — changing the journey happens here too: stop this one, pick another. */}
-              {!isReadOnly&&<button type="button" data-testid="dp-journey-change" disabled={journeyBusy} onClick={async()=>{
-                  if(!window.confirm(`Stop "${journey.templateName||journey.name||"this journey"}" for ${firstNameOf(donor.name)||donor.name}? The steps already done stay on the record.`))return;
-                  setJourneyBusy(true);
-                  try{await apiFetch(`/plans/${journey.id}/stop`,{method:"POST",body:JSON.stringify({})});setJourney(null);}
-                  catch(e){alert(errorMessage(e,"The journey could not be stopped."));}
-                  setJourneyBusy(false);}}
-                style={{marginTop:10,background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Change journey</button>}
             </div>;
           })()}
 
           {/* ── FIX-4 2 · ADD TO A JOURNEY ─────────────────────────────
               Offered only when they are in none, because one active plan
-              per person is the model and a second control that can only 409
-              teaches people to distrust controls. Pick one, see the first
-              step and the real date it falls on, then confirm. */}
+              per person is the model. WHY-1 Part 7: a short pitch, the
+              journey Steward suggests for this person (from simple facts:
+              monthly, lapsed, first year, major prospect, recently met) with
+              its first three steps, the picker as the panel's one action,
+              and a quiet link to every journey. */}
+          {journey&&journey.status==="done"&&(()=>{
+            const ends=(journey.steps||[]).map(x=>x.closedAt).filter(Boolean).sort();
+            const on=ends.length?String(ends[ends.length-1]).slice(0,10):journey.appliedOn;
+            return <div data-testid="dp-journey-finished" style={{fontSize:13,color:RAIL.text,lineHeight:1.5}}>
+              Finished {journey.templateName} on {new Date(String(on).slice(0,10)+"T12:00:00Z").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric",timeZone:"UTC"})}.
+            </div>;
+          })()}
           {!isReadOnly&&!(journey&&journey.status==="active")&&Array.isArray(journeyList)&&(
             <div data-testid="dp-rail-add-journey">
+              <div data-testid="dp-journey-pitch" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55,marginBottom:10}}>
+                Plan the next few touches so this donor never drifts. Steward puts each step on your Thread the day it's due. Nothing is sent.
+              </div>
+              {journeySuggest&&(
+                <div data-testid="dp-journey-suggest" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px",marginBottom:10}}>
+                  <div style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>Suggested</div>
+                  <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{journeySuggest.name}</div>
+                  <div style={{fontSize:12,color:RAIL.dim,marginTop:2,lineHeight:1.45}}>{journeySuggest.why}</div>
+                  <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:4}}>
+                    {journeySuggest.steps.map((x,i)=>(
+                      <div key={i} style={{display:"flex",gap:8,fontSize:12.5,color:RAIL.text}}>
+                        <span style={{flexShrink:0,minWidth:54,color:RAIL.dim}}>{x.when}</span><span>{x.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" data-testid="dp-journey-suggest-start" disabled={journeyBusy}
+                    onClick={async()=>{
+                      setJourneyBusy(true); setAddErr("");
+                      try{
+                        await apiFetch(`/journeys/${journeySuggest.journeyId}/apply`,{method:"POST",body:JSON.stringify({donorIds:[donor.id]})});
+                        const r=await apiFetch(`/donors/${donor.id}/plan`);
+                        setJourney(r.plan||null);
+                        if(onInteractionAdded)onInteractionAdded();
+                      }catch(e){ setAddErr(errorMessage(e,"Steward could not start that journey.")); }
+                      setJourneyBusy(false);
+                    }}
+                    style={{marginTop:10,background:T.greenDk,border:"none",borderRadius:8,padding:"8px 13px",color:T.white,fontSize:12.5,fontWeight:700,cursor:journeyBusy?"wait":"pointer"}}>
+                    {journeyBusy?"Starting…":"Start this journey"}
+                  </button>
+                </div>
+              )}
               {journeyList.length===0?(
                 <div style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55}}>
                   There are no journeys yet.{" "}
@@ -3559,10 +3555,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </div>
               ):(
                 <>
-                  <select data-testid="dp-journey-pick" value={addPick} onChange={e=>pickJourney(e.target.value)}
-                    style={{width:"100%",background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,
-                            padding:"8px 10px",color:RAIL.text,fontSize:12.5,outline:"none",fontFamily:"inherit"}}>
-                    <option value="">Pick a journey…</option>
+                  <select data-testid="dp-journey-pick" aria-label="Start a journey" value={addPick} onChange={e=>pickJourney(e.target.value)}
+                    style={{width:"100%",background:T.greenDk,border:"none",borderRadius:8,appearance:"none",WebkitAppearance:"none",
+                            padding:"9px 30px 9px 12px",color:T.white,fontSize:13,fontWeight:700,outline:"none",fontFamily:"inherit",cursor:"pointer",
+                            backgroundImage:"linear-gradient(45deg, transparent 50%, #FFFFFF 50%), linear-gradient(135deg, #FFFFFF 50%, transparent 50%)",
+                            backgroundPosition:"calc(100% - 16px) 55%, calc(100% - 11px) 55%",backgroundSize:"5px 5px, 5px 5px",backgroundRepeat:"no-repeat"}}>
+                    <option value="">Start a journey</option>
                     {journeyList.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
                   </select>
                   {addPreview&&(
@@ -3599,9 +3597,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   )}
                   {addErr&&<div role="status" data-testid="dp-journey-add-error"
                     style={{fontSize:11.5,color:T.gold500,marginTop:8,lineHeight:1.45}}>{addErr}</div>}
-                  <div style={{fontSize:11.5,color:RAIL.dim,marginTop:9,lineHeight:1.5}}>
-                    Nothing is sent. Each step becomes a next step on your Thread on the day it is due.
-                  </div>
+                  <button type="button" data-testid="dp-journey-all" onClick={()=>onNavigate&&onNavigate("journeys")}
+                    style={{marginTop:9,background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>
+                    See all journeys or build your own
+                  </button>
                 </>
               )}
             </div>

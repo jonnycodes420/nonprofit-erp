@@ -130,12 +130,25 @@ const STATUS_META = {
   scheduled: { label: "Scheduled", color: T.green500, bg: T.green500 + "18" },
   sending:   { label: "Sending",   color: T.gold600, bg: T.gold600 + "18" },
   sent:      { label: "Sent",      color: T.white,    bg: T.greenMid },
+  // WHY-1 Part 8 — HONEST "SENT". Nothing went: Failed, in brass (a problem,
+  // not a destructive confirm, so never red). Some went: "Sent to N of M",
+  // and the badge opens the failed rows.
+  failed:    { label: "Failed",    color: T.ink,      bg: T.gold500 },
+  partial:   { label: "Sent",      color: T.ink,      bg: T.gold500 + "55" },
 };
-function StatusBadge({ status }) {
-  const m = STATUS_META[status] || STATUS_META.draft;
+function StatusBadge({ status, campaign, onFailed }) {
+  const recs = (campaign && campaign.recipients) || [];
+  const failed = recs.filter(r => r.failure_reason).length;
+  const partial = status === "sent" && failed > 0;
+  const m = partial ? STATUS_META.partial : (STATUS_META[status] || STATUS_META.draft);
+  const label = partial ? `Sent to ${recs.filter(r => r.sent_at).length} of ${recs.length}` : m.label;
+  const clickable = (partial || status === "failed") && onFailed;
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 99, padding: "3px 10px", letterSpacing: "0.04em" }}>
-      {status === "sending" ? <span style={{ animation: "pulse 1.2s ease-in-out infinite" }}>{m.label}</span> : m.label}
+    <span data-testid="camp-status" data-status={partial ? "partial" : status} role={clickable ? "button" : undefined} tabIndex={clickable ? 0 : undefined}
+      title={clickable ? "Show the ones that did not go" : undefined}
+      onClick={clickable ? e => { e.stopPropagation(); onFailed(); } : undefined}
+      style={{ fontSize: 11, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 99, padding: "3px 10px", letterSpacing: "0.04em", cursor: clickable ? "pointer" : "default", whiteSpace: "nowrap" }}>
+      {status === "sending" ? <span style={{ animation: "pulse 1.2s ease-in-out infinite" }}>{m.label}</span> : label}
     </span>
   );
 }
@@ -1222,6 +1235,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // FIX-15 Part 5: /app/communications?subtab=campaigns&campaign=<id> opens
   // with that campaign expanded, so a campaign's name is a real link.
   const [expandedId, setExpandedId]   = useState(() => urlParam("communications", "campaign"));
+  const [failedOnly, setFailedOnly]   = useState(null);   // WHY-1 Part 8: the campaign whose failed rows are showing
   // FIX-6 item 5 — which figure is open, and the rows behind it.
   const [statRows, setStatRows] = useState(null);
   const [sendResult, setSendResult]   = useState(null);
@@ -2127,7 +2141,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
-                        <div><StatusBadge status={c.status} /></div>
+                        <div><StatusBadge status={c.status} campaign={c} onFailed={() => { setExpandedId(c.id); setFailedOnly(c.id); }} /></div>
                         <div style={{ fontSize: 13, color: sentCt > 0 ? T.ink : T.ink3 }} data-testid="camp-row-sent">{sentWord(c)}</div>
                         <div>
                           {sentCt > 0 ? (
@@ -2173,8 +2187,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           )}
                           {/* Draft/scheduled/sent actions */}
                           <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                            {c.status !== "sent" && <button onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit</button>}
-                            {isAdmin && c.status !== "sending" && c.status !== "sent" && (
+                            {c.status !== "sent" && c.status !== "failed" && <button onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit</button>}
+                            {isAdmin && c.status !== "sending" && c.status !== "sent" && c.status !== "failed" && (
                               <button onClick={() => sendNow(c.id)} disabled={sending}
                                 style={{ ...S.btn("primary"), opacity: sending ? 0.6 : 1 }}>
                                 {sending ? <><Spin /> Sending…</> : "↑ Send Now"}
@@ -2183,24 +2197,33 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             <CampaignLinkBtn campaignId={c.id} campaignName={c.name} />
                           </div>
                           {/* Recipient list */}
+                          {recs.some(r => r.failure_reason) && (
+                            <div style={{ fontSize: 12, marginBottom: 8 }}>
+                              <button type="button" data-testid="camp-failed-toggle" onClick={() => setFailedOnly(failedOnly === c.id ? null : c.id)}
+                                style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit", fontSize: 12 }}>
+                                {failedOnly === c.id ? "Show everyone" : `Show the ${recs.filter(r => r.failure_reason).length} that did not go`}
+                              </button>
+                            </div>
+                          )}
                           {recs.length > 0 && (
                             <div style={{ border: "1px solid " + T.bg3, borderRadius: 8, overflow: "hidden" }}>
                               <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "7px 12px", background: T.bg2, fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                                 <span>Recipient</span><span>Status</span><span>Time</span>
                               </div>
-                              {recs.slice(0, 30).map(r => (
+                              {(failedOnly === c.id ? recs.filter(r => r.failure_reason) : recs.slice(0, 30)).map(r => (
                                 <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "8px 12px", borderTop: "1px solid " + T.bg2, fontSize: 12, gap: 8, alignItems: "center" }}>
                                   <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>
                                   <span style={{ color: r.opened_at ? T.greenMid : r.failure_reason ? T.terracotta : r.sent_at ? T.ink3 : T.gold600 }}
                                     title={r.failure_reason || undefined}>
                                     {r.opened_at ? "Opened" : r.failure_reason ? "Failed" : r.sent_at ? "Delivered" : "Pending"}
                                   </span>
+                                  {failedOnly === c.id && r.failure_reason && <span data-testid="camp-failed-reason" style={{ gridColumn: "1 / -1", color: T.ink3, fontSize: 11.5 }}>{r.failure_reason}</span>}
                                   <span style={{ color: T.ink3, fontSize: 11 }}>
                                     {(r.opened_at || r.sent_at) ? new Date(r.opened_at || r.sent_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
                                   </span>
                                 </div>
                               ))}
-                              {recs.length > 30 && <div style={{ padding: "8px 12px", fontSize: 11, color: T.ink3, borderTop: "1px solid " + T.bg2 }}>+{recs.length - 30} more</div>}
+                              {failedOnly !== c.id && recs.length > 30 && <div style={{ padding: "8px 12px", fontSize: 11, color: T.ink3, borderTop: "1px solid " + T.bg2 }}>+{recs.length - 30} more</div>}
                             </div>
                           )}
                         </div>

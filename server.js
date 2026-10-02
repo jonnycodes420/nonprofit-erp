@@ -3299,6 +3299,23 @@ async function renderReceiptPdf(snapshot) {
       );
     }
 
+    // WHY-1 Part 8 — A DEMO RECEIPT CAN NEVER PASS AS A REAL ONE. Every page of
+    // a receipt or statement from a demonstration organisation carries a large
+    // "DEMO" across it and a line in its header band saying it is not a tax receipt.
+    if (snapshot.demo) {
+      const range = doc.bufferedPageRange();
+      for (let i = range.start; i < range.start + range.count; i++) {
+        doc.switchToPage(i);
+        doc.save();
+        doc.rotate(-30, { origin: [PW / 2, doc.page.height / 2] });
+        doc.font("Helvetica-Bold").fontSize(120).fillColor("#C9A84C").fillOpacity(0.22)
+          .text("DEMO", 0, doc.page.height / 2 - 70, { width: PW, align: "center", lineBreak: false });
+        doc.restore();
+        doc.fillOpacity(1).font("Helvetica-Bold").fontSize(8.5).fillColor(HEADER_FG)
+          .text("DEMONSTRATION ONLY. NOT A TAX RECEIPT.", 50, 80, { width: PW - 100, lineBreak: false });
+      }
+    }
+
     doc.end();
   });
 }
@@ -3389,6 +3406,7 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO }
       [org.id, gift.campaign_id || "", gift.campaign || ""]);
     if (c) snapshot.campaignNote = { name: c.name, description: c.donor_description };
   }
+  if (require("./twoFactor").isDemoOrg(org)) snapshot.demo = true;   // WHY-1 Part 8
 
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
@@ -4613,7 +4631,10 @@ async function runCampaignSend(campaign, org, donors) {
         const htmlFull = brandHeader + bodyHtml + footer + pixel;
 
         try {
-          if (resendApiKey && smtpFrom) {
+          // No provider means nothing left: that is a failure with its
+          // reason, not a delivery (WHY-1 Part 8).
+          if (!(resendApiKey && smtpFrom)) throw new Error("No mail provider is configured, so this was not sent.");
+          {
             const { error: sendError } = await resend.emails.send({
               // BUILD-88c C.1 — the org's own identity, resolved per recipient
               // so the From, the Reply-To and the List-Unsubscribe mailto
@@ -4664,10 +4685,17 @@ async function runCampaignSend(campaign, org, donors) {
       console.error(`[campaign:${campaign.id}] FATAL send error: msg="${err.message}" code=${err.code||"?"} smtp=${err.responseCode||"?"} response="${err.response||""}" stack=${err.stack?.split("\n").slice(0,2).join(" | ")}`);
     }
 
-    // Always finalize — even if some or all emails failed
+    // Always finalize, and say what happened (WHY-1 Part 8, HONEST "SENT"):
+    // `recipient_count` is how many the provider ACCEPTED, and a campaign none
+    // of whose recipients went is "failed", never "sent". The screen reads a
+    // partial send as "Sent to N of M" from the recipient rows.
+    const [tally] = await query(
+      "SELECT COUNT(*)::int AS m, COUNT(sent_at)::int AS n FROM campaign_recipients WHERE campaign_id=?", [campaign.id]
+    ).catch(() => [{ m: 0, n: sentCount }]);
+    const finalStatus = tally && tally.m > 0 && tally.n === 0 ? "failed" : "sent";
     await run(
-      "UPDATE campaigns SET status='sent', sent_at=NOW(), recipient_count=?, updated_at=NOW() WHERE id=?",
-      [sentCount, campaign.id]
+      "UPDATE campaigns SET status=?, sent_at=NOW(), recipient_count=?, updated_at=NOW() WHERE id=?",
+      [finalStatus, sentCount, campaign.id]
     ).catch(e => console.error(`[campaign:${campaign.id}] final status update failed:`, e.message));
 
     console.log(`[campaign:${campaign.id}] done — sent:${sentCount} failed:${failCount}`);
@@ -6051,8 +6079,10 @@ async function processSequences() {
         // advance happen ONLY after a real delivery. A provider failure skips
         // both — next_send_at is untouched, so the next tick retries, and no
         // timeline entry claims an email that never left.
-        let seqDelivered = true; // no API key configured = nothing to deliver
+        // No provider is not a delivery (WHY-1 Part 8): the step stays, with its reason.
+        let seqDelivered = false, seqErr = "No mail provider is configured";
         if (process.env.RESEND_API_KEY && smtpFrom) {
+          seqErr = null;
           seqDelivered = false;
           try {
             // BUILD-88c C.1 — a DONOR-facing sequence carries the org's own
@@ -6065,11 +6095,19 @@ async function processSequences() {
               : { ...(await donorSendOpts(enr.org_id, recipient.email, "sequence")),
                   to: recipient.email, subject, html: bodyHtml };
             const { error: sendErr } = await resend.emails.send(sendOpts);
-            if (sendErr) console.error("[seq] send error:", sendErr.message);
+            if (sendErr) { seqErr = sendErr.message || "refused"; console.error("[seq] send error:", sendErr.message); }
             else seqDelivered = true;
-          } catch (e) { console.error("[seq] resend error:", e.message); }
+          } catch (e) { seqErr = e.message; console.error("[seq] resend error:", e.message); }
         }
-        if (!seqDelivered) { console.error(`[seq] delivery failed for enrollment ${enr.id} — will retry next tick`); continue; }
+        if (!seqDelivered) {
+          // WHY-1 Part 8 — a refused step keeps its reason and is tried again
+          // a day later, not on every hourly tick (that was a storm).
+          console.error(`[seq] delivery failed for enrollment ${enr.id}; will retry in a day`);
+          await run(`UPDATE sequence_enrollments SET last_error = ?, last_failed_at = NOW(), next_send_at = NOW() + INTERVAL '1 day' WHERE id = ?`,
+            [String(seqErr || "refused").slice(0, 300), enr.id]).catch(() => {});
+          continue;
+        }
+        if (enr.last_error) await run(`UPDATE sequence_enrollments SET last_error = NULL, last_failed_at = NULL WHERE id = ?`, [enr.id]).catch(() => {});
         // Only log donor interactions for non-onboarding sequences (donor_id is a user_id for onboarding)
         if (enr.seq_trigger !== "onboarding") {
           const intId = "i_" + uuid().slice(0, 8);

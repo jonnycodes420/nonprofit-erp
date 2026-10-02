@@ -62,3 +62,11 @@ In `shared/whyShape.js templateSentence`. Spell numbers under ten, no colons, no
 - volunteers: "<N> volunteers have served and never given; <name> leads with <h> hours this year."
 - second: "<N> first-time donors from the last 90 days have no second gift and no thank-you call, <$> in first gifts; <name> gave the most."
 - not matched: "Steward can't answer that one yet. We've noted it."
+
+## The suggested journey (Part 7)
+
+`GET /donors/:id/journey-suggestion`, first fact that holds, and only a journey the org has (by catalogue key):
+monthly (an active recurring gift) → Monthly giver; lapsed (stage lapsed, or drift.js drifting or lapsed, the
+same engine as question (e)) → Welcome back; first gift in the last 365 days → New donor, first year;
+generosity 80 or more → Major donor; a meeting logged in the last 30 days → Major donor. A finished journey is
+excluded from the next suggestion. Starting it is `POST /journeys/:id/apply`, by a person.

@@ -6633,6 +6633,7 @@ async function issueYearEndStatement(org, donor, year, { send = true, by = SYS_A
   // in the org's palette, where it reads as a service the org offers) — this
   // only removes it from the document. (BUILD-49 had stamped it into the frozen
   // snapshot; we no longer set snapshot.givingAccountUrl at all.)
+  if (TF.isDemoOrg(org)) snapshot.demo = true;   // WHY-1 Part 8: a demo statement says so on every page
   const pdfBuffer = await renderReceiptPdf(snapshot);
   const id = "rcpt_" + uuid().slice(0, 8);
   await run(
@@ -16981,7 +16982,7 @@ app.get("/campaigns/sent", requireAuth, wrap(async (req, res) => {
             COUNT(cr.failure_reason)::int                              AS failed
        FROM campaigns c
        LEFT JOIN campaign_recipients cr ON cr.campaign_id = c.id
-      WHERE c.org_id = ? AND c.status IN ('sent','sending','scheduled')
+      WHERE c.org_id = ? AND c.status IN ('sent','sending','scheduled','failed')
       GROUP BY c.id ORDER BY COALESCE(c.sent_at, c.scheduled_at, c.created_at) DESC
       LIMIT 100`, [orgId]);
   // Unsubscribes attributable to a campaign: a suppression for one of ITS

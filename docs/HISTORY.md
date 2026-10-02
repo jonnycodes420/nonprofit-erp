@@ -25,6 +25,21 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## WHY-1 Parts 7 and 8 · Journey, not Rhythm; honest "sent", the last three (2026-10-02)
+
+- **The profile rail's Rhythm panel is now Journey.** The twelve-month touch strip and its legend left the
+  profile (the timeline is where touch history lives). No journey: a pitch line, the journey Steward suggests
+  from simple facts (`GET /donors/:id/journey-suggestion`: monthly, lapsed or drifting, first year, generosity
+  80 or more, met in the last month) with its first three steps, an emerald "Start a journey" picker, and a
+  link to every journey. Running: step N of M, Mark done and Skip, the next two steps faded, a progress bar,
+  Change journey and Stop under "...", confirmed inline. Finished: the date, and the next suggestion. ENGAGE-1's
+  scores did not change.
+- **Honest "sent".** A campaign nobody received is `failed`; a partial one reads "Sent to N of M" and opens its
+  failed rows; no provider is a failure, not a delivery. Onboarding emails, sequence steps and volunteer shift
+  reminders are sent only when the provider accepts them; a refusal keeps its reason and waits a day (it used
+  to retry on every hourly tick). Harborlight's receipts and statements carry DEMO on every page.
+  `mail-suppression` §8 pins all of it.
+
 ## WHY-1 · Ask Steward why, and who to call tomorrow (2026-10-02)
 
 - **The thesis** went into CLAUDE.md ("How Steward is built") and `docs/decisions/why.md`: Steward answers

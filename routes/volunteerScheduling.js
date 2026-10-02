@@ -252,6 +252,9 @@ app.get("/volunteer-hub/slots/:id/signups", requireAuth, wrap(async (req, res) =
       status: r.status, groupName: r.group_name || null, source: r.source,
       checkedInAt: r.checked_in_at, checkedOutAt: r.checked_out_at,
       hoursShiftId: r.hours_shift_id || null,
+      // WHY-1 Part 8 — sent means the provider took it; a refusal says why.
+      reminder: r.reminder_error ? { state: "failed", reason: r.reminder_error, at: r.reminder_failed_at }
+        : r.reminded_at ? { state: "sent", at: r.reminded_at } : null,
       waiver: (creds.get(r.person_id) || {}).waiver || null,
       backgroundCheck: (creds.get(r.person_id) || {}).background_check || null,
     })),
@@ -1454,7 +1457,7 @@ app.patch("/volunteer-hub/settings", requireAuth, requireAdmin, checkWriteAccess
 }));
 
 async function runVolunteerReminders() {
-  const out = { orgsConsidered: 0, orgsOff: 0, sent: 0, skipped: 0 };
+  const out = { orgsConsidered: 0, orgsOff: 0, sent: 0, skipped: 0, failed: 0 };
   const orgs = await query(
     `SELECT id, name, volunteer_reminders_enabled, is_demo_org FROM orgs WHERE volunteer_reminders_enabled = TRUE`, []);
   for (const org of orgs) {
@@ -1474,6 +1477,7 @@ async function runVolunteerReminders() {
          JOIN volunteer_opportunities o ON o.id=s.opportunity_id
          JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
         WHERE su.org_id=? AND su.status='confirmed' AND su.reminded_at IS NULL
+          AND (su.reminder_failed_at IS NULL OR su.reminder_failed_at < NOW() - INTERVAL '1 day')
           AND s.cancelled_at IS NULL AND s.date = ? AND d.deleted_at IS NULL AND d.email IS NOT NULL`,
       [org.id, tomorrow]);
     const brand = await brandOf(org.id);
@@ -1498,10 +1502,16 @@ async function runVolunteerReminders() {
           + `<p style="font-size:13px;color:#5a554f">${escapeHtml(brand.displayName || org.name)}</p>`,
       }).then(resp => {
         // A refusal (the permanent block, mail off) comes back as an error, not a throw.
-        if (resp && resp.error) { out.skipped++; console.error("[volunteer] reminder refused:", resp.error.message); }
-        else out.sent++;
+        if (resp && resp.error) throw new Error(resp.error.message || resp.error.name || "refused");
+        out.sent++;
+        return run("UPDATE volunteer_signups SET reminder_error=NULL, reminder_failed_at=NULL WHERE id=?", [r.id]);
       })
-        .catch(e => { out.skipped++; console.error("[volunteer] reminder:", e.message); });
+        // WHY-1 Part 8 — NOT SENT IS NOT SENT. The claim is released and the
+        // reason kept, so the row reads as failed and the next run (no sooner
+        // than a day later, never a storm) tries once more.
+        .catch(e => { out.failed = (out.failed || 0) + 1; console.error("[volunteer] reminder not sent:", e.message);
+          return run("UPDATE volunteer_signups SET reminded_at=NULL, reminder_error=?, reminder_failed_at=NOW() WHERE id=?",
+            [String(e.message || "refused").slice(0, 300), r.id]).catch(() => {}); });
     }
   }
   return out;
