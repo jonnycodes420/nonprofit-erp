@@ -430,7 +430,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               await run(
                 "INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6)",
                 ["t_"+uuid().slice(0,8), orgId, `Gave again after a year-long gap — follow up with ${donorName||email} within 48 hours`,
-                 new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10), SYS_STRIPE.id, SYS_STRIPE.name]
+                 orgToday(await orgTz(orgId), new Date(Date.now()+2*24*60*60*1000)), SYS_STRIPE.id, SYS_STRIPE.name]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
               ).catch(()=>{});
             }
             // The ledger stamp is recordGift's — one place, BUILD-58 W-3's
@@ -863,7 +863,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                   // LOUD: a high-priority staff task + a donor timeline note. A
                   // dispute has a Stripe response deadline; silence loses it by
                   // default. (The day-view + Finance surface disputed gifts too.)
-                  const due = dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000).toISOString().slice(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+                  const due = orgToday(await orgTz(orgId), dispute.evidence_details?.due_by ? new Date(dispute.evidence_details.due_by * 1000) : new Date(Date.now() + 7 * 86400000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
                   await run("INSERT INTO tasks (id,org_id,title,priority,done,due,donor_id,created_by,created_by_name) VALUES ($1,$2,$3,'high',0,$4,$5,$6,$7)",
                     ["t_" + uuid().slice(0, 8), orgId, `Payment disputed — $${amt.toLocaleString()} charged back${dispute.reason ? " (" + String(dispute.reason).replace(/_/g, " ") + ")" : ""}. Respond in Stripe before ${due} or the funds are lost.`, due, g.donor_id || null, SYS_STRIPE.id, SYS_STRIPE.name]).catch(() => {});
                   if (g.donor_id) {
@@ -1314,7 +1314,7 @@ async function markEmailEvent(orgId, email, reason, event) {
        reason === "bounced"
          ? `Email to ${email} hard-bounced and will not be tried again${detail ? ` — ${detail}` : ""}`
          : `${email} marked this as spam — removed from every list`,
-       new Date().toISOString().slice(0, 10), "system:resend-webhook"]);
+       orgToday(await orgTz(orgId)), "system:resend-webhook"]);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   }
   return rows.length;
 }
@@ -1524,7 +1524,7 @@ app.post("/mailchimp/webhook/:secret", mailchimpWebhookLimiter,
         `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
         ["int_" + uuid().slice(0, 8), conn.org_id, d.id, "email",
          decision.kind === "unreachable" ? "Email stopped working in Mailchimp." : "Unsubscribed in Mailchimp.",
-         new Date().toISOString().slice(0, 10), "system:email-marketing/mailchimp"]).catch(() => {});
+         orgToday(await orgTz(conn.org_id)), "system:email-marketing/mailchimp"]).catch(() => {});   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
     }
     // A webhook NUDGES; it never becomes the only record. The next daily pull
     // reconciles anything this missed.

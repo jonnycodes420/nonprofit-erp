@@ -86,6 +86,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   only the note, next step and people). (FIX-14)
 - **A delete that offers Undo moves the row to `deleted_records`** (`trashRow`) and Undo puts it back
   whole (`POST /deleted-records/:id/restore`). No reader learns a deleted_at column. (FIX-14)
+- **Pledges, asks, relationships and households follow the same rules** (owner or admin, `edited_*`,
+  delete via `trashRow` with an `undoId`). Rows that go with a row (a pledge's instalments, a
+  household's members, a calendar meeting's `interaction_id`) ride in `row_data.__with` and Undo puts
+  them back (`TRASH_WITH` / `RESTORE_WITH`). A pledge with any payment applied is never deleted: 409
+  with a sentence; write it off instead. (FIX-14 Part 2b)
 - **An audit row's Description is built on read** (`auditTrail.describeAuditRow`, names resolved by
   id in `auditPeople`), and an edit carries `changes.record.donor_id` so it stays findable by person.
   The log's home is Settings, Audit log; Finance, Exports links there. (FIX-14)

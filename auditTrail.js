@@ -375,6 +375,9 @@ const FIELD_WORD = {
   next_step_label: "step", due_date: "due date", due_time: "time", title: "title", due: "due date",
   done: "done", priority: "priority", amount: "amount", fund_id: "fund", payment_method: "payment method",
   stage: "stage", status: "status", assigned_to: "owner", email: "email", phone: "phone", name: "name",
+  target_amount: "amount", expected_close: "expected close", proposal_stage: "stage", probability: "probability",
+  officer_name: "officer", relationship_type: "kind", notes: "note", campaign_id: "campaign",
+  primary_donor_id: "primary member", joint_acknowledgment: "joint thank-you",
 };
 const ENTITY_WORD = { thread: "next step", interaction: "conversation", "donor relationship": "relationship" };
 const lowerFirst = s => s ? s.charAt(0).toLowerCase() + s.slice(1) : s;
@@ -387,7 +390,7 @@ function usdShort(v) {
 function showValue(field, v) {
   if (v === null || v === undefined || v === "") return "nothing";
   if (/date|^due$/.test(field)) return shortDate(v);
-  if (field === "amount") return usdShort(v);
+  if (field === "amount" || field === "target_amount") return usdShort(v);
   if (typeof v === "object") return "new details";
   const s = String(v);
   return s.length > 40 ? `"${s.slice(0, 37)}..."` : `"${s}"`;
@@ -401,6 +404,33 @@ function auditDonorId(row) {
   const ctx = (row.changes && row.changes.record) || {};
   return (row.after && row.after.donor_id) || (row.before && row.before.donor_id) || ctx.donor_id || null;
 }
+// Every person a row names, by id, so the log can look their names up in one
+// read: the donor it is about, both sides of a relationship, and the members
+// of a household before and after.
+function auditPeopleIds(row) {
+  const ids = new Set();
+  const d = auditDonorId(row);
+  if (d) ids.add(String(d));
+  for (const side of [row.before, row.after]) {
+    if (!side || typeof side !== "object") continue;
+    for (const k of ["donor_id_a", "donor_id_b", "primary_donor_id"]) if (side[k]) ids.add(String(side[k]));
+    if (Array.isArray(side.member_ids)) for (const m of side.member_ids) if (m) ids.add(String(m));
+  }
+  return [...ids];
+}
+// "The Cobbleworth Household" reads "the Cobbleworth household" mid-sentence.
+// A household's name is a person's name, so the row holds "[person]" (FIX-12)
+// and the live name is looked up as the log is read, under "hh:<id>".
+function householdName(row, people) {
+  const n = String((people && people.get("hh:" + row.entity_id)) || "").trim();
+  if (!n) return "the household";
+  return "the " + n.replace(/^the\s+/i, "").replace(/\bHousehold$/, "household");
+}
+const RELATIONSHIP_WORD = { spouse: "spouse", partner: "partner", parent: "parent", child: "child", sibling: "sibling",
+  employer: "employer", employee: "employee", soft_credit: "soft credit", matching_gift: "corporate match" };
+const nameList = names => names.length <= 1 ? (names[0] || "")
+  : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
 function describeAuditRow(row, ctx = {}) {
   const people = ctx.people || new Map();
   const action = String(row.action || "changed");
@@ -461,6 +491,66 @@ function describeAuditRow(row, ctx = {}) {
       return `${Number(row.after && row.after.done) ? "Completed" : "Reopened"} a task${forWho}${title ? `: ${title}` : ""}`;
     }
   }
+  // FIX-14 Part 2b — PLEDGES, ASKS, RELATIONSHIPS AND HOUSEHOLDS.
+  const fieldChanges = () => changed.map(k => {
+    const w = FIELD_WORD[k] || k.replace(/_/g, " ");
+    const bv = row.before[k], av = row.after[k];
+    return (typeof bv === "object" && bv) || (typeof av === "object" && av) || k === "notes" || k === "note" || /\[(redacted|person)\]/.test(String(av))
+      ? w : `${w} from ${showValue(k, bv)} to ${showValue(k, av)}`;
+  }).join(", ");
+  if (type === "pledge") {
+    const from = who ? ` from ${who}` : "";
+    const amt = full.amount != null ? `${usdShort(full.amount)} ` : "";
+    if (action === "created") return `Recorded a ${amt}pledge${from}`;
+    if (action === "deleted") return `Deleted a ${amt}pledge${from}`;
+    if (action === "restored") return `Restored a ${amt}pledge${from} (Undo)`;
+    if (changed.length) return `Changed the pledge${from}: ${fieldChanges()}`;
+  }
+  if (/^(proposal|opportunity|ask)$/.test(type)) {
+    const forWho = who ? ` for ${who}` : "";
+    const purpose = full.name ? `: ${full.name}` : "";
+    if (action === "created") return `Opened an ask${forWho}${full.target_amount != null ? ` of ${usdShort(full.target_amount)}` : ""}${purpose}`;
+    if (action === "deleted") return `Deleted the ask${forWho}${purpose}`;
+    if (action === "restored") return `Restored the ask${forWho} (Undo)`;
+    if (changed.length) return `Changed the ask${forWho}: ${fieldChanges()}`;
+  }
+  if (/^(relationship|donor relationship)$/.test(type)) {
+    const a = full.donor_id_a ? people.get(String(full.donor_id_a)) : null;
+    const b = full.donor_id_b ? people.get(String(full.donor_id_b)) : null;
+    const pair = a && b ? ` between ${a} and ${b}` : (who ? ` for ${who}` : "");
+    const kind = RELATIONSHIP_WORD[full.relationship_type] || String(full.relationship_type || "").replace(/_/g, " ");
+    if (action === "created") return a && b ? `Linked ${a} and ${b}${kind ? ` (${kind})` : ""}` : `Added a relationship${pair}`;
+    if (action === "deleted") return `Removed the relationship${pair}${kind ? ` (${kind})` : ""}`;
+    if (action === "restored") return `Restored the relationship${pair} (Undo)`;
+    if (changed.length) return `Changed the relationship${pair}: ${fieldChanges()}`;
+  }
+  if (type === "household") {
+    const hh = householdName(row, people);
+    const nameOf = id => people.get(String(id)) || "a person";
+    if (action === "created") return `Created ${hh}`;
+    if (action === "deleted") {
+      const n = Array.isArray(full.member_ids) ? full.member_ids.length : 0;
+      return `Deleted ${hh}${n ? ` (${n} members)` : ""}`;
+    }
+    if (action === "restored") return `Restored ${hh} (Undo)`;
+    if (changed.length) {
+      const parts = [];
+      const bm = (row.before && row.before.member_ids) || null, am = (row.after && row.after.member_ids) || null;
+      if (Array.isArray(bm) && Array.isArray(am)) {
+        const removed = bm.filter(x => !am.includes(x)), added = am.filter(x => !bm.includes(x));
+        if (removed.length) parts.push(`Removed ${nameList(removed.map(nameOf))} from ${hh}`);
+        if (added.length) parts.push(`${parts.length ? "added" : "Added"} ${nameList(added.map(nameOf))} to ${hh}`);
+      }
+      const rest = changed.filter(k => k !== "member_ids");
+      if (rest.length) {
+        const words = rest.map(k => k === "primary_donor_id"
+          ? `primary member from ${nameOf(row.before[k])} to ${nameOf(row.after[k])}`
+          : (FIELD_WORD[k] || k.replace(/_/g, " ")) + (k === "name" ? ` from ${showValue(k, row.before[k])} to ${showValue(k, row.after[k])}` : ""));
+        parts.push(parts.length ? `changed the ${words.join(", ")}` : `Changed ${hh}: ${words.join(", ")}`);
+      }
+      if (parts.length) return parts.join(", and ");
+    }
+  }
   if (type === "gift") {
     const from = who ? ` from ${who}` : "";
     const amt = full.amount != null && !(row.before && row.after && action === "updated") ? `${usdShort(full.amount)} ` : "";
@@ -517,6 +607,7 @@ function auditRecordName(row, ctx = {}) {
   if (/^(thread|next step)$/.test(type)) return who ? `Next step for ${who}` : "Next step";
   if (type === "task") return full.title || (who ? `Task for ${who}` : "Task");
   if (type === "gift") return who ? `Gift from ${who}` : (row.entity_label || "Gift");
+  if (type === "household") return upperFirst(householdName(row, people));
   if (/^(donor|person|people|organisation|organization|stage)$/.test(type)) return who || row.entity_label || "A person";
   return row.entity_label || (who ? `${upperFirst(ENTITY_WORD[type] || type)} for ${who}` : upperFirst(ENTITY_WORD[type] || type || "Record"));
 }
@@ -525,5 +616,5 @@ module.exports = {
   auditRecordName,
   SECRET_KEY_RE, REDACTED, NOISE_COLUMNS, VERB_PAST, READ_ONLY_POSTS,
   redact, diffFields, sameValue, describeRoute, isReadOnlyPost, singular, prettify, rowSentence,
-  bulkSummary, usd, describeAuditRow, auditDonorId, shortDate,
+  bulkSummary, usd, describeAuditRow, auditDonorId, auditPeopleIds, shortDate,
 };
