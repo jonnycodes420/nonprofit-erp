@@ -3731,6 +3731,7 @@ app.use(require("./routes/volunteerScheduling").routers.r0);
 app.use(require("./routes/surveys").routers.r0);   // SURVEY-1
 app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
+app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -10331,6 +10332,9 @@ require("./routes/templates").mount({
 });
 require("./routes/why").mount({
   AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
+});
+require("./routes/profileStatus").mount({
+  actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,

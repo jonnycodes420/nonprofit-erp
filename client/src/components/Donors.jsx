@@ -115,7 +115,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirSearch,setDirSearch]=useState(search);
   const[dirReloadKey,setDirReloadKey]=useState(0);
   useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
-  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold]);
+  // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
+  const[dirStatus,setDirStatus]=useState("");
+  useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus]);
   useEffect(()=>{
     if(view!=="directory")return;
     let cancelled=false;
@@ -131,6 +133,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         if(dirDesignation)qs.set("designation",dirDesignation);
         if(dirSort)qs.set("sort",dirSort);
         if(dirHousehold)qs.set("household",dirHousehold);
+        if(dirStatus){const [k,v]=dirStatus.split(":");qs.set(k,v);}
         const r=await apiFetch(`/donors?${qs.toString()}`);
         if(cancelled)return;
         setDirRows((r.donors||[]).map(adaptDonor));
@@ -138,7 +141,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       }catch(e){console.error(e);if(!cancelled)setDirRows([]);}
     })();
     return()=>{cancelled=true;};
-  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirReloadKey]);
+  },[view,dirPage,dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus,dirReloadKey]);
   // Officer color map — assigned_to → hex; used for portfolio color-coding.
   const officerColorMap=useMemo(()=>Object.fromEntries(officers.filter(o=>o.portfolio_color).map(o=>[o.id,o.portfolio_color])),[officers]);
 
@@ -660,7 +663,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold}} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
 
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 

@@ -226,7 +226,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
     </Modal>
   );
 }
-function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
+function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
@@ -378,6 +378,15 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
 
       {/* Filters */}
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {/* PARITY-1 — the tags and the closeness word, as filters. The same
+            rules a Group uses (donorStatus.js). */}
+        {setStatusFilter&&<select data-testid="dir-status-filter" aria-label="Tag or closeness" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={filterSel}>
+          <option value="">Any tag</option>
+          <optgroup label="Giving level">{[["general","General"],["mid","Mid"],["major","Major"]].map(([k,l])=><option key={k} value={"level:"+k}>{l}</option>)}</optgroup>
+          <optgroup label="Lifecycle">{[["new","New"],["current","Current"],["recaptured","Recaptured"],["lapsed","Lapsed"]].map(([k,l])=><option key={k} value={"lifecycle:"+k}>{l}</option>)}<option value="retained:1">Retained</option></optgroup>
+          <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["cooling","Cooling"],["new","New"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
+          <optgroup label="Giving"><option value="given:never">Has never given</option></optgroup>
+        </select>}
         <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
           <option value="">All stages</option>
           {STAGES.map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
@@ -635,7 +644,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 </div>
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
                   {d.engagement!=null
-                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"?T.gold700:T.ink3}}>{(bandFor(d.engagement)||{}).label}</span></>
+                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"?T.gold700:T.ink3}}>{d.closeness?d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1):(bandFor(d.engagement)||{}).label}</span></>
                     :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>—</span>}
                 </div>
                 <div style={{textAlign:"right"}}>

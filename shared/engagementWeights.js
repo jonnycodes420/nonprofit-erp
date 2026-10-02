@@ -61,6 +61,25 @@ export function bandFor(score) {
   return BANDS.find(b => s >= b.min) || BANDS[BANDS.length - 1];
 }
 
+// ── CLOSENESS, the band in words (PARITY-1) ──────────────────────────────────
+// The profile's line under the tags says one word, and it is the band above,
+// never a second opinion: Close and Warm are the bands of the same names. A
+// Distant person is New when they arrived (their record or their first gift)
+// in the last NEW_DAYS days, and Cooling otherwise. donorStatus.js says the
+// same thing in SQL for lists and Groups.
+export const NEW_DAYS = 90;
+export const CLOSENESS = Object.freeze([
+  { key: "close",   label: "Close" },
+  { key: "warm",    label: "Warm" },
+  { key: "cooling", label: "Cooling" },
+  { key: "new",     label: "New" },
+]);
+export function closenessFor(band, { isNew = false } = {}) {
+  const key = typeof band === "string" ? band : bandFor(band).key;
+  if (key === "close" || key === "warm") return key;
+  return isNew ? "new" : "cooling";
+}
+
 // ── THE EXPLANATION, as the screen shows it ─────────────────────────────────
 export const EXPLANATION = Object.freeze({
   engagement:

@@ -143,6 +143,7 @@ CORE=(
   trust2-erase
   help1-ask
   why1-appeal-variance
+  parity1-donor-tags
   why1-sentence-check
   fix12-ai-switch
   fix12-recipe-drafts
