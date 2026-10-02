@@ -63,6 +63,7 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
   magic link, donor-account emails, "your page" and fundraiser manage links (asked for by the
   donor); legacy and tracked sequences, pledge reminders (default on, Steward's default wording) and
   scheduled campaigns (staff-written, sent on schedule); the retry of failed lifecycle emails.
+  (Added in FIX-14: volunteer shift reminders, org opt-in, confirmed by Jonathan on 2026-10-02.)
 
 ## HELP-1 · help centre and Ask Steward (2026-10-01)
 

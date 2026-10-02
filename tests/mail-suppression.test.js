@@ -204,6 +204,57 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("receipt row records the real delivery (sent_to set)", rrow[0]?.sent_to === donorEmail, rrow[0]);
   }
 
+  // ── §7 volunteer mail rides the same decision (FIX-14 Part 4) ────────────
+  // A volunteer is a row in donors, so a bounced or deceased volunteer gets
+  // no shift reminder and no page link, while a clean one gets both. Reads
+  // through the real sweep and the real route, captured in the local sink.
+  console.log("\n§7 volunteer reminders and page links skip bounced and deceased people");
+  {
+    const CLEAN = "jonathan@stewardapp.dev";
+    const bouncedEmail = `vol-bounced-${uniq()}@example.com`;
+    const deadEmail = `vol-dead-${uniq()}@example.com`;
+    const mk = async (name, em) => (await api("POST", "/donors", tok, { name, email: em })).body.id;
+    const cleanId = await mk("Clean Volunteer", CLEAN);
+    const bouncedId = await mk("Bounced Volunteer", bouncedEmail);
+    const deadId = await mk("Deceased Volunteer", deadEmail);
+    // Bounced: the global deliverability row the Resend webhook writes.
+    await q("INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES ($1,NULL,$2,'bounced','resend_webhook')",
+      ["sup_" + uniq(), bouncedEmail]);
+    await api("PUT", `/donors/${deadId}`, tok, { name: "Deceased Volunteer", email: deadEmail, deceased: true });
+    await q("UPDATE orgs SET volunteer_reminders_enabled=true WHERE id=$1", [orgId]);
+    // "Tomorrow" is in the org's timezone; one of UTC today..today+2 is it,
+    // so each person is confirmed on all three and exactly one is due.
+    const oppId = "vo_" + uniq();
+    await q(`INSERT INTO volunteer_opportunities (id, org_id, name, slug, created_by, created_by_name)
+             VALUES ($1,$2,'Pantry Shift',$3,'system:test','Test')`, [oppId, orgId, "pantry-" + uniq()]);
+    for (let k = 0; k < 3; k++) {
+      const date = new Date(Date.now() + k * 86400000).toISOString().slice(0, 10);
+      const slotId = "vs_" + uniq();
+      await q(`INSERT INTO volunteer_slots (id, org_id, opportunity_id, date, start_time, end_time, created_by, created_by_name)
+               VALUES ($1,$2,$3,$4,'09:00','12:00','system:test','Test')`, [slotId, orgId, oppId, date]);
+      for (const pid of [cleanId, bouncedId, deadId])
+        await q(`INSERT INTO volunteer_signups (id, org_id, slot_id, person_id, status, created_by, created_by_name)
+                 VALUES ($1,$2,$3,$4,'confirmed','system:test','Test')`, ["su_" + uniq(), orgId, slotId, pid]);
+    }
+    state.captured.length = 0;
+    const run = await api("POST", "/volunteer-hub/run-reminders", tok, {});
+    ok("the reminder sweep runs", run.status === 200, run.body);
+    await settle();
+    ok("the clean volunteer got exactly one shift reminder", to(CLEAN).length === 1, { delivered: to(CLEAN).length });
+    ok("the bounced volunteer got NO shift reminder", to(bouncedEmail).length === 0, { delivered: to(bouncedEmail).length });
+    ok("the deceased volunteer got NO shift reminder", to(deadEmail).length === 0, { delivered: to(deadEmail).length });
+
+    state.captured.length = 0;
+    const lb = await api("POST", "/volunteer-hub/magic-link", tok, { personId: bouncedId, send: true });
+    ok("the page link to a bounced volunteer is not emailed, and says so", lb.status === 200 && lb.body.sent === false && /bounced/.test(lb.body.message || ""), lb.body);
+    const lc = await api("POST", "/volunteer-hub/magic-link", tok, { personId: cleanId, send: true });
+    ok("the page link to a clean volunteer is emailed", lc.status === 200 && lc.body.sent === true, lc.body);
+    await settle();
+    ok("…and only the clean one reached the sink", to(CLEAN).length === 1 && to(bouncedEmail).length === 0,
+      { clean: to(CLEAN).length, bounced: to(bouncedEmail).length });
+    await q("UPDATE orgs SET volunteer_reminders_enabled=false WHERE id=$1", [orgId]);
+  }
+
   sink.srv.close();
   await closeDb();
   summary();

@@ -9983,7 +9983,7 @@ require("./routes/supporter").mount({
 });
 require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
-  insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, orgToday, orgTz,
+  insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, orgToday, orgTz,
   publicAppUrl, query, queryTx, requireAdmin, requireAuth, resend, resolveOrgBrandTheme, run, runTx, uuid,
   volunteerSummary, withTransaction, wrap,
   // The reminder sweep registers itself here so the background tick can call

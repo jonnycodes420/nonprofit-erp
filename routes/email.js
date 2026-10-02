@@ -194,6 +194,15 @@ const DONOR_MAIL_POLICY = {
   year_end:           "transactional",  // year-end giving statement
   recurring_change:   "transactional",  // staff/donor changes to a recurring gift + proposals
   card_expiring:      "transactional",  // "your card expires soon" — the pre-failure half of dunning
+  // FIX-14 Part 4 — VOLUNTEER MAIL. A volunteer is a row in donors (one
+  // person record), so the per-person facts apply to them exactly as to a
+  // donor: deceased, bounced/complained, email_unreachable and is_sample all
+  // refuse, above the block list, org switch and demo refusal. Service mail
+  // about a shift she signed up for, or a link somebody asked for, so the
+  // marketing opt-out does not silence it. Shift reminders are an automatic
+  // send (org opt-in, off by default): Jonathan confirmed it on 2026-10-02.
+  volunteer_reminder: "transactional",  // "Tomorrow: <shift>", the day before, once each
+  volunteer_link:     "transactional",  // a staff member sends a volunteer their own page link
 };
 // ── INCIDENT 2026-09-22 — ONE ORG-LEVEL GATE, READ BY EVERY SEAM ──────────
 // Three different kinds of mail escaped that night — a donor reminder, a
