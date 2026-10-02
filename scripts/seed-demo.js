@@ -2605,6 +2605,42 @@ async function main() {
   }
   console.log(`[assert] the agent: ${personasMod.PERSONAS.length} plans waiting, one from each of the six, none of them run`);
 
+  // ── REPORTS-3 · ONE SAVED DASHBOARD AND A QUARTERLY BOARD PACK ─────────
+  // The dashboard Dana would actually keep: the three numbers a board asks
+  // first, the month-by-month line, and the LYBUNT list under them. Shared
+  // with the team, because a dashboard only one person can open is not the
+  // thing this build is for.
+  //
+  // Every tile is a declaration — a figure source name, a chart key, a report
+  // id — so the demo cannot hold a tile the product does not know how to draw.
+  const dashTiles = [
+    { kind: "figure", source: "gifts", params: {} },
+    { kind: "figure", source: "givers", params: {} },
+    { kind: "figure", source: "retention", params: {} },
+    { kind: "chart", chart: "givingByMonth" },
+    { kind: "list", report: "std:lybunt", limit: 10 },
+  ];
+  await q(`INSERT INTO saved_dashboards (id,org_id,name,tiles,filters,shared,owner_id,owner_name,created_by,created_by_name)
+           VALUES ('dash_b72board',$1,'The board''s four questions',$2,'{}'::jsonb,true,'u_b72demo','Dana Reyes','u_b72demo','Dana Reyes')`,
+    [ORG, JSON.stringify(dashTiles)]);
+
+  // The schedule: quarterly, on the fifth, and OFF. The demo must never mail
+  // anybody, so `enabled` stays false and the recipient list stays empty —
+  // which is also exactly the state a real org is in before it decides to
+  // turn this on, so the demo shows the honest starting point rather than a
+  // configuration nobody chose.
+  await q(`INSERT INTO board_pack_schedules (id,org_id,dashboard_id,frequency,day_of_month,enabled,created_by,created_by_name)
+           VALUES ('bps_b72demo',$1,'dash_b72board','quarterly',5,false,'u_b72demo','Dana Reyes')`, [ORG]);
+  const [dashCheck] = await q(
+    `SELECT (SELECT COUNT(*)::int FROM saved_dashboards WHERE org_id=$1) AS dashboards,
+            (SELECT COUNT(*)::int FROM board_pack_schedules WHERE org_id=$1 AND enabled = true) AS live_schedules,
+            (SELECT COALESCE(jsonb_array_length(board_pack_emails), 0) FROM orgs WHERE id=$1) AS recipients`, [ORG]);
+  if (dashCheck.live_schedules !== 0 || dashCheck.recipients !== 0) {
+    console.error("\nREFUSED: the demo's board pack would send real email. It must stay off with no recipients.\n");
+    process.exit(1);
+  }
+  console.log(`[assert] the board pack: ${dashCheck.dashboards} saved dashboard, a quarterly schedule that is OFF, nobody to send it to`);
+
   // ── THE SHAPE ASSERTION ON THE GENERATED FILE (BUILD-76 follow-up) ──────
   // Asserted HERE, after the write, on every target including production —
   // the committed guard is tests/demo-shape.test.js, but that suite never

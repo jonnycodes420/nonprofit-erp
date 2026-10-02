@@ -4783,6 +4783,71 @@ async function initSchema() {
       UNIQUE (report_id, period_key)
     )`);
 
+  // ── REPORTS-3 — SAVED DASHBOARDS AND THE BOARD PACK ─────────────────────
+  // A saved dashboard is tiles she picked, in the order she put them, with the
+  // filters she chose. A tile is a DECLARATION — a figure source name, a chart
+  // key or a report id, validated by shared/boardPack.js — never SQL, exactly
+  // as a saved report is a definition and never SQL.
+  //
+  // THE ORDER OF THESE THREE MATTERS. board_pack_schedules references
+  // saved_dashboards, so on a fresh database (CI's, and every new org's first
+  // boot) saved_dashboards must exist first. A build shipped with these the
+  // other way round once and the schema failed to initialise, which failed the
+  // deploy with every test green.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_dashboards (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      tiles JSONB NOT NULL,
+      filters JSONB NOT NULL DEFAULT '{}',
+      shared BOOLEAN NOT NULL DEFAULT false,
+      owner_id TEXT, owner_name TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_dashboards_org ON saved_dashboards (org_id)`);
+
+  // ONE schedule per organisation: the board pack is the organisation's, not a
+  // thing each person keeps their own copy of. OFF until somebody turns it on
+  // (`enabled` DEFAULT false) — a schedule that mails a board the moment it is
+  // created is a schedule nobody consented to.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS board_pack_schedules (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      dashboard_id TEXT REFERENCES saved_dashboards(id) ON DELETE SET NULL,
+      frequency TEXT NOT NULL,
+      day_of_month INTEGER NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT false,
+      last_sent_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_board_pack_schedule_org ON board_pack_schedules (org_id)`);
+
+  // ONCE per schedule per period, ever: reserved BEFORE the send and released
+  // if it fails (the digest_sends discipline). A board that gets the same pack
+  // twice stops reading it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS board_pack_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      schedule_id TEXT NOT NULL REFERENCES board_pack_schedules(id) ON DELETE CASCADE,
+      period_key TEXT NOT NULL,
+      period_label TEXT,
+      recipients INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (schedule_id, period_key)
+    )`);
+
+  // The organisation's OWN leadership addresses: staff and board, never
+  // donors. It is a list the org types in Settings and the only list a
+  // scheduled pack is ever sent to.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS board_pack_emails JSONB DEFAULT '[]'`);
+
   // ── BUILD-98 (switch) Part 4 — THE DONOR SIDE OF A GALA ─────────────────
   // Ticket and sponsorship levels. A ticket is a gift that bought something
   // (shared/eventShape.js): price and fair-market value in the level, and the

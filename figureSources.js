@@ -141,7 +141,12 @@ const SOURCES = {
   gifts: {
     label: "Gifts",
     measure: p => p.measure || "sum",
-    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure" },
+    // REPORTS-3 — `order` is the ROW ORDER, not a filter: it changes which
+    // gifts a page shows first and never which gifts the number counts, so the
+    // sentence below does not mention it. It is mapped through a FIXED
+    // allowlist two lines down and is never interpolated into the SQL; a word
+    // this source does not know falls back to the default order.
+    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word" },
     sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}.`,
     sql: (orgId, p) => {
       const args = [orgId, p.from, p.to];
@@ -153,6 +158,7 @@ const SOURCES = {
                 LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
                WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}`,
         args,
+        order: p.order === "amount" ? "amount DESC NULLS LAST, id DESC" : undefined,
       };
     },
   },
@@ -946,6 +952,43 @@ const SOURCES = {
       { role: "plus", label: "Giving this year", key: "gifts", params: { from: p.from, to: p.to } },
       { role: "minus", label: "Same point last year", key: "gifts", params: { from: p.prevFrom, to: p.prevTo } },
     ],
+  },
+  // ── VOLUNTEERS (REPORTS-3) ───────────────────────────────────────────────
+  // A board pack asks for volunteer hours, and until now no figure counted
+  // them: the only place hours existed was a column on the report builder's
+  // people entity, which cannot be opened and cannot be footed. These two are
+  // sources like any other, so the hours in the pack open onto the shifts
+  // that make them.
+  "volunteer-hours": {
+    label: "Volunteer hours",
+    measure: () => "sum",
+    amountKind: "hours",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}, with the hours recorded on it.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT v.id, 'shift' AS type, v.person_id AS donor_id, d.name, v.date,
+                   ROUND(v.hours::numeric, 2) AS amount, NULLIF(v.role, '') AS detail
+              FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
+             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?`,
+      args: [orgId, p.from, p.to],
+      order: "amount DESC NULLS LAST, id DESC",
+    }),
+  },
+  "volunteers-served": {
+    label: "People who volunteered",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Each person with at least one volunteer shift dated ${dd(p.from)} to ${dd(p.to)}, with the hours they gave in that time.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(v.date) AS date,
+                   ROUND(SUM(v.hours)::numeric, 2) AS amount,
+                   COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' shift' ELSE ' shifts' END AS detail
+              FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
+             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.from, p.to],
+      order: "amount DESC NULLS LAST, id",
+    }),
   },
   retention: {
     label: "Retention",

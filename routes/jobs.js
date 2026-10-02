@@ -138,6 +138,31 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => recordTick("processSavedReportSchedule", processSavedReportSchedule).catch(console.error), 5 * 60 * 1000);
 }
 
+// REPORTS-3 — THE BOARD PACK, ON THE DAY SHE PICKED. The same 5-minute tick,
+// never a second scheduler, and the same morning window the other scheduled
+// mail uses so a pack arrives with the day's post rather than at 2 AM. Only
+// orgs with an ENABLED schedule are even looked at, and the send itself is
+// idempotent per period (board_pack_sends), so re-ticking inside the window
+// cannot send twice.
+async function processBoardPackSchedule() {
+  try {
+    const orgs = await query(
+      `SELECT o.id, o.name, o.timezone FROM orgs o
+         JOIN board_pack_schedules s ON s.org_id = o.id
+        WHERE s.enabled = true`);
+    const { reportHooks } = require("./crm");
+    for (const org of orgs) {
+      const clock = orgTime.orgClock(org);                     // ORG_TZ_SEAM_OK
+      if (clock.hour < 6 || clock.hour >= 12) continue;         // morning, org-local
+      await reportHooks.runBoardPackSchedule(org, { today: clock.date })
+        .catch(e => console.error("[board-pack]", org.id, e.message));
+    }
+  } catch (e) { console.error("[board-pack] processBoardPackSchedule:", e.message); }
+}
+if (!backgroundTicksDisabled()) {
+  setInterval(() => recordTick("processBoardPackSchedule", processBoardPackSchedule).catch(console.error), 5 * 60 * 1000);
+}
+
 // The tick — runs both digests for every onboarded org for the most-recently-
 // COMPLETED week/month. Reuses the existing 5-min scheduler cadence (NOT a
 // second scheduler). Idempotency means a digest for a completed period goes out

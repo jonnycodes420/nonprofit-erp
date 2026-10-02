@@ -100,6 +100,28 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   opens the person (`_pid` on builder rows, never a column). The CSV and PDF keep ISO dates and full values. (FIX-2 B)
 - **Scheduled sends reserve a ledger row first (`digest_sends`, `saved_report_sends`) and release it on failure.**
   They ride the existing 5-minute tick, never a second scheduler. (BUILD-17, BUILD-98 P3)
+- **A saved dashboard is tiles she picked, and a tile is a DECLARATION, never SQL (`shared/boardPack.js`).** One of
+  three kinds, each already in the product: a `figure` (a `figureSources.js` source name), the one `chart`
+  (`givingByMonth`), or a `list` (a standard or saved report, run through `savedReportFor`/`runSaved`). A kind,
+  chart or source the registry does not hold is refused by `validateDashboard`. They live in the Dashboards group
+  of the one rail, prefixed `sdash:`, beside the board pack and the tile picker: no second list, no new button. (REPORTS-3)
+- **A dashboard's filters are authoritative and a tile's own params are the fallback.** `from`/`to`/`fund`/
+  `campaign`/`owner` save with the dashboard and live in the URL. A filter a tile's source cannot honour is SAID on
+  the tile (`ignoredFilterSentence`), never silently dropped under a heading that claims it was narrowed. (REPORTS-3)
+- **ONE tile's failure costs that tile.** A source that cannot be read, a report that no longer exists, a chart
+  that will not compute: each becomes a `missing` section where it sits and the rest of the dashboard still draws.
+  It used to throw out of the composition and take the whole screen down. (REPORTS-3)
+- **The board pack is ONE composition (`composeBoardPack`), and the PDF is drawn from it.** The screen and the
+  paper read the same object, so a number cannot be one thing on one and another on the other. Its definitions are
+  written in `shared/boardPack.js` for an ARBITRARY period and are deliberately NOT borrowed from
+  `shared/dashboards.js`, whose sentences are written for the fiscal year: printing "since the first day of your
+  fiscal year" over a quarter's number is the one thing the definitions page exists to prevent. (REPORTS-3)
+- **A board pack goes to the org's own `board_pack_emails`, and the server refuses an address on file as a donor.**
+  Staff and board, never donors. The schedule is one row per org, OFF until somebody turns it on, monthly or
+  quarterly on a day between 1 and 28 (29 to 31 do not exist in every month), reporting on the last COMPLETE
+  period through `orgPeriodBounds(org, period, -1)`. It reserves `board_pack_sends` before the first send and
+  releases it when nothing was accepted, and rides the existing 5-minute tick. "Send a test to me" goes to the
+  caller alone and reserves nothing. (REPORTS-3)
 ## Gotchas
 - **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
   figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)
@@ -111,6 +133,18 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   Check every write in a walk. (BUILD-85)
 - **A test that steps the clock forward must land on a weekday.** Derive the expected count from the chosen
   date, or the weekend rule fails it on Fridays. (FIX 2026-09-18)
+- **A RATIO source has no `measure` function.** `retention`, `giving-change` and `giving-difference` are computed
+  from their two parts, so `sDef.measure(p)` throws on one. Ask `tileFigureKind` what kind of number a source
+  makes. The default board pack is all sums and counts, so no server test saw this; the seeded dashboard's
+  retention tile crashed the whole screen on the first browser open. (REPORTS-3)
+- **A screen that swaps itself for a spinner while loading unmounts the control being typed in.** The saved
+  dashboard returned a bare `<Spin/>` on every filter change, which destroyed the date input mid-keystroke: the
+  filters could not be typed at all. Keep the header and filter bar mounted and dim only what is reloading. (REPORTS-3)
+- **An uncompressed pdfkit PDF writes text as a KERNED array (`[<hex> -20 <hex>] TJ`), not as `(…) Tj`.** A reader
+  that looks only for the second form returns nothing, and every "is this printed" assertion then passes
+  vacuously. Assert the reader can tell two near-identical numbers apart before trusting anything it says, and
+  pin a number to its own LABEL: "somewhere on the page" was satisfied by a coincidentally equal total elsewhere
+  in the document and caught only one of six planted defects. (REPORTS-3)
 - **An adapted donor carries `total`, not `total_giving` (`adaptDonor`, api.js).** Seed conversations with
   `TOUCH_TYPES` from `threadShape.js`, because invented touch keys are dropped silently. (BUILD-89)
 ## Every number opens (FIX-2 A)
@@ -182,6 +216,8 @@ number that cannot open does not ship.
 - `client/src/lib/reportsRail.js` · `client/src/lib/reportFormat.js` — the one rail and its resolver · how a report cell reads
 - server.js `REPORT_HANDLERS`, `reportToCsv`, `sendReportCsv`, `reportBuntList`, `parseReportParams`
 - `drift.js` + server.js `computeDriftForDonors` — Drift · `orgTime.js` — `orgPeriodBounds`, `orgReportYear`
+- `shared/boardPack.js` — the pack's sections, the tile kinds, the schedule rules · routes/crm.js
+  `composeBoardPack`/`renderBoardPackPdf`/`runBoardPackScheduleForOrg` · `client/src/components/SavedDashboards.jsx`
 
 ---
 
