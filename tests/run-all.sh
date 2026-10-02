@@ -170,6 +170,7 @@ CORE=(
   stripe-disputes
   recurring-recovery
   give2-fee-footing
+  campaign2-goal-bar
   trial-end
   upgrade-checkout
   close-link

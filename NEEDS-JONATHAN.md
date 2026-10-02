@@ -35,6 +35,14 @@ run ten minutes before a call:
     DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app \
       node scripts/seed-demo.js --i-know-this-is-prod
 
+Afterwards Harborlight also has (GIVE-2 and CAMPAIGN-2, 2 October): a donation
+form with amounts drawn from Harborlight's own giving, five covered-fee gifts
+carrying the processor's real cut beside the charge, a recovered monthly gift
+with the gift behind it, two matching employers with their own form links, a
+year-end campaign page a fifth of the way to $60,000 with a part-claimed
+$25,000 match, and a GivingTuesday plan of seven dated reminders. None of it
+sends anything.
+
 Afterwards Harborlight also has: six agent plans, one from each of the six
 personas, none of them run (AGENTS-1); Stripe healthy, PayPal healthy and
 Givebutter QUIET on the Connections screen (INT-1); Square connected with gala

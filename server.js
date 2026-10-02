@@ -4651,6 +4651,9 @@ async function ratesMod() { return import("./shared/processingRates.js"); }
 async function footingMod() { return import("./shared/giftFooting.js"); }
 async function smartAmountsMod() { return import("./shared/smartAmounts.js"); }
 async function employerMatchMod() { return import("./shared/employerMatch.js"); }
+// CAMPAIGN-2 — the campaign page's templates, plan, countdown, match and the
+// ONE function that turns a gift row into a line a stranger may read.
+async function campaignPageMod() { return import("./shared/campaignPage.js"); }
 
 // ── GIVE-2 §5 — THE RATE THE PUBLIC FORM SHOWS ────────────────────────────
 // Every public giving payload carries it, so the sentence under the
@@ -9518,7 +9521,10 @@ const widgetMod = () => import("./shared/pageWidgets.js");
 // BUILD-95 §5B — the per-widget resolution, shared by the portal page and
 // every giving page. ONE pipeline: a widget that resolves differently on two
 // surfaces is a widget that eventually shows different numbers on them.
-async function resolveWidgetsPublic(org, widgets) {
+// CAMPAIGN-2 — `ctx` carries the PAGE the widgets belong to: its id and its
+// campaign. The three campaign widgets are `give`-only, so the portal caller
+// passes nothing and nothing changes for it.
+async function resolveWidgetsPublic(org, widgets, ctx = {}) {
   // BUILD-54 §1 discipline: the per-widget resolution queries are independent
   // reads — resolve them in PARALLEL (this is the donor's first paint; a
   // sequential loop re-created the exact round-trip stacking §1 removed).
@@ -9557,6 +9563,82 @@ async function resolveWidgetsPublic(org, widgets) {
             ? Math.min(100, Math.round(((parseFloat(c.raised) || 0) / parseFloat(c.goal_amount)) * 100)) : null,
         } : null,
       } : null;
+    }
+    // ── CAMPAIGN-2 · THE THREE A CAMPAIGN PAGE NEEDS ──────────────────────
+    // Each one renders NOTHING when there is nothing true to say: a countdown
+    // with no end date, a match nobody has entered, a list with no gifts in it.
+    // "Never fabricate — no content, no widget" is the rule the `campaign`
+    // branch above already follows and these follow it.
+    if (w.type === "countdown") {
+      const CP = await campaignPageMod();
+      const end = ctx.campaignEndDate || null;
+      r.endDate = end;
+      r.sentence = end ? CP.countdownSentence(end, ctx.today || null) : null;
+      r.daysLeft = end && ctx.today ? CP.daysBetween(ctx.today, end) : null;
+    }
+    if (w.type === "matchchallenge") {
+      const CP = await campaignPageMod();
+      r.match = null;
+      if (ctx.campaignId) {
+        const [c] = await query(
+          `SELECT match_cents, match_sponsor, match_started_at FROM campaigns WHERE id=? AND org_id=?`,
+          [ctx.campaignId, org.id]);
+        const pot = c && Number(c.match_cents) > 0 ? Math.round(Number(c.match_cents)) : 0;
+        if (pot) {
+          // WHAT IS LEFT OF IT is counted from the gifts recorded SINCE the
+          // match began, because money that arrived before anybody promised to
+          // double it was never part of the promise. Donor intent (the gift
+          // less any fee the donor covered), the same basis every campaign
+          // thermometer in this product already uses.
+          const [sum] = await query(
+            `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised
+               FROM gifts g JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
+              WHERE g.org_id=? AND (g.campaign_id=c.id OR g.campaign=c.name)
+                AND (c.match_started_at IS NULL OR g.date >= to_char(c.match_started_at,'YYYY-MM-DD'))`,
+            [ctx.campaignId, org.id]);
+          const since = Math.round((Number(sum?.raised) || 0) * 100);
+          r.match = {
+            potCents: pot, sponsor: c.match_sponsor || null,
+            claimedCents: Math.min(pot, since), remainingCents: Math.max(0, pot - since),
+            sentence: CP.matchSentence({ matchCents: pot, raisedSinceMatchCents: since, sponsor: c.match_sponsor || "" }),
+            definition: CP.MATCH_DEFINITION,
+          };
+        }
+      }
+    }
+    if (w.type === "recentgifts") {
+      const CP = await campaignPageMod();
+      const n = Math.max(1, Math.min(20, parseInt(w.count, 10) || 8));
+      // THE ROWS COME FROM THE CAMPAIGN WHEN THERE IS ONE and from the page
+      // otherwise, so a page that is somebody's campaign shows the campaign's
+      // gifts — including the ones given through a supporter's own fundraising
+      // page, which is the whole point of linking them.
+      //
+      // The SELECT has no email column and there is not going to be one.
+      const rows = ctx.campaignId
+        ? await query(
+            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
+               FROM gifts g
+               JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+               JOIN campaigns c ON c.id=? AND c.org_id=g.org_id
+              WHERE g.org_id=? AND (g.campaign_id=c.id OR g.campaign=c.name) AND g.amount > 0
+              ORDER BY g.date DESC, g.id DESC LIMIT ?`, [ctx.campaignId, org.id, n])
+        : ctx.pageId
+        ? await query(
+            `SELECT g.date, g.amount, g.cover_fee_amount, g.show_name_publicly, d.name AS donor_name
+               FROM gifts g
+               JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+              WHERE g.org_id=? AND g.giving_page_id=? AND g.amount > 0
+              ORDER BY g.date DESC, g.id DESC LIMIT ?`, [org.id, ctx.pageId, n])
+        : [];
+      const showAmounts = w.showAmounts === true;
+      r.gifts = rows.map(row => CP.publicGiftLine({
+        donorName: row.donor_name,
+        amountCents: Math.round(((Number(row.amount) || 0) - (Number(row.cover_fee_amount) || 0)) * 100),
+        showName: row.show_name_publicly === true,
+        date: row.date,
+      }, { showAmounts }));
+      r.definition = CP.RECENT_GIFTS_DEFINITION;
     }
     if (w.type === "impact") {
       // Public view: ORG-WIDE published updates only (targeted updates need
@@ -10157,7 +10239,7 @@ require("./routes/give").mount({
   consumerEmailHtml, crypto, directorySearchLimiter, displayNameCase, donateLimiter, donorAudit,
   donorFacingOrgName, donorFromAddress, donorMailDecision, donorSendOpts, einLookup,
   ensureOrgLedger, escHtmlWf, escapeHtml, express, foldEmail, footingMod, formConfigMod,
-  fromWithDisplayName, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  fromWithDisplayName, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   fundraiserManageLimiter, getThemeAsset, giveThemePayload, invitationLimiter, linkAccountEmail,
   logRecoveryEvent, logRecurringChange, networkSignupLimiter, normalizeAccent, normalizeTint,
@@ -10191,7 +10273,7 @@ require("./routes/crm").mount({
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,
-  ratesMod, smartAmountsMod, coverFeePayload, geocode, getOrgAccessState,
+  ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod, geocode, getOrgAccessState,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,
   grantDocs, grantMoneyRows, grantMsMod, hashApiKey, imageBytesMatchMime, inboundMod, insertShift,

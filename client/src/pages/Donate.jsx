@@ -1012,6 +1012,16 @@ export default function Donate() {
                   {linked && givingPage.campaignName && (
                     <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>Gifts here count toward <strong style={{ color: T.ink2 }}>{givingPage.campaignName}</strong>.</div>
                   )}
+                  {/* CAMPAIGN-2 — WHAT THE BAR COUNTS, in the server's words.
+                      A thermometer is the number a stranger is most likely to
+                      doubt, and the two things people assume it leaves out are
+                      the two it names: a cheque somebody posted, and a gift
+                      given through a supporter's own fundraising page. */}
+                  {givingPage.goalSentence && (
+                    <div className="goal-sentence" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.55 }}>
+                      {givingPage.goalSentence}
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -1114,6 +1124,7 @@ export default function Donate() {
             upsellThresholdCents={givingPage?.upsellThresholdCents}
             upsellMonthlyCents={givingPage?.upsellMonthlyCents}
             feeRateSentence={org?.feeRateSentence}
+            showsRecentGifts={Array.isArray(givingPage?.page) && givingPage.page.some(w => w && w.type === "recentgifts")}
             grossUpCents={grossUpCents}
             submitting={submitting}
             submitErr={submitErr}

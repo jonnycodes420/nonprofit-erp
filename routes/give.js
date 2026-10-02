@@ -33,7 +33,7 @@ const {
   ensureOrgLedger, escHtmlWf, escapeHtml, express, foldEmail, formConfigMod, fromWithDisplayName,
   // GIVE-2 — the pure money modules (rates, footing, smart amounts, employer
   // match) and the one public cover-fee payload every giving page shows.
-  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   fundraiserManageLimiter, getThemeAsset, giveThemePayload, invitationLimiter, linkAccountEmail,
   logRecoveryEvent, logRecurringChange, networkSignupLimiter, normalizeAccent, normalizeTint,
@@ -1619,6 +1619,180 @@ const givingPageOr404 = async (id, orgId) => {
 // things the PAGE may report; a COMPLETION is counted from the gift itself in the
 // webhook, because a page cannot be trusted to know whether money actually moved
 // and a completion nobody paid for is the one number that would matter.
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CAMPAIGN-2 · A CAMPAIGN PAGE IN TEN MINUTES, AND A PLAN INSTEAD OF A BLANK
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// These live HERE, beside the giving pages, because what a campaign template
+// creates IS a giving page: BUILD-95 §5B settled that a public page is
+// `giving_pages` plus a widget list, `giving_pages.campaign_id` already makes
+// the thermometer the campaign's, and BUILD-103's peer-to-peer fundraisers
+// already roll into the page's own total. There is no second page system and no
+// second thermometer; linking the page is what makes every one of those gifts
+// count toward the same bar with no aggregation written anywhere.
+//
+// NOTHING IN HERE SENDS ANYTHING. A template's steps are dated staff tasks:
+// "draft the appeal", "line up the match", "thank everyone within 48 hours".
+// They are reminders on somebody's list, and the standing rule — she wrote
+// every word, she turned it on, each send is hers — is exactly what a campaign
+// template is most likely to quietly break.
+
+// A DATED STEP IS A TASK AND NOT A THREAD, and that is a decision rather than a
+// convenience. A Thread is ONE PERSON's list and requires a donor by
+// construction (`threads.donor_id NOT NULL`); "write the three social posts"
+// belongs to the campaign and to nobody in particular until somebody takes it.
+app.get("/campaign-templates", requireAuth, wrap(async (req, res) => {
+  const CP = await campaignPageMod();
+  const today = orgToday(await orgTz(req.user.orgId));          // ORG_TZ_SEAM_OK
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgName = await donorFacingOrgName(req.user.orgId, org?.name || "");
+  const templates = CP.TEMPLATE_KEYS.map(k => CP.planFor(k, { today, orgName })).filter(Boolean);
+  // WHETHER IT HAS ALREADY BEEN RUN. Standing one up twice is the mistake this
+  // screen makes easiest, and the answer is a fact the server already holds.
+  for (const t of templates) {
+    const [existing] = await query(
+      "SELECT id FROM campaigns WHERE org_id=? AND lower(name)=lower(?)", [req.user.orgId, t.campaign.name]);
+    t.existingCampaignId = existing ? existing.id : null;
+  }
+  res.json({
+    templates,
+    definition: "A template stands up the campaign, its public page and a plan of dated reminders. Every step is a task for somebody here. Steward sends none of them.",
+  });
+}));
+
+app.post("/campaigns/from-template", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const CP = await campaignPageMod();
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK
+  // `req.user` carries no org slug, and the public URL below is the one thing
+  // somebody copies straight out of this response.
+  const [org] = await query("SELECT name, org_slug FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, org?.name || "");
+  const plan = CP.planFor(req.body?.template, { today, orgName });
+  if (!plan) return res.status(400).json({ error: "That is not a template.", code: "unknown_template" });
+
+  // ONE CAMPAIGN PER TEMPLATE PER YEAR. Pressing the button twice is the
+  // likeliest thing to happen to this route, and two GivingTuesday 2026
+  // campaigns is two thermometers measuring the same money.
+  const [clash] = await query(
+    "SELECT id FROM campaigns WHERE org_id=? AND lower(name)=lower(?)", [orgId, plan.campaign.name]);
+  if (clash) {
+    return res.status(409).json({ error: `${plan.campaign.name} already exists.`, code: "already_exists", campaignId: clash.id });
+  }
+
+  const goal = req.body?.goalAmount != null && req.body.goalAmount !== ""
+    ? parseFloat(req.body.goalAmount) : null;
+  if (goal != null && (!Number.isFinite(goal) || goal < 0)) {
+    return res.status(400).json({ error: "A goal is a number of dollars, or nothing at all." });
+  }
+
+  const campaignId = "camp_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO campaigns (id, org_id, name, type, status, goal_amount, start_date, end_date, donor_facing_name, goal_progress_public)
+     VALUES (?,?,?,'appeal','draft',?,?::date,?::date,?,TRUE)`,
+    [campaignId, orgId, plan.campaign.name, goal, plan.campaign.startDate, plan.campaign.endDate, plan.campaign.name]);
+
+  // THE PAGE. A starter widget list, published straight away — a campaign page
+  // that exists only as a draft is a campaign page nobody can give through, and
+  // "ten minutes" is the whole promise.
+  const slug = await uniqueGivingPageSlug(orgId, slugifyGivingPage(plan.page.slug));
+  const pageId = "gp_" + uuid().slice(0, 8);
+  const widgets = [
+    { type: "hero", heading: plan.page.headline, sub: "", image: null, size: "standard" },
+    { type: "richtext", blocks: plan.page.story.split("\n\n").filter(Boolean).map(t => ({ type: "p", text: t })) },
+    { type: "countdown", heading: "" },
+    { type: "matchchallenge" },
+    { type: "recentgifts", count: 8, showAmounts: false, heading: "Recent gifts" },
+  ];
+  await run(
+    `INSERT INTO giving_pages
+       (id, org_id, slug, title, goal_amount, story, status, campaign_id, is_campaign_page,
+        form_position, published, published_at, draft, draft_updated_at, created_by, created_by_name,
+        form_config)
+     VALUES (?,?,?,?,?,?,'active',?,TRUE,'top',?::jsonb,NOW(),?::jsonb,NOW(),?,?,?::jsonb)`,
+    [pageId, orgId, slug, plan.page.title, goal, plan.page.story, campaignId,
+     JSON.stringify(widgets), JSON.stringify(widgets), actor(req).id, actor(req).name,
+     JSON.stringify(plan.formConfig)]);
+
+  // THE PLAN. Dated tasks, unassigned: whoever picks one up owns it, which is
+  // how a two-person shop actually divides a fortnight.
+  const steps = [];
+  for (const s of plan.steps) {
+    const id = "t_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO tasks (id, org_id, title, due, priority, type, done, campaign_id, created_by, created_by_name)
+       VALUES (?,?,?,?,'medium',?,0,?,?,?)`,
+      [id, orgId, s.title, s.due, s.type || "donor", campaignId, actor(req).id, actor(req).name]);
+    steps.push({ id, title: s.title, due: s.due, detail: s.detail, type: s.type || "donor" });
+  }
+
+  req.audit.entity("campaign", campaignId, plan.campaign.name);
+  req.audit.action(`started ${plan.label} from a template`);
+  res.status(201).json({
+    campaignId, pageId, slug,
+    publicUrl: `${publicAppUrl()}/give/${encodeURIComponent(org?.org_slug || "")}/${slug}`,
+    campaign: plan.campaign, steps,
+    sentence: `${plan.campaign.name} is live, with a page donors can give through and ${steps.length} dated reminders. Nothing has been sent.`,
+  });
+}));
+
+// THE PLAN, READ BACK. The same tasks, in date order, with whether they are
+// done — so the campaign screen shows a plan rather than a list of tasks mixed
+// in with everything else somebody has to do this fortnight.
+app.get("/campaigns/:id/plan", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT id, name, start_date, end_date FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "not_found" });
+  const rows = await query(
+    `SELECT id, title, due, done, type, assigned_to_name FROM tasks
+      WHERE org_id=? AND campaign_id=? AND voided_at IS NULL
+      ORDER BY due ASC NULLS LAST, id ASC`, [orgId, req.params.id]);
+  const today = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK
+  res.json({
+    campaignId: c.id, campaignName: c.name,
+    steps: rows.map(r => ({
+      id: r.id, title: r.title, due: r.due, done: r.done === 1,
+      type: r.type, owner: r.assigned_to_name || null,
+      // Brass, not red: an overdue step is "look here", and red is only for a
+      // destructive confirm.
+      late: r.done !== 1 && !!r.due && r.due < today,
+    })),
+    definition: "The steps this campaign's plan put on somebody's list. Each one is a task here; Steward sends nothing.",
+  });
+}));
+
+// THE MATCHING CHALLENGE. Entered by a person, shown only once entered, and
+// cleared by sending nothing.
+app.put("/campaigns/:id/match", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT id, name FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "not_found" });
+  const raw = req.body?.matchCents;
+  if (raw === null || raw === "" || raw === undefined) {
+    await run(`UPDATE campaigns SET match_cents=NULL, match_sponsor=NULL, match_started_at=NULL WHERE id=? AND org_id=?`,
+      [req.params.id, orgId]);
+    return res.json({ match: null, sentence: "The matching challenge is off. The page stops mentioning it." });
+  }
+  const cents = Number(raw);
+  if (!Number.isInteger(cents) || cents <= 0) {
+    return res.status(400).json({ error: "A match is a whole number of cents above zero, or nothing at all." });
+  }
+  const sponsor = String(req.body?.sponsor || "").trim().slice(0, 120) || null;
+  // THE CLOCK STARTS WHEN THE MATCH DOES, and an existing one keeps its own
+  // start: money that arrived before anybody promised to double it was never
+  // part of the promise, and re-saving the sponsor's name must not re-claim it.
+  await run(
+    `UPDATE campaigns SET match_cents=?, match_sponsor=?, match_started_at=COALESCE(match_started_at, NOW())
+      WHERE id=? AND org_id=?`, [cents, sponsor, req.params.id, orgId]);
+  const CP = await campaignPageMod();
+  res.json({
+    match: { potCents: cents, sponsor },
+    sentence: CP.matchSentence({ matchCents: cents, raisedSinceMatchCents: 0, sponsor: sponsor || "" }),
+    definition: CP.MATCH_DEFINITION,
+  });
+}));
+
 app.post("/forms/:id/event", donateLimiter, wrap(async (req, res) => {
   const kind = String(req.body && req.body.kind || "");
   if (!["view", "start"].includes(kind)) {
@@ -2692,6 +2866,12 @@ const donateHandler = async (req, res) => {
     // column from here: a gift through a friend's page is still a gift to
     // the organisation, and the friend is not entitled to a list of who gave.
     show_name_to_fundraiser: peerFundraiserId && req.body.showNameToFundraiser === true ? "1" : "",
+    // CAMPAIGN-2 — whether this donor chose to have their FIRST NAME on the
+    // public campaign page. A separate answer from the one above, because they
+    // are two different audiences: a donor may be happy for the friend whose
+    // page they gave through to know, and not for the internet. Off unless they
+    // ticked it, and the webhook writes the column from here.
+    show_name_publicly: req.body.showNamePublicly === true ? "1" : "",
     // EVENTS-2 — the hold the webhook consumes, whether the member price was
     // applied (so the receipt's split is computed from the price actually
     // charged), and who is coming on this ticket.

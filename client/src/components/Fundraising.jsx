@@ -271,6 +271,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       {!loading && subtab === "campaigns" && (
         <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} focusId={focusCampaign} onOpenCampaign={openCampaign}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
+          onTemplateCreated={() => load()}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
       )}
 
@@ -629,7 +630,188 @@ function GoalThermometerDark({ goal }) {
 // children nested under their umbrella) — NOT the flat campaign rows — so an
 // umbrella shows its roll-up here too, never "$0 · Behind pace" while its
 // children fund it. Top-level count == cards shown.
-function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpenCampaign }) {
+// ── CAMPAIGN-2 · A CAMPAIGN IN TEN MINUTES ─────────────────────────────────
+// Two templates, their real dates computed from this year's calendar, and what
+// pressing the button actually creates. It says so BEFORE the press rather than
+// after: a button that silently makes a campaign, a public page and seven tasks
+// is a button nobody presses twice.
+function CampaignTemplates({ isReadOnly, onCreated }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(null);     // the key whose detail is showing
+  const [goal, setGoal] = useState("");
+
+  useEffect(() => {
+    apiFetch("/campaign-templates").then(setData).catch(() => setData({ templates: [] }));
+  }, []);
+
+  async function create(key) {
+    if (busy) return;
+    setBusy(key); setErr("");
+    try {
+      const out = await apiFetch("/campaigns/from-template", {
+        method: "POST",
+        body: JSON.stringify({ template: key, goalAmount: goal === "" ? null : Number(goal) }),
+      });
+      setGoal(""); setOpen(null);
+      const fresh = await apiFetch("/campaign-templates").catch(() => data);
+      setData(fresh);
+      if (onCreated) onCreated(out);
+    } catch (e) { setErr(errorMessage(e, "That did not start.")); }
+    setBusy("");
+  }
+
+  if (!data || !data.templates.length) return null;
+
+  return (
+    <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px", marginBottom: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 6 }}>
+        Start from a plan
+      </div>
+      <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 14 }}>{data.definition}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
+        {data.templates.map(t => (
+          <div key={t.key} className={`camp-tpl camp-tpl-${t.key}`}
+            style={{ border: "1px solid " + (open === t.key ? T.ink : T.bg3), borderRadius: 12, padding: "14px 16px" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{t.label} {t.year}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6, margin: "4px 0 8px" }}>{t.blurb}</div>
+            <div style={{ fontSize: 12, color: T.ink2 }}>
+              {t.campaign.startDate} to {t.campaign.endDate} &middot; {t.steps.length} dated reminders
+            </div>
+            {t.existingCampaignId ? (
+              <div className="camp-tpl-done" style={{ fontSize: 12, color: T.gold, marginTop: 8, fontWeight: 600 }}>
+                You already have {t.campaign.name}.
+              </div>
+            ) : !isReadOnly ? (
+              <>
+                <button onClick={() => setOpen(open === t.key ? null : t.key)}
+                  style={{ background: "none", border: "none", padding: 0, marginTop: 8, color: T.greenDk,
+                           fontSize: 12.5, fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}>
+                  {open === t.key ? "Hide the plan" : "See the plan"}
+                </button>
+                {open === t.key ? (
+                  <>
+                    <ol className="camp-tpl-steps" style={{ margin: "10px 0 0", paddingLeft: 18 }}>
+                      {t.steps.map(s => (
+                        <li key={s.due + s.title} style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.6, marginBottom: 6 }}>
+                          <strong style={{ color: T.ink }}>{s.due}</strong> &middot; {s.title}
+                          <span style={{ display: "block", color: T.ink3 }}>{s.detail}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+                      <input className="camp-tpl-goal" placeholder="Goal (optional)" value={goal} inputMode="decimal"
+                        onChange={e => setGoal(e.target.value.replace(/[^0-9.]/g, ""))}
+                        style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px",
+                                 color: T.ink, fontSize: 13, fontFamily: "inherit", width: 140 }} />
+                      <button className="camp-tpl-go" onClick={() => create(t.key)} disabled={!!busy}
+                        style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 8,
+                                 padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer" }}>
+                        {busy === t.key ? "Starting…" : `Start ${t.label} ${t.year}`}
+                      </button>
+                    </div>
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {err ? <div style={{ fontSize: 12, color: T.gold, marginTop: 10 }}>{err}</div> : null}
+    </div>
+  );
+}
+
+// ── CAMPAIGN-2 · THE PLAN, AND THE MATCH ───────────────────────────────────
+// Both on the campaign they belong to. The plan is the template's dated steps
+// read back as a plan rather than scattered through everybody's task list, and
+// the match is the one number a campaign page may not invent.
+function CampaignPlanPanel({ campaignId, isReadOnly }) {
+  const [plan, setPlan] = useState(null);
+  const [match, setMatch] = useState({ amount: "", sponsor: "" });
+  const [matchMsg, setMatchMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    if (!campaignId) return;
+    apiFetch(`/campaigns/${campaignId}/plan`).then(setPlan).catch(() => setPlan({ steps: [] }));
+  }, [campaignId]);
+
+  async function saveMatch(clear) {
+    if (busy) return;
+    setBusy(true); setErr(""); setMatchMsg("");
+    try {
+      const cents = clear ? null : Math.round(Number(match.amount || 0) * 100);
+      const out = await apiFetch(`/campaigns/${campaignId}/match`, {
+        method: "PUT", body: JSON.stringify({ matchCents: cents, sponsor: match.sponsor || undefined }),
+      });
+      setMatchMsg(out.sentence || "");
+      if (clear) setMatch({ amount: "", sponsor: "" });
+    } catch (e) { setErr(errorMessage(e, "That did not save.")); }
+    setBusy(false);
+  }
+
+  if (!plan) return null;
+  const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px",
+                color: T.ink, fontSize: 13, fontFamily: "inherit" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {plan.steps.length ? (
+        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>
+            The plan
+          </div>
+          <ul className="camp-plan" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {plan.steps.map(s => (
+              <li key={s.id} style={{ display: "flex", gap: 10, alignItems: "baseline", padding: "7px 0",
+                                      borderTop: "1px solid " + T.bg2, fontSize: 13 }}>
+                {/* Brass for late, never red: red is only for a destructive confirm. */}
+                <span style={{ minWidth: 92, color: s.late ? T.gold700 : T.ink3, fontWeight: s.late ? 700 : 400 }}>{s.due}</span>
+                <span style={{ flex: 1, color: T.ink, textDecoration: s.done ? "line-through" : "none", opacity: s.done ? 0.55 : 1 }}>
+                  {s.title}
+                </span>
+                {s.owner ? <span style={{ color: T.ink3, fontSize: 12 }}>{s.owner}</span> : null}
+              </li>
+            ))}
+          </ul>
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 10, lineHeight: 1.55 }}>{plan.definition}</div>
+        </div>
+      ) : null}
+
+      <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "18px 22px" }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>
+          Matching challenge
+        </div>
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 12 }}>
+          Enter it only once somebody has actually promised it. The page says nothing about a match until you do, and it stops
+          claiming one when the whole amount has been claimed.
+        </div>
+        {!isReadOnly ? (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input className="camp-match-amount" placeholder="Amount" value={match.amount} inputMode="decimal"
+              onChange={e => setMatch({ ...match, amount: e.target.value.replace(/[^0-9.]/g, "") })} style={{ ...inp, width: 120 }} />
+            <input className="camp-match-sponsor" placeholder="Who is matching (optional)" value={match.sponsor}
+              onChange={e => setMatch({ ...match, sponsor: e.target.value })} style={{ ...inp, minWidth: 220, flex: 1 }} />
+            <button className="camp-match-save" onClick={() => saveMatch(false)} disabled={busy || !match.amount}
+              style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "9px 16px",
+                       fontSize: 13, fontWeight: 700, cursor: busy || !match.amount ? "default" : "pointer",
+                       opacity: match.amount ? 1 : 0.5 }}>Save</button>
+            <button onClick={() => saveMatch(true)} disabled={busy}
+              style={{ background: "none", border: "none", padding: 0, color: T.ink3, fontSize: 12,
+                       textDecoration: "underline", cursor: busy ? "default" : "pointer" }}>Turn it off</button>
+          </div>
+        ) : null}
+        {matchMsg ? <div className="camp-match-msg" style={{ fontSize: 12.5, color: T.ink2, marginTop: 10, lineHeight: 1.55 }}>{matchMsg}</div> : null}
+        {err ? <div style={{ fontSize: 12, color: T.gold, marginTop: 8 }}>{err}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpenCampaign, onTemplateCreated }) {
   const editBtn = c => !isReadOnly ? (
     <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
   ) : null;
@@ -640,6 +822,11 @@ function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpe
         <button onClick={onNew} disabled={isReadOnly} title={roTip}
           style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.5 : 1, whiteSpace: "nowrap" }}>+ New campaign</button>
       </div>
+
+      {/* CAMPAIGN-2 — the two starting points a small shop asks for by name,
+          above the list rather than hidden behind the New button: the point is
+          that somebody who has not thought about GivingTuesday sees it. */}
+      <CampaignTemplates isReadOnly={isReadOnly} onCreated={onTemplateCreated} />
 
       {goals.length === 0 ? (
         <>
@@ -897,6 +1084,15 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
             </span>
           </label>
         </div>
+        {/* CAMPAIGN-2 — the plan and the matching challenge, INSIDE the panel
+            where a campaign is already edited rather than on a screen of their
+            own. An unedited campaign has neither, and the panel renders
+            nothing for it. */}
+        {mode === "edit" && campaign?.id ? (
+          <div style={{ marginTop: 18, borderTop: "1px solid " + T.bg2, paddingTop: 16 }}>
+            <CampaignPlanPanel campaignId={campaign.id} isReadOnly={false} />
+          </div>
+        ) : null}
         {err && <div style={{ fontSize: 13, color: T.terracotta, marginTop: 14 }}>{err}</div>}
       </div>
     </Modal>

@@ -5897,6 +5897,47 @@ async function initSchema() {
   await pool.query(`UPDATE gifts SET processor_fee_source='provider'
                      WHERE processor_fee_source IS NULL AND giving_source_id IS NOT NULL`);
 
+  // ── CAMPAIGN-2 · A CAMPAIGN'S PUBLIC PAGE, AND ITS PLAN ──────────────────
+  //
+  // A CAMPAIGN'S PAGE IS A GIVING PAGE. There is no second kind of public page:
+  // `giving_pages.campaign_id` already makes a page's thermometer the
+  // campaign's, and peer-to-peer fundraisers already roll into the page's own
+  // total, so linking the page to the campaign is what makes every one of those
+  // gifts count toward the same bar without a line of aggregation.
+  //
+  // What was missing is WHICH page. A campaign may legitimately have several
+  // linked pages (an appeal page and a walk's p2p page), so the one the
+  // campaign screen opens and the template creates is flagged. One flag, one
+  // page, and a partial unique index makes "one" a fact rather than a habit.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS is_campaign_page BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_giving_pages_one_campaign_page
+                      ON giving_pages(org_id, campaign_id) WHERE is_campaign_page`);
+
+  // THE MATCHING CHALLENGE. Shown only when the organisation has entered one,
+  // and `match_started_at` is what makes "how much of it is left" answerable:
+  // the match applies to gifts recorded from the moment it began, not to money
+  // that arrived before anybody promised to double it.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_cents INTEGER`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_sponsor TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS match_started_at TIMESTAMPTZ`);
+
+  // THE DONOR'S OWN CHOICE ABOUT THEIR NAME, gift by gift. FALSE by default and
+  // the default IS the decision (BUILD-103's rule, applied to a public page): a
+  // gift to an organisation is not a public act unless the person giving it
+  // says so. A separate column from `show_name_to_fundraiser` because they are
+  // two different audiences and two different answers — a donor may be happy
+  // for the friend whose page they gave through to know, and not for the
+  // internet.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS show_name_publicly BOOLEAN NOT NULL DEFAULT FALSE`);
+
+  // THE STAFF PLAN. A template's steps are dated TASKS, not Threads: a Thread
+  // is one person's list and requires a donor by construction (`threads.donor_id
+  // NOT NULL`), while "draft the appeal" is the campaign's and belongs to
+  // nobody in particular until somebody takes it. The column is what lets the
+  // plan be read back as a plan.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_campaign ON tasks(org_id, campaign_id) WHERE campaign_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

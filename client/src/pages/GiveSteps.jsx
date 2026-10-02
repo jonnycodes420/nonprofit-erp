@@ -93,6 +93,10 @@ export default function GiveSteps({
   // GIVE-2 §5 — the org's own processing rate, in the org's own words, so the
   // sentence beside the box is this organisation's number.
   feeRateSentence,
+  // CAMPAIGN-2 — whether this page shows a recent-gifts list. The choice is
+  // only offered where it means something: asking a donor whether to show their
+  // name on a page that lists nobody is a question with no consequence.
+  showsRecentGifts,
   onSubmit, submitting, submitErr, grossUpCents, styles, apiBase,
 }) {
   const { card, inp, btn, quiet } = styles;
@@ -109,6 +113,10 @@ export default function GiveSteps({
   // GIVE-2 §4 — "remember me", for a one-time gift. Opt-in, never pre-ticked:
   // a saved card nobody asked to save is the worst thing a donation form can do.
   const [rememberMe, setRememberMe] = useState(false);
+  // CAMPAIGN-2 — off unless they tick it, and the default IS the decision: a
+  // gift to an organisation is not a public act unless the person giving it
+  // says so.
+  const [showNamePublicly, setShowNamePublicly] = useState(false);
   const [tributeType, setTributeType] = useState("");
   const [tributeName, setTributeName] = useState("");
   const [notifyName, setNotifyName] = useState("");
@@ -219,6 +227,9 @@ export default function GiveSteps({
       // GIVE-2 §4 — the server ignores it for a monthly gift, a ticket and a
       // membership, so this is a request rather than a decision.
       rememberMe: frequency === "once" && rememberMe,
+      // CAMPAIGN-2 — the donor's own answer, never defaulted on and never sent
+      // from a page that did not ask.
+      showNamePublicly: !!showsRecentGifts && showNamePublicly,
       tributeType: tributeType || undefined,
       tributeName: tributeName || undefined,
       notifyName: notifyName || undefined,
@@ -463,6 +474,20 @@ export default function GiveSteps({
                   Card processing is {feeRateSentence}.
                 </span>
               ) : null}
+            </label>
+          ) : null}
+
+          {/* CAMPAIGN-2 — THE DONOR'S OWN CHOICE ABOUT THEIR NAME. Only their
+              FIRST name, only on this page, only if they tick it. The sentence
+              says exactly what appears, because "show my name" without saying
+              where is a question nobody can answer. */}
+          {showsRecentGifts ? (
+            <label className="give-showname" style={{ display: "block", fontSize: 13, marginBottom: 12 }}>
+              <input type="checkbox" checked={showNamePublicly} onChange={e => setShowNamePublicly(e.target.checked)} />{" "}
+              Show my first name in this page&rsquo;s list of recent gifts.
+              <span style={{ display: "block", fontSize: 12, color: MUTED, marginTop: 3, marginLeft: 22 }}>
+                Just the first name. Leave it unticked and the list says Anonymous.
+              </span>
             </label>
           ) : null}
 

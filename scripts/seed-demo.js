@@ -2417,6 +2417,112 @@ async function main() {
     }
   }
 
+  // ── CAMPAIGN-2 · A CAMPAIGN PAGE AND A PLAN ────────────────────────────
+  // Two things a prospect should be able to see working:
+  //   · A YEAR-END CAMPAIGN with a public page partway to its goal, built from
+  //     the same template the button builds, with its countdown, its matching
+  //     challenge and a recent-gifts list that names only the people who chose
+  //     to be named.
+  //   · A GIVINGTUESDAY PLAN for this year: the campaign, its page and seven
+  //     dated reminders on somebody's list. Nothing sent, nothing scheduled.
+  console.log("[seed] the year-end campaign page and the GivingTuesday plan…");
+  {
+    const CP = await import("../shared/campaignPage.js");
+    for (const key of ["yearend", "givingtuesday"]) {
+      const plan = CP.planFor(key, { today: TODAY, orgName: "Harborlight Youth Collective" });
+      if (!plan) continue;
+      const campaignId = `camp_b72_${key}`;
+      const pageId = `gp_b72_${key}`;
+      // The year-end campaign carries a goal it is partway to; GivingTuesday is
+      // the one that has not happened yet, which is the honest state for a plan.
+      const goal = key === "yearend" ? 60000 : 20000;
+      await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date,donor_facing_name,goal_progress_public,match_cents,match_sponsor,match_started_at)
+               VALUES ($1,$2,$3,'appeal',$4,$5,$6::date,$7::date,$3,TRUE,$8,$9,$10)
+               ON CONFLICT (id) DO NOTHING`,
+        [campaignId, ORG, plan.campaign.name, key === "yearend" ? "active" : "draft", goal,
+         plan.campaign.startDate, plan.campaign.endDate,
+         // The match is on the year-end campaign only, and it is partly claimed,
+         // so the page shows a number that has moved.
+         key === "yearend" ? 2500000 : null,   // $25,000, partly claimed, so the bar has moved
+         key === "yearend" ? "Meridian Bank" : null,
+         // The match began when somebody promised it, which on a demonstration
+         // file has to be in the PAST or the page shows a challenge nothing has
+         // been claimed against — a number that cannot move is a number nobody
+         // believes. (The first cut used the campaign's own start date, which is
+         // in November, so the page read "$10,000 still unclaimed" beside
+         // thirty-four gifts.)
+         key === "yearend" ? orgTime.addDays(TODAY, -45) : null]);
+
+      const widgets = [
+        { type: "hero", heading: plan.page.headline, sub: "", image: null, size: "standard" },
+        { type: "richtext", blocks: plan.page.story.split("\n\n").filter(Boolean).map(t => ({ type: "p", text: t })) },
+        { type: "countdown", heading: "" },
+        { type: "matchchallenge" },
+        { type: "recentgifts", count: 8, showAmounts: false, heading: "Recent gifts" },
+      ];
+      await q(`INSERT INTO giving_pages
+                 (id,org_id,slug,title,goal_amount,story,status,campaign_id,is_campaign_page,form_position,
+                  published,published_at,draft,draft_updated_at,created_by,created_by_name,form_config)
+               VALUES ($1,$2,$3,$4,$5,$6,'active',$7,TRUE,'top',$8::jsonb,NOW(),$8::jsonb,NOW(),'u_b72demo','Dana Reyes',$9::jsonb)
+               ON CONFLICT (id) DO NOTHING`,
+        [pageId, ORG, plan.page.slug, plan.page.title, goal, plan.page.story, campaignId,
+         JSON.stringify(widgets), JSON.stringify(plan.formConfig)]);
+
+      for (const [i, s] of plan.steps.entries()) {
+        // The steps already behind us on the year-end plan are done, because a
+        // plan on which nothing has been ticked is a plan nobody is running.
+        const done = key === "yearend" && s.due < TODAY ? 1 : 0;
+        await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,campaign_id,created_by,created_by_name)
+                 VALUES ($1,$2,$3,$4,'medium',$5,$6,$7,'u_b72demo','Dana Reyes')
+                 ON CONFLICT (id) DO NOTHING`,
+          [`t_b72_${key}_${i}`, ORG, s.title, s.due, s.type || "donor", done, campaignId]);
+      }
+    }
+
+    // THE YEAR-END PAGE IS PARTWAY THERE. Real gifts, moved onto the campaign
+    // from this autumn's online giving — the thermometer is a live SUM over gift
+    // rows (never a counter), so moving the gifts IS moving the bar.
+    // Taken from the ANNUAL FUND's recent online gifts, which is where a
+    // year-end appeal's money would actually have come from, and never from
+    // the 5K or the gala: those two are the file's own stories and a campaign
+    // that quietly lost its gifts to another is a demonstration of a bug.
+    // Every gift here already belongs to a campaign — there are no unattributed
+    // ones in this window, which the first cut of this block assumed and which
+    // its own assertion caught on the first run.
+    const autumn = await q(
+      `SELECT id, donor_id FROM gifts
+        WHERE org_id = $1 AND campaign_id = 'camp_b72demo' AND amount BETWEEN 50 AND 2500
+          AND date >= $2 AND date <= $3
+        ORDER BY date DESC LIMIT 34`,
+      [ORG, orgTime.addDays(TODAY, -45), TODAY]);
+    for (const [i, g] of autumn.entries()) {
+      await q(`UPDATE gifts SET campaign_id = $1,
+                 -- EVERY THIRD DONOR CHOSE TO BE NAMED, and the rest are
+                 -- Anonymous. The default is off, so a seed that named
+                 -- everybody would be demonstrating a bug.
+                 show_name_publicly = $3
+               WHERE id = $2 AND org_id = $4`,
+        [`camp_b72_yearend`, g.id, i % 3 === 0, ORG]);
+    }
+
+    // ── THE SEED'S OWN ASSERTION ──────────────────────────────────────────
+    // The goal bar is a live SUM over the campaign's own gift rows. If the
+    // figure and the rows ever disagree, the demonstration is of a defect.
+    const [bar] = await q(
+      `SELECT COALESCE(SUM(g.amount - COALESCE(g.cover_fee_amount,0)),0)::float AS raised,
+              COUNT(*)::int AS n
+         FROM gifts g JOIN campaigns c ON c.id=$2 AND c.org_id=g.org_id
+        WHERE g.org_id=$1 AND (g.campaign_id=c.id OR g.campaign=c.name)`,
+      [ORG, "camp_b72_yearend"]);
+    if (!bar || bar.n < 10) {
+      throw new Error(`REFUSED: the year-end campaign page has ${bar ? bar.n : 0} gifts behind its goal bar; a thermometer on an empty campaign demonstrates nothing.`);
+    }
+    const [named] = await q(
+      `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND campaign_id=$2 AND show_name_publicly IS TRUE`,
+      [ORG, "camp_b72_yearend"]);
+    console.log(`[assert] the year-end page: $${Math.round(bar.raised).toLocaleString("en-US")} over ${bar.n} gifts, ${named.n} of whom chose to be named`);
+  }
+
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
   // Six planned instructions, one from each of the six agents, each about
   // people who are really in this file. They sit in Plans as PLANNED: nothing
