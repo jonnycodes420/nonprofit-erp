@@ -13334,7 +13334,8 @@ function auditRecordLink(r) {
   if (/^(interaction|conversation|touchpoint|thread|next step|task|relationship|donor relationship|pledge|proposal)$/.test(t) && donorId) {
     return { tab: "donors", donorId };
   }
-  if (/^(donor|person|people|organisation|organization)$/.test(t)) return { tab: "donors", donorId: id };
+  if (/^user_/.test(String(id))) return { tab: "settings", section: "team" };
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(t)) return { tab: "donors", donorId: id };
   if (/^(gift|pledge|receipt|refund|soft credit)$/.test(t)) return { tab: "donors", giftId: id };
   if (/^(user|invite|role)$/.test(t)) return { tab: "settings", section: "team" };
   if (/^(fund|account|transaction|budget)$/.test(t)) return { tab: "finance", recordId: id };
@@ -13362,6 +13363,7 @@ const auditRowOut = (r, people) => {
   };
   // FIX-14 Part 2: the Description, in a plain sentence. Never a dash.
   o.description = auditTrailMod.describeAuditRow(o, { people: people || new Map() });
+  o.record_name = auditTrailMod.auditRecordName(o, { people: people || new Map() });
   return o;
 };
 // The names the sentences need, read live (FIX-12: the row holds ids). An

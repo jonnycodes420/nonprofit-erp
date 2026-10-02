@@ -397,7 +397,7 @@ function showValue(field, v) {
 // middleware kept beside a diff).
 function auditDonorId(row) {
   const t = String(row.entity_type || "");
-  if (/^(donor|person|people|organisation|organization)$/.test(t)) return row.entity_id || null;
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(t) && !/^user_/.test(String(row.entity_id || ""))) return row.entity_id || null;
   const ctx = (row.changes && row.changes.record) || {};
   return (row.after && row.after.donor_id) || (row.before && row.before.donor_id) || ctx.donor_id || null;
 }
@@ -419,7 +419,10 @@ function describeAuditRow(row, ctx = {}) {
   if (/^(interaction|conversation|touchpoint)$/.test(type)) {
     const word = CONVERSATION_WORD[full.type || rec.type] || "conversation";
     const withWho = who ? ` with ${who}` : "";
-    if (action === "created") return `Logged a ${word}${withWho}`;
+    if (action === "created") {
+      const ns = full.next_step && typeof full.next_step === "object" ? full.next_step : null;
+      return `Logged a ${word}${withWho}${ns && ns.label ? `, with a next step: ${lowerFirst(ns.label)} around ${shortDate(ns.due)}` : ""}`;
+    }
     if (action === "deleted") return `Deleted a ${word}${withWho}${full.date ? ` from ${shortDate(full.date)}` : ""}`;
     if (action === "restored") return `Restored a ${word}${withWho} (Undo)`;
     if (changed.length) {
@@ -465,12 +468,16 @@ function describeAuditRow(row, ctx = {}) {
     if (action === "deleted") return `Deleted a ${amt}gift${from}`;
     if (action === "voided") return `Voided a ${amt}gift${from}`;
   }
+  if (/\/auth\/register$/.test(String(row.request_path || ""))) return "Created this organization's Steward account";
+  if (type === "stage" && row.before && row.after && row.after.stage !== undefined) {
+    return `Moved ${who || "a person"} from ${upperFirst(String(row.before.stage || "no stage"))} to ${upperFirst(String(row.after.stage || "no stage"))}`;
+  }
   if (/^(donor|person|people|organisation|organization)$/.test(type)) {
     const name = who || row.entity_label || "a person";
     if (action === "created") return `Added ${name}`;
     if (action === "deleted") return `Deleted ${name}`;
     if (changed.length === 1 && changed[0] === "stage") {
-      return `Moved ${name} from ${row.before.stage || "no stage"} to ${row.after.stage || "no stage"}`;
+      return `Moved ${name} from ${upperFirst(String(row.before.stage || "no stage"))} to ${upperFirst(String(row.after.stage || "no stage"))}`;
     }
     if (changed.length) return `Changed ${name}: ${changed.map(k => FIELD_WORD[k] || k.replace(/_/g, " ")).join(", ")}`;
     return `${upperFirst(action)} ${name}`;
@@ -495,7 +502,27 @@ function describeAuditRow(row, ctx = {}) {
   return s;
 }
 
+// The Entity column's name for the record: what a person would call it.
+function auditRecordName(row, ctx = {}) {
+  const people = ctx.people || new Map();
+  const type = String(row.entity_type || "");
+  const rec = (row.changes && row.changes.record) || {};
+  const full = row.after || row.before || {};
+  const donorId = auditDonorId(row);
+  const who = donorId ? people.get(String(donorId)) : null;
+  if (/^(interaction|conversation|touchpoint)$/.test(type)) {
+    const word = upperFirst(CONVERSATION_WORD[full.type || rec.type] || "conversation");
+    return who ? `${word} with ${who}` : word;
+  }
+  if (/^(thread|next step)$/.test(type)) return who ? `Next step for ${who}` : "Next step";
+  if (type === "task") return full.title || (who ? `Task for ${who}` : "Task");
+  if (type === "gift") return who ? `Gift from ${who}` : (row.entity_label || "Gift");
+  if (/^(donor|person|people|organisation|organization|stage)$/.test(type)) return who || row.entity_label || "A person";
+  return row.entity_label || (who ? `${upperFirst(ENTITY_WORD[type] || type)} for ${who}` : upperFirst(ENTITY_WORD[type] || type || "Record"));
+}
+
 module.exports = {
+  auditRecordName,
   SECRET_KEY_RE, REDACTED, NOISE_COLUMNS, VERB_PAST, READ_ONLY_POSTS,
   redact, diffFields, sameValue, describeRoute, isReadOnlyPost, singular, prettify, rowSentence,
   bulkSummary, usd, describeAuditRow, auditDonorId, shortDate,

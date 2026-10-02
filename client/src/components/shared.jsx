@@ -1275,7 +1275,7 @@ export function TpYesNo({val,set}){
 // onDelete (optional): called with the interaction after the user confirms —
 // only passed where entries are actual `interactions` rows (DonorProfile);
 // Grants renders grant_interactions through this too and passes nothing.
-export function TouchpointTimeline({interactions,onDelete}){
+export function TouchpointTimeline({interactions,onDelete,renderActions}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
   const typeColor={call:T.green500,email:T.greenDk,meeting:T.greenMid,gift:T.gold600,event:T.gold500,note:T.ink3,stewardship:T.gold,ask:T.gold500,voice_memo:T.green500,pledge_reminder:T.terracotta};
   const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder",ask:"Ask made"};
@@ -1328,7 +1328,8 @@ export function TouchpointTimeline({interactions,onDelete}){
                 <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
               )}
             </div>
-            {onDelete&&int.id&&(
+            {/* FIX-14 Part 2: a profile passes its Edit/Delete menu (with Undo). */}
+            {renderActions&&int.id?renderActions(int):onDelete&&int.id&&(
               <button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
                 onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))onDelete(int);}}
                 style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",alignSelf:"flex-start",flexShrink:0,lineHeight:1}}>
