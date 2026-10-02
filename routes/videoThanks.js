@@ -174,12 +174,12 @@ app.get("/v/:token", videoLimiter, wrap(async (req, res) => {
   const preview = req.query.preview === "1";
   const src = `/v/${encodeURIComponent(v.token)}/video`;
   const player = v.asset_id
-    ? `<video id="vt" controls playsinline preload="metadata" style="width:100%;max-height:70vh;border-radius:10px;background:#0f1a12;display:block" src="${esc(src)}"></video>`
+    ? `<video id="vt" controls playsinline preload="metadata" style="width:100%;max-height:70vh;border-radius:10px;background:#0f1a12;display:block" src="${esc(src)}" data-viewed="${esc(`/v/${encodeURIComponent(v.token)}/viewed`)}"></video>`
     : `<p class="muted" data-state="processing">This video is still being prepared. Please come back to this link a little later.</p>`;
   // The view is a POST from this page, sent once when playing starts. A
   // preview (staff checking the link) sends nothing.
   const beacon = v.asset_id && !preview
-    ? `<script>(function(){var v=document.getElementById("vt"),sent=false;if(!v)return;v.addEventListener("play",function(){if(sent)return;sent=true;try{fetch(${JSON.stringify(`/v/${v.token}/viewed`)},{method:"POST",keepalive:true,headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){}});})();</script>`
+    ? `<script>(function(){var v=document.getElementById("vt"),sent=false;if(!v)return;v.addEventListener("play",function(){if(sent)return;sent=true;try{fetch(v.getAttribute("data-viewed"),{method:"POST",keepalive:true,headers:{"Content-Type":"application/json"},body:"{}"});}catch(e){}});})();</script>`
     : "";
   res.send(PP.publicPage({ title: `A thank-you from ${orgName}`, brand, footer: "Sent with Steward.",
     body: `<div class="card"><h1>Thank you, ${esc(firstName(v.donor_name))}.</h1>

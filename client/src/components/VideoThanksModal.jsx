@@ -12,6 +12,9 @@ import { useState, useRef, useEffect } from "react";
 import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { displayDateShort } from "../../../shared/displayDate";
+
+// Only an object URL this page made is ever put in a src.
+const blobUrlOf = b => { const u = URL.createObjectURL(b); return /^blob:/.test(u) ? u : ""; };
 import { T, Modal } from "./shared";
 
 // ── Shared consts (above every reader) ─────────────────────────────────────
@@ -70,7 +73,7 @@ export default function VideoThanksModal({ donor, onClose, onSaved }) {
         const type = baseMime(mr.mimeType || mimeType) || "video/webm";
         const blob = new Blob(chunksRef.current, { type });
         blobRef.current = blob;
-        setPlayUrl(URL.createObjectURL(blob));
+        setPlayUrl(blobUrlOf(blob));
         setPhase("recorded");
         stopStream();
       };
@@ -99,7 +102,7 @@ export default function VideoThanksModal({ donor, onClose, onSaved }) {
     if (!f) return;
     if (!ALLOWED.includes(baseMime(f.type))) { setError("That video is not WebM or MP4. Record it again here, or choose an MP4."); return; }
     if (f.size > MAX_BYTES) { setError(`That video is over ${MAX_BYTES / 1024 / 1024} MB. Keep it under two minutes.`); return; }
-    const url = URL.createObjectURL(f);
+    const url = blobUrlOf(f);
     const probe = document.createElement("video");
     probe.preload = "metadata";
     probe.onloadedmetadata = () => {
