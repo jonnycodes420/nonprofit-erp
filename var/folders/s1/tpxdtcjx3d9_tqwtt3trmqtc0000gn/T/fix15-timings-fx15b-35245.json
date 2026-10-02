@@ -1,0 +1,5 @@
+{
+ "note": "Seconds per suite from the last sharded run. Data for scripts/shard-plan.js, never a gate: a stale entry costs seconds, never correctness.",
+ "updated": "2026-10-02",
+ "suites": {}
+}

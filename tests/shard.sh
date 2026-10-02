@@ -23,6 +23,10 @@
 # Nothing in the block collides with the documented worktree ports (5601,
 # 59xx) or with the donor-accounts child server's fixed :5611.
 #
+# FIX-15 · TWO WORKTREES AT ONCE. The database prefix and the port base both
+# come from run-all.sh, which derives them from the worktree (see its
+# "WORKTREE IDENTITY" block). The defaults below are only for a hand-run shard.
+#
 # Usage (run-all.sh does this for you):
 #   SHARD_N=1 SHARD_SUITES="tasks greeting" bash tests/shard.sh
 #
@@ -156,6 +160,12 @@ export BILLING_MOCK_PORT="$billing"
 export BOOKKEEPING_MOCK_PORT="$((api + 5))"
 export XERO_MOCK_PORT="$((api + 6))"
 export CALENDAR_MOCK_PORT="$cal"
+# FIX-15 — the two suites that boot server.js IN-PROCESS (tenant-matrix,
+# fix11-audit-trail) used fixed ports, :5697 and :5698, which two worktrees'
+# batteries both bound. Suites run serially inside a shard, so both share the
+# last free port of this shard's block.
+export MATRIX_PORT="$((api + 9))"
+export AUDIT_PORT="$((api + 9))"
 
 # ── THE DEMO SEED ──────────────────────────────────────────────────────────
 # FIVE suites read the demo org, not one: demo-shape, fix3-c-demo-people,

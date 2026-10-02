@@ -36,7 +36,9 @@
 // Deep donor-account/portal isolation stays in tests/org-blindness.test.js
 // (48) and tests/portal.test.js (67) — this suite is the breadth layer.
 
-process.env.PORT = "5697";
+// FIX-15: a shard hands this suite a port inside its own block, so two
+// worktrees running the battery at once never both bind :5697.
+process.env.PORT = process.env.MATRIX_PORT || "5697";
 // The in-process boot needs the scratch DB even when the pushing shell
 // exported nothing: default DATABASE_URL exactly as tests/helpers.js does
 // (dotenv's .env is empty here — an unset URL sent the boot to :5432), and
@@ -66,7 +68,7 @@ const jwt = require("jsonwebtoken");
 const { ok, summary, q, closeDb } = require("./helpers");
 const { buildInventory } = require("../scripts/lib/routeInventory");
 
-const M = "http://localhost:5697";
+const M = `http://localhost:${process.env.PORT}`;
 const A = "org_mxa", B = "org_mxb";
 // PRIVATE markers — org B data that must never reach an A-credentialed body.
 // The org NAME is deliberately NOT a private marker (public surfaces show it).
