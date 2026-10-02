@@ -76,6 +76,7 @@ const {
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
   seedOrgData, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
+  scheduleScores, recomputeScoresForOrg, engagementMod,
   snapshotMetricsForOrg, solicitableSql, sustainerFileFacts, syncGmail, testMode, threadNudgeDayOk,
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
@@ -2589,7 +2590,16 @@ const DONOR_SORTS = {
   name:           "lower(name) ASC",
   last_gift_date: "last_gift_date DESC NULLS LAST",
   created_at:     "created_at DESC",
+  // ENGAGE-1 — closest first, by the stored score (donor_scores).
+  engagement:     "engagement_score DESC NULLS LAST, lower(name) ASC",
+  generosity:     "generosity_score DESC NULLS LAST, lower(name) ASC",
 };
+// ENGAGE-1 — the two scores ride along on every list row, read from the one
+// stored compute, so the column and the sort are the same numbers the profile shows.
+const DONOR_SCORE_COLS = `,
+  (SELECT s.engagement FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_score,
+  (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
+  (SELECT s.band FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_band`;
 // FIX-1 D — the roles a person can carry that a chip or a list may name.
 // "other" is not a role, it is the absence of one: normalizeTypes floors an
 // empty list at it, and turning any role on replaces it.
@@ -2659,7 +2669,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 
   if (req.query.limit === undefined) {
     const [donors, touchpoints, { map: driftMap }] = await Promise.all([
-      query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params),
+      query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params),
       query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
       computeDriftForDonors(req.user.orgId),
     ]);
@@ -2670,7 +2680,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
-    query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]),
+    query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
@@ -2812,7 +2822,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
   const filter = buildDonorListFilter(req);
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
   const { whereSql, params, orderBy } = filter;
-  const donors = await query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
+  const donors = await query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
   // headed with the CURRENT label, rendered per the type table.
   const cfDonorDefs = await loadCfDefs("donor", req.user.orgId);
@@ -11607,6 +11617,101 @@ app.delete("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async
   res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
+// ── ENGAGE-1 — A DONOR'S TWO SCORES ────────────────────────────────────────
+// What the profile rail shows: engagement with its band and reason, generosity,
+// every part with its points (they add to the score), the explanation from the
+// one weights file, and the suggested ask from their own gifts. A donor the
+// compute has not reached yet (added a second ago) gets the org computed now.
+app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  let [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]);
+  if (!row) { await recomputeScoresForOrg(orgId); [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]); }
+  const W = await engagementMod.weights();
+  const parts = (typeof row?.parts === "string" ? JSON.parse(row.parts) : row?.parts) || { engagement: [], generosity: [] };
+  const band = W.bandFor(row ? row.engagement : 0);
+  res.json({
+    donorId: d.id,
+    engagement: row ? row.engagement : 0, generosity: row ? row.generosity : 0,
+    band: band.key, bandLabel: band.label, reason: row ? row.reason : null,
+    computedFor: row ? row.computed_for : null, computedAt: row ? row.computed_at : null,
+    parts: {
+      engagement: parts.engagement.map(x => ({ ...x, label: W.TOUCH_POINTS[x.key].label, how: W.TOUCH_POINTS[x.key].how, one: W.TOUCH_POINTS[x.key].one, many: W.TOUCH_POINTS[x.key].many,
+        source: { key: "donor-engagement-part", params: { donor: d.id, part: x.key } } })),
+      generosity: parts.generosity.map(x => ({ ...x, label: W.GENEROSITY_PARTS[x.key].label, how: W.GENEROSITY_PARTS[x.key].how,
+        weight: W.GENEROSITY_PARTS[x.key].weight,
+        source: { key: "donor-generosity-part", params: { donor: d.id, part: x.key } } })),
+    },
+    explanation: W.EXPLANATION,
+    bands: W.BANDS,
+    suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id),
+  });
+}));
+
+// ── ENGAGE-1 §4 — APPEAL-WHY: "How did it do?" ─────────────────────────────
+// This campaign against the comparable one a year earlier: the totals, the
+// ranked reasons (each a number that opens its rows, figure source appeal-why)
+// and who to call. Planning a follow-up is the existing POST
+// /donors/:id/threads: it opens a step, it sends nothing.
+app.get("/campaigns/:id/how-did-it-do", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const AW = require("../appealWhy");
+  const c = await AW.campaignRow(orgId, req.params.id);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const { compare, how, candidates } = await AW.comparableFor(orgId, c);
+  if (!compare) return res.json({ campaign: { id: c.id, name: c.name }, compare: null, candidates,
+    sentence: "There is no campaign from a year earlier to compare this with. Choose one and the comparison appears." });
+  const P = await AW.parts(orgId, c.id, compare.id);
+  const src = part => ({ key: "appeal-why", params: { campaign: c.id, compare: compare.id, part } });
+  const side = (gifts, newcomers, returning, lapsed) => ({ ...AW.summary(gifts), newDonors: newcomers, returning, lapsed });
+  const thisSide = side(P.this, P.newcomers.length, P.returning.length, P.notYet.length);
+  const lastSide = { ...AW.summary(P.last) };
+  const reasons = [
+    { key: "notYet", label: "Last year's donors who have not given yet", people: P.notYet.length, cents: AW.sumC(P.notYet), words: "gave last time" },
+    { key: "less", label: "Gave less than last year", people: P.less.length, cents: AW.sumC(P.less), words: "less than last time" },
+    { key: "more", label: "Gave more than last year", people: P.more.length, cents: AW.sumC(P.more), words: "more than last time" },
+    { key: "newcomers", label: "New donors", people: P.newcomers.length, cents: AW.sumC(P.newcomers), words: "from people new to you" },
+  ].map(r => ({ ...r, source: src(r.key) }))
+   // RANKED by how much money each reason moved, either way.
+   .sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
+  // WHO TO CALL: last year's donors not back yet, ranked half by what they gave
+  // last time (where it stands among them) and half by engagement.
+  const pool = P.notYet;
+  const sortedGift = pool.map(x => x.lastCents).sort((a, b) => a - b);
+  const giftPct = v => sortedGift.length ? (100 * (sortedGift.filter(y => y < v).length + sortedGift.filter(y => y === v).length / 2)) / sortedGift.length : 0;
+  const whoToCall = pool.map(x => ({ donorId: x.donor_id, name: x.name, lastGiftCents: x.lastCents, engagement: x.engagement, lastTouch: x.date,
+      rank: Math.round(giftPct(x.lastCents) / 2 + x.engagement / 2) }))
+    .sort((a, b) => b.rank - a.rank || b.lastGiftCents - a.lastGiftCents).slice(0, 25);
+  res.json({
+    campaign: { id: c.id, name: c.name }, compare: { id: compare.id, name: compare.name, how }, candidates,
+    this: { ...thisSide, source: src("this") }, last: { ...lastSide, source: src("last") },
+    reasons, whoToCall,
+    whoToCallSentence: "Last year's donors who have not given to this campaign yet, ranked half by what they gave last time and half by engagement. Planning a follow-up opens a step on their Thread; nothing is sent.",
+  });
+}));
+app.put("/campaigns/:id/compare", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const want = req.body?.compareId ? String(req.body.compareId) : null;
+  if (want) {
+    const [o] = await query("SELECT id FROM campaigns WHERE id=? AND org_id=? AND id<>?", [want, orgId, c.id]);
+    if (!o) return res.status(400).json({ error: "Choose another of your campaigns." });
+  }
+  if (req.audit) req.audit.before({ compare_campaign_id: c.compare_campaign_id || null });
+  await run("UPDATE campaigns SET compare_campaign_id=? WHERE id=? AND org_id=?", [want, c.id, orgId]);
+  if (req.audit) req.audit.after({ compare_campaign_id: want });
+  res.json({ ok: true, compareId: want });
+}));
+
+// Recompute now (an admin, or a suite that cannot wait for the debounce).
+app.post("/scores/recompute", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const n = await recomputeScoresForOrg(req.user.orgId);
+  req.audit.skip("scores are derived from data already on file");
+  res.json({ ok: true, people: n });
+}));
+
 // Wealth/capacity scoring is part of the Team major-gifts layer — Core sees a
 // stored score read-only (behind glass) but can't compute/recompute it.
 app.post("/donors/:id/score", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
@@ -14956,9 +15061,19 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // sorted by that same figure, so what ranks a row is what the row displays.
   const atRiskAmount = toDollars(high.reduce((s, a) => s + toCents(a.usualGift || 0), 0));
 
+  // ENGAGE-1 — ENGAGEMENT IS ONE INPUT TO THE EARLY SIGNS. A medium-confidence
+  // drift (an early sign) is stronger when the person has also gone quiet
+  // (engagement Distant), and the row says so; and the list can be put in
+  // engagement order (?sort=engagement, closest first: who is likeliest to
+  // pick up). The default order is unchanged: the usual gift at risk.
+  const engRows = await query(`SELECT donor_id, engagement, band FROM donor_scores WHERE org_id = ?`, [orgId]);
+  const engMap = new Map(engRows.map(r => [r.donor_id, r]));
+  const byEngagement = req.query.sort === "engagement";
   const surfaced = (includeMedium ? drifting : high)
     .filter(a => !a.handled)
-    .sort((x, y) => (y.usualGift || 0) - (x.usualGift || 0));
+    .sort(byEngagement
+      ? (x, y) => ((engMap.get(y.donorId) || {}).engagement || 0) - ((engMap.get(x.donorId) || {}).engagement || 0) || (y.usualGift || 0) - (x.usualGift || 0)
+      : (x, y) => (y.usualGift || 0) - (x.usualGift || 0));
   const cap = driftEngine.DRIFT.HOME_LIST_CAP;
   const row = a => ({
     donorId: a.donorId, donorName: a.donorName, reason: a.reason,
@@ -14967,6 +15082,10 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
     kind: a.kind || null, contactName: a.contactName || null,
     lastGiftDate: a.lastGiftDate, assignedTo: a.assignedTo, assignedToName: a.assignedToName,
     basis: a.basis, seasonal: !!a.seasonal,
+    engagement: engMap.has(a.donorId) ? engMap.get(a.donorId).engagement : null,
+    engagementBand: engMap.has(a.donorId) ? engMap.get(a.donorId).band : null,
+    earlySign: a.confidence === "medium" && engMap.has(a.donorId) && engMap.get(a.donorId).band === "distant"
+      ? "Their giving has slipped and they have gone quiet too: engagement is Distant." : null,
   });
   // BUILD-80 Part 7 — "Institutional giving": organisations get their own
   // list with grant-cycle language, never a Re-engage button.
@@ -15233,6 +15352,11 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
         majorThreshold,
       },
     });
+    // ENGAGE-1 §3 — a step that IS an ask carries the suggested ask, worked
+    // out from this donor's own gifts (engagement.js; never wealth data).
+    if (t.next_step_type === "check_in_ask" || /\bask\b/i.test(String(t.next_step_label || ""))) {
+      list[list.length - 1].suggestedAsk = await engagementMod.suggestedAsk(query, orgId, t.donor_id).catch(() => null);
+    }
   }
 
   // The tasks, in the same shape, so the ranking cannot tell them apart by

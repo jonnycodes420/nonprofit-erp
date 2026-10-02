@@ -1198,7 +1198,41 @@ async function recordGift(o) {
     } catch (e) { console.error("[p2p] soft credit:", e.message); }
   }
 
+  // ENGAGE-1: a gift moves the generosity scores. Recomputed for the whole org
+  // a moment later (a percentile is relative, so one gift can move others).
+  scheduleScores(orgId);
   return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
+}
+
+// ── ENGAGE-1 — THE TWO SCORES ──────────────────────────────────────────────
+// engagement.js computes; this is when. After a gift or a touch, debounced per
+// org so a batch of twenty gifts is one recompute, and on the six-hour tick
+// (the nightly recompute, with room to spare). Off the request path: a score
+// that is a few seconds behind is fine, a gift that waits for one is not.
+const engagementMod = require("./engagement");
+async function recomputeScoresForOrg(orgId) {
+  const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
+  if (!o) return 0;
+  return engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o));
+}
+const _scoreTimers = new Map();
+const SCORE_DEBOUNCE_MS = Number(process.env.SCORE_DEBOUNCE_MS || 3000);
+function scheduleScores(orgId) {
+  if (!orgId) return;
+  clearTimeout(_scoreTimers.get(orgId));
+  const t = setTimeout(() => {
+    _scoreTimers.delete(orgId);
+    recomputeScoresForOrg(orgId).catch(e => console.error("[scores]", orgId, e.message));
+  }, SCORE_DEBOUNCE_MS);
+  if (t.unref) t.unref();
+  _scoreTimers.set(orgId, t);
+}
+async function recomputeAllScores() {
+  const orgs = await query("SELECT id FROM orgs", []);
+  for (const o of orgs) {
+    try { await recomputeScoresForOrg(o.id); } catch (e) { console.error(`[scores] ${o.id}:`, e.message); }
+  }
+  return [];
 }
 
 // ── BUILD-98 Part 1 — SOFT CREDITS, TRIBUTES, MATCHES ──────────────────────
@@ -2434,6 +2468,17 @@ async function processPledgeInstallmentReminders(opts = {}) {
   }
   return out;
 }
+// ENGAGE-1 — A TOUCH MOVES THE SCORES. Any successful staff write to a person,
+// a gift, a conversation, an event, a shift, a meeting or a survey schedules
+// that org's recompute (debounced: twenty writes are one recompute). Syncs that
+// arrive without a request are picked up by the six-hour tick.
+const SCORE_TOUCH_PATHS = /^\/(donors|gifts|interactions|conversations|threads|events|volunteer|calendar|meetings|recurring|surveys)/;
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD" && SCORE_TOUCH_PATHS.test(req.path)) {
+    res.on("finish", () => { if (res.statusCode < 400 && req.user && req.user.orgId) scheduleScores(req.user.orgId); });
+  }
+  next();
+});
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -10296,6 +10341,7 @@ require("./routes/crm").mount({
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
   seedOrgData, sendPledgeReminderEmail, sendReceiptEmail, signToken, slugifyGivingPage,
+  scheduleScores, recomputeScoresForOrg, engagementMod,
   snapshotMetricsForOrg, solicitableSql, sustainerFileFacts, syncGmail, testMode, threadNudgeDayOk,
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
@@ -10304,6 +10350,8 @@ require("./routes/crm").mount({
 require("./routes/jobs").mount({
   // INT-5 — the webhook delivery pass, on the existing tick.
   deliverWebhooks,
+  // ENGAGE-1 — the scores, recomputed on the six-hour tick.
+  recomputeAllScores,
   // INT-BUILD-1 — every live mailbox, mail and calendar, on the 15-minute tick.
   syncMailbox, syncCalendar,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,

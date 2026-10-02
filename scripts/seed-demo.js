@@ -737,6 +737,40 @@ async function main() {
   const fixedOffline = new Set([...driftedIds, lapsedMajor, twoAddr, twoAddrB, hh1, hh2, centsDonor,
                                 pledgeDonorA, pledgeDonorB, ...orgDonors.map(([id]) => id)]);
   const ONLINE_P = { major: 0.08, mid: 0.55, new: 0.8 };
+  // ── ENGAGE-1 · THE SPRING APPEAL, THIS YEAR AND LAST ────────────────────
+  // "How did it do?" needs a campaign with a comparable one a year earlier and
+  // a believable gap. Last spring, thirty mid-level donors gave. This spring:
+  // the eight who gave MOST last time have not given yet (the "Who to call"
+  // list), ten gave a little less, twelve gave the same or more, and four
+  // people gave their very first gift to Harborlight through it. Drawn from
+  // donors who ARE giving this year, so none of the eleven drifted donors (the
+  // thesis: nothing this year) is quietly made to give.
+  const SPRING = { last: "camp_b72demo_spring_prev", now: "camp_b72demo_spring" };
+  const springEight = [];   // the eight not back yet: their touches are written after writeAll
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
+           VALUES ($1,$2,$3,'appeal','completed',40000,$4,$5), ($6,$2,$7,'appeal','completed',45000,$8,$9)`,
+    [SPRING.last, ORG, `Spring Appeal ${YEAR - 1}`, dateIn(YEAR - 1, 3, 1), dateIn(YEAR - 1, 5, 31),
+     SPRING.now, `Spring Appeal ${YEAR}`, dateIn(YEAR, 3, 1), dateIn(YEAR, 5, 31)]);
+  {
+    const givingNow = new Set(gifts.filter(g => String(g.date).startsWith(String(YEAR))).map(g => g.donorId));
+    const drifted = new Set(driftedIds);
+    const pool = donors.filter(d => d.status === "mid" && givingNow.has(d.id) && !drifted.has(d.id)).slice(0, 30);
+    const LAST = [3000, 2750, 2500, 2500, 2000, 2000, 1800, 1500,           // the eight not back yet
+                  1500, 1200, 1200, 1000, 1000, 1000, 900, 800, 750, 700,  // ten who gave less
+                  700, 650, 600, 600, 500, 500, 500, 400, 400, 350, 300, 250]; // twelve the same or more
+    pool.forEach((d, i) => {
+      const lastAmt = LAST[i] || 250;
+      addGift(d.id, lastAmt, dateIn(YEAR - 1, 4, 1 + (i % 27)), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
+      if (i < 8) { springEight.push(d.id); return; }
+      const nowAmt = i < 18 ? Math.round(lastAmt * 0.6 / 50) * 50 : (i % 3 === 0 ? lastAmt : Math.round(lastAmt * 1.4 / 50) * 50);
+      addGift(d.id, nowAmt, dateIn(YEAR, 4, 2 + (i % 26)), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
+    });
+    [["Imogen Fairweather", 250], ["Tobias Lindqvist", 100], ["Ruth Okonkwo-Hale", 500], ["Calvin Ashdown", 150]].forEach(([name, amt], i) => {
+      const id = addDonor(name, name.toLowerCase().replace(/[^a-z]+/g, ".") + "@example.demo", { status: "new", stage: "prospect" });
+      addGift(id, amt, dateIn(YEAR, 4, 10 + i * 3), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
+    });
+  }
+
   const OFFLINE = {
     major: [["check", "Check"], ["check", "Check"], ["stock", "Stock"], ["daf", "DAF"], ["ach", "ACH"]],
     mid: [["check", "Check"], ["check", "Check"], ["check", "Check"], ["ach", "ACH"], ["daf", "DAF"]],
@@ -755,6 +789,20 @@ async function main() {
   }
 
   await writeAll(client, donors, gifts);
+  // ENGAGE-1 — five of the eight not back from the spring appeal have been in
+  // touch lately, three have not, so "Who to call" ranks on something real:
+  // what they gave last time, and how close they are now.
+  const SPRING_TOUCH = [["meeting", "Coffee near the boatyard. Asked how the spring cohort did.", 12],
+                        ["call", "Returned my call about the summer programme.", 30],
+                        ["meeting", "Toured the workshop with their daughter.", 55],
+                        ["call", "Left a message; they called back the next day.", 140],
+                        ["call", "Short call, thanked them for last spring.", 260]];
+  for (const [k, [touch, note, ago]] of SPRING_TOUCH.entries()) {
+    if (!springEight[k]) break;
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
+            [`int_b72_spring_${k}`, ORG, springEight[k], touch, note, orgTime.addDays(TODAY, -ago)]);
+  }
   // FIX-14 Part 3 — the Stonebridges ARE a household (the comment above
   // always said so; the row was never written), so the profile draws a
   // household name and the smoke walk can check it is a real link.
@@ -2691,6 +2739,16 @@ async function main() {
                                    THEN ROUND(amount * 0.022 + 0.30, 2) ELSE COALESCE(processor_fee_amount,0) END
             WHERE org_id = $1
               AND LOWER(COALESCE(type,'')) NOT IN ('stock','in kind','in-kind','in_kind','securities')`, [ORG]);
+
+  // ENGAGE-1 — every person's two scores, computed LAST, from everything the
+  // seed just wrote, by the same function the server runs nightly. It takes
+  // `?` placeholders; this adapter numbers them for this client.
+  {
+    const E = require("../engagement");
+    const qq = (sql, args = []) => { let n = 0; return q(sql.replace(/\?/g, () => `$${++n}`), args); };
+    const scored = await E.recomputeOrgScores(qq, ORG, TODAY);
+    console.log(`[seed] engagement and generosity scored for ${scored} people`);
+  }
 
   console.log(`\n─── Harborlight Youth Collective (${ORG}) ───`);
   console.log(`  donors ${sum.donors} · gifts ${sum.gifts} · lifetime $${Math.round(sum.dollars).toLocaleString()}`);

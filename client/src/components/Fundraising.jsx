@@ -15,6 +15,7 @@ import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { PeerToPeerView } from "./PeerToPeer";
+import { HowDidItDo } from "./HowDidItDo";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
@@ -1091,6 +1092,12 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
         {mode === "edit" && campaign?.id ? (
           <div style={{ marginTop: 18, borderTop: "1px solid " + T.bg2, paddingTop: 16 }}>
             <CampaignPlanPanel campaignId={campaign.id} isReadOnly={false} />
+          </div>
+        ) : null}
+        {/* ENGAGE-1 §4 — "How did it do?", in the same panel. */}
+        {mode === "edit" && campaign?.id ? (
+          <div style={{ marginTop: 18, borderTop: "1px solid " + T.bg2, paddingTop: 16 }}>
+            <HowDidItDo campaignId={campaign.id} isReadOnly={false} />
           </div>
         ) : null}
         {err && <div style={{ fontSize: 13, color: T.terracotta, marginTop: 14 }}>{err}</div>}

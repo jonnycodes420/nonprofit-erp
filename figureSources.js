@@ -319,6 +319,40 @@ const SOURCES = {
       }];
     },
   },
+  // ENGAGE-1 — EACH PART OF A SCORE OPENS THE ROWS IT COUNTED. The rows come
+  // from engagement.js's one row builder, the same call the compute made, so
+  // what a part counted and what it shows cannot differ. An engagement part
+  // adds up POINTS (a touch's points after it fades with age); a generosity
+  // part adds up dollars, or counts years and recurring gifts.
+  "donor-engagement-part": {
+    label: "Engagement",
+    measure: () => "sum",
+    amountKind: "points",
+    params: { donor: "id:required", part: "word:required" },
+    sentence: p => `Every touch counted under this part in the last 24 months, with the points it earned. A touch in the last 90 days counts in full; older ones fade to nothing at 24 months.`,
+    js: async (orgId, p) => {
+      const [o] = await query(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
+      const E = require("./engagement");
+      return E.partRows(query, orgId, p.donor, require("./orgTime").orgToday(o || {}), "engagement", p.part);
+    },
+  },
+  "donor-generosity-part": {
+    label: "Generosity",
+    measure: p => (p.part === "consistency" || p.part === "monthly" ? "count" : "sum"),
+    params: { donor: "id:required", part: "word:required" },
+    sentence: p => ({
+      lifetime: "Every gift this person has given, net of refunds.",
+      recent: "Every gift in the last 24 months.",
+      consistency: "Each of the last five calendar years in which they gave.",
+      monthly: "Each recurring gift running now.",
+      upgrade: "Their gifts in the last 12 months, minus their gifts in the 12 months before: the growth this part counts.",
+    }[p.part] || "The gifts this part counted."),
+    js: async (orgId, p) => {
+      const [o] = await query(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
+      const E = require("./engagement");
+      return E.partRows(query, orgId, p.donor, require("./orgTime").orgToday(o || {}), "generosity", p.part);
+    },
+  },
   "donor-last-gift": {
     label: "Last gift",
     measure: () => "sum",
@@ -503,6 +537,55 @@ const SOURCES = {
              GROUP BY d.id, d.name`,
       args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC, id",
     }),
+  },
+  // ENGAGE-1 §4 — APPEAL-WHY. Every number on "How did it do?" opens these
+  // rows, built by appealWhy.js's one gift set per campaign.
+  "appeal-why": {
+    label: "How did it do?",
+    measure: p => (/^donors/.test(p.part) ? "count" : /^avg/.test(p.part) ? "avg" : "sum"),
+    params: { campaign: "id:required", compare: "id", part: "word:required" },
+    sentence: p => ({
+      this: "Every gift attributed to this campaign, refunds subtracted.",
+      last: "Every gift attributed to the campaign it is compared with.",
+      notYet: "Each person who gave to last year's campaign and has not given to this one yet, with what they gave last time. Largest first.",
+      less: "Each person who gave to both and gave less this time: this time minus last time.",
+      more: "Each person who gave to both and gave more this time: this time minus last time.",
+      newcomers: "Each person whose first gift to the organisation came through this campaign, with what they gave.",
+      returning: "Each person who gave to both campaigns, with what they gave this time.",
+      donorsThis: "Each person who gave to this campaign, once, with what they gave in all.",
+      donorsLast: "Each person who gave to the campaign it is compared with, once, with what they gave in all.",
+      avgThis: "Every gift to this campaign; the average is their total divided by how many there are, to the dollar.",
+      avgLast: "Every gift to the campaign it is compared with; the average is their total divided by how many there are, to the dollar.",
+    }[p.part] || "The rows behind this number."),
+    js: async (orgId, p) => {
+      const out = await require("./appealWhy").parts(orgId, p.campaign, p.compare || null);
+      return (out && Array.isArray(out[p.part])) ? out[p.part] : [];
+    },
+  },
+  // ENGAGE-1 — WARM BUT NOT ASKED THIS YEAR. Engagement 34 or more (Warm or
+  // Close, the stored score), and no ask since `since` (1 January): no ask or
+  // solicitation logged, and no proposal opened or moved since then.
+  "warm-not-asked": {
+    label: "Warm but not asked this year",
+    measure: () => "count",
+    params: { since: "date:required", owner: "id" },
+    sentence: (p, dd) => `Everyone whose engagement is Warm or Close (34 or more) and who has not been asked since ${dd(p.since)}: no ask logged and no proposal opened or moved since then. Closest first.`,
+    sql: (orgId, p) => {
+      const args = [orgId, p.since, p.since, p.since];
+      let w = "";
+      if (p.owner) { w = " AND d.assigned_to = ?"; args.push(p.owner); }
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_touch AS date, NULL::numeric AS amount,
+                     'Engagement ' || s.engagement || ' · ' || initcap(s.band) AS detail, s.engagement AS eng
+                FROM donor_scores s JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
+               WHERE s.org_id = ? AND d.deleted_at IS NULL AND s.engagement >= 34
+                 AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id
+                                  AND i.type IN ('ask', 'solicitation') AND LEFT(i.date, 10) >= ?)
+                 AND NOT EXISTS (SELECT 1 FROM opportunities o WHERE o.org_id = d.org_id AND o.donor_id = d.id
+                                  AND (o.created_at::date >= ?::date OR o.updated_at::date >= ?::date))${w}`,
+        args, order: "eng DESC, name ASC, id",
+      };
+    },
   },
   // A person's emails in a range, and how many of them she wrote.
   "donor-emails": {

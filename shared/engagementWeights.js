@@ -1,0 +1,78 @@
+// shared/engagementWeights.js — ENGAGE-1. THE ONE FILE THE TWO SCORES ARE MADE OF.
+//
+// Every weight, every window and every cut point is here, next to the plain
+// words that explain it. The donor profile's "See why" panel prints EXPLANATION
+// from this file, so the screen and the arithmetic cannot say different things.
+// Change a number here and the explanation's sentence must change with it.
+//
+// Both scores are 0 to 100 and RELATIVE: a donor's number is where they stand
+// among this organisation's own people, never against anybody else's. They are
+// computed by engagement.js, nightly and after every gift or touch.
+
+// ── ENGAGEMENT: how close they are, from the touches of the last 24 months ──
+export const WINDOW_DAYS = 730;          // 24 months; a touch older than this counts nothing
+export const FULL_WEIGHT_DAYS = 90;      // a touch in the last 90 days counts in full
+// Between 90 days and 24 months a touch fades in a straight line to nothing:
+// a meeting a year ago counts a little over half of one last month.
+export function recencyWeight(ageDays) {
+  if (ageDays < 0 || ageDays >= WINDOW_DAYS) return ageDays < 0 ? 1 : 0;
+  if (ageDays <= FULL_WEIGHT_DAYS) return 1;
+  return (WINDOW_DAYS - ageDays) / (WINDOW_DAYS - FULL_WEIGHT_DAYS);
+}
+
+// Points for one touch at full weight. A meeting is the strongest sign of a
+// relationship, then attending an event, then a call or a reply, then giving
+// time; an email opened is the faintest sign there is.
+export const TOUCH_POINTS = Object.freeze({
+  meetings:    { points: 5,   label: "Meetings",          one: "meeting",  many: "meetings",  how: "a meeting or visit, logged or on the calendar" },
+  events:      { points: 4,   label: "Events attended",   one: "event",    many: "events",    how: "an event they came to" },
+  calls:       { points: 3,   label: "Calls",             one: "call",     many: "calls",     how: "a call" },
+  replies:     { points: 3,   label: "Email replies",     one: "reply",    many: "replies",   how: "an email they wrote back to" },
+  surveys:     { points: 3,   label: "Survey answers",    one: "survey",   many: "surveys",   how: "a survey they answered with their name on it" },
+  volunteering:{ points: 2,   label: "Volunteer shifts",  one: "shift",    many: "shifts",    how: "a volunteer shift" },
+  email:       { points: 1,   label: "Newsletter opens and clicks", one: "open or click", many: "opens and clicks", how: "a newsletter click (1 point) or open (half a point), from Mailchimp or Constant Contact" },
+});
+export const OPEN_POINTS = 0.5;          // an open without a click
+export const ENGAGEMENT_PARTS = Object.keys(TOUCH_POINTS);
+
+// ── GENEROSITY: how much they give, against the organisation's own donors ──
+// Each part is a percentile among the donors who have given at least once, and
+// the score is these weights times those percentiles. The weights add to 1.
+export const GENEROSITY_PARTS = Object.freeze({
+  lifetime:    { weight: 0.30, label: "Lifetime giving",      how: "everything they have given, net of refunds" },
+  recent:      { weight: 0.30, label: "Last 24 months",       how: "what they have given in the last 24 months" },
+  consistency: { weight: 0.20, label: "Years given",          how: "how many of the last five calendar years they gave in" },
+  monthly:     { weight: 0.10, label: "Monthly giving",       how: "whether they have a recurring gift running now" },
+  upgrade:     { weight: 0.10, label: "Giving more",          how: "how much more they gave in the last 12 months than the 12 before (only for donors who gave in both)" },
+});
+export const CONSISTENCY_YEARS = 5;
+export const UPGRADE_DAYS = 365;
+
+// ── BANDS, on the engagement score ──────────────────────────────────────────
+// Three plain words and a number. No "hot", no "on fire": a band is where they
+// are, not how excited anybody should be.
+export const BANDS = Object.freeze([
+  { key: "close",   label: "Close",   min: 67 },
+  { key: "warm",    label: "Warm",    min: 34 },
+  { key: "distant", label: "Distant", min: 0 },
+]);
+export function bandFor(score) {
+  const s = Number(score) || 0;
+  return BANDS.find(b => s >= b.min) || BANDS[BANDS.length - 1];
+}
+
+// ── THE EXPLANATION, as the screen shows it ─────────────────────────────────
+export const EXPLANATION = Object.freeze({
+  engagement:
+    "Engagement is how close this person is, from 0 to 100. Every meeting (5 points), event attended (4), call (3), email reply (3), "
+    + "named survey answer (3), volunteer shift (2), newsletter click (1) or open (half a point) in the last 24 months counts. "
+    + "A touch in the last 90 days counts in full and older ones fade to nothing at 24 months. "
+    + "The score is where their total stands among the people you have been in touch with in those 24 months: 80 means closer than about 80 in 100 of them (people tied with them count as half). "
+    + "67 and above is Close, 34 to 66 is Warm, 33 and below is Distant.",
+  generosity:
+    "Generosity is how much this person gives, from 0 to 100, against your own donors only. Five parts, each a percentile among everyone who has given: "
+    + "lifetime giving (30%), the last 24 months (30%), how many of the last five years they gave (20%), a monthly gift running now (10%) "
+    + "and giving more this year than last (10%). It never uses wealth or capacity data.",
+  parts:
+    "The parts add up to the score. Each part opens the rows it counted.",
+});

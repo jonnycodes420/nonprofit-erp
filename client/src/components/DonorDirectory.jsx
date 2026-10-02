@@ -3,6 +3,7 @@
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
 import { useState, useEffect } from "react";
+import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
@@ -46,6 +47,8 @@ const stageChip=s=>s&&s.id==="lapsed"?{background:T.gold100,color:T.gold700}:{ba
 // string literal), so the definition BUILD-100 wrote reached exactly one tile
 // — the one this build then took off the screen.
 const GIVING_STRENGTH_LABEL = "Giving strength";
+// ENGAGE-1 — the stored engagement score and its band.
+const ENGAGEMENT_LABEL = "Engagement";
 // FIX-10 F — THE SOURCE STRING WAS ALREADY RIGHT; THE CSS WAS SHOUTING IT.
 // The walk read "GIVING STRENGTH?" off this screen and a grep for it found
 // nothing, because `textTransform:"uppercase"` on the header cell is what
@@ -343,7 +346,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
   const showPortfolios=officers.length>1; // single-user shop: no color clutter at all
 
   const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
-  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 60px"+(isAdmin?" 80px":"");
+  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 88px 60px"+(isAdmin?" 80px":"");
   const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:T.ink,cursor:"pointer",borderBottom:"1px solid "+T.bg2,fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(totalDonors===0&&!hasSampleData){
@@ -393,6 +396,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <option value="">Sort: total given</option>
           <option value="last_gift_date">Sort: last gift</option>
           <option value="name">Sort: name</option>
+          <option value="engagement">Sort: engagement</option>
+          <option value="generosity">Sort: generosity</option>
         </select>}
         {household&&<span data-testid="dir-household" style={{fontSize:12,color:T.ink,fontWeight:700,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",display:"inline-flex",gap:8,alignItems:"center"}}>
           One household
@@ -562,12 +567,13 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last gift",GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
+            {["Donor","Stage","Owner","Lifetime","Last gift",ENGAGEMENT_LABEL,GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
                   style={{...HEAD,color:T.ink3,textAlign:i>=3?"right":"left"}}>
                   {h}
                   {h===GIVING_STRENGTH_LABEL&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
+                  {h===ENGAGEMENT_LABEL&&<ColDef text={ENGAGEMENT_EXPLANATION.engagement} testid="dir-def-engagement"/>}
                 </div>
               ))}
           </div>
@@ -626,6 +632,11 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                   {d.lastGift
                     ?<><div style={{fontSize:12,color:T.ink}}>{new Date(d.lastGift).toLocaleDateString("en-US",{month:"short",year:"numeric"})}</div>{!compact&&<div style={{fontSize:11,color:T.ink3}}>{d.lastAmount>0?fmtFull(d.lastAmount):""}</div>}</>
                     :<div style={{fontSize:11,color:T.ink3}}>no gift on file</div>}
+                </div>
+                <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
+                  {d.engagement!=null
+                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"?T.gold700:T.ink3}}>{(bandFor(d.engagement)||{}).label}</span></>
+                    :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>—</span>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   {sc!=null

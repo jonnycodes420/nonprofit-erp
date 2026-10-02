@@ -167,6 +167,10 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
 export function adaptDonor(d) {
   return {
     id:             d.id,
+    // ENGAGE-1 — the stored scores, when the list read carried them.
+    engagement:     d.engagement_score == null ? null : Number(d.engagement_score),
+    engagementBand: d.engagement_band || null,
+    generosity:     d.generosity_score == null ? null : Number(d.generosity_score),
     name:           d.name,
     email:          d.email || "",
     phone:          d.phone || "",
