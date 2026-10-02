@@ -4513,7 +4513,7 @@ app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAcces
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "stage_change",
        `Stage moved from ${oldStage} → ${stage}`,
-       new Date().toISOString().split("T")[0], req.user.userId, userName]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Stage change log:", e.message); }
 
@@ -4729,7 +4729,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
 
   const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const userName = userRow[0]?.name || "";
-  const today = new Date().toISOString().split("T")[0];
+  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
 
   // Straight donor_id reassigns — no unique constraint on donor_id in these.
   const PLAIN_CHILD_TABLES = [
@@ -4855,7 +4855,8 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   await run(
     "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type, note || "",
-     date || new Date().toISOString().split("T")[0], req.user.userId,
+     // FIX-14 Part 1 — no date means the ORG's today (this was the UTC day).
+     /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? date : orgToday(await orgTz(req.user.orgId)), req.user.userId,   // ORG_TZ_SEAM_OK
      userName, metadata ? JSON.stringify(metadata) : null]
   );
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
@@ -7569,7 +7570,7 @@ app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "planned_gift",
        `Planned gift indicated: ${type.replace(/_/g," ")}${estimated_value ? " (est. $" + Number(estimated_value).toLocaleString() + ")" : ""}`,
-       new Date().toISOString().split("T")[0], req.user.userId, userName]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Planned gift log:", e.message); }
   res.status(201).json(rows[0]);
@@ -7655,7 +7656,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "material",
        `Material added: ${file_name} (${ext})`,
-       new Date().toISOString().split("T")[0], req.user.userId, userRow[0]?.name||""]
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, userRow[0]?.name||""]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Material log:", e.message); }
   res.status(201).json(rows[0]);
@@ -8675,7 +8676,7 @@ app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWrite
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_" + uuid().slice(0, 8), req.user.orgId, req.params.donorId, "stage_change",
        `Moved ${fromStage} → ${toStage}: ${String(description).trim()}`,
-       new Date().toISOString().split("T")[0], req.user.userId, officerName]);
+       orgToday(await orgTz(req.user.orgId)), req.user.userId, officerName]);   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
   } catch (e) { console.error("move interaction log:", e.message); }
   res.status(201).json({ ok: true, moveId, stage: toStage, fromStage });
 }));
@@ -13651,11 +13652,13 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const now = new Date();
   const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
-  const today = now.toISOString().split("T")[0];
+  // FIX-14 Part 1 — the org's civil today (this was the UTC date), and Visits
+  // YTD is the one meetings source (meetings.js) for this staff member.
+  const today = orgToday(await orgTz(orgId));                // ORG_TZ_SEAM_OK
 
   const [portfolioRows, visitsRows, movesRows, giftsRows, pipelineRows, lapsedRows, orgInteractionRows, orgGiftHistoryRows] = await Promise.all([
     query("SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND assigned_to=? AND deleted_at IS NULL", [orgId, userId]),
-    query("SELECT COUNT(*) as cnt FROM interactions WHERE org_id=? AND created_by=? AND type='meeting' AND date>=?", [orgId, userId, fyStart]),
+    figureSources.figureValue(orgId, { key: "meetings", params: { from: fyStart, to: today, staff: userId } }, {}).then(f => [{ cnt: f.value || 0 }]),
     // "Moves Made" = every meaningful-contact interaction (call/meeting/
     // email/stewardship — the same MEANINGFUL_CONTACT_TYPES used by
     // Stewardship Debt/First-Touch Delay), NOT literally every interactions
@@ -13854,26 +13857,17 @@ app.get("/dashboard/my-stats/visits/breakdown", requireAuth, wrap(async (req, re
   const now = new Date();
   const fyStart = orgFiscalYearStart(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   const PAGE_SIZE = 50;
-  const [rows, countRow] = await Promise.all([
-    query(
-      `SELECT i.id, i.donor_id, d.name AS donor_name, i.date FROM interactions i
-       JOIN donors d ON d.id = i.donor_id
-       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL
-       ORDER BY i.date DESC LIMIT ?`,
-      [orgId, userId, fyStart, PAGE_SIZE]
-    ),
-    query(
-      `SELECT COUNT(*) as cnt FROM interactions i JOIN donors d ON d.id=i.donor_id
-       WHERE i.org_id=? AND i.created_by=? AND i.type='meeting' AND i.date>=? AND d.deleted_at IS NULL`,
-      [orgId, userId, fyStart]
-    ),
-  ]);
+  // FIX-14 Part 1 — the same source as the count on Home (meetings.js).
+  const f = await figureSources.figure(orgId, { key: "meetings", params: { from: fyStart, to: orgToday(await orgTz(orgId)), staff: userId } }, {}, { pageSize: PAGE_SIZE });   // ORG_TZ_SEAM_OK
+  const { displayDateShort } = await import("../shared/displayDate.js");
+  const names = Object.fromEntries((await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)",
+    [orgId, [...new Set((f.rows || []).map(r => r.donorId || r.donor_id).filter(Boolean))]])).map(r => [r.id, r.name]));
   res.json({
-    count: parseInt(countRow[0]?.cnt || 0),
-    rows: rows.map(r => ({
-      id: r.id, donorId: r.donor_id, donorName: r.donor_name,
-      detail: "Meeting logged",
-      value: new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    count: f.totalRows || 0,
+    rows: (f.rows || []).map(r => ({
+      id: r.id, donorId: r.donorId || r.donor_id, donorName: names[r.donorId || r.donor_id] || "",
+      detail: r.type === "meeting" ? "Meeting from a calendar" : "Meeting logged",
+      value: displayDateShort(r.date, r.date),
     })),
   });
 }));
@@ -14903,8 +14897,11 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const shape = await threadShapeMod();
   const touch = shape.touchTypeFor(String(req.body?.touch || ""));
   if (!touch) return res.status(400).json({ error: "Unknown touch type" });
-  const line = typeof req.body?.line === "string" ? req.body.line.trim() : "";
+  const line = typeof req.body?.line === "string" ? req.body.line.trim().slice(0, 8000) : "";
   if (!line) return res.status(400).json({ error: "The one line is required — what happened?" });
+  // FIX-14 Part 1 — where it happened, for a meeting or a visit. The card is
+  // titled by it ("Meeting at Starbucks").
+  const place = typeof req.body?.place === "string" ? req.body.place.trim().slice(0, 200) : "";
 
   const org = await orgTz(orgId);
   const today = orgToday(org);                          // ORG_TZ_SEAM_OK
@@ -14973,7 +14970,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     await runTx(client,
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
-       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set",
+       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(place ? { location: place } : {}),
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}) })]);
 
     // An open thread on this donor closes on this conversation — the outcome.
@@ -15018,6 +15015,168 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
         fundId: giftWritten.fundId, paymentMethod: giftWritten.paymentMethod }
     : (giftWritten && giftWritten.duplicate ? { duplicate: true } : null);
   res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
+}));
+
+// ── FIX-14 Part 1 — WHAT STEWARD HEARD IN A LOGGED CONVERSATION ────────────
+// The FIX-12 after-meeting engine, for a conversation logged by hand: the
+// Agent engine reads the note through the one AI door (aiClient.js asks the
+// org's switch), and shared/meetingNote.js's simple reader is the fallback.
+// Three chips, and NOTHING is recorded until a person says yes:
+//   next     sets the profile's next step: the donor's one open Thread step
+//   spouse   links the spouse named in the note into one household, matching
+//            a person already on file by name or adding them (the one person
+//            record: a row in donors, person type "other")
+//   planned  marks the record a planned-giving prospect (the designation)
+// A chip answered either way is remembered on the interaction
+// (metadata.chips_done), so it is offered once.
+const CONVO_CHIP_TTL_MS = 10 * 60 * 1000;
+const _convoChipCache = new Map();   // interaction id + note → the engine's chips, briefly
+async function loggedConversation(orgId, id) {
+  const [i] = await query(
+    `SELECT i.id, i.donor_id, i.type, i.note, i.date, i.metadata, d.name AS donor_name, d.household_id
+       FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE i.id = ? AND i.org_id = ? AND d.deleted_at IS NULL`, [id, orgId]);
+  if (!i) return null;
+  i.meta = typeof i.metadata === "string" ? (() => { try { return JSON.parse(i.metadata); } catch { return {}; } })() : (i.metadata || {});
+  i.done = Array.isArray(i.meta.chips_done) ? i.meta.chips_done : [];
+  return i;
+}
+async function spouseCandidate(orgId, i, name) {
+  const given = String(name || "").trim();
+  const ln = lastName(i.donor_name);
+  const full = given.includes(" ") || !ln ? given : `${given} ${ln}`;
+  const rows = await query(
+    `SELECT id, name, household_id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND id <> ?
+        AND (LOWER(name) = LOWER(?) OR LOWER(name) = LOWER(?)) ORDER BY (LOWER(name) = LOWER(?)) DESC LIMIT 2`,
+    [orgId, i.donor_id, full, given, full]);
+  return { full, match: rows.length >= 1 && (rows.length === 1 || rows[0].name.toLowerCase() === full.toLowerCase()) ? rows[0] : null };
+}
+
+app.post("/interactions/:id/suggest", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  if (req.audit) req.audit.skip("reads a note and writes nothing");
+  const i = await loggedConversation(orgId, req.params.id);
+  if (!i) return res.status(404).json({ error: "Not found" });
+  const N = await import("../shared/meetingNote.js");
+  const note = String(i.note || "").slice(0, 4000);
+  const ctx = { date: String(i.date || "").slice(0, 10) };
+  let suggestions = null, source = "reader", aiOff = false;
+  const ck = i.id + "\u0000" + note;
+  const hit = _convoChipCache.get(ck);
+  if (hit && hit.until > Date.now()) { suggestions = hit.chips; source = "agent"; }
+  else if (note.trim()) {
+    try {
+      const r = await anthropicFor(orgId).messages.create({
+        model: AGENT_MODEL, max_tokens: 600, system: N.CONVERSATION_CHIP_SYSTEM,
+        messages: [{ role: "user", content: `Her note:\n"""${note}"""` }],
+        tools: [N.CONVERSATION_CHIP_TOOL], tool_choice: { type: "tool", name: N.CONVERSATION_CHIP_TOOL.name } });
+      const use = (r.content || []).find(c => c.type === "tool_use");
+      const chips = N.validateConversationChips(use && use.input && use.input.chips, note, ctx);
+      if (chips.length) { suggestions = chips; source = "agent"; _convoChipCache.set(ck, { chips, until: Date.now() + CONVO_CHIP_TTL_MS }); }
+    } catch (e) {
+      if (e instanceof AiOffError) aiOff = e.reason === "ai_disabled";
+      else console.error("[conversation-chips] engine:", e.message);
+    }
+  }
+  if (!suggestions) suggestions = N.suggestFromConversation(note, ctx);
+  // Only what is not already true, and not already answered.
+  const out = [];
+  for (const c of suggestions) {
+    if (i.done.includes(c.kind)) continue;
+    if (c.kind === "planned") {
+      const [has] = await query(`SELECT 1 FROM donor_designations WHERE org_id = ? AND donor_id = ? AND kind IN ('planned_prospect','planned_confirmed','estate')`, [orgId, i.donor_id]);
+      if (has) continue;
+    }
+    if (c.kind === "spouse") {
+      const { full, match } = await spouseCandidate(orgId, i, c.name);
+      if (match && i.household_id && match.household_id === i.household_id) continue;
+      out.push({ ...c, fullName: full, matchId: match ? match.id : null,
+        label: match ? `Link ${match.name} to the household` : `Add ${full} and link the household` });
+      continue;
+    }
+    if (c.kind === "next") {
+      const [open] = await query(`SELECT due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL`, [orgId, i.donor_id]);
+      if (open && open.due_date === c.due) continue;
+    }
+    out.push(c);
+  }
+  res.json({ suggestions: out, source,
+    sentence: aiOff ? AI_OFF_MESSAGE + ". These come from Steward's simple reader. Nothing changes until you say yes."
+      : "Read from the note. Nothing changes until you say yes." });
+}));
+
+app.post("/interactions/:id/chips", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const i = await loggedConversation(orgId, req.params.id);
+  if (!i) return res.status(404).json({ error: "Not found" });
+  const kind = String(req.body?.kind || "");
+  if (!["next", "spouse", "planned"].includes(kind)) return res.status(400).json({ error: "kind must be next, spouse or planned" });
+  const answer = req.body?.answer === "no" ? "no" : "yes";
+  const who = actor(req);
+  let sentence = "Fine. Steward will not offer that again for this note.";
+  if (answer === "yes" && kind === "next") {
+    const shape = await threadShapeMod();
+    const label = shape.sanitizeStepLabel(req.body?.label) || "Follow up";
+    const due = String(req.body?.due || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
+    const [donor] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ?", [i.donor_id, orgId]);
+    const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+    const [open] = await query("SELECT id FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL", [orgId, i.donor_id]);
+    if (open) {
+      // One open step per person: her yes replaces what it says and when.
+      await run("UPDATE threads SET next_step_type = ?, next_step_label = ?, due_date = ?, snoozed_until = NULL WHERE id = ? AND org_id = ?",
+        [shape.nextStepTypeForLabel(label), label, due, open.id, orgId]);
+    } else {
+      await withTransaction(client => openThreadTx(client, {
+        orgId, donorId: i.donor_id, step: { type: shape.nextStepTypeForLabel(label), label, due, time: null }, openedOn: today,
+        ownerId: donor?.assigned_to || userId, ownerName: donor?.assigned_to ? donor.assigned_to_name : who.name,
+        actorId: who.id, actorName: who.name, openingInteractionId: i.id,
+      }));
+    }
+    sentence = `Next step set: ${label}, due ${due}.`;
+  } else if (answer === "yes" && kind === "spouse") {
+    const name = String(req.body?.name || "").trim().slice(0, 120);
+    if (!name) return res.status(400).json({ error: "name is required" });
+    let spouseId = null;
+    if (req.body?.matchId) {
+      const [m] = await query("SELECT id, household_id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [String(req.body.matchId), orgId]);
+      if (!m) return res.status(404).json({ error: "That person is not on file." });
+      if (m.household_id && i.household_id && m.household_id !== i.household_id)
+        return res.status(400).json({ error: "That person is already in another household." });
+      spouseId = m.id;
+    }
+    await withTransaction(async client => {
+      if (!spouseId) {
+        // THE ONE PERSON RECORD: a spouse is a row in donors, not a field.
+        spouseId = "d_" + uuid().slice(0, 8);
+        await runTx(client,
+          `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,gift_count,tags,notes,created_by,created_by_name,person_types)
+           VALUES (?,?,?,'','','new','prospect',0,0,0,'[]','',?,?,?)`,
+          [spouseId, orgId, name, who.id, who.name, JSON.stringify(["other"])]);
+      }
+      let hh = i.household_id;
+      if (!hh) {
+        const [sp] = await queryTx(client, "SELECT household_id FROM donors WHERE id = ? AND org_id = ?", [spouseId, orgId]);
+        hh = sp && sp.household_id;
+      }
+      if (!hh) {
+        hh = "hh_" + uuid().slice(0, 8);
+        const ln = lastName(i.donor_name);
+        await runTx(client, "INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)",
+          [hh, orgId, ln ? `The ${ln} Household` : "Household", i.donor_id, true, who.id, who.name]);
+      }
+      await runTx(client, "UPDATE donors SET household_id = ? WHERE org_id = ? AND id = ANY(?)", [hh, orgId, [i.donor_id, spouseId]]);
+    });
+    sentence = `${name} is linked to ${i.donor_name}'s household.`;
+  } else if (answer === "yes" && kind === "planned") {
+    await run("INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES (?,?,?,?) ON CONFLICT (donor_id, kind) DO NOTHING",
+      ["dsg_" + uuid().slice(0, 8), orgId, i.donor_id, "planned_prospect"]);
+    sentence = `${i.donor_name} is marked as a planned-giving prospect.`;
+  }
+  await run(`UPDATE interactions SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('chips_done', ?::jsonb)
+              WHERE id = ? AND org_id = ?`, [JSON.stringify([...new Set([...i.done, kind])]), i.id, orgId]);
+  if (req.audit) { req.audit.entity("donor", i.donor_id); req.audit.action(answer === "yes" ? `confirmed the ${kind} suggestion` : `declined the ${kind} suggestion`); }
+  res.json({ ok: true, kind, answer, sentence });
 }));
 
 // POST /threads/:id/dismiss — the other way out. reason ∈ the short fixed

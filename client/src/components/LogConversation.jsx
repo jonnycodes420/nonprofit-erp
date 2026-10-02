@@ -14,14 +14,18 @@ import {
 } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
 import { NavIcon } from "./NavIcon";
+import { orgTodayCivil } from "../lib/orgToday";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
-const todayLocal = () => new Date().toISOString().split("T")[0];
+// FIX-14 Part 1 — the ORG's today. This was `toISOString()`, the UTC day, so a
+// conversation logged after 8pm in New York defaulted to tomorrow.
+const todayLocal = () => orgTodayCivil();
 
 export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null }) {
   const [touch, setTouch] = useState("call_reached");
   const [line, setLine] = useState("");
+  const [place, setPlace] = useState("");   // FIX-14 Part 1 — where, for a meeting or a visit
   const [date, setDate] = useState(todayLocal());
   const [nsLabel, setNsLabel] = useState("Follow up");
   const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 5));
@@ -92,6 +96,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         method: "POST",
         body: JSON.stringify({
           touch, line: line.trim(), date,
+          ...((touch === "meeting" || touch === "visit") && place.trim() ? { place: place.trim() } : {}),
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
                                       fundId: fundId || (defaultFund ? defaultFund.id : null),
                                       paymentMethod: method || undefined } } : {}),
@@ -101,7 +106,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                 source: nsSource?.from || null },
         }),
       });
-      onSaved && onSaved({ ...r, touch, line: line.trim(), date });
+      onSaved && onSaved({ ...r, touch, line: line.trim(), date, place: place.trim() || null });
       onClose && onClose();
     } catch (e) {
       setErr(errorMessage(e, "That didn't save. Try again."));
@@ -134,10 +139,21 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 
         <div style={{ marginBottom: 12 }}>
           <span style={lbl}>What happened?</span>
-          <input ref={lineRef} value={line} onChange={e => setLine(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter" && line.trim()) save(false); }}
-            placeholder="One line. She asked for the impact report." style={inp} />
+          {/* FIX-14 Part 1 — a textarea, so a note's own lines survive: an
+              <input> folded "Location:", "Next Step:" and the rest into one
+              unreadable paragraph. Cmd or Ctrl and Enter still saves. */}
+          <textarea ref={lineRef} value={line} onChange={e => setLine(e.target.value)} rows={3}
+            onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && line.trim()) save(false); }}
+            placeholder="She asked for the impact report." data-testid="conv-line"
+            style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
+        {(touch === "meeting" || touch === "visit") && (
+          <div style={{ marginBottom: 12 }}>
+            <span style={lbl}>Where (optional)</span>
+            <input value={place} onChange={e => setPlace(e.target.value)} maxLength={200}
+              aria-label="Where" data-testid="conv-place" placeholder="Starbucks on Main Street" style={inp} />
+          </div>
+        )}
         <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
           <div style={{ flex: "0 1 170px" }}>
             <span style={lbl}>When</span>
