@@ -142,6 +142,8 @@ CORE=(
   sec1-two-factor
   trust2-erase
   help1-ask
+  why1-appeal-variance
+  why1-sentence-check
   fix12-ai-switch
   fix12-recipe-drafts
   fix11-inbound-resend

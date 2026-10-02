@@ -738,34 +738,52 @@ async function main() {
                                 pledgeDonorA, pledgeDonorB, ...orgDonors.map(([id]) => id)]);
   const ONLINE_P = { major: 0.08, mid: 0.55, new: 0.8 };
   // ── ENGAGE-1 · THE SPRING APPEAL, THIS YEAR AND LAST ────────────────────
-  // "How did it do?" needs a campaign with a comparable one a year earlier and
-  // a believable gap. Last spring, thirty mid-level donors gave. This spring:
-  // the eight who gave MOST last time have not given yet (the "Who to call"
-  // list), ten gave a little less, twelve gave the same or more, and four
-  // people gave their very first gift to Harborlight through it. Drawn from
-  // donors who ARE giving this year, so none of the eleven drifted donors (the
-  // thesis: nothing this year) is quietly made to give.
+  // WHY-1 — "Why did the spring appeal come in under last year?" is the demo's
+  // first question, so the gap is made of real reasons, each one a set of
+  // people the answer can open:
+  //   ELEVEN of last spring's donors have not given yet (the call list),
+  //   TWO more gave late last May, and this spring's letter went out TWELVE
+  //     days later (13 March, not 1 March) with the same end date, so the
+  //     window they gave in last time has not been open this year (timing),
+  //   FOUR gave less, seven gave more, six gave the same,
+  //   THREE people gave their very first gift to Harborlight through it.
+  // Drawn from donors who ARE giving this year, so none of the eleven drifted
+  // donors (the thesis: nothing this year) is quietly made to give.
   const SPRING = { last: "camp_b72demo_spring_prev", now: "camp_b72demo_spring" };
-  const springEight = [];   // the eight not back yet: their touches are written after writeAll
+  const springEight = [];   // the eleven not back yet: their touches are written after writeAll
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
            VALUES ($1,$2,$3,'appeal','completed',40000,$4,$5), ($6,$2,$7,'appeal','completed',45000,$8,$9)`,
     [SPRING.last, ORG, `Spring Appeal ${YEAR - 1}`, dateIn(YEAR - 1, 3, 1), dateIn(YEAR - 1, 5, 31),
-     SPRING.now, `Spring Appeal ${YEAR}`, dateIn(YEAR, 3, 1), dateIn(YEAR, 5, 31)]);
+     SPRING.now, `Spring Appeal ${YEAR}`, dateIn(YEAR, 3, 13), dateIn(YEAR, 5, 31)]);
   {
     const givingNow = new Set(gifts.filter(g => String(g.date).startsWith(String(YEAR))).map(g => g.donorId));
     const drifted = new Set(driftedIds);
     const pool = donors.filter(d => d.status === "mid" && givingNow.has(d.id) && !drifted.has(d.id)).slice(0, 30);
-    const LAST = [3000, 2750, 2500, 2500, 2000, 2000, 1800, 1500,           // the eight not back yet
-                  1500, 1200, 1200, 1000, 1000, 1000, 900, 800, 750, 700,  // ten who gave less
-                  700, 650, 600, 600, 500, 500, 500, 400, 400, 350, 300, 250]; // twelve the same or more
+    const LAPSED = [2500, 2000, 1500, 1200, 1000, 1000, 800, 750, 600, 500, 400];   // eleven, nothing yet
+    const LATE = [600, 350];                                                       // gave after 19 May last year
+    const LESS = [[1500, 1000], [1200, 800], [1000, 600], [900, 500]];              // four who gave less
+    const REST = [800, 750, 700, 650, 600, 600, 500, 500, 500, 400, 400, 350, 300]; // seven more, six the same
     pool.forEach((d, i) => {
-      const lastAmt = LAST[i] || 250;
-      addGift(d.id, lastAmt, dateIn(YEAR - 1, 4, 1 + (i % 27)), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
-      if (i < 8) { springEight.push(d.id); return; }
-      const nowAmt = i < 18 ? Math.round(lastAmt * 0.6 / 50) * 50 : (i % 3 === 0 ? lastAmt : Math.round(lastAmt * 1.4 / 50) * 50);
-      addGift(d.id, nowAmt, dateIn(YEAR, 4, 2 + (i % 26)), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
+      if (i < 11) {
+        addGift(d.id, LAPSED[i], dateIn(YEAR - 1, 3, 20 + (i % 9)), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
+        springEight.push(d.id); return;
+      }
+      if (i < 13) {
+        addGift(d.id, LATE[i - 11], dateIn(YEAR - 1, 5, 22 + (i - 11) * 4), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
+        return;
+      }
+      if (i < 17) {
+        const [was, now] = LESS[i - 13];
+        addGift(d.id, was, dateIn(YEAR - 1, 4, 2 + i), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
+        addGift(d.id, now, dateIn(YEAR, 4, 2 + i), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
+        return;
+      }
+      const k = i - 17, was = REST[k] || 250;
+      const now = k < 7 ? Math.round(was * 1.5 / 50) * 50 : was;
+      addGift(d.id, was, dateIn(YEAR - 1, 4, 1 + (k % 27)), { campaign: `Spring Appeal ${YEAR - 1}`, campaignId: SPRING.last });
+      addGift(d.id, now, dateIn(YEAR, 4, 1 + (k % 27)), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
     });
-    [["Imogen Fairweather", 250], ["Tobias Lindqvist", 100], ["Ruth Okonkwo-Hale", 500], ["Calvin Ashdown", 150]].forEach(([name, amt], i) => {
+    [["Imogen Fairweather", 500], ["Ruth Okonkwo-Hale", 250], ["Calvin Ashdown", 150]].forEach(([name, amt], i) => {
       const id = addDonor(name, name.toLowerCase().replace(/[^a-z]+/g, ".") + "@example.demo", { status: "new", stage: "prospect" });
       addGift(id, amt, dateIn(YEAR, 4, 10 + i * 3), { campaign: `Spring Appeal ${YEAR}`, campaignId: SPRING.now });
     });
@@ -789,8 +807,8 @@ async function main() {
   }
 
   await writeAll(client, donors, gifts);
-  // ENGAGE-1 — five of the eight not back from the spring appeal have been in
-  // touch lately, three have not, so "Who to call" ranks on something real:
+  // ENGAGE-1 — five of the eleven not back from the spring appeal have been in
+  // touch lately, six have not, so "Who to call" ranks on something real:
   // what they gave last time, and how close they are now.
   const SPRING_TOUCH = [["meeting", "Coffee near the boatyard. Asked how the spring cohort did.", 12],
                         ["call", "Returned my call about the summer programme.", 30],
@@ -2855,6 +2873,39 @@ async function main() {
     }
     await q(`UPDATE orgs SET volunteer_survey_id=$1 WHERE id=$2`, [VS, ORG]);
     console.log(`[seed] surveys: ${givers.length} donor answers, ${vols.length} volunteer answers`);
+  }
+
+  // ── WHY-1 · TOMORROW MORNING, AND THE JOURNEYS A RAIL CAN SUGGEST ──────
+  // "Who should I call tomorrow?" is the demo's second question and it should
+  // come back with five strong names for five different reasons. Four are
+  // already in the file (the October major donors, Tidewater's unthanked
+  // $7,500, a drifting donor, Ondine's failed card); the fifth is an open ask
+  // past its expected date, raised here for a donor of Dana's who is not
+  // already on her Thread. Written late, after every thread, so the "not
+  // already on the Thread" test is true of the finished file.
+  console.log("[seed] tomorrow morning: an ask past its date, and three journeys to suggest…");
+  {
+    const [who] = await q(`SELECT d.id FROM donors d WHERE d.org_id = $1 AND d.assigned_to = 'u_b72demo' AND d.deleted_at IS NULL
+        AND d.total_giving BETWEEN 4000 AND 20000 AND COALESCE(d.kind,'') NOT IN ('organisation','anonymous')
+        AND NOT (d.id = ANY($2))
+        AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.org_id = d.org_id AND t.donor_id = d.id AND t.closed_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM opportunities o WHERE o.org_id = d.org_id AND o.donor_id = d.id)
+        AND NOT EXISTS (SELECT 1 FROM recurring_subscriptions r WHERE r.org_id = d.org_id AND r.donor_id = d.id)
+      ORDER BY d.total_giving DESC, d.id LIMIT 1`, [ORG, driftedIds]);
+    if (who) await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,created_at,proposal_stage,expected_close,notes,created_by,created_by_name)
+        VALUES ('opp_b72_sail',$1,$2,'Summer sailing scholarships',10000,'open','u_b72demo','Dana Reyes',NOW() - interval '48 days','asked',$3::date,
+                'Said they would decide by the end of September.','u_b72demo','Dana Reyes')`, [ORG, who.id, orgTime.addDays(TODAY, -6)]);
+    // The journeys a donor's rail can suggest beyond the first year: lapsed,
+    // monthly and major. From the catalogue, like the first-year one. NOT
+    // armed (journey_enabled false): starting one is a person's choice on the
+    // rail, and no rule should start one while somebody is giving the demo.
+    for (const [id, key] of [["ct_b72_welcome", "welcome_back"], ["ct_b72_monthly", "monthly_giver"], ["ct_b72_major", "major_donor"]]) {
+      const P = journeyMod.presetByKey(key);
+      await q(`INSERT INTO cultivation_templates
+                 (id,org_id,name,description,steps,trigger_key,priority,preset_key,journey_enabled,created_by,created_by_name,trigger_amount_cents)
+               VALUES ($1,$2,$3,$4,$5::jsonb,$6,$7,$8,false,'u_b72demo','Dana Reyes',$9)`,
+        [id, ORG, P.name, P.blurb, JSON.stringify(P.steps), P.trigger || "by_hand", P.priority || 50, key, key === "major_donor" ? 500000 : null]);
+    }
   }
 
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the

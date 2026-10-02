@@ -22,6 +22,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
+import { AskWhy } from "./WhyAnswer";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -2160,6 +2161,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 </button>
               </span>
             </div>
+            {/* WHY-1 — Ask why, at the top of the Thread: who to call
+                tomorrow and the latest campaign, one tap each, or typed. The
+                answer opens in a panel; its step lands on this Thread. */}
+            {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
+              <AskWhy isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
+            </div>}
             {threadsData&&threadList.length===0&&(
               threadsData.hasAny
                 ?<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="Nothing waiting."

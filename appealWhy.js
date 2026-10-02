@@ -80,7 +80,7 @@ async function parts(orgId, campaignId, compareId) {
   const ids = [...firstHere.keys()];
   const earlier = ids.length ? new Set((await query(
     `SELECT DISTINCT g.donor_id FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?)
-        AND NOT (g.campaign_id = ? OR (g.campaign_id IS NULL AND g.campaign = ?))
+        AND NOT (COALESCE(g.campaign_id, '') = ? OR (g.campaign_id IS NULL AND COALESCE(g.campaign, '') = ?))
         AND LEFT(g.date, 10) < (SELECT MIN(LEFT(h.date, 10)) FROM gifts h WHERE h.org_id = g.org_id AND h.donor_id = g.donor_id
                                   AND (h.campaign_id = ? OR (h.campaign_id IS NULL AND h.campaign = ?)))`,
     [orgId, ids, c.id, c.name, c.id, c.name])).map(r => r.donor_id)) : new Set();

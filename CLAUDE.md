@@ -25,6 +25,17 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
   customer's file) goes in `NEEDS-JONATHAN.md`, one line each. Decide everything else.
   Never create a `BLOCKED-*.md`.
 
+## How Steward is built
+
+Most donor software answers what happened; Steward answers why it happened and what to do next.
+Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
+- Every screen ends in a decision: a name, a reason and a step.
+- Every reason is a computed fact that opens its rows. Steward never states a cause it can't show.
+- Rank the reasons by dollars and say which matters most. The step is taken by a person.
+- Say plainly what the data can't see.
+- AI writes the sentence, never the facts, and goes through the AI switch. With AI off, the same
+  answer shows in template sentences.
+
 ## Standing rules
 
 - **The line that is never crossed: agents read, draft and propose. A human signs anything
@@ -145,6 +156,7 @@ touch …", then the rules, then the reference sections moved from the old CLAUD
 - `docs/decisions/forms.md` — giving pages, the builder and widget registry, peer-to-peer, form configs.
 - `docs/decisions/tests-and-ci.md` — the battery, browser legs, tenant matrix, guards, pre-push, CI, deploys, TDZ, the speed rule.
 - `docs/decisions/architecture.md` — stack, env vars, project layout, tabs, components, org scoping, the actor stamp, API keys, export, scale.
+- `docs/decisions/why.md` — Ask why: the answer shape, the seven questions, template sentences, the number check.
 - `docs/decisions/home-and-reports.md` — Home, the Dashboard, the Thread, Drift, tasks, goals, report definitions, board reports.
 - `docs/decisions/people-and-records.md` — the person record: donors, orgs, non-donors, households, merge, deletion, profile, volunteers, events.
 - `docs/decisions/accounts-and-billing.md` — sign-in, signup, onboarding, invites, roles, super admin, Settings, platform billing.

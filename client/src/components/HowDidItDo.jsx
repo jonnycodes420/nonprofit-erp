@@ -1,15 +1,14 @@
 // ENGAGE-1 §4 — APPEAL-WHY. "How did it do?", inside the campaign's own edit
-// panel (no new screen). This campaign against the one a year earlier, the
-// reasons ranked by how much money each moved, and who to call. Every number is
+// panel (no new screen). This campaign against the one a year earlier; since
+// WHY-1 the reasons and who to call are Ask why's answer (CampaignWhy below). Every number is
 // a <Figure> that opens its rows (figure source appeal-why). "Plan a follow-up"
 // opens the existing planner: it adds a step to that person's Thread and sends
 // nothing.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmtFull } from "./shared";
+import { T } from "./shared";
 import { Figure } from "./Figure";
-import { DonorLink } from "./RecordLink";
-import { PlanFollowUpModal } from "./PlanFollowUp";
+import { askWhy, WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
 
 const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
@@ -18,8 +17,6 @@ const cell = { padding: "8px 10px", borderTop: "1px solid " + T.bg2, fontSize: 1
 export function HowDidItDo({ campaignId, isReadOnly }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
-  const [planFor, setPlanFor] = useState(null);
-  const [planned, setPlanned] = useState({});
   const load = () => apiFetch(`/campaigns/${campaignId}/how-did-it-do`).then(setD).catch(e => setErr(errorMessage(e, "This comparison could not be loaded.")));
   useEffect(() => { setD(null); load(); }, [campaignId]);
   const choose = async id => {
@@ -82,40 +79,26 @@ export function HowDidItDo({ campaignId, isReadOnly }) {
         Average gift is the total divided by the number of gifts, to the dollar. New donors gave their first gift to you through this campaign.
       </div>
 
-      <div style={LABEL}>Why, largest first</div>
-      <div data-testid="how-reasons" style={{ display: "flex", flexDirection: "column" }}>
-        {d.reasons.map(r => (
-          <div key={r.key} data-reason={r.key} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, fontSize: 13.5 }}>
-            <span style={{ color: T.ink }}>{r.label} <span style={{ color: T.ink3 }}>· {r.people} {r.people === 1 ? "person" : "people"}</span></span>
-            <span style={{ fontWeight: 700, color: r.key === "notYet" || r.key === "less" ? T.gold700 : T.ink }}>
-              <Figure value={r.cents / 100} kind="money" label={r.label} source={r.source} variant="inline" /> <span style={{ fontWeight: 400, color: T.ink3 }}>{r.words}</span>
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div style={LABEL}>Who to call</div>
-      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>{d.whoToCallSentence}</div>
-      <div data-testid="how-who-to-call" style={{ display: "flex", flexDirection: "column" }}>
-        {d.whoToCall.length === 0 && <div style={{ fontSize: 13, color: T.ink3 }}>Everyone who gave last time has given again.</div>}
-        {d.whoToCall.map(p => (
-          <div key={p.donorId} data-call-row={p.donorId} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto auto", gap: 10, alignItems: "center", padding: "8px 2px", borderTop: "1px solid " + T.bg2 }}>
-            <div style={{ minWidth: 0 }}>
-              <DonorLink id={p.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{p.name}</DonorLink>
-              <div style={{ fontSize: 12, color: T.ink3 }}>Gave {fmtFull(p.lastGiftCents / 100)} last time · engagement {p.engagement}{p.lastTouch ? ` · last touch ${p.lastTouch}` : ""}</div>
-            </div>
-            <span />
-            {planned[p.donorId]
-              ? <span style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700 }}>Planned</span>
-              : !isReadOnly && <button type="button" data-testid="how-plan" onClick={() => setPlanFor({ id: p.donorId, name: p.name })}
-                  style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                  Plan a follow-up
-                </button>}
-          </div>
-        ))}
-      </div>
-      {planFor && <PlanFollowUpModal donor={planFor} onClose={() => setPlanFor(null)}
-        onSaved={() => { setPlanned(m => ({ ...m, [planFor.id]: true })); setPlanFor(null); }} />}
+      {/* WHY-1 — the reasons and who to call are now Ask why's answer for
+          this campaign (the same math, ranked by dollars, every reason opening
+          its rows, one step that plans and never sends). */}
+      <div style={LABEL}>Why did this come in where it did?</div>
+      <CampaignWhy campaignId={campaignId} compareId={d.compare.id} isReadOnly={isReadOnly} />
     </div>
   );
+}
+
+// The answer is asked again when the comparison changes, so the reasons are
+// always against the campaign shown in the table above.
+function CampaignWhy({ campaignId, compareId, isReadOnly }) {
+  const [a, setA] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true; setA(null);
+    askWhy({ key: "appeal", campaign: campaignId }).then(r => live && setA(r)).catch(e => live && setErr(errorMessage(e, "Steward could not work that out just now.")));
+    return () => { live = false; };
+  }, [campaignId, compareId]);
+  if (err) return <div style={{ fontSize: 13, color: T.ink3 }}>{err}</div>;
+  if (!a) return <div style={{ fontSize: 13, color: T.ink3 }}>Working it out…</div>;
+  return <div data-testid="campaign-why"><WhyAnswerBody answer={a} isReadOnly={isReadOnly} /></div>;
 }

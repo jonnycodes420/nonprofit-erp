@@ -568,6 +568,28 @@ const SOURCES = {
       return (out && Array.isArray(out[p.part])) ? out[p.part] : [];
     },
   },
+  // WHY-1 — every reason in an Ask why answer opens the rows it was summed
+  // from. why.js builds each reason FROM its rows, so the reason's number and
+  // these rows are one computation (a part is a reason's key).
+  why: {
+    label: "Why",
+    measure: p => (["retention", "volunteers", "stopped"].includes(p.q) ? "count" : "sum"),
+    params: { q: "word:required", part: "word:required", campaign: "id", donor: "id", user: "id" },
+    sentence: p => ({
+      appeal: "Each person behind this part of the difference between the two campaigns, with the dollars they moved it by.",
+      call: "Each person on tomorrow's list for this reason, with the dollars at stake.",
+      retention: "Each of last year's donors in this group who has not given this year, with what they gave last year.",
+      stopped: "The records on this donor's file behind this reason.",
+      lapse: "Each donor past their own usual gap between gifts, with their usual gift.",
+      volunteers: "Each volunteer with hours on file and no gift ever.",
+      second: "Each first-time donor from the last 90 days with no second gift and no call logged, with their first gift.",
+    }[p.q] || "The rows behind this reason."),
+    js: async (orgId, p, deps) => {
+      const a = await require("./why").answer(orgId, p.q, { campaign: p.campaign, donor: p.donor, user: p.user }, deps || {});
+      const r = a && (a.reasons || []).find(x => x.key === p.part);
+      return r ? r.rows : [];
+    },
+  },
   // ENGAGE-1 — WARM BUT NOT ASKED THIS YEAR. Engagement 34 or more (Warm or
   // Close, the stored score), and no ask since `since` (1 January): no ask or
   // solicitation logged, and no proposal opened or moved since then.
