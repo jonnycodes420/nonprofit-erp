@@ -800,23 +800,38 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
     const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + await unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
     const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
     const decision0 = await donorMailDecision("onboarding_drip", userEmail, orgId);
+    // WHY-1 Part 8 — HONEST "SENT". Step 0 counts as sent only when the
+    // provider accepts it. A refusal keeps the enrollment on step 0 with its
+    // reason, and the engine tries once more a day later, never sooner.
+    let err0 = null;
     if (!decision0.send) {
+      err0 = `Not sent: ${decision0.reason}`;
       console.log(`[onboarding] skipping ${userEmail} (${decision0.reason})`);
-    } else if (process.env.RESEND_API_KEY) {
+    } else if (!process.env.RESEND_API_KEY) {
+      err0 = "Not sent: no mail provider is configured";
+    } else {
       try {
         const { error: sendErr } = await resend.emails.send({
           from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, replyTo: founderEmail,
           headers: unsubscribeHeaders(userEmail, orgId, "sequence"),
         });
-        if (sendErr) console.error("[onboarding] email 1 send error:", sendErr.message);
+        if (sendErr) err0 = sendErr.message || "refused";
         else console.log("[onboarding] email 1 sent to", userEmail);
-      } catch (e) { console.error("[onboarding] email 1 resend error:", e.message); }
+      } catch (e) { err0 = e.message || "send failed"; }
     }
-    // Advance enrollment past step 0 — engine picks up from step 1 (delay_days: 2)
-    await run(
-      `UPDATE sequence_enrollments SET current_step = 1, next_send_at = NOW() + INTERVAL '2 days' WHERE id = ?`,
-      [enrId]
-    );
+    if (err0) {
+      console.error("[onboarding] email 1 not sent:", err0);
+      await run(
+        `UPDATE sequence_enrollments SET last_error = ?, last_failed_at = NOW(), next_send_at = NOW() + INTERVAL '1 day' WHERE id = ?`,
+        [String(err0).slice(0, 300), enrId]
+      );
+    } else {
+      // Advance past step 0; the engine picks up from step 1 (delay_days: 2).
+      await run(
+        `UPDATE sequence_enrollments SET current_step = 1, next_send_at = NOW() + INTERVAL '2 days', last_error = NULL, last_failed_at = NULL WHERE id = ?`,
+        [enrId]
+      );
+    }
     console.log(`[onboarding] sequence created for org ${orgId}, user ${userId} (${userEmail})`);
   } catch (e) {
     console.error("[onboarding] sendOnboardingSequence error:", e.message);
@@ -2125,6 +2140,11 @@ app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res)
     query("SELECT COUNT(*) AS c FROM sequences WHERE org_id=?", [req.params.id]),
     query("SELECT COUNT(*) AS c FROM sequence_enrollments WHERE org_id=?", [req.params.id]),
   ]);
+  // WHY-1 Part 8 — the onboarding email that did not go, with its reason.
+  const onboardingFailed = await query(
+    `SELECT se.current_step, se.last_error, se.last_failed_at, se.next_send_at FROM sequence_enrollments se
+       JOIN sequences s ON s.id = se.sequence_id
+      WHERE se.org_id = ? AND s.trigger = 'onboarding' AND se.last_error IS NOT NULL`, [req.params.id]).catch(() => []);
 
   res.json({
     ...org,
@@ -2132,6 +2152,7 @@ app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res)
     recent_activity: recentActivity,
     sequence_count: parseInt(sequences[0].c, 10),
     enrollment_count: parseInt(enrollments[0].c, 10),
+    onboarding_failed: onboardingFailed.map(r => ({ step: r.current_step + 1, reason: r.last_error, failedAt: r.last_failed_at, retryAt: r.next_send_at })),
   });
 }));
 

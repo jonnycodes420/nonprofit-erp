@@ -352,6 +352,13 @@ function OrgPanel({ org, onClose, onRefresh }) {
             ))}
           </div>
 
+          {/* WHY-1 Part 8 — an onboarding email that did not go says so, and why. */}
+          {(detail?.onboarding_failed || []).map((f, i) => (
+            <div key={"obf" + i} data-testid="admin-onboarding-failed" style={{ fontSize: 12.5, color: A.ink, background: A.card, border: `1px solid ${A.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+              Onboarding email {f.step} was not sent: {f.reason}. Steward tries once more {f.retryAt ? `after ${new Date(f.retryAt).toLocaleString()}` : "tomorrow"}.
+            </div>
+          ))}
+
           {/* Users */}
           {detail?.users?.length > 0 && (
             <div>

@@ -5184,6 +5184,12 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS volunteer_milestone_hours INTEGER`);
   // Which sign-up a reminder has already gone out for. One row, one send.
   await pool.query(`ALTER TABLE volunteer_signups ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`);
+  // WHY-1 Part 8 — HONEST "SENT". A refused reminder or onboarding email is
+  // not sent: it keeps its reason and its time, and is retried at most once a day.
+  await pool.query(`ALTER TABLE volunteer_signups ADD COLUMN IF NOT EXISTS reminder_error TEXT`);
+  await pool.query(`ALTER TABLE volunteer_signups ADD COLUMN IF NOT EXISTS reminder_failed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS last_error TEXT`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS last_failed_at TIMESTAMPTZ`);
   // FIX-1 — the volunteer sign-up link's version. It is signed into the link,
   // so "make a new link" bumps it and every older link stops verifying.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_link_version INTEGER NOT NULL DEFAULT 0`);

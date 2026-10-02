@@ -93,6 +93,60 @@ app.get("/why/questions", requireAuth, wrap(async (req, res) => {
   res.json({ taps, all: Sx.QUESTIONS.map(q => ({ key: q.key, needs: q.needs, text: q.ask() })) });
 }));
 
+// GET /donors/:id/journey-suggestion — WHY-1 Part 7. The journey the donor's
+// rail suggests, chosen from simple facts on their record, first that fits:
+//   monthly        an active recurring gift              -> Monthly giver
+//   lapsed         past their usual gap (drift.js: drifting or lapsed), or
+//                  marked lapsed                          -> Welcome back
+//   first year     their first gift in the last 365 days  -> New donor, first year
+//   major prospect generosity score 80 or more            -> Major donor
+//   recently met   a meeting logged in the last 30 days   -> Major donor
+// Only a journey the org has (by its catalogue key, not archived) is offered.
+// Read-only; starting it is POST /journeys/:id/apply, a person's choice.
+const SUGGEST_ORDER = [["monthly", "monthly_giver"], ["lapsed", "welcome_back"], ["firstYear", "new_donor_first_year"],
+  ["major", "major_donor"], ["met", "major_donor"]];
+const SUGGEST_WHY = {
+  monthly: "They give every month.",
+  lapsed: "They are past their usual gap between gifts.",
+  firstYear: "Their first gift was this past year.",
+  major: "Their giving puts them among your most generous.",
+  met: "You met them in the last month.",
+};
+app.get("/donors/:id/journey-suggestion", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, stage FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = orgToday(await orgTz(orgId));
+  const [[sub], [first], [score], [met]] = await Promise.all([
+    query(`SELECT 1 AS y FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered') LIMIT 1`, [orgId, d.id]),
+    query(`SELECT MIN(LEFT(date,10)) AS first FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, d.id]),
+    query(`SELECT generosity FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]),
+    query(`SELECT 1 AS y FROM interactions WHERE org_id = ? AND donor_id = ? AND type = 'meeting' AND LEFT(date,10) >= ? LIMIT 1`, [orgId, d.id, orgTime.addDays(today, -30)]),
+  ]);
+  let drift = null;
+  try { const { map } = await computeDriftForDonors(orgId, { donorIds: [d.id] }); drift = map.get(d.id) || null; } catch { drift = null; }
+  const facts = {
+    monthly: !!sub,
+    lapsed: d.stage === "lapsed" || !!(drift && (drift.state === "drifting" || drift.state === "lapsed")),
+    firstYear: !!(first && first.first && first.first >= orgTime.addDays(today, -365)),
+    major: !!(score && Number(score.generosity) >= 80),
+    met: !!met,
+  };
+  const journeys = await query(`SELECT id, name, preset_key, steps FROM cultivation_templates
+     WHERE org_id = ? AND archived_at IS NULL AND preset_key IS NOT NULL ORDER BY created_at`, [orgId]);
+  const J = await import("../shared/journeyShape.js");
+  for (const [fact, key] of SUGGEST_ORDER) {
+    if (!facts[fact]) continue;
+    const j = journeys.find(x => x.preset_key === key && x.id !== String(req.query.exclude || ""));
+    if (!j) continue;
+    const steps = (typeof j.steps === "string" ? JSON.parse(j.steps) : j.steps) || [];
+    let prev = null;
+    const shaped = steps.map(st => { const r = J.resolveTiming(st, prev); prev = r.offsetDays; return { label: st.label, offsetDays: r.offsetDays, when: J.timingWord(r.timing, r.offsetDays) }; });
+    return res.json({ suggestion: { journeyId: j.id, name: j.name, why: SUGGEST_WHY[fact], fact, steps: shaped.slice(0, 3), total: shaped.length } });
+  }
+  res.json({ suggestion: null });
+}));
+
 // POST /why/ask — { text } typed, or { key, campaign?, donor? } tapped.
 // Writes the question to the log and nothing else.
 app.post("/why/ask", requireAuth, wrap(async (req, res) => {

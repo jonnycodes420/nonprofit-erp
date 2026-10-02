@@ -36,8 +36,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 // Capture sink on :5602 (the server's RESEND_BASE_URL). `mode` can be flipped
 // to "fail" so the provider rejects — the log-honesty leg.
 function startSink(port = SINK_PORT) {
-  const state = { captured: [], mode: "ok" };
+  const state = { captured: [], mode: "ok", attempts: 0 };
   const srv = http.createServer((req, res) => {
+    state.attempts++;
     let b = ""; req.on("data", c => b += c);
     req.on("end", () => {
       let parsed = {}; try { parsed = JSON.parse(b); } catch {}
@@ -187,6 +188,11 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("suppressed donor did NOT receive the campaign", to(donorEmail).length === 0, { delivered: to(donorEmail).length });
     ok("do-not-contact donor did NOT receive the campaign", to(dncEmail).length === 0, { delivered: to(dncEmail).length });
     ok("deceased donor did NOT receive the campaign", to(deadEmail).length === 0, { delivered: to(deadEmail).length });
+    // WHY-1 Part 8 — a partial send says so: it is "sent", it counts only the
+    // one the provider took, and the rows that did not go keep their reasons.
+    const [cr] = await q("SELECT status, recipient_count FROM campaigns WHERE id=$1", [campId]);
+    const fails = await q("SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE campaign_id=$1 AND failure_reason IS NOT NULL", [campId]);
+    ok("§8a a partial send is sent, counting only what the provider accepted", cr.status === "sent" && cr.recipient_count === 1 && fails[0].n >= 1, { cr, fails: fails[0] });
   }
 
   // ── §6 receipts are transactional too ────────────────────────────────────
@@ -252,7 +258,59 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     await settle();
     ok("…and only the clean one reached the sink", to(CLEAN).length === 1 && to(bouncedEmail).length === 0,
       { clean: to(CLEAN).length, bounced: to(bouncedEmail).length });
+
+    // WHY-1 Part 8 (c) — a refused reminder is NOT sent: the claim is released,
+    // the reason kept, and the next run inside a day does not try again.
+    const lateEmail = `vol-late-${uniq()}@example.com`;
+    const lateId = await mk("Late Volunteer", lateEmail);
+    const lateSlots = await q(`SELECT DISTINCT slot_id FROM volunteer_signups WHERE org_id=$1 AND person_id=$2`, [orgId, cleanId]);
+    for (const { slot_id } of lateSlots)
+      await q(`INSERT INTO volunteer_signups (id, org_id, slot_id, person_id, status, created_by, created_by_name)
+               VALUES ($1,$2,$3,$4,'confirmed','system:test','Test')`, ["su_" + uniq(), orgId, slot_id, lateId]);
+    state.mode = "fail";
+    await api("POST", "/volunteer-hub/run-reminders", tok, {});
+    await settle();
+    const lateRows = await q(`SELECT reminded_at, reminder_error, reminder_failed_at FROM volunteer_signups WHERE org_id=$1 AND person_id=$2 AND reminder_failed_at IS NOT NULL`, [orgId, lateId]);
+    ok("§8c a refused reminder is not marked sent, and keeps its reason", lateRows.length === 1 && lateRows[0].reminded_at === null && !!lateRows[0].reminder_error, lateRows);
+    const before = state.attempts;
+    await api("POST", "/volunteer-hub/run-reminders", tok, {});
+    await settle();
+    ok("§8c the next run inside a day does not try it again (no storm)", state.attempts === before, { before, after: state.attempts });
+    state.mode = "ok";
     await q("UPDATE orgs SET volunteer_reminders_enabled=false WHERE id=$1", [orgId]);
+  }
+
+  // ── §8 HONEST "SENT" (WHY-1 Part 8) ──────────────────────────────────────
+  console.log("\n§8 a campaign nobody received is Failed; a refused onboarding email waits a day");
+  {
+    // (a) every recipient refused by the provider: Failed, never Sent.
+    const lone = `lone-w4-${uniq()}@test.local`;
+    await api("POST", "/donors", tok, { name: "Lone Reader", email: lone });
+    const camp = await api("POST", "/campaigns", tok, { name: "W4 All Fail " + uniq(), subject: "Hello", body: "Hi", audience: "all" });
+    const campId = camp.body?.id || camp.body?.campaign?.id;
+    state.mode = "fail";
+    await api("POST", `/campaigns/${campId}/send`, tok, {});
+    await settle(2500);
+    state.mode = "ok";
+    const [c] = await q("SELECT status, recipient_count FROM campaigns WHERE id=$1", [campId]);
+    ok("§8a a campaign where every recipient failed is Failed, with nobody counted", c.status === "failed" && c.recipient_count === 0, c);
+
+    // (b) an onboarding email the provider refuses: the step stays, the
+    // reason is kept, and it is tried again a day later, not next tick.
+    const seqId = "seq_w4_" + uniq(), enrId = "se_w4_" + uniq();
+    await q(`INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES ($1,$2,'Onboarding','onboarding','active','system:test','Test')`, [seqId, orgId]);
+    await q(`INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES ($1,$2,0,0,'Welcome','Hi {{first_name}}'), ($3,$2,1,2,'Next','Hi')`,
+      ["ss_w4a_" + uniq(), seqId, "ss_w4b_" + uniq()]);
+    const [u] = await q("SELECT id FROM users WHERE org_id=$1 LIMIT 1", [orgId]);
+    await q(`INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at) VALUES ($1,$2,$3,$4,0,'active',NOW() - INTERVAL '1 minute')`,
+      [enrId, seqId, orgId, u.id]);
+    state.mode = "fail";
+    await api("POST", "/sequences/process", tok, {});
+    const [e1] = await q("SELECT current_step, last_error, next_send_at > NOW() + INTERVAL '23 hours' AS waits_a_day FROM sequence_enrollments WHERE id=$1", [enrId]);
+    ok("§8b a refused onboarding email is not sent: same step, reason kept", e1.current_step === 0 && !!e1.last_error, e1);
+    ok("§8b it is retried a day later, not on the next tick", e1.waits_a_day === true, e1);
+    state.mode = "ok";
+    await q("UPDATE sequence_enrollments SET status='completed' WHERE id=$1", [enrId]);
   }
 
   sink.srv.close();

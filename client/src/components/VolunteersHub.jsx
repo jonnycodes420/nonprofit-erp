@@ -920,6 +920,10 @@ function SlotPeopleModal({ slotId, onClose, isReadOnly }) {
               <span style={{ ...pillQuiet, background: p.status === "waitlisted" ? T.gold100 : T.green100,
                              color: p.status === "waitlisted" ? T.gold700 : T.greenDk }}>{p.status === "waitlisted" ? "Waiting list" : p.status}</span>
               {p.groupName && <span style={{ fontSize: 12, color: T.ink3 }}>{p.groupName}</span>}
+              {/* WHY-1 Part 8 — the reminder says what happened to it: sent
+                  means the provider took it, and a refusal shows its reason. */}
+              {p.reminder && p.reminder.state === "failed" && <span data-testid="vol-reminder-failed" style={{ fontSize: 12, color: T.gold700 }} title={p.reminder.reason}>Reminder not sent: {p.reminder.reason}</span>}
+              {p.reminder && p.reminder.state === "sent" && <span style={{ fontSize: 12, color: T.ink3 }}>Reminder sent</span>}
               {/* The credential state, where it matters: she is looking at
                   who is coming on Saturday. */}
               {data.slot.requiresWaiver && (
