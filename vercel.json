@@ -63,6 +63,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/e/:path*"
     },
     {
+      "source": "/auction/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/auction/:path*"
+    },
+    {
       "source": "/ticket/:path*",
       "destination": "https://nonprofit-erp-production.up.railway.app/ticket/:path*"
     },

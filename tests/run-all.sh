@@ -125,6 +125,7 @@ CORE=(
   lf1-no-donor-data-leaves
   members2-isolation
   events2-checkout
+  parity2-auction
   fix11-seating
   build103-soft-credit
   agents1-persona-scope

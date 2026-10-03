@@ -6277,6 +6277,91 @@ async function initSchema() {
       PRIMARY KEY (group_id, donor_id)
     )`);
 
+  // PARITY-2 Part 4 · AUCTIONS. An auction is a page with opening and
+  // closing times (per event, or standalone); an item is something donated,
+  // with the org's own fair market value; a bidder is a donors row (one
+  // person record) plus a number and a hashed session token; a bid is a row
+  // stamped by the DATABASE clock. Winners are computed at read time from the
+  // bids (amount, then earliest), never stored, so a closed auction cannot
+  // disagree with its own bids. The money is a gift through recordGift when
+  // the winner pays through the org's own Stripe; the item's paid_gift_id
+  // points at it. The donated item is an in-kind gift for its donor, recorded
+  // once, by a person pressing a button (in_kind_gift_id).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auctions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      event_id TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      public_slug TEXT NOT NULL UNIQUE,
+      opens_at TIMESTAMPTZ NOT NULL,
+      closes_at TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (closes_at > opens_at)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auctions_org ON auctions (org_id, closes_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_items (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      auction_id TEXT NOT NULL REFERENCES auctions(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      photos JSONB NOT NULL DEFAULT '[]'::jsonb,
+      donor_id TEXT,
+      fmv NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (fmv >= 0),
+      starting_bid NUMERIC(12,2) NOT NULL CHECK (starting_bid > 0),
+      bid_increment NUMERIC(12,2) NOT NULL CHECK (bid_increment > 0),
+      buy_now NUMERIC(12,2) CHECK (buy_now IS NULL OR buy_now >= starting_bid),
+      position INTEGER NOT NULL DEFAULT 0,
+      closed_at TIMESTAMPTZ,
+      in_kind_gift_id TEXT,
+      paid_gift_id TEXT,
+      paid_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_items_auction ON auction_items (org_id, auction_id, position)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_bidders (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      auction_id TEXT NOT NULL REFERENCES auctions(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      bidder_number INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (auction_id, bidder_number)
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_auction_bidders_email ON auction_bidders (auction_id, LOWER(email))`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_bids (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      auction_id TEXT NOT NULL REFERENCES auctions(id) ON DELETE CASCADE,
+      item_id TEXT NOT NULL REFERENCES auction_items(id) ON DELETE CASCADE,
+      bidder_id TEXT NOT NULL REFERENCES auction_bidders(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      buy_now BOOLEAN NOT NULL DEFAULT false,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_bids_item ON auction_bids (item_id, amount DESC, created_at, id)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

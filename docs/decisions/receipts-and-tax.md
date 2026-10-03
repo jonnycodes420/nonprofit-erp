@@ -48,6 +48,10 @@ Read this when you touch receipts, acknowledgments, letters, year-end statements
 - **`receipt_address` is also the CAN-SPAM postal address.** `unsubscribeEmailFooterHtml` reads it with
   `legal_name`; without it marketing mail gets an unsubscribe-only footer and a prompt to add it. (CAN-SPAM FIX)
 
+- **An auction win's deductible part is the winning bid less the item's fair market value, never below
+  zero.** The webhook passes `quidProQuoValue = min(fmv, amount)` to `recordGift`, re-reading the item and
+  checking the bid is still its winner, and the existing receipt prints it. (PARITY-2)
+
 ## Gotchas
 - **`POST /donors/:id/year-end-statement` takes `{year, send}`, not `taxYear`.** (Tax receipting)
 - **The thank-you queue must write the user's name as logged-by, not the actor email.** Same trap as

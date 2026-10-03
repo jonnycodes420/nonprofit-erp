@@ -2973,6 +2973,7 @@ async function main() {
   }
 
   await require("./seed/parity2-events").seedParity2Events(q, ORG);   // PARITY-2 Part 3: the event pages
+  await require("./seed/parity2-auction").seedParity2Auction(q, { ORG });   // PARITY-2 Part 4
 
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes

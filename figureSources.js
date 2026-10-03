@@ -34,7 +34,8 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 const money = require("./money");
-const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
+const meetings = require("./meetings");
+const auctionCore = require("./auctionCore");   // PARITY-2 Part 4 — the one winner ordering   // FIX-14 Part 1 — meetings with a person, defined once
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9_.:\-]{1,120}$/;
@@ -132,6 +133,24 @@ function topGiversSql(orgId, p) {
           SELECT id, 'person' AS type, id AS donor_id, name, last AS date, ROUND(v, 2) AS amount, NULL::text AS detail
             FROM r WHERE total > 0 AND before < total * 0.9`,
     args: [orgId, p.from, p.to],
+    order: "amount DESC, id",
+  };
+}
+
+// PARITY-2 Part 4 — one row per item whose bidding has closed with a winner:
+// the winning bid, the winner, and whether they have paid.
+function auctionWinsSql(orgId, p) {
+  return {
+    sql: `WITH top AS (${auctionCore.TOP_BIDS_SQL})
+          SELECT i.id, 'auction_item' AS type, bd.donor_id, bd.name, TO_CHAR(top.created_at, 'YYYY-MM-DD') AS date,
+                 ROUND(top.amount::numeric, 2) AS amount,
+                 i.title || CASE WHEN i.paid_gift_id IS NOT NULL THEN ' · paid' ELSE ' · not paid yet' END AS detail
+            FROM auction_items i JOIN auctions a ON a.id = i.auction_id AND a.org_id = i.org_id
+            JOIN top ON top.item_id = i.id
+            JOIN auction_bidders bd ON bd.id = top.bidder_id AND bd.org_id = i.org_id
+           WHERE i.org_id = ? AND i.auction_id = ?
+             AND LEAST(a.closes_at, COALESCE(i.closed_at, a.closes_at)) <= NOW()`,
+    args: [orgId, p.auction, orgId, p.auction],
     order: "amount DESC, id",
   };
 }
@@ -1013,6 +1032,76 @@ const SOURCES = {
               FROM recurring_subscriptions s LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
              WHERE s.org_id = ? AND s.status IN ('active','recovered')`,
       args: [orgId],
+      order: "amount DESC, id",
+    }),
+  },
+  // ── PARITY-2 Part 4 — AN AUCTION ──────────────────────────────────────
+  // The winner of an item is auctionCore's one ordering (highest bid, then the
+  // earliest), and an item is closed by the database clock, so these rows and
+  // the auction screen cannot disagree about who won or what is still open.
+  "auction-raised": {
+    label: "Raised",
+    measure: () => "sum",
+    params: { auction: "id:required" },
+    sentence: () => "Every payment a winner has made for an item in this auction, at the amount charged: the gift their payment recorded.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, i.title AS detail
+              FROM auction_items i JOIN gifts g ON g.id = i.paid_gift_id AND g.org_id = i.org_id
+              LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE i.org_id = ? AND i.auction_id = ?`,
+      args: [orgId, p.auction],
+    }),
+  },
+  "auction-committed": {
+    label: "Won, paid or not",
+    measure: () => "sum",
+    params: { auction: "id:required" },
+    sentence: () => "The winning bid on every item whose bidding has closed, whether the winner has paid yet or not.",
+    sql: (orgId, p) => auctionWinsSql(orgId, p),
+  },
+  "auction-sold": {
+    label: "Items sold",
+    measure: () => "count",
+    params: { auction: "id:required" },
+    sentence: () => "Every item whose bidding has closed with a winning bid, with that bid.",
+    sql: (orgId, p) => auctionWinsSql(orgId, p),
+  },
+  "auction-unsold": {
+    label: "Items unsold",
+    measure: () => "count",
+    params: { auction: "id:required" },
+    sentence: () => "Every item whose bidding has closed with no bid at all. An item still open is neither sold nor unsold.",
+    sql: (orgId, p) => ({
+      sql: `SELECT i.id, 'auction_item' AS type, i.donor_id, i.title AS name, TO_CHAR(LEAST(a.closes_at, COALESCE(i.closed_at, a.closes_at)), 'YYYY-MM-DD') AS date,
+                   NULL::numeric AS amount, COALESCE(i.category, 'No category') AS detail
+              FROM auction_items i JOIN auctions a ON a.id = i.auction_id AND a.org_id = i.org_id
+             WHERE i.org_id = ? AND i.auction_id = ?
+               AND LEAST(a.closes_at, COALESCE(i.closed_at, a.closes_at)) <= NOW()
+               AND NOT EXISTS (SELECT 1 FROM auction_bids b WHERE b.item_id = i.id AND b.org_id = i.org_id)`,
+      args: [orgId, p.auction],
+    }),
+  },
+  "auction-bidders": {
+    label: "Bidders",
+    measure: () => "count",
+    params: { auction: "id:required" },
+    sentence: () => "Every registered bidder who placed at least one bid, largest total of winning bids first. Each one's amount is what they won on closed items.",
+    sql: (orgId, p) => ({
+      sql: `WITH top AS (${auctionCore.TOP_BIDS_SQL}),
+                 won AS (SELECT top.bidder_id, SUM(top.amount) AS amt, COUNT(*) AS n
+                           FROM top JOIN auction_items i ON i.id = top.item_id AND i.org_id = ?
+                           JOIN auctions a ON a.id = i.auction_id AND a.org_id = i.org_id
+                          WHERE LEAST(a.closes_at, COALESCE(i.closed_at, a.closes_at)) <= NOW()
+                          GROUP BY top.bidder_id)
+            SELECT bd.id, 'bidder' AS type, bd.donor_id, bd.name, TO_CHAR(MAX(b.created_at), 'YYYY-MM-DD') AS date,
+                   ROUND(COALESCE(MAX(won.amt), 0)::numeric, 2) AS amount,
+                   'Bidder #' || bd.bidder_number || ' · ' || COUNT(b.id) || CASE WHEN COUNT(b.id) = 1 THEN ' bid' ELSE ' bids' END
+                     || ' · won ' || COALESCE(MAX(won.n), 0) AS detail
+              FROM auction_bidders bd JOIN auction_bids b ON b.bidder_id = bd.id AND b.org_id = bd.org_id
+              LEFT JOIN won ON won.bidder_id = bd.id
+             WHERE bd.org_id = ? AND bd.auction_id = ?
+             GROUP BY bd.id, bd.donor_id, bd.name, bd.bidder_number`,
+      args: [orgId, p.auction, orgId, orgId, p.auction],
       order: "amount DESC, id",
     }),
   },
