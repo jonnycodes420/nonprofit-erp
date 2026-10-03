@@ -1,10 +1,9 @@
 // LANDING-2 · the Resources menu: guides, templates, articles, the glossary,
 // the FAQ, help, what's new, the three calculators and the legal drafts.
 import React, { useState } from "react";
-import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A, Cover, rich } from "../lib";
+import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Photo, Pill, A, Cover, rich } from "../lib";
 import { GUIDES, GUIDE_SLUGS } from "../data/guides";
 import { TEMPL } from "../data/templates";
-import { ARTS } from "../data/articles";
 import { API } from "../../api";
 import { PRODUCT_WORDS } from "../../../../shared/changelog.js";
 import { HELP_ARTICLES } from "../../../../shared/helpArticles.js";
@@ -12,23 +11,14 @@ import { searchArticles } from "../../../../shared/helpSearch.js";
 // TRUST-2: What's new is the files in docs/changelog/, one per build, never
 // generated from commit messages. A super-admin can hide an entry.
 import { CHANGELOG } from "../../lib/changelog";
-import { ART2, ART2_SLUGS } from "../data/articles2";
-import { GLOSS } from "../data/glossary";
+import { ARTICLE, ARTICLE_SLUGS, inline } from "../articles/index.js";
+import { GLOSSARY, TERM } from "../data/glossary";
+import { ROUTES } from "../routes";
 import { FAQ_PAGE } from "../data/faqs";
 import { SRC, SRC_ALL, QUOTES } from "../data/research";
-import { useLocation } from "react-router-dom";
-import PRICING from "../../../../pricing.json";
-import { SOURCES, SOURCE_KEYS, RETENTION_GAP, checkedOn } from "../../../../shared/sources.js";
+import { SOURCES, SOURCE_KEYS, checkedOn } from "../../../../shared/sources.js";
 import { LEGAL_ENTITY_NAME } from "../../../../shared/legalEntity.js";
 
-// FIX-13 · the page runs the audit. It used to promise "run the free audit"
-// and "drop it in" with nothing to drop a file on: the working audit lived
-// only at /lost-and-found. Now this page renders that same component, so the
-// drop zone and the Run the free audit button sit in the hero, and every
-// Lost & Found link on the site (menu, tools, feature finder) lands on a page
-// that can run it. Book a demo and Start free stay below the result.
-// Lazy, so the audit's code loads only for the people who come here.
-const LostAndFoundAudit = React.lazy(() => import("../../pages/LostAndFound").then(m => ({ default: m.LostAndFoundAudit })));
 
 export function Resources() {
   return <>
@@ -102,26 +92,19 @@ export function Templates() {
 
 // LANDING-3 · article cards wear a generated cover, never a photograph: an
 // ink, emerald or tint block with a serif title and a leaf. They cost nothing
+// LANDING-3 · article cards wear a generated cover, never a photograph: an
+// ink, emerald or tint block with a serif title and a leaf. They cost nothing
 // to load and stay legible at any size.
 export function ArtCards({ keys }) {
   return (
     <div className="res">
       {keys.map((k, i) => {
-        if (k === "state-of-retention") return (
-          <A className="rc" href="/articles/state-of-retention" key={k}>
-            <Cover t="The state of" b="donor retention" i={i} />
-            <span className="k">Research</span>
-            <h4>The state of donor retention, in plain words</h4>
-            <p>What the latest sector data says about who gives again.</p>
-            <span className="go">Read →</span>
-          </A>
-        );
-        const a = ART2[k];
+        const a = ARTICLE[k];
         return (
           <A className="rc" href={"/articles/" + k} key={k}>
-            <Cover t={a.t} b={a.b} i={i} />
-            <span className="k">{a.k} · {a.min} min</span>
-            <h4>{plainH(a.h)}</h4><p>{a.d}</p>
+            <Cover t={a.cover[0]} b={a.cover[1]} i={i} />
+            <span className="k">{a.kicker} · {a.minutes} min</span>
+            <h4>{a.title.replace(/\.$/, "")}</h4><p>{a.description}</p>
             <span className="go">Read →</span>
           </A>
         );
@@ -130,44 +113,22 @@ export function ArtCards({ keys }) {
   );
 }
 
-const plainH = h => h.replace(/<\/?b>/g, "");
-
 export function Articles() {
   return <>
     <Hero eyebrow="Articles" crumbs={[["Resources", "/resources"], ["Articles"]]} h="Ideas worth <b>a coffee break.</b>" lede="Short reads on retention, stewardship and running a calm development office." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap"><ArtCards keys={ART2_SLUGS} /></div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap"><ArtCards keys={ARTICLE_SLUGS} />
+      <p className="srcnote" style={{ marginTop: 28 }}>New articles by feed: <a href="/rss.xml">RSS</a></p>
+    </div></section>
     <FinalCta />
   </>;
 }
 
-// The one template for the six new articles.
-export function Article({ slug }) {
-  const a = ART2[slug];
-  const i = ART2_SLUGS.indexOf(slug);
-  return <>
-    <Crumbs list={[["Resources", "/resources"], ["Articles", "/articles"], [plainH(a.h)]]} />
-    <section className="hero phero" style={{ paddingBottom: 40 }}><div className="wrap hero-g">
-      <div>
-        <div className="eyebrow">{a.k} · {a.min} minute read</div>
-        <h1 className="mix h-l">{rich(a.h)}</h1>
-        <p className="lede">{a.d}</p>
-      </div>
-      <Cover t={a.t} b={a.b} i={i} />
-    </div></section>
-    <section style={{ paddingTop: 0 }}><div className="wrap prose narrow">
-      <p>{a.lede}</p>
-      {a.s.map(([h, ps]) => <React.Fragment key={h}><h2>{h}</h2>{ps.map(x => <p key={x}>{x}</p>)}</React.Fragment>)}
-      {a.src && <p className="srcnote">Source: {a.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC_ALL[k][1]}>{SRC_ALL[k][0]}</A></React.Fragment>)}</p>}
-      {a.end === "lost-and-found"
-        ? <div className="callout"><b>Start with week one, today.</b><p>The free Lost & Found audit shows who is slipping from a giving export. It runs in your browser and nothing is uploaded. Then bring the same file to a 20-minute demo.</p><div className="ctas" style={{ marginTop: 6 }}><Pill href="/tools/lost-and-found">Run the free audit</Pill><Pill kind="soft" href="/demo">Book a demo</Pill></div></div>
-        : <div className="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><Pill href="/demo">Book a demo</Pill></div>}
-    </div></section>
-    <section style={{ paddingTop: 0 }}><div className="wrap">
-      <div className="eyebrow">Keep reading</div>
-      <ArtCards keys={ART2_SLUGS.filter(x => x !== slug).slice(0, 3)} />
-    </div></section>
-    <FinalCta />
-  </>;
+// CONTENT-1 · inline markdown as elements: bold, italic and links, nothing else.
+function Toks({ list }) {
+  return list.map((t, i) => t[0] === "b" ? <b key={i}><Toks list={t[1]} /></b> : t[0] === "em" ? <em key={i}><Toks list={t[1]} /></em> : t[0] === "a" ? <A key={i} href={t[2]}>{t[1]}</A> : <React.Fragment key={i}>{t[1]}</React.Fragment>);
+}
+export function Md({ s }) {
+  return <Toks list={inline(s)} />;
 }
 
 // A research quote inside an article, with its source. LANDING-3 deleted this
@@ -175,37 +136,99 @@ export function Article({ slug }) {
 const srcShortOf = k => SRC[k][0].split(",")[0];
 const Quote = ({ q }) => <blockquote data-quote="research">{q[0]}<cite>{q[1]}, {q[2]} · <A href={SRC[q[3]][1]}>{srcShortOf(q[3])}</A></cite></blockquote>;
 
-export function StateOfRetention() {
+function Block({ b }) {
+  if (b.t === "h2") return <h2><Md s={b.text} /></h2>;
+  if (b.t === "h3") return <h3><Md s={b.text} /></h3>;
+  if (b.t === "ul") return <ul>{b.items.map((x, i) => <li key={i}><Md s={x} /></li>)}</ul>;
+  if (b.t === "ol") return <ol>{b.items.map((x, i) => <li key={i}><Md s={x} /></li>)}</ol>;
+  if (b.t === "quote") return <Quote q={QUOTES[b.i]} />;
+  if (b.t === "example") return <div className="worked" role="note"><b>Worked example</b>{b.lines.filter(l => l.trim()).map((l, i) => <p key={i}>{l}</p>)}</div>;
+  return <p><Md s={b.text} /></p>;
+}
+
+const longDate = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+
+// The closing pair every article and glossary page ends on: find who is
+// slipping in your own file, then bring that file to a demo.
+export function LostAndFoundCallout({ b = "See who is slipping in your own file." }) {
+  return <div className="callout"><b>{b}</b><p>The free Lost & Found audit reads a giving export in your browser and shows your lapsing donors and what they used to give. Nothing is uploaded. Then bring the same file to a 20-minute demo.</p><div className="ctas" style={{ marginTop: 6 }}><Pill href="/tools/lost-and-found">Run Lost & Found</Pill><Pill kind="soft" href="/demo">Book a demo</Pill></div></div>;
+}
+
+// The one template for every article in articles/*.md.
+export function Article({ slug }) {
+  const a = ARTICLE[slug];
+  const i = ARTICLE_SLUGS.indexOf(slug);
+  const terms = a.terms.map(t => TERM[t]).filter(Boolean);
   return <>
-    <Crumbs list={[["Resources", "/resources"], ["Articles", "/articles"], ["The state of donor retention"]]} />
-    <section className="hero phero" style={{ paddingBottom: 40 }}><div className="wrap">
-      <div className="eyebrow">Article · 5 minute read</div>
-      <h1 className="mix h-l" style={{ maxWidth: 1000 }}>The state of donor retention, <b>in plain words.</b></h1>
+    <Crumbs list={[["Resources", "/resources"], ["Articles", "/articles"], [a.title.replace(/\.$/, "")]]} />
+    <section className="hero phero" style={{ paddingBottom: 40 }}><div className="wrap hero-g">
+      <div>
+        <div className="eyebrow">{a.kicker} · {a.minutes} minute read</div>
+        <h1 className="mix h-l">{rich(a.headline)}</h1>
+        <p className="lede">{a.description}</p>
+        <p className="byline">By {a.author} · <time dateTime={a.date}>{longDate(a.date)}</time></p>
+      </div>
+      <Cover t={a.cover[0]} b={a.cover[1]} i={i} />
     </div></section>
-    <section style={{ paddingTop: 0 }}><div className="wrap prose narrow">
-      <p>Every quarter the Fundraising Effectiveness Project, a collaboration of AFP and GivingTuesday, publishes giving data from thousands of nonprofits. Its Q4 2025 report covered the full year, and the headline was mixed: dollars rose 5.0%, but the number of donors fell 3.6%.</p>
-      <h2>Fewer people, bigger checks</h2>
-      <p>Overall donor retention edged up to 43.3%. That still means more than half of the people who gave in 2024 did not give in 2025. Growth came mostly from larger gifts while small donors kept falling away.</p>
-      <Quote q={QUOTES[0]} />
-      <h2>The second gift</h2>
-      <p>The gap between new and repeat donors is the most useful number in fundraising. In FEP's Q4 2024 report, 19.4% of new donors gave again, compared with 69.2% of repeat donors. Get the second gift and a donor is far more likely to stay.</p>
-      <h2>What moves the number</h2>
-      <p>The research points to the same few habits: a fast, personal thank-you, proof that the gift mattered, and a renewal ask timed to the donor's own rhythm. Penelope Burk found that a thank-you call within 48 hours led to gifts 39% larger the next time. Adrian Sargeant's work suggests a 10% lift in retention can raise the lifetime value of a donor file by up to 200%.</p>
-      <Quote q={QUOTES[1]} />
-      <h2>What a small shop can do this week</h2>
-      <p>Pull last year's donors who have not given this year. Call the top twenty. Thank every new gift within two days. Put a first-year plan on the calendar for every new donor. Steward does the sorting and the reminders. You do the part that only a person can.</p>
-      <p className="srcnote">Sources: {["fep25", "fep24", "burk", "sarg"].map((k, i) => <React.Fragment key={k}>{i ? " · " : ""}<A href={SRC[k][1]}>{SRC[k][0]}</A></React.Fragment>)}</p>
+    <section style={{ paddingTop: 0 }}><article className="wrap prose narrow">
+      <p><Md s={a.lede} /></p>
+      {a.blocks.map((b, n) => <Block b={b} key={n} />)}
+      {a.sources.length > 0 && <p className="srcnote">{a.sources.length > 1 ? "Sources" : "Source"}: {a.sources.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SOURCES[k].url}>{SOURCES[k].label}</A></React.Fragment>)}</p>}
+      {terms.length > 0 && <p className="termrow"><b>Terms in this article</b>{terms.map(t => <A key={t.slug} href={"/glossary/" + t.slug}>{t.term}</A>)}</p>}
+      <LostAndFoundCallout />
+    </article></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap">
+      <div className="eyebrow">Keep reading</div>
+      <ArtCards keys={ARTICLE_SLUGS.filter(x => x !== slug).slice(0, 3)} />
     </div></section>
     <FinalCta />
   </>;
 }
 
+// CONTENT-1 · the glossary index. Every term has its own page.
 export function Glossary() {
+  const sorted = [...GLOSSARY].sort((x, y) => x.term.localeCompare(y.term));
   return <>
-    <Hero eyebrow="Nonprofit glossary" crumbs={[["Resources", "/resources"], ["Glossary"]]} h="Fundraising terms, <b>in plain words.</b>" lede="The words you will hear in board meetings and on software demos, explained without jargon." noCta />
+    <Hero eyebrow="Nonprofit glossary" crumbs={[["Resources", "/resources"], ["Glossary"]]} h="Fundraising terms, <b>in plain words.</b>" lede="The words you will hear in board meetings and on software demos, explained without jargon. Each term has its own page with why it matters, how to work it out and how Steward shows it." noCta />
     <section style={{ paddingTop: 0 }}><dl className="wrap gloss" style={{ marginBlock: 0 }}>
-      {GLOSS.map(g => <div key={g[0]}><dt>{g[0]}</dt><dd>{g[1]}</dd></div>)}
+      {sorted.map(g => <div key={g.slug} id={g.slug}><dt><A href={"/glossary/" + g.slug}>{g.term}</A></dt><dd>{g.def}</dd></div>)}
     </dl></section>
+    <FinalCta />
+  </>;
+}
+
+const titleOf = p => (ROUTES.find(r => r.path === p) || {}).title || p;
+const seeCard = p => [p, titleOf(p).replace(/^Steward · /, ""), p.startsWith("/tools/") ? "Free tool. Runs in your browser." : "Article.", p.startsWith("/tools/") ? "reports" : "forms"];
+
+// CONTENT-1 · one page per term: the definition first, then why it matters,
+// the arithmetic when it is a number, how Steward shows it, and where to go next.
+export function GlossaryTerm({ slug }) {
+  const g = TERM[slug];
+  return <>
+    <Crumbs list={[["Resources", "/resources"], ["Glossary", "/glossary"], [g.term]]} />
+    <section className="hero phero" style={{ paddingBottom: 30 }}><div className="wrap">
+      <div className="eyebrow">Nonprofit glossary{g.aka ? " · " + g.aka : ""}</div>
+      <h1 className="mix h-l">{g.term}</h1>
+      <p className="lede definition" data-definition>{g.def}</p>
+    </div></section>
+    <section style={{ paddingTop: 0 }}><article className="wrap prose narrow">
+      <h2>Why it matters</h2>
+      {g.why.map((p, i) => <p key={i}>{p}</p>)}
+      {g.calc && <>
+        <h2>How to calculate it</h2>
+        <p className="formula">{g.calc.formula}</p>
+        <div className="worked" role="note"><b>Worked example</b>{g.calc.example.map((l, i) => <p key={i}>{l}</p>)}</div>
+      </>}
+      {g.steward && g.steward.length > 0 && <>
+        <h2>How Steward shows it</h2>
+        {g.steward.map((p, i) => <p key={i}>{p}</p>)}
+      </>}
+      {g.src && <p className="srcnote">Source: {g.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SOURCES[k].url}>{SOURCES[k].label}</A></React.Fragment>)}</p>}
+      <h2>Related terms</h2>
+      <ul className="termlist">{g.related.map(r => <li key={r}><A href={"/glossary/" + r}><b>{TERM[r].term}</b></A> {TERM[r].def}</li>)}</ul>
+      <LostAndFoundCallout />
+    </article></section>
+    {g.see && g.see.length > 0 && <Cards eb="Read and try" h="Put it <b>to work.</b>" list={g.see.map(seeCard)} />}
     <FinalCta />
   </>;
 }
@@ -261,158 +284,6 @@ export function WhatsNew() {
     <Hero eyebrow="What's new" crumbs={[["Customers"], ["What's new"]]} h="What we <b>shipped lately.</b>" lede="One entry for each thing we ship, newest first, written for the people who use Steward." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap chg">
       {shown.map(c => <div key={c.id} data-entry={c.id}><span className="chip">{PRODUCT_WORDS[c.product] || "New"}</span><div><b>{c.title}</b><p>{new Date(c.date + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}. {c.body}</p></div></div>)}
-    </div></section>
-    <FinalCta />
-  </>;
-}
-
-// ── FREE TOOLS ─────────────────────────────────────────────────────────────
-// Ported as they work in the reference. Everything is computed in the
-// browser; nothing on these pages sends anything anywhere.
-export function Tools() {
-  return <>
-    <Hero eyebrow="Free tools" crumbs={[["Resources", "/resources"], ["Free tools"]]} h="Free tools, <b>no signup.</b>" lede="Run them on your own numbers. Nothing you type leaves your browser." noCta />
-    <Cards list={[["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"], ["/tools/retention", "Keep Rate calculator", "Your retention rate, and what a few points are worth.", "reports"], ["/tools/lapsed-cost", "Lapse Ledger", "What last year's lapsed donors used to give.", "finance"], ["/tools/thermometer", "Goal Gauge", "A campaign goal bar for your website.", "events"]]} />
-    <FinalCta />
-  </>;
-}
-
-export function ToolLostAndFound() {
-  return <>
-    <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
-      lede="Drop in a giving export and see your lapsing donors and what they used to give. Free, no signup."
-      noCta>
-      <React.Suspense fallback={<div className="lf-loading" style={{ minHeight: 220 }} />}>
-        <div data-lf-audit><LostAndFoundAudit compact /></div>
-      </React.Suspense>
-      <div className="ctas" style={{ marginTop: 34 }} data-lf-ctas>
-        <Pill href="/demo">Book a demo</Pill>
-        <Pill kind="soft" href="/signup">Start free</Pill>
-      </div>
-    </Hero>
-    <Steps eb="How it works" h="A minute, <b>start to finish.</b>" list={[["Export your gifts", "Any spreadsheet with donor, date and amount."], ["Drop it in", "The audit reads it in your browser. Nothing is uploaded."], ["See who is slipping", "Lapsing donors ranked by what they used to give."]]} />
-    <StatBand n={4} />
-    <FinalCta />
-  </>;
-}
-
-const num = v => +v || 0;
-const usd = x => "$" + Math.round(x).toLocaleString();
-function useFields(init) {
-  const [v, setV] = useState(init);
-  return [v, k => e => setV({ ...v, [k]: e.target.value })];
-}
-
-export function retentionMath(a, b, c) {
-  const r = a ? b / a * 100 : 0;
-  return { rate: r.toFixed(1) + "%", lift: usd(a * 0.05 * c), more: Math.round(a * 0.05) };
-}
-export function lapsedMath(a, b, c) {
-  return { lost: usd(a * b), back: usd(a * b * c / 100) };
-}
-export function thermometerMath(g, r) {
-  const p = g ? Math.min(100, r / g * 100) : 0;
-  return { pct: p, raised: usd(r), goal: usd(g) };
-}
-
-// PROOF-2 · the retention gap on her own numbers: donors kept at each rate,
-// what the difference gives in a year, and a year of the Steward plan her
-// donor count lands on, from pricing.json. It says "less" when it is less.
-export function gapMath(donors, gift, hi, lo) {
-  const keptHi = Math.round(donors * hi / 100), keptLo = Math.round(donors * lo / 100);
-  const more = keptHi - keptLo, worth = more * gift;
-  const tier = PRICING.tiers.find(t => donors <= t.maxDonors) || null;
-  const plan = tier ? tier.monthlyUsd * 12 : null;
-  return { keptHi, keptLo, more, worth: usd(worth), tier, plan: plan == null ? null : usd(plan), beats: plan == null ? null : worth > plan };
-}
-
-function GapPanel({ hi, lo }) {
-  const [v, on] = useFields({ d: "500", g: "250" });
-  const m = gapMath(num(v.d), num(v.g), hi, lo);
-  const src = SRC_ALL[RETENTION_GAP.source];
-  return <section style={{ paddingTop: 0 }} data-testid="gap-panel"><div className="wrap">
-    <div className="eyebrow">The retention gap</div>
-    <h2 className="mix h-m" style={{ marginTop: 16, marginBottom: 28 }}>{hi}% with a strategy, {lo}% without. <b>On your donors.</b></h2>
-    <div className="tool">
-      <div className="form">
-        <label>Donors last year<input type="number" min="1" value={v.d} onChange={on("d")} autoFocus /></label>
-        <label>Average yearly gift ($)<input type="number" min="0" value={v.g} onChange={on("g")} /></label>
-      </div>
-      <div className="out" aria-live="polite">
-        <div className="big">{m.more.toLocaleString()}</div><p>more donors giving again: {m.keptHi.toLocaleString()} at {hi}% against {m.keptLo.toLocaleString()} at {lo}%</p>
-        <div className="big sm">{m.worth}</div><p>a year from those donors at your average gift</p>
-        <p style={{ marginTop: 22 }}>{m.tier
-          ? <>A year of Steward on {m.tier.name}, month to month, is {m.plan}. The gap is worth {m.beats ? "more" : "less"} than that.</>
-          : <>Above {PRICING.tiers[PRICING.tiers.length - 1].maxDonors.toLocaleString()} donors, Steward is priced with you.</>}</p>
-      </div>
-    </div>
-    <p className="srcnote">The two rates: <A href={src[1]}>{src[0]}</A>. Organizations with a donor retention strategy reported {hi}% retention; those without one reported {lo}%. A survey shows what respondents reported, not what any one organization will see.</p>
-  </div></section>;
-}
-
-export function ToolRetention() {
-  const [v, on] = useFields({ a: "1000", b: "420", c: "250" });
-  const m = retentionMath(num(v.a), num(v.b), num(v.c));
-  const q = new URLSearchParams(useLocation().search);
-  const pct = k => { const n = Number(q.get(k)); return Number.isFinite(n) && n > 0 && n <= 100 ? n : null; };
-  const hi = pct("with"), lo = pct("without");
-  return <>
-    <Hero eyebrow="Keep Rate calculator" crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
-    {/* Only the sourced pair opens the panel: any other rates in the link
-        would print beside a source that never said them. */}
-    {hi === RETENTION_GAP.withStrategy && lo === RETENTION_GAP.without && <GapPanel hi={hi} lo={lo} />}
-    <section style={{ paddingTop: 0 }}><div className="wrap tool">
-      <div className="form">
-        <label>Donors last year<input type="number" min="1" value={v.a} onChange={on("a")} /></label>
-        <label>Of those, gave again this year<input type="number" min="0" value={v.b} onChange={on("b")} /></label>
-        <label>Average yearly gift ($)<input type="number" min="0" value={v.c} onChange={on("c")} /></label>
-      </div>
-      <div className="out" aria-live="polite">
-        <div className="big">{m.rate}</div><p>your retention, against 43.3% nationally in 2025</p>
-        <div className="big sm">{m.lift}</div><p>more each year from a five-point lift ({m.more} more donors giving again)</p>
-      </div>
-    </div></section>
-    <section style={{ paddingTop: 0 }}><div className="wrap"><p className="srcnote">National figure: 43.3% overall retention in 2025, <A href={SRC.fep25[1]}>{SRC.fep25[0]}</A>.</p></div></section>
-    <FinalCta />
-  </>;
-}
-
-export function ToolLapsed() {
-  const [v, on] = useFields({ a: "580", b: "180", c: "15" });
-  const m = lapsedMath(num(v.a), num(v.b), num(v.c));
-  return <>
-    <Hero eyebrow="Lapse Ledger" crumbs={[["Free tools", "/tools"], ["Lapse Ledger"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap tool">
-      <div className="form">
-        <label>Donors who did not give again<input type="number" min="0" value={v.a} onChange={on("a")} /></label>
-        <label>Their average yearly gift ($)<input type="number" min="0" value={v.b} onChange={on("b")} /></label>
-        <label>Share who might give again after a call (%)<input type="number" min="0" max="100" value={v.c} onChange={on("c")} /></label>
-      </div>
-      <div className="out" aria-live="polite">
-        <div className="big">{m.lost}</div><p>a year, given by donors who stopped</p>
-        <div className="big sm">{m.back}</div><p>more a year if {num(v.c)}% give again after a call</p>
-      </div>
-    </div></section>
-    <FinalCta />
-  </>;
-}
-
-export function ToolThermometer() {
-  const [v, on] = useFields({ n: "Spring appeal", g: "50000", r: "31250" });
-  const m = thermometerMath(num(v.g), num(v.r));
-  return <>
-    <Hero eyebrow="Goal Gauge" crumbs={[["Free tools", "/tools"], ["Goal Gauge"]]} h="A goal bar <b>people want to fill.</b>" lede="Set your goal and amount raised and see the bar. The embeddable version comes with the live site." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap tool">
-      <div className="form">
-        <label>Campaign name<input value={v.n} onChange={on("n")} /></label>
-        <label>Goal ($)<input type="number" value={v.g} onChange={on("g")} /></label>
-        <label>Raised so far ($)<input type="number" value={v.r} onChange={on("r")} /></label>
-      </div>
-      <div className="out" aria-live="polite">
-        <p style={{ fontWeight: 700, fontSize: 20 }}>{v.n}</p>
-        <div className="therm"><span style={{ width: m.pct + "%" }}></span></div>
-        <div className="big sm">{m.raised}</div><p>raised of {m.goal} · {m.pct.toFixed(0)}%</p>
-      </div>
     </div></section>
     <FinalCta />
   </>;

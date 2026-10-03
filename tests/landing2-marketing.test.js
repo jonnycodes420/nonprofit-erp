@@ -45,6 +45,23 @@
 //      and the page (component or article) showing it must also link that
 //      source. Example screens (a <Ui> mock's tots/rows, a feature's ui
 //      table) are example data, not statistics, and are skipped.
+//
+// CONTENT-1 added the search pages, and checks them from what the build
+// writes (the prerender's own render and seo.js, never a copy):
+//  16. a marketing route without a unique title, a description, exactly one
+//      h1 or a canonical URL, or whose prerendered HTML lacks its h1 text; a
+//      sitemap that misses a route or a lastmod; robots.txt letting the app in
+//  17. a glossary term in data/glossary.js without its own page, a definition,
+//      three real related terms and two real articles or tools; fewer than 45
+//      terms, or one of the terms the brief names missing
+//  18. an article without complete frontmatter, or a term it lists that its
+//      body never links; a link in a body to a page that does not exist
+//  19. new copy (articles, glossary, tools, move pages) naming a plan, an
+//      "active donor", "records" or a record count; a "vs" page
+// The PROOF-2 rule (15) now reads the articles' markdown too: a figure in a
+// body must be a claim of a source the frontmatter lists. Worked arithmetic
+// (a glossary term's calc block, an article's ```example block) is example
+// math and is skipped.
 
 const fs = require("fs");
 const path = require("path");
@@ -63,7 +80,7 @@ const files = [];
   for (const f of fs.readdirSync(d)) {
     const p = path.join(d, f);
     if (fs.statSync(p).isDirectory()) walk(p);
-    else if (/\.(jsx?|css)$/.test(f)) files.push(p);
+    else if (/\.(jsx?|css|md)$/.test(f)) files.push(p);
   }
 })(MK);
 const rel = p => path.relative(ROOT, p);
@@ -136,6 +153,7 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     const linkish = [];
     for (const [f, t] of Object.entries(SRC_TEXT)) {
       if (!/\.jsx?$/.test(f)) continue;
+      if (f.endsWith("marketing/seo.js")) continue;                 // CONTENT-1: robots.txt's Disallow list names app paths, not links
       for (const m of t.matchAll(/["'`](\/[a-z][a-z0-9\-/]*(?:[#?][^"'`]*)?)["'`]/g)) {
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
@@ -190,11 +208,14 @@ const ALL = Object.values(SRC_TEXT).join("\n");
 
   console.log("\n— 8 · SEO —");
   {
-    const sm = fs.readFileSync(path.join(ROOT, "client", "public", "sitemap.xml"), "utf8");
+    // CONTENT-1: the sitemap and robots.txt are written by the prerender from
+    // seo.js, so this reads what the build writes.
+    const seo = await import(path.join(MK, "seo.js"));
+    const sm = seo.sitemapXml(ROUTES);
     const locs = [...sm.matchAll(/<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
     const want = ROUTES.map(r => "https://www.stewardapp.dev" + r.path);
     ok("sitemap.xml lists exactly the marketing routes", JSON.stringify([...locs].sort()) === JSON.stringify([...want].sort()), { missing: want.filter(w => !locs.includes(w)), extra: locs.filter(l => !want.includes(l)) });
-    const robots = fs.readFileSync(path.join(ROOT, "client", "public", "robots.txt"), "utf8");
+    const robots = seo.ROBOTS;
     ok("robots.txt points at the sitemap", /Sitemap: https:\/\/www\.stewardapp\.dev\/sitemap\.xml/.test(robots));
     const lib = SRC_TEXT["client/src/marketing/lib.jsx"];
     ok("each page sets its title, description, canonical and Open Graph tags", ["document.title", '"description"', 'rel", "canonical"', '"og:title"', '"og:description"', '"og:url"'].every(s => lib.includes(s)));
@@ -435,7 +456,9 @@ const ALL = Object.values(SRC_TEXT).join("\n");
       "pricing.json": fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8") };
     const found = [], orphans = [], unlinked = [];
     for (const [f, raw] of Object.entries(texts)) {
-      const t = raw.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "").replace(/^\s*\/\/.*$/gm, "")
+      // CONTENT-1: a glossary term's calc block is worked example arithmetic.
+      const t = raw.replace(/\n\s*calc: \{[\s\S]*?\n    \},/g, "\n")
+        .replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "").replace(/^\s*\/\/.*$/gm, "")
         .replace(/style=\{\{[^}]*\}\}/g, "")
         .split("\n").filter(l => !/\btots=\{|\brows=\{|\bui: \[/.test(l)).join("\n");
       for (const unit of t.split(/\n(?=export |function |\s{2}"[a-z0-9-]+": \{)/)) {
@@ -450,12 +473,128 @@ const ALL = Object.values(SRC_TEXT).join("\n");
         }
       }
     }
+    // CONTENT-1 · the articles are markdown now: each one is a unit, its
+    // frontmatter's `sources` is its link line, and ```example blocks are
+    // worked arithmetic.
+    const { ARTICLES } = await import(path.join(MK, "articles", "index.js"));
+    for (const a of ARTICLES) {
+      const body = [a.lede, ...a.blocks.filter(b => b.t !== "example").map(b => b.text || (b.items || []).join(" "))].join("\n");
+      for (const m of body.matchAll(FIG_RE)) {
+        const fig = m[0].toLowerCase(), name = "articles/" + a.slug + ".md " + m[0];
+        found.push(name);
+        const keys = owners.get(fig);
+        if (!keys) orphans.push(name);
+        else if (!keys.some(k => a.sources.includes(k))) unlinked.push(name + " (needs " + keys.join(" or ") + " in sources)");
+      }
+      for (const k of a.sources) if (!SOURCES[k]) orphans.push("articles/" + a.slug + ".md lists unknown source " + k);
+    }
     ok("every percentage and x-times figure in the copy has an entry in shared/sources.js (" + found.length + " figures)", found.length >= 30 && orphans.length === 0, orphans);
     ok("…and the page showing it also shows that source's link", unlinked.length === 0, unlinked);
     const res = SRC_TEXT["client/src/marketing/pages/resources.jsx"];
     ok("/research lists every source, its claims, its link and the date checked",
       ROUTES.some(r => r.path === "/research" && r.page === "research")
         && /export function Research\(\)[^]*?SOURCE_KEYS\.map[^]*?x\.claims\.map[^]*?href=\{x\.url\}[^]*?checkedOn\(x\.checked\)/.test(res));
+  }
+
+  console.log("\n— 16–19 · CONTENT-1 · pages people search for —");
+  {
+    // The prerender's own Node build and its own page assembly: what the
+    // crawler gets is what is checked.
+    const { execFileSync } = require("child_process");
+    const CLIENT = path.join(ROOT, "client");
+    execFileSync(process.execPath, [path.join(CLIENT, "node_modules", "vite", "bin", "vite.js"), "build", "-c", "vite.prerender.config.js", "--logLevel", "error"], { cwd: CLIENT, stdio: "inherit" });
+    process.env.NODE_ENV = "production";
+    const { render, ARTICLE, TERM } = await import(path.join(CLIENT, "dist-prerender", "prerender.mjs"));
+    const seo = await import(path.join(MK, "seo.js"));
+    const { GLOSSARY } = await import(path.join(MK, "data", "glossary.js"));
+    const { ARTICLES, articleLinks } = await import(path.join(MK, "articles", "index.js"));
+    const shell = fs.readFileSync(path.join(CLIENT, "index.html"), "utf8");
+    const base = seo.pageShell(shell);
+    const extraFor = r => r.page === "article" ? { article: ARTICLE[r.slug] } : r.page === "glossaryTerm" ? { term: TERM[r.slug] } : r.page === "glossary" ? { terms: GLOSSARY } : {};
+    const text = s => seo.stripTags(s).replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
+
+    // 16 · every route in the sitemap: a unique title, a description, one h1,
+    // a canonical, and its prerendered HTML carries that h1.
+    const sm = seo.sitemapXml(ROUTES);
+    const locs = [...sm.matchAll(/<url><loc>([^<]+)<\/loc><lastmod>(\d{4}-\d{2}-\d{2})<\/lastmod><\/url>/g)].map(m => m[1]);
+    ok("the sitemap lists every marketing route, each with a lastmod (" + locs.length + ")", locs.length === ROUTES.length && ROUTES.every(r => locs.includes(seo.urlOf(r.path))));
+    const bad = { h1: [], head: [], body: [], title: [], desc: [] };
+    const titles = new Map(), descs = new Map();
+    for (const r of ROUTES) {
+      const html = render(r.path);
+      const page = seo.assemblePage(base, r, html, extraFor(r));
+      const h1 = seo.h1s(page);
+      if (h1.length !== 1 || !h1[0]) bad.h1.push(r.path + " (" + h1.length + ")");
+      const head = page.slice(0, page.indexOf("</head>"));
+      if ((head.match(/<title>/g) || []).length !== 1 || !head.includes(`<link rel="canonical" href="${seo.urlOf(r.path)}" />`) || !/<meta name="description" content="[^"]{40,}"/.test(head)) bad.head.push(r.path);
+      // The h1 and the first paragraph after it are in the served bytes.
+      const root = page.slice(page.indexOf('<div id="root">'));
+      if (!h1[0] || !text(root).includes(h1[0])) bad.body.push(r.path);
+      if (titles.has(r.title)) bad.title.push(r.path + " = " + titles.get(r.title));
+      if (descs.has(r.description)) bad.desc.push(r.path + " = " + descs.get(r.description));
+      titles.set(r.title, r.path); descs.set(r.description, r.path);
+    }
+    ok("every marketing route prerenders exactly one h1", bad.h1.length === 0, bad.h1);
+    ok("every page's head has one title, a description of 40 characters or more and its own canonical", bad.head.length === 0, bad.head);
+    ok("every prerendered page carries its h1 text in the HTML, no JavaScript needed", bad.body.length === 0, bad.body);
+    ok("no two routes share a title", bad.title.length === 0, bad.title);
+    ok("no two routes share a description", bad.desc.length === 0, bad.desc);
+    const ld = (p, extra) => { const r = ROUTES.find(x => x.path === p); const pg = seo.assemblePage(base, r, render(p), extra || extraFor(r)); const m = pg.match(/application\/ld\+json">(.*?)<\/script>/); return m ? JSON.parse(m[1])["@graph"].map(x => x["@type"]) : []; };
+    ok("Home carries Organization structured data", ld("/").includes("Organization"));
+    ok("inner pages carry BreadcrumbList, a glossary page DefinedTerm, an article Article, a page with an FAQ FAQPage",
+      ld("/glossary/lybunt").join() === "BreadcrumbList,DefinedTerm" && ld("/articles/donor-retention-rate").join() === "BreadcrumbList,Article"
+        && ld("/tools/lybunt-sybunt").includes("FAQPage") && ld("/move").includes("FAQPage"), [ld("/glossary/lybunt"), ld("/articles/donor-retention-rate"), ld("/tools/lybunt-sybunt")]);
+    const dis = seo.ROBOTS.split("\n").filter(l => l.startsWith("Disallow: ")).map(l => l.slice(10));
+    const { FILE_LINK_TARGETS } = await import(path.join(MK, "routes.js"));
+    ok("every file a page links to exists (the feed is written by the prerender)", FILE_LINK_TARGETS.every(p => p === "/rss.xml" ? /prerender[^]*rss\.xml/.test(fs.readFileSync(path.join(CLIENT, "scripts", "prerender.mjs"), "utf8")) : fs.existsSync(path.join(CLIENT, "public", p))), FILE_LINK_TARGETS);
+    ok("robots.txt points at the sitemap and keeps the app out", /Sitemap: https:\/\/www\.stewardapp\.dev\/sitemap\.xml/.test(seo.ROBOTS)
+      && ["/dashboard", "/donors", "/app/", "/login", "/signup", "/admin"].every(p => dis.includes(p))
+      && ROUTES.every(r => !dis.some(d => r.path === d || r.path.startsWith(d.endsWith("/") ? d : d + "/"))), dis);
+    const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+    ok("paths without a prerendered file get the app shell, never the homepage's HTML", (vj.rewrites || []).some(r => r.source === "/(.*)" && r.destination === "/app.html")
+      && /"build": "[^"]*vite build -c vite\.prerender\.config\.js[^"]*node scripts\/prerender\.mjs"/.test(fs.readFileSync(path.join(CLIENT, "package.json"), "utf8")));
+
+    // 17 · the glossary: one page per term, each one complete.
+    const REQUIRED = ["lybunt", "sybunt", "donor-retention-rate", "first-year-retention", "repeat-donor-retention", "donor-lapse", "lapsed-donor", "reactivation", "donor-lifetime-value", "average-gift", "gift-range-chart", "moves-management", "portfolio", "major-gift", "planned-gift", "soft-credit", "hard-credit", "donor-advised-fund", "matching-gift", "recurring-gift", "sustainer", "pledge", "in-kind-gift", "restricted-gift", "unrestricted-gift", "stewardship", "cultivation", "solicitation", "case-for-support", "annual-fund", "capital-campaign", "peer-to-peer-fundraising", "giving-day", "year-end-appeal", "acknowledgment-letter", "tax-receipt", "quid-pro-quo", "ncoa", "deduplication", "wealth-screening", "capacity", "affinity", "engagement-score", "donor-journey", "board-giving"];
+    ok("at least 45 glossary terms, and every term the brief names (" + GLOSSARY.length + ")", GLOSSARY.length >= 45 && REQUIRED.every(s => TERM[s]), REQUIRED.filter(s => !TERM[s]));
+    const termRoutes = new Set(ROUTES.filter(r => r.page === "glossaryTerm").map(r => r.slug));
+    ok("every term in the glossary module has its own page at /glossary/<slug>", GLOSSARY.every(g => termRoutes.has(g.slug) && known.has("/glossary/" + g.slug)) && termRoutes.size === GLOSSARY.length,
+      GLOSSARY.filter(g => !termRoutes.has(g.slug)).map(g => g.slug));
+    const incomplete = GLOSSARY.filter(g => !(g.term && g.def && g.def.length >= 40 && g.def.length <= 320 && g.why && g.why.length
+      && g.related && g.related.length === 3 && g.related.every(x => TERM[x] && x !== g.slug)
+      && g.see && g.see.length === 2 && g.see.every(p => known.has(p)) && (!g.calc || (g.calc.formula && g.calc.example.length)))).map(g => g.slug);
+    ok("every term has a definition, why it matters, three real related terms and two real articles or tools", incomplete.length === 0, incomplete);
+    const defOn = GLOSSARY.filter(g => !text(render("/glossary/" + g.slug)).includes(text(g.def))).map(g => g.slug);
+    ok("every term page leads with its definition in the HTML", defOn.length === 0, defOn);
+
+    // 18 · articles: one markdown file each, complete, linking what they use.
+    const fmBad = ARTICLES.filter(a => !(a.title && a.description && a.description.length >= 50 && /^\d{4}-\d{2}-\d{2}$/.test(a.date) && a.author && a.lede && a.blocks.length)).map(a => a.slug);
+    ok("every article has a title, description, date, author and a body (" + ARTICLES.length + ")", ARTICLES.length >= 12 && fmBad.length === 0, fmBad);
+    ok("every article is routed, in the sitemap with its date, and in the RSS feed",
+      ARTICLES.every(a => ROUTES.some(r => r.path === "/articles/" + a.slug && r.lastmod === a.date) && seo.rssXml(ARTICLES).includes("/articles/" + a.slug + "</link>")));
+    const unlinkedTerms = ARTICLES.flatMap(a => a.terms.filter(t => !TERM[t] || !articleLinks(a).includes("/glossary/" + t)).map(t => a.slug + " " + t));
+    ok("every article links each glossary term it lists", unlinkedTerms.length === 0, unlinkedTerms);
+    const usesTerms = ARTICLES.filter(a => !a.terms.length).map(a => a.slug);
+    ok("every article lists the terms it uses", usesTerms.length === 0, usesTerms);
+    const deadInBodies = ARTICLES.flatMap(a => articleLinks(a).filter(h => h.startsWith("/") && !known.has(h.split(/[#?]/)[0])).map(h => a.slug + " " + h));
+    ok("every link in an article body is a real page", deadInBodies.length === 0, deadInBodies);
+    const NEW_ARTICLES = ["donor-retention-rate", "lybunt-sybunt-before-year-end", "first-year-donor-plan", "spreadsheet-to-donor-system"];
+    const words = a => (a.lede + " " + a.body.replace(/^```[\s\S]*?^```/gm, "")).split(/\s+/).filter(Boolean).length;
+    ok("the four new articles are there, 900 to 1,400 words each", NEW_ARTICLES.every(s => ARTICLE[s] && words(ARTICLE[s]) >= 900 && words(ARTICLE[s]) <= 1500),
+      NEW_ARTICLES.map(s => s + " " + (ARTICLE[s] ? words(ARTICLE[s]) : "missing")));
+    const endsRight = ROUTES.filter(r => r.page === "article" || r.page === "glossaryTerm").filter(r => { const h = render(r.path); return !h.includes('href="/tools/lost-and-found"') || !h.includes('href="/demo"'); }).map(r => r.path);
+    ok("every article and glossary page ends with Lost & Found and Book a demo", endsRight.length === 0, endsRight);
+
+    // 19 · new copy names no plan, no active donor, no records, and there are no "vs" pages.
+    const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
+    const moveFns = ["Move", "MoveSpreadsheet", "MoveCrm", "MoveGivingPlatform"].map(n => { const i = why.indexOf("export function " + n + "("); const j = why.indexOf("\nexport function ", i + 10); return i < 0 ? "" : why.slice(i, j); }).join("\n");
+    const NEW_COPY = { ...Object.fromEntries(Object.entries(SRC_TEXT).filter(([f]) => /marketing\/articles\/.*\.md$|data\/glossary\.js$|pages\/tools\.jsx$/.test(f))),
+      "why.jsx (move pages)": moveFns,
+      "routes (new pages)": ROUTES.filter(r => /^\/(glossary|articles|tools|move)\//.test(r.path)).map(r => r.title + " " + r.description).join("\n") };
+    const NEVER = /\brecords?\b|\brecord count|\bactive donors?\b|\b(Seed|Sapling|Orchard|Forest)\b/i;
+    const said = Object.entries(NEW_COPY).flatMap(([f, t]) => t.replace(/^\s*\/\/.*$/gm, "").split("\n").filter(l => NEVER.test(l)).map(l => f + ": " + l.trim().slice(0, 120)));
+    ok("new copy never names a plan, an active donor, records or a record count", moveFns.length > 500 && said.length === 0, said);
+    ok("no comparison (vs) page", !ROUTES.some(r => /(^|[/-])vs([/-]|$)|versus|alternative/i.test(r.path)));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

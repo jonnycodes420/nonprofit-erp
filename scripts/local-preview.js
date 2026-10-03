@@ -129,10 +129,17 @@ const srv = http.createServer(async (req, res) => {
   if (url.startsWith("/_vercel/")) { res.statusCode = 404; return res.end(); }
 
   // 3) Static files, then the /giving entry, then the SPA catch-all.
-  let file = path.join(DIST, url);
-  if (!file.startsWith(DIST)) { res.statusCode = 403; return res.end(); }   // no traversal
+  // The request path is normalised, resolved and CHECKED to still be inside
+  // the build before anything is read (CodeQL js/path-injection).
+  let file = path.resolve(DIST, "." + path.posix.normalize("/" + url));
+  if (file !== DIST && !file.startsWith(DIST + path.sep)) { res.statusCode = 403; return res.end(); }   // no traversal
   if (url === "/giving") file = path.join(DIST, "giving.html");
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, "index.html");
+  // CONTENT-1: a marketing page is prerendered to <path>/index.html, as Vercel
+  // serves it; anything else gets the app shell (app.html), as vercel.json's
+  // catch-all does. A dist from before the prerender has no app.html.
+  const page = path.join(file, "index.html");
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(page)) file = page;
+  else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
 
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
   if (url.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
