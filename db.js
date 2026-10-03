@@ -3942,6 +3942,69 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bookkeeping_deposits_month
                       ON bookkeeping_deposits (org_id, vendor, deposit_on)`);
 
+  // ── PARITY-2 Part 5 · QUICKBOOKS ONLINE SYNC ──────────────────────────────
+  // Two switches on the org. `qbo_sync_enabled` is the founder's: production
+  // keys need Intuit's app assessment, and until it is passed the connection
+  // is shown only where he turned it on. `qbo_auto_sync` is the org admin's:
+  // off means nothing is sent until a person presses Sync.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS qbo_sync_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS qbo_auto_sync BOOLEAN NOT NULL DEFAULT false`);
+  // A lease, not a lock that holds a connection: one sync run per org at a
+  // time, so two people pressing Sync all cannot create the same donor as two
+  // QuickBooks customers. A run that dies leaves a lease that lapses itself.
+  await pool.query(`ALTER TABLE bookkeeping_connections ADD COLUMN IF NOT EXISTS sync_lock_until TIMESTAMPTZ`);
+  // ONE ROW PER GIFT PER ACCOUNTING SYSTEM, and the unique index is the
+  // guarantee that a gift becomes one sales receipt. The row is claimed
+  // ('sending') BEFORE the call and kept afterwards whatever happened; a
+  // failed row is retried with the SAME request id, so QuickBooks itself
+  // answers a retry after a timeout with the receipt it already made.
+  // Disconnecting deletes nothing here: this is the history of what was sent.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gift_bookkeeping_syncs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      gift_id TEXT NOT NULL,
+      vendor TEXT NOT NULL DEFAULT 'quickbooks',
+      connection_id TEXT,
+      realm_id TEXT,
+      status TEXT NOT NULL DEFAULT 'sending',     -- sending | synced | skipped | failed
+      txn_type TEXT,                              -- SalesReceipt | Deposit
+      qbo_id TEXT,
+      request_id TEXT,
+      account_id TEXT, class_id TEXT, customer_id TEXT,
+      amount_cents INTEGER,
+      error TEXT,                                 -- the plain sentence a person reads
+      error_code TEXT,
+      reached_vendor BOOLEAN NOT NULL DEFAULT false,
+      attempts INTEGER NOT NULL DEFAULT 1,
+      synced_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT gift_bk_sync_status CHECK (status IN ('sending','synced','skipped','failed'))
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_bookkeeping_one_per_gift
+                      ON gift_bookkeeping_syncs (org_id, gift_id, vendor)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gift_bk_syncs_status
+                      ON gift_bookkeeping_syncs (org_id, vendor, status)`);
+  // The QuickBooks customer each donor became, per company file, so the same
+  // person is matched once and never created twice.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bookkeeping_customers (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      vendor TEXT NOT NULL DEFAULT 'quickbooks',
+      realm_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      customer_id TEXT NOT NULL,
+      customer_name TEXT,
+      matched_by TEXT,                            -- email | name | created
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS bookkeeping_customers_one
+                      ON bookkeeping_customers (org_id, vendor, realm_id, donor_id)`);
+
   // A gift can be reported under more than one provider's id. `external_id`
   // stays the FIRST one (it is the dedupe key and the unique index is on it);
   // the others ride here, so answering "same gift" once means the question is

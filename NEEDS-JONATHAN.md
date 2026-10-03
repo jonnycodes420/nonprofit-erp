@@ -310,14 +310,18 @@ Toast Partner Connect, "Integration Partner", which asks for a company, an
 integration description and a review. Until it is approved there is nothing to
 paste and nothing is waiting on it.
 
-**Intuit / QuickBooks Online** (INT-2). The mapping, the deposit builder, the
-send-once ledger and the monthly agreement are finished and proven against a
-mock. To send to a real company file:
-  · an Intuit developer account and an app with the `com.intuit.quickbooks.accounting`
-    scope, and Intuit's review before production keys are issued
-  · Railway variables: **`INTUIT_CLIENT_ID`**, **`INTUIT_CLIENT_SECRET`**,
-    **`INTUIT_REDIRECT_URI`**, **`INTUIT_API_BASE`**
-    (sandbox: `https://sandbox-quickbooks.api.intuit.com`)
+**Intuit / QuickBooks Online** (INT-2, PARITY-2 Part 5). Gift-by-gift sync
+(sales receipts, or a deposit per payout), the mapping from the company's own
+accounts, Pending with Sync / Sync all / Skip, and auto-sync are built and
+proven against a stub. Shown only to orgs you turn on in /admin (QuickBooks
+sync toggle). Every assessment answer is in `docs/integrations/quickbooks.md`.
+One line per step:
+  · Walk the sandbox once with the development keys: connect a sandbox company, map, Sync one gift, Disconnect.
+  · Submit Intuit's app assessment (production keys) with the answers in `docs/integrations/quickbooks.md`.
+  · In the Intuit app, register the redirect URI `https://www.stewardapp.dev/oauth/intuit/callback`.
+  · Railway, sandbox now: **`INTUIT_CLIENT_ID`**, **`INTUIT_CLIENT_SECRET`** (development keys), **`INTUIT_REDIRECT_URI`**=`https://www.stewardapp.dev/oauth/intuit/callback`, **`INTUIT_API_BASE`**=`https://sandbox-quickbooks.api.intuit.com`.
+  · Railway, after approval: swap in the production **`INTUIT_CLIENT_ID`** / **`INTUIT_CLIENT_SECRET`** and set **`INTUIT_API_BASE`**=`https://quickbooks.api.intuit.com`.
+  · Turn QuickBooks sync on per org in /admin once production keys are live.
 
 **Xero** (INT-2). Same code, same mapping, tracking categories instead of
 classes.

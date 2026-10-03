@@ -132,6 +132,7 @@ CORE=(
   int1-paypal-webhook
   intpos-sale-is-not-a-gift
   int2-send-once
+  parity2-qbo-sync
   oauth-state
   int3-optout
   int4-mailbox

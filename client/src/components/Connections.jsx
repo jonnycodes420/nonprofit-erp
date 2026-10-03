@@ -21,6 +21,7 @@ import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { InboxConnectCard, useMailbox } from "./InboxConnect";
+import QboSync from "./QboSync";
 import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send, BookOpen, FileText, Store,
   KeyRound, Webhook, Zap } from "lucide-react";
 
@@ -141,7 +142,7 @@ function ItemMapping({ isReadOnly, isAdmin }) {
 // silently posts restricted money to the wrong place and nobody notices until
 // an auditor does.
 function Bookkeeping({ isReadOnly, isAdmin }) {
-  const [d, setD] = useState(null);
+  const [loaded, setD] = useState(null);
   const [openId, setOpenId] = useState("");
   const [openMap, setOpenMap] = useState("");
   const [agree, setAgree] = useState(null);
@@ -149,6 +150,11 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
   const [msg, setMsg] = useState("");
   const load = () => apiFetch("/bookkeeping").then(r => { setD(r); setDraft(null); }).catch(() => setD(null));
   useEffect(() => { load(); }, []);
+  // PARITY-2 Part 5: where QuickBooks sync is on, QboSync's own panel (chosen
+  // from the company's chart of accounts) is QuickBooks' mapping; this one
+  // stays for Xero.
+  const d = loaded && loaded.qboSyncEnabled
+    ? { ...loaded, connections: (loaded.connections || []).filter(c => c.vendor !== "quickbooks") } : loaded;
   if (!d || !(d.connections || []).length) return null;
   // FIX-9 Part A.2 — ONE CARD PER ACCOUNTING CONNECTION. QuickBooks appeared
   // twice on this screen: once as this panel's own heading and again as a
@@ -831,6 +837,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
       {/* The two mappings, below the cards, each a line until it is opened. */}
       {(!bare || mappings === "pos") && <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
       {(!bare || mappings === "books") && <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
+      {mappings === "books" && <QboSync connectionId={onlyIds && onlyIds[0]} isReadOnly={isReadOnly} isAdmin={isAdmin} />}
     </div>
   );
 }

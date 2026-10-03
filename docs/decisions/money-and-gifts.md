@@ -75,6 +75,11 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   separate); say "giving", never "revenue"; optional other income is never summed into giving. (BUILD-26, BUILD-32, BUILD-88a)
 - **Read the fiscal year through `orgPeriodBounds`/`finPeriodBounds`, never string arithmetic.** The
   boundary comes from `fiscal_year_start_month` (July default); receipts use the calendar year. (BUILD-86, BUILD-88a)
+- **A gift goes to QuickBooks once, and only where a person mapped it.** `gift_bookkeeping_syncs` is unique on
+  (org, gift, vendor) and claimed before the call; Intuit's `requestid` is kept across a retry whose outcome was
+  unknown. A gift whose campaign and fund have no account stays in Pending with the sentence, never a default
+  account. Nothing is sent until someone presses Sync or the org's admin turns auto-sync on; the per-org flag is
+  the founder's until Intuit's assessment passes. See `docs/integrations/quickbooks.md`. (PARITY-2)
 - **The bookkeeper export must foot in cents before a byte is written.** Mismatch is a 409, nothing
   repaired; the database sum is asked for exactly, not pre-rounded (`bookkeeper.js`). (BUILD-87)
 
@@ -116,6 +121,7 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - `shared/restrictedMoney.js` — restricted-award balances
 - `server.js` `stampGrantAward`, `ensureOrgLedger`, `fundraisingCampaignRows`, `computeFundraisingPace`
 - `orgTime.js` `orgPeriodBounds`; `server.js` `finPeriodBounds` — fiscal and calendar period bounds
+- `qboSync.js`: QuickBooks Online sync: the Pending definition, the mapping, sales receipts and deposits (PARITY-2)
 - `scripts/consistency-audit.js` — read-only cross-surface reconciliation; run before a pilot goes live
 
 ---

@@ -2265,6 +2265,22 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
   res.json({ ok: true, org: after });
 }));
 
+// ── PARITY-2 Part 5: QUICKBOOKS SYNC, PER ORG ────────────────────────────
+// The founder's switch, not the org's: production QuickBooks keys need
+// Intuit's app assessment, and until it is passed the connection is offered
+// only to the organisations he turns it on for. Turning it off hides the
+// Connect button and stops sending; it deletes nothing, and every gift already
+// sent keeps its QuickBooks id.
+app.post("/admin/orgs/:id/qbo-sync", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name FROM orgs WHERE id=?", [req.params.id]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  if (typeof req.body?.enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+  await run("UPDATE orgs SET qbo_sync_enabled=? WHERE id=?", [req.body.enabled, org.id]);
+  if (!req.body.enabled) await run("UPDATE orgs SET qbo_auto_sync=false WHERE id=?", [org.id]);
+  res.json({ ok: true, orgId: org.id, qboSyncEnabled: req.body.enabled,
+    sentence: req.body.enabled ? `QuickBooks sync is on for ${org.name}.` : `QuickBooks sync is off for ${org.name}. Nothing was deleted.` });
+}));
+
 // ── BUILD-96 Part 2 — CLEAR SAMPLE DATA, on somebody else's org ────────────
 // org_justinsplace holds invented people under a real organisation's name.
 // Before Allie's real export loads, all of that has to go and NOTHING else —
@@ -2406,6 +2422,10 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM gmail_connections WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE org_id=?)", [orgId]).catch(() => {});
   await run("DELETE FROM users WHERE org_id=?", [orgId]).catch(() => {});
+  // PARITY-2 Part 5: the accounting connection and what it sent go with the
+  // org (the connection row was missing from this list since INT-2).
+  for (const t of ["gift_bookkeeping_syncs", "bookkeeping_customers", "bookkeeping_deposits", "bookkeeping_connections"])
+    await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
   await run("DELETE FROM orgs WHERE id=?", [orgId]);
   res.json({ deleted: true });
 }));

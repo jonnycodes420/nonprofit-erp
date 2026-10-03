@@ -552,8 +552,13 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       `SELECT id, vendor, status, last_sent_at, last_error FROM bookkeeping_connections
         WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
     const byVendor = new Map(books.map(b => [b.vendor, b]));
+    // PARITY-2 Part 5: QuickBooks is offered only where the founder turned
+    // its sync on, until Intuit's app assessment is passed. A connection that
+    // already exists is never hidden: what is connected is always on screen.
+    const [qboFlag] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [orgId]);
     for (const key of BK.VENDOR_KEYS) {
       const b = byVendor.get(key);
+      if (key === "quickbooks" && !b && !(qboFlag && qboFlag.qbo_sync_enabled === true)) continue;
       // FIX-9 Part A.3 — AN ACCOUNTING CONNECTION HAS ITS OWN SHAPE. It was
       // reusing the money-in card, so QuickBooks and Xero each read
       // "$0 in the last 30 days · 0 gifts · never last gift". An accounting

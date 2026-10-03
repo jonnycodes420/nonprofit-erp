@@ -299,6 +299,18 @@ function OrgPanel({ org, onClose, onRefresh }) {
     setWorking(false);
   }
 
+  // PARITY-2 Part 5: QuickBooks sync is offered only to the orgs turned on
+  // here, until Intuit's app assessment is passed.
+  async function toggleQbo() {
+    setWorking(true);
+    try {
+      const on = !(detail?.qbo_sync_enabled === true);
+      await adminFetch("/admin/orgs/" + org.id + "/qbo-sync", { method: "POST", body: JSON.stringify({ enabled: on }) });
+      setDetail(dd => dd ? { ...dd, qbo_sync_enabled: on } : dd);
+    } catch (e) { alert(errorMessage(e)); }
+    setWorking(false);
+  }
+
   async function deleteOrg() {
     if (deleteInput !== org.name) { alert("Type the org name exactly to confirm."); return; }
     setWorking(true);
@@ -406,6 +418,14 @@ function OrgPanel({ org, onClose, onRefresh }) {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = A.green; e.currentTarget.style.color = A.green; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = A.border; e.currentTarget.style.color = A.secondary; }}>
                   Extend Trial
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style={{ fontSize: 13, color: A.secondary, flex: 1 }}>
+                  QuickBooks sync: {detail?.qbo_sync_enabled ? "on" : "off"}
+                </span>
+                <button data-testid="admin-qbo-toggle" onClick={toggleQbo} disabled={working || !detail} style={{ ...PBTN }}>
+                  {detail?.qbo_sync_enabled ? "Turn off" : "Turn on"}
                 </button>
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
