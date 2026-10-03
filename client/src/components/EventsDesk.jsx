@@ -12,6 +12,8 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
+import { EventKiosk } from "./Events";
+import { EventPageEditor } from "./EventPageEditor";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = primary => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -22,7 +24,11 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const [levels, setLevels] = useState([]);
   const [guests, setGuests] = useState(null);
   const [msg, setMsg] = useState("");
-  const [lv, setLv] = useState({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "" });
+  const [lv, setLv] = useState({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" });
+  // PARITY-2 Part 3: check-in at the door, from the guest list, on a phone.
+  const [door, setDoor] = useState(false);
+  // A sponsor level's benefits, edited in place (one per line).
+  const [editBenefits, setEditBenefits] = useState(null);   // { id, text }
   const [reg, setReg] = useState({ who: "", email: "", levelId: "", quantity: 1, paid: true });
   const [marks, setMarks] = useState({});
   // EVENTS-2 — who asked to be told if a place comes free.
@@ -40,7 +46,9 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   useEffect(() => { load(); }, [event.id]);
   const act = async (fn, okMsg) => { setMsg(""); try { await fn(); if (okMsg) setMsg(okMsg); load(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
   const addLevel = () => act(() => apiFetch(`/events/${event.id}/levels`, { method: "POST", body: JSON.stringify(lv) })
-    .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "" })));
+    .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" })));
+  const saveBenefits = () => act(() => apiFetch(`/event-levels/${editBenefits.id}`, { method: "PUT", body: JSON.stringify({ benefits: editBenefits.text }) })
+    .then(() => setEditBenefits(null)), "Saved. The sponsor card on the page shows it now.");
   const register = () => {
     const d = donors.find(x => String(x.name || "").toLowerCase() === reg.who.trim().toLowerCase());
     const body = d ? { donorId: d.id } : { name: reg.who.trim(), email: reg.email.trim() };
@@ -68,6 +76,8 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
 
+      <EventPageEditor eventId={event.id} isReadOnly={isReadOnly} />
+
       <Card style={{ padding: "16px 18px" }}>
         <div style={h}>Tickets and sponsorships</div>
         {levels.map(l => (
@@ -77,6 +87,18 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
             <span style={{ color: T.ink3 }}>{l.kind === "sponsor" ? "sponsorship" : `worth ${fmtFull(l.fmv)}, so ${fmtFull(l.deductible)} deductible`}</span>
             {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organisation pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
             <span style={{ marginLeft: "auto", color: T.ink3 }}>{l.capacity == null ? `${l.taken} taken` : `${l.taken} of ${l.capacity} taken`}</span>
+            {l.kind === "sponsor" && (editBenefits && editBenefits.id === l.id
+              ? <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <textarea value={editBenefits.text} onChange={e => setEditBenefits({ ...editBenefits, text: e.target.value })} rows={4}
+                    placeholder={"What it comes with, one per line\nA table for ten\nYour name on the stage screen"} style={{ ...inp, fontFamily: "inherit" }} data-testid="event-level-benefits" />
+                  <span style={{ display: "flex", gap: 6 }}><button onClick={saveBenefits} style={btn(true)} data-testid="event-level-benefits-save">Save</button>
+                    <button onClick={() => setEditBenefits(null)} style={btn(false)}>Cancel</button></span>
+                </div>
+              : <div style={{ flexBasis: "100%", fontSize: 12, color: T.ink3, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+                  <span>{(l.benefits || []).length ? (l.benefits || []).join(" · ") : "No benefits listed yet."}</span>
+                  {!isReadOnly && <button onClick={() => setEditBenefits({ id: l.id, text: (l.benefits || []).join("\n") })} style={{ ...btn(false), padding: "3px 9px", fontSize: 12 }}>
+                    {(l.benefits || []).length ? "Edit benefits" : "Add benefits"}</button>}
+                </div>)}
           </div>))}
         {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
           <select value={lv.kind} onChange={e => setLv({ ...lv, kind: e.target.value })} style={inp}><option value="ticket">Ticket</option><option value="sponsor">Sponsorship</option></select>
@@ -86,6 +108,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           {lv.kind === "ticket" && <input placeholder="Member price" type="number" value={lv.memberPrice} onChange={e => setLv({ ...lv, memberPrice: e.target.value })} style={{ ...inp, width: 120 }} title="What a current member pays. Leave it empty and everybody pays the same. Steward checks the membership against the email at checkout, so the page never decides it." />}
           <input placeholder="Places" type="number" value={lv.capacity} onChange={e => setLv({ ...lv, capacity: e.target.value })} style={{ ...inp, width: 70 }} />
           {lv.kind === "sponsor" && <input placeholder="Recognition, e.g. {{name}}, Gold sponsor" value={lv.recognition} onChange={e => setLv({ ...lv, recognition: e.target.value })} style={{ ...inp, width: 240 }} />}
+          {lv.kind === "sponsor" && <textarea placeholder={"What it comes with, one per line\nA table for ten\nYour name on the stage screen"} value={lv.benefits} onChange={e => setLv({ ...lv, benefits: e.target.value })} rows={3} style={{ ...inp, flexBasis: "100%", fontFamily: "inherit" }} />}
           <button onClick={addLevel} style={btn(false)} data-testid="event-add-level">Add</button>
         </div>}
       </Card>
@@ -122,10 +145,14 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
       </Card>}
 
       <Card style={{ padding: "16px 18px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <div style={h}>Guest list</div>
-          {!isReadOnly && guests?.guests?.length > 0 && <button onClick={saveAttendance} disabled={!Object.keys(marks).length} style={btn(true)} data-testid="event-save-attendance">Save attendance</button>}
+          <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {!isReadOnly && guests?.guests?.length > 0 && <button onClick={() => setDoor(d => !d)} style={btn(!door)} data-testid="event-door-checkin">{door ? "Close check-in" : "Check in at the door"}</button>}
+            {!isReadOnly && guests?.guests?.length > 0 && <button onClick={saveAttendance} disabled={!Object.keys(marks).length} style={btn(false)} data-testid="event-save-attendance">Save attendance</button>}
+          </span>
         </div>
+        {door && <div style={{ marginTop: 10 }}><EventKiosk eventId={event.id} /></div>}
         {!guests ? <div style={{ color: T.ink3, fontSize: 13 }}>Loading…</div> : guests.guests.length === 0
           ? <div style={{ color: T.ink3, fontSize: 13 }}>Nobody has registered yet.</div>
           : guests.guests.map(g => (

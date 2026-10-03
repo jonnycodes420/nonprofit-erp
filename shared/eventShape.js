@@ -51,8 +51,12 @@ export function validateLevel(raw) {
   const capacity = raw?.capacity === undefined || raw?.capacity === null || raw?.capacity === "" ? null : Number(raw.capacity);
   if (capacity !== null && (!Number.isInteger(capacity) || capacity <= 0)) errors.push("capacity is a whole number of places");
   const recognition = String(raw?.recognition || "").trim().slice(0, 200) || null;
+  // PARITY-2 Part 3: what a sponsorship comes with, one line each, shown as
+  // a list on the public page's sponsor card. A textarea or an array.
+  const benefits = (Array.isArray(raw?.benefits) ? raw.benefits : String(raw?.benefits || "").split(/\r?\n/))
+    .map(x => String(x == null ? "" : x).trim().replace(/^[-*\u2022]\s*/, "").slice(0, 200)).filter(Boolean).slice(0, 12);
   return errors.length ? { ok: false, errors }
-    : { ok: true, level: { kind, name, priceCents: price, fmvCents: fmv, memberPriceCents: memberPrice, capacity, recognition } };
+    : { ok: true, level: { kind, name, priceCents: price, fmvCents: fmv, memberPriceCents: memberPrice, capacity, recognition, benefits } };
 }
 
 // The split for a purchase of `qty` at this level, in cents.

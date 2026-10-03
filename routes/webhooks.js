@@ -429,6 +429,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
               return res.json({ received: true, duplicate: true });
             }
+            // PARITY-2 Part 3: a gift given from an event's public page with
+            // no ticket belongs to that event. The id is our own metadata, and
+            // it is re-checked against THIS org before it is written.
+            if (!evLevel && pi.metadata?.event_gift_id && written.gift?.id) {
+              await run(`UPDATE gifts SET event_id = e.id FROM events e
+                          WHERE gifts.id = ? AND gifts.org_id = ? AND gifts.event_id IS NULL
+                            AND e.id = ? AND e.org_id = gifts.org_id`,
+                [written.gift.id, orgId, String(pi.metadata.event_gift_id)])
+                .catch(e => console.error("[stripe] stamping the event on a gift:", e.message));
+            }
             // BUILD-102 Part 3 — the form's tribute, employer and answers. Runs
             // only for a gift the duplicate guard just let through, so a
             // redelivered webhook writes no second tribute draft and no second

@@ -527,6 +527,11 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
 app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+// PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.
+app.use((req, res, next) =>
+  req.method === "POST" && /^\/events\/[^/]+\/(hero|photos)$/.test(req.path)
+    ? express.json({ limit: "22mb" })(req, res, next)
+    : next());
 // BUILD-94 Part 1 — a donor photo is capped at 10MB of DECODED image, which is
 // ~13.7MB of base64 plus the JSON around it. Matched by path rather than
 // mounted on "/donors" so the rest of the donor family keeps the 5mb cap.

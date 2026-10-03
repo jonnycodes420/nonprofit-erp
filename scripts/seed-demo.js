@@ -2971,6 +2971,8 @@ async function main() {
     console.log(`[seed] groups: Mid-level donors (by rule), Gala table hosts (${hosts.length}), Board prospects (${board.length}); two journeys running`);
   }
 
+  await require("./seed/parity2-events").seedParity2Events(q, ORG);   // PARITY-2 Part 3: the event pages
+
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
   // `?` placeholders; this adapter numbers them for this client.
