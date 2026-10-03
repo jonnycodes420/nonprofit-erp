@@ -116,7 +116,7 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly }) {
   return (
     <FigureContext.Provider value={{ openPerson: onOpenPerson || null }}>
       <div data-testid="group-page">
-        <button type="button" style={{ ...quiet, marginBottom: 12 }} onClick={onBack}>All groups</button>
+        {onBack && <button type="button" style={{ ...quiet, marginBottom: 12 }} onClick={onBack}>All groups</button>}
         <h2 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 26, margin: "0 0 4px", color: T.ink }}>
           {g.name}{g.kind === "dynamic" && <LightningMark size={16} />}
         </h2>

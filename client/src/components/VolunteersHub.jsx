@@ -29,6 +29,8 @@ import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule";   // PARITY-3 Part 4
+import { RecruitmentView, ApplicationsView } from "./VolunteerRecruit";          // PARITY-3 Part 2
+import { VolunteerCounts, VolunteerListView, VolunteersGroupView } from "./VolunteerList";   // PARITY-3 Parts 3 and 5
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -41,6 +43,10 @@ import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule"; 
 const VOL_SECTIONS = [
   { id: "people", label: "People", question: "Who volunteers, and what have they given?",
     parts: [
+      // PARITY-3 Part 3 — every volunteer, filtered, with chosen columns and
+      // bulk actions; and the default Volunteers group's giving page.
+      { id: "list", label: "All volunteers" },
+      { id: "volgroup", label: "Volunteers group", giving: true },
       { id: "roster", label: "Roster" },
       { id: "givers", label: "Volunteers who give", giving: true },
     ] },
@@ -67,6 +73,9 @@ const VOL_SECTIONS = [
     ] },
   { id: "reach", label: "Reach", question: "How do people find you, and who should be asked?",
     parts: [
+      // PARITY-3 Part 2 — the public volunteer page, and where its applications wait.
+      { id: "recruit", label: "Recruitment page" },
+      { id: "applications", label: "Applications" },
       { id: "signup", label: "Sign-up link" },
       { id: "crossover", label: "Gives and volunteers", giving: true },
     ] },
@@ -125,7 +134,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
   // FIX-15 Part 5: ?slot= and ?group= open Schedule on that shift or group,
   // so "Who is coming" and a group row work as real links in a new tab.
   const [section, setSection] = useState(() => (urlParam("volunteers", "slot") || urlParam("volunteers", "group")) ? "schedule" : "people");
-  const [partOf, setPartOf] = useState(() => ({ people: "roster", schedule: urlParam("volunteers", "group") ? "groups" : urlParam("volunteers", "slot") ? "opportunities" : "calendar", records: "shifts", reach: "signup" }));
+  const [partOf, setPartOf] = useState(() => ({ people: "list", schedule: urlParam("volunteers", "group") ? "groups" : urlParam("volunteers", "slot") ? "opportunities" : "calendar", records: "shifts", reach: "signup" }));
   const [roster, setRoster] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpenRaw] = useState(null);   // the person whose panel is open
@@ -149,6 +158,9 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
     .map(sec => ({ ...sec, parts: sec.parts.filter(p => !(p.giving && isCoordinator)) }))
     .filter(sec => sec.parts.length);
 
+  const [countsKey, setCountsKey] = useState(0);
+  const [listFilter, setListFilter] = useState(null);
+  const [listKey, setListKey] = useState(0);
   // PARITY-3 — "Check in on this phone" from a shift opens Check-in on it.
   const [kioskSlot, setKioskSlot] = useState("");
   useEffect(() => {
@@ -177,6 +189,12 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
   return (
     <div data-testid="volunteers-hub" className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <PageTitle main="Your" accent="volunteers." sub={roster && roster.people.length ? roster.sentence : " "} />
+      {/* PARITY-3 Part 3 — the four numbers, each opening its rows. */}
+      <VolunteerCounts refreshKey={countsKey} onOpen={k => {
+        if (k === "active") { setListFilter({ volActive: "1" }); setListKey(n => n + 1); setSection("people"); setPartOf(m => ({ ...m, people: "list" })); }
+        if (k === "pending") { setSection("reach"); setPartOf(m => ({ ...m, reach: "applications" })); }
+        if (k === "conflicts" || k === "short") { setSection("schedule"); setPartOf(m => ({ ...m, schedule: "calendar" })); }
+      }} />
       <SectionTabs tabs={sections.map(x => ({ id: x.id, label: x.label }))} active={sec.id}
         onSelect={setSection} className="finance-tabbar fr-tabbar" dataKey="vol-section"
         stripProps={{ "data-vol-strip": "", "aria-label": "Volunteers" }} style={{ marginBottom: 12 }} />
@@ -218,6 +236,8 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
         </div>
       )}
 
+      {part === "list" && <VolunteerListView key={listKey} isReadOnly={isReadOnly} coordinator={isCoordinator} initialFilter={listFilter} onOpenPerson={p => setOpen(p)} />}
+      {part === "volgroup" && <VolunteersGroupView isReadOnly={isReadOnly} onOpenRecord={openRecord} />}
       {part === "roster" && <RosterView roster={roster} narrow={narrow} onOpen={setOpen} coordinator={isCoordinator}
         onAdd={() => setAdding(true)} onImport={() => setImporting(true)} onSignupLink={() => { setSection("reach"); setPart("signup"); }}
         isReadOnly={isReadOnly} />}
@@ -226,6 +246,8 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       {part === "givers" && <GiversView narrow={narrow} onOpenRecord={openRecord} onOpen={setOpen} />}
       {part === "calendar" && <ScheduleView isReadOnly={isReadOnly} narrow={narrow} onOpenPerson={p => setOpen(p)} />}
       {part === "rostermode" && <RosterModeView isReadOnly={isReadOnly} narrow={narrow} />}
+      {part === "recruit" && <RecruitmentView isReadOnly={isReadOnly} />}
+      {part === "applications" && <ApplicationsView isReadOnly={isReadOnly} onOpenPerson={p => setOpen(p)} onCount={() => setCountsKey(n => n + 1)} />}
       {part === "tosend" && <ToSendView isReadOnly={isReadOnly} />}
       {part === "opportunities" && <OpportunitiesView isReadOnly={isReadOnly} narrow={narrow} />}
       {part === "groups" && <GroupsView isReadOnly={isReadOnly} narrow={narrow} onOpenRecord={openRecord} />}

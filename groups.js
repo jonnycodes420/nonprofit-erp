@@ -86,6 +86,75 @@ async function buildDonorFilter(orgId, q = {}) {
   }
   if (q.given === "never") where.push("NOT EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
   else if (q.given === "ever") where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
+  // ── PARITY-3 Part 3 · THE VOLUNTEER FILTERS ──────────────────────────────
+  // The Volunteers screen's filters are rules here, so the screen, its export
+  // and a Group saved from it are the same rows. Each is an EXISTS or a sum
+  // over the volunteer tables, org-scoped, and refused (badStatus) when its
+  // value is not one Steward understands, never quietly ignored.
+  const D = /^\d{4}-\d{2}-\d{2}$/;
+  const dateOr = (v, dflt) => (v && D.test(String(v)) ? String(v) : dflt);
+  if (q.volunteer === "1") {
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id)
+             OR EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.status = 'approved'))`);
+  }
+  if (q.volActive === "1") {
+    // ACTIVE: a logged hour in the last twelve months, or a place on a shift
+    // still to come. The Volunteers screen's first count is this rule.
+    const yearAgo = new Date(Date.UTC(+today.slice(0, 4) - 1, +today.slice(5, 7) - 1, +today.slice(8, 10))).toISOString().slice(0, 10);
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date > ?)
+             OR EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id AND lx.cancelled_at IS NULL
+                         WHERE sx.org_id = donors.org_id AND sx.person_id = donors.id AND sx.status = 'confirmed' AND lx.date >= ?))`);
+    params.push(yearAgo, today);
+  }
+  if (q.volOpp) {
+    where.push(`(EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.opportunity_id = ?)
+             OR EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id
+                         WHERE sx.org_id = donors.org_id AND sx.person_id = donors.id AND lx.opportunity_id = ? AND sx.status <> 'cancelled'))`);
+    params.push(String(q.volOpp), String(q.volOpp));
+  }
+  if (q.volShiftFrom || q.volShiftTo) {
+    where.push(`EXISTS (SELECT 1 FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id = sx.slot_id AND lx.cancelled_at IS NULL
+                         WHERE sx.org_id = donors.org_id AND sx.person_id = donors.id AND sx.status IN ('confirmed','completed')
+                           AND lx.date >= ? AND lx.date <= ?)`);
+    params.push(dateOr(q.volShiftFrom, "1900-01-01"), dateOr(q.volShiftTo, "2999-12-31"));
+  }
+  if (q.volHoursMin !== undefined || q.volHoursMax !== undefined) {
+    const sum = `(SELECT COALESCE(SUM(vx.hours), 0) FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id
+                   AND vx.date >= ? AND vx.date <= ?)`;
+    const range = [dateOr(q.volHoursFrom, "1900-01-01"), dateOr(q.volHoursTo, "2999-12-31")];
+    if (q.volHoursMin !== undefined) { const n = Number(q.volHoursMin); if (!Number.isFinite(n)) return { badStatus: true }; where.push(`${sum} >= ?`); params.push(...range, n); }
+    if (q.volHoursMax !== undefined) { const n = Number(q.volHoursMax); if (!Number.isFinite(n)) return { badStatus: true }; where.push(`${sum} < ?`); params.push(...range, n); }
+  }
+  if (q.gaveFrom || q.gaveTo) {
+    where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0 AND LEFT(gv.date,10) >= ? AND LEFT(gv.date,10) <= ?)");
+    params.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31"));
+  }
+  if (q.volQual) {
+    // A skill, certification or tag by name; or a background check or waiver
+    // that is CURRENT (signed, and not past its expiry) on the org's today.
+    const v = String(q.volQual);
+    if (v === "background_check" || v === "waiver") {
+      where.push(`EXISTS (SELECT 1 FROM volunteer_credentials cx WHERE cx.org_id = donors.org_id AND cx.person_id = donors.id
+                           AND cx.kind = ? AND cx.superseded_at IS NULL AND (cx.expires_on IS NULL OR cx.expires_on >= ?))`);
+      params.push(v, today);
+    } else {
+      where.push(`EXISTS (SELECT 1 FROM volunteer_qualifications qx WHERE qx.org_id = donors.org_id AND qx.person_id = donors.id AND lower(qx.name) = lower(?))`);
+      params.push(v);
+    }
+  }
+  if (q.volAnswer) {
+    // "questionId=answer" against their most recent application.
+    const m = /^([A-Za-z0-9_]{1,24})=(.{1,200})$/.exec(String(q.volAnswer));
+    if (!m) return { badStatus: true };
+    where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax, jsonb_array_elements(ax.answers) el
+                         WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id
+                           AND el->>'questionId' = ? AND lower(el->>'answerText') = lower(?))`);
+    params.push(m[1], m[2]);
+  }
+  if (q.volAvail) {
+    where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.availability ? ?)`);
+    params.push(String(q.volAvail));
+  }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   const orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
@@ -96,7 +165,10 @@ async function buildDonorFilter(orgId, q = {}) {
 // ── THE RULE ───────────────────────────────────────────────────────────────
 // The keys a dynamic group's rule may hold: exactly the list's own filters.
 const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "household", "search",
-  "level", "lifecycle", "retained", "closeness", "given"];
+  "level", "lifecycle", "retained", "closeness", "given",
+  // PARITY-3 — the Volunteers screen's filters.
+  "volunteer", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
+  "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -119,6 +191,14 @@ function normalizeRules(raw) {
     if (rules.retained !== "1") delete rules.retained;
   }
   if (rules.given && !["never", "ever"].includes(rules.given)) errors.push("Given is never or ever.");
+  // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
+  if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
+  if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
+  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo"])
+    if (rules[k] && !/^\d{4}-\d{2}-\d{2}$/.test(rules[k])) errors.push("A date is written 2026-01-31.");
+  for (const k of ["volHoursMin", "volHoursMax"])
+    if (rules[k] !== undefined && !(Number(rules[k]) >= 0)) errors.push("Hours is a number, 0 or more.");
+  if (rules.volAnswer && !/^[A-Za-z0-9_]{1,24}=.+$/.test(rules.volAnswer)) errors.push("An answer filter names a question and an answer.");
   if (!Object.keys(rules).length) errors.push("A group by rule needs at least one rule, or it is everybody.");
   return { ok: errors.length === 0, rules, errors };
 }
@@ -139,6 +219,16 @@ function rulesSentence(rules = {}) {
   if (rules.assignedTo) parts.push("assigned to one person");
   if (rules.household) parts.push(rules.household === "none" ? "not in a household" : "in a household");
   if (rules.search) parts.push(`matching "${rules.search}"`);
+  if (rules.volunteer) parts.push("who have volunteered (a logged hour or an approved application)");
+  if (rules.volActive) parts.push("active (an hour in the last twelve months, or a shift to come)");
+  if (rules.volOpp) parts.push("on one opportunity");
+  if (rules.volShiftFrom || rules.volShiftTo) parts.push(`on a shift ${rules.volShiftFrom || "any time"} to ${rules.volShiftTo || "any time"}`);
+  if (rules.volHoursMin) parts.push(`with at least ${rules.volHoursMin} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
+  if (rules.volHoursMax) parts.push(`with fewer than ${rules.volHoursMax} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
+  if (rules.gaveFrom || rules.gaveTo) parts.push(`who gave ${rules.gaveFrom || "any time"} to ${rules.gaveTo || "today"}`);
+  if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
+  if (rules.volAnswer) parts.push("who gave one answer on their application");
+  if (rules.volAvail) parts.push(`free on ${rules.volAvail}`);
   return parts.length ? `Everyone on file: ${parts.join(", ")}. Worked out fresh every time it is read.` : "";
 }
 

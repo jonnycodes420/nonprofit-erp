@@ -164,7 +164,7 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   role by role. A conflict is one person with a place on two shifts that overlap; back to back is not
   one. A draft shift (`published = false`) is the coordinator's: the public page and Your page cannot see
   or join it. (PARITY-3)
-- **Check-in writes the hours, from the shift's own times and date.** Linked to the opportunity and
+- **Check-in writes the hours, from the shift's own times, dated the day they are here** (the org's today, never the planned date, so an early check-in cannot write hours in the future). Linked to the opportunity and
   shift (`volunteer_shifts.opportunity_id/slot_id`), editable after on the person's record. Check-out
   only marks the sign-up done. (PARITY-3)
 - **A group signs up on a screen now.** Volunteers → Schedule → Groups. A group is a LABEL on a
@@ -182,6 +182,19 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   (`volunteer_qualifications`: skill, certification with expiry, tag), checks and waivers, application
   answers, and notes kept `internal` or shown to the volunteer on Your page. Each logged shift is on the
   timeline as Volunteer service. The glance line opens the same source. (PARITY-3)
+- **A volunteer applies; a coordinator approves.** `volunteer_applications` holds what the public page
+  sent and is not a person. Approve matches by email under `withAdvisoryLock('donor:org:email')`: one match
+  is that person (a donor stays one record, now also a Volunteer); two or more and staff choose; none and
+  a person is made. Decline sends nothing. The page's words are stored only after `sanitizeRichText`
+  (an allowlist: headings, lists, links to the web or mail, `/portal-assets/` or https images, YouTube
+  and Vimeo players). A waiver upload is stored as kind `volapply`, never written into a public page, and
+  served to signed-in staff only. (PARITY-3)
+- **The Volunteers list is the donor list's filter.** The volunteer rules (opportunity, on a shift in a
+  range, hours over or under N in a range, gave in a range, qualification, application answer,
+  availability, active) are `buildDonorFilter` rule keys, so a Group saved from the list is the same rows.
+  A coordinator gets no giving column and a giving filter from one is refused (403). The default
+  Volunteers group (rule `volunteer=1`: a logged hour or an approved application) is made by a POST from
+  the screen, and its page adds "Volunteers who have never given" (`group-never-gave`). (PARITY-3)
 - **Count volunteer hours in integer hundredths.** A shift must be more than 0 and at most 24 hours, enforced
   by the route and a CHECK. An imported shift is unique on (person, day, hours, role). (BUILD-98)
 - **Staff copy the volunteer self-log link; Steward never sends it.** It is an HMAC over org, person and a

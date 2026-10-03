@@ -682,6 +682,121 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
     } });
 }));
 
+// ── PARITY-3 Part 3 · THE VOLUNTEER LIST, ITS FILTERS AND ITS BULK ACTIONS ──
+// The list is the donor list's own filter (groups.js buildDonorFilter) with
+// the volunteer rules, so the screen, its CSV and a Group saved from it are
+// the same rows. Giving is a column and a filter for staff; a volunteer
+// coordinator gets neither, and a giving filter from one is refused here,
+// because the role is the boundary and the screen is only a courtesy.
+const GR = require("../groups");
+const GIVING_RULES = ["given", "gaveFrom", "gaveTo", "level", "lifecycle", "retained"];
+const LIST_RULES = ["search", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
+  "volQual", "volAnswer", "volAvail", ...GIVING_RULES];
+
+async function volunteerList(req) {
+  const orgId = req.user.orgId, q = req.query || {};
+  const coord = req.user.role === COORD;
+  const rules = { role: "volunteer" };
+  for (const k of LIST_RULES) if (q[k] !== undefined && q[k] !== "") rules[k] = String(q[k]);
+  if (coord && GIVING_RULES.some(k => rules[k])) return { refused: true };
+  const f = await GR.buildDonorFilter(orgId, rules);
+  if (f.badRole || f.badStatus) return { bad: true };
+  const D = /^\d{4}-\d{2}-\d{2}$/;
+  const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
+  const hFrom = D.test(String(q.hoursFrom || "")) ? String(q.hoursFrom) : today.slice(0, 4) + "-01-01";
+  const hTo = D.test(String(q.hoursTo || "")) ? String(q.hoursTo) : today;
+  const rows = await query(
+    `SELECT donors.id, donors.name, donors.email, donors.phone, donors.total_giving, donors.last_gift_date,
+            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id)::bigint AS life_h,
+            (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id AND vx.date >= ? AND vx.date <= ?)::bigint AS range_h,
+            (SELECT MAX(vx.date) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id) AS last_served,
+            (SELECT MIN(lx.date) FROM volunteer_signups sx JOIN volunteer_slots lx ON lx.id=sx.slot_id AND lx.cancelled_at IS NULL
+              WHERE sx.org_id=donors.org_id AND sx.person_id=donors.id AND sx.status='confirmed' AND lx.date >= ?) AS next_shift,
+            (SELECT string_agg(qx.name, ', ' ORDER BY qx.kind, lower(qx.name)) FROM volunteer_qualifications qx WHERE qx.org_id=donors.org_id AND qx.person_id=donors.id) AS quals,
+            (SELECT COUNT(*) FROM gifts gx WHERE gx.org_id=donors.org_id AND gx.donor_id=donors.id AND gx.amount > 0)::int AS gift_count
+       FROM donors WHERE ${f.whereSql} ORDER BY lower(donors.name), donors.id LIMIT 2000`,
+    [hFrom, hTo, today, ...f.params]);
+  return { hFrom, hTo, today, coord, rules,
+    rows: rows.map(r => ({ id: r.id, name: r.name, email: r.email || "", phone: r.phone || "",
+      lifetimeHours: Number(r.life_h) / 100, rangeHours: Number(r.range_h) / 100,
+      lastServed: r.last_served || null, nextShift: r.next_shift || null, qualifications: r.quals || "",
+      ...(coord ? {} : { lifetimeGiving: Number(r.total_giving || 0), lastGiftDate: r.last_gift_date || null, gifts: r.gift_count }) })) };
+}
+
+app.get("/volunteer-hub/list", requireAuth, wrap(async (req, res) => {
+  const out = await volunteerList(req);
+  if (out.refused) return res.status(403).json({ error: "giving_hidden", message: "Giving is not part of the volunteer coordinator's role, so it cannot be a filter here." });
+  if (out.bad) return res.status(400).json({ error: "bad_filter", message: "One of those filters is not one Steward understands." });
+  res.json({ ...out, sentence: `${out.rows.length} ${out.rows.length === 1 ? "volunteer matches" : "volunteers match"}.`,
+    definitions: {
+      lifetimeHours: "Every volunteer shift logged for this person, added up.",
+      rangeHours: `Hours from shifts dated ${out.hFrom} to ${out.hTo}.`,
+      lastServed: "The most recent shift logged for them.", nextShift: "The next shift they have a place on.",
+      ...(out.coord ? {} : { lifetimeGiving: "Every gift on their record, net of refunds.", gifts: "How many gifts they have given." }),
+    } });
+}));
+
+// The volunteers a request names, kept to this org's own.
+async function ownPeople(orgId, raw) {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).map(String).filter(Boolean))].slice(0, 2000);
+  if (!ids.length) return [];
+  return query(`SELECT id, name, email FROM donors WHERE org_id=? AND deleted_at IS NULL AND id = ANY(?::text[])`, [orgId, ids]);
+}
+
+// Draft an email to the people selected: one DRAFT each, in To send. Staff send.
+app.post("/volunteer-hub/bulk/draft", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const subject = String(req.body?.subject || "").trim().slice(0, 200), body = String(req.body?.body || "").trim().slice(0, 8000);
+  if (!subject || !body) return res.status(400).json({ error: "A message needs a subject and some words." });
+  const people = await ownPeople(orgId, req.body?.personIds);
+  const batch = uuid().slice(0, 8);
+  let drafted = 0, noEmail = 0;
+  for (const p of people) {
+    if (!p.email) { noEmail++; continue; }
+    const first = String(p.name || "").split(/\s+/)[0] || "there";
+    await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?) ON CONFLICT DO NOTHING`,
+      ["md_" + uuid().slice(0, 12), orgId, p.id, `vol:msg:${batch}:${p.id}`, subject, body.replace(/\{\{\s*first_name\s*\}\}/gi, first), who.id, who.name]);
+    drafted++;
+  }
+  res.json({ drafted, message: `${drafted} ${drafted === 1 ? "draft" : "drafts"} written${noEmail ? `; ${noEmail} with no email were left out` : ""}. Nothing is sent until you press Send in Schedule, To send.` });
+}));
+
+// Add or remove a tag on the people selected.
+app.post("/volunteer-hub/bulk/tag", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: "Name the tag." });
+  const people = await ownPeople(orgId, req.body?.personIds);
+  let n = 0;
+  for (const p of people) {
+    if (req.body?.remove === true) n += (await run(`DELETE FROM volunteer_qualifications WHERE org_id=? AND person_id=? AND kind='tag' AND lower(name)=lower(?)`, [orgId, p.id, name])).changes;
+    else n += (await query(`INSERT INTO volunteer_qualifications (id,org_id,person_id,kind,name,created_by,created_by_name) VALUES (?,?,?,'tag',?,?,?)
+                             ON CONFLICT DO NOTHING RETURNING id`, ["vq_" + uuid().slice(0, 10), orgId, p.id, name, who.id, who.name])).length;
+  }
+  res.json({ changed: n, message: req.body?.remove === true ? `${name} taken off ${n} ${n === 1 ? "person" : "people"}.` : `${name} added to ${n} ${n === 1 ? "person" : "people"}.` });
+}));
+
+// The default Volunteers group: by rule, everyone with a logged hour or an
+// approved application. Made the first time somebody opens Volunteers (a
+// POST from the screen, never a GET), once per org, and then it is an
+// ordinary Group: its page has the PARITY-1 giving figures, which is the
+// "volunteers who give" view.
+const VOLUNTEERS_GROUP = "Volunteers";
+app.post("/volunteer-hub/volunteers-group", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const find = () => query(`SELECT id FROM audiences WHERE org_id=? AND kind='dynamic' AND rules->>'volunteer' = '1' AND name=? LIMIT 1`, [orgId, VOLUNTEERS_GROUP]);
+  let [g] = await find();
+  if (!g && req.user.role !== COORD) {
+    await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
+               VALUES (?,?,?,?,?::jsonb,'dynamic',?::jsonb,?,?) ON CONFLICT DO NOTHING`,
+      ["grp_" + uuid().slice(0, 10), orgId, VOLUNTEERS_GROUP, "Everyone with a logged volunteer hour or an approved application. Kept by Steward.",
+       JSON.stringify({ mode: "group" }), JSON.stringify({ volunteer: "1" }), who.id || "system:volunteers-group", who.name || "Steward"]).catch(() => {});
+    [g] = await find();
+  }
+  res.json({ id: g ? g.id : null });
+}));
+
 app.get("/volunteer-hub/givers", requireAuth, wrap(async (req, res) => {
   // This view IS giving, so there is nothing to strip: a coordinator is
   // refused it, with the sentence that says why rather than an empty list

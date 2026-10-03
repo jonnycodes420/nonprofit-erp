@@ -874,6 +874,30 @@ const SOURCES = {
       };
     },
   },
+  // PARITY-3 Part 5 — the people in a group who have never given a gift: on
+  // the Volunteers group, the volunteers to think about asking. Each row is a
+  // person, with the volunteer hours they have given as its amount.
+  "group-never-gave": {
+    label: "Never given",
+    measure: () => "count",
+    amountKind: "hours",
+    params: { group: "id:required" },
+    sentence: () => "The people in this group with no gift on their record, refunds aside. The amount on each row is the volunteer hours they have given.",
+    sql: async (orgId, p) => {
+      const GR = require("./groups");
+      const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name,
+                     (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id) AS date,
+                     ROUND((SELECT COALESCE(SUM(v.hours), 0) FROM volunteer_shifts v WHERE v.org_id = d.org_id AND v.person_id = d.id)::numeric, 2) AS amount,
+                     'Volunteer hours' AS detail
+                FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})
+                 AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0)`,
+        args: [orgId, ...m.args],
+        order: "amount DESC NULLS LAST, name ASC, id",
+      };
+    },
+  },
   // `kind` is total (every gift, a refund taken off), count (how many gifts,
   // refunds are not gifts) or average (those gifts, added up and divided by
   // how many there are, to the cent). With no dates it is all time.

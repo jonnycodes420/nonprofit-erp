@@ -5686,6 +5686,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     await runTx(client, "UPDATE volunteer_shifts SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
     // FIX-1 C — the coordinator's notes follow the person the same way.
     await runTx(client, "UPDATE volunteer_notes SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
+    await runTx(client, "UPDATE volunteer_applications SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);   // PARITY-3
     // PARITY-3 — qualifications move too; one the primary already holds by
     // the same kind and name stays theirs, and the duplicate goes.
     await runTx(client, `DELETE FROM volunteer_qualifications sq WHERE sq.org_id=? AND sq.person_id=?

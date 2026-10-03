@@ -1585,7 +1585,9 @@ async function main() {
   // first Saturday has a waiting list for team lead, one is a draft, and one
   // volunteer is on two shifts that overlap: the conflict the screen counts.
   {
-    const SAT0 = (() => { let d = TODAY; for (let i = 0; i < 7; i++) { const w = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10))).getUTCDay(); if (w === 6 && d !== TODAY) break; d = dAdd(d, 1); } return d; })();
+    // This week's Saturday (today, when today is one), so the conflict and the
+    // short food drive count in "this week" on most days the demo is opened.
+    const SAT0 = (() => { let d = TODAY; for (let i = 0; i < 7; i++) { const w = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10))).getUTCDay(); if (w === 6) break; d = dAdd(d, 1); } return d; })();
     const TUE0 = dAdd(SAT0, 3);
     let rr = 0;
     const mkSlot = async (id, opp, date, s, e, { name = null, color = null, venue = null, place = null, published = true, roles = [] } = {}) => {
@@ -1638,6 +1640,72 @@ async function main() {
     await onRole("vsl_b72_fooddrive", fd["Sorters"], sat0Picker);
     await onRole("vsl_b72_fooddrive", fd["Sorters"], allVols[30]);
     console.log(`[seed] a month of shifts: 4 Saturdays, 4 Tuesdays and a food drive; one conflict (${sat0Picker}), a waiting list for team lead, a draft`);
+  }
+
+  // ── PARITY-3 Part 2 · THE RECRUITMENT PAGE AND SIX APPLICATIONS ────────
+  // The public volunteer page, written the way a coordinator would, with two
+  // photographs from the landing set (the potter's hands and the museum
+  // students, both cleared in client/public/ASSETS.md) and a video; four
+  // questions, one of them a waiver upload; and six people waiting for a
+  // decision, one of whom already gives (approving them must not make a
+  // second record). Plus the default Volunteers group, by rule.
+  {
+    const crypto = require("crypto"), fs = require("fs"), path = require("path");
+    const photo = async name => {
+      const buf = fs.readFileSync(path.join(__dirname, "..", "client", "public", "photos", name));
+      const id = "pa_" + crypto.createHash("sha256").update(ORG + "|volpage|" + name).digest("hex").slice(0, 24);
+      await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'volpage','image/webp',$3,'db',$4)
+               ON CONFLICT (id) DO NOTHING`, [id, ORG, buf.length, buf.toString("base64")]);
+      return `/portal-assets/${id}`;
+    };
+    const hands = await photo("potter-2x.webp"), students = await photo("museum-2x.webp");
+    const body = `<h2>Why volunteer with us</h2><p>Harborlight runs on people who give a Saturday morning or a Tuesday afternoon. Our young people notice who turns up, and they remember.</p>`
+      + `<img src="${students}" alt="Students on a museum trip">`
+      + `<h2>What you could do</h2><ul><li><strong>Shoreline clean-ups</strong>, three hours on Pier 4 with gloves and a flask.</li>`
+      + `<li><strong>After-school tutoring</strong>, an hour a week with the same young person.</li><li><strong>Gala night crew</strong>, once a year, and the best party in town.</li></ul>`
+      + `<img src="${hands}" alt="Hands shaping a clay pot">`
+      + `<h3>Hear it from a volunteer</h3><iframe src="https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ"></iframe>`
+      + `<p>No experience needed. We train everyone, and tutoring volunteers have a background check, which we arrange and pay for.</p>`;
+    const QS = [
+      { id: "why", label: "What draws you to Harborlight?", type: "text", required: true, options: [] },
+      { id: "before", label: "Have you volunteered with young people before?", type: "yesno", required: true, options: [] },
+      { id: "interest", label: "Which would you most like to do?", type: "choice", required: false, options: ["Shoreline clean-ups", "After-school tutoring", "Gala night crew"] },
+      { id: "waiver", label: "Your signed waiver, if you have it", type: "file", required: false, options: [] },
+    ];
+    await q(`INSERT INTO volunteer_recruitment (org_id,title,body_html,questions,published,updated_by,updated_by_name)
+             VALUES ($1,'Volunteer at Harborlight',$2,$3::jsonb,TRUE,'u_b72demo','Dana Reyes')`, [ORG, body, JSON.stringify(QS)]);
+    const [giver] = await q(`SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0 AND email IS NOT NULL AND email <> ''
+                               AND NOT (person_types @> '["volunteer"]'::jsonb) ORDER BY total_giving DESC OFFSET 40 LIMIT 1`, [ORG]);
+    const APPS = [
+      ["Rosalind Ashbury", "Saturdays", "Shoreline clean-ups", true, "I walk my dog on Pier 4 every morning and I am tired of the litter."],
+      ["Theo Marchetti", "Weekday afternoons", "After-school tutoring", true, "I teach maths part time and would like to give an hour a week."],
+      ["Imogen Calloway", "Weekday evenings", "Gala night crew", false, "My daughter came to your summer camp and loved it."],
+      ["Benedict Okafor", "Saturdays", "Shoreline clean-ups", false, "Our company gives us two volunteering days a year."],
+      ["Wilhelmina Strand", "Weekday afternoons", "After-school tutoring", true, "Retired teacher. Happy to help with reading."],
+    ];
+    let na = 0;
+    const app = async (name, email, avail, interest, before, why, daysAgo) => {
+      na++;
+      const answers = [
+        { questionId: "why", question: QS[0].label, type: "text", answer: why, answerText: why },
+        { questionId: "before", question: QS[1].label, type: "yesno", answer: before, answerText: before ? "Yes" : "No" },
+        { questionId: "interest", question: QS[2].label, type: "choice", answer: interest, answerText: interest },
+        { questionId: "waiver", question: QS[3].label, type: "file", answer: null, answerText: "" },
+      ];
+      await q(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,submitted_at,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,NOW() - ($8 || ' days')::interval,'system:volunteer-apply','The volunteer, from the application form')`,
+        [`vap_b72_${na}`, ORG, name, email, `555-02${String(10 + na)}`, JSON.stringify(answers), JSON.stringify([avail]), String(daysAgo)]);
+    };
+    for (const [i, [name, avail, interest, before, why]] of APPS.entries()) {
+      if (!takeName(name)) throw new Error(`[seed] the applicant "${name}" has the same name as somebody already in the file.`);
+      const [first, last] = name.toLowerCase().split(" ");
+      await app(name, `${first}.${last}@example.org`, avail, interest, before, why, i + 1);
+    }
+    if (giver) await app(giver.name, giver.email, "Sundays", "Gala night crew", false, "I have given for years and would like to help on the night too.", 2);
+    await q(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
+             VALUES ('grp_b72_volunteers',$1,'Volunteers','Everyone with a logged volunteer hour or an approved application. Kept by Steward.','{"mode":"group"}'::jsonb,'dynamic','{"volunteer":"1"}'::jsonb,'u_b72demo','Dana Reyes')
+             ON CONFLICT DO NOTHING`, [ORG]);
+    console.log(`[seed] recruitment page with two photos and a video; ${na} pending applications (${giver ? giver.name + " already gives" : "none already on file"}); the Volunteers group`);
   }
 
   const [volCount] = await q(
