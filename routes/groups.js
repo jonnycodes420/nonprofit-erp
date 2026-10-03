@@ -50,6 +50,12 @@ function validate(b, { partial = false, kind = null } = {}) {
   return { ok: errors.length === 0, errors, value: out };
 }
 
+// FIX-21: how long the route took on the server, so a timing taken from a
+// browser can be split into the network and the work (Server-Timing header).
+function serverTiming(res, t0) {
+  res.set("Server-Timing", `app;dur=${(performance.now() - t0).toFixed(1)}`);
+}
+
 async function orgOf(orgId) {
   const [o] = await query("SELECT timezone, vocabulary_json FROM orgs WHERE id=?", [orgId]);
   return o || {};
@@ -58,9 +64,11 @@ async function orgOf(orgId) {
 // GET /groups, the list. FIX-21: every group's count in ONE statement
 // (groups.js memberCounts), not one read per group.
 app.get("/groups", requireAuth, wrap(async (req, res) => {
+  const t0 = performance.now();
   const orgId = req.user.orgId;
   const groups = await GR.listGroups(orgId);
   const counts = await GR.memberCounts(orgId, groups);
+  serverTiming(res, t0);
   res.json({
     groups: groups.map((g, i) => ({ ...g, count: counts[i],
       countSource: { key: "group-members", params: { group: g.id } } })),
@@ -115,6 +123,7 @@ app.delete("/groups/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
 
 // GET /groups/:id — the page. A GET, and it writes nothing.
 app.get("/groups/:id", requireAuth, wrap(async (req, res) => {
+  const t0 = performance.now();
   const orgId = req.user.orgId;
   const g = await GR.groupById(orgId, req.params.id);
   if (!g) return res.status(404).json({ error: "Not found" });
@@ -168,6 +177,7 @@ app.get("/groups/:id", requireAuth, wrap(async (req, res) => {
   ]);
   figures.forEach((f, i) => Object.assign(f, values[i], { sentence: sentences[i] }));
   months.forEach((mo, i) => { mo.value = values[figures.length + i].value; });
+  serverTiming(res, t0);
   res.json({
     group: g, figures, months,
     monthsSentence: "What the people in this group gave each month, refunds taken off. Each month opens its gifts.",
