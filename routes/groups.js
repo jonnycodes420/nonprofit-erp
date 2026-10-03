@@ -243,8 +243,7 @@ app.get("/donors/:id/groups", requireAuth, wrap(async (req, res) => {
   const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const all = await GR.listGroups(orgId);
-  const inIds = new Set();
-  for (const g of all) if (await GR.isMember(orgId, g, d.id)) inIds.add(g.id);
+  const inIds = new Set((await GR.groupsFor(orgId, d.id, all)).map(g => g.id));
   res.json({
     groups: all.filter(g => inIds.has(g.id)),
     canJoin: all.filter(g => g.kind === "static" && !inIds.has(g.id)).map(g => ({ id: g.id, name: g.name })),

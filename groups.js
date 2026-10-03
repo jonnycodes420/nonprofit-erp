@@ -296,10 +296,20 @@ async function isMember(orgId, group, donorId) {
   return rows.length > 0;
 }
 // Every group this person is in right now, static and by rule.
-async function groupsFor(orgId, donorId) {
-  const out = [];
-  for (const g of await listGroups(orgId)) if (await isMember(orgId, g, donorId)) out.push(g);
-  return out;
+// FIX-22 · in ONE statement, one EXISTS column per group (it was one query per
+// group: on prod each costs a ~65ms round trip, so 12 groups were most of a
+// second). The same memberSql rows isMember reads, so the answers agree.
+async function membershipFlags(orgId, groups, donorId) {
+  if (!groups.length) return [];
+  const ms = await Promise.all(groups.map(g => memberSql(orgId, g)));
+  const cols = ms.map((m, i) => `EXISTS (SELECT 1 FROM (${m.sql}) g${i} WHERE g${i}.id = ?) AS in${i}`);
+  const [row] = await query(`SELECT ${cols.join(", ")}`, ms.flatMap(m => [...m.args, donorId]));
+  return ms.map((_, i) => !!(row && row[`in${i}`]));
+}
+async function groupsFor(orgId, donorId, groups) {
+  const all = groups || await listGroups(orgId);
+  const flags = await membershipFlags(orgId, all, donorId);
+  return all.filter((_, i) => flags[i]);
 }
 
 // ── "JOINS A GROUP" FOR A GROUP BY RULE ─────────────────────────────────────
