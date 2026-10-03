@@ -598,7 +598,7 @@ const SOURCES = {
   // these rows are one computation (a part is a reason's key).
   why: {
     label: "Why",
-    measure: p => (["retention", "volunteers", "stopped"].includes(p.q) ? "count" : "sum"),
+    measure: p => (["retention", "volunteers", "stopped", "more"].includes(p.q) ? "count" : "sum"),
     params: { q: "word:required", part: "word:required", campaign: "id", donor: "id", user: "id" },
     sentence: p => ({
       appeal: "Each person behind this part of the difference between the two campaigns, with the dollars they moved it by.",
@@ -608,6 +608,7 @@ const SOURCES = {
       lapse: "Each donor past their own usual gap between gifts, with their usual gift.",
       volunteers: "Each volunteer with hours on file and no gift ever.",
       second: "Each first-time donor from the last 90 days with no second gift and no call logged, with their first gift.",
+      more: "Each person whose own file, or a screening file, shows room to give more, with what they gave in the last twelve months.",
     }[p.q] || "The rows behind this reason."),
     js: async (orgId, p, deps) => {
       const a = await require("./why").answer(orgId, p.q, { campaign: p.campaign, donor: p.donor, user: p.user }, deps || {});

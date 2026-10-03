@@ -48,7 +48,9 @@ const DELETE_BY_DONOR = ["interactions", "threads", "thank_you_drafts", "milesto
   "moves", "custom_field_values", "donor_materials", "campaign_recipients", "email_marketing_activity", "tasks",
   "tribute_notices", "opportunities", "planned_gifts", "donor_designations", "cultivation_plans", "reconnect_sends",
   "sequence_enrollments", "sequence_sends", "gift_duplicate_questions", "import_merges", "donor_account_links",
-  "portal_audit_log"];
+  "portal_audit_log",
+  // PROSPECT-1 — screening results and a public filing looked up for them.
+  "screening_results", "public_filings"];
 
 async function exportPerson(orgId, donorId) {
   const one = async (sql, args) => { try { return await query(sql, args); } catch (e) { if (/does not exist/.test(e.message)) return []; throw e; } };
@@ -69,6 +71,10 @@ async function exportPerson(orgId, donorId) {
                          LEFT JOIN events e ON e.id=a.event_id WHERE a.org_id=? AND a.donor_id=?`, [orgId, donorId]),
     volunteerHours: await one(`SELECT id, date, hours, note FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, donorId]),
     customFields: await one(`SELECT field_id, value FROM custom_field_values WHERE org_id=? AND donor_id=?`, [orgId, donorId]),
+    // PROSPECT-1 — what a screening provider returned about them, with the
+    // provider and the date, so a request for their data covers it.
+    screeningResults: await one(`SELECT provider, screened_on, capacity_low_cents, capacity_high_cents, real_estate_low_cents, real_estate_high_cents,
+                                   other_gifts, foundation_ties, business_affiliations, created_at FROM screening_results WHERE org_id=? AND donor_id=? ORDER BY screened_on`, [orgId, donorId]),
     relationships: await one(`SELECT id, donor_id_a, donor_id_b, relationship, notes FROM donor_relationships WHERE org_id=? AND (donor_id_a=? OR donor_id_b=?)`, [orgId, donorId, donorId]),
     optOuts: {
       flags: { do_not_contact: donor.do_not_contact, do_not_solicit: donor.do_not_solicit, do_not_mail: donor.do_not_mail, do_not_email: donor.do_not_email },

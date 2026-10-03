@@ -63,7 +63,8 @@ const MERGE_REFS = [
   ["opportunities", "donor_id", "refuse"], ["payment_recovery_events", "donor_id"], ["peer_fundraisers", "person_id"],
   ["planned_gifts", "donor_id"], ["pledges", "donor_id"], ["portal_audit_log", "donor_id"], ["pos_sales", "person_id"],
   ["receipts", "donor_id", "refuse"], ["reconnect_sends", "donor_id"], ["recurring_change_log", "donor_id"],
-  ["recurring_proposals", "donor_id"], ["recurring_subscriptions", "donor_id"], ["sequence_enrollments", "donor_id"],
+  ["public_filings", "donor_id"], ["recurring_proposals", "donor_id"], ["recurring_subscriptions", "donor_id"],
+  ["screening_results", "donor_id"], ["sequence_enrollments", "donor_id"],
   ["sequence_sends", "donor_id"], ["supporter_links", "person_id"], ["supporter_sessions", "person_id"],
   ["survey_responses", "donor_id"], ["tasks", "donor_id"], ["thank_you_drafts", "donor_id"], ["threads", "donor_id"],
   ["tribute_notices", "donor_id"], ["video_thanks", "donor_id"], ["volunteer_applications", "person_id"],
@@ -77,7 +78,7 @@ const NOT_MOVED = {
   "donors.external_donor_id": "the person's id in the system they came from, a value not a pointer; it is a field the merge screen offers",
 };
 // Tables with no `id` column: a row is found by these columns plus the pointer.
-const KEY_COLS = { donor_scores: [], group_members: ["group_id"], group_sweep_seen: ["group_id"] };
+const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"] };
 const REFUSE_WORDS = {
   memberships: "Both people have a current membership. End one of them on the person's record, then merge.",
   receipts: "Both people have a year-end statement for the same year. Void one, then merge.",

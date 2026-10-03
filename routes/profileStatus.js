@@ -144,7 +144,7 @@ async function highlights(orgId, d, today, w) {
 
 // The next action, in one line, from the same facts WHY-1's journey suggestion
 // reads, and the suggested ask from ENGAGE-1 (engagement.suggestedAsk).
-async function nextAction(orgId, d, today, status, glanceLast) {
+async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = false) {
   const [[thread], [sub], [score], [unthanked]] = await Promise.all([
     query(`SELECT next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL LIMIT 1`, [orgId, d.id]),
     query(`SELECT 1 AS y FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered') LIMIT 1`, [orgId, d.id]),
@@ -165,10 +165,13 @@ async function nextAction(orgId, d, today, status, glanceLast) {
   else if (giftCount >= 2) { step = "ask about monthly giving"; why = "They have given more than once and do not give monthly yet."; }
   else if (giftCount === 1) { step = "ask for a second gift"; why = "They have given once."; }
   else { step = "get to know them"; why = "They have not given yet."; }
-  const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id) : null;
+  // PROSPECT-1 — screening results move the ask only for a viewer who may see them.
+  const P = require("../prospect");
+  const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id,
+    viewerMaySee ? { screening: (await P.latestScreening(orgId, [d.id])).get(d.id) || null } : {}) : null;
   const said = String(step).trim().replace(/[.!?]+$/, "");
   const text = `Next: ${said}.` + (ask ? ` Suggested ask: ${DS.dollars(ask.askCents)}.` : "");
-  return { step, text, why, ask: ask ? { cents: ask.askCents, sentence: ask.sentence } : null };
+  return { step, text, why, ask: ask ? { cents: ask.askCents, sentence: ask.sentence, screening: !!ask.screening } : null };
 }
 
 app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
@@ -190,7 +193,7 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const [hl, close, next] = await Promise.all([
     highlights(orgId, d, today, w),
     closeness(orgId, d, today, w),
-    nextAction(orgId, d, today, status, latest.value),
+    nextAction(orgId, d, today, status, latest.value, await require("../prospect").canSee(req.user.userId)),
   ]);
   // PARITY-3 — one plain line for a volunteer: "44 hours since 2023, last
   // served May 22", opening the shifts it adds up.

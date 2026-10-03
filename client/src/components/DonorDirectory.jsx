@@ -14,6 +14,8 @@ import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
+import { useCanMajorGifts, ROOM_LABEL, ROOM_RANK } from "../lib/majorGifts";
+import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -48,6 +50,7 @@ const stageChip=s=>s&&s.id==="lapsed"?{background:T.gold100,color:T.gold700}:{ba
 // string literal), so the definition BUILD-100 wrote reached exactly one tile
 // — the one this build then took off the screen.
 const GIVING_STRENGTH_LABEL = "Giving strength";
+const ROOM_HEAD = "Room to give";   // PROSPECT-1
 // ENGAGE-1 — the stored engagement score and its band.
 const ENGAGEMENT_LABEL = "Engagement";
 // FIX-10 F — THE SOURCE STRING WAS ALREADY RIGHT; THE CSS WAS SHOUTING IT.
@@ -237,6 +240,17 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   const [busy,setBusy]=useState(false);
   const [toast,setToast]=useState("");
   const [exporting,setExporting]=useState(false);
+  // PROSPECT-1 — Room to give as a column, the screening file and the
+  // screening results. Admins and the major gifts permission only; the
+  // routes refuse anyone else.
+  const canMajorGifts=useCanMajorGifts();
+  const [room,setRoom]=useState(null);           // {[donorId]:{word,label,rank}}
+  const [roomSort,setRoomSort]=useState(false);
+  const [screenFor,setScreenFor]=useState(null); // {donorIds} for the file preview
+  const [screenImport,setScreenImport]=useState(false);
+  const [includeScreening,setIncludeScreening]=useState(false);
+  const loadRoom=()=>apiFetch("/prospects/room-to-give").then(r=>setRoom((r&&r.donors)||{})).catch(()=>setRoom({}));
+  useEffect(()=>{if(canMajorGifts)loadRoom();},[canMajorGifts]);
   // Persisted across the session, not just this mount — a compact preference
   // shouldn't reset every time you navigate away from Directory and back.
   const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
@@ -261,6 +275,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     try{
       const qs=new URLSearchParams();
       Object.entries(exportParams||{}).forEach(([k,v])=>{if(v)qs.set(k,v);});
+      // PROSPECT-1 — never in the default file; an admin adds it on purpose.
+      if(isAdmin&&includeScreening)qs.set("includeScreening","1");
       const res=await fetch(`${API}/donors/export/csv?${qs.toString()}`,{headers:{Authorization:`Bearer ${getToken()}`}});
       if(!res.ok){
         // BUILD-79 Part 7.4 — "Export failed: Export failed" was an error whose
@@ -281,6 +297,10 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   }
 
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
+  // Strong, then Some, then Not yet known, within the rows loaded; the
+  // server's own order breaks ties.
+  const roomOf=id=>(room&&room[id])||null;
+  const shownRows=roomSort&&room?filtered.map((d,i)=>[d,i]).sort((a,b)=>((roomOf(b[0].id)||{}).rank??ROOM_RANK.unknown)-((roomOf(a[0].id)||{}).rank??ROOM_RANK.unknown)||a[1]-b[1]).map(x=>x[0]):filtered;
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
   const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
 
@@ -347,7 +367,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   const showPortfolios=officers.length>1; // single-user shop: no color clutter at all
 
   const filterSel={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"};
-  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 88px 60px"+(isAdmin?" 80px":"");
+  const colGrid="36px minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 120px 110px 88px 60px"+(canMajorGifts?" 104px":"")+(isAdmin?" 80px":"");
   const dropItem={display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"9px 14px",fontSize:13,color:T.ink,cursor:"pointer",borderBottom:"1px solid "+T.bg2,fontFamily:"'DM Sans',system-ui,sans-serif"};
 
   if(totalDonors===0&&!hasSampleData){
@@ -437,6 +457,19 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:serverTotal===0?T.ink3:T.ink,fontSize:12,fontWeight:600,cursor:exporting||serverTotal===0?"not-allowed":"pointer"}}>
           {exporting?"Exporting…":"Export CSV"}
         </button>
+        {isAdmin&&canMajorGifts&&<label data-testid="dir-export-screening" title="Adds the screening provider, the date screened, the capacity range and the real estate range" style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:T.ink3,cursor:"pointer"}}>
+          <input type="checkbox" checked={includeScreening} onChange={e=>setIncludeScreening(e.target.checked)} style={{accentColor:T.greenDk}}/>
+          Include screening results (adds provider, date, capacity range and real estate range)
+        </label>}
+        {canMajorGifts&&<button data-testid="dir-screening-group" onClick={()=>setScreenFor({donorIds:[]})}
+          title="A saved group, in the layout screening providers take"
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          Prepare a screening file
+        </button>}
+        {canMajorGifts&&!isReadOnly&&<button data-testid="dir-screening-import" onClick={()=>setScreenImport(true)}
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          Bring in screening results
+        </button>}
         <div style={{display:"flex",background:T.bg,borderRadius:99,padding:2,border:"1px solid "+T.bg3}}>
           {[["comfortable","Comfortable"],["compact","Compact"]].map(([v,l])=>(
             <button key={v} onClick={()=>setDensity(v)} title={l+" row spacing"}
@@ -488,6 +521,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           {!isReadOnly&&<button onClick={()=>setPlanSel(selFiltered)} disabled={busy}
             style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
             Plan a follow-up
+          </button>}
+
+          {/* PROSPECT-1 — the ticked people, in the layout screening providers take. */}
+          {canMajorGifts&&<button data-testid="dir-screening-file" onClick={()=>setScreenFor({donorIds:selFiltered.map(d=>d.id)})} disabled={busy}
+            style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+            Prepare a screening file
           </button>}
 
           {/* PARITY-1 Part D — put the ticked people in a group kept by hand. */}
@@ -560,6 +599,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
       {/* BUILD-85 — the selection being planned. On success the selection is
           cleared: the twenty you just planned are no longer the twenty you are
           about to act on, and leaving them checked invites a second plan. */}
+      {screenFor&&<ScreeningFileModal who={screenFor} onClose={()=>setScreenFor(null)}/>}
+      {screenImport&&<ScreeningImportModal onClose={()=>setScreenImport(false)} onDone={()=>loadRoom()}/>}
       {planSel&&<PlanFollowUpModal donors={planSel}
         onSaved={()=>{setSelIds(new Set());}} onClose={()=>setPlanSel(null)}/>}
 
@@ -580,8 +621,14 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last gift",ENGAGEMENT_LABEL,GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
-              .map((h,i)=>(
+            {["Donor","Stage","Owner","Lifetime","Last gift",ENGAGEMENT_LABEL,GIVING_STRENGTH_LABEL,...(canMajorGifts?[ROOM_HEAD]:[]),...(isAdmin?[""]:[])]
+              .map((h,i)=>h===ROOM_HEAD?(
+                <button key={i} type="button" data-testid="dir-room-sort" aria-pressed={roomSort} onClick={()=>setRoomSort(v=>!v)}
+                  title={roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"}
+                  style={{...HEAD,color:roomSort?T.greenDk:T.ink3,textAlign:"right",background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",textDecoration:roomSort?"underline":"none"}}>
+                  Room to give{roomSort?" ↓":""}
+                </button>
+              ):(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
                   style={{...HEAD,color:T.ink3,textAlign:i>=3?"right":"left"}}>
                   {h}
@@ -591,7 +638,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
               ))}
           </div>
           {/* Rows */}
-          {filtered.map((d,idx)=>{
+          {shownRows.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
             const sc=donorScore(d);const scColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
             const isLast=idx===filtered.length-1;
@@ -656,6 +703,9 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                     :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>—</span>}
                 </div>
+                {canMajorGifts&&<div data-testid="dir-room" data-room-word={(roomOf(d.id)||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
+                  {room?((roomOf(d.id)||{}).label||ROOM_LABEL.unknown):""}
+                </div>}
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
                   {/* Reassigning the owner is Team (server 403s for Core). */}
                   {teamPortfolios&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}

@@ -6781,6 +6781,59 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_reason TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_at TIMESTAMPTZ`);
 
+  // ── PROSPECT-1 · ROOM TO GIVE ────────────────────────────────────────────
+  // Who may see it: admins always, and staff an admin has given the major
+  // gifts permission. Read live on every request (prospect.js), never from the JWT.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS can_major_gifts BOOLEAN NOT NULL DEFAULT false`);
+  // A screening file a provider returned, and what came back for each person
+  // it matched. Stored as the provider wrote it (ranges, never one number),
+  // with the provider's name and the date it was screened.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS screening_imports (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      provider TEXT NOT NULL,
+      screened_on TEXT NOT NULL,
+      filename TEXT,
+      rows_in INTEGER NOT NULL DEFAULT 0,
+      matched INTEGER NOT NULL DEFAULT 0,
+      unmatched JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS screening_results (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      import_id TEXT REFERENCES screening_imports(id) ON DELETE SET NULL,
+      provider TEXT NOT NULL,
+      screened_on TEXT NOT NULL,
+      capacity_low_cents BIGINT, capacity_high_cents BIGINT,
+      real_estate_low_cents BIGINT, real_estate_high_cents BIGINT,
+      other_gifts TEXT, foundation_ties TEXT, business_affiliations TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_screening_results_donor ON screening_results (org_id, donor_id, created_at DESC)`);
+  // A public filing for an organisation with an EIN, as last looked up (cache:
+  // a person presses the button; a page render never calls out).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public_filings (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      ein TEXT NOT NULL,
+      name TEXT,
+      total_assets_cents BIGINT, grants_paid_cents BIGINT,
+      tax_year INTEGER, form TEXT, filing_url TEXT, source_url TEXT,
+      found BOOLEAN NOT NULL DEFAULT true,
+      fetched_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      PRIMARY KEY (org_id, donor_id)
+    )`);
+  // A file only major gifts staff may open (a prospect brief).
+  await pool.query(`ALTER TABLE donor_materials ADD COLUMN IF NOT EXISTS major_gifts_only BOOLEAN NOT NULL DEFAULT false`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

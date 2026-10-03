@@ -24,6 +24,7 @@
 //                   exclusion column goes to the flag family and can never be
 //                   a custom field — BUILD-78's ask gate)
 //   onChange(value) · onCreateField({label,type,entity}) → Promise<def>
+//   allowNew        false hides "New custom field" (the screening mapper)
 import { useState } from "react";
 import { T } from "./shared";
 import { CF_TYPES } from "../../../shared/customFieldShape";
@@ -33,6 +34,10 @@ export function ColumnTargetSelect({
   header, standardFields = [], cfDefs = { donor: [], gift: [] }, entity = "donor",
   value = "ignore", takenStd = null, locked = null, evidence = "", proposal = null,
   onChange, onCreateField, disabled = false, compact = false, testId,
+  // PROSPECT-1: screening results must never become an ordinary custom field
+  // (that would put them where every staff user can read them), so the
+  // screening mapper turns the new-field option off.
+  allowNew = true,
 }) {
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -96,7 +101,7 @@ export function ColumnTargetSelect({
           </optgroup>
         )}
         <optgroup label="—">
-          <option value="__new__">＋ New custom field…</option>
+          {allowNew && <option value="__new__">＋ New custom field…</option>}
           <option value="ignore">Don't import this column</option>
         </optgroup>
       </select>

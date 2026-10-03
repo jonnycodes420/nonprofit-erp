@@ -210,3 +210,34 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - `PUT /gifts/:id`, `DELETE /gifts/:id` — inline gift editing/deletion. DELETE handles the gift's legal/financial references deliberately (2026-07-16, was an unhandled FK violation): an **active tax receipt blocks deletion with 409** `receipt_active` ("void the receipt first" — receipts are legal artifacts, silent cascade is wrong); voided receipts get `gift_id` NULLed (their frozen `snapshot`/`pdf_data` record survives); a pledge fulfilled by the gift is reopened (`status='open'`, fulfilled fields cleared). All in one transaction before the delete + donor recalc.
 - `GET/POST /donors/:id/planned-gifts`, `PUT/DELETE /planned-gifts/:id` — planned giving CRUD
 - `GET/POST /donors/:id/materials`, `DELETE /materials/:id` — donor materials CRUD
+
+## Room to give (PROSPECT-1)
+
+- **Room to give is a WORD and its reasons, never a meter or a number Steward made up.** `shared/roomToGive.js`
+  is the one rule; `prospect.js` reads the rows for it; the profile rail, the Donors column, the eighth Ask why
+  question, the brief and the seed check all call it. Word for word:
+  Their own file gives up to nine signals: a gift at least three times their usual (median) gift, with three or
+  more gifts on file; giving up in each of the last three twelve-month periods; generosity 80 or more; engagement
+  Close (67 or more); a monthly gift plus a one-time gift in the last twelve months; gifts to two or more funds or
+  campaigns; an event or volunteer hours on file; a gift through a donor-advised fund; a gift matched by an
+  employer. **Strong**: three or more signals, one of them the large gift or the rising trend; or a screening file
+  whose capacity range starts at five times or more what they gave in the last twelve months. **Some**: at least
+  one signal (giving down three years running holds a Strong back to Some). **Not yet known**: no gifts and no
+  signal, or no signal at all.
+- **A screening result is stored as the provider wrote it: ranges, with the provider's name and the date.** Never
+  one net worth, never a model's estimate. One provider's latest per person; a re-run replaces it. A returned row
+  matches ONE person (the Steward ID sent out, an email that is exactly one person's, or the full name with the
+  ZIP when exactly one person has both) or it is listed as unmatched. Never guessed.
+- **Who sees it: admins, and staff an admin gives the major gifts permission (`users.can_major_gifts`).**
+  `prospect.canSee` reads the live row on every request, never the JWT. Never on the donor portal, never in a
+  default CSV export (an admin can add it with the checkbox that names what it adds), never in a material a
+  staff member without the permission can list. The person export includes it and erase removes it.
+- **The screening file never leaves by itself.** A staff member downloads it and gives it to the provider. The
+  file carries the Steward ID, the name split in two, the mailing address, the email and the spouse's name, and
+  nothing else. Organisations and erased people are never in it.
+- **A public filing is looked up when a person presses the button, never on a page render, and cached a day.**
+  ProPublica Nonprofit Explorer, no key. Grants paid is a 990-PF line; on a regular 990 it stays unknown, not
+  zero. A TEST_MODE server reads `tests/fixtures/propublica/<ein>.json`, so no test reaches the network.
+- **The prospect brief is assembled from rows, not written by a model.** Steward's record, the screening results
+  and the public filing; every line names its source and a "Not known" list says what none of them holds. It is
+  saved to the person's files as `major_gifts_only` and never sent.

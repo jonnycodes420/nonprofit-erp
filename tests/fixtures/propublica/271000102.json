@@ -1,0 +1,10 @@
+{
+  "_note": "PROSPECT-1 test fixture in the shape of ProPublica Nonprofit Explorer API v2 GET /organizations/:ein.json. A made-up public charity for the Harborlight demo; not a real filing.",
+  "organization": { "ein": 271000102, "name": "NORTH SHORE HARBOR TRUST", "city": "PORTLAND", "state": "ME" },
+  "filings_with_data": [
+    { "tax_prd": 202406, "tax_prd_yr": 2023, "formtype": 0, "pdf_url": "https://projects.propublica.org/nonprofits/organizations/271000102", "totassetsend": 1290400 }
+  ],
+  "filings_without_data": [],
+  "data_source": "fixture",
+  "api_version": 2
+}

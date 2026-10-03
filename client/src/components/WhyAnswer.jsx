@@ -37,7 +37,7 @@ async function takePlan(step) {
   for (const it of step.items || []) {
     try {
       await apiFetch(`/donors/${it.donorId}/threads`, { method: "POST",
-        body: JSON.stringify({ label: it.label, due: step.due, ...(it.ownerId ? { ownerId: it.ownerId } : {}) }) });
+        body: JSON.stringify({ label: it.label, due: step.due || addDays(step.dueIn || 1), ...(it.ownerId ? { ownerId: it.ownerId } : {}) }) });
       planned++;
     } catch (e) {
       if (e && (e.status === 409 || /thread_open|already has an open/i.test(String(e.message || "")))) already++;
@@ -57,6 +57,52 @@ async function takeJourney(step) {
   return `${j.name} started for ${r.started === 1 ? "one person" : `${r.started} people`}${r.skipped ? `; ${r.skipped} already had a journey running` : ""}. Each step lands on the Thread the day it is due. Nothing was sent.`;
 }
 
+// PROSPECT-1 — "Who could give more?": each person's own steps. Each plans
+// one Thread step or starts one journey for one person; nothing is sent.
+function addDays(n) {
+  const d = new Date(); d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function MoreSteps({ w, isReadOnly, onStepTaken }) {
+  const [busy, setBusy] = useState("");
+  const [done, setDone] = useState("");
+  const [err, setErr] = useState("");
+  const [askOpen, setAskOpen] = useState(false);
+  if (isReadOnly) return null;
+  const run = async (kind, fn) => {
+    setBusy(kind); setErr("");
+    try { setDone(await fn()); onStepTaken && onStepTaken(); }
+    catch (e) { setErr(errorMessage(e, "That step could not be planned.")); }
+    finally { setBusy(""); }
+  };
+  const plan = async (label, dueIn) => {
+    const one = await takePlan({ dueIn, due: addDays(dueIn), items: [{ donorId: w.donorId, name: w.name, label, ...(w.knows && w.knows.userId ? { ownerId: w.knows.userId } : {}) }] });
+    return one;
+  };
+  const SMALL = { ...CHIP, padding: "4px 10px", fontSize: 12 };
+  if (done) return <div data-testid="why-more-done" style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 600, marginTop: 4 }}>{done}</div>;
+  return (
+    <div style={{ marginTop: 6 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        <button type="button" data-testid="why-more-visit" style={SMALL} disabled={!!busy} onClick={() => run("visit", () => plan("Visit", 7))}>{busy === "visit" ? "Planning…" : "Plan a visit"}</button>
+        <button type="button" data-testid="why-more-journey" style={SMALL} disabled={!!busy}
+          onClick={() => run("journey", () => takeJourney({ preset: "major_donor", donorIds: [w.donorId], fallback: { dueIn: 7, due: addDays(7), items: [{ donorId: w.donorId, name: w.name, label: "Visit", ...(w.knows && w.knows.userId ? { ownerId: w.knows.userId } : {}) }] } }))}>
+          {busy === "journey" ? "Starting…" : "Start the Major donor journey"}
+        </button>
+        {w.ask && <button type="button" data-testid="why-more-ask" style={SMALL} disabled={!!busy} onClick={() => setAskOpen(o => !o)}>Set the ask</button>}
+      </div>
+      {askOpen && w.ask && <div data-testid="why-more-ask-panel" style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.5, marginTop: 6, background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
+        {w.ask.sentence}
+        <div style={{ marginTop: 6 }}>
+          <button type="button" data-testid="why-more-ask-plan" style={{ ...BTN, padding: "6px 12px", fontSize: 12.5 }} disabled={!!busy}
+            onClick={() => run("ask", () => plan(`Make the ask: ${fmtFull(w.ask.cents / 100)}`, 14))}>{busy === "ask" ? "Planning…" : `Plan the ask of ${fmtFull(w.ask.cents / 100)}`}</button>
+        </div>
+      </div>}
+      {err && <div style={{ fontSize: 12.5, color: T.ink2, marginTop: 4 }}>{err}</div>}
+    </div>
+  );
+}
+
 export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
@@ -66,13 +112,14 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
   if (!answer) return null;
   if (!answer.answered) return <div data-testid="why-cant" style={{ fontSize: 15, color: T.ink2, lineHeight: 1.55 }}>{answer.sentence}</div>;
   const step = answer.step;
-  const take = async () => {
-    if (step.kind === "log") { setLogFor({ id: step.donorId, name: step.name }); return; }
+  const take = async (st = step) => {
+    if (st.kind === "log") { setLogFor({ id: st.donorId, name: st.name }); return; }
     setBusy(true); setErr("");
-    try { setDone(step.kind === "journey" ? await takeJourney(step) : await takePlan(step)); onStepTaken && onStepTaken(); }
+    try { setDone(st.kind === "journey" ? await takeJourney(st) : await takePlan(st)); onStepTaken && onStepTaken(); }
     catch (e) { setErr(errorMessage(e, "That step could not be planned.")); }
     finally { setBusy(false); }
   };
+  const isMore = answer.question && answer.question.key === "more";
   const money = answer.reasons.some(r => r.measure !== "count");
   return (
     <div data-testid="why-answer" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -106,14 +153,22 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
               <DonorLink id={w.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{w.name}</DonorLink>
               {w.cents != null && <span style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }}>{fmtFull(w.cents / 100)}</span>}
             </div>
-            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{w.reason}{w.knows ? ` ${w.knows.name} ${w.knows.why}.` : ""}</div>
+            {isMore && w.label && <div data-why-room={w.word} style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, marginTop: 2 }}>Room to give: {w.label}</div>}
+            {isMore && (w.reasons || []).length > 0
+              ? <ul style={{ margin: "2px 0 0", paddingLeft: 18, fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{w.reasons.map((t, i) => <li key={i}>{t}</li>)}</ul>
+              : <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{w.reason}{!isMore && w.knows ? ` ${w.knows.name} ${w.knows.why}.` : ""}</div>}
+            {isMore && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45, marginTop: 2 }}>{w.knows ? `${w.knows.name} ${w.knows.why}.` : "Nobody on staff is on their record yet."}</div>}
+            {isMore && <MoreSteps w={w} isReadOnly={isReadOnly} onStepTaken={onStepTaken} />}
           </div>
         ))}
         {answer.who.length > 10 && <div style={{ fontSize: 12, color: T.ink3, paddingTop: 6 }}>And {answer.who.length - 10} more; each reason above opens all of them.</div>}
       </div>}
 
       {step && !isReadOnly && <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {!done && <button type="button" data-testid="why-step" disabled={busy} onClick={take} style={{ ...BTN, alignSelf: "flex-start", opacity: busy ? 0.6 : 1 }}>{busy ? "Planning…" : step.label}</button>}
+        {!done && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button type="button" data-testid="why-step" disabled={busy} onClick={() => take()} style={{ ...BTN, alignSelf: "flex-start", opacity: busy ? 0.6 : 1 }}>{busy ? "Planning…" : step.label}</button>
+          {(answer.alsoSteps || []).map((st, i) => <button key={i} type="button" data-testid={"why-also-step-" + st.kind} disabled={busy} onClick={() => take(st)} style={{ ...CHIP, opacity: busy ? 0.6 : 1 }}>{st.label}</button>)}
+        </div>}
         {done && <div data-testid="why-step-done" style={{ fontSize: 13, color: T.greenDk, fontWeight: 600 }}>{done}</div>}
         {err && <div style={{ fontSize: 13, color: T.ink2 }}>{err}</div>}
         {!done && <div style={{ fontSize: 12, color: T.ink3 }}>{step.kind === "log" ? "Opens Log a conversation. Nothing is sent." : "Adds steps to the Thread for a person to take. Nothing is sent."}</div>}

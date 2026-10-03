@@ -3315,6 +3315,23 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
             <Pill label={m.role} color={m.role==="admin"?T.ink:T.ink3}/>
+            {/* PROSPECT-1 — who sees Room to give, screening results and
+                prospect briefs. Admins always do; anyone else only when an
+                admin ticks this. */}
+            {isAdmin&&m.role!=="volunteer_coordinator"&&(
+              <label data-testid={"team-major-gifts-"+m.id} title={m.role==="admin"?"Admins always have it":"Sees Room to give, screening results and prospect briefs"}
+                style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:11.5,color:T.ink3,cursor:m.role==="admin"?"default":"pointer",flexShrink:0}}>
+                <input type="checkbox" checked={m.role==="admin"||!!m.can_major_gifts} disabled={m.role==="admin"}
+                  onChange={async e=>{
+                    const on=e.target.checked;
+                    setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:on}:x));
+                    try{ const r=await apiFetch(`/org/users/${m.id}/major-gifts`,{method:"PUT",body:JSON.stringify({on})});
+                      setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:!!r.canMajorGifts}:x)); }
+                    catch(err){ setTeam(t=>t.map(x=>x.id===m.id?{...x,can_major_gifts:!on}:x)); alert(errorMessage(err,"That permission did not change.")); }
+                  }} style={{accentColor:T.greenDk}}/>
+                Major gifts{m.role==="admin"?" (admins always have it)":""}
+              </label>
+            )}
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps

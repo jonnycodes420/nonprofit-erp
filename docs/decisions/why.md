@@ -39,7 +39,7 @@ template sentences. Every future build is checked against this.
 - **No statistic without a source.** Every number in an answer is the org's own. Never quote another
   company's research as Steward's, and never name a competitor in the product or site. (WHY-1)
 
-## The seven questions (how each is computed)
+## The eight questions (how each is computed)
 
 | key | question | facts | ranked by | step |
 |---|---|---|---|---|
@@ -50,6 +50,7 @@ template sentences. Every future build is checked against this.
 | lapse | Who is about to lapse, and why? | `computeDriftForDonors` state drifting, split by confidence (clear pattern / early signs), drift's own sentence | usual gift | plan calls to the top five |
 | volunteers | Which volunteers should we ask to give? | volunteer type, hours on file, no gift ever, not do-not-solicit; hours this year, last served, asked or not; who knows them best is the staff member who logged most of their shifts, else their owner, else the volunteer coordinator | hours this year, then recency | plan a personal ask from that person (owner on the step) |
 | second | Which first-time donors need a second ask? | first gift ever in the last 90 days, one gift only, no call or meeting logged; split thanked / not thanked | first gift | plan the thank-you call for the top five |
+| more | Who could give more? (admins and major gifts staff only; PROSPECT-1) | Room to give for everyone who may be asked (not deceased, do not contact or do not solicit, not anonymous): the word and reasons from `prospect.js` + `shared/roomToGive.js`; who knows them best is the staff member who logged most of their conversations, else their owner; the suggested ask for the top five, moved by a screening file only for those who may see it | word (Strong, then Some), then engagement, then capacity low end minus this year's giving | plan a visit with the top five (owner on the step); also: start the Major donor journey, or set the ask per person |
 
 ## Template sentences
 
@@ -60,6 +61,7 @@ In `shared/whyShape.js templateSentence`. Spell numbers under ten, no colons, no
 - stopped: "<name> last gave <$> <when>. On their record, <first fact>."
 - lapse: "<N> donors are past their own usual gap between gifts, with <$> of usual gifts between them; <name> has gone longest."
 - volunteers: "<N> volunteers have served and never given; <name> leads with <h> hours this year."
+- more: "<N> people show room to give more, <s> of them strong; start with <name>."
 - second: "<N> first-time donors from the last 90 days have no second gift and no thank-you call, <$> in first gifts; <name> gave the most."
 - not matched: "Steward can't answer that one yet. We've noted it."
 

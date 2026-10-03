@@ -572,7 +572,74 @@ async function second(orgId) {
   };
 }
 
-const ANSWERS = { appeal, call, retention, stopped, lapse, volunteers, second };
+// ── (h) Who could give more? ───────────────────────────────────────────────
+// PROSPECT-1. Room to give (prospect.js, the one rule in shared/roomToGive.js)
+// for everybody who may be asked, then ranked: the word first (Strong before
+// Some), then closeness (the stored engagement score), then the room the
+// screening file shows above what they give now. Each person carries the
+// reasons behind their word, the staff member who knows them best (who logged
+// most of their conversations, else their owner) and the suggested ask. Only
+// admins and major gifts staff reach this question (routes/why.js).
+async function more(orgId) {
+  const P = require("./prospect");
+  const RT = await P.rtg();
+  const people = await query(`SELECT d.id, d.name, d.assigned_to, COALESCE(s.engagement, 0) AS engagement
+     FROM donors d LEFT JOIN donor_scores s ON s.org_id = d.org_id AND s.donor_id = d.id
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.erased_at IS NULL AND COALESCE(d.deceased,false) = false
+       AND COALESCE(d.do_not_contact,false) = false AND COALESCE(d.do_not_solicit,false) = false
+       AND COALESCE(d.kind,'') <> 'anonymous'`, [orgId]);
+  const room = await P.roomToGive(orgId, people.map(p => p.id));
+  const roomAbove = a => (a.screening && a.screening.capacityLowCents != null ? a.screening.capacityLowCents - a.annualCents : 0);
+  const all = people.map(p => ({ ...p, a: room.get(p.id) })).filter(p => p.a && p.a.word !== "unknown")
+    .sort((x, y) => y.a.rank - x.a.rank || Number(y.engagement) - Number(x.engagement) || roomAbove(y.a) - roomAbove(x.a) || x.name.localeCompare(y.name));
+  const ids = all.map(p => p.id);
+  const loggers = ids.length ? await query(`SELECT i.donor_id, i.created_by, u.name, COUNT(*)::int AS n FROM interactions i
+     JOIN users u ON u.id = i.created_by AND u.org_id = i.org_id
+     WHERE i.org_id = ? AND i.donor_id = ANY(?) GROUP BY 1,2,3 ORDER BY n DESC, u.name`, [orgId, ids]) : [];
+  const users = new Map((await query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL`, [orgId])).map(u => [u.id, u.name]));
+  const knows = p => {
+    const l = loggers.find(x => x.donor_id === p.id && users.has(x.created_by));
+    if (l) return { userId: l.created_by, name: l.name, why: `logged ${l.n === 1 ? "their one conversation" : `${l.n} of their conversations`}` };
+    if (p.assigned_to && users.has(p.assigned_to)) return { userId: p.assigned_to, name: users.get(p.assigned_to), why: "is their relationship owner" };
+    return null;
+  };
+  const E = require("./engagement");
+  const top = all.slice(0, 5);
+  const asks = new Map();
+  for (const p of top) asks.set(p.id, await E.suggestedAsk(query, orgId, p.id, { screening: p.a.screening }).catch(() => null));
+  const shaped = all.map(p => {
+    const k = knows(p);
+    const line = RT.summary(p.a) || `${p.a.label} room to give.`;
+    return { donorId: p.id, name: p.name, cents: p.a.annualCents, word: p.a.word, label: p.a.label,
+      reason: `${p.a.label}. ${line}`, reasons: p.a.reasons.map(r => r.text), knows: k,
+      ask: asks.has(p.id) && asks.get(p.id) ? { cents: asks.get(p.id).askCents, sentence: asks.get(p.id).sentence, screening: !!asks.get(p.id).screening } : null };
+  });
+  const rowsOf = xs => xs.map(x => row(x.donorId, "donor", x.donorId, x.name, null, x.cents, x.reason));
+  const strong = shaped.filter(x => x.word === "strong"), some = shaped.filter(x => x.word === "some");
+  const reasons = [
+    reason("strong", "Strong room to give", rowsOf(strong), { measure: "count", phrase: "strong room to give",
+      definition: "Each person whose own file, or a screening file, shows strong room to give, with what they gave in the last twelve months. Closest first." }),
+    reason("some", "Some room to give", rowsOf(some), { measure: "count", phrase: "some room to give",
+      definition: "Each person whose own file shows some room to give, with what they gave in the last twelve months. Closest first." }),
+  ].filter(r => r.count > 0);
+  const five = shaped.slice(0, 5);
+  const plan = five.length ? { kind: "plan", label: `Plan a visit with the top ${spell(five.length)}`, dueIn: 7,
+    items: five.map(x => ({ donorId: x.donorId, name: x.name, label: "Visit", ownerId: x.knows ? x.knows.userId : null, ownerName: x.knows ? x.knows.name : null })) } : null;
+  const screened = shaped.filter(x => x.reasons.some(t => /screening file/.test(t))).length;
+  return {
+    facts: { count: shaped.length, strong: strong.length, some: some.length, first: shaped[0] ? { name: shaped[0].name, label: shaped[0].label } : null },
+    reasons,
+    who: shaped,
+    step: plan,
+    alsoSteps: five.length ? [{ kind: "journey", preset: "major_donor", label: `Start the Major donor journey for the top ${spell(five.length)}`,
+      donorIds: five.map(x => x.donorId), fallback: plan }] : [],
+    cantSee: !shaped.length ? null : screened === 0
+      ? "No screening results are on file, so this is from your own records alone; a screening file adds capacity ranges."
+      : null,
+  };
+}
+
+const ANSWERS = { appeal, call, retention, stopped, lapse, volunteers, second, more };
 
 // The answer for one question, with the drift engine handed in (it lives in
 // server.js and is the only integration point for drift).

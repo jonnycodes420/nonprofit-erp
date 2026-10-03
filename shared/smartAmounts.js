@@ -178,6 +178,9 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
 // From the donor's OWN history only: their largest gift, the average of their
 // last three, and whether that average is rising. Never from wealth or capacity
 // data.
+// PROSPECT-1 — the next friendly amount above this one (the ask, one step up).
+export function nextFriendlyAbove(cents) { return rungAbove(toFriendlyCents(cents), 1) ?? cents; }
+
 export function suggestedAskCents({ largestCents = 0, lastThreeCents = [] } = {}) {
   const three = (lastThreeCents || []).map(c => Math.round(Number(c) || 0)).filter(c => c > 0).slice(0, 3);
   const largest = Math.max(0, Math.round(Number(largestCents) || 0));

@@ -1080,7 +1080,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
   res.json({
-    user: { id: u.id, email: u.email, name: u.name, role: u.role },
+    user: { id: u.id, email: u.email, name: u.name, role: u.role, canMajorGifts: await require("../prospect").canSee(u.id) },   // PROSPECT-1
     org: orgs[0],
     notifications: mapNotifyPrefs(u),
   });
@@ -2451,6 +2451,10 @@ app.post("/board-pack/schedule/run", requireAuth, requireAdmin, wrap(async (req,
 // a malformed one is refused, never guessed.
 app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
   const { page, pageSize, ...params } = req.query;
+  // PROSPECT-1 — "Who could give more?" opens its rows only for those who may ask it.
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../prospect").canSee(req.user.userId))) {
+    return res.status(403).json({ error: "major_gifts_only" });
+  }
   try {
     const out = await figureSources.figure(req.user.orgId, { key: String(req.params.source), params },
       { computeRetentionRate, computeDriftForDonors }, { page, pageSize });
@@ -3335,7 +3339,7 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
   // but their authored rows keep their created_by identity (BUILD-75 C.1/C.3).
   const members = await query(
     // SEC-1 — whether each person has two-factor on, for the owner's Security list.
-    "SELECT id, email, name, role, created_at, (mfa_enabled_at IS NOT NULL) AS mfa_enabled, mfa_must_setup FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
+    "SELECT id, email, name, role, created_at, (mfa_enabled_at IS NOT NULL) AS mfa_enabled, mfa_must_setup, (role = 'admin' OR COALESCE(can_major_gifts, false)) AS can_major_gifts FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
     [req.user.orgId]
   );
   res.json(members);
@@ -3639,6 +3643,19 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
+  // PROSPECT-1 — screening results are never in the default export. An admin
+  // may add them with the checkbox that says what it adds (includeScreening=1).
+  if (String(req.query.includeScreening || "") === "1") {
+    const [me] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+    if (!me || me.role !== "admin") return res.status(403).json({ error: "Only an admin can include screening results in an export." });
+    const PR = require("../prospect"), RT = await PR.rtg();
+    const sc = await PR.latestScreening(req.user.orgId, donors.map(d => d.id));
+    const s = d => sc.get(d.id) || {};
+    columns.push(["Screening provider", d => s(d).provider || ""], ["Screening date", d => s(d).screenedOn || ""],
+      ["Capacity range", d => RT.rangeText(s(d).capacityLowCents ?? null, s(d).capacityHighCents ?? null) || ""],
+      ["Real estate range", d => RT.rangeText(s(d).realEstateLowCents ?? null, s(d).realEstateHighCents ?? null) || ""]);
+    if (req.audit) req.audit.summary(`Exported donors with screening results (${donors.length})`, { count: donors.length });
+  }
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="donors-${orgToday(await orgTz(req.user.orgId))}.csv"`); // ORG_TZ_SEAM_OK — an evening export is named for today, not UTC-tomorrow
   res.send(toCsv(columns, donors));
@@ -8732,7 +8749,10 @@ app.delete("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
 
 app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" }); // BUILD-75 B: the parent must be YOURS before children are answered — even an empty list confirms nothing about another tenant
-  const rows = await query("SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at FROM donor_materials WHERE donor_id=? AND org_id=? ORDER BY uploaded_at DESC", [req.params.id, req.user.orgId]);
+  // PROSPECT-1 — a prospect brief is for admins and major gifts staff only.
+  const mg = await require("../prospect").canSee(req.user.userId);
+  const rows = await query(`SELECT id,org_id,donor_id,file_name,file_type,file_url,notes,uploaded_by,uploaded_at,major_gifts_only FROM donor_materials
+      WHERE donor_id=? AND org_id=?${mg ? "" : " AND COALESCE(major_gifts_only,false) = false"} ORDER BY uploaded_at DESC`, [req.params.id, req.user.orgId]);
   res.json(rows);
 }));
 
@@ -8797,6 +8817,7 @@ app.post("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
 app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Not found" });
+  if (existing[0].major_gifts_only && !(await require("../prospect").canSee(req.user.userId))) return res.status(404).json({ error: "Not found" });
   await run("DELETE FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   res.json({ ok: true });
 }));
@@ -12669,7 +12690,9 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
     },
     explanation: W.EXPLANATION,
     bands: W.BANDS,
-    suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id),
+    // PROSPECT-1 — screening results move the ask only for someone who may see them.
+    suggestedAsk: await engagementMod.suggestedAsk(query, orgId, d.id,
+      (await require("../prospect").canSee(req.user.userId)) ? { screening: (await require("../prospect").latestScreening(orgId, [d.id])).get(d.id) || null } : {}),
   });
 }));
 
