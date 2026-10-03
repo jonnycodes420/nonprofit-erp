@@ -4,7 +4,7 @@
 // LANDING-3 removed the people reel and gave its place to the Leadership band.
 import { useState } from "react";
 import { A, Pill, Photo, Icon, Ui, LeadBand, FaqList } from "../lib";
-import { STATS, srcShort, SRC } from "../data/research";
+import { STATS, srcShort, SRC, SRC_ALL } from "../data/research";
 import { FEAT, FEATURE_CATS, FEATURE_EXTRAS } from "../data/features";
 import { HOME_FAQ } from "../data/faqs";
 
@@ -36,6 +36,27 @@ function StatStrip() {
         </div></div>
       </div>
     </div>
+  );
+}
+
+// PROOF-2 · the retention gap, straight after the hero. Every figure is
+// Momentive's, worded as the survey words it, and the source line links it.
+function RetentionBand() {
+  const src = SRC_ALL.momentive25;
+  return (
+    <section className="gapband" aria-label="Retention is a strategy">
+      <div className="wrap">
+        <div className="eyebrow">Retention is a strategy, not a hope</div>
+        <h2 className="mix h-l" style={{ marginTop: 22, maxWidth: 1100 }}>Nonprofits with a donor retention strategy reported 77% retention. <b>Those without one: 61%.</b></h2>
+        <p className="lede" style={{ marginTop: 40 }}>46% have no retention strategy at all. <b>Steward is one, built in.</b></p>
+        <div className="gap-how">
+          <A href="/features/drift"><b>Drift caught early.</b><span>Each donor is measured against their own rhythm and flagged while a call still fixes it.</span></A>
+          <A href="/features/journeys"><b>Journeys planned.</b><span>A first year of thank-yous, updates and asks, with a person named on every step.</span></A>
+          <A href="/platform"><b>Who to call, each morning.</b><span>Home names the people who need you today, and why.</span></A>
+        </div>
+        <p className="srcnote">Source: <A href={src[1]}>{src[0]}</A>, a survey of US nonprofit professionals, February to March 2025. Figures are as respondents reported them.</p>
+      </div>
+    </section>
   );
 }
 
@@ -121,6 +142,7 @@ export default function Home() {
         </div>
       </section>
 
+      <RetentionBand />
       <StatStrip />
       <WhyTabs />
 
@@ -159,7 +181,7 @@ export default function Home() {
         <div className="wrap">
           <div className="guide-band">
             <div className="gb-art"><div className="t">The first-year<br /><b>retention plan</b></div><small>Twelve touches in twelve months</small><span className="leaf"></span></div>
-            <div className="gb-txt"><div className="eyebrow">Keep the second gift</div><h2 className="mix h-m">Only 19.4% of first-time donors <b>give again.</b></h2><p>A free, practical plan for a team of one or two: what to send, when to call and who owns each step, so new donors become repeat donors.</p><Pill href="/guides/first-year-retention">Get the free guide</Pill></div>
+            <div className="gb-txt"><div className="eyebrow">Keep the second gift</div><h2 className="mix h-m">Only 19.4% of first-time donors <b>give again.</b></h2><p>A free, practical plan for a team of one or two: what to send, when to call and who owns each step, so new donors become repeat donors.</p><Pill href="/guides/first-year-retention">Get the free guide</Pill><p className="srcnote" style={{ marginTop: 18 }}>Source: <A href={SRC.fep24[1]}>{SRC.fep24[0]}</A></p></div>
           </div>
         </div>
       </section>

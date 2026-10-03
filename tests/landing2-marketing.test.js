@@ -38,6 +38,13 @@
 //  14. a "Live" connection label that production cannot honour. The table
 //      must not promise a provider that shared/givingSources.js has no
 //      adapter for and oauth.js has no provider entry for.
+//
+// PROOF-2 added one:
+//  15. a statistic with no source. Every percentage and every "x times"
+//      figure in the marketing copy must match a claim in shared/sources.js,
+//      and the page (component or article) showing it must also link that
+//      source. Example screens (a <Ui> mock's tots/rows, a feature's ui
+//      table) are example data, not statistics, and are skipped.
 
 const fs = require("fs");
 const path = require("path");
@@ -396,6 +403,59 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     ok("/signup preselects the tier from plan= and the interval from interval=",
       /TIERS\.find\(x => x\.id === params\.get\("plan"\)\)/.test(sp) && /params\.get\("interval"\) === "yearly"/.test(sp)
         && PRICING.tiers.every(t => bandFor(t.maxDonors) === t));
+  }
+
+
+  console.log("\n— 15 · PROOF-2 · every figure has a source —");
+  {
+    const { SOURCES, STRIP } = await import(path.join(ROOT, "shared", "sources.js"));
+    const entries = Object.entries(SOURCES);
+    ok("every source names its publisher, report, year, sample, an https link, the date checked and at least one claim",
+      entries.length >= 7 && entries.every(([, x]) => x.source && x.report && x.year && x.sample && /^https:\/\//.test(x.url) && x.label
+        && /^\d{4}-\d{2}-\d{2}$/.test(x.checked) && x.claims.length && x.claims.every(c => c.figure && c.claim)),
+      entries.filter(([, x]) => !(x.claims || []).length).map(([k]) => k));
+    // A percentage, or a multiple used as a comparison ("3x", "three times as
+    // likely"). "Gave three times last year" is a count, not a statistic.
+    const FIG_RE = /\b\d+(?:\.\d+)?%|\b\d+(?:\.\d+)?x\b|\b(?:\d+(?:\.\d+)?|two|three|four|five|six|seven|eight|nine|ten) times (?:as|more|higher|larger|greater|less|fewer|likelier|the)\b/gi;
+    const owners = new Map();
+    for (const [k, x] of entries) for (const c of x.claims) for (const f of [c.figure, ...(c.figure.match(FIG_RE) || []), ...(c.claim.match(FIG_RE) || [])]) {
+      const key = f.toLowerCase();
+      owners.set(key, [...new Set([...(owners.get(key) || []), k])]);
+    }
+    // The strip's rows are the reference's sentences: each figure in a row
+    // must be a claim of that row's own source.
+    const stripBad = STRIP.filter(([fig, line, k]) => [...(fig.match(FIG_RE) || [fig]), ...(line.match(FIG_RE) || [])]
+      .some(f => !(owners.get(f.toLowerCase()) || []).includes(k)));
+    ok("every figure in the research strip is a claim of its own source", stripBad.length === 0, stripBad);
+
+    // The copy: every marketing source file plus the price list, split into
+    // units (a component, or one article or guide), comments, inline styles
+    // and example screens removed.
+    const texts = { ...Object.fromEntries(Object.entries(SRC_TEXT).filter(([f]) => /\.jsx?$/.test(f))),
+      "pricing.json": fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8") };
+    const found = [], orphans = [], unlinked = [];
+    for (const [f, raw] of Object.entries(texts)) {
+      const t = raw.replace(/\{?\/\*[\s\S]*?\*\/\}?/g, "").replace(/^\s*\/\/.*$/gm, "")
+        .replace(/style=\{\{[^}]*\}\}/g, "")
+        .split("\n").filter(l => !/\btots=\{|\brows=\{|\bui: \[/.test(l)).join("\n");
+      for (const unit of t.split(/\n(?=export |function |\s{2}"[a-z0-9-]+": \{)/)) {
+        const name = f + " · " + ((unit.match(/^(?:export )?(?:default )?function (\w+)|^\s*"([a-z0-9-]+)"/) || []).slice(1).find(Boolean) || "top");
+        for (const m of unit.matchAll(FIG_RE)) {
+          const fig = m[0].toLowerCase();
+          found.push(name + " " + m[0]);
+          const keys = owners.get(fig);
+          if (!keys) { orphans.push(name + " " + m[0]); continue; }
+          const linked = keys.some(k => new RegExp("\\bSRC(?:_ALL)?(?:\\." + k + "\\b|\\[[\"']" + k + "[\"']\\])|[\"']" + k + "[\"']").test(unit));
+          if (!linked) unlinked.push(name + " " + m[0] + " (needs " + keys.join(" or ") + ")");
+        }
+      }
+    }
+    ok("every percentage and x-times figure in the copy has an entry in shared/sources.js (" + found.length + " figures)", found.length >= 30 && orphans.length === 0, orphans);
+    ok("…and the page showing it also shows that source's link", unlinked.length === 0, unlinked);
+    const res = SRC_TEXT["client/src/marketing/pages/resources.jsx"];
+    ok("/research lists every source, its claims, its link and the date checked",
+      ROUTES.some(r => r.path === "/research" && r.page === "research")
+        && /export function Research\(\)[^]*?SOURCE_KEYS\.map[^]*?x\.claims\.map[^]*?href=\{x\.url\}[^]*?checkedOn\(x\.checked\)/.test(res));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

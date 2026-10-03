@@ -9,7 +9,7 @@ export const GUIDES = {
       ["Month six: a short survey", "Two questions. Why did you give? What would you like to hear about? Then use the answers."],
       ["Months seven to eleven: steady updates", "One short update a month by email, one by mail in the fall. Keep each under 200 words."],
       ["Month twelve: the renewal ask", "Ask for the second gift on the anniversary of the first, mentioning what their first gift did. Ask for a specific amount close to last year."],
-      ["How Steward runs this", "The first-year journey in Steward schedules every touch, names who owns it and puts today's steps on Home. Drafts are ready for review. People do the sending."]] },
+      ["How Steward runs this", "The first-year journey in Steward schedules every touch, names who owns it and puts today's steps on Home. Drafts are ready for review. People do the sending."]], src: ["fep24", "burk"] },
   "major-donor-visits": { t: "Major donor visits for small shops", d: "Who to visit, what to bring, what to ask, and how to follow up in a week.", p: "cafe-laugh-2", min: 7,
     s: [["Choose ten people", "Sort by giving over the last five years, then add anyone with capacity you know about. Ten visits a quarter is a realistic portfolio for a director who does everything else too."],
       ["Book the visit honestly", "Say why you want to meet: to say thank you and to hear what they care about. Most people say yes to that."],

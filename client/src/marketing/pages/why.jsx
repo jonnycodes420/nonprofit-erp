@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Photo, Tick, Icon, A } from "../lib";
 import { AUD, AUDIENCE_SLUGS } from "../data/audiences";
-import { SRC } from "../data/research";
+import { SRC, SRC_ALL } from "../data/research";
 // Contact keeps the founder's real portrait: never a stock photograph of a person.
 import { TEAM } from "../data/team";
 import { API } from "../../api";
@@ -22,9 +22,33 @@ export function Why() {
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="brass-tint" h="What the numbers mean for a small shop." p="If you had 1,000 donors last year, the national pattern says fewer than half come back without a plan. The second gift is the turning point, and a thank-you call within two days moves the next one. That is exactly the work Steward puts on your Home screen each morning." photo="call-notepad" />
     </div></section>
+    <PeopleLeave />
     <Cards eb="Keep going" h="Why teams <b>choose Steward.</b>" list={[["/move", "Moving to Steward", "About a day of your time, matched to the cent.", "import"], ["/pricing", "Honest pricing", "Published prices, month to month, no platform fee.", "finance"], ["/security", "Security and trust", "What we protect, and how.", "audit"], ["/for", "Who it's for", "Built for the organizations doing the work.", "people"]]} />
     <FinalCta />
   </>;
+}
+
+// PROOF-2 · staff turnover, and what Steward keeps when someone leaves. The
+// figures are Sage's, worded as the report words them. HANDOVER-1 has not
+// shipped, so nothing here promises a handover screen.
+function PeopleLeave() {
+  const src = SRC_ALL.sage25;
+  return (
+    <section style={{ paddingTop: 0 }}><div className="wrap">
+      <div className="eyebrow">When people leave</div>
+      <h2 className="mix h-l" style={{ marginTop: 22 }}>When people leave, <b>relationships stay.</b></h2>
+      <p className="lede" style={{ marginTop: 22 }}>In Sage's 2025 survey of more than 350 nonprofit leaders, 58% said hiring and retention is their biggest external challenge, ahead of competition for funding (55%) and economic uncertainty (49%). When a development officer leaves, what they knew about each donor usually leaves with them. In Steward it stays on the donor's profile.</p>
+      <div className="stays">
+        {[["Every conversation", "Emails with a donor land on their profile from a connected Gmail or Outlook inbox, replies included, so the thread is not locked in one person's mailbox."],
+          ["Every meeting and call", "Meetings, visits and calls are logged on the donor's timeline with the notes from each, and meetings on a connected calendar show there too."],
+          ["Every next step", "Tasks and planned steps sit on the donor with a named owner, so the next person can see what was promised and when."],
+          ["History", "The History tab shows every change to the donor's details, who made it and when."],
+          ["Journeys", "A first-year plan lives on the donor, not in someone's calendar. Each step names a person, and the plan is still there for whoever picks it up."]]
+          .map(([h, p]) => <div className="card" key={h}><h4>{h}</h4><p>{p}</p></div>)}
+      </div>
+      <p className="srcnote">Source: <A href={src[1]}>{src[0]}</A>, a survey of more than 350 nonprofit leaders. Figures are as respondents reported them.</p>
+    </div></section>
+  );
 }
 
 export function Move() {

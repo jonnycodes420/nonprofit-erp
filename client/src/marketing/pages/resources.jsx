@@ -15,7 +15,10 @@ import { CHANGELOG } from "../../lib/changelog";
 import { ART2, ART2_SLUGS } from "../data/articles2";
 import { GLOSS } from "../data/glossary";
 import { FAQ_PAGE } from "../data/faqs";
-import { SRC, QUOTES } from "../data/research";
+import { SRC, SRC_ALL, QUOTES } from "../data/research";
+import { useLocation } from "react-router-dom";
+import PRICING from "../../../../pricing.json";
+import { SOURCES, SOURCE_KEYS, RETENTION_GAP, checkedOn } from "../../../../shared/sources.js";
 import { LEGAL_ENTITY_NAME } from "../../../../shared/legalEntity.js";
 
 // FIX-13 · the page runs the audit. It used to promise "run the free audit"
@@ -30,7 +33,7 @@ const LostAndFoundAudit = React.lazy(() => import("../../pages/LostAndFound").th
 export function Resources() {
   return <>
     <Hero eyebrow="Resources" crumbs={[["Resources"]]} h="Learn from people <b>who've done the work.</b>" lede="Guides, templates, free tools and the research behind them, for development teams of one to five." noCta />
-    <Cards list={[["/guides", "Guides", "Five plans you can run this month.", "forms"], ["/templates", "Templates", "Thank-you letters, win-back emails and more.", "receipts"], ["/articles", "Articles", "Short reads on retention and stewardship.", "grants"], ["/glossary", "Glossary", "Fundraising terms in plain words.", "forms"], ["/tools", "Free tools", "Lost & Found and three calculators.", "reports"], ["/faq", "FAQ", "Answers to what most teams ask first.", "check"]]} />
+    <Cards list={[["/guides", "Guides", "Five plans you can run this month.", "forms"], ["/templates", "Templates", "Thank-you letters, win-back emails and more.", "receipts"], ["/articles", "Articles", "Short reads on retention and stewardship.", "grants"], ["/glossary", "Glossary", "Fundraising terms in plain words.", "forms"], ["/tools", "Free tools", "Lost & Found and three calculators.", "reports"], ["/faq", "FAQ", "Answers to what most teams ask first.", "check"], ["/research", "Research", "Every number on this site, with its source.", "audit"]]} />
     <StatBand n={4} dark />
     <FinalCta />
   </>;
@@ -67,6 +70,7 @@ export function Guide({ slug }) {
       <aside className="toc"><b>In this guide</b>{g.s.map((s, i) => <a key={i} href={"#g" + i} onClick={e => jump(e, "g" + i)}>{s[0]}</a>)}</aside>
       <article className="prose">
         {g.s.map((s, i) => <React.Fragment key={i}><h2 id={"g" + i}>{s[0]}</h2><p>{s[1]}</p></React.Fragment>)}
+        {g.src && <p className="srcnote">Sources: {g.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC_ALL[k][1]}>{SRC_ALL[k][0]}</A></React.Fragment>)}</p>}
         <div className="callout"><b>Run this plan in Steward.</b><p>Journeys schedule every touch, name who owns it and put today's steps on your Home screen.</p><Pill href="/demo">Book a demo</Pill></div>
       </article>
     </div></section>
@@ -153,8 +157,10 @@ export function Article({ slug }) {
     <section style={{ paddingTop: 0 }}><div className="wrap prose narrow">
       <p>{a.lede}</p>
       {a.s.map(([h, ps]) => <React.Fragment key={h}><h2>{h}</h2>{ps.map(x => <p key={x}>{x}</p>)}</React.Fragment>)}
-      {a.src && <p className="srcnote">Source: {a.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC[k][1]}>{SRC[k][0]}</A></React.Fragment>)}</p>}
-      <div className="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><Pill href="/demo">Book a demo</Pill></div>
+      {a.src && <p className="srcnote">Source: {a.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC_ALL[k][1]}>{SRC_ALL[k][0]}</A></React.Fragment>)}</p>}
+      {a.end === "lost-and-found"
+        ? <div className="callout"><b>Start with week one, today.</b><p>The free Lost & Found audit shows who is slipping from a giving export. It runs in your browser and nothing is uploaded. Then bring the same file to a 20-minute demo.</p><div className="ctas" style={{ marginTop: 6 }}><Pill href="/tools/lost-and-found">Run the free audit</Pill><Pill kind="soft" href="/demo">Book a demo</Pill></div></div>
+        : <div className="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><Pill href="/demo">Book a demo</Pill></div>}
     </div></section>
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">Keep reading</div>
@@ -163,6 +169,11 @@ export function Article({ slug }) {
     <FinalCta />
   </>;
 }
+
+// A research quote inside an article, with its source. LANDING-3 deleted this
+// while the two calls below stayed, and the article threw on render (PROOF-2).
+const srcShortOf = k => SRC[k][0].split(",")[0];
+const Quote = ({ q }) => <blockquote data-quote="research">{q[0]}<cite>{q[1]}, {q[2]} · <A href={SRC[q[3]][1]}>{srcShortOf(q[3])}</A></cite></blockquote>;
 
 export function StateOfRetention() {
   return <>
@@ -177,7 +188,7 @@ export function StateOfRetention() {
       <p>Overall donor retention edged up to 43.3%. That still means more than half of the people who gave in 2024 did not give in 2025. Growth came mostly from larger gifts while small donors kept falling away.</p>
       <Quote q={QUOTES[0]} />
       <h2>The second gift</h2>
-      <p>The gap between new and repeat donors is the most useful number in fundraising. In FEP's Q4 2024 report, 19.4% of new donors gave again, compared with 69.2% of repeat donors. Get the second gift and a donor is more than three times as likely to stay.</p>
+      <p>The gap between new and repeat donors is the most useful number in fundraising. In FEP's Q4 2024 report, 19.4% of new donors gave again, compared with 69.2% of repeat donors. Get the second gift and a donor is far more likely to stay.</p>
       <h2>What moves the number</h2>
       <p>The research points to the same few habits: a fast, personal thank-you, proof that the gift mattered, and a renewal ask timed to the donor's own rhythm. Penelope Burk found that a thank-you call within 48 hours led to gifts 39% larger the next time. Adrian Sargeant's work suggests a 10% lift in retention can raise the lifetime value of a donor file by up to 200%.</p>
       <Quote q={QUOTES[1]} />
@@ -304,11 +315,52 @@ export function thermometerMath(g, r) {
   return { pct: p, raised: usd(r), goal: usd(g) };
 }
 
+// PROOF-2 · the retention gap on her own numbers: donors kept at each rate,
+// what the difference gives in a year, and a year of the Steward plan her
+// donor count lands on, from pricing.json. It says "less" when it is less.
+export function gapMath(donors, gift, hi, lo) {
+  const keptHi = Math.round(donors * hi / 100), keptLo = Math.round(donors * lo / 100);
+  const more = keptHi - keptLo, worth = more * gift;
+  const tier = PRICING.tiers.find(t => donors <= t.maxDonors) || null;
+  const plan = tier ? tier.monthlyUsd * 12 : null;
+  return { keptHi, keptLo, more, worth: usd(worth), tier, plan: plan == null ? null : usd(plan), beats: plan == null ? null : worth > plan };
+}
+
+function GapPanel({ hi, lo }) {
+  const [v, on] = useFields({ d: "500", g: "250" });
+  const m = gapMath(num(v.d), num(v.g), hi, lo);
+  const src = SRC_ALL[RETENTION_GAP.source];
+  return <section style={{ paddingTop: 0 }} data-testid="gap-panel"><div className="wrap">
+    <div className="eyebrow">The retention gap</div>
+    <h2 className="mix h-m" style={{ marginTop: 16, marginBottom: 28 }}>{hi}% with a strategy, {lo}% without. <b>On your donors.</b></h2>
+    <div className="tool">
+      <div className="form">
+        <label>Donors last year<input type="number" min="1" value={v.d} onChange={on("d")} autoFocus /></label>
+        <label>Average yearly gift ($)<input type="number" min="0" value={v.g} onChange={on("g")} /></label>
+      </div>
+      <div className="out" aria-live="polite">
+        <div className="big">{m.more.toLocaleString()}</div><p>more donors giving again: {m.keptHi.toLocaleString()} at {hi}% against {m.keptLo.toLocaleString()} at {lo}%</p>
+        <div className="big sm">{m.worth}</div><p>a year from those donors at your average gift</p>
+        <p style={{ marginTop: 22 }}>{m.tier
+          ? <>A year of Steward on {m.tier.name}, month to month, is {m.plan}. The gap is worth {m.beats ? "more" : "less"} than that.</>
+          : <>Above {PRICING.tiers[PRICING.tiers.length - 1].maxDonors.toLocaleString()} donors, Steward is priced with you.</>}</p>
+      </div>
+    </div>
+    <p className="srcnote">The two rates: <A href={src[1]}>{src[0]}</A>. Organizations with a donor retention strategy reported {hi}% retention; those without one reported {lo}%. A survey shows what respondents reported, not what any one organization will see.</p>
+  </div></section>;
+}
+
 export function ToolRetention() {
   const [v, on] = useFields({ a: "1000", b: "420", c: "250" });
   const m = retentionMath(num(v.a), num(v.b), num(v.c));
+  const q = new URLSearchParams(useLocation().search);
+  const pct = k => { const n = Number(q.get(k)); return Number.isFinite(n) && n > 0 && n <= 100 ? n : null; };
+  const hi = pct("with"), lo = pct("without");
   return <>
     <Hero eyebrow="Keep Rate calculator" crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
+    {/* Only the sourced pair opens the panel: any other rates in the link
+        would print beside a source that never said them. */}
+    {hi === RETENTION_GAP.withStrategy && lo === RETENTION_GAP.without && <GapPanel hi={hi} lo={lo} />}
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Donors last year<input type="number" min="1" value={v.a} onChange={on("a")} /></label>
@@ -406,5 +458,29 @@ export function LegalAccessibility() {
     <p>We want everyone who works at a nonprofit, and everyone who gives to one, to be able to use Steward. We design to the Web Content Accessibility Guidelines 2.1 at level AA, test with keyboards and screen readers, and fix what we find.</p>
     <p>If anything in Steward or on this site is hard to use, email jonathan@stewardapp.dev and we will respond within two business days.</p>
   </Legal>;
+}
+
+// PROOF-2 · every source the site quotes, from shared/sources.js: the claim
+// in the source's words, the link, and the day a person last checked it.
+export function Research() {
+  return <>
+    <Hero eyebrow="Research" crumbs={[["Resources", "/resources"], ["Research"]]} h="Every number, <b>and where it came from.</b>"
+      lede="Each statistic on this site comes from one of the sources below, worded as the source words it. Survey findings are what respondents reported. Follow any link and check us." noCta />
+    <section style={{ paddingTop: 0 }}><div className="wrap" style={{ maxWidth: 940 }}>
+      <div className="srcs">
+        {SOURCE_KEYS.map(k => {
+          const x = SOURCES[k];
+          return <article key={k} id={k} data-source={k}>
+            <h3>{x.source}</h3>
+            <p className="meta">{x.report} · {x.year} · {x.sample}</p>
+            <ul>{x.claims.map(c => <li key={c.figure + c.claim}><b>{c.figure}</b> · {c.claim}</li>)}</ul>
+            <A className="lk" href={x.url}>{x.url}</A>
+            <p className="meta">Checked {checkedOn(x.checked)}</p>
+          </article>;
+        })}
+      </div>
+    </div></section>
+    <FinalCta />
+  </>;
 }
 

@@ -69,6 +69,8 @@ export const ROUTES = [
   { path: "/articles/state-of-retention", page: "stateOfRetention", title: T("The state of donor retention, in plain words."), description: "What the latest sector data says about who gives again, and what a small shop can do about it." },
   // LANDING-3 · the six new articles, each on its own route.
   ...Object.keys(ART2).filter(s => ART2[s]).map(s => ({ path: "/articles/" + s, page: "article", slug: s, title: T(ART2[s].h), description: ART2[s].d })),
+  // PROOF-2 · every source the site quotes, so anyone can verify us.
+  { path: "/research", page: "research", title: T("Every number, and where it came from."), description: "Every statistic on the Steward site, with the source's own words, a link to the report and the date we last checked it." },
   { path: "/glossary", page: "glossary", title: T("Fundraising terms, in plain words."), description: "The words you will hear in board meetings and on software demos, explained without jargon." },
   { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
   { path: "/help", page: "help", title: T("How do I do this in Steward?"), description: "An article for every screen in Steward and for the jobs people come for, searchable. If it is not here, a person answers." },
