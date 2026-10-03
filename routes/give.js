@@ -4732,7 +4732,11 @@ function setPortalCookie(res, token, maxAgeSec) {
 
 // One org lookup for every portal route: slug → org row + portal settings.
 // Returns null for unknown slug OR a disabled portal (indistinguishable).
-async function portalOrgBySlug(slug) {
+// FIX-20 Part 7: { membership: true } is the membership page's sign-in, which
+// works whether or not the org's donor portal is on. It opens only the routes
+// that pass it (request-link with a membership return path, verify of a
+// membership link, give-default); every portal screen keeps the default.
+async function portalOrgBySlug(slug, { membership = false } = {}) {
   if (!slug || typeof slug !== "string" || slug.length > 120) return null;
   const rows = await query(
     `SELECT o.*, ps.enabled AS portal_enabled, ps.display_name AS portal_display_name,
@@ -4742,9 +4746,17 @@ async function portalOrgBySlug(slug) {
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
             ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style,
             ps.header_focal_x, ps.header_focal_y, ps.header_crop
-     FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
-     WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
+     FROM orgs o ${membership ? "LEFT JOIN" : "JOIN"} portal_settings ps ON ps.org_id = o.id
+     WHERE o.org_slug = ?${membership ? "" : " AND ps.enabled = true"}`, [slug]);
   return rows[0] || null;
+}
+
+// FIX-20 Part 7: where a membership sign-in link brings the member back to.
+// Never an address from the request: the only answer is this org's own
+// membership page, built here from the slug, or null.
+function membershipReturnPath(slug, raw) {
+  const own = `/give/${slug}?memberships`;
+  return raw === own ? own : null;
 }
 
 function portalThemePayload(org) {
@@ -4791,7 +4803,11 @@ async function portalDonorsFor(orgId, email) {
 // ── Session middleware (P-4) ───────────────────────────────────────────────
 // Cookie-only. A staff JWT in Authorization is IGNORED here, exactly as the
 // portal cookie is ignored by requireAuth — proven by the differential sweep.
-function requirePortalSession(req, res, next) {
+const requirePortalSession = portalSession();
+// FIX-20 Part 7: the membership page reads its member through this one, so a
+// member signed in from the membership page is known there with the portal off.
+const requireMembershipSession = portalSession({ membership: true });
+function portalSession(opts = {}) { return (req, res, next) => {
   (async () => {
     const raw = parsePortalCookies(req)[PORTAL_COOKIE];
     if (!raw || raw.length > 300) return res.status(401).json({ error: "portal_auth" });
@@ -4800,7 +4816,7 @@ function requirePortalSession(req, res, next) {
       [sha256hex(raw)]);
     if (!rows.length) return res.status(401).json({ error: "portal_auth" });
     const sess = rows[0];
-    const org = await portalOrgBySlug(req.params.orgSlug);
+    const org = await portalOrgBySlug(req.params.orgSlug, opts);
     if (!org) return res.status(401).json({ error: "portal_auth" });
     if (sess.org_id) {
       // Tenant pinning: an org-scoped session is scoped to ONE org — a valid
@@ -4826,18 +4842,23 @@ function requirePortalSession(req, res, next) {
     run(`UPDATE portal_sessions SET last_seen_at = NOW() WHERE id = ?`, [sess.id]).catch(() => {});
     next();
   })().catch(next);
-}
+}; }
 
 // ── Magic-link email ───────────────────────────────────────────────────────
-async function sendPortalMagicLinkEmail(org, email, token) {
+async function sendPortalMagicLinkEmail(org, email, token, returnTo = null) {
   const theme = portalThemePayload(org);
-  const link = `${publicAppUrl()}/portal/${org.org_slug}/verify#token=${token}`; // fragment: never sent in Referer (S-4)
+  // FIX-20 Part 7: a membership sign-in lands back on the membership page it
+  // was asked from (returnTo is only ever membershipReturnPath's answer). The
+  // token rides the fragment either way, and the page POSTs it.
+  const link = returnTo
+    ? `${publicAppUrl()}${returnTo}#signin=${token}`
+    : `${publicAppUrl()}/portal/${org.org_slug}/verify#token=${token}`; // fragment: never sent in Referer (S-4)
   const orgName = escHtmlWf(theme.displayName);
   const html = await brandEmailHeaderHtml(org.id) + `
     <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
-      <p>Here is your secure sign-in link for your giving history with ${orgName}:</p>
+      <p>Here is your secure sign-in link for your ${returnTo ? "membership" : "giving history"} with ${orgName}:</p>
       <p style="text-align:center;margin:28px 0;">
-        <a href="${link}" style="background:${theme.primary};color:${theme.primaryFg};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">View my giving</a>
+        <a href="${link}" style="background:${theme.primary};color:${theme.primaryFg};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">${returnTo ? "Back to membership" : "View my giving"}</a>
       </p>
       <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>
       ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
@@ -4928,7 +4949,10 @@ app.get("/portal/:orgSlug/config", wrap(async (req, res) => {
 
 // ── P-1/P-2/P-3: request a magic link ──────────────────────────────────────
 app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLimiter, wrap(async (req, res) => {
-  const org = await portalOrgBySlug(req.params.orgSlug);
+  // FIX-20 Part 7: asked from the membership page, the link is a membership
+  // link: it works with the portal off and brings the member back there.
+  const returnTo = membershipReturnPath(req.params.orgSlug, req.body?.returnTo);
+  const org = await portalOrgBySlug(req.params.orgSlug, { membership: !!returnTo });
   if (!org) return res.status(404).json({ error: "portal_not_found" });
   const email = String(req.body?.email || "").trim().toLowerCase();
   // P-2 — identical response AND timing for known and unknown emails: respond
@@ -4943,15 +4967,15 @@ app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLi
     await run(
       `UPDATE portal_magic_links SET superseded_at = NOW()
        WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL
-         AND purpose = 'portal'`, [org.id, email]);
+         AND purpose IN ('portal','membership')`, [org.id, email]);
     const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
     await run(
       // GIVE-2 §4 — the purpose is stamped rather than defaulted, so the one
       // table's two kinds of link are explicit at both ends.
       `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
-       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, 'portal')`,
-      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null]);
-    await sendPortalMagicLinkEmail(org, email, token);
+       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, ?)`,
+      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null, returnTo ? "membership" : "portal"]);
+    await sendPortalMagicLinkEmail(org, email, token, returnTo);
   })().catch(e => console.error("[portal] link request failed:", e.message));
 }));
 
@@ -5234,7 +5258,7 @@ app.post("/express/:orgSlug/charge", donateLimiter, wrap(async (req, res) => {
 
 // ── S-4: token is POST-consumed, atomically single-use ─────────────────────
 app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) => {
-  const org = await portalOrgBySlug(req.params.orgSlug);
+  const org = await portalOrgBySlug(req.params.orgSlug, { membership: true });
   if (!org) return res.status(404).json({ error: "portal_not_found" });
   const token = String(req.body?.token || "");
   if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
@@ -5247,9 +5271,11 @@ app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) =
     // saved, which is not the same claim as "show me my giving history".
     `UPDATE portal_magic_links SET used_at = NOW()
      WHERE token_hash = ? AND org_id = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
-       AND purpose = 'portal'
+       AND (purpose = 'membership' OR (purpose = 'portal' AND ?::boolean))
      RETURNING email`,
-    [sha256hex(token), org.id]);
+    // FIX-20 Part 7: a membership link (asked from the membership page) signs
+    // in with the portal off; a portal link still needs the portal on.
+    [sha256hex(token), org.id, org.portal_enabled === true]);
   if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used. Request a fresh one." });
   const email = rows[0].email;
   const sessToken = crypto.randomBytes(32).toString("base64url");
@@ -5296,7 +5322,7 @@ app.get("/portal/:orgSlug/session", requirePortalSession, wrap(async (req, res) 
 // a public give page is byte-identical whether or not the email behind it has
 // ever given (pinned in tests/org-blindness.test.js). Returns the donor's
 // current recurring arrangement (frequency + intended base amount) or null.
-app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, res) => {
+app.get("/portal/:orgSlug/give-default", requireMembershipSession, wrap(async (req, res) => {
   const { org, email } = req.portal;
   const donors = await portalDonorsFor(org.id, email);
   // PARITY-1 E: the give form says who is signed in. The donor's OWN first

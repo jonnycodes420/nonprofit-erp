@@ -78,7 +78,7 @@ function sourceParamMap(serverSrc) {
     // runtime walk stays the authority for WHICH routes exist; this annotates.
     const regLine = slice.slice(0, Math.min(slice.length, slice.indexOf("=>") + 1 || 400, 400));
     const gates = [];
-    for (const gm of regLine.matchAll(/\b(requireAuth|requireAdmin|requireSuperAdmin|checkWriteAccess|requireDonorAccount|requirePortalSession|verifyStripeSignature)\b|\brequirePlan\(\s*["'](\w+)["']\s*\)|\b(\w*[lL]imiter)\b|\b(rawParser|urlencodedParser)\b/g)) {
+    for (const gm of regLine.matchAll(/\b(requireAuth|requireAdmin|requireSuperAdmin|checkWriteAccess|requireDonorAccount|requirePortalSession|requireMembershipSession|verifyStripeSignature)\b|\brequirePlan\(\s*["'](\w+)["']\s*\)|\b(\w*[lL]imiter)\b|\b(rawParser|urlencodedParser)\b/g)) {
       if (gm[1]) gates.push(gm[1]);
       else if (gm[2]) gates.push(`requirePlan(${gm[2]})`);
       else if (gm[3]) gates.push(gm[3]);
