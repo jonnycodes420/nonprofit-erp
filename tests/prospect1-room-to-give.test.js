@@ -14,6 +14,8 @@
 //   §3  "Who could give more?" lists nobody outside its counted rows: every
 //       person it names is in a reason's rows (the figure source), and the
 //       reasons' counts add up to the people it names
+//       and the Donors list's Room to give sort (FIX-22) runs on the server,
+//       so the order holds across pages, not only on the page loaded
 //   §4  deleting one person's screening takes them back to their own-file
 //       word, and the org-wide delete leaves no row
 //
@@ -79,6 +81,16 @@ const call = async (tok, method, p, body) => {
   ok("§1 Ostrowski, with no gifts, says so", words.ostrowski.label === "Not yet known" && texts("ostrowski")[0] === "No gifts on file yet", texts("ostrowski"));
   ok("§1 every own-file reason opens its rows (a figure source)", SEED.PEOPLE.every(p => words[p[0]].reasons.every(r => r.screening || (r.source && r.source.key === "donor-lifetime"))));
   ok("§1 no reason carries an em dash or a score meter", Object.values(words).every(w => w.reasons.every(r => !/—|%|\/100\b/.test(r.text))));
+
+  // §1 FIX-22: the Donors list sorts by Room to give on the server, so the
+  // order runs across pages: three to a page, Strong, then Some, then the rest.
+  const paged = [];
+  for (let off = 0; off < 15; off += 3) paged.push(...((await call(tok, "GET", `/donors?limit=3&offset=${off}&sort=room_to_give`)).body.donors || []));
+  const rankOf = id => ({ strong: 2, some: 1 })[(words[id.slice(PRE.length)] || {}).word] || 0;
+  const people = paged.filter(d => d.id.startsWith(PRE) && SEED.PEOPLE.some(p => PRE + p[0] === d.id));
+  ok("§1 the Room to give sort orders the whole list, page after page",
+    people.length === SEED.PEOPLE.length && people.every((d, i) => i === 0 || rankOf(people[i - 1].id) >= rankOf(d.id))
+      && paged.slice(0, 3).every(d => rankOf(d.id) === 2), paged.map(d => `${d.name}:${d.room_rank}`));
 
   // §2 ─────────────────────────────────────────────────────────────────────
   const csv = fs.readFileSync(path.join(__dirname, "fixtures", "prospect1", "harborlight-screening-return.csv"), "utf8").replace(/d_pr1_/g, PRE);

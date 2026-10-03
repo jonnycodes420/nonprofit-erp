@@ -108,6 +108,12 @@ const carries = t => MARK.some(m => String(t).includes(m));
     const r = await call(staff, "GET", p);
     ok(`§1 ${p} opens for them and carries no screening result`, r.status === 200 && !carries(r.text), { status: r.status, hit: MARK.filter(m => r.text.includes(m)) });
   }
+  // FIX-22: the Room to give sort would show the word through the order, so
+  // for them it is the list's own order, with no rank on any row.
+  const own = await call(staff, "GET", "/donors?limit=50&role=donor");
+  const rs = await call(staff, "GET", "/donors?limit=50&role=donor&sort=room_to_give");
+  ok("§1 the Room to give sort is the list's own order for them",
+    rs.status === 200 && JSON.stringify(rs.body.donors.map(d => d.id)) === JSON.stringify(own.body.donors.map(d => d.id)) && rs.body.donors.every(d => !("room_rank" in d)), rs.status);
   ok("§1 their /me says they cannot", (await call(staff, "GET", "/me")).body.user.canMajorGifts === false);
 
   // §2 ─────────────────────────────────────────────────────────────────────

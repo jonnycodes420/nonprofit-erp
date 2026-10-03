@@ -3440,7 +3440,21 @@ const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, M
 async function buildDonorListFilter(req) {
   // PARITY-1 Part D · the filter takes a plain params object now (groups.js),
   // so a dynamic Group's rule runs through exactly this code.
-  return GR.buildDonorFilter(req.user.orgId, req.query || {});
+  // FIX-22 · the Room to give sort reads the word for the whole org (a
+  // handful of set-wise queries side by side, never one per row), and only
+  // for someone who may see it; anyone else gets the list's own order.
+  const q = req.query || {};
+  let opts = {};
+  if (q.sort === "room_to_give") {
+    const PR = require("../prospect");
+    if (await PR.canSee(req.user.userId)) {
+      const all = await PR.roomToGive(req.user.orgId);
+      const roomRanks = [];
+      for (const [id, a] of all) if (a.rank > 0) roomRanks.push([id, a.rank]);
+      opts = { roomRanks };
+    }
+  }
+  return GR.buildDonorFilter(req.user.orgId, q, opts);
 }
 
 // GET /donors — unpaginated legacy shape (plain array) when `limit` is

@@ -808,6 +808,19 @@ async function main() {
     if (!g.online && !g.method) g.method = c.method;
   }
 
+  // FIX-22 · a working office has an owner on most of its file. Only one
+  // person in seven had one, so "Who could give more?" could name nobody who
+  // knows them best for most of its list (why.js reads who logged their
+  // conversations, else their owner). Everyone with a gift on file and no
+  // owner yet gets one, by their place in the list: two in three are the
+  // director's, one in three the officer's. No random draw, so the seed stays
+  // deterministic; giftless prospects stay unassigned, the pile a new
+  // officer would be handed.
+  {
+    const gave = new Set(gifts.map(g => g.donorId));
+    let k = 0;
+    for (const d of donors) if (!d.officer && gave.has(d.id)) d.officer = k++ % 3 === 2 ? "u_b72demo_off" : "u_b72demo";
+  }
   await writeAll(client, donors, gifts);
   // ENGAGE-1 — five of the eleven not back from the spring appeal have been in
   // touch lately, six have not, so "Who to call" ranks on something real:
@@ -3151,6 +3164,7 @@ async function main() {
     console.log(`[seed] engagement and generosity scored for ${scored} people`);
   }
   await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
+  await require("./seed/prospect1-prospects").checkKnowsBest(q, ORG);   // FIX-22: a name under who knows them best
 
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took
