@@ -129,13 +129,16 @@ const srv = http.createServer(async (req, res) => {
   if (url.startsWith("/_vercel/")) { res.statusCode = 404; return res.end(); }
 
   // 3) Static files, then the /giving entry, then the SPA catch-all.
-  let file = path.join(DIST, url);
-  if (!file.startsWith(DIST)) { res.statusCode = 403; return res.end(); }   // no traversal
+  // Every path is resolved and checked to stay inside DIST before it is read.
+  const inDist = p => { const r = path.resolve(p); return r === DIST || r.startsWith(DIST + path.sep) ? r : null; };
+  let file = inDist(path.join(DIST, url));
+  if (!file) { res.statusCode = 403; return res.end(); }   // no traversal
   if (url === "/giving") file = path.join(DIST, "giving.html");
   // CONTENT-1: a marketing page is prerendered to <path>/index.html, as Vercel
   // serves it; anything else gets the app shell (app.html), as vercel.json's
   // catch-all does. A dist from before the prerender has no app.html.
-  if (fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(path.join(file, "index.html"))) file = path.join(file, "index.html");
+  const page = inDist(path.join(file, "index.html"));
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory() && page && fs.existsSync(page)) file = page;
   else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
 
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");

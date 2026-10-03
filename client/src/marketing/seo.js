@@ -18,7 +18,9 @@ export const urlOf = path => SITE_ORIGIN + (path === "/" ? "/" : path);
 
 const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const unesc = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&");
-const text = html => unesc(html.replace(/<!--.*?-->/g, "").replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+// Plain text from our own rendered HTML, for structured data and checks. Any
+// angle bracket left after the tags are gone is dropped, never passed on.
+const text = html => unesc(html.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, "").replace(/[<>]/g, "")).replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
 const ORG = { "@type": "Organization", "@id": SITE_ORIGIN + "/#org", name: "Steward", url: SITE_ORIGIN + "/", logo: LOGO, email: "jonathan@stewardapp.dev",
   description: "A retention and stewardship CRM for small nonprofits. It shows who is drifting while a phone call still fixes it." };
