@@ -100,7 +100,7 @@ function daysLeftText(dl) {
   return `${dl} days left`;
 }
 
-export function Fundraising({ data, isReadOnly, onNavigate, initialSection, initialScope, isCoreTier }) {
+export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, isCoreTier }) {
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
   // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
   // on mount only, navNonce remounts like the other intent tabs.
@@ -296,7 +296,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       )}
 
       {!loading && subtab === "members" && (
-        <MembersView isReadOnly={isReadOnly} onNavigate={onNavigate} orgSlug={orgSlug} />
+        <MembersView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate} orgSlug={orgSlug} />
       )}
 
       {!loading && subtab === "funds" && (
