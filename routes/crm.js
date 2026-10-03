@@ -5686,6 +5686,12 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     await runTx(client, "UPDATE volunteer_shifts SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
     // FIX-1 C — the coordinator's notes follow the person the same way.
     await runTx(client, "UPDATE volunteer_notes SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
+    // PARITY-3 — qualifications move too; one the primary already holds by
+    // the same kind and name stays theirs, and the duplicate goes.
+    await runTx(client, `DELETE FROM volunteer_qualifications sq WHERE sq.org_id=? AND sq.person_id=?
+                           AND EXISTS (SELECT 1 FROM volunteer_qualifications pq WHERE pq.org_id=sq.org_id AND pq.person_id=?
+                                         AND pq.kind=sq.kind AND lower(pq.name)=lower(sq.name))`, [orgId, secondaryId, primaryId]);
+    await runTx(client, "UPDATE volunteer_qualifications SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET tribute_donor_id=? WHERE org_id=? AND tribute_donor_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET match_employer_id=? WHERE org_id=? AND match_employer_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client,
@@ -14619,39 +14625,160 @@ function signVolunteerToken(orgId, personId, exp) {
   return Buffer.from(body).toString("base64url") + "." + sig;
 }
 
+// ── PARITY-3 Part 1 · THE VOLUNTEER RECORD ON THE PROFILE ─────────────────
+// The hours log, filtered by date range and opportunity; this year and
+// lifetime, each opening its rows through the one `volunteer-hours` figure
+// source; the opportunities to log against; and the plain glance line
+// ("44 hours since 2023, last served May 22"). Hours are read from
+// volunteer_shifts and nowhere else.
+const VOL_LOG_MAX = 1000;
+async function volunteerLog(orgId, personId, q = {}) {
+  const where = ["v.org_id=?", "v.person_id=?"], args = [orgId, personId];
+  const ok = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ""));
+  if (ok(q.from)) { where.push("v.date >= ?"); args.push(String(q.from)); }
+  if (ok(q.to)) { where.push("v.date <= ?"); args.push(String(q.to)); }
+  if (q.opportunityId) { where.push("v.opportunity_id = ?"); args.push(String(q.opportunityId)); }
+  return query(
+    `SELECT v.id, v.date, v.hours, v.role, v.note, v.via, v.created_at, v.updated_at,
+            COALESCE(u.name, v.created_by_name) AS created_by_name,
+            v.opportunity_id, v.slot_id, v.start_time, v.end_time, o.name AS opportunity_name
+       FROM volunteer_shifts v LEFT JOIN volunteer_opportunities o ON o.id=v.opportunity_id AND o.org_id=v.org_id
+       LEFT JOIN users u ON u.id = v.created_by AND u.org_id = v.org_id
+      WHERE ${where.join(" AND ")} ORDER BY v.date DESC, v.created_at DESC LIMIT ${VOL_LOG_MAX}`, args);
+}
+const VIA_WORD = { staff: "Staff", self: "The volunteer, from their own link", import: "An import" };
+
 app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
-  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
-  const shifts = await query(`SELECT id, date, hours, role, note, via, created_by_name FROM volunteer_shifts
-                               WHERE org_id=? AND person_id=? ORDER BY date DESC, created_at DESC LIMIT 100`, [req.user.orgId, d.id]);
+  const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
+  const shifts = await volunteerLog(orgId, d.id, req.query || {});
   // VOL-1 — the shifts they are SIGNED UP FOR, beside the hours they have
   // already given. The record answers both questions a person opening it
   // asks: what have they done, and when will I see them next.
-  const today = orgToday(await orgTz(req.user.orgId));             // ORG_TZ_SEAM_OK
   const upcoming = await query(
-    `SELECT s.date, s.start_time, s.end_time, o.name AS opp_name, su.status
+    `SELECT s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS opp_name, su.status
        FROM volunteer_signups su
        JOIN volunteer_slots s ON s.id = su.slot_id
        JOIN volunteer_opportunities o ON o.id = s.opportunity_id
       WHERE su.org_id=? AND su.person_id=? AND su.status IN ('confirmed','waitlisted')
         AND s.cancelled_at IS NULL AND s.date >= ?
-      ORDER BY s.date, s.start_time LIMIT 6`, [req.user.orgId, d.id, today]).catch(() => []);
-  res.json({ ...(await volunteerSummary(req.user.orgId, d.id)),
-    sentence: "Every shift logged for this person, by staff, by the volunteer from their link, or from an import.",
+      ORDER BY s.date, s.start_time LIMIT 6`, [orgId, d.id, today]).catch(() => []);
+  const sum = await volunteerSummary(orgId, d.id);
+  const [yr] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND date >= ? AND date <= ?`,
+    [orgId, d.id, today.slice(0, 4) + "-01-01", today]);
+  const opps = await query(`SELECT id, name FROM volunteer_opportunities WHERE org_id=? AND archived_at IS NULL ORDER BY name`, [orgId]);
+  const lifeFrom = "1900-01-01", lifeTo = "2999-12-31";
+  const first = sum.firstShift ? String(sum.firstShift).slice(0, 10) : null, last = sum.lastShift ? String(sum.lastShift).slice(0, 10) : null;
+  const dd = iso => { const t = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10))); return t.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + (iso.slice(0, 4) !== today.slice(0, 4) ? `, ${iso.slice(0, 4)}` : ""); };
+  res.json({ ...sum,
+    sentence: "Every shift logged for this person, by staff at check-in or by hand, by the volunteer from their link, or from an import.",
+    thisYear: { hours: Number(yr.h || 0) / 100, label: `Hours in ${today.slice(0, 4)}`,
+      sentence: `Every volunteer shift dated January 1 to today, ${today.slice(0, 4)}, added up.`,
+      source: { key: "volunteer-hours", params: { from: today.slice(0, 4) + "-01-01", to: today, donor: d.id } } },
+    lifetime: { hours: sum.totalHours, label: "Hours in all",
+      sentence: "Every volunteer shift ever logged for this person, added up.",
+      source: { key: "volunteer-hours", params: { from: lifeFrom, to: lifeTo, donor: d.id } } },
+    glanceLine: sum.shiftCount ? `${sum.totalHours} ${sum.totalHours === 1 ? "hour" : "hours"} since ${first.slice(0, 4)}, last served ${dd(last)}` : null,
+    opportunities: opps,
     upcoming: upcoming.map(u => ({
       when: `${u.opp_name}, ${u.date}${u.status === "waitlisted" ? " (waiting list)" : ""}`,
       date: u.date, status: u.status })),
-    shifts: shifts.map(s => ({ ...s, hours: Number(s.hours) })) });
+    filtered: !!(req.query.from || req.query.to || req.query.opportunityId),
+    shifts: shifts.map(s => ({ id: s.id, date: s.date, hours: Number(s.hours), role: s.role, note: s.note,
+      opportunityId: s.opportunity_id || null, opportunityName: s.opportunity_name || null, slotId: s.slot_id || null,
+      startTime: s.start_time || null, endTime: s.end_time || null,
+      enteredAt: s.created_at, enteredBy: s.created_by_name || VIA_WORD[s.via] || "", via: s.via, editedAt: s.updated_at || null })) });
+}));
+
+// The same filtered log, as a file.
+app.get("/donors/:id/volunteer-hours.csv", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const rows = await volunteerLog(orgId, d.id, req.query || {});
+  const cell = v => { const t = v == null ? "" : String(v); const g = /^[=+\-@]/.test(t) ? "'" + t : t; return /[",\n\r]/.test(g) || g !== t ? `"${g.replace(/"/g, '""')}"` : g; };
+  const lines = [["Person", "Opportunity", "Date", "Hours", "Start", "End", "Entered", "Entered by", "Notes"].join(",")];
+  for (const r of rows) lines.push([d.name, r.opportunity_name || r.role || "", r.date, Number(r.hours), r.start_time || "", r.end_time || "",
+    r.created_at ? new Date(r.created_at).toISOString().slice(0, 16).replace("T", " ") : "", r.created_by_name || VIA_WORD[r.via] || "", r.note || ""].map(cell).join(","));
+  const total = rows.reduce((a, r) => a + Math.round(Number(r.hours) * 100), 0) / 100;
+  lines.push(["Total", "", "", total, "", "", "", "", ""].map(cell).join(","));
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="volunteer-hours.csv"`);
+  res.send(lines.join("\r\n") + "\r\n");
 }));
 
 app.post("/donors/:id/volunteer-hours", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await VH_READY;
-  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
-  const v = VH.validateShift(req.body || {});
-  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
-  const id = await insertShift(req.user.orgId, d.id, v.shift, { via: "staff", who: actor(req) });
-  res.status(201).json({ id, ...(await volunteerSummary(req.user.orgId, d.id)) });
+  const b = req.body || {};
+  let opp = null;
+  if (b.opportunityId) {
+    [opp] = await query("SELECT id, name FROM volunteer_opportunities WHERE id=? AND org_id=?", [String(b.opportunityId), orgId]);
+    if (!opp) return res.status(404).json({ error: "That opportunity is not one of yours." });
+  }
+  const v = VH.validateShift({ ...b, role: b.role || (opp && opp.name) || null });
+  if (!v.ok) return res.status(400).json({ error: `A shift needs ${v.errors.join("; ")}.` });
+  const id = await insertShift(orgId, d.id, { ...v.shift, opportunityId: opp ? opp.id : null }, { via: "staff", who: actor(req) });
+  res.status(201).json({ id, ...(await volunteerSummary(orgId, d.id)) });
+}));
+
+// What a volunteer is qualified for and what they told you: tags, skills and
+// certifications; the background check and waiver with their state and
+// expiry; the answers on their application; and the coordinator's notes,
+// internal and the ones the volunteer can see, kept apart.
+app.get("/donors/:id/volunteer-profile", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
+  const VS = await import("../shared/volunteerShifts.js");
+  const quals = await query(`SELECT id, kind, name, expires_on, created_by_name, created_at FROM volunteer_qualifications
+                              WHERE org_id=? AND person_id=? ORDER BY kind, lower(name)`, [orgId, d.id]);
+  const creds = await query(`SELECT DISTINCT ON (kind) kind, signed_on, expires_on, reference FROM volunteer_credentials
+                              WHERE org_id=? AND person_id=? AND superseded_at IS NULL ORDER BY kind, signed_on DESC`, [orgId, d.id]);
+  const apps = await query(`SELECT id, status, answers, availability, submitted_at, decided_at, decided_by_name FROM volunteer_applications
+                             WHERE org_id=? AND person_id=? ORDER BY submitted_at DESC LIMIT 5`, [orgId, d.id]).catch(() => []);
+  const notes = await query(`SELECT id, kind, body, note_date, visibility, created_by_name, created_at FROM volunteer_notes
+                              WHERE org_id=? AND person_id=? ORDER BY created_at DESC LIMIT 100`, [orgId, d.id]);
+  const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || null); } catch { return null; } };
+  res.json({
+    qualifications: quals.map(q => ({ id: q.id, kind: q.kind, name: q.name, expiresOn: q.expires_on || null,
+      expired: !!(q.expires_on && q.expires_on < today), addedBy: q.created_by_name || "" })),
+    credentials: creds.map(c => ({ kind: c.kind, signedOn: c.signed_on, expiresOn: c.expires_on || null, reference: c.reference || null,
+      ...VS.credentialState({ kind: c.kind, signedOn: c.signed_on, expiresOn: c.expires_on }, today) })),
+    applications: apps.map(a => ({ id: a.id, status: a.status, answers: parse(a.answers) || [], availability: parse(a.availability) || [],
+      submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "" })),
+    notes: notes.map(n => ({ id: n.id, kind: n.kind, body: n.body, date: n.note_date, visibility: n.visibility || "internal",
+      by: n.created_by_name || "", at: n.created_at })),
+    sentences: {
+      qualifications: "Skills, certifications and tags you keep for this volunteer. A certification can carry the date it runs out.",
+      notes: "Internal notes are for staff only. A note marked for the volunteer shows on their own page.",
+    },
+  });
+}));
+
+app.post("/donors/:id/volunteer-qualifications", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const kind = String(req.body?.kind || ""), name = String(req.body?.name || "").trim().slice(0, 80);
+  const expiresOn = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.expiresOn || "")) ? String(req.body.expiresOn) : null;
+  if (!["skill", "certification", "tag"].includes(kind)) return res.status(400).json({ error: "That is a skill, a certification or a tag." });
+  if (!name) return res.status(400).json({ error: "Give it a name." });
+  const id = "vq_" + uuid().slice(0, 10);
+  const r = await query(`INSERT INTO volunteer_qualifications (id,org_id,person_id,kind,name,expires_on,created_by,created_by_name)
+                         VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING RETURNING id`, [id, orgId, d.id, kind, name, kind === "certification" ? expiresOn : null, who.id, who.name]);
+  if (!r.length) return res.status(409).json({ error: `They already have ${name}.` });
+  res.status(201).json({ id });
+}));
+app.delete("/volunteer-qualifications/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM volunteer_qualifications WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
 }));
 
 // The link staff hand to a volunteer so they can log their own hours.

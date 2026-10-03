@@ -114,6 +114,13 @@ export function ProfileGlance({ status, onOpenDonor }) {
           <Tile label="Average gift" figure={g.average} sub={g.average && g.average.count ? `of ${g.average.count} gift${g.average.count === 1 ? "" : "s"}` : null} />
         </div>
       )}
+      {/* PARITY-3 — the volunteer line, opening the shifts it adds up. */}
+      {status.volunteer && (
+        <div data-testid="dp-glance-volunteer" style={{ marginTop: 8, fontSize: 13, color: T.ink2 }}>
+          <Opens source={status.volunteer.source} title={status.volunteer.sentence} explanation={status.volunteer.sentence} testid="dp-glance-volunteer-open" onSelectDonor={onOpenDonor}
+            style={{ textAlign: "left", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{status.volunteer.line}</Opens>
+        </div>
+      )}
       {status.highlights && status.highlights.length > 0 && (
         <div data-testid="dp-highlights" style={{ marginTop: 10, background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "10px 14px" }}>
           <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>Highlights</div>

@@ -28,15 +28,40 @@ export function hoursToHundredths(v) {
 }
 export function hundredthsToHours(h) { return Math.round(h) / 100; }
 
+// PARITY-3 — hours can be given three ways: a number of hours ("2.5"),
+// hours and minutes (2 and 30), or a start and an end time (09:00 to 11:30).
+// All three become integer hundredths of an hour, the one unit hours are kept
+// in. A start and end that cross midnight are refused, not guessed.
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+export function entryHundredths(raw = {}) {
+  if (raw.startTime || raw.endTime) {
+    if (!HHMM.test(String(raw.startTime || "")) || !HHMM.test(String(raw.endTime || ""))) return { error: "a start and an end time, like 09:00 and 11:30" };
+    const m = s => +s.slice(0, 2) * 60 + +s.slice(3, 5);
+    const mins = m(String(raw.endTime)) - m(String(raw.startTime));
+    if (mins <= 0) return { error: "an end time after the start time, on the same day" };
+    return { hundredths: Math.round(mins * 100 / 60), startTime: String(raw.startTime), endTime: String(raw.endTime) };
+  }
+  if (raw.minutes !== undefined && raw.minutes !== null && String(raw.minutes).trim() !== "") {
+    const hh = String(raw.hours ?? "").trim() === "" ? 0 : Number(raw.hours), mm = Number(raw.minutes);
+    if (!Number.isFinite(hh) || !Number.isInteger(mm) || hh < 0 || mm < 0 || mm > 59 || (hh !== Math.floor(hh))) return { error: "whole hours and minutes from 0 to 59" };
+    return { hundredths: Math.round((hh * 60 + mm) * 100 / 60) };
+  }
+  return { hundredths: hoursToHundredths(raw.hours) };
+}
+
 export function validateShift(raw) {
   const errors = [];
   const date = String(raw?.date || "").slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) errors.push("a date (YYYY-MM-DD)");
-  const h = hoursToHundredths(raw?.hours);
-  if (h === null || h <= 0) errors.push("hours greater than zero");
+  const entry = entryHundredths(raw || {});
+  if (entry.error) errors.push(entry.error);
+  const h = entry.error ? 0 : entry.hundredths;
+  if (entry.error) { /* already said */ }
+  else if (h === null || h <= 0) errors.push("hours greater than zero");
   else if (h > MAX_SHIFT_HOURS * 100) errors.push(`no more than ${MAX_SHIFT_HOURS} hours in one shift`);
   const role = String(raw?.role || "").trim().slice(0, 120) || null;
-  return errors.length ? { ok: false, errors } : { ok: true, shift: { date, hundredths: h, role, note: String(raw?.note || "").trim().slice(0, 500) || null } };
+  return errors.length ? { ok: false, errors } : { ok: true, shift: { date, hundredths: h, role, note: String(raw?.note || "").trim().slice(0, 500) || null,
+    startTime: entry.startTime || null, endTime: entry.endTime || null } };
 }
 
 export function shiftKey({ email, name, date, hundredths, role }) {

@@ -6483,6 +6483,27 @@ async function initSchema() {
   await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_opp ON volunteer_shifts (org_id, opportunity_id, date) WHERE opportunity_id IS NOT NULL`);
 
+  // Part 1. A volunteer's tags and qualifications: a skill ("Spanish"), a
+  // certification with an expiry ("First aid", to 2027-03-01), or a tag
+  // ("Saturday regular"). Background checks and waivers stay in
+  // volunteer_credentials, which already holds a dated thing that lapses.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_qualifications (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('skill','certification','tag')),
+      name TEXT NOT NULL,
+      expires_on TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_qual ON volunteer_qualifications (org_id, person_id, kind, lower(name))`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_qual_name ON volunteer_qualifications (org_id, kind, lower(name))`);
+  // A coordinator's note is INTERNAL unless she says the volunteer may see it,
+  // in which case it shows on their own page. Every note before this is internal.
+  await pool.query(`ALTER TABLE volunteer_notes ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'internal'`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

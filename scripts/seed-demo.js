@@ -1492,12 +1492,17 @@ async function main() {
   // The past shifts produce HOURS, through the same table the total is
   // summed from — a checked-out slot and a hand-logged shift are one number.
   let vsh = 0;
-  const logHours = async (personId, date, hours, role) => {
+  // PARITY-3 — each one knows its opportunity and shift, so the profile's
+  // hours log reads "Saturday harbor clean-up", filters by opportunity, and
+  // a few carry the kind of note a coordinator actually writes.
+  const OPP_OF_ROLE = { "Saturday harbor clean-up": "vo_b72_shore", "After-school tutoring": "vo_b72_tutor", "Gala night crew": "vo_b72_gala" };
+  const HOUR_NOTES = ["Stayed late to sort the recycling", "Brought two friends along", "Led the north beach team", "Covered for a tutor who was ill"];
+  const logHours = async (personId, date, hours, role, slotId = null, start = null, end = null) => {
     vsh++;
     const id = `vs_b72_${vsh}`;
-    await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,via,created_by,created_by_name)
-             VALUES ($1,$2,$3,$4,$5,$6,'staff','u_b72demo','Dana Reyes')`,
-      [id, ORG, personId, date, hours, role]);
+    await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,via,created_by,created_by_name,opportunity_id,slot_id,start_time,end_time,note)
+             VALUES ($1,$2,$3,$4,$5,$6,'staff','u_b72demo','Dana Reyes',$7,$8,$9,$10,$11)`,
+      [id, ORG, personId, date, hours, role, OPP_OF_ROLE[role] || null, slotId, start, end, vsh % 9 === 0 ? HOUR_NOTES[(vsh / 9) % HOUR_NOTES.length] : null]);
     return id;
   };
   const past = [
@@ -1508,7 +1513,7 @@ async function main() {
   ];
   for (const p of past) {
     for (const person of p.who) {
-      const shiftId = await logHours(person, p.slot.date, p.hours, p.role);
+      const shiftId = await logHours(person, p.slot.date, p.hours, p.role, p.slot.id, p.slot.s, p.slot.e);
       await putOn(p.slot.id, person, "completed", {
         source: "public", shiftId,
         in: `${p.slot.date}T${p.slot.s}:00Z`, out: `${p.slot.date}T${p.slot.e}:00Z`,
@@ -1547,6 +1552,31 @@ async function main() {
   }
   await cred(allVols[15], "background_check", dAdd(TODAY, -740), dAdd(TODAY, -12));   // LAPSED twelve days ago
   await cred(allVols[16], "waiver", dAdd(TODAY, -350), dAdd(TODAY, 11));              // expires in eleven days
+
+  // PARITY-3 Part 1 — skills, certifications and tags, and notes kept apart:
+  // internal ones for staff, and one the volunteer sees on their own page.
+  {
+    const QUALS = [["skill", "Spanish"], ["skill", "Maths tutoring"], ["certification", "First aid", dAdd(TODAY, 200)],
+                   ["certification", "Food handling", dAdd(TODAY, -20)], ["tag", "Saturday regular"], ["tag", "Team lead"]];
+    let nq = 0;
+    for (const [i, person] of allVols.slice(0, 12).entries()) {
+      for (const [k, name, exp] of [QUALS[i % QUALS.length], QUALS[(i + 3) % QUALS.length]]) {
+        nq++;
+        await q(`INSERT INTO volunteer_qualifications (id,org_id,person_id,kind,name,expires_on,created_by,created_by_name)
+                 VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes') ON CONFLICT DO NOTHING`, [`vq_b72_${nq}`, ORG, person, k, name, exp || null]);
+      }
+    }
+    const NOTES = [
+      [allVols[0], "availability", "Saturdays only until the spring; works shifts in the week.", "internal"],
+      [allVols[0], "note", "Thank you for leading the north beach team. Gloves are in the blue crate now.", "volunteer"],
+      [allVols[2], "training", "Did the tutoring induction on the 12th. Ready for one-to-one.", "internal"],
+      [allVols[5], "note", "Prefers a text the day before rather than an email.", "internal"],
+    ];
+    for (const [i, [person, kind, body, vis]] of NOTES.entries()) {
+      await q(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,visibility,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,'u_b72demo','Dana Reyes')`, [`vn_b72_p3_${i}`, ORG, person, kind, body, dAdd(TODAY, -10 - i), vis]);
+    }
+  }
 
   // ── PARITY-3 Part 4 · A MONTH OF SHIFTS, WITH ROLES ───────────────────
   // The two opportunities a coordinator runs every week, for the next four

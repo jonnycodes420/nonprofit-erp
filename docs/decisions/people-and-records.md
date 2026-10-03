@@ -175,6 +175,13 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   whole or empty by a CHECK, one parser for every door (`shared/birthday.js`: the profile, both import
   paths, the server's re-check). A cell it cannot read is refused, never guessed. February 29 is
   remembered on the 28th in a year without one, and the Birthday journey fires on the org's own date. (PARITY-3)
+- **The volunteer record lives on the person.** The profile's Volunteering section (main column with
+  hours, under More without): this year and lifetime through the one `volunteer-hours` figure source, the
+  hours log filtered by dates and opportunity with its CSV, hours given as hours, hours and minutes, or
+  start and end (`VH.validateShift`), edit and delete through the audit write, qualifications
+  (`volunteer_qualifications`: skill, certification with expiry, tag), checks and waivers, application
+  answers, and notes kept `internal` or shown to the volunteer on Your page. Each logged shift is on the
+  timeline as Volunteer service. The glance line opens the same source. (PARITY-3)
 - **Count volunteer hours in integer hundredths.** A shift must be more than 0 and at most 24 hours, enforced
   by the route and a CHECK. An imported shift is unique on (person, day, hours, role). (BUILD-98)
 - **Staff copy the volunteer self-log link; Steward never sends it.** It is an HMAC over org, person and a
