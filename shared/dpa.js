@@ -19,6 +19,7 @@ export function dpaSections() {
     ] },
     { h: "2. What Steward processes", p: [
       "Information about the Customer's donors, members, volunteers and other contacts: names, contact details, addresses, giving history, notes, logged emails and meetings, event registrations and volunteer hours. Information about the Customer's staff who use Steward: names, email addresses, roles and sign-in records.",
+      "If the Customer uses wealth screening, the results a screening provider returns about a person (capacity and real estate ranges, known gifts to other charities, foundation ties and business affiliations), stored with the provider's name and the date. Only the Customer's admins and staff it gives the major gifts permission can see them, and a person's export and erasure include them. The provider is to be named.",
       "Steward does not sell this data, does not use it to advertise, and does not combine it with any other customer's data.",
     ] },
     { h: "3. Staff and confidentiality", p: [

@@ -21,6 +21,15 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-PROSPECT-1 · RE-SEED THE DEMO FOR ROOM TO GIVE; A SCREENING PROVIDER IS YOURS TO PICK (2026-10-03)
+
+The seed changed: ten prospects (3 Strong, 4 Some, 3 Not yet known), two foundations with EINs
+(271000101, 271000102, made up) and a matched-gift employer. Re-seed with the CLEAN-1 command above. The sample
+screening file for the walk is `tests/fixtures/prospect1/harborlight-screening-return.csv` (six match, one does not).
+On prod "Look up public filing" asks ProPublica for real, so the two made-up EINs come back "no filing found";
+to see a real filing on the walk, put a real foundation's EIN on one of them first. Choosing and paying a
+screening provider (prices and links in the PROSPECT-1 PR) is yours; nothing is signed up.
+
 ## 0-CLEAN-1 · RE-SEED THE PROD DEMO FOR DATA HEALTH, AND PICK AN NCOA PROVIDER (2026-10-03)
 
 The seed now adds eight duplicate pairs (3 high, 3 medium, 2 low), fifteen messy addresses, four emails to

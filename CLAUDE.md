@@ -156,7 +156,7 @@ touch …", then the rules, then the reference sections moved from the old CLAUD
 - `docs/decisions/forms.md` — giving pages, the builder and widget registry, peer-to-peer, form configs.
 - `docs/decisions/tests-and-ci.md` — the battery, browser legs, tenant matrix, guards, pre-push, CI, deploys, TDZ, the speed rule.
 - `docs/decisions/architecture.md` — stack, env vars, project layout, tabs, components, org scoping, the actor stamp, API keys, export, scale.
-- `docs/decisions/why.md` — Ask why: the answer shape, the seven questions, template sentences, the number check.
+- `docs/decisions/why.md` — Ask why: the answer shape, the eight questions, template sentences, the number check.
 - `docs/decisions/home-and-reports.md` — Home, the Dashboard, the Thread, Drift, tasks, goals, report definitions, board reports.
 - `docs/decisions/people-and-records.md` — the person record: donors, orgs, non-donors, households, merge, deletion, profile, volunteers, events.
 - `docs/decisions/accounts-and-billing.md` — sign-in, signup, onboarding, invites, roles, super admin, Settings, platform billing.

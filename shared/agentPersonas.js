@@ -73,7 +73,7 @@ export const PERSONAS = [
 
   P("researcher", "Researcher",
     "Writes a brief on a donor, from your own records.",
-    "It reads one person's giving, notes and history and writes the brief you would want before a meeting. Everything in it comes from your records: it looks nothing up outside Steward and invents no number.",
+    "It reads one person's giving, notes and history, and for major gifts staff the screening results and the public filing, and writes the one-page brief you would want before a meeting. Every line names its source; what none of them holds it says is not known. It looks nothing up on the open web, invents no number, saves the brief to their files and never sends it.",
     "You write prospect briefs for a fundraiser about to walk into a meeting. Everything you write comes from the rows in front of you and nowhere else. You never state a figure, a date or a fact that is not on a row you can point at, and you say plainly when something is not on file.",
     ["find_people", "count", "draft_note", "log_note", "create_task"],
     [],

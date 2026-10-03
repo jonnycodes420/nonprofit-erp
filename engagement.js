@@ -265,14 +265,29 @@ async function partRows(q, orgId, donorId, today, score, part) {
 }
 
 // ── SUGGESTED ASK, from their own gifts only ────────────────────────────────
-async function suggestedAsk(q, orgId, donorId) {
+// PROSPECT-1 — when the caller may see screening results and hands them in
+// (`opts.screening`, prospect.js shapeScreening), a capacity range whose low end
+// is at least five times their largest gift moves the ask one friendly step up,
+// and the sentence says so and names the file. Without screening the ask is
+// their own gifts' alone, exactly as before.
+async function suggestedAsk(q, orgId, donorId, opts = {}) {
   const rows = await q(
     `SELECT g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
       ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, donorId]);
   if (!rows.length) return null;
   const all = rows.map(r => cents(r.amount));
-  const { suggestedAskCents } = await import("./shared/smartAmounts.js");
-  return suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3) });
+  const SA = await import("./shared/smartAmounts.js");
+  const own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3) });
+  const s = opts.screening;
+  if (!own || !s || s.capacityLowCents == null) return own;
+  const RT = await import("./shared/roomToGive.js");
+  const range = RT.rangeText(s.capacityLowCents, s.capacityHighCents);
+  if (s.capacityLowCents < RT.STRONG_CAPACITY_MULTIPLE * own.largestCents) {
+    return { ...own, screening: true, sentence: `${own.sentence} The screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, which does not move the ask.` };
+  }
+  const up = SA.nextFriendlyAbove ? SA.nextFriendlyAbove(own.askCents) : own.askCents;
+  return { ...own, askCents: up, screening: true,
+    sentence: `${own.sentence.replace(/: ask \$[\d,.]+\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
 module.exports = { touchRows, givingRows, generosityParts, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights };

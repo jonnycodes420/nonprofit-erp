@@ -3139,6 +3139,7 @@ async function main() {
   await require("./seed/parity2-events").seedParity2Events(q, ORG);   // PARITY-2 Part 3: the event pages
   await require("./seed/parity2-auction").seedParity2Auction(q, { ORG });   // PARITY-2 Part 4
   await require("./seed/clean1-mess").seedClean1Mess(q, ORG, { TODAY });   // CLEAN-1 Part 6: Data health has something to show
+  await require("./seed/prospect1-prospects").seedProspect1(q, ORG, { TODAY });   // PROSPECT-1 Part 7: believable prospects
 
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
@@ -3149,6 +3150,7 @@ async function main() {
     const scored = await E.recomputeOrgScores(qq, ORG, TODAY);
     console.log(`[seed] engagement and generosity scored for ${scored} people`);
   }
+  await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
 
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took

@@ -34,6 +34,8 @@ export const QUESTIONS = [
   { key: "lapse", needs: null, ask: () => "Who is about to lapse, and why?" },
   { key: "volunteers", needs: null, ask: () => "Which volunteers should we ask to give?" },
   { key: "second", needs: null, ask: () => "Which first-time donors need a second ask?" },
+  // PROSPECT-1 — admins and major gifts staff only (routes/why.js).
+  { key: "more", needs: null, ask: () => "Who could give more?", restricted: true },
 ];
 export const QUESTION_KEYS = QUESTIONS.map(q => q.key);
 
@@ -43,6 +45,7 @@ export const CANT_ANSWER = "Steward can't answer that one yet. We've noted it.";
 // narrower questions are tried first, so "which volunteers haven't given" is
 // the volunteer question and not the lapse one.
 const MATCHERS = [
+  ["more", /\b(could|can|might|able to)\b.*\bgive more\b|\broom to give\b|\b(capacity|upgrade|major (gift|donor) prospects?)\b/i],
   ["volunteers", /\bvolunteer/i],
   ["second", /\b(first[- ]time|first gift|new donors?|second (ask|gift))\b/i],
   ["call", /\b(who|whom)\b.*\b(call|ring|phone|reach out|contact)\b|\b(call|ring)\b.*\b(tomorrow|today|this morning|next)\b/i],
@@ -108,6 +111,10 @@ export function templateSentence(key, f) {
     case "second": {
       if (!f.count) return "Every first-time donor from the last 90 days has a second gift or a thank-you call on file.";
       return `${cap(plural(f.count, "first-time donor", "first-time donors"))} from the last 90 days ${f.count === 1 ? "has" : "have"} no second gift and no thank-you call, ${dollars(f.firstCents)} in first gifts; ${f.first.name} gave the most.`;
+    }
+    case "more": {
+      if (!f.count) return "Nobody's own file shows room to give more yet; a screening file can add what the file can't see.";
+      return `${cap(plural(f.count, "person shows", "people show"))} room to give more, ${spell(f.strong)} of them strong; start with ${f.first.name}.`;
     }
     default: return CANT_ANSWER;
   }

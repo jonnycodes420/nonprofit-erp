@@ -147,6 +147,8 @@ CORE=(
   trust2-erase
   clean1-merge
   clean1-duplicates
+  prospect1-room-to-give
+  prospect1-who-sees
   help1-ask
   why1-appeal-variance
   parity1-donor-tags

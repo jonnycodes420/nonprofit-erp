@@ -17,6 +17,7 @@
 const express = require("express");
 const WHY = require("../why");
 const AW = require("../appealWhy");
+const P = require("../prospect");
 
 const routers = { r0: express.Router() };
 
@@ -90,7 +91,10 @@ app.get("/why/questions", requireAuth, wrap(async (req, res) => {
   const c = await WHY.defaultCampaign(req.user.orgId);
   const taps = [{ key: "call", text: Sx.QUESTIONS.find(q => q.key === "call").ask() }];
   if (c) taps.push({ key: "appeal", campaign: c.id, text: Sx.QUESTIONS.find(q => q.key === "appeal").ask(c.name) });
-  res.json({ taps, all: Sx.QUESTIONS.map(q => ({ key: q.key, needs: q.needs, text: q.ask() })) });
+  // PROSPECT-1 — the eighth question is a one-tap for admins and major gifts staff, and nobody else.
+  const mg = await P.canSee(req.user.userId);
+  if (mg) taps.push({ key: "more", text: Sx.QUESTIONS.find(q => q.key === "more").ask() });
+  res.json({ taps, all: Sx.QUESTIONS.filter(q => mg || !q.restricted).map(q => ({ key: q.key, needs: q.needs, text: q.ask() })) });
 }));
 
 // GET /donors/:id/journey-suggestion — WHY-1 Part 7. The journey the donor's
@@ -160,6 +164,13 @@ app.post("/why/ask", requireAuth, wrap(async (req, res) => {
   if (key === "stopped" && !donor && typed) donor = ((await donorNamedIn(orgId, typed)) || {}).id || null;
   if (key === "appeal" && !campaign) key = null;
   if (key === "stopped" && !donor) key = null;
+  // PROSPECT-1 — room to give is for admins and major gifts staff. Anyone else
+  // who types the question is told plainly, and nothing about anybody is shown.
+  if (key === "more" && !(await P.canSee(req.user.userId))) {
+    await logQuestion(typed || "Who could give more?", "more", false);
+    return res.status(403).json({ error: "major_gifts_only", answered: false,
+      sentence: "Room to give is for admins and staff with the major gifts permission.", question: { text: typed } });
+  }
 
   // The text that is logged: what she typed, or the tapped question's words
   // with the subject left generic (a donor's name is donor data).
@@ -186,6 +197,8 @@ app.post("/why/ask", requireAuth, wrap(async (req, res) => {
     sentence: s.sentence, sentenceSource: s.source, template: s.template, aiOff: !!s.aiOff,
     reasons: (a.reasons || []).map(r => publicReason(r, params)),
     who: a.who || [], step, cantSee: a.cantSee || null,
+    alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
+      ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
   });
 }));
 }

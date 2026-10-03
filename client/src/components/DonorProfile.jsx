@@ -4,6 +4,8 @@
 // Tests read it through readSource("client/src/components/Donors.jsx").
 import { useState, useEffect, useRef, useContext, useMemo } from "react";
 import { ScoreCard, useScores, SuggestedAskLine } from "./ScoreWhy";
+import { RoomToGiveBlock, PublicFilingBlock, usePublicFiling, PublicFilingLookupModal, ProspectBriefModal } from "./RoomToGive";
+import { useCanMajorGifts } from "../lib/majorGifts";
 import { FunderPanel } from "./FunderPanel";
 import { VolunteerPanel } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
@@ -940,6 +942,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [rel,setRel]=useState(null);
   // ENGAGE-1 — the two scores and the suggested ask, one read.
   const scores=useScores(donor.id);
+  // PROSPECT-1 — Room to give, the screening results, an organization's
+  // public filing and the prospect brief: admins and the major gifts
+  // permission only. The filing read is the cache; a lookup is a POST.
+  const canMajorGifts=useCanMajorGifts();
+  const [publicFiling,setPublicFiling]=usePublicFiling(donor.id, canMajorGifts&&donor.kind==="organisation");
+  const [filingLookupOpen,setFilingLookupOpen]=useState(false);
+  const [prospectBriefOpen,setProspectBriefOpen]=useState(false);
   // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
   const status=useDonorStatus(donor.id, figs);
   const [logMeeting,setLogMeeting]=useState(null);
@@ -2003,6 +2012,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
                 [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
                 ["Brief me",()=>setBriefOpen(true),false],
+                // PROSPECT-1 — a one-page prospect brief from the record, the
+                // screening results and the public filing; saved to their files.
+                ...(canMajorGifts?[["Write a prospect brief",()=>setProspectBriefOpen(true),isReadOnly,"dp-prospect-brief"]]:[]),
+                ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
                 // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
                 ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
                 // PARITY-3 Part 1 — the volunteer record, for somebody with no hours yet
@@ -2031,6 +2044,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           )}
           {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
           {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
+          {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
+          {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
           {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
           {editingInt&&(()=>{let m={};try{m=typeof editingInt.metadata==="string"?JSON.parse(editingInt.metadata||"{}"):(editingInt.metadata||{});}catch{m={};}
@@ -3372,7 +3387,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               )}
               {/* ENGAGE-1 — how close they are, and how much they give. Inside
                   the Next step panel: no new layout. */}
-              <ScoreCard donorId={donor.id} scores={scores}/>
+              <ScoreCard donorId={donor.id} scores={scores}>
+                {canMajorGifts&&<RoomToGiveBlock donorId={donor.id} isReadOnly={isReadOnly}/>}
+                {canMajorGifts&&donor.kind==="organisation"&&<PublicFilingBlock data={publicFiling}/>}
+              </ScoreCard>
             </div>;
             // WHY-1 Part 7 — JOURNEY, NOT RHYTHM. The twelve-month touch
             // strip is gone from the profile (the timeline is where touch

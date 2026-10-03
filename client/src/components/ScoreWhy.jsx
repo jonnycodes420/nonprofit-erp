@@ -24,7 +24,7 @@ export function useScores(donorId) {
   return s;
 }
 
-export function ScoreCard({ donorId, scores }) {
+export function ScoreCard({ donorId, scores, children }) {
   const [why, setWhy] = useState(false);
   const s = scores;
   if (!s) return null;
@@ -51,6 +51,9 @@ export function ScoreCard({ donorId, scores }) {
         See why
       </button>
       {why && <ScoreWhyModal s={s} onClose={() => setWhy(false)} />}
+      {/* PROSPECT-1 — Room to give and an organization's public filing sit
+          in this card, for the people allowed to see them. */}
+      {children}
     </div>
   );
 }
@@ -118,7 +121,7 @@ export function SuggestedAskLine({ ask, style }) {
   if (!ask) return null;
   return (
     <div data-testid="suggested-ask" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, ...style }}>
-      <strong style={{ color: T.ink }}>Suggested ask:</strong> {ask.sentence} <span style={{ color: T.ink3 }}>From their own gifts only.</span>
+      <strong style={{ color: T.ink }}>Suggested ask:</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
     </div>
   );
 }

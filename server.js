@@ -3829,6 +3829,7 @@ app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
 app.use(require("./routes/dataHealth").routers.r0);    // CLEAN-1
+app.use(require("./routes/prospect").routers.r0);      // PROSPECT-1
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -10448,6 +10449,7 @@ require("./routes/templates").mount({
 require("./routes/why").mount({
   AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
 });
+require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });
