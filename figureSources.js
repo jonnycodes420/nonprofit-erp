@@ -897,6 +897,23 @@ const SOURCES = {
       args: [orgId, p.donor], order: "date DESC, id",
     }),
   },
+  // PARITY-2 Part 2: one peer-to-peer page's gifts: the P2P screen's Raised
+  // column for a fundraiser, the same set GET /peer-fundraisers/:id/gifts
+  // lists (amount > 0, through this page).
+  "fundraiser-gifts": {
+    label: "Raised through this page",
+    measure: () => "sum",
+    params: { fundraiser: "id:required" },
+    sentence: () => "Every gift given through this fundraiser's own page, added up to the cent. Hard credit stays with each donor.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(gd.name, 'A supporter') AS name, g.date,
+                   ROUND(g.amount::numeric, 2) AS amount, 'Peer-to-peer page: ' || pf.name AS detail
+              FROM gifts g JOIN peer_fundraisers pf ON pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id
+              LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+             WHERE g.org_id = ? AND pf.id = ? AND g.amount > 0`,
+      args: [orgId, p.fundraiser], order: "date DESC, id",
+    }),
+  },
   // MOVES MANAGEMENT — who has not been met. Owner and amount aware.
   "no-recent-meeting": {
     label: "No meeting since",

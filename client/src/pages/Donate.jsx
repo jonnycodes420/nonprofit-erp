@@ -120,23 +120,33 @@ const baseInp = {
 // account setup by design: on success the supporter is redirected straight
 // to their new live page, and a "manage your fundraiser" link is emailed
 // as the entire auth model for editing it later (see ManageFundraiser.jsx).
-function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
+// PARITY-2 Part 2: `initialTeamId` is "Join a team": the modal opens with
+// that team already picked (from a team's own page, or a row on the Teams
+// board), and `joining` with no team picks the first one. A page that asks for
+// approval answers `pending`, and the modal says so instead of sending the
+// supporter to a page that is not public yet.
+function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated, initialTeamId = "", joining = false }) {
   const [form, setForm] = useState({ name: "", email: "", personalGoalAmount: "", story: "", imageUrl: "" });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [pendingNote, setPendingNote] = useState("");
   const inp = { ...baseInp };
   // BUILD-103 Part 1 — JOIN A TEAM, OR START ONE. One screen: the teams on
   // this campaign come back from a public read, and "on my own" is the first
   // option because most people are.
   const [teams, setTeams] = useState([]);
-  const [teamChoice, setTeamChoice] = useState("");     // "" solo · id · "new"
+  const [teamChoice, setTeamChoice] = useState(initialTeamId || "");     // "" solo · id · "new"
   const [newTeam, setNewTeam] = useState({ name: "", goalAmount: "" });
   useEffect(() => {
     fetch(`${API}/org/${orgSlug}/giving-page/${pageSlug}/teams`)
       .then(r => r.ok ? r.json() : { teams: [] })
-      .then(d => setTeams(d.teams || []))
+      .then(d => {
+        const list = d.teams || [];
+        setTeams(list);
+        if (joining && !initialTeamId && list.length) setTeamChoice(c => c || list[0].id);
+      })
       .catch(() => setTeams([]));
-  }, [orgSlug, pageSlug]);
+  }, [orgSlug, pageSlug, joining, initialTeamId]);
 
   async function submit(e) {
     e.preventDefault();
@@ -153,6 +163,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not start your fundraiser.");
+      if (d.pending) { setPendingNote((d.pendingSentence || "Your page is waiting for approval. The link to manage it is in your email.") + (d.demoNote ? " " + d.demoNote : "")); setSaving(false); return; }
       onCreated(d);
     } catch (e) {
       setErr(errorMessage(e));
@@ -163,9 +174,16 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(26,26,26,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      {pendingNote ? (
+        <div data-testid="fundraiser-pending" style={{ background: T.white, borderRadius: 18, padding: "26px 24px", width: 440, maxWidth: "calc(100vw - 32px)", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: th.serif, marginBottom: 8 }}>Thank you. Your page is waiting for approval</div>
+          <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, marginBottom: 16 }}>{pendingNote}</div>
+          <button type="button" onClick={onClose} style={{ background: th.button, border: "none", borderRadius: 10, padding: "10px 18px", color: th.buttonFg, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Close</button>
+        </div>
+      ) : (
       <form onSubmit={submit} style={{ background: T.white, borderRadius: 18, padding: "26px 24px", width: 440, maxWidth: "calc(100vw - 32px)", maxHeight: "calc(100vh - 32px)", overflowY: "auto", boxShadow: "0 8px 40px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: th.serif }}>Start your own fundraiser</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: th.serif }}>{joining || initialTeamId ? "Join a team" : "Start your own fundraiser"}</div>
           <button type="button" onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.ink3, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 18, lineHeight: 1.5 }}>
@@ -206,6 +224,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
           {saving ? "Creating your page…" : "Create my fundraiser →"}
         </button>
       </form>
+      )}
     </div>
   );
 }
@@ -413,19 +432,26 @@ function DonorSignIn({ orgSlug, enabled, signedInAs, th }) {
 // Plain links and nothing else: no share widget, no third-party script, nothing
 // that tells another company who gave. Each one opens the network's own page
 // with the giving page's address in it, and the donor decides from there.
-function ShareRow({ url, orgName, th }) {
+// PARITY-2 Part 2: a fundraiser's page passes `p2pShare` (shared/p2p.js
+// shareLinks, from the server): every link carries its UTM tags, so a gift
+// that arrives through one is attributed like any other. `heading` says what
+// the row is for on that page.
+function ShareRow({ url, orgName, th, p2pShare = null, heading = "" }) {
   const [copied, setCopied] = useState(false);
   const text = `I just gave to ${orgName}. Join me:`;
   const enc = encodeURIComponent;
-  const links = [
+  const links = p2pShare ? [
+    ["Email", p2pShare.email], ["Text", p2pShare.text], ["Facebook", p2pShare.facebook], ["WhatsApp", p2pShare.whatsapp],
+  ] : [
     ["Email", `mailto:?subject=${enc(`Give to ${orgName}`)}&body=${enc(`${text} ${url}`)}`],
     ["Facebook", `https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`],
     ["X", `https://twitter.com/intent/tweet?url=${enc(url)}&text=${enc(text)}`],
     ["LinkedIn", `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}`],
   ];
+  const copyUrl = p2pShare ? p2pShare.copy : url;
   function copy() {
     try {
-      navigator.clipboard.writeText(url).then(() => setCopied(true), () => setCopied(false));
+      navigator.clipboard.writeText(copyUrl).then(() => setCopied(true), () => setCopied(false));
     } catch { setCopied(false); }
   }
   const pill = { display: "inline-block", padding: "8px 14px", borderRadius: 99, border: `1px solid ${T.bg3}`,
@@ -433,13 +459,170 @@ function ShareRow({ url, orgName, th }) {
                  cursor: "pointer", fontFamily: th.sans };
   return (
     <div className="thanks-share" style={{ marginTop: 26, maxWidth: 420 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>Ask a friend to give too</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{heading || "Ask a friend to give too"}</div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
         <button type="button" className="thanks-share-copy" onClick={copy} style={pill}>{copied ? "Link copied" : "Copy link"}</button>
         {links.map(([label, href]) => (
           <a key={label} className="thanks-share-link" data-net={label} href={href}
-             target={label === "Email" ? undefined : "_blank"} rel="noopener noreferrer" style={pill}>{label}</a>
+             target={label === "Email" || label === "Text" ? undefined : "_blank"} rel="noopener noreferrer" style={pill}>{label}</a>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── PARITY-2 Part 2 · THE PEER-TO-PEER PAGE ─────────────────────────────────
+// A thin progress bar in the org's own colour. Every bar on these pages is
+// this one, so a fundraiser's, a team's and the campaign's look alike.
+function ProgressBar({ raised, goal, th }) {
+  if (!(goal > 0)) return null;
+  return (
+    <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: `${Math.min(100, Math.round((raised / goal) * 100))}%`, background: th.primary, borderRadius: 99 }} />
+    </div>
+  );
+}
+
+// The leaderboard: Individuals | Teams, the top ten from the page payload,
+// and "See all" reads every active row from the one public board query, so
+// the top ten and the full list cannot rank differently. A team row opens
+// the team's page.
+function P2PBoard({ orgSlug, pageSlug, individuals, teams, teamCount, individualCount, sentence, th, card, onJoin }) {
+  const [tab, setTab] = useState("individuals");
+  const [all, setAll] = useState({});
+  const [busy, setBusy] = useState(false);
+  const rows = all[tab] || (tab === "teams" ? teams : individuals) || [];
+  const total = tab === "teams" ? teamCount : individualCount;
+  const seeAll = () => {
+    setBusy(true);
+    fetch(`${API}/org/${orgSlug}/giving-page/${pageSlug}/leaderboard?kind=${tab}`)
+      .then(r => (r.ok ? r.json() : { rows: [] }))
+      .then(d => setAll(a => ({ ...a, [tab]: d.rows || [] })))
+      .catch(() => {})
+      .finally(() => setBusy(false));
+  };
+  const tabBtn = (key, label) => (
+    <button type="button" role="tab" aria-selected={tab === key} data-testid={`p2p-tab-${key}`} onClick={() => setTab(key)}
+      style={{ flex: 1, padding: "8px 0", border: "none", borderBottom: `2px solid ${tab === key ? th.primary : "transparent"}`,
+               background: "none", color: tab === key ? T.ink : T.ink3, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: th.sans }}>
+      {label}
+    </button>
+  );
+  return (
+    <div data-testid="p2p-board" style={{ ...card, padding: "14px 18px", marginTop: 14 }}>
+      <div role="tablist" style={{ display: "flex", gap: 4, borderBottom: "1px solid " + T.bg3, marginBottom: 6 }}>
+        {tabBtn("individuals", `Individuals (${individualCount})`)}
+        {tabBtn("teams", `Teams (${teamCount})`)}
+      </div>
+      {!rows.length && (
+        <div style={{ fontSize: 13, color: T.ink3, padding: "10px 0" }}>
+          {tab === "teams" ? "No teams yet. Start one when you sign up." : "Nobody has started a page yet. Be the first."}
+        </div>
+      )}
+      {rows.map((r, i) => {
+        const href = tab === "teams" ? `/give/${orgSlug}/${pageSlug}?team=${encodeURIComponent(r.slug)}` : `/give/${orgSlug}/${pageSlug}/${r.slug}`;
+        return (
+          <div key={r.id} data-testid="p2p-board-row" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none" }}>
+            <div style={{ width: 24, fontSize: 12, fontWeight: 800, color: i < 3 ? th.accent : T.ink3, flexShrink: 0 }}>{i + 1}</div>
+            <a href={href} style={{ flex: 1, minWidth: 0, textDecoration: "none" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</div>
+              {tab === "teams"
+                ? <div style={{ fontSize: 11.5, color: T.ink3 }}>{r.members} {r.members === 1 ? "member" : "members"}{r.goalAmount ? ` · goal ${fmtMoney(r.goalAmount)}` : ""}</div>
+                : r.teamName ? <div style={{ fontSize: 11.5, color: T.ink3 }}>{r.teamName}</div> : null}
+            </a>
+            <div style={{ fontSize: 13, fontWeight: 800, color: th.primary, flexShrink: 0 }}>{fmtMoney(r.raisedAmount)}</div>
+            {tab === "teams" && onJoin && (
+              <button type="button" onClick={() => onJoin(r.id)} data-testid="p2p-board-join"
+                style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 9px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", flexShrink: 0 }}>
+                Join
+              </button>
+            )}
+          </div>
+        );
+      })}
+      {total > rows.length && (
+        <button type="button" onClick={seeAll} disabled={busy} data-testid="p2p-see-all"
+          style={{ marginTop: 8, background: "none", border: "none", padding: 0, color: th.primary, fontWeight: 700, fontSize: 13, cursor: "pointer", textDecoration: "underline", fontFamily: th.sans }}>
+          {busy ? "Loading…" : `See all ${total}`}
+        </button>
+      )}
+      {sentence && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8, lineHeight: 1.5 }}>{sentence}</div>}
+    </div>
+  );
+}
+
+// Recent donors on a fundraiser's page: a first name only where the donor
+// chose to show it publicly, otherwise Anonymous, and the amount. The server
+// shapes every line through publicGiftLine; nothing else about anybody
+// reaches this page.
+function RecentDonors({ rows, sentence, card }) {
+  if (!rows || !rows.length) return null;
+  return (
+    <div data-testid="p2p-recent-donors" style={{ ...card, padding: "14px 18px", marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>Recent donors</div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ display: "flex", gap: 10, padding: "6px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", fontSize: 13 }}>
+          <span style={{ flex: 1, color: T.ink, fontWeight: 600 }}>{r.who}</span>
+          <span style={{ color: T.ink3 }}>{displayDate(r.date) || r.date}</span>
+          <span style={{ color: T.ink, fontWeight: 700, minWidth: 56, textAlign: "right" }}>{r.amount}</span>
+        </div>
+      ))}
+      {sentence && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>{sentence}</div>}
+    </div>
+  );
+}
+
+// A TEAM'S PAGE. `/give/:orgSlug/:pageSlug?team=<slug>`, a mode of the
+// campaign page and not a path segment, so it can never collide with a
+// fundraiser's own slug. Captain, members with what each has raised, the
+// team's total against its goal, and "Join this team".
+function TeamPage({ orgSlug, pageSlug, teamSlug, th, BASE, card, onJoin }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    fetch(`${API}/org/${orgSlug}/giving-page/${pageSlug}/team/${encodeURIComponent(teamSlug)}/public`)
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error("This team could not be found."))))
+      .then(setData)
+      .catch(e => setErr(errorMessage(e, "This team could not be found.")));
+  }, [orgSlug, pageSlug, teamSlug]);
+  if (err) return <div style={BASE}><div style={{ ...card, padding: 28, color: T.ink }}>{err} <a href={`/give/${orgSlug}/${pageSlug}`} style={{ color: th.primary }}>Back to the campaign</a></div></div>;
+  if (!data) return <div style={BASE}><div style={{ color: T.ink3, fontSize: 14 }}>Loading…</div></div>;
+  const t = data.team;
+  return (
+    <div style={BASE}>
+      <div data-testid="p2p-team-page" style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 14 }}>
+        <a href={`/give/${orgSlug}/${pageSlug}`} style={{ fontSize: 12, fontWeight: 700, color: th.primary, textDecoration: "none" }}>← Part of {data.givingPage.title}</a>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>A team fundraising for {data.orgName}</div>
+          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif }}>{t.name}</h1>
+          {t.captain && <div style={{ fontSize: 13, color: T.ink2, marginTop: 6 }}>Captain: <a href={`/give/${orgSlug}/${pageSlug}/${t.captain.slug}`} style={{ color: th.primary, fontWeight: 700 }}>{t.captain.name}</a></div>}
+        </div>
+        <div style={{ ...card, padding: "18px 22px" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: th.primary, fontFamily: th.serif }}>{fmtMoney(t.raisedAmount)}</div>
+            {t.goalAmount > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(t.goalAmount)} team goal</div>}
+          </div>
+          <ProgressBar raised={t.raisedAmount} goal={t.goalAmount} th={th} />
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 8, lineHeight: 1.55 }}>{t.sentence}</div>
+        </div>
+        <div style={{ ...card, padding: "14px 18px" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>{t.members.length} {t.members.length === 1 ? "member" : "members"}</div>
+          {t.members.map((m, i) => (
+            <a key={m.slug} href={`/give/${orgSlug}/${pageSlug}/${m.slug}`} data-testid="p2p-team-member"
+              style={{ display: "flex", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", textDecoration: "none" }}>
+              <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink }}>{m.name}{m.isCaptain ? <span style={{ fontWeight: 600, color: T.ink3 }}> · captain</span> : null}</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: th.primary }}>{fmtMoney(m.raisedAmount)}</span>
+            </a>
+          ))}
+          {!t.members.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody on this team has a page yet.</div>}
+        </div>
+        <button type="button" onClick={() => onJoin(t.id)} data-testid="p2p-join-this-team"
+          style={{ background: th.button, color: th.buttonFg, border: "none", borderRadius: 10, padding: "13px 0", fontSize: 16, fontWeight: 700, cursor: "pointer", fontFamily: th.sans }}>
+          Join this team
+        </button>
+        <div style={{ fontSize: 12.5, color: T.ink3, textAlign: "center", lineHeight: 1.5 }}>
+          To give, open a member&rsquo;s page above, or <a href={`/give/${orgSlug}/${pageSlug}#give-form`} style={{ color: th.primary }}>give to the campaign</a>.
+        </div>
       </div>
     </div>
   );
@@ -451,6 +634,9 @@ export default function Donate() {
   const ticketEventId = useMemo(() => new URLSearchParams(window.location.search).get("event"), []);
   // BUILD-101 Part 4 — ?membership=<levelId> turns this page into that level.
   const membershipLevelId = useMemo(() => new URLSearchParams(window.location.search).get("membership"), []);
+  // PARITY-2 Part 2: ?team=<slug> turns a peer-to-peer campaign page into
+  // that team's page (a mode, not a path segment: forms.md).
+  const teamSlug = useMemo(() => new URLSearchParams(window.location.search).get("team"), []);
   const [org, setOrg] = useState(null);
   const [givingPage, setGivingPage] = useState(null);
   const [peerFundraiser, setPeerFundraiser] = useState(null);
@@ -461,6 +647,13 @@ export default function Donate() {
   const [donated, setDonated] = useState(false);
   const [cardUpdated, setCardUpdated] = useState(false);
   const [showStartFundraiser, setShowStartFundraiser] = useState(false);
+  // PARITY-2 Part 2: the peer-to-peer block of the page payload (null on a
+  // page that is not peer-to-peer), and which team "Join a team" picked.
+  const [p2p, setP2p] = useState(null);
+  const [joinTeam, setJoinTeam] = useState({ joining: false, teamId: "" });
+  // A donor's own choice about their first name on THIS page's list of recent
+  // donors. Unticked by default, and the default IS the decision.
+  const [showNamePublicly, setShowNamePublicly] = useState(false);
   const [justCreatedEmailSent, setJustCreatedEmailSent] = useState(null);
   const [justCreatedDemoNote, setJustCreatedDemoNote] = useState("");
   // ── GIVE-2 §4 — EXPRESS GIVING ───────────────────────────────────────────
@@ -667,6 +860,7 @@ export default function Donate() {
           if (qFund && !d.givingPage?.fundId && (d.funds || []).some(f => f.id === qFund)) setFundId(qFund);
           if (d.peerFundraiser) setPeerFundraiser(d.peerFundraiser);
           if (d.peerFundraisers) setPeerFundraisersSummary(d.peerFundraisers);
+          if (d.p2p) setP2p(d.p2p);
         }
         setPageLoading(false);
       })
@@ -766,6 +960,7 @@ export default function Donate() {
           reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
           showNameToFundraiser: !!(peerFundraiser && showNameToFundraiser),
+          showNamePublicly: !!(peerFundraiser && showNamePublicly),
           coverFees: showCoverFees && coverFees,
         }),
       });
@@ -1025,6 +1220,21 @@ export default function Donate() {
     </button>
   );
 
+  // PARITY-2 Part 2: one sign-up modal for "Start a fundraiser", "Join a
+  // team" and "Join this team", drawn on the campaign page and the team page.
+  const openSignup = (teamId = "", joining = false) => { setJoinTeam({ joining, teamId }); setShowStartFundraiser(true); };
+  const signupModal = showStartFundraiser && (
+    <StartFundraiserModal
+      orgSlug={orgSlug} pageSlug={pageSlug} th={th}
+      initialTeamId={joinTeam.teamId} joining={joinTeam.joining}
+      onClose={() => setShowStartFundraiser(false)}
+      onCreated={d => { window.location.href = `${d.publicUrl}?fundraiser_created=true&email_sent=${d.emailSent}`
+        + (d.demoNote ? `&demo_note=${encodeURIComponent(d.demoNote)}` : ""); }}
+    />
+  );
+  if (teamSlug && pageSlug && !fundraiserSlug && p2p) return (
+    <>{signupModal}<TeamPage orgSlug={orgSlug} pageSlug={pageSlug} teamSlug={teamSlug} th={th} BASE={BASE} card={card} onJoin={id => openSignup(id, true)} /></>
+  );
   if (ticketEventId) return <TicketsPage orgSlug={orgSlug} eventId={ticketEventId} th={th} BASE={BASE} card={card} />;
   if (membershipLevelId) return <MembershipPage orgSlug={orgSlug} levelId={membershipLevelId} th={th} BASE={BASE} card={card} />;
 
@@ -1062,6 +1272,15 @@ export default function Donate() {
                       {givingPage.goalSentence}
                     </div>
                   )}
+                  {/* PARITY-2 Part 2: the donor count and the countdown on a
+                      peer-to-peer page, both computed once on the server. */}
+                  {p2p && (
+                    <div data-testid="p2p-thermo-extra" style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 10, fontSize: 13, color: T.ink2 }}>
+                      <span data-testid="p2p-donor-count" title={p2p.donorCountSentence}><strong style={{ color: T.ink }}>{p2p.donorCountLine}</strong></span>
+                      {p2p.countdown && <span data-testid="p2p-countdown"><strong style={{ color: T.ink }}>{p2p.countdown}</strong>{p2p.endDate ? ` Closes ${displayDate(p2p.endDate) || p2p.endDate}.` : ""}</span>}
+                    </div>
+                  )}
+                  {p2p && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>{p2p.donorCountSentence}</div>}
                 </div>
               );
   };
@@ -1070,14 +1289,7 @@ export default function Donate() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
       <style>{`@keyframes sp{to{transform:rotate(360deg)}}`}</style>
 
-      {showStartFundraiser && (
-        <StartFundraiserModal
-          orgSlug={orgSlug} pageSlug={pageSlug} th={th}
-          onClose={() => setShowStartFundraiser(false)}
-          onCreated={d => { window.location.href = `${d.publicUrl}?fundraiser_created=true&email_sent=${d.emailSent}`
-            + (d.demoNote ? `&demo_note=${encodeURIComponent(d.demoNote)}` : ""); }}
-        />
-      )}
+      {signupModal}
 
       {/* Header — hidden when embedded in an iframe. Three variants: a peer
           fundraiser's own personal page, a parent Giving Page, or the generic
@@ -1116,6 +1328,14 @@ export default function Donate() {
               <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
                 {peerFundraiser.name}'s Fundraiser
               </h1>
+              {/* PARITY-2 Part 2: the team badge opens the team's page. */}
+              {peerFundraiser.team && (
+                <a href={`/give/${orgSlug}/${pageSlug}?team=${encodeURIComponent(peerFundraiser.team.slug)}`} data-testid="p2p-team-badge"
+                  style={{ display: "inline-block", marginTop: 8, padding: "4px 12px", borderRadius: 99, border: "1px solid " + T.bg3,
+                           background: T.white, fontSize: 12, fontWeight: 700, color: T.ink, textDecoration: "none" }}>
+                  Team: {peerFundraiser.team.name}
+                </a>
+              )}
               {peerFundraiser.story && (
                 <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{peerFundraiser.story}</p>
               )}
@@ -1125,16 +1345,28 @@ export default function Donate() {
                 <div style={{ fontSize: 20, fontWeight: 800, color: th.primary, fontFamily: th.serif }}>{fmtMoney(peerFundraiser.raisedAmount)}</div>
                 {peerFundraiser.personalGoalAmount > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>of {fmtMoney(peerFundraiser.personalGoalAmount)} goal</div>}
               </div>
-              {peerFundraiser.personalGoalAmount > 0 && (
-                <div style={{ background: T.bg, borderRadius: 99, height: 10, overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${Math.min(100, Math.round((peerFundraiser.raisedAmount / peerFundraiser.personalGoalAmount) * 100))}%`,
-                    background: th.primary, borderRadius: 99, transition: "width 0.6s ease",
-                  }} />
-                </div>
-              )}
+              <ProgressBar raised={peerFundraiser.raisedAmount} goal={peerFundraiser.personalGoalAmount} th={th} />
+              {/* PARITY-2 Part 2: what the bar counts, how many people gave,
+                  and how long is left, in the server's words. */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 16px", marginTop: 10, fontSize: 13, color: T.ink2 }}>
+                {peerFundraiser.donorCountLine && <strong data-testid="p2p-fundraiser-donors" style={{ color: T.ink }}>{peerFundraiser.donorCountLine}</strong>}
+                {peerFundraiser.countdown && <span data-testid="p2p-countdown"><strong style={{ color: T.ink }}>{peerFundraiser.countdown}</strong></span>}
+              </div>
+              {peerFundraiser.raisedSentence && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.55 }}>{peerFundraiser.raisedSentence}</div>}
+              <a href="#give-form" data-testid="p2p-donate"
+                onClick={e => { const f = document.getElementById("give-form"); if (f) { e.preventDefault(); f.scrollIntoView({ behavior: "smooth", block: "start" }); } }}
+                style={{ display: "block", textAlign: "center", marginTop: 14, background: th.button, color: th.buttonFg, borderRadius: 10,
+                         padding: "12px 0", fontSize: 15, fontWeight: 700, textDecoration: "none", fontFamily: th.sans }}>
+                Donate
+              </a>
             </div>
+            <RecentDonors rows={peerFundraiser.recentDonors} sentence={peerFundraiser.recentDonorsSentence} card={card} />
+            {peerFundraiser.share && (
+              <div style={{ display: "flex", justifyContent: "center" }}>
+                <ShareRow url={peerFundraiser.share.copy} orgName={org.name} th={th} p2pShare={peerFundraiser.share}
+                  heading={`Share ${peerFundraiser.name.split(" ")[0]}'s page`} />
+              </div>
+            )}
           </div>
         ) : givingPage ? (
           <>
@@ -1153,6 +1385,22 @@ export default function Donate() {
                          padding: "13px 0", fontSize: 16, fontWeight: 700, textDecoration: "none", fontFamily: th.sans }}>
                 Give now
               </a>
+              {/* PARITY-2 Part 2: the two ways in, above the fold too, so
+                  nobody has to scroll past the form to find them. */}
+              {p2p && (
+                <div data-testid="p2p-top-entries" style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button type="button" onClick={() => openSignup("", false)}
+                    style={{ flex: 1, background: T.white, border: "1px solid " + th.button, borderRadius: 10, padding: "11px 0", color: T.ink, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: th.sans }}>
+                    Start a fundraiser
+                  </button>
+                  {p2p.teamCount > 0 && (
+                    <button type="button" onClick={() => openSignup("", true)}
+                      style={{ flex: 1, background: T.white, border: "1px solid " + th.button, borderRadius: 10, padding: "11px 0", color: T.ink, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: th.sans }}>
+                      Join a team
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 28, order: 2 }}>
@@ -1178,30 +1426,35 @@ export default function Donate() {
             )}
             {!isCampaignPage && goalBar()}
 
-            <div style={{ background: th.primary + "10", border: "1px solid " + th.primary + "30", borderRadius: 16, padding: "16px 20px", marginTop: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>
-                Want to help more? <strong>Start your own fundraiser</strong> and share it with your own network.
-              </div>
-              <button onClick={() => setShowStartFundraiser(true)}
-                style={{ background: th.button, border: "none", borderRadius: 10, padding: "9px 16px", color: th.buttonFg, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                Start fundraising →
-              </button>
-            </div>
-
-            {peerFundraisersSummary && peerFundraisersSummary.count > 0 && (
-              <div style={{ ...card, padding: "18px 22px", marginTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-                  {peerFundraisersSummary.count} Fundraiser{peerFundraisersSummary.count !== 1 ? "s" : ""} Raising For This
+            {/* PARITY-2 Part 2: TWO WAYS IN, and only on a peer-to-peer page
+                (the button used to show on every giving page, where the
+                server then refused the sign-up). */}
+            {p2p && (
+              <div data-testid="p2p-entries" style={{ background: th.primary + "10", border: "1px solid " + th.primary + "30", borderRadius: 16, padding: "16px 20px", marginTop: 14 }}>
+                <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5, marginBottom: 10 }}>
+                  Raise money with your own page and share it with the people you know{p2p.teamCount ? ", or join a team" : ""}.
+                  {p2p.requiresApproval ? ` ${org.name} looks at each new page before it goes live.` : ""}
                 </div>
-                {peerFundraisersSummary.leaderboard.map((f, i) => (
-                  <a key={f.id} href={`/give/${orgSlug}/${pageSlug}/${f.slug}`}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", textDecoration: "none" }}>
-                    <div style={{ width: 22, fontSize: 12, fontWeight: 800, color: i < 3 ? th.accent : T.ink3, flexShrink: 0 }}>#{i + 1}</div>
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: th.primary, flexShrink: 0 }}>{fmtMoney(f.raisedAmount)}</div>
-                  </a>
-                ))}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" data-testid="p2p-start" onClick={() => openSignup("", false)}
+                    style={{ background: th.button, border: "none", borderRadius: 10, padding: "10px 16px", color: th.buttonFg, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    Start a fundraiser
+                  </button>
+                  {p2p.teamCount > 0 && (
+                    <button type="button" data-testid="p2p-join" onClick={() => openSignup("", true)}
+                      style={{ background: T.white, border: "1px solid " + th.button, borderRadius: 10, padding: "10px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      Join a team
+                    </button>
+                  )}
+                </div>
               </div>
+            )}
+
+            {p2p && (
+              <P2PBoard orgSlug={orgSlug} pageSlug={pageSlug} th={th} card={card}
+                individuals={peerFundraisersSummary?.leaderboard || []} individualCount={peerFundraisersSummary?.count || 0}
+                teams={p2p.teams || []} teamCount={p2p.teamCount || 0} sentence={p2p.leaderboardSentence}
+                onJoin={id => openSignup(id, true)} />
             )}
           </div>
           </>
@@ -1277,7 +1530,7 @@ export default function Donate() {
             upsellThresholdCents={givingPage?.upsellThresholdCents}
             upsellMonthlyCents={givingPage?.upsellMonthlyCents}
             feeRateSentence={org?.feeRateSentence}
-            showsRecentGifts={Array.isArray(givingPage?.page) && givingPage.page.some(w => w && w.type === "recentgifts")}
+            showsRecentGifts={!!peerFundraiser || (Array.isArray(givingPage?.page) && givingPage.page.some(w => w && w.type === "recentgifts"))}
             grossUpCents={grossUpCents}
             submitting={submitting}
             submitErr={submitErr}
@@ -1376,6 +1629,19 @@ export default function Donate() {
             <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
               Let {peerFundraiser.name.split(" ")[0]} see my first name, so they can thank me.
               {" "}Leave it unticked and they see the gift without a name. {org.name} has the full record either way.
+            </span>
+          </label>
+        )}
+        {/* PARITY-2 Part 2: and whether the first name shows in this page's
+            public list of recent donors. A different audience, a different
+            answer, its own box, off unless ticked. */}
+        {peerFundraiser && (
+          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={showNamePublicly} onChange={e => setShowNamePublicly(e.target.checked)}
+              data-testid="show-name-publicly"
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Show my first name in this page&rsquo;s list of recent donors. Leave it unticked and the list says Anonymous.
             </span>
           </label>
         )}

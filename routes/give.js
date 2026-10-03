@@ -1520,7 +1520,7 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
 }));
 
 app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const existingRows = await query("SELECT * FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const existingRows = await query("SELECT *, to_char(ends_on,'YYYY-MM-DD') AS ends_on_text FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existingRows.length) return res.status(404).json({ error: "Not found" });
   const existing = existingRows[0];
   const { title, goalAmount, story, imageUrl, fundId, slug, status, campaignId } = req.body;
@@ -1539,6 +1539,13 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   // edit form always sends it; a partial update like the archive toggle,
   // which sends only {status}, must not silently regenerate a custom slug
   // from the title).
+  // PARITY-2 Part 2: the countdown's date on a page with no campaign. A
+  // date written 2026-05-31, or "" to clear it; anything else is refused.
+  let endsOnValue = null;
+  if (req.body.endsOn !== undefined && req.body.endsOn !== null && req.body.endsOn !== "") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.endsOn))) return res.status(400).json({ error: "The end date must be a date written 2026-05-31." });
+    endsOnValue = String(req.body.endsOn);
+  }
   let finalSlug = existing.slug;
   if (slug !== undefined) {
     const requestedSlug = slugifyGivingPage(slug || title || existing.title);
@@ -1550,7 +1557,10 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
     // BUILD-103 — `p2p_enabled` is what makes this page a peer-to-peer
     // campaign. A partial update that does not mention it leaves it exactly
     // as it was: the archive toggle must not turn a live walk off.
-    `UPDATE giving_pages SET title=?, goal_amount=?, story=?, image_url=?, fund_id=?, slug=?, status=?, campaign_id=?, p2p_enabled=?, updated_at=NOW()
+    // PARITY-2 Part 2: `p2p_requires_approval` and `ends_on` move the same
+    // way: only when the request names them.
+    `UPDATE giving_pages SET title=?, goal_amount=?, story=?, image_url=?, fund_id=?, slug=?, status=?, campaign_id=?, p2p_enabled=?,
+            p2p_requires_approval=?, ends_on=?::date, updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [
       title?.trim() || existing.title,
@@ -1562,6 +1572,8 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
       status && ["active", "archived"].includes(status) ? status : existing.status,
       campaignId !== undefined ? (campaignId || null) : existing.campaign_id,
       req.body.p2pEnabled !== undefined ? !!req.body.p2pEnabled : existing.p2p_enabled,
+      req.body.p2pRequiresApproval !== undefined ? !!req.body.p2pRequiresApproval : existing.p2p_requires_approval === true,
+      req.body.endsOn !== undefined ? endsOnValue : existing.ends_on_text,
       req.params.id, req.user.orgId,
     ]
   );
@@ -2411,9 +2423,22 @@ async function createTeam(orgId, pageId, team, who) {
 app.put("/p2p-teams/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const [t] = await query("SELECT id FROM p2p_teams WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
+  // PARITY-2 Part 2: THE CAPTAIN. Whoever started the team at sign-up is
+  // captain; staff can hand it to another member of the SAME team (looked up
+  // under this team and this org, so an id from elsewhere finds nothing), or
+  // clear it with null.
+  if (req.body && Object.prototype.hasOwnProperty.call(req.body, "captainFundraiserId")) {
+    const cap = req.body.captainFundraiserId ? String(req.body.captainFundraiserId) : null;
+    if (cap) {
+      const [m] = await query("SELECT id, name FROM peer_fundraisers WHERE id=? AND org_id=? AND team_id=?", [cap, req.user.orgId, t.id]);
+      if (!m) return res.status(400).json({ error: "The captain has to be a fundraiser on this team." });
+    }
+    await run("UPDATE p2p_teams SET captain_fundraiser_id=?, updated_at=NOW() WHERE id=? AND org_id=?", [cap, t.id, req.user.orgId]);
+    if (req.body.status === undefined) return res.json({ ok: true, sentence: cap ? "The team has a new captain." : "The team has no captain now." });
+  }
   const status = String(req.body?.status || "");
   if (!["active", "archived"].includes(status)) return res.status(400).json({ error: "status must be 'active' or 'archived'" });
-  await run("UPDATE p2p_teams SET status=?, updated_at=NOW() WHERE id=?", [status, t.id]);
+  await run("UPDATE p2p_teams SET status=?, updated_at=NOW() WHERE id=? AND org_id=?", [status, t.id, req.user.orgId]);
   res.json({ ok: true,
     sentence: status === "archived"
       ? "The team is off the leaderboard. Every gift it brought in is still counted on the campaign: the money did arrive."
@@ -2427,10 +2452,20 @@ app.put("/p2p-teams/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
 // page's in cents, because both are the same SUM over the same rows.
 app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
   await P2P_READY;
-  const [pg] = await query("SELECT id, title, slug, goal_amount, p2p_enabled FROM giving_pages WHERE id=? AND org_id=?",
+  const [pg] = await query(
+    `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.p2p_enabled, gp.p2p_requires_approval, gp.campaign_id,
+            to_char(gp.ends_on,'YYYY-MM-DD') AS ends_on, to_char(c.end_date,'YYYY-MM-DD') AS campaign_end_date, o.name AS org_name
+       FROM giving_pages gp JOIN orgs o ON o.id = gp.org_id
+       LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
+      WHERE gp.id=? AND gp.org_id=?`,
     [req.params.id, req.user.orgId]);
   if (!pg) return res.status(404).json({ error: "Not found" });
   const orgId = req.user.orgId;
+  // PARITY-2 Part 2: the date the public countdown runs to, and how many of
+  // the org's own days are left, for the coaching drafts' "last days" words.
+  const endDate = pg.campaign_end_date || pg.ends_on || null;
+  const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
+  const daysLeft = endDate ? Math.round((Date.parse(endDate + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000) : null;
 
   const [tot] = await query(
     `SELECT COALESCE(SUM(amount),0)::float AS all_gifts,
@@ -2440,6 +2475,7 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
 
   const fundraisers = await query(
     `SELECT pf.id, pf.name, pf.slug, pf.status, pf.team_id, pf.person_id, pf.personal_goal_amount,
+            pf.email, pf.story, pf.image_url,
             t.name AS team_name,
             COALESCE((SELECT SUM(amount) FROM gifts WHERE peer_fundraiser_id=pf.id AND amount > 0),0)::float AS raised,
             COALESCE((SELECT COUNT(*) FROM gifts WHERE peer_fundraiser_id=pf.id AND amount > 0),0)::int AS gift_count
@@ -2448,7 +2484,7 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
       ORDER BY raised DESC, pf.name`, [pg.id, orgId]);
 
   const teams = await query(
-    `SELECT t.id, t.name, t.slug, t.status, t.goal_amount,
+    `SELECT t.id, t.name, t.slug, t.status, t.goal_amount, t.captain_fundraiser_id,
             (SELECT COUNT(*)::int FROM peer_fundraisers pf WHERE pf.team_id=t.id AND pf.status='active') AS members,
             COALESCE((SELECT SUM(g.amount) FROM gifts g JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
                        WHERE pf.team_id=t.id AND g.amount > 0),0)::float AS raised
@@ -2456,17 +2492,24 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
 
   const cents = n => Math.round(Number(n || 0) * 100);
   const shaped = fundraisers.map(f => ({
-    id: f.id, name: f.name, slug: f.slug, status: f.status, teamName: f.team_name || null,
-    isPerson: !!f.person_id, giftCount: f.gift_count,
+    id: f.id, name: f.name, slug: f.slug, status: f.status, teamName: f.team_name || null, teamId: f.team_id || null,
+    isPerson: !!f.person_id, personId: f.person_id || null, giftCount: f.gift_count,
     raisedCents: cents(f.raised),
     goalCents: f.personal_goal_amount != null ? cents(f.personal_goal_amount) : null,
+    // PARITY-2 Part 2: staff edit a page's words and see who to write to.
+    // Staff see a fundraiser's email everywhere else in the app; the PUBLIC
+    // payloads never carry it.
+    email: f.email, story: f.story || "", imageUrl: f.image_url || "",
   }));
   const teamCentsTotal = teams.reduce((a, t) => a + cents(t.raised), 0);
   const soloCents = shaped.filter(f => !f.teamName).reduce((a, f) => a + f.raisedCents, 0);
 
   res.json({
     page: { id: pg.id, title: pg.title, slug: pg.slug, p2pEnabled: pg.p2p_enabled === true,
-            goalCents: pg.goal_amount != null ? cents(pg.goal_amount) : null },
+            goalCents: pg.goal_amount != null ? cents(pg.goal_amount) : null,
+            requiresApproval: pg.p2p_requires_approval === true,
+            endsOn: pg.ends_on || null, campaignEndDate: pg.campaign_end_date || null, endDate, daysLeft,
+            orgName: pg.org_name },
     totals: {
       pageCents: cents(tot?.all_gifts), throughPeopleCents: cents(tot?.through_people),
       directCents: cents(tot?.direct), teamCents: teamCentsTotal, soloCents,
@@ -2475,11 +2518,16 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
     },
     sentence: P2P.PAGE_TOTAL_SENTENCE,
     teams: teams.map(t => ({ id: t.id, name: t.name, slug: t.slug, status: t.status, members: t.members,
+      captainId: t.captain_fundraiser_id || null,
+      captainName: (shaped.find(f => f.id === t.captain_fundraiser_id) || {}).name || null,
       raisedCents: cents(t.raised), goalCents: t.goal_amount != null ? cents(t.goal_amount) : null })),
     fundraisers: shaped,
     notYet: shaped.filter(f => f.status === "active" && f.raisedCents === 0),
     notYetSentence: P2P.NOT_YET_SENTENCE,
-    leaderboard: shaped.filter(f => f.status === "active").slice(0, 25),
+    // PARITY-2 Part 2: the pages waiting for a person to approve them.
+    pending: shaped.filter(f => f.status === "pending"),
+    pendingSentence: "New pages on this campaign wait here until somebody approves them. A waiting page is not public and cannot take a gift.",
+    leaderboard: shaped.filter(f => f.status === "active"),
   });
 }));
 
@@ -2491,19 +2539,75 @@ app.get("/giving-pages/:id/p2p", requireAuth, wrap(async (req, res) => {
 // same effect as archiving a Giving Page itself: the public fundraiser page
 // 404s and POST /donate/:orgSlug rejects new donations against it (both
 // enforced by the WHERE status='active' clauses in the routes above).
+// PARITY-2 Part 2: and APPROVAL, and A STAFF EDIT. `status` 'active'
+// approves a waiting page or puts a hidden one back; 'archived' hides it. The
+// words (name, story, goal, photo URL) are the fundraiser's own and usually
+// edited through their manage link; staff can correct them here, for the
+// page that has a typo in it the night before the walk. Slug and email never
+// change: the link is already shared.
 app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { status } = req.body;
-  if (!status || !["active", "archived"].includes(status)) return res.status(400).json({ error: "status must be 'active' or 'archived'" });
-  const rows = await query("SELECT id FROM peer_fundraisers WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const { status, name, story, personalGoalAmount, imageUrl } = req.body || {};
+  const editing = [name, story, personalGoalAmount, imageUrl].some(v => v !== undefined);
+  if (!editing || status !== undefined) {
+    if (!status || !["active", "archived"].includes(status)) return res.status(400).json({ error: "status must be 'active' or 'archived'" });
+  }
+  if (name !== undefined && (!String(name).trim() || String(name).trim().length > 200)) return res.status(400).json({ error: "A fundraiser needs a name of up to 200 characters." });
+  if (story !== undefined && String(story).length > 5000) return res.status(400).json({ error: "Story is too long (5,000 character max)." });
+  if (imageUrl !== undefined && imageUrl && (String(imageUrl).length > 2000 || !/^https:\/\//i.test(String(imageUrl)))) return res.status(400).json({ error: "The photo has to be an https:// address." });
+  if (personalGoalAmount !== undefined && personalGoalAmount !== null && personalGoalAmount !== "" &&
+      (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "Personal goal must be a positive number." });
+  const rows = await query("SELECT * FROM peer_fundraisers WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Not found" });
-  await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=?", [status, req.params.id]);
+  const cur = rows[0];
+  if (editing) {
+    await run(`UPDATE peer_fundraisers SET name=?, story=?, personal_goal_amount=?, image_url=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+      [name !== undefined ? String(name).trim() : cur.name,
+       story !== undefined ? String(story) : cur.story,
+       personalGoalAmount !== undefined ? (personalGoalAmount === null || personalGoalAmount === "" ? null : parseFloat(personalGoalAmount)) : cur.personal_goal_amount,
+       imageUrl !== undefined ? String(imageUrl || "") : cur.image_url,
+       req.params.id, req.user.orgId]);
+  }
+  if (status !== undefined) await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=? AND org_id=?", [status, req.params.id, req.user.orgId]);
   const updated = await query(
     `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
-     FROM peer_fundraisers pf WHERE pf.id=?`,
-    [req.params.id]
+     FROM peer_fundraisers pf WHERE pf.id=? AND pf.org_id=?`,
+    [req.params.id, req.user.orgId]
   );
-  res.json(updated[0]);
+  res.json({ ...updated[0],
+    sentence: status === "active" && cur.status === "pending" ? `${cur.name}'s page is approved and public now. It can take gifts.`
+      : status === "archived" ? `${cur.name}'s page is off the public site. Past gifts still count.`
+      : status === "active" ? `${cur.name}'s page is back up.`
+      : `${cur.name}'s page is saved.` });
+}));
+
+// PARITY-2 Part 2: ONE FUNDRAISER'S GIFTS, for staff. Every gift through
+// their page, each a row, with the total those rows foot to in cents. It is
+// the same set the `fundraiser-gifts` figure source opens (figureSources.js),
+// and the same SUM the P2P screen's Raised column shows: amount > 0, through
+// this page. Staff see the donor's name; a fundraiser never does unless the
+// donor chose it (donorLine).
+app.get("/peer-fundraisers/:id/gifts", requireAuth, wrap(async (req, res) => {
+  const [f] = await query(
+    `SELECT pf.id, pf.name, pf.email, pf.slug, pf.status, pf.person_id, pf.personal_goal_amount, gp.title AS page_title
+       FROM peer_fundraisers pf JOIN giving_pages gp ON gp.id = pf.giving_page_id AND gp.org_id = pf.org_id
+      WHERE pf.id=? AND pf.org_id=?`, [req.params.id, req.user.orgId]);
+  if (!f) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT g.id, g.donor_id, d.name AS donor_name, to_char(g.date::date,'YYYY-MM-DD') AS date,
+            ROUND(g.amount::numeric, 2)::float AS amount, g.show_name_to_fundraiser, g.show_name_publicly
+       FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=? AND g.peer_fundraiser_id=? AND g.amount > 0
+      ORDER BY g.date DESC, g.id`, [req.user.orgId, f.id]);
+  const gifts = rows.map(r => ({ id: r.id, donorId: r.donor_id, donorName: r.donor_name || "A supporter", date: r.date,
+    amountCents: Math.round(Number(r.amount) * 100),
+    shownToFundraiser: r.show_name_to_fundraiser === true, shownPublicly: r.show_name_publicly === true }));
+  const totalCents = gifts.reduce((a, g) => a + g.amountCents, 0);
+  res.json({
+    fundraiser: { id: f.id, name: f.name, email: f.email, slug: f.slug, status: f.status, pageTitle: f.page_title },
+    gifts, totalCents,
+    sentence: `Every gift given through ${f.name}'s page, ${gifts.length} in all, adding up to ${(await P2P_READY).money(totalCents)} to the cent. Hard credit stays with each donor; ${f.person_id ? "the fundraiser has a soft credit for each." : "the fundraiser is not matched to a person on file, so no soft credit is recorded."}`,
+  });
 }));
 
 // Donor-covers-fees gross-up (BUILD-08 Phase B): the amount to charge so the

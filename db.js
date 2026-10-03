@@ -6009,6 +6009,16 @@ async function initSchema() {
   // internet.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS show_name_publicly BOOLEAN NOT NULL DEFAULT FALSE`);
 
+  // PARITY-2 Part 2 · PEER-TO-PEER PAGES. Two switches on the page, both off by
+  // default so every campaign already running keeps behaving as it did.
+  // `p2p_requires_approval`: a new fundraiser page is written 'pending' and is
+  // not public until a staff member approves it (peer_fundraisers.status is
+  // 'active' | 'pending' | 'archived'; only 'active' is ever shown or takes a
+  // gift). `ends_on`: the date the countdown runs to on a page that does not
+  // count toward a campaign; a linked page counts down to the campaign's end.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS p2p_requires_approval BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS ends_on DATE`);
+
   // THE STAFF PLAN. A template's steps are dated TASKS, not Threads: a Thread
   // is one person's list and requires a donor by construction (`threads.donor_id
   // NOT NULL`), while "draft the appeal" is the campaign's and belongs to
