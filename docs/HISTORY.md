@@ -25,6 +25,16 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-20 · Leftovers from PARITY-2 and PARITY-3 (2026-10-03)
+
+Ten parts, one PR, built in four worktrees at once (security and deploys; auctions; bookkeeping; memberships).
+- Part 0: `/portal-assets/:id` served any asset to anyone with its id, waivers and conversation attachments included. An asset is now private unless an admin placed it on a public page (`portal_assets.is_public`); a private file needs a signed-in user of its org, and the attachment and grant-document doors need the session as well as the signature. Tenant matrix §11.
+- Part 1: one auction item, one paid winner. The first payment claims the item; a second records no gift and becomes a refund flag on the staff screen. Test `fix20-auction-double-checkout`.
+- Parts 2 to 4: the QuickBooks sent list belongs to a company (realmId); Sync all runs in batches of 100; Xero says plainly that it does not send (its old send posted to a path Xero does not have). Test `fix20-qbo-realm-switch`.
+- Parts 5 and 6: auction winner mail is transactional (`auction_winner`), and bidders sign in on a second device (`auction_signin`).
+- Parts 7 and 8: membership sign-in returns to the membership page and works with the portal off; the Members screen hides admin controls from non-admins (`isAdmin` had defaulted to true).
+- Part 9: the tenant matrix's teardown is discovered from every table with an org_id, so it re-runs on one database.
+- Part 10: Railway had no healthcheck and switched traffic the moment a container started; the PARITY-3 deploy returned 503 for 4m45s. `railway.json` now points it at `/ready`, and schema init yields its locks to live reads.
 ## PROOF-2 · Sell it with the evidence (2026-10-03)
 
 Marketing site only. `shared/sources.js` is now the one list of every statistic the site quotes: publisher, report, year, sample, link, the date a person opened the link and found the number, and each claim in the source's words. `data/research.js` derives the reference's SRC/STATS from it, so the LANDING-2 reference comparison is unchanged. New: a retention-gap band on Home (Momentive 2025: 77% vs 61%, 46% with no strategy), "When people leave, relationships stay" on /why (Sage 2025: 58%, 55%, 49%; no handover screen claimed, HANDOVER-1 has not shipped), one line under the prices linking to the Keep Rate calculator with `?with=77&without=61` (only that sourced pair opens the gap panel, which compares the gap to a year of the plan her count lands on and says "less" when it is less), the article `/articles/no-retention-strategy`, and `/research`.

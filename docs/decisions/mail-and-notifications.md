@@ -9,9 +9,13 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   bytes. There is no virus scan on the host. (PARITY-1)
 - **Auction notes are drafts (`milestone_drafts`, keys `auction-closing:<id>` and `auction-winner:<id>`).**
   "Bidding closes soon" and the winners' pay links are written by a staff press, one per person, once, and
-  sent by a person through `/milestone-drafts/:id/send` (kind `milestone`, so an unsubscribed winner is
-  refused and staff copy the pay link instead). Steward sends no outbid email or text. A sent draft's
-  http(s) links are now clickable. (PARITY-2)
+  sent by a person through `/milestone-drafts/:id/send`. The closing note is kind `milestone`; a winner's
+  pay link is kind `auction_winner`, TRANSACTIONAL (FIX-20), so an unsubscribed winner gets it once a person
+  presses Send, and a bounce, complaint, deceased or sample flag still refuses it: no draft is written for that
+  winner and the Winners list says why beside Copy pay link. Steward sends no outbid email or text. A sent
+  draft's http(s) links are clickable. (PARITY-2, FIX-20)
+- **A bidder's second-device sign-in link is kind `auction_signin`, transactional** (FIX-20). It is asked for
+  on the auction page and goes only to an email registered for that auction.
 - **No workflow recipe sends to a donor (FIX-12).** It writes a draft to Drafts to review. The automatic
   donor-facing sends that remain are listed in the FIX-12 entry of `docs/HISTORY.md`; a new one needs Jonathan.
 - **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/HISTORY.md`. Volunteer shift

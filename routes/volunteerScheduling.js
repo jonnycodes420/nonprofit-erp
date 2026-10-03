@@ -2137,7 +2137,7 @@ app.put("/volunteer-hub/recruitment", requireAuth, checkWriteAccess, wrap(async 
 app.post("/volunteer-hub/recruitment/image", requireAuth, checkWriteAccess, express.json({ limit: "8mb" }), wrap(async (req, res) => {
   const f = decodeDataUrl(req.body && req.body.file, PAGE_IMAGE_MIME, 5 * 1024 * 1024);
   if (f.error) return res.status(400).json({ error: f.error });
-  const out = await ASSETS.putThemeAsset({ orgId: req.user.orgId, kind: "volpage", buffer: f.buffer, contentType: f.mime });
+  const out = await ASSETS.putThemeAsset({ orgId: req.user.orgId, kind: "volpage", buffer: f.buffer, contentType: f.mime, isPublic: true });
   res.status(201).json({ path: out.path });
 }));
 

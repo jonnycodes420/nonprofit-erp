@@ -29,6 +29,14 @@ const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
+const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
+const { rateLimit } = require("express-rate-limit");
+// FIX-20 Part 0: the private file doors (conversation attachments, grant
+// documents). Signed-in staff open a handful at a time; this is per IP.
+const fileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false,
+  skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
+});
 
 const routers = {
   r0: express.Router(),
@@ -13811,13 +13819,17 @@ app.get("/funders/:donorId/documents", requireAuth, wrap(async (req, res) => {
 // GET /grant-documents/:id — the signed, expiring, PRIVATE door.
 // Unauthenticated by design (a browser fetches a file with no auth header);
 // the URL carries its own signature and the org comes from the STORED ROW.
-app.get("/grant-documents/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: the signature is no longer enough on its own. The link also
+// needs a signed-in user of the org on the stored row (the client fetches it
+// with the session and saves the bytes), so a copied link opened anywhere
+// else is a 404.
+app.get("/grant-documents/:id", fileLimiter, requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
     `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`,
     [id, grantDocs.DOC_ASSET_KIND]);
-  if (!row) return res.status(404).json({ error: "not_found" });
+  if (!row || row.org_id !== req.user.orgId) return res.status(404).json({ error: "not_found" });
   const v = grantDocs.verifyDocUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
   // ONE answer for expired and for wrong-org alike, so a probe cannot tell
   // "this agreement exists in another tenant" from "this link is old".
@@ -13943,12 +13955,13 @@ app.delete("/interactions/:id/attachments", requireAuth, wrap(async (req, res) =
 // header (a browser fetches a file with none); the URL carries its signature,
 // minted only for signed-in staff of the org, and the org comes from the
 // STORED ROW. A removed attachment stops serving even inside its thirty minutes.
-app.get("/interaction-files/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: and a signed-in user of that org, as /grant-documents.
+app.get("/interaction-files/:id", fileLimiter, requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
     `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`, [id, IXF.FILE_ASSET_KIND]);
-  if (!row) return res.status(404).json({ error: "not_found" });
+  if (!row || row.org_id !== req.user.orgId) return res.status(404).json({ error: "not_found" });
   const v = IXF.verifyFileUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
   if (!v.ok) return res.status(403).json({ error: "link_expired" });
   const [meta] = await query(
@@ -21617,7 +21630,12 @@ async function sendMilestoneDraft(req, draft) {
   // PARITY-3 — a volunteer's shift reminder is transactional (FIX-14), so it is
   // asked as one: a marketing opt-out does not stop the reminder for a shift
   // they signed up for. Everything else here is asked as a milestone.
-  const decision = await donorMailDecision(draft.source === "volunteer_reminder" ? "volunteer_reminder" : "milestone", donor.email, req.user.orgId);
+  // FIX-20 Part 5: an auction winner's pay link is service mail about a bid
+  // they made, so it is asked as transactional too. A bounce or a complaint
+  // still refuses it, and the auction screen offers its Copy link instead.
+  const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
+    : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
+  const decision = await donorMailDecision(kind, donor.email, req.user.orgId);
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
   if (process.env.RESEND_API_KEY) {
@@ -24124,7 +24142,7 @@ async function storeEventImage(orgId, dataUri) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("event", m[1], buffer);
   if (norm.error) return { error: norm.error, message: norm.message };
-  const asset = await putThemeAsset({ orgId, kind: "event", buffer: norm.buffer, contentType: norm.contentType,
+  const asset = await putThemeAsset({ orgId, kind: "event", isPublic: true, buffer: norm.buffer, contentType: norm.contentType,
     width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
@@ -25093,7 +25111,7 @@ async function storeCampaignHero(orgId, heroIn) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("campaign", m[1], buffer);
   if (norm.error) return norm;
-  const asset = await putThemeAsset({ orgId, kind: "campaign", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  const asset = await putThemeAsset({ orgId, kind: "campaign", isPublic: true, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
 async function pruneCampaignAssets(orgId) {

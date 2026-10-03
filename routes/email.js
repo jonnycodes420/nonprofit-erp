@@ -204,6 +204,10 @@ const DONOR_MAIL_POLICY = {
   volunteer_reminder: "transactional",  // "Tomorrow: <shift>", the day before, once each
   volunteer_link:     "transactional",  // a staff member sends a volunteer their own page link
   express_link:       "transactional",  // GIVE-2 §4 — the sign-in link a donor asked for, seconds ago
+  // FIX-20 Parts 5 and 6, by Jonathan's brief. A winner's pay link is sent by
+  // a person pressing Send; a bidder's sign-in link is one they asked for.
+  auction_winner:     "transactional",  // the pay link for an item they won
+  auction_signin:     "transactional",  // the sign-in link a bidder asked for, seconds ago
 };
 // ── INCIDENT 2026-09-22 — ONE ORG-LEVEL GATE, READ BY EVERY SEAM ──────────
 // Three different kinds of mail escaped that night — a donor reminder, a

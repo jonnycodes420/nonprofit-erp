@@ -16,6 +16,8 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
+const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
+const { getAssetMeta } = require("../assetStore");
 
 const routers = {
   r0: express.Router(),
@@ -572,6 +574,24 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
            FROM bookkeeping_deposits WHERE org_id=? AND vendor=? AND deposit_on >= ?`,
         [orgId, key, since30]) : [{ sent: 0, cents: 0, held: 0 }];
       const sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
+      // rather than counting deposits that cannot have happened.
+      if (BK.VENDORS[key].sends === false) {
+        cards.push({
+          id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key, sends: false,
+          label: BK.VENDORS[key].label,
+          subtitle: BK.VENDORS[key].notSendingSentence,
+          connected: !!b, canDisconnect: !!b,
+          action: b ? null : "connect", actionLabel: b ? null : "Connect",
+          oauthProvider: OAUTH_BY_VENDOR[key] || null,
+          lastSentAt: null, lastSyncedAt: null,
+          status: !b ? "not_connected" : "healthy",
+          sentence: !b ? C.STATUSES.not_connected.definition
+            : `Connected. ${BK.VENDORS[key].notSendingSentence}`,
+          deposits30: 0, deposits30Cents: 0, held30: 0, heldSentence: null,
+        });
+        continue;
+      }
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
@@ -2824,7 +2844,7 @@ const donateHandler = async (req, res) => {
   if (auctionPayToken) {
     auctionWin = await AC.resolvePayToken(query, auctionPayToken);
     if (!auctionWin || auctionWin.orgId !== org.id) return res.status(400).json({ error: "This pay link is no longer valid. Ask the organisation for a new one." });
-    if (auctionWin.item.paid_gift_id) return res.status(409).json({ error: "This item has already been paid for." });
+    if (auctionWin.item.paid_gift_id || auctionWin.item.paid_payment_id) return res.status(409).json({ error: "This item has already been paid for." });
     baseCents = AC.cents(auctionWin.item.high_amount);
     email = auctionWin.item.bidder_email;
     const nm = String(auctionWin.item.bidder_name || "").trim().split(/\s+/);
@@ -3157,9 +3177,40 @@ const donateHandler = async (req, res) => {
     ),
   };
 
-  const session = await stripe.checkout.sessions.create(sessionParams, {
-    stripeAccount: org.stripe_account_id,
-  });
+  // FIX-20 Part 1: ONE OPEN CHECKOUT PER AUCTION ITEM. Two taps on Pay (two
+  // tabs, two devices) used to open two live Stripe checkouts for one item,
+  // and both could be paid. Under a per-item lock, a new checkout first
+  // re-reads the item: paid is refused; an earlier checkout that is already
+  // complete is refused (its payment is on its way to the webhook); an earlier
+  // one still open is expired in Stripe so it can no longer take a card. The
+  // webhook's claim is the backstop for anything that slips past this.
+  let session;
+  if (auctionWin) {
+    const itemId = auctionWin.item.id, acct = { stripeAccount: org.stripe_account_id };
+    const got = await withAdvisoryLock(`auction-checkout:${itemId}`, async () => {
+      const [cur] = await query(`SELECT paid_payment_id, paid_gift_id, checkout_session_id FROM auction_items WHERE id=? AND org_id=?`, [itemId, org.id]);
+      if (!cur || cur.paid_payment_id || cur.paid_gift_id) return { refused: "This item has already been paid for." };
+      if (cur.checkout_session_id) {
+        try {
+          const prev = await stripe.checkout.sessions.retrieve(cur.checkout_session_id, {}, acct);
+          if (prev && prev.status === "complete") return { refused: "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organisation." };
+          if (prev && prev.status === "open") await stripe.checkout.sessions.expire(cur.checkout_session_id, {}, acct);
+        } catch (e) {
+          console.error(`[auction] could not close the earlier checkout for ${itemId}:`, e.message);
+          return { refused: "We could not check on an earlier payment for this item. Try again in a minute." };
+        }
+      }
+      const s = await stripe.checkout.sessions.create(sessionParams, acct);
+      await run(`UPDATE auction_items SET checkout_session_id=? WHERE id=? AND org_id=?`, [s.id, itemId, org.id]);
+      return { session: s };
+    });
+    if (got.refused) return res.status(409).json({ error: got.refused });
+    session = got.session;
+  } else {
+    session = await stripe.checkout.sessions.create(sessionParams, {
+      stripeAccount: org.stripe_account_id,
+    });
+  }
   if (eventHoldId) await run(`UPDATE event_seat_holds SET stripe_session_id=? WHERE id=?`, [session.id, eventHoldId]).catch(() => {});
   res.json({ url: session.url });
 };
@@ -3273,7 +3324,7 @@ app.post("/auction/pay/:token", donateLimiter, express.urlencoded({ extended: fa
   const win = await AC.resolvePayToken(query, req.params.token);
   if (!win) return res.status(404).send("Not found");
   const [org] = await query(`SELECT org_slug FROM orgs WHERE id=?`, [win.orgId]);
-  const back = () => res.redirect(303, `/auction/pay/${encodeURIComponent(req.params.token)}`);
+  const back = (m) => res.redirect(303, `/auction/pay/${encodeURIComponent(req.params.token)}${m ? `?m=${m}` : ""}`);
   const inner = { params: { orgSlug: org.org_slug },
     body: { firstName: "Bidder", lastName: "Bidder", email: "winner@auction.invalid", amount: "1", frequency: "once",
             coverFees: false, auctionPayToken: String(req.params.token) } };
@@ -3285,7 +3336,10 @@ app.post("/auction/pay/:token", donateLimiter, express.urlencoded({ extended: fa
       answered = true;
       if (payload && payload.url) return res.redirect(303, payload.url);
       console.error("[auction] pay checkout refused:", payload && payload.error);
-      return back();
+      // FIX-20 Part 1: the refusals a winner can act on, said on the pay page.
+      const why = String(payload && payload.error || "");
+      return back(/already been paid/.test(why) ? "paid_already" : /already going through/.test(why) ? "pay_in_progress"
+        : /Try again in a minute/.test(why) ? "pay_try_again" : "");
     },
   };
   await donateHandler(inner, shim);
@@ -4678,7 +4732,11 @@ function setPortalCookie(res, token, maxAgeSec) {
 
 // One org lookup for every portal route: slug → org row + portal settings.
 // Returns null for unknown slug OR a disabled portal (indistinguishable).
-async function portalOrgBySlug(slug) {
+// FIX-20 Part 7: { membership: true } is the membership page's sign-in, which
+// works whether or not the org's donor portal is on. It opens only the routes
+// that pass it (request-link with a membership return path, verify of a
+// membership link, give-default); every portal screen keeps the default.
+async function portalOrgBySlug(slug, { membership = false } = {}) {
   if (!slug || typeof slug !== "string" || slug.length > 120) return null;
   const rows = await query(
     `SELECT o.*, ps.enabled AS portal_enabled, ps.display_name AS portal_display_name,
@@ -4688,9 +4746,17 @@ async function portalOrgBySlug(slug) {
             ps.powered_by, ps.min_recurring_cents, ps.network_listed,
             ps.background_tint, ps.button_color, ps.type_pairing, ps.card_style,
             ps.header_focal_x, ps.header_focal_y, ps.header_crop
-     FROM orgs o JOIN portal_settings ps ON ps.org_id = o.id
-     WHERE o.org_slug = ? AND ps.enabled = true`, [slug]);
+     FROM orgs o ${membership ? "LEFT JOIN" : "JOIN"} portal_settings ps ON ps.org_id = o.id
+     WHERE o.org_slug = ?${membership ? "" : " AND ps.enabled = true"}`, [slug]);
   return rows[0] || null;
+}
+
+// FIX-20 Part 7: where a membership sign-in link brings the member back to.
+// Never an address from the request: the only answer is this org's own
+// membership page, built here from the slug, or null.
+function membershipReturnPath(slug, raw) {
+  const own = `/give/${slug}?memberships`;
+  return raw === own ? own : null;
 }
 
 function portalThemePayload(org) {
@@ -4737,7 +4803,11 @@ async function portalDonorsFor(orgId, email) {
 // ── Session middleware (P-4) ───────────────────────────────────────────────
 // Cookie-only. A staff JWT in Authorization is IGNORED here, exactly as the
 // portal cookie is ignored by requireAuth — proven by the differential sweep.
-function requirePortalSession(req, res, next) {
+const requirePortalSession = portalSession();
+// FIX-20 Part 7: the membership page reads its member through this one, so a
+// member signed in from the membership page is known there with the portal off.
+const requireMembershipSession = portalSession({ membership: true });
+function portalSession(opts = {}) { return (req, res, next) => {
   (async () => {
     const raw = parsePortalCookies(req)[PORTAL_COOKIE];
     if (!raw || raw.length > 300) return res.status(401).json({ error: "portal_auth" });
@@ -4746,7 +4816,7 @@ function requirePortalSession(req, res, next) {
       [sha256hex(raw)]);
     if (!rows.length) return res.status(401).json({ error: "portal_auth" });
     const sess = rows[0];
-    const org = await portalOrgBySlug(req.params.orgSlug);
+    const org = await portalOrgBySlug(req.params.orgSlug, opts);
     if (!org) return res.status(401).json({ error: "portal_auth" });
     if (sess.org_id) {
       // Tenant pinning: an org-scoped session is scoped to ONE org — a valid
@@ -4772,18 +4842,23 @@ function requirePortalSession(req, res, next) {
     run(`UPDATE portal_sessions SET last_seen_at = NOW() WHERE id = ?`, [sess.id]).catch(() => {});
     next();
   })().catch(next);
-}
+}; }
 
 // ── Magic-link email ───────────────────────────────────────────────────────
-async function sendPortalMagicLinkEmail(org, email, token) {
+async function sendPortalMagicLinkEmail(org, email, token, returnTo = null) {
   const theme = portalThemePayload(org);
-  const link = `${publicAppUrl()}/portal/${org.org_slug}/verify#token=${token}`; // fragment: never sent in Referer (S-4)
+  // FIX-20 Part 7: a membership sign-in lands back on the membership page it
+  // was asked from (returnTo is only ever membershipReturnPath's answer). The
+  // token rides the fragment either way, and the page POSTs it.
+  const link = returnTo
+    ? `${publicAppUrl()}${returnTo}#signin=${token}`
+    : `${publicAppUrl()}/portal/${org.org_slug}/verify#token=${token}`; // fragment: never sent in Referer (S-4)
   const orgName = escHtmlWf(theme.displayName);
   const html = await brandEmailHeaderHtml(org.id) + `
     <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
-      <p>Here is your secure sign-in link for your giving history with ${orgName}:</p>
+      <p>Here is your secure sign-in link for your ${returnTo ? "membership" : "giving history"} with ${orgName}:</p>
       <p style="text-align:center;margin:28px 0;">
-        <a href="${link}" style="background:${theme.primary};color:${theme.primaryFg};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">View my giving</a>
+        <a href="${link}" style="background:${theme.primary};color:${theme.primaryFg};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">${returnTo ? "Back to membership" : "View my giving"}</a>
       </p>
       <p style="font-size:13px;color:#555;">This link works once and expires in 15 minutes. If you didn't request it, you can safely ignore this email.</p>
       ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
@@ -4874,7 +4949,10 @@ app.get("/portal/:orgSlug/config", wrap(async (req, res) => {
 
 // ── P-1/P-2/P-3: request a magic link ──────────────────────────────────────
 app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLimiter, wrap(async (req, res) => {
-  const org = await portalOrgBySlug(req.params.orgSlug);
+  // FIX-20 Part 7: asked from the membership page, the link is a membership
+  // link: it works with the portal off and brings the member back there.
+  const returnTo = membershipReturnPath(req.params.orgSlug, req.body?.returnTo);
+  const org = await portalOrgBySlug(req.params.orgSlug, { membership: !!returnTo });
   if (!org) return res.status(404).json({ error: "portal_not_found" });
   const email = String(req.body?.email || "").trim().toLowerCase();
   // P-2 — identical response AND timing for known and unknown emails: respond
@@ -4889,15 +4967,15 @@ app.post("/portal/:orgSlug/request-link", portalLinkIpLimiter, portalLinkEmailLi
     await run(
       `UPDATE portal_magic_links SET superseded_at = NOW()
        WHERE org_id = ? AND email = ? AND used_at IS NULL AND superseded_at IS NULL
-         AND purpose = 'portal'`, [org.id, email]);
+         AND purpose IN ('portal','membership')`, [org.id, email]);
     const token = crypto.randomBytes(32).toString("base64url"); // 256-bit CSPRNG
     await run(
       // GIVE-2 §4 — the purpose is stamped rather than defaulted, so the one
       // table's two kinds of link are explicit at both ends.
       `INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
-       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, 'portal')`,
-      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null]);
-    await sendPortalMagicLinkEmail(org, email, token);
+       VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, ?)`,
+      ["pml_" + uuid().slice(0, 10), org.id, email, sha256hex(token), req.ip || null, returnTo ? "membership" : "portal"]);
+    await sendPortalMagicLinkEmail(org, email, token, returnTo);
   })().catch(e => console.error("[portal] link request failed:", e.message));
 }));
 
@@ -5180,7 +5258,7 @@ app.post("/express/:orgSlug/charge", donateLimiter, wrap(async (req, res) => {
 
 // ── S-4: token is POST-consumed, atomically single-use ─────────────────────
 app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) => {
-  const org = await portalOrgBySlug(req.params.orgSlug);
+  const org = await portalOrgBySlug(req.params.orgSlug, { membership: true });
   if (!org) return res.status(404).json({ error: "portal_not_found" });
   const token = String(req.body?.token || "");
   if (!token || token.length > 300) return res.status(400).json({ error: "invalid_link" });
@@ -5193,9 +5271,11 @@ app.post("/portal/:orgSlug/verify", portalLinkIpLimiter, wrap(async (req, res) =
     // saved, which is not the same claim as "show me my giving history".
     `UPDATE portal_magic_links SET used_at = NOW()
      WHERE token_hash = ? AND org_id = ? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
-       AND purpose = 'portal'
+       AND (purpose = 'membership' OR (purpose = 'portal' AND ?::boolean))
      RETURNING email`,
-    [sha256hex(token), org.id]);
+    // FIX-20 Part 7: a membership link (asked from the membership page) signs
+    // in with the portal off; a portal link still needs the portal on.
+    [sha256hex(token), org.id, org.portal_enabled === true]);
   if (!rows.length) return res.status(400).json({ error: "invalid_link", message: "That link has expired or was already used. Request a fresh one." });
   const email = rows[0].email;
   const sessToken = crypto.randomBytes(32).toString("base64url");
@@ -5242,7 +5322,7 @@ app.get("/portal/:orgSlug/session", requirePortalSession, wrap(async (req, res) 
 // a public give page is byte-identical whether or not the email behind it has
 // ever given (pinned in tests/org-blindness.test.js). Returns the donor's
 // current recurring arrangement (frequency + intended base amount) or null.
-app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, res) => {
+app.get("/portal/:orgSlug/give-default", requireMembershipSession, wrap(async (req, res) => {
   const { org, email } = req.portal;
   const donors = await portalDonorsFor(org.id, email);
   // PARITY-1 E: the give form says who is signed in. The donor's OWN first
@@ -5723,9 +5803,23 @@ app.post("/portal/:orgSlug/recurring/:subId/update-card", portalMutationLimiter,
 // (id,w) is a stable, immutable URL — the CDN caches each width once. SVGs and
 // non-raster types pass through untouched (they scale losslessly).
 const PORTAL_ASSET_WIDTHS = [400, 800, 1280, 1920, 2560];
-app.get("/portal-assets/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: only an asset an admin placed on a public page is served to
+// anyone. Any other asset needs a signed-in user of the org that owns it, and
+// every refusal is the same 404 as a missing id.
+async function assetDoor(req, res, next) {
+  const meta = await getAssetMeta(req.params.id);
+  if (!meta) return res.status(404).json({ error: "not_found" });
+  req.assetMeta = meta;
+  if (meta.isPublic) return next();
+  return requireAuth404(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.user || req.user.orgId !== meta.orgId) return res.status(404).json({ error: "not_found" });
+    next();
+  });
+}
+app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   const asset = await getThemeAsset(req.params.id);
-  if (!asset) return res.status(404).json({ error: "not_found" });
+  if (!asset || asset.orgId !== req.assetMeta.orgId) return res.status(404).json({ error: "not_found" });
   let buffer = asset.buffer, contentType = asset.contentType, variantTag = "";
   const w = parseInt(req.query.w, 10);
   if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
@@ -5742,7 +5836,8 @@ app.get("/portal-assets/:id", wrap(async (req, res) => {
     } catch (e) { console.error("[portal-assets] resize failed, serving master:", e.message); }
   }
   res.set("Content-Type", contentType);
-  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.set("Cache-Control", asset.isPublic ? "public, max-age=31536000, immutable" : "private, no-store");
+  if (!asset.isPublic) res.set("X-Content-Type-Options", "nosniff");
   res.set("ETag", `"${asset.id}${variantTag}"`);
   res.set("Vary", "Accept");
   res.send(buffer);
@@ -5772,7 +5867,7 @@ async function rescueLegacyImageValue(orgId, kind, dataUri) {
   const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
   if (!m) return null;
   try {
-    const asset = await putThemeAsset({ orgId, kind, buffer: Buffer.from(m[2], "base64"), contentType: m[1] });
+    const asset = await putThemeAsset({ orgId, kind, buffer: Buffer.from(m[2], "base64"), contentType: m[1], isPublic: true });
     return asset.path;
   } catch (e) { console.error("[assets] legacy-image rescue failed:", e.message); return "legacy:unrecoverable"; }
 }
@@ -5804,7 +5899,7 @@ async function storeImpactPhotos(orgId, photosIn, cropsIn) {
     if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
     const norm = await normalizeUploadImage("impact", m[1], buffer);
     if (norm.error) return norm;
-    const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+    const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
     out.push(asset.path); crops.push(crop);
   }
   return { photos: out, crops };
@@ -5847,7 +5942,7 @@ async function storeWidgetImage(orgId, v) {
   if (!dims.ok) return { error: dims.message };
   const norm = await normalizeUploadImage("widget", m[1], buffer);
   if (norm.error) return { error: norm.message };
-  const asset = await putThemeAsset({ orgId, kind: "widget", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  const asset = await putThemeAsset({ orgId, kind: "widget", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
   return { url: asset.path };
 }
 
@@ -6222,7 +6317,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     if (!dims.ok) return res.status(400).json({ error: "bad_image_dimensions", message: dims.message });
     const norm = await normalizeUploadImage(kind, contentType, buffer);
     if (norm.error) return res.status(400).json({ error: norm.error, message: norm.message });
-    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
     updates.push(`${colBase}_url = ?`); params.push(asset.path);
     updates.push(`${colBase}_data = ?`); params.push(null);
     assetOps.push({ kind, keepId: asset.id, entity: `portal_settings.${colBase}`, fromVal, toVal: asset.path });

@@ -168,7 +168,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
         <strong style={{ fontSize: 13.5, color: T.ink }}>Where the money posts</strong>
         {d.connections.map(c => (
           <span key={c.id} style={{ fontSize: 12.5, color: c.ready ? T.ink3 : T.gold700 }}>
-            {c.vendorLabel}: {c.ready ? "every fund, the fee and each bank account are mapped" : "not sending yet"}.
+            {c.vendorLabel}: {c.sends === false ? "sending is not available yet" : c.ready ? "every fund, the fee and each bank account are mapped" : "not sending yet"}.
           </span>))}
         <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-open"
           onClick={() => setOpenMap(d.connections[0].id)}>Review</button>
@@ -199,13 +199,13 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
             <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
               <strong style={{ fontSize: 15, color: T.ink }}>{c.vendorLabel}</strong>
               <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
-                color: c.ready ? T.greenDk : T.gold700 }}>{c.ready ? "Ready to send" : "Not sending yet"}</span>
-              <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-agreement"
-                onClick={() => openAgreement(c)}>Do the two agree?</button>
-              <button style={btn(false)} onClick={() => setOpenMap("")}>Close</button>
+                color: c.ready ? T.greenDk : T.gold700 }}>{c.sends === false ? "Sending not available yet" : c.ready ? "Ready to send" : "Not sending yet"}</span>
+              {c.sends !== false && <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-agreement"
+                onClick={() => openAgreement(c)}>Do the two agree?</button>}
+              <button style={{ ...btn(false), ...(c.sends === false ? { marginLeft: "auto" } : {}) }} onClick={() => setOpenMap("")}>Close</button>
             </div>
-            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
-            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.definition}</div>
+            <div data-testid="bookkeeping-sentence" style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
+            {c.sends !== false && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.definition}</div>}
             {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8 }}>{msg}</div>}
 
             <div style={{ marginTop: 10 }}>
@@ -254,7 +254,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
                   <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>{d.donorNamesDefault}</span>
                 </span>
               </label>
-              {!c.ready && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 8, lineHeight: 1.5 }}>{c.sentence}</div>}
+              {!c.ready && c.sends !== false && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 8, lineHeight: 1.5 }}>{c.sentence}</div>}
               {!isReadOnly && isAdmin && draft?.id === c.id && (
                 <button style={{ ...btn(true), marginTop: 10 }} data-testid="bookkeeping-save" onClick={() => save(c)}>Save the mapping</button>)}
             </div>
@@ -696,7 +696,8 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               money-in card, so QuickBooks read "0 gifts · never last gift"
               and Square read "nothing has come through" over eleven sales. */}
           <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 10 }}>
-            {c.kind === "bookkeeping" ? <>
+            {c.kind === "bookkeeping" && c.sends === false ? null
+              : c.kind === "bookkeeping" ? <>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.deposits30 ?? 0}</div>
                 <div style={{ fontSize: 11.5, color: T.ink3 }}>{(c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent"}</div>

@@ -131,8 +131,44 @@ async function schemaUnchanged() {
   return r.rows.length > 0 && r.rows[0].schema_hash === SCHEMA_HASH;
 }
 
+// FIX-20 Part 10: schema init runs while the OLD instance is still serving
+// (Railway now waits for /ready before it switches). An ALTER TABLE queued
+// behind a long read holds every later read on that table behind it, so a
+// deploy could stall the live site. Init therefore runs on ONE session with a
+// short lock_timeout: a statement that cannot take its lock at once gives up,
+// waits, and tries again, and never sits in the queue in front of live reads.
+const DDL_LOCK_TIMEOUT = "1s";
+const DDL_RETRIES = 40;
+async function ddlSession() {
+  const client = await pool.connect();
+  await client.query(`SET lock_timeout = '${DDL_LOCK_TIMEOUT}'`);
+  return {
+    async query(sql, params) {
+      for (let attempt = 1; ; attempt++) {
+        try { return await client.query(sql, params); }
+        catch (e) {
+          if (e.code !== "55P03" || attempt >= DDL_RETRIES) throw e;   // 55P03: lock_not_available
+          console.warn(`[schema] a lock was busy (attempt ${attempt}); waiting so live reads go first`);
+          await new Promise(r => setTimeout(r, Math.min(5000, 250 * attempt)));
+        }
+      }
+    },
+    async release() {
+      await client.query("RESET lock_timeout").catch(() => {});
+      client.release();
+    },
+  };
+}
+
 async function initSchema() {
   if (await schemaUnchanged()) return;
+  const ddl = await ddlSession();
+  try { await runSchemaInit(ddl); }
+  finally { await ddl.release(); }
+}
+
+// The DDL itself. `pool` here is the init session above, not the module pool.
+async function runSchemaInit(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orgs (
       id TEXT PRIMARY KEY,
@@ -3437,6 +3473,20 @@ async function initSchema() {
   // Pinned by tests/asset-retention.test.js (incl. the one-seam battery).
   await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
+  // FIX-20 Part 0: an asset is PRIVATE unless an admin placed it on a public
+  // page. /portal-assets/:id serves a public one to anyone and a private one
+  // only to a signed-in user of the owning org. The backfill runs once, when
+  // the column first appears: every existing asset of a public-page kind (the
+  // logo, the header, impact, widget, campaign, event, auction and volunteer
+  // page images) was placed there by an admin, and nothing else ever was.
+  {
+    const had = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name='portal_assets' AND column_name='is_public'`);
+    await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    if (!had.rows.length) {
+      await pool.query(`UPDATE portal_assets SET is_public = TRUE
+        WHERE kind IN ('logo','header','impact','widget','campaign','event','auction','volpage')`);
+    }
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS asset_pointer_history (
       id TEXT PRIMARY KEY,
@@ -3983,8 +4033,20 @@ async function initSchema() {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT gift_bk_sync_status CHECK (status IN ('sending','synced','skipped','failed'))
     )`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_bookkeeping_one_per_gift
-                      ON gift_bookkeeping_syncs (org_id, gift_id, vendor)`);
+  // FIX-20: ONE ROW PER GIFT PER COMPANY. The sent list belongs to a
+  // QuickBooks company (realm_id), not to the org: a connection moved to a
+  // different company has sent nothing there yet. A row written before the
+  // company was part of the key takes its connection's company; one with no
+  // company at all keeps '' and so never counts as sent to a real company.
+  await pool.query(`UPDATE gift_bookkeeping_syncs s SET realm_id = c.realm_id
+                      FROM bookkeeping_connections c
+                     WHERE s.realm_id IS NULL AND c.id = s.connection_id AND c.org_id = s.org_id AND c.realm_id IS NOT NULL`);
+  await pool.query(`UPDATE gift_bookkeeping_syncs SET realm_id = '' WHERE realm_id IS NULL`);
+  await pool.query(`ALTER TABLE gift_bookkeeping_syncs ALTER COLUMN realm_id SET DEFAULT ''`);
+  await pool.query(`ALTER TABLE gift_bookkeeping_syncs ALTER COLUMN realm_id SET NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_bookkeeping_one_per_gift_company
+                      ON gift_bookkeeping_syncs (org_id, gift_id, vendor, realm_id)`);
+  await pool.query(`DROP INDEX IF EXISTS gift_bookkeeping_one_per_gift`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gift_bk_syncs_status
                       ON gift_bookkeeping_syncs (org_id, vendor, status)`);
   // The QuickBooks customer each donor became, per company file, so the same
@@ -6424,6 +6486,47 @@ async function initSchema() {
       created_by_name TEXT
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_bids_item ON auction_bids (item_id, amount DESC, created_at, id)`);
+  // FIX-20 Part 1: ONE ITEM, ONE PAID WINNER. The first payment to arrive
+  // claims the item (paid_payment_id, set in one UPDATE by the webhook); a
+  // second payment for the same item records no gift and becomes a row here,
+  // which the staff screen shows with the exact payment to refund in Stripe.
+  // Steward never refunds on its own. The open checkout is remembered so a
+  // second checkout for the same item expires the first one before it opens.
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS paid_payment_id TEXT`);
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS checkout_session_id TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_refund_flags (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      auction_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      stripe_payment_id TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      payer_name TEXT,
+      payer_email TEXT,
+      donor_id TEXT,
+      kept_payment_id TEXT,
+      resolved_at TIMESTAMPTZ,
+      resolved_by TEXT,
+      resolved_by_name TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, stripe_payment_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_refund_flags_auction ON auction_refund_flags (org_id, auction_id)`);
+  // FIX-20 Part 6: a bidder signed in on a second device. Each device holds
+  // its own session token (hashed here); the first device keeps its own.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_bidder_devices (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      bidder_id TEXT NOT NULL REFERENCES auction_bidders(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
 
   // ── PARITY-3 · VOLUNTEERS, AND THE TWO LEFTOVERS FROM PARITY-1 ───────────
   // 6a. A birthday is a month and a day; the year is optional, because most

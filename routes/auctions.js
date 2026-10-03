@@ -57,15 +57,22 @@ const MESSAGES = {
   bad_amount: ["err", "That amount did not read as dollars and cents."],
   too_high: ["err", "That bid is over one million dollars, which is almost certainly a typo."],
   no_buy_now: ["err", "Buy now is no longer available on that item: the bidding has passed it."],
-  already: ["err", "That email is already registered for this auction on another phone or browser. Use that one, or ask the organisation at the desk."],
+  already: ["err", "That email is already registered for this auction. To bid from this phone or browser too, ask for a sign-in link below."],
+  link_sent: ["ok", "If that email is registered for this auction, a sign-in link is on its way. It works once, for fifteen minutes."],
+  link_bad: ["err", "That sign-in link has expired or was already used. Ask for a new one below."],
+  signed_in: ["ok", "You are signed in on this device. Your bids and your bidder number are the same as on your other one."],
+  paid_already: ["ok", "This item has already been paid for."],
+  pay_in_progress: ["err", "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organisation."],
+  pay_try_again: ["err", "We could not check on an earlier payment for this item. Try again in a minute."],
   missing: ["err", "A name, an email and a phone number, so the organisation can reach you if you win."],
   no_item: ["err", "That item is not in this auction."],
 };
 
 function mount(ctx) {
 const {
-  actor, checkWriteAccess, donateLimiter, publicAppUrl, query, queryTx, recordGift, requireAuth,
-  resolveOrgBrandTheme, run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
+  actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
+  portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
+  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
 } = ctx;
 const app = routers.r0;
 
@@ -97,8 +104,14 @@ const cookieOf = (req, name) => {
 async function bidderFor(req, auction) {
   const t = cookieOf(req, COOKIE_PREFIX + auction.id);
   if (!t) return null;
-  const [b] = await query(`SELECT * FROM auction_bidders WHERE token_hash=? AND auction_id=? AND org_id=?`,
-    [AC.hashToken(t), auction.id, auction.org_id]);
+  const h = AC.hashToken(t);
+  // FIX-20 Part 6: the first device's token is on the bidder row; every
+  // device signed in by an emailed link has its own row.
+  const [b] = await query(`SELECT bd.* FROM auction_bidders bd
+                            WHERE bd.auction_id=? AND bd.org_id=?
+                              AND (bd.token_hash=? OR EXISTS (SELECT 1 FROM auction_bidder_devices v
+                                    WHERE v.bidder_id=bd.id AND v.org_id=bd.org_id AND v.token_hash=?))`,
+    [auction.id, auction.org_id, h, h]);
   return b || null;
 }
 async function publicAuction(slug) {
@@ -251,6 +264,24 @@ async function auctionFigures(orgId, auctionId) {
   return out;
 }
 
+// FIX-20 Part 5: who a winner's email cannot reach, and why. Only reasons
+// about the PERSON count here (a bounce, a complaint, a deceased flag): an
+// org whose mail is off is a fact about every winner, and the drafts screen
+// already says so when Send is pressed.
+const WINNER_MAIL_WORDS = {
+  bounced: "Their address bounced, so email will not reach them.",
+  complained: "They marked your mail as spam, so Steward will not email them.",
+  deceased: "They are marked deceased.",
+  blocked_address: "Their address is on the do-not-mail list.",
+  sample_donor: "They are a sample person, so Steward will not email them.",
+  no_email: "There is no email address for them.",
+};
+async function winnerMailBlock(orgId, email) {
+  const d = await donorMailDecision("auction_winner", email, orgId);
+  if (d.send || !WINNER_MAIL_WORDS[d.reason]) return null;
+  return { reason: d.reason, sentence: WINNER_MAIL_WORDS[d.reason] + " Copy the pay link and send it yourself." };
+}
+
 app.get("/auctions/:id", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const a = await loadAuction(orgId, req.params.id);
@@ -283,8 +314,21 @@ app.get("/auctions/:id", requireAuth, wrap(async (req, res) => {
        FROM milestone_drafts m LEFT JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
       WHERE m.org_id=? AND m.milestone_key IN (?, ?) AND m.status <> 'dismissed'
       ORDER BY m.created_at DESC`, [orgId, `auction-closing:${a.id}`, `auction-winner:${a.id}`]);
+  for (const it of items) {
+    if (it.winner && !it.paidGiftId) it.winner.mailBlocked = await winnerMailBlock(orgId, it.winner.email);
+  }
+  // FIX-20 Part 1: a second payment for an item someone already paid for.
+  // No gift was recorded for it; a person refunds it in Stripe.
+  const refundFlags = (await query(
+    `SELECT f.id, f.item_id, i.title AS item_title, f.stripe_payment_id, f.amount::text AS amount, f.payer_name, f.payer_email,
+            f.donor_id, f.kept_payment_id, f.created_at, f.resolved_at, f.resolved_by_name
+       FROM auction_refund_flags f LEFT JOIN auction_items i ON i.id=f.item_id AND i.org_id=f.org_id
+      WHERE f.org_id=? AND f.auction_id=? ORDER BY f.created_at`, [orgId, a.id]))
+    .map(f => ({ ...f, amount: Number(f.amount) }));
   const [org] = await query(`SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=?`, [orgId]);
   res.json({
+    refundFlags,
+    refundSentence: "A second payment arrived for an item that was already paid for. Steward recorded no gift for it. Refund this in Stripe; Steward does not refund on its own.",
     auction: { ...a, opensLocal: localOf(a.opens_at, tz), closesLocal: localOf(a.closes_at, tz),
                opensWords: whenWords(a.opens_at, tz), closesWords: whenWords(a.closes_at, tz),
                closed: new Date(a.closes_at) <= new Date(), notOpen: new Date(a.opens_at) > new Date(),
@@ -462,7 +506,9 @@ app.post("/auctions/:id/winner-emails", requireAuth, checkWriteAccess, wrap(asyn
   const brand = await resolveOrgBrandTheme(orgId).catch(() => null);
   const orgName = (brand && brand.displayName) || "us";
   const byPerson = new Map();
+  let unreachable = 0;
   for (const s of won) {
+    if (await winnerMailBlock(orgId, s.bidder_email)) { unreachable++; continue; }
     const k = s.bidder_donor_id;
     if (!byPerson.has(k)) byPerson.set(k, { donorId: k, name: s.bidder_name, items: [] });
     byPerson.get(k).items.push(s);
@@ -474,7 +520,18 @@ app.post("/auctions/:id/winner-emails", requireAuth, checkWriteAccess, wrap(asyn
       body: `Hi ${firstName(p.name)},\n\nCongratulations: you had the winning bid in ${a.title}.\n\n${lines.join("\n\n")}\n\nEach link takes you to a secure payment page run by ${orgName}'s own payment account. Your receipt will show the part of your bid that is tax deductible: the amount over each item's fair market value.\n\nThank you for supporting ${orgName}.`,
     };
   });
-  res.json({ made, winners: byPerson.size });
+  res.json({ made, winners: byPerson.size, unreachable });
+}));
+
+// FIX-20 Part 1: a person refunded the flagged payment in Stripe and says so.
+// Steward moves no money here; it only records that somebody did.
+app.post("/auction-refund-flags/:id/resolve", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const who = actor(req);
+  const { changes } = await run(
+    `UPDATE auction_refund_flags SET resolved_at=NOW(), resolved_by=?, resolved_by_name=? WHERE id=? AND org_id=? AND resolved_at IS NULL`,
+    [who.id, who.name, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found or already marked refunded" });
+  res.json({ ok: true });
 }));
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -590,6 +647,16 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
       </form>
     </div>` : "";
 
+  const signinCard = !bidder ? `
+    <div class="card" id="signin">
+      <h2>Registered on another phone?</h2>
+      <p class="small">Enter the email you registered with and we will send a sign-in link for this device. Your bidder number and your bids stay the same.</p>
+      <form method="post" action="${self}/signin-link">
+        <label>Email<input name="email" type="email" required autocomplete="email"></label>
+        <button class="btn quiet" type="submit">Email me a sign-in link</button>
+      </form>
+    </div>` : "";
+
   const enc = encodeURIComponent(shareUrl);
   const share = `<div class="card"><h2>Share it</h2>
       <p class="small" style="display:flex;gap:14px;flex-wrap:wrap;margin:6px 0 0">
@@ -611,6 +678,7 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
       ${bidder ? `<p class="small" style="margin-top:8px">You are bidder #${esc(bidder.bidder_number)}, ${esc(bidder.name)}.</p>` : ""}
     </div>
     ${registerCard}
+    ${signinCard}
     ${cats.length ? `<p class="small" style="display:flex;gap:8px;flex-wrap:wrap">
         <a href="${self}" class="pill ${cat ? "shut" : "open"}">All</a>
         ${cats.map(c => `<a href="${self}?c=${encodeURIComponent(c)}" class="pill ${c === cat ? "open" : "shut"}">${esc(c)}</a>`).join("")}</p>` : ""}
@@ -667,7 +735,7 @@ app.post("/auction/:slug/register", donateLimiter, express.urlencoded({ extended
   const a = await publicAuction(req.params.slug);
   if (!a) return res.status(404).send("Not found");
   const self = `/auction/${encodeURIComponent(a.public_slug)}`;
-  const back = code => res.redirect(303, `${self}?m=${code}${code === "registered" ? "" : "#register"}`);
+  const back = code => res.redirect(303, `${self}?m=${code}${code === "registered" ? "" : code === "already" ? "#signin" : "#register"}`);
   if (String(req.body?.website || "").trim()) return back("registered");   // the honeypot
   if (new Date(a.closes_at) <= new Date()) return back("closed");
   const name = cleanText(req.body?.name, 200), email = cleanText(req.body?.email, 320).toLowerCase(), phone = cleanText(req.body?.phone, 40);
@@ -703,6 +771,96 @@ app.post("/auction/:slug/register", donateLimiter, express.urlencoded({ extended
   const secure = req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https");
   res.setHeader("Set-Cookie", `${COOKIE_PREFIX}${a.id}=${encodeURIComponent(token)}; Path=/auction; Max-Age=${60 * 60 * 24 * 60}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`);
   back("registered");
+}));
+
+// FIX-20 Part 6: SIGNING IN ON A SECOND DEVICE, by the same kind of link the
+// donor portal sends: one use, fifteen minutes, stored hashed in
+// portal_magic_links (purpose auction:<id>, so it opens this auction and
+// nothing else), superseded by a new request. The answer is the same whether
+// or not the email is registered, and the send happens after the response.
+app.post("/auction/:slug/signin-link", express.urlencoded({ extended: false }), portalLinkIpLimiter, portalLinkEmailLimiter, wrap(async (req, res) => {
+  const a = await publicAuction(req.params.slug);
+  if (!a) return res.status(404).send("Not found");
+  const self = `/auction/${encodeURIComponent(a.public_slug)}`;
+  res.redirect(303, `${self}?m=link_sent#signin`);
+  const email = cleanText(req.body?.email, 320).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+  (async () => {
+    const [b] = await query(`SELECT id, name, email FROM auction_bidders WHERE auction_id=? AND org_id=? AND LOWER(email)=?`, [a.id, a.org_id, email]);
+    if (!b) return;
+    const purpose = `auction:${a.id}`;
+    await run(`UPDATE portal_magic_links SET superseded_at=NOW()
+                WHERE org_id=? AND email=? AND used_at IS NULL AND superseded_at IS NULL AND purpose=?`, [a.org_id, email, purpose]);
+    const token = AC.randomToken();
+    await run(`INSERT INTO portal_magic_links (id,org_id,email,token_hash,expires_at,requested_ip,purpose)
+               VALUES (?,?,?,?, NOW() + INTERVAL '15 minutes', ?, ?)`,
+      ["pml_" + uuid().slice(0, 10), a.org_id, email, AC.hashToken(token), req.ip || null, purpose]);
+    const decision = await donorMailDecision("auction_signin", email, a.org_id);
+    if (!decision.send) { console.log(`[auction] sign-in link refused (${decision.reason})`); return; }
+    if (!process.env.RESEND_API_KEY) return;
+    const brand = await resolveOrgBrandTheme(a.org_id).catch(() => null);
+    const orgName = (brand && brand.displayName) || "the organisation";
+    const url = `${publicAppUrl()}${self}/signin#token=${encodeURIComponent(token)}`;   // a fragment never rides a Referer
+    const PPm = await PP_READY;
+    const e = PPm.escapeHtml;
+    const out = await resend.emails.send({
+      ...(await donorSendOpts(a.org_id, email, "auction_signin")),
+      to: email,
+      subject: `Your sign-in link for ${a.title}`,
+      html: `${await brandEmailHeaderHtml(a.org_id)}<div style="font-family:Georgia,serif;font-size:16px;line-height:1.6;color:#0F1A12">
+        <p>Hello ${e(firstName(b.name))},</p>
+        <p>Here is your sign-in link for ${e(a.title)}, so you can bid from this device too. It works once, for the next fifteen minutes.</p>
+        <p><a href="${e(url)}" style="display:inline-block;background:#0D5C3A;color:#FFFFFF;padding:12px 20px;border-radius:6px;text-decoration:none">Sign in to bid</a></p>
+        <p style="font-size:14px">If you did not ask for this, nothing has happened and you can ignore it. ${e(orgName)} never asks for a password.</p>
+      </div>`,
+      text: `Hello ${firstName(b.name)},\n\nHere is your sign-in link for ${a.title}. It works once, for the next fifteen minutes.\n\n${url}\n\nIf you did not ask for this, nothing has happened and you can ignore it.`,
+    });
+    if (out && out.error) console.error("[auction] sign-in link refused by the provider:", out.error.message);
+  })().catch(err => console.error("[auction] sign-in link failed:", err.message));
+}));
+
+// The link lands here. A GET writes nothing: the page reads the token from the
+// fragment and the person presses the button, which POSTs it.
+app.get("/auction/:slug/signin", donateLimiter, wrap(async (req, res) => {
+  await PP_READY;
+  res.setHeader("Cache-Control", "no-store");
+  const a = await publicAuction(req.params.slug);
+  if (!a) return res.status(404).send(NOT_FOUND());
+  const esc = PP.escapeHtml;
+  const brand = await resolveOrgBrandTheme(a.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+  const self = `/auction/${encodeURIComponent(a.public_slug)}`;
+  res.send(page({ title: `Sign in · ${a.title}`, brand, body: `
+    <div class="card">
+      <h1>Bid from this device</h1>
+      <p class="muted">${esc(a.title)}</p>
+      <form method="post" action="${self}/signin">
+        <input type="hidden" name="token" data-token>
+        <button class="btn" type="submit">Sign in on this device</button>
+      </form>
+    </div>
+    <script>(function(){var m=/token=([^&]+)/.exec(location.hash||"");var i=document.querySelector("[data-token]");
+      if(m&&i){i.value=decodeURIComponent(m[1]);history.replaceState(null,"",location.pathname);}})();</script>` }));
+}));
+
+app.post("/auction/:slug/signin", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  const a = await publicAuction(req.params.slug);
+  if (!a) return res.status(404).send("Not found");
+  const self = `/auction/${encodeURIComponent(a.public_slug)}`;
+  const token = String(req.body?.token || "");
+  if (!token || token.length > 300) return res.redirect(303, `${self}?m=link_bad#signin`);
+  const [used] = await query(
+    `UPDATE portal_magic_links SET used_at=NOW()
+      WHERE token_hash=? AND org_id=? AND purpose=? AND used_at IS NULL AND superseded_at IS NULL AND expires_at > NOW()
+      RETURNING email`, [AC.hashToken(token), a.org_id, `auction:${a.id}`]);
+  const [b] = used ? await query(`SELECT id, name, bidder_number FROM auction_bidders WHERE auction_id=? AND org_id=? AND LOWER(email)=LOWER(?)`,
+    [a.id, a.org_id, used.email]) : [];
+  if (!b) return res.redirect(303, `${self}?m=link_bad#signin`);
+  const device = AC.randomToken();
+  await run(`INSERT INTO auction_bidder_devices (id,org_id,bidder_id,token_hash,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
+    ["abd_" + uuid().replace(/-/g, "").slice(0, 12), a.org_id, b.id, AC.hashToken(device), AC.SYS_PUBLIC.id, `Bidder #${b.bidder_number}, ${b.name}`]);
+  const secure = req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https");
+  res.setHeader("Set-Cookie", `${COOKIE_PREFIX}${a.id}=${encodeURIComponent(device)}; Path=/auction; Max-Age=${60 * 60 * 24 * 60}; HttpOnly; SameSite=Lax${secure ? "; Secure" : ""}`);
+  res.redirect(303, `${self}?m=signed_in`);
 }));
 
 // THE BID. Decided inside one transaction that locks the item row, by the

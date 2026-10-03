@@ -77,62 +77,28 @@ const PRIV = ["zzmarkb", "6377.89", "63778"];
 const iso = d => d.toISOString().slice(0, 10);
 const TODAY = iso(new Date());
 
+// FIX-20 Part 9: THE TEARDOWN IS DISCOVERED, NOT LISTED. It used to be a
+// hand-kept list of tables, and every build that added a table the battery
+// writes to (saved_dashboards was the last) made the suite pass once and then
+// die on its own leftovers with an FK error that reads like a product bug.
+// Now every table with an org_id column is swept, children before parents by
+// retrying whatever an FK held back, until nothing of either org is left. The
+// org delete at the end fails loudly if anything still points at it.
 async function reset() {
+  const tables = (await q(`SELECT c.table_name FROM information_schema.columns c
+    JOIN information_schema.tables t ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+    WHERE c.column_name = 'org_id' AND c.table_schema = 'public' AND t.table_type = 'BASE TABLE'
+    ORDER BY c.table_name`)).map(r => r.table_name);
   for (const org of [A, B]) {
-    for (const t of ["memberships", "membership_levels", "api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
-      // PARITY-2 Part 4: the auction's four tables, children first.
-      "auction_bids", "auction_bidders", "auction_items", "auctions",
-      "group_sweep_seen", "group_members", "audiences", "statement_mappings", "gift_duplicate_questions",
-      // INT-3 and INT-4 — the email tool and the staff mailbox. Ordered here,
-      // before the org delete, for exactly the reason the ack_letter_templates
-      // note below gives: a teardown list one table short is a suite that
-      // passes once and then dies on its own leftovers with an FK error that
-      // reads like a product bug.
-      "email_marketing_activity", "email_marketing_campaigns", "email_marketing_connections",
-      "mailbox_exclusions", "mailbox_never_log", "mailbox_connections",
-      // INT-BUILD-1 — the meetings, and INT-5's webhooks, which this suite
-      // inserts below and never deleted, so a second run died on the org FK.
-      "calendar_events", "webhook_deliveries", "webhook_endpoints",
-      // SEC-1 — the sessions and two-factor rows (they cascade from orgs, but
-      // the list is explicit, as this file's own rule asks).
-      "user_sessions", "mfa_recovery_codes",
-      // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
-      // only bites on the second run: the first leaves a row behind, and then
-      // `DELETE FROM orgs` fails its foreign key and the whole suite aborts
-      // with "SUITE ERROR" rather than an assertion. A teardown list that is
-      // one table short is a suite that passes once.
-      "ack_letter_templates",
-      "giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
-      "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
-      "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
-      "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
-      "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
-      // BUILD-102 (Steward Give) Part 6 — the form funnel. It cascades from
-      // giving_pages, but it is named explicitly and ordered BEFORE it: the
-      // cascade covers a page delete, and this list has to survive an ORG delete
-      // too.
-      "form_events",
-      "volunteer_group_members", "volunteer_signups", "volunteer_slots", "volunteer_opportunities", "volunteer_groups",
-      "gift_bookkeeping_syncs", "bookkeeping_customers",
-      "bookkeeping_deposits", "bookkeeping_connections", "pos_sales", "pos_item_mappings",
-      "matching_employers",
-      "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
-      // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
-      // `grants` delete below would usually take them — but `grant_id` is
-      // nullable, so a row without one would survive and block the org delete
-      // with an FK violation that reads as a product bug. Named explicitly and
-      // ordered BEFORE `grants`, which is the rule this list exists for.
-      "grant_spend", "grant_milestones", "grant_documents",
-      "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "deleted_records", "gifts", "grants",
-      "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
-      // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`
-      // is NOT, and it is here because its absence is what made this suite
-      // un-re-runnable after any crashed run — the exact class the file's own
-      // note names. A leftover api_keys row for org_mxa blocked the reset with
-      // an FK violation that reads as a product bug and is fixture hygiene.
-      "portfolio_targets", "cultivation_plan_steps", "cultivation_plans", "cultivation_templates", "api_keys",
-      "invites", "portal_settings", "annual_fund_goals", "fundraising_goals", "metric_snapshots", "campaigns", "users"])
-      await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
+    let left = tables;
+    for (let pass = 0; pass < 10 && left.length; pass++) {
+      const heldBack = [];
+      for (const t of left) {
+        try { await q(`DELETE FROM "${t}" WHERE org_id = $1`, [org]); }
+        catch (e) { if (e.code === "23503") heldBack.push(t); }   // a child row still points here: next pass
+      }
+      left = heldBack;
+    }
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
   }
 }
@@ -1087,6 +1053,47 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const sameOrg = await mfetch("POST", `/donors/d_${A}_owner/threads`, aAdmin,
     { label: "Call to say thank you", due: TODAY, ownerId: `u_${A}_staff` });
   ok("§10 an ownerId from org A's own staff is accepted", sameOrg.status === 201, { status: sameOrg.status, body: sameOrg.text.slice(0, 160) });
+
+  // ── §11 · FILES AND ASSETS · FIX-20 Part 0 ──────────────────────────────
+  // /portal-assets/:id served ANY asset to anyone holding its id: a waiver, a
+  // conversation attachment, a grant agreement. Now only an asset an admin
+  // placed on a public page is served without a session; every other asset
+  // needs a signed-in user of the org that owns it, and every refusal is the
+  // same 404 a missing id gets. Fails if the door goes back to serving by id
+  // alone (the signed-out and cross-org probes get the bytes).
+  console.log("\n§11 · files and assets: signed out, other org, public page");
+  const IXF = require("../interactionFiles");
+  const aid = (k) => "pa_" + crypto.createHash("sha256").update(B + "|" + k).digest("hex").slice(0, 24);
+  const bytes = Buffer.from("ZZMARKB private file bytes");
+  const putB = (id, kind, ct, pub) => q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data,is_public)
+    VALUES ($1,$2,$3,$4,$5,'db',$6,$7) ON CONFLICT (id) DO UPDATE SET is_public=$7, deleted_at=NULL`,
+    [id, B, kind, ct, bytes.length, bytes.toString("base64"), pub]);
+  const waiver = aid("volapply"), attach = aid("ixfile"), pagePhoto = aid("event");
+  await putB(waiver, "volapply", "application/pdf", false);
+  await putB(attach, "ixfile", "application/pdf", false);
+  await putB(pagePhoto, "event", "image/png", true);
+  await q(`INSERT INTO interaction_attachments (id,org_id,interaction_id,donor_id,asset_id,filename,mime,bytes,created_by)
+           VALUES ($1,$2,$3,$4,$5,'waiver.pdf','application/pdf',$6,'system:matrix') ON CONFLICT (id) DO NOTHING`,
+    [`iatt_${B}`, B, `i_${B}`, `d_${B}`, attach, bytes.length]);
+  const bAdmin = await loginM("admin-b@mx.local");
+  const get = async (p, token) => { const r = await fetch(M + p, { headers: token ? { Authorization: "Bearer " + token } : {} }); return { status: r.status, text: await r.text() }; };
+  for (const [label, id] of [["a waiver upload", waiver], ["a conversation attachment", attach]]) {
+    const out = await get(`/portal-assets/${id}`);
+    const cross = await get(`/portal-assets/${id}`, aAdmin);
+    const own = await get(`/portal-assets/${id}`, bAdmin);
+    ok(`§11 ${label}: signed out gets 404`, out.status === 404 && !/ZZMARKB/.test(out.text), out.status);
+    ok(`§11 ${label}: another org's admin gets 404`, cross.status === 404 && !/ZZMARKB/.test(cross.text), cross.status);
+    ok(`§11 ${label}: its own org's signed-in user gets the file`, own.status === 200 && /ZZMARKB/.test(own.text), own.status);
+  }
+  const signed = IXF.signFileUrl({ orgId: B, assetId: attach });
+  const sOut = await get(signed), sCross = await get(signed, aAdmin), sOwn = await get(signed, bAdmin);
+  ok("§11 a conversation attachment's signed link opened signed out is a 404", sOut.status === 404, sOut.status);
+  ok("§11 …and from another org is a 404", sCross.status === 404, sCross.status);
+  ok("§11 …and from its own org downloads", sOwn.status === 200 && /ZZMARKB/.test(sOwn.text), sOwn.status);
+  const pub = await get(`/portal-assets/${pagePhoto}`);
+  ok("§11 a public page image still loads signed out", pub.status === 200, pub.status);
+  const missing = await get(`/portal-assets/pa_${"0".repeat(24)}`);
+  ok("§11 a refusal is byte-identical to a missing id", missing.status === 404 && missing.text === (await get(`/portal-assets/${waiver}`)).text);
 
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();

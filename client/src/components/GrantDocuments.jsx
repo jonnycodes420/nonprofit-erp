@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { downloadFile } from "../lib/downloadFile";
 
 const ACCEPT = ".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.txt";
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -34,7 +35,8 @@ export function DocumentRow({ d, onDelete, isReadOnly, showGrant = false }) {
   return (
     <div data-testid="grant-document" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-        <a href={d.url} target="_blank" rel="noopener noreferrer"
+        <a href={d.url || undefined} rel="noopener noreferrer"
+          onClick={e => { e.preventDefault(); if (d.url) downloadFile(d.url, d.fileName).catch(x => window.alert(x.message)); }}
           style={{ fontSize: 14, fontWeight: 600, color: T.greenDk, overflowWrap: "anywhere" }}>{d.fileName}</a>
         <div style={{ fontSize: 12, color: T.ink3 }}>
           {d.docTypeLabel}{d.version > 1 ? ` · version ${d.version}` : ""}

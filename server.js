@@ -639,6 +639,18 @@ getDb()
   })
   .catch(err => { console.error("Database init failed:", err); process.exit(1); });
 
+// FIX-20 Part 10: THE READINESS CHECK Railway's healthcheck points at
+// (railway.json). It answers 200 only once schema init and the seed have
+// finished and the database answers, so during a deploy the OLD instance keeps
+// serving until this one is ready, and nobody sees "Database initializing".
+// It sits above the gate on purpose: it is the one route that must answer
+// while the gate is shut.
+app.get("/ready", async (req, res) => {
+  if (!dbReady) return res.status(503).json({ ready: false });
+  try { await query("SELECT 1"); res.json({ ready: true }); }
+  catch { res.status(503).json({ ready: false }); }
+});
+
 app.use((req, res, next) => {
   if (!dbReady) return res.status(503).json({ error: "Database initializing" });
   next();
@@ -10464,13 +10476,14 @@ async function storeAuctionPhoto(orgId, v) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("campaign", m[1], buffer);
   if (norm.error) return { error: norm.error, message: norm.message || "That photo could not be read." };
-  const asset = await putThemeAsset({ orgId, kind: "auction", buffer: norm.buffer, contentType: norm.contentType,
+  const asset = await putThemeAsset({ orgId, kind: "auction", isPublic: true, buffer: norm.buffer, contentType: norm.contentType,
     width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
 require("./routes/auctions").mount({
-  actor, checkWriteAccess, donateLimiter, publicAppUrl, query, queryTx, recordGift, requireAuth,
-  resolveOrgBrandTheme, run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
+  actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
+  portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
+  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
 });
 require("./routes/videoThanks").mount({
   actor, checkWriteAccess, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, videoLimiter, wrap,

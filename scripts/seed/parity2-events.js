@@ -34,8 +34,8 @@ async function storePhoto(q, org, file) {
     buf = out.data; ct = "image/webp"; w = out.info.width; h = out.info.height;
   } catch { /* the original JPEG is a fine photograph too */ }
   const id = "pa_" + sha(org + "|event|" + ct + "|").slice(0, 8) + sha(buf).slice(0, 16);
-  await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,width,height,storage,data)
-           VALUES ($1,$2,'event',$3,$4,$5,$6,'db',$7) ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`,
+  await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,width,height,storage,data,is_public)
+           VALUES ($1,$2,'event',$3,$4,$5,$6,'db',$7,TRUE) ON CONFLICT (id) DO UPDATE SET deleted_at = NULL, is_public = TRUE`,
     [id, org, ct, buf.length, w, h, buf.toString("base64")]);
   return `/portal-assets/${id}`;
 }

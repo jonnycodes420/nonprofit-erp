@@ -347,6 +347,13 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - calcWealthScore scopes gifts and interactions queries by both donor_id AND org_id
 - Stripe webhook looks up org by stripe_account_id (per-org), then inserts scoped records
 
+## Files and assets are private unless placed on a public page (FIX-20)
+- `portal_assets.is_public` is set ONLY where an admin places an image on a public page: the logo and header, impact, widget, campaign, event, auction and recruitment page images (`putThemeAsset({ ..., isPublic: true })`). Everything else is private: waivers and application uploads (`volapply`), conversation attachments (`ixfile`), grant documents, cheques and faces (`person`), video thank-yous.
+- `GET /portal-assets/:id` serves a public asset to anyone. A private one needs a signed-in user of the owning org (`requireAuth404` in auth.js, org read from the stored row). `/interaction-files/:id` and `/grant-documents/:id` need the session AND the signature. Every refusal is the same 404 a missing id gets.
+- The client fetches a private file with the session and saves the bytes (`client/src/lib/downloadFile.js`). A bare `<a href>` to a private file cannot work, because the session is a Bearer header, not a cookie.
+- Still on their own signed or token doors, by design: person and cheque photos (`/person-photos`, signed, rendered in `<img>`), and a video thank-you (`/v/:token`, it reaches the donor).
+- Pinned by `tests/tenant-matrix.test.js` §11.
+
 ## An import ends with ANALYZE (PARITY-3)
 
 - Postgres plans from statistics it gathers on its own schedule, not when a file lands. With none it

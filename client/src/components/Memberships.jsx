@@ -132,7 +132,10 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
 }
 
 // ── Fundraising → Members ───────────────────────────────────────────────────
-export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = "" }) {
+// FIX-20 Part 8: isAdmin defaults to FALSE. The admin-only controls (Add a
+// level, reorder, the renewal and grace settings, price, value and term) are
+// hidden or locked for anyone else; the server refuses them anyway.
+export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug = "" }) {
   const [levels, setLevels] = useState(null);
   const [list, setList] = useState(null);
   const [status, setStatus] = useState("");

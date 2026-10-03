@@ -371,7 +371,9 @@ function MembershipPage({ orgSlug, levelId, th, BASE, card }) {
 // with the portal off there is nothing to sign in to, and a link that leads
 // nowhere is worse than no link. A donor already signed in sees their own name
 // instead. The answer is the same sentence for every address, known or not.
-function DonorSignIn({ orgSlug, enabled, signedInAs, th }) {
+// FIX-20 Part 7: `returnTo` is the page to come back to. The server accepts
+// only the org's own membership page and ignores anything else.
+function DonorSignIn({ orgSlug, enabled, signedInAs, th, returnTo = null }) {
   const [open, setOpen] = useState(false);
   const [addr, setAddr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -391,7 +393,7 @@ function DonorSignIn({ orgSlug, enabled, signedInAs, th }) {
     try {
       const r = await fetch(`${PORTAL_BASE}/${orgSlug}/request-link`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: addr.trim() }),
+        body: JSON.stringify(returnTo ? { email: addr.trim(), returnTo } : { email: addr.trim() }),
       });
       const d = await r.json().catch(() => ({}));
       setMsg(r.ok ? (d.message || "If we have this address on file, a sign-in link is on its way.") : "That did not go through. Please try again in a minute.");
@@ -657,6 +659,21 @@ export default function Donate() {
   const [returning, setReturning] = useState(false); // signed-in donor prefill applied
   // PARITY-1 E — who the portal session says is here, for "Signed in as".
   const [signedInAs, setSignedInAs] = useState("");
+  // FIX-20 Part 7: a membership sign-in link lands back on this page with its
+  // token in the fragment (#signin=). Landing writes nothing: the token is
+  // POSTed once, then the page asks again who is here.
+  const [sessionTick, setSessionTick] = useState(0);
+  const [signInNote, setSignInNote] = useState("");
+  useEffect(() => {
+    if (!membershipsMode) return;
+    const m = /signin=([A-Za-z0-9_-]+)/.exec(window.location.hash || "");
+    if (!m) return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    fetch(`${PORTAL_BASE}/${orgSlug}/verify`, { method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: m[1] }) })
+      .then(r => { if (r.ok) setSessionTick(t => t + 1); else setSignInNote("That sign-in link has expired or was already used. Sign in again for a fresh one."); })
+      .catch(() => setSignInNote("That sign-in link did not work. Sign in again for a fresh one."));
+  }, [membershipsMode, orgSlug]);
 
   const th = resolveTheme(org?.theme);
 
@@ -839,7 +856,7 @@ export default function Donate() {
   // signed in; the ARRANGEMENT is still applied on the org-wide page only, since
   // a built page has its own amounts. Not asked at all when the portal is off.
   useEffect(() => {
-    if (!org || !org.portalSignIn) return;
+    if (!org || !(org.portalSignIn || membershipsMode)) return;
     let cancelled = false;
     fetch(`${PORTAL_BASE}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))
@@ -856,7 +873,7 @@ export default function Donate() {
       })
       .catch(() => { /* anonymous / no proxy — ignore */ });
     return () => { cancelled = true; };
-  }, [org, orgSlug, pageSlug]);
+  }, [org, orgSlug, pageSlug, membershipsMode, sessionTick]);
 
   // Frequency switch: re-select the second tier of the NEW ladder (never carry
   // the old amount across — a $250 one-time gift is a very different monthly ask).
@@ -1202,8 +1219,11 @@ export default function Donate() {
   if (membershipLevelId) return <MembershipPage orgSlug={orgSlug} levelId={membershipLevelId} th={th} BASE={BASE} card={card} />;
   if (membershipsMode) return (
     <MembershipsPage orgSlug={orgSlug} th={th} BASE={BASE} card={card} monogram={monogram}
-      portalBase={PORTAL_BASE} portalSignIn={!!org.portalSignIn}
-      signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org.portalSignIn} signedInAs={signedInAs} th={th} />} />
+      portalBase={PORTAL_BASE} sessionTick={sessionTick}
+      signIn={<>
+        <DonorSignIn orgSlug={orgSlug} enabled signedInAs={signedInAs} th={th} returnTo={`/give/${orgSlug}?memberships`} />
+        {signInNote && !signedInAs && <div role="status" style={{ fontSize: 13, color: T.ink2, marginBottom: 14 }}>{signInNote}</div>}
+      </>} />
   );
 
   // The goal bar, drawn once: at the top of a campaign page, or under the

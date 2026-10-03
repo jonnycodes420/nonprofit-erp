@@ -207,9 +207,27 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
             <span style={{ color: T.ink3 }}>{money(it.deductibleOfWin)} deductible</span>
             <span style={{ fontWeight: 700, color: it.paidGiftId ? T.greenDk : T.gold700 }}>{it.paidGiftId ? "Paid" : "Not paid yet"}</span>
             {!it.paidGiftId && <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} onClick={() => copy(it.winner.payUrl)}>Copy pay link</button>}
+            {!it.paidGiftId && it.winner.mailBlocked && <span data-winner-unreachable style={{ flex: "1 1 100%", fontSize: 12, color: T.ink2 }}>{it.winner.mailBlocked.sentence}</span>}
           </div>))}
         {!d.canTakeCards && winners.length > 0 && <p style={{ fontSize: 12, color: T.ink3 }}>Connect Stripe in Settings so winners can pay online. Until then, take their payment as you would any gift.</p>}
       </Card>
+
+      {(d.refundFlags || []).length > 0 && <Card style={{ padding: "16px 18px", borderLeft: "4px solid " + T.gold700 }}>
+        <div style={h} data-testid="auction-refund-flags">Payments to refund</div>
+        <p style={{ fontSize: 12.5, color: T.ink2, margin: "0 0 10px" }}>{d.refundSentence}</p>
+        {d.refundFlags.map(f => (
+          <div key={f.id} data-refund-flag={f.id} style={{ display: "flex", gap: 10, padding: "8px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+            <strong style={{ flex: "1 1 180px", color: T.ink }}>{f.item_title}</strong>
+            <span style={{ flex: "1 1 160px" }}>{f.donor_id ? <DonorLink id={f.donor_id} onOpen={() => openPerson(f.donor_id)}>{f.payer_name || f.payer_email}</DonorLink> : (f.payer_name || f.payer_email)}</span>
+            <span>{money(f.amount)}</span>
+            <code style={{ fontSize: 12, color: T.ink2, wordBreak: "break-all" }}>{f.stripe_payment_id}</code>
+            <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} onClick={() => copy(f.stripe_payment_id)}>Copy payment id</button>
+            {f.resolved_at
+              ? <span style={{ color: T.ink3 }}>Marked refunded{f.resolved_by_name ? ` by ${f.resolved_by_name}` : ""}</span>
+              : <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} disabled={isReadOnly}
+                  onClick={() => act(() => apiFetch(`/auction-refund-flags/${f.id}/resolve`, { method: "POST" }), "Marked as refunded in Stripe.")}>I refunded this in Stripe</button>}
+          </div>))}
+      </Card>}
 
       <Card style={{ padding: "16px 18px" }}>
         <div style={h}>Notes to bidders</div>
@@ -219,7 +237,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
             onClick={() => act(() => apiFetch(`/auctions/${id}/closing-note`, { method: "POST" }), r => `${r.made} draft${r.made === 1 ? "" : "s"} written for ${r.bidders} bidder${r.bidders === 1 ? "" : "s"}.`)}>
             Prepare "bidding closes soon"</button>}
           {winners.some(w => !w.paidGiftId) && <button style={btn(false)} disabled={isReadOnly}
-            onClick={() => act(() => apiFetch(`/auctions/${id}/winner-emails`, { method: "POST" }), r => `${r.made} draft${r.made === 1 ? "" : "s"} written for ${r.winners} winner${r.winners === 1 ? "" : "s"}.`)}>
+            onClick={() => act(() => apiFetch(`/auctions/${id}/winner-emails`, { method: "POST" }), r => `${r.made} draft${r.made === 1 ? "" : "s"} written for ${r.winners} winner${r.winners === 1 ? "" : "s"}.${r.unreachable ? ` ${r.unreachable} winner${r.unreachable === 1 ? "" : "s"} cannot be emailed: copy their pay link from Winners.` : ""}`)}>
             Prepare the winners' emails</button>}
           {pendingDrafts.length > 1 && <button style={btn(true)} disabled={isReadOnly} onClick={sendAll}>Send all {pendingDrafts.length}</button>}
         </div>

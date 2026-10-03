@@ -10,7 +10,7 @@
 // slug "join" or "members" must stay free for the org (forms.md).
 //
 // A signed-in member (the portal's own magic link, the same session the give
-// form reads) sees their level and its expiry on its card, with Renew. Nobody
+// form reads, asked from this page even with the portal off: FIX-20) sees their level and its expiry on its card, with Renew. Nobody
 // else is shown anything about anybody: an anonymous visit asks nothing.
 //
 // The colours, type and logo are the ORG's (resolveTheme in Donate.jsx hands
@@ -129,7 +129,7 @@ function LevelCard({ l, th, card, orgSlug, prefill, mine, isMember }) {
   );
 }
 
-export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, portalSignIn, signIn, monogram }) {
+export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, sessionTick, signIn, monogram }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [me, setMe] = useState(null);   // { membership, prefill } for a signed-in visitor
@@ -139,17 +139,18 @@ export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, p
       .then(setData)
       .catch(e => setErr(errorMessage(e, "This page is not available.")));
   }, [orgSlug]);
-  // The visitor's OWN membership, through their own portal session. Asked
-  // only when the org's portal is on: with it off there is no session to have.
+  // The visitor's OWN membership, through their own session. FIX-20 Part 7:
+  // asked whether or not the org's portal is on, since the membership page
+  // signs a member in either way; anonymous is a 401 and changes nothing.
+  // Asked again after a sign-in link is spent (sessionTick).
   useEffect(() => {
-    if (!portalSignIn) return;
     let cancelled = false;
     fetch(`${portalBase}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))
       .then(d => { if (!cancelled && d) setMe({ membership: d.membership || null, prefill: d.prefill || null }); })
       .catch(() => { /* anonymous */ });
     return () => { cancelled = true; };
-  }, [orgSlug, portalBase, portalSignIn]);
+  }, [orgSlug, portalBase, sessionTick]);
 
   if (err) return <div style={BASE}><div style={{ ...card, padding: 28, color: T.ink }}>{err}</div></div>;
   if (!data) return <div style={BASE}><div style={{ color: T.ink3, fontSize: 14 }}>Loading…</div></div>;

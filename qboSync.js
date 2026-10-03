@@ -20,8 +20,12 @@
 //
 // ── ONCE, AND THE TWO BELTS THAT MAKE IT ONCE ─────────────────────────────
 // 1. Steward's own row, `gift_bookkeeping_syncs`, unique on (org, gift,
-//    vendor), claimed BEFORE the call and kept whatever happened. A synced
-//    gift cannot be claimed again, so pressing Sync twice sends nothing new.
+//    vendor, company), claimed BEFORE the call and kept whatever happened. A
+//    synced gift cannot be claimed again, so pressing Sync twice sends nothing
+//    new. FIX-20: the COMPANY (Intuit's realmId) is part of the key. A gift
+//    sent to one QuickBooks company is not in a different company's books, so
+//    a connection moved to another company starts with an empty sent list
+//    there, and the first company's list is kept for the day it comes back.
 // 2. Intuit's `requestid` query parameter. A retry after a timeout carries the
 //    SAME request id, and QuickBooks answers it with the receipt it already
 //    made rather than making a second one. Intuit replays the first answer to
@@ -47,6 +51,10 @@ const MINOR_VERSION = 75;
 const NO_FUND = "__none";
 const STALE_SENDING_MINUTES = 10;
 const RUN_LIMIT = 100;
+// The company the org's live connection points at, as SQL, so every reader of
+// the sent list (Pending, its figure, the claim) asks about the same company.
+const LIVE_REALM_SQL = `(SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_connections bc
+     WHERE bc.org_id = g.org_id AND bc.vendor = '${VENDOR}' AND bc.status <> 'disconnected' LIMIT 1)`;
 const NON_CASH_SQL = [...NON_CASH_TYPES].map(t => `'${String(t).replace(/'/g, "''")}'`).join(",");
 
 // ── WHERE INTUIT IS ───────────────────────────────────────────────────────
@@ -80,6 +88,12 @@ const ref = v => (v && typeof v === "object" && v.id) ? { id: String(v.id), name
 function readMapping(connRow) {
   const m = parseJson(connRow && connRow.mapping);
   const q = (m && typeof m.qbo === "object" && m.qbo) || {};
+  // FIX-20: a mapping is chosen from ONE company's chart of accounts. Account
+  // and class ids are that company's own numbers, so another company's "81"
+  // is some other account entirely: a mapping made in a different company is
+  // not used, and the gifts wait in Pending until this company's is chosen.
+  const mappedRealm = q.realmId ? String(q.realmId) : null;
+  const otherCompany = !!(mappedRealm && connRow && connRow.realm_id && mappedRealm !== String(connRow.realm_id));
   const clean = obj => {
     const out = {};
     for (const [k, v] of Object.entries(obj && typeof obj === "object" ? obj : {})) {
@@ -92,9 +106,10 @@ function readMapping(connRow) {
   return {
     mode: q.mode === "deposit" ? "deposit" : "salesreceipt",
     startDate: /^\d{4}-\d{2}-\d{2}$/.test(String(q.startDate || "")) ? String(q.startDate) : null,
-    depositAccount: ref(q.depositAccount),
-    feeAccount: ref(q.feeAccount),
-    funds: clean(q.funds), campaigns: clean(q.campaigns),
+    depositAccount: otherCompany ? null : ref(q.depositAccount),
+    feeAccount: otherCompany ? null : ref(q.feeAccount),
+    funds: otherCompany ? {} : clean(q.funds), campaigns: otherCompany ? {} : clean(q.campaigns),
+    realmId: mappedRealm, otherCompany,
     items: (q.items && typeof q.items === "object") ? q.items : {},
     demo: q.demo === true,
   };
@@ -109,6 +124,10 @@ function startDateOf(connRow, map) {
 
 // ── WHERE ONE GIFT LANDS (pure) ───────────────────────────────────────────
 function landingFor(g, map) {
+  if (map.otherCompany) {
+    return { ok: false, problem: "other_company",
+      sentence: "The mapping was chosen in a different QuickBooks company. Choose this company's accounts in the mapping, then press Retry." };
+  }
   const camp = g.campaign_id ? (map.campaigns[g.campaign_id] || null) : null;
   const fund = map.funds[g.fund_id || NO_FUND] || null;
   const acct = camp && camp.accountId ? camp : (fund && fund.accountId ? fund : null);
@@ -151,7 +170,8 @@ function pendingWhere(orgId, since, { giftIds = null } = {}) {
     from: `gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
       LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
-      LEFT JOIN gift_bookkeeping_syncs s ON s.org_id = g.org_id AND s.gift_id = g.id AND s.vendor = '${VENDOR}'`,
+      LEFT JOIN gift_bookkeeping_syncs s ON s.org_id = g.org_id AND s.gift_id = g.id AND s.vendor = '${VENDOR}'
+                                         AND s.realm_id = ${LIVE_REALM_SQL}`,
     where, args,
   };
 }
@@ -164,7 +184,7 @@ function pendingRowsSql(orgId, since, opts = {}) {
                  g.fund_id, f.name AS fund_name, g.campaign_id, c.name AS campaign_name,
                  g.deposit_ref, g.deposited_on, g.payment_method,
                  s.status AS sync_status, s.error AS sync_error, s.error_code AS sync_error_code,
-                 s.request_id AS sync_request_id, s.attempts AS sync_attempts
+                 s.request_id AS sync_request_id, s.attempts AS sync_attempts, s.updated_at AS sync_updated_at
             FROM ${p.from} WHERE ${p.where}
            ORDER BY g.date ASC, g.id ASC`,
     args: p.args,
@@ -393,15 +413,15 @@ function buildPayoutDeposit(payoutRef, items, { depositAccountId, feeAccountId }
 // or freshly-sending row returns nothing, and nothing is sent.
 async function claim(ctx, g, landing, txnType) {
   const [prior] = await query(
-    `SELECT status, request_id, error_code FROM gift_bookkeeping_syncs WHERE org_id=? AND gift_id=? AND vendor=?`,
-    [ctx.orgId, g.id, VENDOR]);
+    `SELECT status, request_id, error_code FROM gift_bookkeeping_syncs WHERE org_id=? AND gift_id=? AND vendor=? AND realm_id=?`,
+    [ctx.orgId, g.id, VENDOR, ctx.realmId]);
   const rows = await query(
     `INSERT INTO gift_bookkeeping_syncs (id,org_id,gift_id,vendor,connection_id,realm_id,status,txn_type,
                                         account_id,class_id,amount_cents,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,'sending',?,?,?,?,?,?)
-     ON CONFLICT (org_id, gift_id, vendor) DO UPDATE
+     ON CONFLICT (org_id, gift_id, vendor, realm_id) DO UPDATE
         SET status='sending', attempts=gift_bookkeeping_syncs.attempts + 1, updated_at=NOW(),
-            connection_id=EXCLUDED.connection_id, realm_id=EXCLUDED.realm_id, txn_type=EXCLUDED.txn_type,
+            connection_id=EXCLUDED.connection_id, txn_type=EXCLUDED.txn_type,
             account_id=EXCLUDED.account_id, class_id=EXCLUDED.class_id, amount_cents=EXCLUDED.amount_cents
       WHERE gift_bookkeeping_syncs.status = 'failed'
          OR (gift_bookkeeping_syncs.status = 'sending'
@@ -419,16 +439,16 @@ async function markFailed(ctx, giftIds, sentence, { code = null, requestId: rid 
   await run(
     `UPDATE gift_bookkeeping_syncs SET status='failed', error=?, error_code=?, request_id=COALESCE(?, request_id),
             reached_vendor = reached_vendor OR ?, updated_at=NOW()
-      WHERE org_id=? AND vendor=? AND gift_id = ANY(?)`,
-    [String(sentence).slice(0, 400), code, rid, reached, ctx.orgId, VENDOR, giftIds]);
+      WHERE org_id=? AND vendor=? AND realm_id=? AND gift_id = ANY(?)`,
+    [String(sentence).slice(0, 400), code, rid, reached, ctx.orgId, VENDOR, ctx.realmId, giftIds]);
 }
 async function markSynced(ctx, giftIds, { txnType, qboId, rid, customerIds = {} }) {
   for (const gid of giftIds) {
     await run(
       `UPDATE gift_bookkeeping_syncs SET status='synced', txn_type=?, qbo_id=?, request_id=?, customer_id=?,
               error=NULL, error_code=NULL, reached_vendor=true, synced_at=NOW(), updated_at=NOW()
-        WHERE org_id=? AND vendor=? AND gift_id=?`,
-      [txnType, String(qboId), rid, customerIds[gid] || null, ctx.orgId, VENDOR, gid]);
+        WHERE org_id=? AND vendor=? AND realm_id=? AND gift_id=?`,
+      [txnType, String(qboId), rid, customerIds[gid] || null, ctx.orgId, VENDOR, ctx.realmId, gid]);
   }
 }
 // A gift that is not mapped is written as a failed row WITHOUT a call, so it
@@ -439,7 +459,7 @@ async function noteUnsendable(ctx, g, sentence, code) {
     `INSERT INTO gift_bookkeeping_syncs (id,org_id,gift_id,vendor,connection_id,realm_id,status,error,error_code,
                                         amount_cents,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,'failed',?,?,?,?,?)
-     ON CONFLICT (org_id, gift_id, vendor) DO UPDATE
+     ON CONFLICT (org_id, gift_id, vendor, realm_id) DO UPDATE
         SET error=EXCLUDED.error, error_code=EXCLUDED.error_code, updated_at=NOW(),
             attempts=gift_bookkeeping_syncs.attempts + 1
       WHERE gift_bookkeeping_syncs.status = 'failed'`,
@@ -542,7 +562,7 @@ async function syncPayout(ctx, payoutRef, gifts) {
 // `giftIds` null with `all` true is Sync all; otherwise only those gifts. The
 // caller is a person (routes/finance.js) or the org's own auto-sync tick, and
 // `who` is stamped on every row either way.
-async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT }) {
+async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null }) {
   const refuse = (error, sentence, status = 409) => ({ ok: false, status, error, sentence });
   const [org] = await query(`SELECT id, is_demo_org, qbo_sync_enabled FROM orgs WHERE id=?`, [orgId]);
   if (!org || org.qbo_sync_enabled !== true)
@@ -570,11 +590,50 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
   const ctx = { orgId, realmId: String(conn.realm_id), connId: conn.id, map, who,
                 token: conn.credentials_sealed && tokenFor ? force => tokenFor(conn, force) : null };
   const results = [];
+  let remaining = 0;
+  const [{ now: runNow }] = await query(`SELECT NOW() AS now`, []);
   try {
     const since = startDateOf(conn, map);
     const wanted = all ? null : [...new Set(giftIds.map(String))].slice(0, 500);
     const q = pendingRowsSql(orgId, since, { giftIds: wanted });
-    const pending = (await query(q.sql, q.args)).slice(0, Math.max(1, Math.min(Number(limit) || RUN_LIMIT, 500)));
+    const cap = Math.max(1, Math.min(Number(limit) || RUN_LIMIT, 500));
+    let pending = await query(q.sql, q.args);
+    // FIX-20 Part 3 · SYNC ALL IN BATCHES. A press of Sync all is one RUN,
+    // stamped with when it started, and the screen asks for the next batch
+    // until nothing is left. A gift that failed during this run is not tried
+    // again in it (it would otherwise be the first hundred rows of every
+    // batch, forever); in deposit mode its whole payout is held back with it,
+    // because a deposit with a gift missing does not match the bank.
+    // The run's start is the SERVER's clock, handed back by the first batch
+    // and echoed by the screen, so it is compared with times the same database
+    // wrote. A continuing batch does not list the gifts still waiting for a
+    // payout again; the first batch already said so.
+    const continuing = !!(runStartedAt && !isNaN(new Date(runStartedAt)));
+    const runStart = continuing ? new Date(runStartedAt) : runNow;
+    const failedThisRun = g => runStart && g.sync_status === "failed" && g.sync_updated_at && new Date(g.sync_updated_at) >= runStart;
+    if (!wanted && map.mode === "deposit") {
+      const heldRefs = new Set(pending.filter(failedThisRun).map(g => g.deposit_ref).filter(Boolean));
+      pending = pending.filter(g => !failedThisRun(g) && !(g.deposit_ref && heldRefs.has(g.deposit_ref)));
+      // Whole payouts only: the batch takes payouts in order until it holds
+      // the cap's worth of gifts, and never splits one across two batches.
+      const order = [], byRef = new Map();
+      for (const g of pending) {
+        if (!g.deposit_ref) continue;
+        if (!byRef.has(g.deposit_ref)) { byRef.set(g.deposit_ref, []); order.push(g.deposit_ref); }
+        byRef.get(g.deposit_ref).push(g);
+      }
+      const take = new Set(); let n = 0;
+      for (const ref of order) { if (n >= cap) break; take.add(ref); n += byRef.get(ref).length; }
+      const waiting = continuing ? [] : pending.filter(g => !g.deposit_ref);
+      remaining = order.filter(r => !take.has(r)).reduce((t, r) => t + byRef.get(r).length, 0);
+      pending = [...pending.filter(g => g.deposit_ref && take.has(g.deposit_ref)), ...waiting];
+    } else if (!wanted) {
+      pending = pending.filter(g => !failedThisRun(g));
+      remaining = Math.max(0, pending.length - cap);
+      pending = pending.slice(0, cap);
+    } else {
+      pending = pending.slice(0, cap);
+    }
     // A gift asked for by id and not pending says why, rather than vanishing.
     if (wanted) {
       const seen = new Set(pending.map(g => g.id));
@@ -582,8 +641,8 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
       if (missing.length) {
         const rows = await query(
           `SELECT g.id, s.status, s.qbo_id, s.txn_type FROM gifts g
-             LEFT JOIN gift_bookkeeping_syncs s ON s.org_id=g.org_id AND s.gift_id=g.id AND s.vendor=?
-            WHERE g.org_id=? AND g.id = ANY(?)`, [VENDOR, orgId, missing]);
+             LEFT JOIN gift_bookkeeping_syncs s ON s.org_id=g.org_id AND s.gift_id=g.id AND s.vendor=? AND s.realm_id=?
+            WHERE g.org_id=? AND g.id = ANY(?)`, [VENDOR, ctx.realmId, orgId, missing]);
         const byId = new Map(rows.map(r => [r.id, r]));
         for (const id of missing) {
           const r = byId.get(id);
@@ -622,7 +681,7 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
     }
   } finally {
     const [left] = await query(
-      `SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND status='failed'`, [orgId, VENDOR]);
+      `SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND realm_id=? AND status='failed'`, [orgId, VENDOR, ctx.realmId]);
     const nFailed = Number(left && left.n) || 0;
     await run(
       `UPDATE bookkeeping_connections SET sync_lock_until=NULL, last_sent_at=NOW(),
@@ -634,7 +693,9 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
   const count = s => results.filter(r => r.status === s).length;
   const synced = count("synced"), failed = count("failed") + count("needs_mapping"), already = count("already");
   return {
-    ok: true, synced, failed, already, results,
+    ok: true, synced, failed, already, results, remaining,
+    runStartedAt: runStartedAt && !isNaN(new Date(runStartedAt)) ? new Date(runStartedAt).toISOString() : new Date(runNow).toISOString(),
+    batchSize: Math.max(1, Math.min(Number(limit) || RUN_LIMIT, 500)),
     sentence: !results.length ? "Nothing was waiting. Every gift in Pending is already in QuickBooks or skipped."
       : [synced ? `${synced} sent to QuickBooks` : null,
          failed ? `${failed} could not go yet and ${failed === 1 ? "stays" : "stay"} in Pending with the reason` : null,
@@ -663,6 +724,6 @@ async function fetchLists(ctx) {
 
 module.exports = {
   VENDOR, NO_FUND, MINOR_VERSION, apiBase, environment, appHost, txnLink,
-  readMapping, startDateOf, landingFor, pendingWhere, pendingRowsSql, plainError, requestId,
+  RUN_LIMIT, readMapping, startDateOf, landingFor, pendingWhere, pendingRowsSql, plainError, requestId,
   buildSalesReceipt, buildPayoutDeposit, syncGifts, fetchLists, qboCall, qboQuery, safeName,
 };

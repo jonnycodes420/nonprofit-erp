@@ -30,6 +30,11 @@
 //       same donor is ONE customer, not two
 //   §6  the unmapped gift is never sent and stays in Pending with a plain
 //       sentence naming the fund
+//   §7  FIX-20: in deposit-per-payout mode, one payout of two gifts is ONE
+//       deposit, its lines foot to the payout's net with the fee as one
+//       negative line, and syncing again (all, and by id) sends nothing new.
+//       Planted 2026-10-03: letting Pending and the claim take a synced row
+//       again sent three deposits for one payout, and §7 went red.
 //
 // HOW IT WOULD GO RED, each one planted and watched (2026-10-02):
 //   · the once-only rule has TWO belts, the Pending filter (a synced gift is
@@ -56,7 +61,7 @@ const SINCE = "2026-09-01";
 const ACCT_DONATIONS = "81", ACCT_PROGRAMS = "82", ACCT_BANK = "35", CLASS_YOUTH = "5000000000000071234";
 
 // ── THE STUB ───────────────────────────────────────────────────────────────
-const store = { customers: [], items: [], receipts: [], requestIds: [] };
+const store = { customers: [], items: [], receipts: [], requestIds: [], deposits: [] };
 const ACCOUNTS = [
   { Id: ACCT_DONATIONS, Name: "Donations", FullyQualifiedName: "Donations", AccountType: "Income", Active: true },
   { Id: ACCT_PROGRAMS, Name: "Program Income", FullyQualifiedName: "Program Income", AccountType: "Income", Active: true },
@@ -105,6 +110,11 @@ function startStub() {
           const sr = { ...body, Id: String(1000 + store.receipts.length) };
           store.receipts.push(sr); store.requestIds.push(u.searchParams.get("requestid"));
           res.end(JSON.stringify({ SalesReceipt: sr })); return;
+        }
+        if (req.method === "POST" && kind === "deposit") {
+          // NO requestid dedupe here either.
+          const dep = { ...body, Id: String(5000 + store.deposits.length) };
+          store.deposits.push(dep); res.end(JSON.stringify({ Deposit: dep })); return;
         }
         res.statusCode = 400; res.end(JSON.stringify({ Fault: { Error: [{ code: "2020", Message: "unsupported" }] } }));
       });
@@ -236,6 +246,31 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
   ok("§6 pressing Sync on it answers the same sentence and sends nothing",
      (unSync.body?.results || []).some(r => r.giftId === "g_p2_unmapped" && r.status === "needs_mapping" && /Roof Appeal/.test(r.sentence))
      && !store.receipts.some(r => r.PrivateNote === "Steward gift g_p2_unmapped"), unSync.body);
+
+  // ── §7 · DEPOSIT PER PAYOUT: ONE PAYOUT, ONE DEPOSIT, ONCE ─────────────
+  await q(`UPDATE bookkeeping_connections SET mapping = jsonb_set(mapping, '{qbo}',
+             (mapping->'qbo') || '{"mode":"deposit","feeAccount":{"id":"90","name":"Bank fees"}}'::jsonb) WHERE id=$1`, [CONN]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,deposit_ref,deposited_on,processor_fee_amount)
+           VALUES ('g_p2_po_a',$1,'d_p2_wren',50,'2026-09-21','online','fnd_p2_youth','card','po_p2_1','2026-09-23',1.75),
+                  ('g_p2_po_b',$1,'d_p2_ash',30.25,'2026-09-22','online','fnd_p2_youth','card','po_p2_1','2026-09-23',1.18)`, [ORG]);
+  const dep1 = await sync(tok, { all: true });
+  ok("§7 Sync all in deposit mode sends the payout's two gifts", dep1.status === 200
+     && (dep1.body?.results || []).filter(r => /^g_p2_po_/.test(r.giftId) && r.status === "synced").length === 2, dep1.body);
+  ok("§7 QuickBooks has exactly ONE deposit", store.deposits.length === 1, store.deposits.length);
+  const d0 = store.deposits[0] || {};
+  const dLines = d0.Line || [];
+  const dCents = dLines.reduce((t, l) => t + Math.round(l.Amount * 100), 0);
+  ok("§7 …of two gift lines and one fee line, footing to the net 7732 cents (8025 less 293 in fees)",
+     dLines.length === 3 && dCents === 7732 && dLines.filter(l => l.Amount < 0).length === 1
+       && Math.round(dLines.find(l => l.Amount < 0).Amount * 100) === -293, dLines);
+  ok("§7 …dated the day the payout landed, into the mapped bank account",
+     d0.TxnDate === "2026-09-23" && d0.DepositToAccountRef?.value === ACCT_BANK, { date: d0.TxnDate, acct: d0.DepositToAccountRef });
+  await sync(tok, { all: true });
+  await sync(tok, { giftIds: ["g_p2_po_a"] });
+  ok("§7 syncing again, all and by id, sends NO second deposit", store.deposits.length === 1, store.deposits.length);
+  const [{ n: depRows }] = await q(`SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=$1 AND gift_id IN ('g_p2_po_a','g_p2_po_b')
+                                    AND status='synced' AND txn_type='Deposit' AND qbo_id=$2`, [ORG, d0.Id]);
+  ok("§7 …and both gifts keep the one deposit's id", depRows === 2, depRows);
 
   await reset();
   for (const t of ["fin_funds", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});

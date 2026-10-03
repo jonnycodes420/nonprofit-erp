@@ -126,6 +126,7 @@ CORE=(
   members2-isolation
   events2-checkout
   parity2-auction
+  fix20-auction-double-checkout
   fix11-seating
   build103-soft-credit
   agents1-persona-scope
@@ -133,6 +134,7 @@ CORE=(
   intpos-sale-is-not-a-gift
   int2-send-once
   parity2-qbo-sync
+  fix20-qbo-realm-switch
   oauth-state
   int3-optout
   int4-mailbox

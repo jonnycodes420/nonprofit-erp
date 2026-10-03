@@ -88,9 +88,27 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
     catch (e) { setMsg(said(e)); }
     setBusy("");
   };
+  const doneSentence = (sent, held, r) => (!sent && !held) ? (r && r.sentence) || "Nothing was waiting."
+    : [`${sent} sent to QuickBooks`, held ? `${held} could not go yet and ${held === 1 ? "stays" : "stay"} in Pending with the reason` : null].filter(Boolean).join("; ") + ".";
+  // FIX-20 Part 3: Sync all is one run in batches of d.batchSize. Each batch
+  // is asked for in turn while the server says some are left, and the screen
+  // counts as it goes. A batch that sends nothing and fails nothing ends it.
   const sync = async body => {
     setBusy(body.all ? "all" : "g:" + body.giftIds[0]); setMsg("");
-    try { const r = await apiFetch("/qbo/sync", { method: "POST", body: JSON.stringify(body) }); setMsg(r.sentence); }
+    try {
+      if (!body.all) {
+        const r = await apiFetch("/qbo/sync", { method: "POST", body: JSON.stringify(body) }); setMsg(r.sentence);
+      } else {
+        let runStartedAt = null, sent = 0, held = 0, r = null;
+        for (let i = 0; i < 500; i++) {
+          r = await apiFetch("/qbo/sync", { method: "POST", body: JSON.stringify({ all: true, ...(runStartedAt ? { runStartedAt } : {}) }) });
+          runStartedAt = r.runStartedAt; sent += r.synced || 0; held += r.failed || 0;
+          if (!r.remaining || !((r.synced || 0) + (r.failed || 0))) break;
+          setMsg(`${sent} sent to QuickBooks so far${held ? `, ${held} staying in Pending with a reason` : ""}. ${r.remaining} still to go…`);
+        }
+        setMsg(doneSentence(sent, held, r));
+      }
+    }
     catch (e) { setMsg(said(e)); }
     setBusy(""); load();
   };
@@ -137,6 +155,9 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
       <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>
         {d.autoSync ? "Auto-sync is on: once an hour Steward sends whatever is waiting." : "Auto-sync is off: nothing goes until somebody presses Sync."}
       </div>
+      {d.companySentence && <div data-testid="qbo-new-company" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>{d.companySentence}</div>}
+      {d.mappingOtherCompany && <div data-testid="qbo-map-other-company" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>
+        The mapping below was chosen in a different QuickBooks company, so nothing is sent until this company's accounts are chosen.</div>}
       {d.demoSentence && <div data-testid="qbo-demo" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.demoSentence}</div>}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8, lineHeight: 1.5 }}>{msg}</div>}
 
@@ -199,7 +220,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
           </span>
           {can && p.count > 0 && <button type="button" data-testid="qbo-sync-all" disabled={!!busy || d.demo}
             style={{ ...btn(true), marginLeft: "auto" }} onClick={() => sync({ all: true })}>
-            {busy === "all" ? "Sending…" : "Sync all"}</button>}
+            {busy === "all" ? "Sending…" : p.count > (d.batchSize || 100) ? `Sync all ${p.count}, ${d.batchSize || 100} at a time` : "Sync all"}</button>}
         </div>
         <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{p.total.definition}</div>
         {!p.rows.length && <div style={{ fontSize: 13, color: T.ink3, marginTop: 6 }}>Nothing is waiting. Every gift since {p.since} is in QuickBooks or skipped.</div>}
