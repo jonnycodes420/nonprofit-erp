@@ -10481,8 +10481,9 @@ async function storeAuctionPhoto(orgId, v) {
   return { url: asset.path };
 }
 require("./routes/auctions").mount({
-  actor, checkWriteAccess, donateLimiter, publicAppUrl, query, queryTx, recordGift, requireAuth,
-  resolveOrgBrandTheme, run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
+  actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
+  portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
+  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
 });
 require("./routes/videoThanks").mount({
   actor, checkWriteAccess, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, videoLimiter, wrap,

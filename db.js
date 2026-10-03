@@ -6486,6 +6486,47 @@ async function runSchemaInit(pool) {
       created_by_name TEXT
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_bids_item ON auction_bids (item_id, amount DESC, created_at, id)`);
+  // FIX-20 Part 1: ONE ITEM, ONE PAID WINNER. The first payment to arrive
+  // claims the item (paid_payment_id, set in one UPDATE by the webhook); a
+  // second payment for the same item records no gift and becomes a row here,
+  // which the staff screen shows with the exact payment to refund in Stripe.
+  // Steward never refunds on its own. The open checkout is remembered so a
+  // second checkout for the same item expires the first one before it opens.
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS paid_payment_id TEXT`);
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS checkout_session_id TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_refund_flags (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      auction_id TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      stripe_payment_id TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      payer_name TEXT,
+      payer_email TEXT,
+      donor_id TEXT,
+      kept_payment_id TEXT,
+      resolved_at TIMESTAMPTZ,
+      resolved_by TEXT,
+      resolved_by_name TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, stripe_payment_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_refund_flags_auction ON auction_refund_flags (org_id, auction_id)`);
+  // FIX-20 Part 6: a bidder signed in on a second device. Each device holds
+  // its own session token (hashed here); the first device keeps its own.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS auction_bidder_devices (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      bidder_id TEXT NOT NULL REFERENCES auction_bidders(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
 
   // ── PARITY-3 · VOLUNTEERS, AND THE TWO LEFTOVERS FROM PARITY-1 ───────────
   // 6a. A birthday is a month and a day; the year is optional, because most

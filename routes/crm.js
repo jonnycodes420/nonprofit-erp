@@ -21623,7 +21623,12 @@ async function sendMilestoneDraft(req, draft) {
   // PARITY-3 — a volunteer's shift reminder is transactional (FIX-14), so it is
   // asked as one: a marketing opt-out does not stop the reminder for a shift
   // they signed up for. Everything else here is asked as a milestone.
-  const decision = await donorMailDecision(draft.source === "volunteer_reminder" ? "volunteer_reminder" : "milestone", donor.email, req.user.orgId);
+  // FIX-20 Part 5: an auction winner's pay link is service mail about a bid
+  // they made, so it is asked as transactional too. A bounce or a complaint
+  // still refuses it, and the auction screen offers its Copy link instead.
+  const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
+    : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
+  const decision = await donorMailDecision(kind, donor.email, req.user.orgId);
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
   if (process.env.RESEND_API_KEY) {

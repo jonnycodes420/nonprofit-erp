@@ -261,8 +261,10 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   closes that item at the buy-now price. (PARITY-2)
 - **A bidder is a donors row matched by exact email, plus an `auction_bidders` row with a hashed session
   token in an HttpOnly cookie.** Somebody unknown becomes a person typed "other". An email already registered
-  for the auction is refused on a second browser rather than handed a session: a bid is a promise to pay.
-  (PARITY-2)
+  for the auction is not handed a second session by registering again: the bidder asks for a one-use,
+  fifteen-minute sign-in link (`portal_magic_links`, purpose `auction:<id>`), and the device it is opened on
+  gets its own token in `auction_bidder_devices`. The link page's GET writes nothing; pressing Sign in POSTs
+  the token. (PARITY-2, FIX-20)
 - **The public page is `/auction/:slug` (server-rendered, `shared/publicPage.js`, a `vercel.json` rewrite).**
   GET writes nothing; registering and bidding are form POSTs; the page polls `/status` for "You're the high
   bidder" / "You've been outbid". Donors of items are not named publicly. (PARITY-2)
@@ -270,6 +272,11 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   like `/e/:slug/checkout`; the server prices from the winning bid the token was signed for and takes the
   payer's email from the bidder row. The pay token is the item id plus an HMAC of (item, winning bid): nothing
   stored, and it dies if that bid stops being the winner. (PARITY-2)
+- **One item, one paid winner (FIX-20).** A new checkout for an item expires the earlier open one in Stripe,
+  under a per-item lock, and is refused once paid or once an earlier checkout is complete. The webhook claims
+  the item in one UPDATE (`auction_items.paid_payment_id`); a second payment records no gift and becomes an
+  `auction_refund_flags` row the staff screen shows with its Stripe payment id. Steward never refunds; a person
+  refunds in Stripe and marks it. `tests/fix20-auction-double-checkout.test.js`.
 - **The donated item is an in-kind gift at fair market value, recorded once by a person pressing "Record as
   in-kind gift"** (`recordGift`, `idempotency_key auction-inkind:<item>`, `auction_items.in_kind_gift_id`).
   Never on item creation: the value may be corrected after listing. (PARITY-2)
