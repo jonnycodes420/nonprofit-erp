@@ -57,6 +57,32 @@ async function query(sql, params = []) {
   return result.rows;
 }
 
+// FIX-21 · SET-WISE READS. A question about a whole set of people (a group's
+// members, their gifts, every group's count) is read on its own small pool
+// whose connections have nested loops switched off. The planner picks a
+// nested loop when its statistics say an org has one row, which is what they
+// say about every org that arrived after the last ANALYZE: on a 1,000-member
+// group that turned a 20 ms read into 35 seconds. Hash joins cost the same
+// whatever the statistics say. Only callers that read sets use this; a
+// lookup by id stays on the main pool, where an index nested loop is right.
+let _setPool = null;
+function setPool() {
+  return _setPool || (_setPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
+    options: "-c steward.app_connection=on -c enable_nestloop=off",
+    max: 4,
+    idleTimeoutMillis: 60000,
+    allowExitOnIdle: true,
+  }));
+}
+async function querySetwise(sql, params = []) {
+  let i = 0;
+  const pgSql = sql.replace(/\?/g, () => `$${++i}`);
+  const result = await setPool().query(pgSql, params);
+  return result.rows;
+}
+
 async function run(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
@@ -7442,4 +7468,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };
+module.exports = { getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };

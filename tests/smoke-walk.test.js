@@ -101,6 +101,64 @@ const IGNORABLE_URL = /\/_vercel\/|fonts\.googleapis|\/favicon|\/ai\/stream/;
 const IGNORABLE_TEXT = /Download the React DevTools|Unexpected token '<'/;
 const EXPECTED_5XX = /\/ai\/stream/;
 
+// ── FIX-21 · GROUPS ANSWER IN UNDER HALF A SECOND ─────────────────────────
+// Clicking a group was six seconds of white on prod: the page asked for its
+// 22 figures one at a time, each re-reading the group and re-running its
+// rule, up to 100 round trips. A screen that takes that long to answer is a
+// blank screen to the person looking at it, so this walk times the Groups
+// list and a 1,000-member group page (one kept by hand, one by a rule) and
+// fails either over 500 ms. Its own fixture org, never the demo; the rows are
+// fresh, so the planner has had no ANALYZE to lean on, as on a busy prod.
+// The median of three warm reads, so one slow tick on a runner is not a fail.
+// PROVEN ABLE TO FAIL (2026-10-03): with the old routes/groups.js put back
+// (one count per group, 22 figure reads per page, nested loops allowed) all
+// three went red locally: the list at 633 ms and both pages over 4 seconds.
+const PERF_ORG = "org_fix21perf", PERF_ADMIN = "admin@fix21perf.local", BUDGET_MS = 500;
+async function groupsAreQuick() {
+  const bcrypt = require("bcryptjs");
+  const { q, login } = require("./helpers");
+  const orgTables = (await q(`SELECT table_name FROM information_schema.columns
+                                WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of orgTables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [PERF_ORG]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [PERF_ORG]).then(() => true).catch(() => false)) break;
+  }
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Groups Speed Fixture','fix21-perf',1,'active','team','America/New_York')`, [PERF_ORG]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix21perf',$1,$2,$3,'Speed Admin','admin')`, [PERF_ORG, PERF_ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
+  // 1,000 people, five gifts each across the last two years.
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name)
+           SELECT 'd_fix21_' || i, $1, 'Speed Person ' || lpad(i::text, 4, '0'), 'p' || i || '@fix21perf.local', 'steward', 'system:test', 'test'
+             FROM generate_series(1, 1000) i`, [PERF_ORG]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name)
+           SELECT 'g_fix21_' || i || '_' || k, $1, 'd_fix21_' || i, 25 + (i % 40) * 10 + k,
+                  to_char(CURRENT_DATE - (k * 140 + i % 120), 'YYYY-MM-DD'), 'system:test', 'test'
+             FROM generate_series(1, 1000) i, generate_series(1, 5) k`, [PERF_ORG]);
+  const tok = await login(PERF_ADMIN);
+  const byHand = await api("POST", "/groups", tok, { name: "Everyone by hand", kind: "static" });
+  const byRule = await api("POST", "/groups", tok, { name: "Everyone who gave", kind: "dynamic", rules: { given: "ever" } });
+  ok("§speed the two 1,000-member groups are made", byHand.status === 201 && byRule.status === 201, [byHand.status, byRule.status]);
+  await q(`INSERT INTO group_members (org_id, group_id, donor_id, added_by, added_by_name)
+           SELECT $1, $2, id, 'system:test', 'test' FROM donors WHERE org_id = $1`, [PERF_ORG, byHand.body.id]);
+  const median = async path => {
+    await api("GET", path, tok);                        // warm: the first read pays for the connection
+    const runs = [];
+    let last;
+    for (let i = 0; i < 3; i++) { last = await api("GET", path, tok); runs.push(last.ms); }
+    runs.sort((a, b) => a - b);
+    return { ms: runs[1], runs, last };
+  };
+  const list = await median("/groups");
+  ok(`§speed the Groups list answers in under ${BUDGET_MS} ms (${list.ms} ms)`, list.last.status === 200 && list.ms < BUDGET_MS, list.runs);
+  ok("§speed the list counts 1,000 in each group", (list.last.body.groups || []).every(g => g.count === 1000), (list.last.body.groups || []).map(g => g.count));
+  for (const [what, g] of [["kept by hand", byHand.body], ["by a rule", byRule.body]]) {
+    const p = await median(`/groups/${g.id}`);
+    ok(`§speed a 1,000-member group ${what} answers in under ${BUDGET_MS} ms (${p.ms} ms)`, p.last.status === 200 && p.ms < BUDGET_MS, p.runs);
+    const people = (p.last.body.figures || []).find(f => f.label === "People");
+    ok(`§speed the ${what} page lists its 1,000 people and counts them`, (p.last.body.members || []).length === 1000 && people && people.value === 1000,
+       { members: (p.last.body.members || []).length, people: people && people.value });
+  }
+}
+
 (async () => {
   console.log("smoke-walk");
   const login = await api("POST", "/auth/login", null, DEMO);
@@ -110,6 +168,8 @@ const EXPECTED_5XX = /\/ai\/stream/;
   }
   ok("logged in to the demo", true);
   const auth = login.body;
+
+  await groupsAreQuick();
 
   const donors = await api("GET", "/donors?limit=3", auth.token);
   const three = (Array.isArray(donors.body) ? donors.body : (donors.body.donors || donors.body.rows || [])).slice(0, 3);
