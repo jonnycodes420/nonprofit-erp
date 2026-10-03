@@ -32,6 +32,12 @@ import { useAuth } from "../../main";
 import { apiFetch } from "../../api";
 import PRICING from "../../../../pricing.json";
 import { Crumbs, FaqS, FinalCta, Pill, Tick, A, rich } from "../lib";
+import { SRC_ALL } from "../data/research";
+import { RETENTION_GAP } from "../../../../shared/sources.js";
+
+// PROOF-2 · the line under the prices links to the Keep Rate calculator with
+// the survey's two rates filled in, so the claim is checked on her own count.
+export const GAP_HREF = "/tools/retention?with=" + RETENTION_GAP.withStrategy + "&without=" + RETENTION_GAP.without;
 
 const TIERS = PRICING.tiers;
 const TALK = PRICING.talkToUs;
@@ -112,6 +118,7 @@ export function Pricing() {
             <Pill kind="soft" href="/demo">{TALK.cta}</Pill>
           </div>
         </div>
+        <p className="gapline" data-testid="pricing-gap">The {RETENTION_GAP.withStrategy - RETENTION_GAP.without}-point retention gap is worth more than the subscription. <A href={GAP_HREF}>See the math with your own donor count</A>. <span className="srcnote" style={{ display: "block", marginTop: 8 }}>Gap: <A href={SRC_ALL[RETENTION_GAP.source][1]}>{SRC_ALL[RETENTION_GAP.source][0]}</A></span></p>
       </div></section>
     </div>
 

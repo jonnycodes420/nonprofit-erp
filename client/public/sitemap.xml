@@ -22,7 +22,7 @@
   <url><loc>https://www.stewardapp.dev/features/import</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/features/finance</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/features/receipts</loc><priority>0.6</priority></url>
-  <url><loc>https://www.stewardapp.dev/pricing</loc><priority>0.9</priority></url>
+  <url><loc>https://www.stewardapp.dev/pricing</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/why</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/leadership</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/move</loc><priority>0.8</priority></url>
@@ -53,11 +53,13 @@
   <url><loc>https://www.stewardapp.dev/articles</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/state-of-retention</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/second-gift</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/no-retention-strategy</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/lybunt-sybunt</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/read-retention</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/thank-you-call</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/monthly-donors</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/january-week</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/research</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/glossary</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/faq</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/help</loc><priority>0.8</priority></url>

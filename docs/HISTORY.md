@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## PROOF-2 · Sell it with the evidence (2026-10-03)
+
+Marketing site only. `shared/sources.js` is now the one list of every statistic the site quotes: publisher, report, year, sample, link, the date a person opened the link and found the number, and each claim in the source's words. `data/research.js` derives the reference's SRC/STATS from it, so the LANDING-2 reference comparison is unchanged. New: a retention-gap band on Home (Momentive 2025: 77% vs 61%, 46% with no strategy), "When people leave, relationships stay" on /why (Sage 2025: 58%, 55%, 49%; no handover screen claimed, HANDOVER-1 has not shipped), one line under the prices linking to the Keep Rate calculator with `?with=77&without=61` (only that sourced pair opens the gap panel, which compares the gap to a year of the plan her count lands on and says "less" when it is less), the article `/articles/no-retention-strategy`, and `/research`.
+
+The guard is section 15 of `tests/landing2-marketing.test.js` (no new suite): every percentage and comparative multiple in the copy must be a claim in sources.js, and its component or article must link that source. Example screens (`tots=`, `rows=`, `ui: [`) are skipped. Proven red three ways: an unsourced 72% on Home, the Sage source line removed, and the derived "three times as likely" put back.
+
+What it found already on the site: two articles said "more than three times as likely" (our division of 69.2 by 19.4, not FEP's words; reworded), the first-year guide quoted 19.4/69.2/39% with no link (now `src`), and /articles/state-of-retention threw `Quote is not defined` on render since LANDING-3 deleted the component and left its two calls (restored, with a source link). The in-app M+R benchmark lives in `shared/thresholds.js` and is not marketing copy, so it was not moved.
+
 ## PARITY-3 · Match the leader's volunteer module (2026-10-02 to 10-03)
 
 Six parts, five PRs: Part 6 (#110), Part 4 (#117), Part 1 (#118), Parts 2, 3 and 5 (this one).
