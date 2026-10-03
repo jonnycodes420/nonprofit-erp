@@ -152,7 +152,8 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
   const only = Array.isArray(ids) && ids.length ? ids.map(String) : null;
   return query(
     `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status, d.total_giving, d.gift_count,
-            d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample, d.person_types
+            d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample, d.person_types,
+            d.first_gift_date, d.phone, d.household_id, d.assigned_to_name
        FROM donors d
       WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND (?::text[] IS NULL OR d.id = ANY(?::text[]))
@@ -292,6 +293,13 @@ async function agentWrite(ctx, { tool, table, entityId, before, after, cites }) 
 // here, and a money tool is not here, so there is no path — not a disabled one,
 // not a guarded one. tests/build97-agent.test.js asserts this table and
 // shared/agentShape.js agree in both directions.
+// AGENT-2: the screens' own routes (agentCall.js), and a route's refusal as a reason.
+const AC = require("../agentCall");
+function refusal(r) {
+  const b = r.body || {};
+  const said = b.sentence || b.message || (typeof b.error === "string" && b.error.length > 12 ? b.error : null);
+  return said ? String(said).replace(/\.$/, "") : `Steward was refused (${r.status}${b.error ? ", " + b.error : ""})`;
+}
 const AGENT_EXECUTORS = {
   async draft_note(ctx, step) {
     const donor = ctx.donorById(step.donorId);
@@ -346,14 +354,20 @@ const AGENT_EXECUTORS = {
   async set_stage(ctx, step) {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
-    const to = String(step.stage || "");
+    // AGENT-2: "Cultivate" is cultivate: the walk's "that stage does not
+    // exist" was the capital letter.
+    const to = String(step.stage || "").trim().toLowerCase();
     if (!ALL_PIPELINE_STAGES.includes(to)) return { skipped: "unknown_stage" };
     // The PREVIOUS stage is what makes this undoable, and it is read off the
     // ROW rather than taken from the model's idea of where the donor was.
     const [row] = await query("SELECT stage FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
     if (!row) return { skipped: "unknown_donor" };
     if ((row.stage || null) === to) return { skipped: "already_there" };
-    await runTx(ctx.client, "UPDATE donors SET stage=? WHERE id=? AND org_id=?", [to, donor.id, ctx.orgId]);
+    // AGENT-2: the screen's own stage route, so the timeline says so too.
+    const r = await AC.call(ctx, "PATCH", `/donors/${donor.id}/stage`, { stage: to });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT stage FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    if (!now || now.stage !== to) return { failed: "their stage has not changed when Steward looks" };
     await agentWrite(ctx, { tool: "set_stage", table: "donors", entityId: donor.id,
       before: { stage: row.stage }, after: { stage: to }, cites: step.citesRows });
     return { donorId: donor.id, from: row.stage, to };
@@ -434,6 +448,252 @@ const AGENT_EXECUTORS = {
       before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     return { id, donorId: donor.id };
   },
+
+  // ── AGENT-2 · REAL ACTIONS ───────────────────────────────────────────────
+  // Each executor calls the ROUTE a person's click calls (agentCall.js), as
+  // the person who confirmed, so the screen's own checks, plan gates and audit
+  // apply. Then it LOOKS: the claimed result is read back from the database,
+  // and only a result that is there is Done. Anything else is { failed } with
+  // the reason (routes refuse in sentences; that sentence is the reason).
+  // `before` is what undo puts back; null means undo removes what was made.
+  async update_contact(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const body = {};
+    for (const f of ["email", "phone", "address", "city", "state", "zip"]) {
+      const v = String(step[f] || "").trim();
+      if (v && !/^(none|n\/a|null|unknown|-)$/i.test(v)) body[f] = v;
+    }
+    if (!Object.keys(body).length) return { failed: "there was no new email, phone or address in it" };
+    const r = await AC.call(ctx, "PATCH", `/donors/${donor.id}/contact`, body);
+    if (r.status >= 300) return { failed: refusal(r) };
+    if (r.body.unchanged) return { skipped: "already_there" };
+    const [now] = await query(`SELECT ${r.body.changed.join(", ")} FROM donors WHERE id=? AND org_id=?`, [donor.id, ctx.orgId]);
+    const ok = now && r.body.changed.every(k => String(now[k] || "").toLowerCase() === String(k === "email" ? body.email.toLowerCase() : body[k] || "").toLowerCase());
+    if (!ok) return { failed: "the record does not show the new details" };
+    await agentWrite(ctx, { tool: "update_contact", table: "donors", entityId: donor.id, before: r.body.before, after: now, cites: step.citesRows });
+    return { donorId: donor.id, id: donor.id };
+  },
+
+  async set_owner(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [String(step.ownerUserId || ""), ctx.orgId]);
+    if (!u) return { failed: "that colleague is not on this organisation's team" };
+    const [was] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    if (was.assigned_to === u.id) return { skipped: "already_there" };
+    const r = await AC.call(ctx, "PATCH", "/donors/bulk-assign", { ids: [donor.id], assignedTo: u.id });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    if (!now || now.assigned_to !== u.id) return { failed: "the record does not show the new owner" };
+    await agentWrite(ctx, { tool: "set_owner", table: "donors", entityId: donor.id, before: was, after: now, cites: step.citesRows });
+    return { donorId: donor.id, id: donor.id };
+  },
+
+  async add_to_group(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const gid = String(step.groupId || "");
+    const r = await AC.call(ctx, "POST", `/groups/${encodeURIComponent(gid)}/members`, { donorIds: [donor.id] });
+    if (r.status >= 300) return { failed: refusal(r) };
+    if (r.body && r.body.added === 0) return { skipped: "already_there" };
+    const [m] = await query("SELECT 1 AS y FROM group_members WHERE org_id=? AND group_id=? AND donor_id=?", [ctx.orgId, gid, donor.id]);
+    if (!m) return { failed: "they are not in the group when Steward looks" };
+    await agentWrite(ctx, { tool: "add_to_group", table: "group_members", entityId: `${gid}:${donor.id}`, before: null, after: { group_id: gid, donor_id: donor.id }, cites: step.citesRows });
+    return { donorId: donor.id, id: gid };
+  },
+
+  async remove_from_group(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const gid = String(step.groupId || "");
+    const [had] = await query("SELECT group_id, donor_id, added_by, added_by_name FROM group_members WHERE org_id=? AND group_id=? AND donor_id=?", [ctx.orgId, gid, donor.id]);
+    if (!had) return { skipped: "not_in_group" };
+    const r = await AC.call(ctx, "POST", `/groups/${encodeURIComponent(gid)}/members/remove`, { donorIds: [donor.id] });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [m] = await query("SELECT 1 AS y FROM group_members WHERE org_id=? AND group_id=? AND donor_id=?", [ctx.orgId, gid, donor.id]);
+    if (m) return { failed: "they are still in the group when Steward looks" };
+    await agentWrite(ctx, { tool: "remove_from_group", table: "group_members", entityId: `${gid}:${donor.id}`, before: had, after: { removed: true }, cites: step.citesRows });
+    return { donorId: donor.id, id: gid };
+  },
+
+  async add_to_household(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const hid = String(step.householdId || "");
+    const [h] = await query("SELECT * FROM households WHERE id=? AND org_id=?", [hid, ctx.orgId]);
+    if (!h) return { failed: "that household is not on file" };
+    const members = (await query("SELECT id, household_id FROM donors WHERE org_id=? AND household_id=? AND deleted_at IS NULL", [ctx.orgId, hid])).map(x => x.id);
+    if (members.includes(donor.id)) return { skipped: "already_there" };
+    const [was] = await query("SELECT household_id FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    const r = await AC.call(ctx, "PUT", `/households/${encodeURIComponent(hid)}`, { name: h.name, memberIds: [...members, donor.id],
+      primaryDonorId: h.primary_donor_id || members[0], jointAcknowledgment: h.joint_acknowledgment });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT household_id FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    if (!now || now.household_id !== hid) return { failed: "the record does not show the household" };
+    await agentWrite(ctx, { tool: "add_to_household", table: "donors", entityId: donor.id, before: { household_id: was ? was.household_id : null }, after: now, cites: step.citesRows });
+    return { donorId: donor.id, id: hid };
+  },
+
+  async log_conversation(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const kind = ["call", "meeting", "email"].includes(step.kind) ? step.kind : null;
+    if (!kind) return { failed: "a conversation is a call, a meeting or an email" };
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(step.date || "")) ? step.date : ctx.today;
+    if (date > ctx.today) return { failed: "a conversation that has not happened yet is a next step, not a log" };
+    const r = await AC.call(ctx, "POST", `/donors/${donor.id}/interactions`, { type: kind, note: String(step.note || "").slice(0, 2000), date });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const id = r.body && r.body.id;
+    const [row] = id ? await query("SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND type=?", [id, ctx.orgId, donor.id, kind])
+      : await query("SELECT id FROM interactions WHERE org_id=? AND donor_id=? AND type=? AND LEFT(date,10)=? ORDER BY created_at DESC LIMIT 1", [ctx.orgId, donor.id, kind, date]);
+    if (!row) return { failed: "the conversation is not on their timeline when Steward looks" };
+    await agentWrite(ctx, { tool: "log_conversation", table: "interactions", entityId: row.id, before: null, after: { donor_id: donor.id, type: kind, date }, cites: step.citesRows });
+    return { donorId: donor.id, id: row.id };
+  },
+
+  async set_next_step(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const label = String(step.label || step.title || "").trim().slice(0, 200);
+    if (!label) return { failed: "a next step needs words" };
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(String(step.due || "")) ? step.due : orgTime.addDays(ctx.today, 7);
+    const [open] = await query("SELECT id, next_step_label, due_date FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
+    const r = open ? await AC.call(ctx, "PUT", `/threads/${open.id}`, { label, due })
+      : await AC.call(ctx, "POST", `/donors/${donor.id}/threads`, { label, due });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT id, next_step_label, due_date FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
+    if (!now || now.next_step_label !== label) return { failed: "the next step on their record is not the new one" };
+    await agentWrite(ctx, { tool: "set_next_step", table: "threads", entityId: now.id,
+      before: open ? { next_step_label: open.next_step_label, due_date: open.due_date } : null, after: { next_step_label: label, due_date: now.due_date }, cites: step.citesRows });
+    return { donorId: donor.id, id: now.id };
+  },
+
+  async make_volunteer(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const [p] = await query("SELECT person_types FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    const [had] = await query(`SELECT id, hours_per_week, availability, roles FROM volunteer_applications WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [ctx.orgId, donor.id]);
+    const body = {};
+    if (Number(step.hoursPerWeek) > 0) body.hoursPerWeek = Number(step.hoursPerWeek);
+    if (Array.isArray(step.availability) && step.availability.length) body.availability = step.availability;
+    if (Array.isArray(step.roles) && step.roles.length) body.roles = step.roles;
+    const r = await AC.call(ctx, "POST", `/donors/${donor.id}/make-volunteer`, body);
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [rec] = await query(`SELECT id, hours_per_week FROM volunteer_applications WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [ctx.orgId, donor.id]);
+    const [types] = await query("SELECT person_types FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    const isVol = types && JSON.stringify(types.person_types || []).includes("volunteer");
+    if (!rec || !isVol || (body.hoursPerWeek != null && Number(rec.hours_per_week) !== Number(body.hoursPerWeek)))
+      return { failed: "their volunteer record is not there as asked when Steward looks" };
+    const was = p && p.person_types;
+    await agentWrite(ctx, { tool: "make_volunteer", table: "donors", entityId: donor.id,
+      before: { person_types: typeof was === "string" ? was : JSON.stringify(was || ["other"]) }, after: { person_types: "+volunteer" }, cites: step.citesRows });
+    await agentWrite(ctx, { tool: "make_volunteer", table: "volunteer_applications", entityId: rec.id,
+      before: had ? { hours_per_week: had.hours_per_week, availability: JSON.stringify(had.availability || []), roles: JSON.stringify(had.roles || []) } : null,
+      after: { hours_per_week: rec.hours_per_week }, cites: step.citesRows });
+    return { donorId: donor.id, id: rec.id };
+  },
+
+  async sign_up_shift(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const slotId = String(step.slotId || "");
+    const r = await AC.call(ctx, "POST", "/volunteer-hub/signups", { slotId, personId: donor.id, ...(step.roleId ? { roleId: step.roleId } : {}) });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [su] = await query("SELECT id, status FROM volunteer_signups WHERE org_id=? AND slot_id=? AND person_id=? ORDER BY created_at DESC LIMIT 1", [ctx.orgId, slotId, donor.id]);
+    if (!su || !["confirmed", "waitlisted"].includes(su.status)) return { failed: "they are not on the shift when Steward looks" };
+    await agentWrite(ctx, { tool: "sign_up_shift", table: "volunteer_signups", entityId: su.id, before: null, after: { slot_id: slotId, status: su.status }, cites: step.citesRows });
+    return { donorId: donor.id, id: su.id, note: su.status === "waitlisted" ? "the shift was full, so they are on its waiting list" : null };
+  },
+
+  async log_hours(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const h = Number(step.hours);
+    if (!(h > 0 && h <= 24)) return { failed: "hours are more than 0 and at most 24 for one shift" };
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(step.date || "")) ? step.date : ctx.today;
+    const whole = Math.floor(h), minutes = Math.round((h - whole) * 60);
+    const r = await AC.call(ctx, "POST", `/donors/${donor.id}/volunteer-hours`, { date, hours: String(whole), minutes: String(minutes), ...(step.opportunityId ? { opportunityId: step.opportunityId } : {}) });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [row] = await query("SELECT id, hours FROM volunteer_shifts WHERE id=? AND org_id=? AND person_id=?", [r.body && r.body.id, ctx.orgId, donor.id]);
+    if (!row) return { failed: "the hours are not on their record when Steward looks" };
+    await agentWrite(ctx, { tool: "log_hours", table: "volunteer_shifts", entityId: row.id, before: null, after: { hours: row.hours, date }, cites: step.citesRows });
+    return { donorId: donor.id, id: row.id };
+  },
+
+  async start_journey(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const jid = String(step.journeyId || "");
+    const r = await AC.call(ctx, "POST", `/journeys/${encodeURIComponent(jid)}/apply`, { donorIds: [donor.id] });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [pl] = await query("SELECT id FROM cultivation_plans WHERE org_id=? AND donor_id=? AND template_id=? AND status='active' ORDER BY applied_on DESC, id DESC LIMIT 1", [ctx.orgId, donor.id, jid]);
+    if (!pl) {
+      const why = r.body && r.body.detail && r.body.detail.skipped && r.body.detail.skipped[0];
+      return { failed: (why && (why.sentence || why.reason)) || "they are not in the journey when Steward looks" };
+    }
+    await agentWrite(ctx, { tool: "start_journey", table: "cultivation_plans", entityId: pl.id, before: null, after: { status: "active" }, cites: step.citesRows });
+    return { donorId: donor.id, id: pl.id };
+  },
+
+  async stop_journey(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const jid = String(step.journeyId || "");
+    const [pl] = await query(`SELECT id, status, closed_at FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active' ${jid ? "AND template_id=?" : ""} ORDER BY applied_on DESC LIMIT 1`,
+      jid ? [ctx.orgId, donor.id, jid] : [ctx.orgId, donor.id]);
+    if (!pl) return { skipped: "not_in_journey" };
+    const r = await AC.call(ctx, "POST", `/plans/${pl.id}/stop`, {});
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT status FROM cultivation_plans WHERE id=? AND org_id=?", [pl.id, ctx.orgId]);
+    if (!now || now.status === "active") return { failed: "the journey is still running for them when Steward looks" };
+    await agentWrite(ctx, { tool: "stop_journey", table: "cultivation_plans", entityId: pl.id, before: { status: "active", closed_at: null }, after: { status: now.status }, cites: step.citesRows });
+    return { donorId: donor.id, id: pl.id };
+  },
+
+  async register_event(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const eid = String(step.eventId || "");
+    const [ev] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [eid, ctx.orgId]);
+    if (!ev) return { failed: "that event is not on file" };
+    if (Number(ev.cost || ev.ticket_price || 0) > 0) return { failed: "it is a paid event, and selling a ticket is a person's to do" };
+    const r = await AC.call(ctx, "POST", `/events/${encodeURIComponent(eid)}/attendees`, { donorIds: [donor.id] });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [a] = await query("SELECT id FROM event_attendees WHERE event_id=? AND donor_id=? ORDER BY id DESC LIMIT 1", [eid, donor.id]);
+    if (!a) return { failed: "they are not on the guest list when Steward looks" };
+    await agentWrite(ctx, { tool: "register_event", table: "event_attendees", entityId: a.id, before: null, after: { event_id: eid, donor_id: donor.id }, cites: step.citesRows });
+    return { donorId: donor.id, id: a.id };
+  },
+
+  async mark_gift_thanked(ctx, step) {
+    const gid = String(step.giftId || "");
+    const [g] = await query("SELECT id, donor_id, acknowledgement_sent, acknowledgement_sent_at, acknowledged_by, acknowledged_by_name, acknowledged_via FROM gifts WHERE id=? AND org_id=?", [gid, ctx.orgId]);
+    if (!g) return { failed: "that gift is not on file" };
+    if (g.acknowledgement_sent === true) return { skipped: "already_thanked" };
+    const via = ["letter", "email", "phone", "in_person", "receipt"].includes(step.method) ? step.method : "email";
+    const r = await AC.call(ctx, "POST", "/acknowledgments/mark", { giftIds: [gid], via });
+    if (r.status >= 300) return { failed: refusal(r) };
+    const [now] = await query("SELECT acknowledgement_sent FROM gifts WHERE id=? AND org_id=?", [gid, ctx.orgId]);
+    if (!now || now.acknowledgement_sent !== true) return { failed: "the gift does not show as thanked when Steward looks" };
+    const { id: _i, donor_id: _d, ...before } = g;
+    await agentWrite(ctx, { tool: "mark_gift_thanked", table: "gifts", entityId: gid, before, after: { acknowledgement_sent: true, acknowledged_via: via }, cites: step.citesRows });
+    return { donorId: g.donor_id, id: gid };
+  },
+
+  async propose_merge(ctx, step) {
+    const a = ctx.donorById(step.donorId), b = ctx.donorById(step.otherDonorId);
+    if (!a || !b || a.id === b.id) return { failed: "a merge needs two different records" };
+    const r = await AC.call(ctx, "POST", "/data-health/proposals", { a: a.id, b: b.id, reason: ctx.instructionText });
+    if (r.status >= 300) return { failed: refusal(r) };
+    if (r.body && r.body.already) return { skipped: "already_proposed" };
+    const [x, y] = [a.id, b.id].sort();
+    const [row] = await query("SELECT id FROM merge_proposals WHERE org_id=? AND a=? AND b=?", [ctx.orgId, x, y]);
+    if (!row) return { failed: "the pair is not in the duplicate queue when Steward looks" };
+    await agentWrite(ctx, { tool: "propose_merge", table: "merge_proposals", entityId: row.id, before: null, after: { a: x, b: y }, cites: step.citesRows });
+    return { donorId: a.id, id: row.id };
+  },
+
 };
 const AGENT_RUNNABLE = Object.keys(AGENT_EXECUTORS);
 
@@ -441,12 +701,28 @@ const AGENT_RUNNABLE = Object.keys(AGENT_EXECUTORS);
 // Only the columns the ledger recorded are restored — never a whole-row
 // overwrite, which would also undo a HUMAN's later edit to a different field on
 // the same record.
-const AGENT_UNDO_DELETE_OK = new Set(["agent_drafts", "tasks", "interactions", "threads", "volunteer_notes"]);
+const AGENT_UNDO_DELETE_OK = new Set(["agent_drafts", "tasks", "interactions", "threads", "volunteer_notes",
+  // AGENT-2: rows the Agent made through a screen's route, undone by removing them.
+  "volunteer_applications", "volunteer_shifts", "volunteer_signups", "event_attendees", "merge_proposals"]);
 
 async function agentUndoWrite(w, orgId) {
   const table = w.entity_table;
   let before = w.before_row;
   if (typeof before === "string") { try { before = JSON.parse(before); } catch { before = null; } }
+  // AGENT-2: two kinds of row the generic restore cannot put back.
+  if (table === "group_members") {
+    const [gid, did] = String(w.entity_id).split(":");
+    if (!before) { await run("DELETE FROM group_members WHERE org_id=? AND group_id=? AND donor_id=?", [orgId, gid, did]); return { ok: true, action: "deleted" }; }
+    await run(`INSERT INTO group_members (org_id, group_id, donor_id, added_by, added_by_name) VALUES (?,?,?,?,?) ON CONFLICT (group_id, donor_id) DO NOTHING`,
+      [orgId, gid, did, before.added_by || null, before.added_by_name || null]);
+    return { ok: true, action: "restored" };
+  }
+  if (table === "cultivation_plans" && !before) {
+    // A journey the Agent started is stopped, not deleted: its drafts and
+    // reminders keep their history.
+    await run("UPDATE cultivation_plans SET status='abandoned', closed_at=NOW() WHERE id=? AND org_id=? AND status='active'", [w.entity_id, orgId]);
+    return { ok: true, action: "stopped" };
+  }
   if (!before) {
     if (!AGENT_UNDO_DELETE_OK.has(table)) return { ok: false, reason: "not_undoable" };
     await run(`DELETE FROM ${table} WHERE id=? AND org_id=?`, [w.entity_id, orgId]);
@@ -468,6 +744,53 @@ async function agentUndoWrite(w, orgId) {
 // headline; Steward writes the headline from those steps (compilePlan), and
 // the run executes exactly those steps. The model sees only the rows the
 // instruction names, or the organisation when it names nobody.
+// AGENT-2: WHAT THE REAL ACTIONS CAN POINT AT. Steward's own reads, org
+// scoped and capped: the staff, the groups kept by hand, households, journeys,
+// shifts coming up, events, and the gifts of the people she named. The model
+// may use an id only from these lists; the plan drops a step that names one
+// that is not here.
+async function agentContext(orgId, { today, scope, allowed }) {
+  const want = t => allowed.has(t);
+  const safe = p => p.catch(() => []);
+  const ctx = {};
+  if (want("set_owner")) ctx.staff = await safe(query("SELECT id, name FROM users WHERE org_id=? ORDER BY name LIMIT 50", [orgId]));
+  if (want("add_to_group") || want("remove_from_group"))
+    ctx.groups = await safe(query("SELECT id, name FROM audiences WHERE org_id=? AND kind='static' ORDER BY name LIMIT 100", [orgId]));
+  if (want("add_to_household")) ctx.households = await safe(query("SELECT id, name FROM households WHERE org_id=? ORDER BY name LIMIT 100", [orgId]));
+  if (want("start_journey") || want("stop_journey"))
+    ctx.journeys = await safe(query("SELECT id, name FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name LIMIT 50", [orgId]));
+  if (want("sign_up_shift") || want("log_hours")) {
+    ctx.shifts = await safe(query(`SELECT s.id, s.date, s.start_time, s.end_time, s.name, s.opportunity_id, o.name AS opportunity
+        FROM volunteer_slots s LEFT JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
+       WHERE s.org_id=? AND s.cancelled_at IS NULL AND s.date >= ? AND s.date <= ? ORDER BY s.date, s.start_time LIMIT 60`,
+      [orgId, orgTime.addDays(today, -14), orgTime.addDays(today, 60)]));
+    const ids = ctx.shifts.map(x => x.id);
+    const roles = ids.length ? await safe(query("SELECT id, slot_id, name FROM volunteer_slot_roles WHERE slot_id = ANY(?::text[])", [ids])) : [];
+    for (const sh of ctx.shifts) sh.roles = roles.filter(r => r.slot_id === sh.id);
+    ctx.opportunities = await safe(query("SELECT id, name FROM volunteer_opportunities WHERE org_id=? ORDER BY name LIMIT 50", [orgId]));
+  }
+  if (want("register_event")) ctx.events = (await safe(query("SELECT * FROM events WHERE org_id=? ORDER BY date DESC LIMIT 30", [orgId])))
+    .map(e => ({ id: e.id, name: e.name, date: String(e.date || "").slice(0, 10), paid: Number(e.cost || e.ticket_price || 0) > 0 }));
+  if (want("mark_gift_thanked")) ctx.gifts = scope && scope.length
+    ? await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND donor_id = ANY(?::text[]) AND amount > 0 ORDER BY date DESC LIMIT 40`, [orgId, scope]))
+    : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE AND LEFT(date,10) >= ? ORDER BY date DESC LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
+  return ctx;
+}
+function agentContextLines(c) {
+  const out = [];
+  const sec = (title, rows, fmt) => { if (rows && rows.length) out.push("", title, ...rows.map(fmt)); };
+  sec("STAFF (ownerUserId):", c.staff, u => `  ${u.id} | ${u.name}`);
+  sec("GROUPS kept by hand (groupId):", c.groups, g => `  ${g.id} | ${g.name}`);
+  sec("HOUSEHOLDS (householdId):", c.households, h => `  ${h.id} | ${h.name}`);
+  sec("JOURNEYS (journeyId):", c.journeys, j => `  ${j.id} | ${j.name}`);
+  sec("SHIFTS (slotId; roleId when it has roles):", c.shifts, x => `  ${x.id} | ${x.date} ${x.start_time || ""}-${x.end_time || ""} | ${x.name || x.opportunity || "Shift"} | opportunity ${x.opportunity_id || "none"} ${x.opportunity || ""}${x.roles.length ? " | roles " + x.roles.map(r => `${r.id} ${r.name}`).join(", ") : ""}`);
+  sec("VOLUNTEER OPPORTUNITIES (opportunityId):", c.opportunities, o => `  ${o.id} | ${o.name}`);
+  sec("EVENTS (eventId):", c.events, e => `  ${e.id} | ${e.name} | ${e.date} | ${e.paid ? "paid" : "free"}`);
+  sec("GIFTS (giftId):", c.gifts, g => `  ${g.id} | giver ${g.donor_id} | amount ${Number(g.amount)} | ${g.date} | ${g.acknowledgement_sent ? "thanked" : "not thanked"}`);
+  if (c.days) out.push("", `DAYS (availability, exactly these words): ${c.days.join(", ")}`);
+  return out;
+}
+
 async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null, persona = null }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
@@ -548,16 +871,31 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     `- Today is ${today} in this organisation's own calendar. A date you write is YYYY-MM-DD.`,
     "- A task's due date goes in `dueDays`: whole days from today (a week is 7). Leave `due` null.",
     "- When the rows include GIFTS and she asks for something per gift, return one step per gift, citing the gift id and the giver's id.",
+    // AGENT-2: DO THE THING, OR SAY IT CANNOT BE DONE.
+    "- Do what she asked with the tool that does it. NEVER put a note, a tag or a task in place of an action a tool above can do.",
+    "- If no tool can do part of what she asked, leave that part out and say so in `cannot`, in one plain sentence. Do not invent a substitute.",
+    "- The people listed are the people she meant. Never create a task or note asking which person she meant.",
+    "- A conversation she says already happened is log_conversation with its date (today is " + today + "; yesterday is " + orgTime.addDays(today, -1) + "). Anything still to do is set_next_step with a due date.",
+    "- Use an id only from the lists below (people, STAFF, GROUPS, HOUSEHOLDS, JOURNEYS, SHIFTS, EVENTS, GIFTS). `citesRows` holds the person's id, and the gift id for a gift step.",
+    "- A gift she says arrived is prepare_gift (amount in dollars). You never record money.",
+    "- `headline`: one short sentence, under 90 characters, saying what the plan does.",
+    "- Add nothing she did not ask for, except one draft she would plainly want (a welcome to a new volunteer).",
   ].join("\n");
 
+  const actx = await agentContext(orgId, { today, scope, allowed });
+  if (allowed.has("make_volunteer")) actx.days = (await import("../shared/volunteerApply.js")).AVAILABILITY;
+  // Who "me" is, for "make me her owner".
+  const [meRow] = userId ? await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [userId, orgId]) : [];
   const user = [
     `Her instruction, verbatim: "${String(instructionText).slice(0, 2000)}"`,
+    ...(meRow ? [`She is ${meRow.name} (${meRow.id}).`] : []),
     "",
     `Today: ${today}`,
     "",
     scope ? "The records she named:" : `The people on file (${reachable.length}):`,
     ...reachable.map(p =>
-      `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}`),
+      `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | first ${p.first_gift_date ? String(p.first_gift_date).slice(0, 10) : "never"} | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}${scope ? ` | email ${p.email || "none"} | phone ${p.phone || "none"} | household ${p.household_id || "none"} | owner ${p.assigned_to_name || "none"}` : ""}`),
+    ...agentContextLines(actx),
     ...(win ? ["", `The gifts dated ${win.words} (${win.from} to ${win.to}), ${giftRows.length}:`,
       ...giftRows.map(g => `  ${g.id} | giver ${g.donor_id} | ${g.donor_name} | amount ${Number(g.amount)} | date ${String(g.date).slice(0, 10)}`)] : []),
   ].join("\n");
@@ -593,13 +931,46 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // tool she has not signed for stays in, so validatePlan REFUSES the plan
   // rather than trimming it.
   const byId = new Map(reachable.map(p => [p.id, p]));
-  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id)];
+  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id), ...(actx.gifts || []).map(g => g.id)];
   const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
     ...giftRows.map(g => g.amount)].map(Number).filter(Number.isFinite);
   const steps = [];
   let withheld = 0;
   let outOfScope = 0;
-  for (const s of Array.isArray(raw.steps) ? raw.steps : []) {
+  const idIn = (list, id) => (list || []).find(x => x.id === id) || null;
+  const giftIds = new Set((actx.gifts || []).map(g => g.id));
+  for (const s0 of Array.isArray(raw.steps) ? raw.steps : []) {
+    let s = s0;
+    // AGENT-2: "which Ada did you mean" is asked BEFORE a plan, never left as work.
+    if (["create_task", "log_note"].includes(s.tool) && /\b(which|confirm|check)\b[^.]{0,40}\b(one|record|person|mean|meant|right)\b/i.test(`${s.title || ""} ${s.note || ""}`)) { withheld++; continue; }
+    // AGENT-2: the ids a real action points at must be Steward's own, and the
+    // step carries the name so the plan reads in words.
+    const bad = (s.tool === "set_owner" && !(s.ownerName = (idIn(actx.staff, s.ownerUserId) || {}).name))
+      || (["add_to_group", "remove_from_group"].includes(s.tool) && !(s.groupName = (idIn(actx.groups, s.groupId) || {}).name))
+      || (s.tool === "add_to_household" && !(s.householdName = (idIn(actx.households, s.householdId) || {}).name))
+      || (s.tool === "start_journey" && !(s.journeyName = (idIn(actx.journeys, s.journeyId) || {}).name))
+      || (s.tool === "stop_journey" && s.journeyId && !(s.journeyName = (idIn(actx.journeys, s.journeyId) || {}).name))
+      || (s.tool === "sign_up_shift" && !(s.shiftName = (() => { const x = idIn(actx.shifts, s.slotId); return x && `${x.name || x.opportunity || "the shift"} on ${x.date}`; })()))
+      || (s.tool === "register_event" && !(s.eventName = (idIn(actx.events, s.eventId) || {}).name))
+      || (s.tool === "mark_gift_thanked" && !giftIds.has(s.giftId))
+      || (s.tool === "propose_merge" && (!byId.has(s.otherDonorId) || s.otherDonorId === s.donorId));
+    if (bad) { withheld++; continue; }
+    if (s.tool === "mark_gift_thanked") {
+      const g = idIn(actx.gifts, s.giftId);
+      s = { ...s, donorId: s.donorId || g.donor_id, giftWords: `${A.formatCents(Math.round(Number(g.amount) * 100))}, ${g.date}`, citesRows: [g.donor_id, g.id] };
+    }
+    if (s.tool === "prepare_gift") {
+      // The money stays human: it becomes the ONE prepared card she records.
+      const cents = Math.round(Number(s.amount) * 100);
+      if (!(cents > 0) || !byId.has(s.donorId)) { withheld++; continue; }
+      s = { tool: "record_gift", donorId: s.donorId, amountCents: cents, preparedBy: "steward", method: s.method || null,
+            date: /^\d{4}-\d{2}-\d{2}$/.test(String(s.date || "")) ? s.date : today, citesRows: [s.donorId],
+            detail: [s.method || "method: you fill it in", s.date || today].join(" · ") };
+      steps.push(s); continue;
+    }
+    // A real action cites its person (and gift); a list id is not a row read.
+    if (s.donorId && A.TOOLS_BY_NAME[s.tool] && !["draft_note", "create_task", "open_thread", "log_note", "add_tag"].includes(s.tool))
+      s = { ...s, citesRows: [...new Set([s.donorId, ...(s.otherDonorId ? [s.otherDonorId] : []), ...(s.citesRows || []).filter(id => byId.has(id) || giftIds.has(id))])] };
     // AGENTS-1 — A STEP OUTSIDE THE PERSONA'S TOOLS IS DROPPED AT PLAN TIME,
     // not at confirm time. She must never read a plan that says the Analyst
     // will move somebody's stage and then watch that step quietly not happen:
@@ -624,6 +995,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     + ` | rows ${_tRows - _t0}ms · model ${_tModel - _tRows}ms · filter ${_tEnd - _tModel}ms · total ${_tEnd - _t0}ms`
     + (_truncated ? " | TRUNCATED at max_tokens" : ""));
   return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable,
+           headline: raw.headline || null, cannot: raw.cannot || null,
            timing: { rowsMs: _tRows - _t0, modelMs: _tModel - _tRows, filterMs: _tEnd - _tModel,
                      totalMs: _tEnd - _t0, people: reachable.length, steps: steps.length, drafted,
                      truncated: _truncated } };
@@ -706,14 +1078,15 @@ async function agentVolunteerPlan(orgId, text, personId) {
 // tool must have an executor, the donor must be this org's, and the step must
 // cite rows Steward read. A money step is never executed here: the PERSON
 // recorded it in the confirm route (`confirmed`), and the run says so.
-async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
+async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth = null }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
   const runId = "arun_" + uuid().slice(0, 10);
   const plan = instruction.plan || {};
   const planSteps = Array.isArray(plan.steps) ? plan.steps : [];
   // READS ARE SCOPED: the run reads the people its steps name, and nobody else.
-  const named = [...new Set(planSteps.map(s => s.donorId).filter(Boolean))];
+  // AGENT-2: a merge proposal names a second person too.
+  const named = [...new Set(planSteps.flatMap(s => [s.donorId, s.otherDonorId]).filter(Boolean))];
   const people = named.length ? await agentReadPeople(orgId, { ids: named }) : [];
   const byId = new Map(people.map(p => [p.id, p]));
   // PARITY-1 Part F: a step may cite a GIFT as well as its giver. A cited
@@ -749,7 +1122,9 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
     unknown_stage: "that stage does not exist", already_there: "they were already at that stage",
     no_tag: "there was no tag to add", already_tagged: "they already had that tag",
     already_volunteer: "they were already a volunteer", not_a_volunteer: "they are not marked as a volunteer",
-    no_note: "there was nothing to note" };
+    no_note: "there was nothing to note", not_in_group: "they were not in that group",
+    not_in_journey: "they were not in that journey", already_thanked: "that gift was already marked thanked",
+    already_proposed: "that pair was already in the duplicate queue" };
 
   let drafted = 0, done = 0, withheld = 0, declined = 0;
   const withheldReasons = [];
@@ -758,16 +1133,25 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
     describes: a.describes || null, state: a.state || null, outcome: o, reason: reason || null, ...(extra || {}) });
 
   try {
-    await withTransaction(async (txClient) => {
+    // AGENT-2: NO RUN-WIDE TRANSACTION. Each step commits on its own and is
+    // its own undo, because the steps now write through the screens' routes
+    // (on the pool) and a transaction held around them would lock the rows
+    // those routes wait for. A step that fails is said, and the ones before it
+    // stay done and undoable.
+    await require("../db").withClient(async (txClient) => {
       const ctx = { client: txClient, orgId, runId, instructionId: instruction.id, userId, today,
+                    auth, instructionText: String(instruction.text || "").slice(0, 240),
                     donorById: id => byId.get(id) || null };
       for (let i = 0; i < planSteps.length; i++) {
         const a = planSteps[i];
         // THE PERSON'S STEP. Recorded by her before this run began, or not at all.
         if (a.state === A.STEP_CONFIRM) {
           const c = confirmed[i];
-          if (c && c.giftId) { done++; outcome(a, A.OUTCOME_DONE, null, { giftId: c.giftId, by: c.by || null }); }
-          else outcome(a, A.OUTCOME_NOT_DONE, (c && c.reason) || "it was not confirmed");
+          // AGENT-2: DONE MEANS THE GIFT IS THERE: read back, to the cent.
+          const [g] = c && c.giftId ? await query("SELECT id, amount FROM gifts WHERE id=? AND org_id=? AND donor_id=?", [c.giftId, orgId, a.donorId]) : [];
+          if (g && Math.round(Number(g.amount) * 100) === Number(a.amountCents)) { done++; outcome(a, A.OUTCOME_DONE, null, { giftId: c.giftId, by: c.by || null }); }
+          else if (c && c.reason === "it was already recorded") outcome(a, A.OUTCOME_NOT_DONE, c.reason);
+          else { declined++; outcome(a, A.OUTCOME_FAILED, (c && c.reason) || (c && c.giftId ? "the gift is not on file as prepared" : "it was not confirmed")); }
           continue;
         }
         // A step that waits on another runs only when that one was done.
@@ -793,9 +1177,11 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
 
         const r = await AGENT_EXECUTORS[a.tool](ctx, a);
         if (r && r.skipped) { declined++; withheldReasons.push(r.skipped); outcome(a, A.OUTCOME_NOT_DONE, SKIPPED[r.skipped] || r.skipped); continue; }
+        // AGENT-2: it ran, and what it claimed is not there: Failed, never Done.
+        if (r && r.failed) { declined++; withheldReasons.push(r.failed); outcome(a, A.OUTCOME_FAILED, r.failed); continue; }
         if (r && r.drafted) { drafted++; done++; outcome(a, A.OUTCOME_WAITING, "the draft is waiting for you", { entityId: r.id || null }); continue; }
         done++;
-        outcome(a, A.OUTCOME_DONE, null, { entityId: (r && r.id) || null });
+        outcome(a, A.OUTCOME_DONE, (r && r.note) || null, { entityId: (r && r.id) || null });
       }
     });
   } catch (e) {
@@ -1154,7 +1540,15 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     const readNames = named.scope
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
       : `your ${built.people.length} people`;
-    plan = A.compilePlan(built.steps, { people: built.people, reads: readNames, withheld: built.withheld });
+    // AGENT-2: find and count are reads with no executor: as a step they ran
+    // as "Done · 0". They are left out, and an instruction that is only a
+    // question is told so rather than given a plan that does nothing.
+    const runnable = built.steps.filter(x => !["find_people", "count"].includes(x.tool));
+    const readOnly = built.steps.length - runnable.length;
+    plan = A.compilePlan(runnable, { people: built.people, reads: readNames, withheld: built.withheld,
+      headline: built.headline, cannot: built.cannot || (readOnly && !runnable.length
+        ? "That is a question rather than work. Steward answers it in Reports (or try \"open the retention report\"); a plan here would change nothing" : null) });
+    if (!plan.steps.length) return res.json({ cannot: { sentence: plan.cannot || "Steward found nothing it can do for that, so nothing was planned." } });
     if (built.timing) plan.timing = built.timing;   // FIX-8 Part D.1
     plan.sends = Math.max(plan.sends, built.sends);
     plan.readIds = named.scope || null;
@@ -1243,7 +1637,11 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
 
   const result = await agentRunPlan(orgId,
     { id: ins.id, text: ins.text, plan, authorization: ins.send_authorization },
-    { userId: req.user.userId, confirmed });
+    { userId: req.user.userId, confirmed, auth: req.headers.authorization || null });
+  // AGENT-2: this request's own audit row names the instruction it ran.
+  // Each write inside it has its own row, the Agent as actor (agentCall.js).
+  if (req.audit) req.audit.summary(`Ran the instruction "${String(ins.text).slice(0, 200)}": ${result.done || 0} done${result.steps && result.steps.some(x => x.outcome === A.OUTCOME_FAILED) ? ", some failed" : ""}`,
+    { count: (result.steps || []).length });
 
   if (ins.kind === A.KIND_TASK)
     await run("UPDATE agent_instructions SET status='done' WHERE id=? AND org_id=?", [ins.id, orgId]);

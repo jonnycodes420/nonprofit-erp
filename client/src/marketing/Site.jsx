@@ -38,7 +38,7 @@ function MegaPlatform() {
         <h5>Products</h5>
         <Mi href="/crm" icon="people" b="Steward CRM" span="Keep more donors by seeing drift while a call still fixes it." />
         <Mi href="/volunteer" icon="hand" b="Steward Volunteer" span="Shifts, hours and waivers, on the same record as giving." />
-        <Mi href="/agent" icon="spark1" b="Steward Agent" span="Six assistants that draft and organize, never send." />
+        <Mi href="/agent" icon="spark1" b="Steward Agent" span="Does the work you ask, after your yes. Never sends." />
       </div>
       <div className="col rule">
         <h5>Features</h5>

@@ -105,6 +105,57 @@ export const AGENT_TOOLS = [
     entity: "volunteer_notes",
     what: "Write an internal note in the Volunteers hub, such as when somebody can help.",
     why: "A volunteer note stays with the coordinator: it never appears on the giving record, in Drift, or in anything drafted." },
+  // ── AGENT-2 · REAL ACTIONS ───────────────────────────────────────────────
+  // Each one is the route a person's click calls (agentCall.js), checked after
+  // it runs, logged with the Agent as actor and undoable for thirty days.
+  { name: "update_contact", needsHuman: "never", writes: true, undoable: true, entity: "donors",
+    what: "Change somebody's email, phone or address (only the fields given; the rest stay).",
+    why: "How this office reaches somebody, on their one record; the old values are kept so it can be put back." },
+  { name: "set_owner", needsHuman: "never", writes: true, undoable: true, entity: "donors",
+    what: "Make a staff member (ownerUserId, from STAFF) the owner of somebody.",
+    why: "Who in this office looks after a relationship." },
+  { name: "add_to_group", needsHuman: "never", writes: true, undoable: true, entity: "group_members",
+    what: "Add somebody to a group kept by hand (groupId, from GROUPS).",
+    why: "A group is a list this office keeps." },
+  { name: "remove_from_group", needsHuman: "never", writes: true, undoable: true, entity: "group_members",
+    what: "Take somebody out of a group kept by hand (groupId, from GROUPS).",
+    why: "A group is a list this office keeps." },
+  { name: "add_to_household", needsHuman: "never", writes: true, undoable: true, entity: "donors",
+    what: "Put somebody in a household (householdId, from HOUSEHOLDS).",
+    why: "A household links records; it never moves a gift." },
+  { name: "log_conversation", needsHuman: "never", writes: true, undoable: true, entity: "interactions",
+    what: "Log a call, meeting or email that already happened (kind: call, meeting or email; date YYYY-MM-DD; note says what was said). It updates last contact everywhere.",
+    why: "A record of a conversation a person in this office had." },
+  { name: "set_next_step", needsHuman: "never", writes: true, undoable: true, entity: "threads",
+    what: "Set somebody's next step (label) with a due date (due, YYYY-MM-DD). It replaces the open one if there is one.",
+    why: "A commitment this office makes to itself." },
+  { name: "make_volunteer", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_applications",
+    what: "Make somebody a volunteer on their own record, with hoursPerWeek, availability (from DAYS) and roles. Use it for anyone who becomes or is a volunteer.",
+    why: "The volunteer record on one person; it puts them in the Volunteers group." },
+  { name: "sign_up_shift", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_signups",
+    what: "Sign somebody up for a shift (slotId, and roleId when the shift has roles, from SHIFTS).",
+    why: "A place on a shift; capacity and the waiting list are decided as on the schedule." },
+  { name: "log_hours", needsHuman: "never", writes: true, undoable: true, entity: "volunteer_shifts",
+    what: "Log volunteer hours somebody already gave (hours, date YYYY-MM-DD, opportunityId from SHIFTS when named).",
+    why: "Hours given, on their record." },
+  { name: "start_journey", needsHuman: "never", writes: true, undoable: true, entity: "cultivation_plans",
+    what: "Start a journey (journeyId, from JOURNEYS) for somebody.",
+    why: "A journey drafts and reminds; it sends nothing on its own." },
+  { name: "stop_journey", needsHuman: "never", writes: true, undoable: true, entity: "cultivation_plans",
+    what: "Stop the journey somebody is in (journeyId, from JOURNEYS).",
+    why: "Taking somebody out of a plan this office made." },
+  { name: "register_event", needsHuman: "never", writes: true, undoable: true, entity: "event_attendees",
+    what: "Register somebody for a free event, or put them on its guest list (eventId, from EVENTS). Never a paid ticket.",
+    why: "A name on a guest list; no money moves." },
+  { name: "mark_gift_thanked", needsHuman: "never", writes: true, undoable: true, entity: "gifts",
+    what: "Mark a gift as thanked (giftId, from GIFTS). It records nothing new about the money.",
+    why: "Whether the thank-you happened is this office's own note on a gift." },
+  { name: "propose_merge", needsHuman: "never", writes: true, undoable: true, entity: "merge_proposals",
+    what: "Propose that two records are one person (donorId and otherDonorId). A person merges them in Data health.",
+    why: "A proposal in the duplicate queue; nothing is merged by the Agent." },
+  { name: "prepare_gift", needsHuman: "never", writes: false,
+    what: "Prepare a gift she told you about (donorId, amount in dollars, date, method) as one card she records with one click. Never recorded by you.",
+    why: "Becomes a gift card the person confirms; the Agent itself records nothing." },
   { name: "enrol_sequence", needsHuman: "never", writes: true, undoable: true,
     entity: "sequence_enrollments",
     what: "Enrol somebody in a sequence SHE wrote and SHE turned on.",
@@ -209,7 +260,9 @@ export function moneyRefusal(instructionText) {
 export const PLAN_STEP_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["tool", "donorId", "citesRows", "subject", "body", "title", "note", "stage", "tag", "label", "due", "dueDays", "priority"],
+  required: ["tool", "donorId", "citesRows", "subject", "body", "title", "note", "stage", "tag", "label", "due", "dueDays", "priority",
+    "email", "phone", "address", "city", "state", "zip", "ownerUserId", "groupId", "householdId", "otherDonorId", "kind", "date",
+    "hoursPerWeek", "hours", "availability", "roles", "slotId", "roleId", "opportunityId", "journeyId", "eventId", "giftId", "amount", "method"],
   properties: {
     tool: { type: "string", description: "One of Steward's own tools." },
     donorId: { type: ["string", "null"], description: "The id of the person this step is about, from the rows given." },
@@ -222,14 +275,33 @@ export const PLAN_STEP_SCHEMA = {
     // resolves it to a civil date in the org's calendar.
     dueDays: { type: ["integer", "null"] },
     priority: { type: ["string", "null"] },
+    // AGENT-2: what the real actions need. Every id comes from the lists in
+    // the prompt. Plain types, because a strict schema allows only 16
+    // nullable fields: "" or 0 or [] when the step does not use it.
+    email: { type: "string" }, phone: { type: "string" },
+    address: { type: "string", description: "The street line only." },
+    city: { type: "string" }, state: { type: "string" }, zip: { type: "string" },
+    ownerUserId: { type: "string" }, groupId: { type: "string" },
+    householdId: { type: "string" }, otherDonorId: { type: "string" },
+    kind: { type: "string", description: "call, meeting or email, for log_conversation." },
+    date: { type: "string", description: "YYYY-MM-DD." },
+    hoursPerWeek: { type: "number" }, hours: { type: "number" },
+    availability: { type: "array", items: { type: "string" } },
+    roles: { type: "array", items: { type: "string" } },
+    slotId: { type: "string" }, roleId: { type: "string" },
+    opportunityId: { type: "string" }, journeyId: { type: "string" },
+    eventId: { type: "string" }, giftId: { type: "string" },
+    amount: { type: "number" }, method: { type: "string" },
   },
 };
 export const PLAN_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["steps", "sends"],
+  required: ["steps", "sends", "headline", "cannot"],
   properties: {
     steps: { type: "array", description: "Every action Steward will take, one per person, in order.", items: PLAN_STEP_SCHEMA },
+    headline: { type: "string", description: "One short sentence saying what the plan does, like \"Make Ada a volunteer at 15 hours a week and draft a welcome\". No more than 90 characters." },
+    cannot: { type: "string", description: "If part of her instruction has no tool, say so in one sentence (\"Steward can't schedule shifts by text yet\"). Empty when everything is covered." },
     sends: { type: "integer", description: "How many messages leave the building. Zero unless she has signed this instruction." },
   },
 };
@@ -279,6 +351,8 @@ export const STEP_WAITS = "waits";
 export const OUTCOME_DONE = "done";
 export const OUTCOME_WAITING = "waiting";      // waiting for you
 export const OUTCOME_NOT_DONE = "not_done";    // not done, with a reason
+// AGENT-2: the step ran and its result is not there when Steward looks. Never Done.
+export const OUTCOME_FAILED = "failed";
 
 const money = cents => {
   const d = Math.round(Number(cents) || 0) / 100;
@@ -327,6 +401,21 @@ function clauseFor(tool, group, byId, nameIt) {
     case "queue_for_send": return `put ${n === 1 ? "a message" : n + " messages"} in your send queue`;
     case "send_email": return `send ${n === 1 ? "a message" : n + " messages"} you signed for`;
     case "mark_volunteer": return n === 1 ? `make ${who || "them"} a volunteer` : `make ${who || n + " people"} volunteers`;
+    case "make_volunteer": return n === 1 ? `make ${who || "them"} a volunteer${s0.hoursPerWeek ? ` at ${s0.hoursPerWeek} hours a week` : ""}` : `make ${who || n + " people"} volunteers`;
+    case "update_contact": return `update ${w ? w + "'s" : "the"} contact details`;
+    case "set_owner": return `make ${s0.ownerName || "a colleague"} ${w ? w + "'s" : "the"} owner`;
+    case "add_to_group": return `add ${who || n + " people"} to ${s0.groupName || "the group"}`;
+    case "remove_from_group": return `take ${who || n + " people"} out of ${s0.groupName || "the group"}`;
+    case "add_to_household": return `put ${who || "them"} in ${s0.householdName || "the household"}`;
+    case "log_conversation": return `log ${n === 1 ? `a ${s0.kind || "conversation"}` : n + " conversations"}${w ? ` with ${w}` : ""}`;
+    case "set_next_step": return `set ${w ? w + "'s" : "the"} next step`;
+    case "sign_up_shift": return `sign ${who || "them"} up for ${s0.shiftName || "the shift"}`;
+    case "log_hours": return `log ${s0.hours || ""} hours for ${who || "them"}`.replace("log  hours", "log hours");
+    case "start_journey": return `start ${s0.journeyName || "the journey"} for ${who || n + " people"}`;
+    case "stop_journey": return `stop ${s0.journeyName || "the journey"} for ${who || n + " people"}`;
+    case "register_event": return `register ${who || n + " people"} for ${s0.eventName || "the event"}`;
+    case "mark_gift_thanked": return `mark ${n === 1 ? "the gift" : n + " gifts"} thanked`;
+    case "propose_merge": return `propose merging two records called ${(byId.get(s0.donorId) || {}).name || "the same name"}`;
     case "note_volunteer": return n === 1 ? `note ${w ? w + "'s " : ""}${s0.availability || "availability"}` : `note ${n} volunteers' availability`;
     default: return `${tool} (${n})`;
   }
@@ -353,6 +442,21 @@ export function describeStep(step, byId = new Map()) {
     case "queue_for_send": return `Put a message to ${who} in your send queue.`;
     case "send_email": return `Send a message to ${who}.`;
     case "mark_volunteer": return `Tag ${who} Volunteer, on the same record.`;
+    case "make_volunteer": return `Make ${who} a volunteer${step.hoursPerWeek ? `, ${step.hoursPerWeek} hours a week` : ""}${(step.availability || []).length ? `, ${step.availability.join(", ")}` : ""}${(step.roles || []).length ? `, as ${step.roles.join(", ")}` : ""}.`;
+    case "update_contact": return `Change ${who}'s ${[step.email && `email to ${step.email}`, step.phone && `phone to ${step.phone}`, (step.address || step.city || step.zip) && `address to ${[step.address, step.city, step.state, step.zip].filter(Boolean).join(", ")}`].filter(Boolean).join(" and ") || "contact details"}.`;
+    case "set_owner": return `Make ${step.ownerName || "a colleague"} ${who}'s owner.`;
+    case "add_to_group": return `Add ${who} to ${step.groupName || "the group"}.`;
+    case "remove_from_group": return `Take ${who} out of ${step.groupName || "the group"}.`;
+    case "add_to_household": return `Put ${who} in ${step.householdName || "the household"}.`;
+    case "log_conversation": return `Log a ${step.kind || "conversation"} with ${who} on ${step.date || "today"}${step.note ? `: ${String(step.note).slice(0, 120)}` : ""}.`;
+    case "set_next_step": return `Set ${who}'s next step: ${step.label || "a follow-up"}${step.due ? `, due ${step.due}` : ""}.`;
+    case "sign_up_shift": return `Sign ${who} up for ${step.shiftName || "the shift"}.`;
+    case "log_hours": return `Log ${step.hours || "the"} hours for ${who}${step.date ? ` on ${step.date}` : ""}.`;
+    case "start_journey": return `Start ${step.journeyName || "the journey"} for ${who}.`;
+    case "stop_journey": return `Stop ${step.journeyName || "the journey"} for ${who}.`;
+    case "register_event": return `Register ${who} for ${step.eventName || "the event"}.`;
+    case "mark_gift_thanked": return `Mark ${who}'s gift${step.giftWords ? ` (${step.giftWords})` : ""} thanked.`;
+    case "propose_merge": return `Propose that ${who} and ${nameInSentence(byId.get(step.otherDonorId))} are one person, for you to merge in Data health.`;
     case "note_volunteer": return `Note ${who}'s availability in Volunteers: ${step.availability || "as you said"}.`;
     default: return `${step.tool}.`;
   }
@@ -387,7 +491,7 @@ function headline(order, groups, byId, { names = true } = {}) {
 // records a gift; a plan with no thread step cannot say it opens a follow-up,
 // because there is no clause to say it with. What was left out is counted on
 // the plan (`withheld`) and said on its own line, never in the headline.
-export function compilePlan(steps, { people = [], reads = null, withheld = 0 } = {}) {
+export function compilePlan(steps, { people = [], reads = null, withheld = 0, headline: said = null, cannot = null } = {}) {
   const byId = new Map((people || []).map(p => [p.id, p]));
   const out = (Array.isArray(steps) ? steps : []).map(s => {
     const tool = TOOLS_BY_NAME[s.tool];
@@ -406,6 +510,11 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0 } =
     summary = headline(order, groups, byId);
     if (summary.length > HEADLINE_MAX) summary = headline(order, groups, byId, { names: false });
   }
+  // AGENT-2: the model's one short sentence, when it gave one that fits; the
+  // steps under it carry the detail. Never a headline for a plan with no steps.
+  const h = String(said || "").trim().replace(/\s+/g, " ").replace(/[.!]*$/, "");
+  if (order.length && h.length >= 8 && h.length <= 90 && !/\u2014/.test(h)) summary = h.charAt(0).toUpperCase() + h.slice(1) + ".";
+  const cant = String(cannot || "").trim().replace(/\s+/g, " ").slice(0, 200);
   const people_ = new Set(out.map(s => s.donorId).filter(Boolean));
   return {
     steps: out,
@@ -415,6 +524,7 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0 } =
     sends: out.filter(s => s.tool === "send_email").length,
     confirms: out.filter(s => s.state === STEP_CONFIRM).length,
     withheld,
+    cannot: cant ? (cant.endsWith(".") ? cant : cant + ".") : null,
   };
 }
 
@@ -600,6 +710,7 @@ export function outcomeLabel(step) {
   if (!step || !step.outcome) return stateLabel(step && step.state);
   if (step.outcome === OUTCOME_DONE) return "Done";
   if (step.outcome === OUTCOME_WAITING) return "Waiting for you";
+  if (step.outcome === OUTCOME_FAILED) return "Failed" + (step.reason ? ": " + step.reason : "");
   return "Not done" + (step.reason ? ": " + step.reason : "");
 }
 // The one yes. When the plan holds money she is recording it, and the button
@@ -793,6 +904,8 @@ export function volunteerNews(text) {
   const t = raw.toLowerCase().replace(/[’']/g, "'");
   if (!VOL_NEWS.some(re => re.test(t))) return null;
   if (SEGMENT.test(t) || VOL_ASKS.test(t)) return null;
+  // AGENT-2: a shift or hours already given is work for the planner's tools.
+  if (/\bshifts?\b|\blog(ged)?\b[^.]{0,20}\bhours?\b/.test(t)) return null;
   const parts = [];
   const h = raw.match(HOURS_RE);
   if (h) {
@@ -801,7 +914,18 @@ export function volunteerNews(text) {
   }
   const d = raw.match(DAYS_RE);
   if (d) parts.push((d[1].charAt(0).toUpperCase() + d[1].slice(1).toLowerCase()) + (d[2] ? d[2].toLowerCase() : ""));
-  return { availability: parts.length ? parts.join(", ") : null };
+  // AGENT-2: the same words, as the volunteer record's fields.
+  const hoursPerWeek = h && (!h[2] || /week/i.test(h[2])) ? (NUMBER_WORDS[h[1].toLowerCase()] || Number(h[1])) : null;
+  const days = [];
+  if (/saturdays?|weekends?/i.test(raw)) days.push("Saturdays");
+  if (/sundays?|weekends?/i.test(raw)) days.push("Sundays");
+  if (/weekday|(mon|tues|wednes|thurs|fri)days?/i.test(raw)) {
+    if (/mornings?/i.test(raw)) days.push("Weekday mornings");
+    if (/afternoons?/i.test(raw)) days.push("Weekday afternoons");
+    if (/evenings?/i.test(raw)) days.push("Weekday evenings");
+  }
+  const role = raw.match(/\bas an? ([a-z][a-z -]{2,40}?)(?:[,.]|\s+(?:on|and|at|for)\b|$)/i);
+  return { availability: parts.length ? parts.join(", ") : null, hoursPerWeek, days, roles: role ? [role[1].trim().replace(/^./, c => c.toUpperCase())] : [] };
 }
 
 const typesOf = p => {
@@ -816,14 +940,14 @@ export function volunteerSteps(person, news, { instruction = "", welcome = null 
   if (!person || !person.id) return [];
   const cites = [person.id];
   const steps = [];
-  if (!typesOf(person).includes("volunteer"))
-    steps.push({ tool: "mark_volunteer", donorId: person.id, citesRows: cites,
-      detail: "The Volunteer role, added to the same record" });
-  if (news && news.availability)
-    steps.push({ tool: "note_volunteer", donorId: person.id, citesRows: cites, kind: "availability",
-      availability: news.availability,
-      note: `${news.availability.charAt(0).toUpperCase() + news.availability.slice(1)}. As you told Steward: “${String(instruction).trim().slice(0, 1600)}”`,
-      detail: "Internal note in Volunteers · never on the giving record" });
+  // AGENT-2: the volunteer RECORD (makeVolunteer), not a tag and a note: the
+  // role, hours a week, days and roles, and they are in the Volunteers group.
+  const already = typesOf(person).includes("volunteer");
+  const fields = news && (news.hoursPerWeek || (news.days || []).length || (news.roles || []).length);
+  if (!already || fields)
+    steps.push({ tool: "make_volunteer", donorId: person.id, citesRows: cites,
+      hoursPerWeek: (news && news.hoursPerWeek) || null, availability: (news && news.days) || [], roles: (news && news.roles) || [],
+      detail: "On the same record · in the Volunteers group" });
   if (welcome && !person.deceased && !person.do_not_contact && !person.is_sample)
     steps.push({ tool: "draft_note", donorId: person.id, citesRows: cites, purpose: "welcome",
       subject: welcome.subject, body: welcome.body, detail: "A draft under Waiting for you · you send it" });

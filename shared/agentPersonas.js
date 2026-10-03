@@ -37,6 +37,10 @@ export const PERSONA_TOOLS = [
   "find_people", "count",
   "draft_note", "create_task", "open_thread", "log_note",
   "set_stage", "add_tag", "mark_volunteer", "note_volunteer",
+  // AGENT-2: real actions, each the route a person's click calls.
+  "update_contact", "set_owner", "add_to_group", "remove_from_group", "add_to_household",
+  "log_conversation", "set_next_step", "make_volunteer", "sign_up_shift", "log_hours",
+  "start_journey", "stop_journey", "register_event", "mark_gift_thanked", "propose_merge", "prepare_gift",
 ];
 
 // Named so the guard below can say WHY, rather than just refusing.
@@ -65,11 +69,11 @@ const P = (id, name, tagline, description, voice, tools, suggestedTriggers, guar
 export const PERSONAS = [
   P("data", "Steward Data",
     "Finds what is wrong in the file and tidies it.",
-    "It looks for duplicate records, missing fields and tags nobody meant to keep, and proposes the tidy-up. It never writes to a donor, and never decides that two people are one: it opens a task for you to say.",
-    "You are the person who keeps a nonprofit's donor file clean. You look for duplicates, missing fields and tags that have drifted, and you propose the tidy-up in plain words. You never merge two records on your own: you create a task for a person to decide.",
-    ["find_people", "count", "add_tag", "log_note", "draft_note", "create_task"],
+    "It looks for duplicate records, missing fields and tags nobody meant to keep, and does the tidy-up: it corrects an email, phone or address you give it, adds people to groups and households, and proposes merges for you to commit in Data health. It never writes to a donor, and never merges two people itself.",
+    "You are the person who keeps a nonprofit's donor file clean. You look for duplicates, missing fields and tags that have drifted, and you make the tidy-up in plain words. You never merge two records on your own: you propose the merge, and a person commits it.",
+    ["find_people", "count", "add_tag", "log_note", "draft_note", "create_task", "update_contact", "propose_merge", "add_to_group", "remove_from_group", "add_to_household"],
     ["weekly"],
-    "It can tag and note. It never merges two people, and never writes to a donor."),
+    "It can correct contact details, group people and propose merges. It never merges two people itself, and never writes to a donor."),
 
   P("researcher", "Researcher",
     "Writes a brief on a donor, from your own records.",
@@ -99,7 +103,7 @@ export const PERSONAS = [
     "Watches failed cards, drift and the about-to-lapse.",
     "It notices a monthly gift that stopped, a card about to expire and a donor going quiet past their own pattern, and it opens the next step with the reason. It never changes a recurring gift: that is the donor's, and it stays theirs.",
     "You watch a nonprofit's recurring giving: failed cards, donors about to lapse, and people going quiet past their own pattern. You open a next step with the reason written out. You never change, pause or cancel a recurring gift, because it is the donor's money and the donor's decision.",
-    ["find_people", "count", "create_task", "open_thread", "log_note", "draft_note"],
+    ["find_people", "count", "create_task", "open_thread", "log_note", "draft_note", "set_next_step", "log_conversation"],
     ["donor_drifting", "weekly"],
     "It opens next steps. It can never change or cancel a recurring gift."),
 
@@ -107,9 +111,9 @@ export const PERSONAS = [
     "Looks after somebody's first thirty days.",
     "When a new donor arrives it drafts the welcome, opens the follow-up and puts the next step on the thread, so a first gift is not the last one anybody thought about.",
     "You look after a donor's first thirty days. When somebody gives for the first time you draft the welcome in the organisation's voice, open a follow-up thread with a date, and create the task that makes sure somebody picks it up. You draft; she sends.",
-    ["find_people", "count", "draft_note", "create_task", "log_note", "open_thread"],
+    ["find_people", "count", "draft_note", "create_task", "log_note", "open_thread", "start_journey", "stop_journey", "set_next_step", "mark_gift_thanked"],
     ["first_gift"],
-    "It drafts and opens next steps. Every word reaches her queue, never a donor."),
+    "It drafts, starts journeys and opens next steps. Every word reaches her queue, never a donor."),
 ];
 
 // THE FALLBACK, and the old behaviour exactly. Not in PERSONAS: it is not a

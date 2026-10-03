@@ -5353,6 +5353,38 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
+// AGENT-2: CHANGE HOW TO REACH SOMEBODY, AND ONLY THAT. PUT /donors/:id
+// replaces the whole record (a missing stage there becomes "cultivate"), so a
+// new email, phone or address arrives here instead: only the fields given
+// change, an email must look like one, and an address change is kept in
+// donor_address_history beside the tidy-up's own.
+app.patch("/donors/:id/contact", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, b = req.body || {};
+  const [d] = await query("SELECT id, name, email, phone, address, address2, city, state, zip FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const FIELDS = ["email", "phone", "address", "address2", "city", "state", "zip"];
+  const next = {};
+  for (const f of FIELDS) if (b[f] !== undefined && b[f] !== null) next[f] = String(b[f]).trim().slice(0, f === "address" || f === "address2" ? 200 : 120);
+  if (next.email !== undefined) {
+    next.email = next.email.toLowerCase();
+    if (next.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email)) return res.status(400).json({ error: "bad_email", message: "That does not look like an email address." });
+  }
+  const keys = Object.keys(next).filter(k => String(d[k] || "") !== next[k]);
+  if (!keys.length) return res.json({ id: d.id, changed: [], unchanged: true, sentence: `${d.name}'s record already says that.` });
+  if (keys.some(k => ["address", "address2", "city", "state", "zip"].includes(k))) {
+    const was = { address: d.address, address2: d.address2, city: d.city, state: d.state, zip: d.zip };
+    const now = { ...was }; for (const k of keys) if (k in now) now[k] = next[k];
+    await run(`INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?)`,
+      ["dah_" + uuid().slice(0, 12), orgId, d.id, "edit", JSON.stringify(was), JSON.stringify(now), actor(req).id, actor(req).name]);
+  }
+  await run(`UPDATE donors SET ${keys.map(k => `${k}=?`).join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...keys.map(k => next[k] || null), d.id, orgId]);
+  if (keys.some(k => ["address", "city", "state", "zip"].includes(k))) {
+    try { await markDonorsForGeocoding(orgId, { donorIds: [d.id] }); } catch (e) { console.error("[geocode] mark after contact edit failed:", e.message); }
+  }
+  res.json({ id: d.id, changed: keys, before: Object.fromEntries(keys.map(k => [k, d[k] ?? null])),
+    sentence: `${d.name}'s ${keys.map(k => k === "address2" ? "address" : k).filter((x, i, a) => a.indexOf(x) === i).join(", ")} ${keys.length === 1 ? "is" : "are"} changed.` });
+}));
+
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });

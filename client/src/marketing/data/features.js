@@ -94,7 +94,7 @@ export const FEATURE_CATS = { drift: "keep focus", journeys: "keep", "major-gift
 export const OPEN_API_HREF = "/connections#api";
 export const FEATURE_EXTRAS = [
   { n: "Steward Volunteer", s: "Shifts, kiosk check-in, waivers and hours.", i: "hand", h: "/volunteer", c: "run" },
-  { n: "Steward Agent", s: "Six assistants that draft, then wait for your yes.", i: "spark", h: "/agent", c: "focus" },
+  { n: "Steward Agent", s: "Tell it what happened. It does the work, after your yes.", i: "spark", h: "/agent", c: "focus" },
   { n: "Connections", s: "Keep your giving tools. Steward watches every one.", i: "link", h: "/connections", c: "run raise" },
   { n: "Open API", s: "Scoped keys and webhooks for your own tools.", i: "code", h: OPEN_API_HREF, c: "run" },
   { n: "Moving to Steward", s: "About a day of your time, matched to the cent.", i: "import", h: "/move", c: "run" },

@@ -100,6 +100,15 @@ async function run(sql, params = []) {
 }
 
 // Transaction helper — acquire a dedicated client, run fn(client) inside BEGIN/COMMIT
+// AGENT-2: a client with NO transaction: each statement commits on its own.
+// The Agent's run writes through the same routes the screens use, which run on
+// the pool; holding a transaction open around them would lock the rows those
+// routes then wait for.
+async function withClient(fn) {
+  const client = await pool.connect();
+  try { return await fn(client); } finally { client.release(); }
+}
+
 async function withTransaction(fn) {
   const client = await pool.connect();
   try {
@@ -6730,6 +6739,22 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (org_id, kind, key)
     )`);
+  // AGENT-2: A MERGE SOMEBODY PROPOSED. The Agent never merges two people;
+  // told "merge the two Ellen Parks" it puts the pair at the top of CLEAN-1's
+  // duplicate queue with the instruction as the reason, and a person commits
+  // the merge there. The pair is stored in key order (dataHealth pairKey).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS merge_proposals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      a TEXT NOT NULL,
+      b TEXT NOT NULL,
+      reason TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_merge_proposals_pair ON merge_proposals (org_id, a, b)`);
   // One row per run (after an import, once a night, or by hand): the counts
   // as they stood, and how many possible duplicates the import itself left.
   await pool.query(`
@@ -6760,6 +6785,14 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_addr_history_donor ON donor_address_history (org_id, donor_id, created_at DESC)`);
+  // AGENT-2: an address changed on purpose (PATCH /donors/:id/contact) is history too.
+  await pool.query(`DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'donor_address_history_source_check'
+               AND pg_get_constraintdef(oid) NOT LIKE '%edit%') THEN
+      ALTER TABLE donor_address_history DROP CONSTRAINT donor_address_history_source_check;
+      ALTER TABLE donor_address_history ADD CONSTRAINT donor_address_history_source_check
+        CHECK (source IN ('tidy','ncoa','ncoa_unmailable','edit'));
+    END IF; END $$`);
   // A change-of-address (NCOA) file a licensed provider returned, and each
   // move in it. A move waits for a person to approve it.
   await pool.query(`
@@ -7562,4 +7595,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };
+module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };

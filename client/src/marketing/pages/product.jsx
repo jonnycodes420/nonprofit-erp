@@ -22,7 +22,7 @@ export function Platform() {
         sh="Every number opens." sp="Click any total on any screen and see the gifts behind it. The board gets numbers you can defend."
         ui={<Ui t="Month end · September" k="finance" tots={[["Gifts recorded", "all sources", "412"], ["Stripe payouts", "matched", "$31,204.55", 1], ["Fees", "card processing", "$912.10"], ["Bookkeeper file", "ready", "Download"]]} />} />
     </div></section>
-    <Cards eb="Explore the platform" h="Three products, <b>one record.</b>" list={[["/crm", "Steward CRM", "The donor record, drift, journeys, major gifts, forms, events and reports.", "people"], ["/volunteer", "Steward Volunteer", "Shifts, waitlists, kiosk check-in, waivers and hours.", "hand"], ["/agent", "Steward Agent", "Six assistants that draft and organize, then wait for your yes.", "spark"], ["/connections", "Connections", "Keep your giving tools. Steward watches every one.", "link"], ["/move", "Moving to Steward", "About a day of your time, matched to the cent.", "import"], ["/onboarding", "Onboarding and support", "A named person for the move and the first month.", "check"]]} />
+    <Cards eb="Explore the platform" h="Three products, <b>one record.</b>" list={[["/crm", "Steward CRM", "The donor record, drift, journeys, major gifts, forms, events and reports.", "people"], ["/volunteer", "Steward Volunteer", "Shifts, waitlists, kiosk check-in, waivers and hours.", "hand"], ["/agent", "Steward Agent", "Tell it what happened. It does the work, after your yes.", "spark"], ["/connections", "Connections", "Keep your giving tools. Steward watches every one.", "link"], ["/move", "Moving to Steward", "About a day of your time, matched to the cent.", "import"], ["/onboarding", "Onboarding and support", "A named person for the move and the first month.", "check"]]} />
     <FinalCta />
   </>;
 }
@@ -72,15 +72,17 @@ export function Volunteer() {
 export function Agent() {
   return <>
     <Hero eyebrow="Steward Agent" crumbs={[["Platform", "/platform"], ["Steward Agent"]]} h="Say what you need. <b>Approve the plan.</b>"
-      lede="Six assistants that read your whole file, show you exactly what they intend to do and wait for your yes. They draft and organize. They never send to a donor and never touch money."
+      lede="Tell it what happened and it does the work: updates the record, logs the call, signs up the volunteer, starts the journey. It shows you the plan first and checks every step after. It never sends to a donor and never records money on its own."
       photo="laptop-coffee" proof={["Plan first, then approve", "Every action can be undone", "Never sends on its own"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
-      <Block tint="brass-tint" h="A plan you can read before anything happens." p={"Ask for \"thank-you drafts for everyone who gave over $500 this week\" and the Agent shows the list, the drafts and the steps. You change what you want, then approve."}
-        ui={<Ui t="Agent · plan" k="spark" rows={[["1", "Find gifts over $500", "Since Monday · 23 donors", "Done", "c"], ["2", "Draft thank-you letters", "In your voice, signed by Dana", "Review"], ["3", "Add a call task for 4 board prospects", "Assigned to Dana", "Review"]]} />} />
+      <Block tint="brass-tint" h="A plan you can read before anything happens." p={"Type \"Ada just became a volunteer and wants to do 15 hours a week\" and the Agent shows one short plan. Say yes and Ada is on the Volunteers page with 15 hours a week, on the record she already had. Each step says Done only once Steward has looked and found it there."}
+        ui={<Ui t="Agent · plan" k="spark" rows={[["1", "Make Ada a volunteer, 15 hours a week", "Same record · in the Volunteers group", "Done", "c"], ["2", "Draft a welcome to Ada", "In your voice, for you to send", "Review"]]} />} />
+      <Block flip tint="cream" h="The work, not a note about the work." p={"People: a new email, phone or address, an owner, a stage, a group, a household. Conversations: a call, meeting or email logged with its date, and the next step set. Volunteers: the volunteer record, a shift, hours given. Journeys started or stopped, a name on a free event's guest list, a gift marked thanked, a duplicate proposed for you to merge. A gift you tell it about becomes one card you record with one click. What it cannot do, the plan says in one sentence at the top."}
+        ui={<Ui t="Agent · what it did" k="spark" rows={[["1", "Logged a call with Margaret", "Today · last contact updated", "Done", "c"], ["2", "Set her next step: meet in November", "Due Nov 3", "Done", "c"], ["3", "Gift from the Sunrise Foundation", "$5,000 · waiting for you to record", "Review"]]} />} />
       <Block flip tint="emerald-tint" h="Every action recorded, every action reversible." p="Whatever the Agent does is in the audit log with who approved it. Changed your mind? Undo it from the same screen." photo="team-pointing-wide" />
     </div></section>
     <AgentCrew />
-    <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. The Agent never touches payments, and gift changes go through the normal screens with the audit log."], ["Is the Agent included?", "Yes, on every plan."]]} />
+    <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. It prepares a gift you tell it about as one card, and you record it. It never records, changes or refunds a gift itself."], ["What if it cannot do part of what I asked?", "The plan says so in one sentence at the top. It never leaves a note or a tag in place of the thing you asked for."], ["Is the Agent included?", "Yes, on every plan."]]} />
     <FinalCta />
   </>;
 }
@@ -124,7 +126,7 @@ export function Onboarding() {
 export function Features() {
   return <>
     <Hero eyebrow="Features" crumbs={[["Features"]]} h="Everything included, <b>nothing to unlock.</b>" lede="Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." />
-    <Cards list={FEATURE_SLUGS.map(featureCard).concat([["/volunteer", "Steward Volunteer", "Shifts, hours, waivers and kiosk.", "hand"], ["/agent", "Steward Agent", "Six assistants that draft, then wait for your yes.", "spark"], [OPEN_API_HREF, "Open API", "Scoped keys and webhooks.", "code"]])} />
+    <Cards list={FEATURE_SLUGS.map(featureCard).concat([["/volunteer", "Steward Volunteer", "Shifts, hours, waivers and kiosk.", "hand"], ["/agent", "Steward Agent", "Tell it what happened. It does the work, after your yes.", "spark"], [OPEN_API_HREF, "Open API", "Scoped keys and webhooks.", "code"]])} />
     <FinalCta />
   </>;
 }

@@ -154,6 +154,8 @@ CORE=(
   parity1-donor-tags
   parity1-groups-journeys
   parity3-volunteers
+  agent2-volunteer
+  agent2-gift
   why1-sentence-check
   fix12-ai-switch
   fix12-recipe-drafts

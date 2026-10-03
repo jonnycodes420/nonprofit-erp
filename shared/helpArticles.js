@@ -382,6 +382,16 @@ export const HELP_ARTICLES = [
       { h: `What you see`, p: [
         `Five tabs: Plans, Ask, Workflows, Waiting for you and Guardrails. Steward reads, counts, finds people and drafts. It never records money on its own, refunds, changes a pledge or a monthly gift, or issues a tax receipt.`,
       ]},
+      { h: `What it can do for you`, p: [
+        `Tell it in your own words and it does the work through the same buttons you would press, as you, and checks each result before it says Done:`,
+        `People: change an email, phone or address; make a colleague someone's owner; move their stage; add them to or take them out of a group; put them in a household.`,
+        `Conversations: log a call, meeting or email with its date, which updates last contact everywhere; set or replace their next step with a due date.`,
+        `Volunteers: make someone a volunteer with hours a week, days and roles; sign them up for a shift; log hours they gave.`,
+        `Journeys and events: start or stop a journey for one person or a list; put someone on the guest list of a free event.`,
+        `Gifts: when you tell it a gift arrived, it prepares the gift as one card, and nothing is recorded until you press Record. It can mark a gift thanked.`,
+        `Duplicates: it proposes that two records are one person, at the top of Data health, and you press Merge.`,
+        `If part of what you asked is something it cannot do, the plan says so in one sentence at the top instead of leaving a note. If a name matches more than one person, it asks which before it changes anything. A step that ran but whose result is not there says Failed, with the reason, never Done. Everything it does is in the audit log as the Agent, approved by you, with your words as the reason, and can be undone for thirty days.`,
+      ]},
       { h: `Ask for something`, steps: [
         `In Plans, type what you want, for example "Draft a thank-you to every donor who gave this month".`,
         `Click "Show me the plan". Steward lists each step.`,
