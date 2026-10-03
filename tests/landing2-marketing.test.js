@@ -28,7 +28,7 @@
 //
 // LANDING-3 added four, each one a thing that was on the site before it:
 //  11. the word "tour" on any button. There is no tour: every hero offers
-//      Book a demo and Start free, and the Why tabs say Learn more.
+//      Book a call and Start free, and the Why tabs say Learn more.
 //  12. a people carousel. TeamReel, .reel, .track-of-people and .tm are
 //      deleted, not hidden, and no route may render one. The research
 //      marquee (.marq) is not a people carousel and is deliberately allowed.
@@ -86,6 +86,11 @@ const files = [];
 const rel = p => path.relative(ROOT, p);
 const SRC_TEXT = Object.fromEntries(files.map(p => [rel(p), fs.readFileSync(p, "utf8")]));
 const ALL = Object.values(SRC_TEXT).join("\n");
+// CONTENT-1b · pages the site serves from outside client/src/marketing: the
+// help centre and What's new. They are prerendered and crawled like the rest,
+// so the competitor and outcome-word rules read them too.
+const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, "shared", "helpArticles.js"), "utf8"),
+  ...Object.fromEntries(fs.readdirSync(path.join(ROOT, "docs", "changelog")).filter(f => f.endsWith(".md")).map(f => ["docs/changelog/" + f, fs.readFileSync(path.join(ROOT, "docs", "changelog", f), "utf8")])) };
 
 (async () => {
   const { ROUTES, APP_LINK_TARGETS } = await import(path.join(MK, "routes.js"));
@@ -103,8 +108,8 @@ const ALL = Object.values(SRC_TEXT).join("\n");
   {
     const BANNED = [/\brecovered\b/i, /\bre-engaged\b/i, /\breengaged\b/i, /\brecaptured\b/i, /\bwon back\b/i, /\bbrought back\b/i];
     const hits = [];
-    for (const [f, t] of Object.entries(SRC_TEXT)) for (const re of BANNED) if (re.test(t)) hits.push(f + " " + re);
-    ok("none of the banned outcome words", hits.length === 0, hits);
+    for (const [f, t] of Object.entries({ ...SRC_TEXT, ...SERVED_TEXT })) for (const re of BANNED) if (re.test(t)) hits.push(f + " " + re);
+    ok("none of the banned outcome words, on the marketing pages, the help centre or What's new", hits.length === 0, hits);
   }
   {
     // Donor-CRM and fundraising-suite vendors. The giving tools Steward
@@ -116,8 +121,8 @@ const ALL = Object.values(SRC_TEXT).join("\n");
       "Bonterra", "EveryAction", "Network for Good", "Kindsight", "Funraise", "Classy", "Qgiv", "DonorSnap", "CiviCRM", "Arreva",
       "Donor Tools", "Givesmart", "GiveSmart", "OneCause", "Double the Donation", "Sumac", "Aplos", "Dataro", "Gravyty", "iWave"];
     const hits = [];
-    for (const [f, t] of Object.entries(SRC_TEXT)) for (const c of COMPETITORS) if (new RegExp("\\b" + c.replace(/'/g, "['’]") + "\\b").test(t)) hits.push(f + " " + c);
-    ok("no competitor name anywhere on the marketing pages", hits.length === 0, hits);
+    for (const [f, t] of Object.entries({ ...SRC_TEXT, ...SERVED_TEXT })) for (const c of COMPETITORS) if (new RegExp("\\b" + c.replace(/'/g, "['’]") + "\\b").test(t)) hits.push(f + " " + c);
+    ok("no competitor name anywhere on the marketing pages, the help centre or What's new", hits.length === 0, hits);
   }
   {
     ok("APPROVED_TESTIMONIALS is the (empty) approved list", Array.isArray(research.APPROVED_TESTIMONIALS) && research.APPROVED_TESTIMONIALS.length === 0);
@@ -400,18 +405,32 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     }
     ok("every menu entry or card that names Lost & Found links to it", named.length >= 3 && named.every(([, h]) => /^(\/tools)?\/lost-and-found$/.test(h)), named);
 
-    // No "Book a call" anywhere a visitor can reach: the marketing source, the
-    // audit page, the signup page and the price list they both read.
+    // CONTENT-1b turned this around. FIX-13 banned "Book a call"; the call is
+    // what /demo books, so it is now the ONLY name for it. "Book a call" on
+    // every button and link that books the 20-minute call, and "Book a demo"
+    // nowhere a visitor can reach: the marketing source, the audit page, the
+    // signup page and the price list they both read. The /demo route and the
+    // lead's book-a-demo source tag are unchanged.
     const reach = { ...SRC_TEXT,
       "client/src/pages/LostAndFound.jsx": lfSrc,
       "client/src/pages/SignupPage.jsx": fs.readFileSync(path.join(ROOT, "client", "src", "pages", "SignupPage.jsx"), "utf8"),
       "pricing.json": fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8") };
-    const calls = Object.entries(reach).filter(([, t]) => /Book a call/i.test(t)).map(([f]) => f);
-    ok("no \"Book a call\" anywhere on the site", calls.length === 0, calls);
+    const demos = Object.entries(reach).filter(([, t]) => /Book a (20-minute )?demo/i.test(t)).map(([f]) => f);
+    ok("no \"Book a demo\" anywhere on the site", demos.length === 0, demos);
+    // Every link to /demo, in any file a visitor reaches, is labelled Book a call.
+    const toDemo = [];
+    for (const [f, t] of Object.entries(reach)) for (const m of t.matchAll(/(?:href|to)="\/demo"[^>]*>\s*(?:<i><\/i>)?\s*([^<]*?)\s*</g)) toDemo.push([f, m[1]]);
+    const wrong = toDemo.filter(([, label]) => label !== "Book a call" && label !== "{TALK.cta}" && label !== "{TALK_TO_US.cta}");
+    ok("every button and link to /demo says Book a call (" + toDemo.length + ")", toDemo.length >= 15 && wrong.length === 0, wrong);
+    ok("…including the header, every hero and the closing call to action",
+      /href="\/demo"><i><\/i>Book a call<\/A>/.test(SRC_TEXT["client/src/marketing/Site.jsx"])
+        && /<Pill href="\/demo">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"].slice(SRC_TEXT["client/src/marketing/lib.jsx"].indexOf("export function Hero")))
+        && /<Pill kind="white" href="\/demo">Book a call<\/Pill>/.test(SRC_TEXT["client/src/marketing/lib.jsx"]));
+    ok("the signup page's link to a call says Book a 20-minute call", /data-testid="signup-book"[^>]*>Book a 20-minute call</.test(reach["client/src/pages/SignupPage.jsx"]));
     const PRICING = JSON.parse(reach["pricing.json"]);
     const pricing = SRC_TEXT["client/src/marketing/pages/pricing.jsx"];
-    ok("the Forest card's button says Talk to us and opens Book a demo",
-      PRICING.talkToUs.name === "Forest" && PRICING.talkToUs.cta === "Talk to us" && /<Pill kind="soft" href="\/demo">\{TALK\.cta\}<\/Pill>/.test(pricing));
+    ok("the Forest card's button says Book a call and opens /demo",
+      PRICING.talkToUs.name === "Forest" && PRICING.talkToUs.cta === "Book a call" && /<Pill kind="soft" href="\/demo">\{TALK\.cta\}<\/Pill>/.test(pricing));
 
     // Every plan's Start link carries plan= (and the interval) into /signup,
     // and /signup preselects both.
@@ -584,7 +603,7 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     ok("the four new articles are there, 900 to 1,400 words each", NEW_ARTICLES.every(s => ARTICLE[s] && words(ARTICLE[s]) >= 900 && words(ARTICLE[s]) <= 1500),
       NEW_ARTICLES.map(s => s + " " + (ARTICLE[s] ? words(ARTICLE[s]) : "missing")));
     const endsRight = ROUTES.filter(r => r.page === "article" || r.page === "glossaryTerm").filter(r => { const h = render(r.path); return !h.includes('href="/tools/lost-and-found"') || !h.includes('href="/demo"'); }).map(r => r.path);
-    ok("every article and glossary page ends with Lost & Found and Book a demo", endsRight.length === 0, endsRight);
+    ok("every article and glossary page ends with Lost & Found and Book a call", endsRight.length === 0, endsRight);
 
     // 19 · new copy names no plan, no active donor, no records, and there are no "vs" pages.
     const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];

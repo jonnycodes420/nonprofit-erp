@@ -1,6 +1,6 @@
 // LANDING-2 · the Why Steward menu and the Company pages: the case for
 // retention, moving, who it's for, security, about, leadership, partners,
-// contact, and Book a demo.
+// contact, and Book a call.
 import { useState } from "react";
 import { Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Photo, Tick, Icon, A, Prose } from "../lib";
 import { AUD, AUDIENCE_SLUGS } from "../data/audiences";
@@ -96,9 +96,9 @@ export function MoveSpreadsheet() {
     <FaqS items={[["Which files can Steward read?", "CSV, TSV and Excel files (.xlsx and .xls). You can also paste CSV text straight in."], ["Our donors and gifts are on two sheets. Is that a problem?", "No. If one workbook has a donors sheet and a gifts sheet, Steward offers to import both at once and links each gift to its donor."], ["Do we have to use the template?", "No. It is a shortcut. Steward reads your own headings and asks about any it is not sure of, once."], ["Will donors hear anything when we import?", "No. An import is history. It sends nothing to anyone and starts nothing on its own."]]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="callout">
-        <b>Bring your sheet to a demo.</b>
+        <b>Bring your sheet to a call.</b>
         <p>In 20 minutes we will show you your own donors in Steward. Or run the free Lost & Found audit on your giving export first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a demo</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -133,9 +133,9 @@ export function MoveCrm() {
     <FaqS items={[["Our system is not one you have a how-to for. Can we still move?", "Yes. The contacts and gifts exports work from almost any system. The mapper shows every column and asks which is which, once, before anything is written."], ["What if the totals do not match?", "The Move Report says by how much, and lists the rows behind the difference. A row that was set aside is listed by line number with the reason, so nothing goes missing quietly."], ["Can we keep using our old system for a while?", "Yes. Run both, and import a newer export whenever you like. Gifts already in Steward are skipped by their ID, and you see only what is new."], ["Can we undo it?", "Each time the import joins two rows into one person, that join has its own Undo. \"We've moved\" can be undone for 30 days and deletes nothing."]]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="callout">
-        <b>Bring your export to a demo.</b>
+        <b>Bring your export to a call.</b>
         <p>In 20 minutes we will show you your own donors in Steward and what your move looks like. Or run the free Lost & Found audit on a giving export first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a demo</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -172,8 +172,8 @@ export function MoveGivingPlatform() {
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="callout">
         <b>See your own donors in Steward.</b>
-        <p>Bring a giving export to a 20-minute demo. Or run the free Lost & Found audit on it first. It runs in your browser and nothing is uploaded.</p>
-        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a demo</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
+        <p>Bring a giving export to a 20-minute call. Or run the free Lost & Found audit on it first. It runs in your browser and nothing is uploaded.</p>
+        <div className="ctas" style={{ marginTop: 6 }}><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/tools/lost-and-found">Run Lost & Found</Pill></div>
       </div>
     </div></section>
     <FinalCta />
@@ -223,7 +223,7 @@ export function About() {
         <div className="eyebrow">About Steward</div>
         <h1 className="mix h-xl">Small shops deserve <b>great software.</b></h1>
         <p className="lede">Most nonprofits are run by a handful of people doing the work of twenty. Steward exists so the few people raising the money can spend their time on donors, not on software.</p>
-        <div className="ctas"><Pill href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+        <div className="ctas"><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
       </div>
     </div></section>
 
@@ -339,7 +339,7 @@ export function Contact() {
         <div className="eyebrow">Contact</div>
         <h1 className="mix h-xl">Talk to <b>a person.</b></h1>
         <p className="lede">Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder.</p>
-        <div className="ctas"><Pill href="mailto:jonathan@stewardapp.dev">Email jonathan@stewardapp.dev</Pill><Pill kind="soft" href="/demo">Book a demo</Pill></div>
+        <div className="ctas"><Pill href="mailto:jonathan@stewardapp.dev">Email jonathan@stewardapp.dev</Pill><Pill kind="soft" href="/demo">Book a call</Pill></div>
         <p style={{ marginTop: 30, color: "var(--grey)" }}>{LEGAL_ENTITY_NAME} · {PLACE}</p>
       </div>
       <Portrait src={TEAM[0][2]} name={TEAM[0][0]} />
@@ -348,7 +348,7 @@ export function Contact() {
   </>;
 }
 
-// BOOK A DEMO. The request is stored as a lead in the same table the Lost &
+// BOOK A CALL. The request is stored as a lead in the same table the Lost &
 // Found leads live in (POST /lost-and-found/lead, which super-admin lists),
 // tagged ref "book-a-demo" so it reads as its own source there. Every field
 // on the form is sent, by name: the three the audit's lead also has, plus the
@@ -381,10 +381,10 @@ export function Demo() {
   }
 
   return <>
-    <Crumbs list={[["Book a demo"]]} />
+    <Crumbs list={[["Book a call"]]} />
     <section className="hero phero"><div className="wrap hero-g">
       <div>
-        <div className="eyebrow">Book a demo</div>
+        <div className="eyebrow">Book a call</div>
         <h1 className="mix h-xl">Twenty minutes, <b>your own file.</b></h1>
         <p className="lede">Bring a giving export. We will show you your own drifting donors in Steward, answer every question and tell you exactly what a move looks like.</p>
         {state === "sent" ? (

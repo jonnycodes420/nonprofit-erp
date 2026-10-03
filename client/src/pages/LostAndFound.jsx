@@ -105,7 +105,7 @@ export default function LostAndFound() {
             <Link to="/demo" style={{ background: "transparent", color: INK,
               border: `1.5px solid ${INK}`, borderRadius: 12, padding: "15px 30px",
               fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
-              Book a demo
+              Book a call
             </Link>
           </div>
         </div>

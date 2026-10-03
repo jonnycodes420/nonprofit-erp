@@ -169,7 +169,7 @@ function Header() {
         </ul>
         <div className="right">
           <A className="login" href="/login">Log in</A>
-          <A className="pill pill-ink" href="/demo"><i></i>Book a demo</A>
+          <A className="pill pill-ink" href="/demo"><i></i>Book a call</A>
           <button className="burger" type="button" aria-label="Open menu" aria-expanded={drawer ? "true" : "false"} aria-controls="drawer" onClick={() => setDrawer(!drawer)}>
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </button>
