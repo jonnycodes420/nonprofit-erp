@@ -17,7 +17,7 @@ export function ProfileTimeline(props) {
   // PARITY-3 Part 1 — every logged shift is on the timeline as Volunteer service.
   const [service, setService] = useState([]);
   const ints = props.interactions;
-  // FIX-22 — the files follow the interactions (an email that arrives carries
+  // FIX-22 · the files follow the interactions (an email that arrives carries
   // its attachments), so they reload when the list changes. Tasks and volunteer
   // hours do not, and used to reload with it: every profile asked twice.
   useEffect(() => {

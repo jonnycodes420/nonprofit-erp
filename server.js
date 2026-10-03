@@ -367,7 +367,7 @@ app.use(cors({ origin: corsOrigins, credentials: true }));
 // ── Rate limiting ────────────────────────────────────────────────────────
 // Shared 429 handler: explicit Retry-After header + a body shape that can't be
 // mistaken for a generic error (client code can key off error === "rate_limited").
-// FIX-22 — the message says WHEN, in one sentence, because a screen that hits
+// FIX-22 · the message says WHEN, in one sentence, because a screen that hits
 // a limit quotes it (apiFetch carries `message`; App's load screen and every
 // domain catch show it). "Please try again later" left a demo guessing.
 function retryWords(sec) {
@@ -404,7 +404,7 @@ const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "
 // without interfering with normal SPA usage (a dashboard load fires many
 // parallel fetches from one IP).
 //
-// FIX-22 — TWO buckets. A signed-in request is limited PER USER, high enough
+// FIX-22 · TWO buckets. A signed-in request is limited PER USER, high enough
 // that a fast human never meets it: an office on one wifi shares an IP, and a
 // per-IP limit made the whole office one person (Muse's demo walks hit it
 // twice). Everything without a valid token (forms, login, Lost & Found, the
@@ -436,7 +436,7 @@ const generalLimiter = rateLimit({
 app.use(signedInLimiter);
 app.use(generalLimiter);
 
-// FIX-22 — Ask why writes a sentence with the model on every question. Its own
+// FIX-22 · Ask why writes a sentence with the model on every question. Its own
 // ceiling, per user, is the one a person can meet only by trying: 60 an hour.
 const whyAskLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

@@ -1090,7 +1090,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   ok("§11 a conversation attachment's signed link opened signed out is a 404", sOut.status === 404, sOut.status);
   ok("§11 …and from another org is a 404", sCross.status === 404, sCross.status);
   ok("§11 …and from its own org downloads", sOwn.status === 200 && /ZZMARKB/.test(sOwn.text), sOwn.status);
-  // FIX-22 — EVERY ATTACHMENT THE APP LISTS OPENS. The timeline counted an
+  // FIX-22 · EVERY ATTACHMENT THE APP LISTS OPENS. The timeline counted an
   // email's attachment that nothing could open. Each file the profile lists
   // must download for its own org and 404 signed out and from another org; an
   // email's attachment (counted, never kept) must carry a link to the message

@@ -140,7 +140,7 @@ function AppShell() {
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
-  // FIX-22 — a rate limit is not an outage: the screen says so, and when.
+  // FIX-22 · a rate limit is not an outage: the screen says so, and when.
   const [loadLimited,setLoadLimited]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
   const [subscribedToast,setSubscribedToast]=useState(false);

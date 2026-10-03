@@ -1361,7 +1361,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     `SELECT id, note, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
       ORDER BY date DESC, created_at DESC LIMIT 400`, [orgId, donorId]);
   const threads = new Map();
-  // FIX-22 — AN ATTACHMENT THE TIMELINE COUNTS MUST OPEN SOMEWHERE. Mailbox
+  // FIX-22 · AN ATTACHMENT THE TIMELINE COUNTS MUST OPEN SOMEWHERE. Mailbox
   // sync counts attachments and never keeps them (shared/mailboxLog.js, and the
   // sentence she agreed to when she connected). The file stays in the mailbox
   // it arrived in, so the count carries a link back to that message there.

@@ -248,7 +248,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
     items.push({ kind: "service", bucket: "service", id: "v:" + v.id, date: String(v.date || "").slice(0, 10), v });
   }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  // FIX-22 — and the attachments an email arrived with, which stay in the
+  // FIX-22 · and the attachments an email arrived with, which stay in the
   // mailbox they came to: listed here too, each opening that message there.
   const mailFiles = (rel.emailThreads || []).flatMap(t => t.mailFiles || []);
   const fileItems = (attachments || []).map(f => ({ kind: "file", bucket: "file", id: "f:" + f.id,
@@ -416,7 +416,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   );
 }
 
-// FIX-22 — "1 attachment" on an email opens the message where the file is.
+// FIX-22 · "1 attachment" on an email opens the message where the file is.
 function MailFileLinks({ files }) {
   const list = (files || []).filter(f => f.url);
   if (!list.length) return null;

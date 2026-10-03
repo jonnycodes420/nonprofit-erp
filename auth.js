@@ -12,7 +12,7 @@ function signToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "7d" });
 }
 
-// FIX-22 — the user a request is signed in as, from its bearer token, or null.
+// FIX-22 · the user a request is signed in as, from its bearer token, or null.
 // Used only to KEY a rate limiter (an office on one wifi must never share a
 // limit): a valid signature is enough here, because requireAuth still decides
 // whether the session is alive. A forged or expired token keys by IP.
