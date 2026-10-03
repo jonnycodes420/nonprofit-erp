@@ -879,6 +879,13 @@ function registerJourneyEngine(fn) { _journeyEngine = fn; }
 // at mount time, for the same reason the journey engine is: that file is
 // required after this one's body has run.
 let _volunteerReminders = null;
+// PARITY-3 — two more seams of the same kind. The one draft sender (crm.js
+// sendMilestoneDraft, every mail rule applied at the press), handed to the
+// volunteer routes so a coordinator's "Send all" goes through it; and the one
+// sign-up path (volunteerScheduling signUp), handed to Your page so a
+// volunteer joining a shift there is decided by the same locked transaction.
+let _sendDraft = null;
+let _volunteerSignUp = null;
 // ── VOL-2 item 5 · THE SWEEP HAS A TIMER NOW ─────────────────────────────
 // VOL-1 shipped the sweep and its admin route and left it driven by hand,
 // which means a reminder the day before a shift only went out if somebody
@@ -899,7 +906,7 @@ async function runVolunteerRemindersTick() {
   if (typeof _volunteerReminders !== "function") return;
   try {
     const out = await _volunteerReminders();
-    if (out && out.sent) console.log(`[volunteer] reminders: ${out.sent} sent, ${out.skipped || 0} skipped`);
+    if (out && out.drafted) console.log(`[volunteer] reminders: ${out.drafted} drafted for staff to send`);
   } catch (e) { console.error("[volunteer] reminder sweep:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
@@ -3772,11 +3779,15 @@ async function markVolunteer(orgId, personId, client = null) {
 
 async function insertShift(orgId, personId, shift, { via, importKey = null, who }) {
   const rows = await query(
-    `INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,note,via,import_key,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,note,via,import_key,created_by,created_by_name,
+                                   opportunity_id,slot_id,start_time,end_time)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, import_key) WHERE import_key IS NOT NULL DO NOTHING RETURNING id`,
     ["vs_" + uuid().slice(0, 10), orgId, personId, shift.date, shift.hundredths / 100, shift.role, shift.note || null,
-     via, importKey, who.id, who.name]);
+     via, importKey, who.id, who.name,
+     // PARITY-3 — which opportunity and shift the hours were given to, and the
+     // clock times when they were logged that way. All optional.
+     shift.opportunityId || null, shift.slotId || null, shift.startTime || null, shift.endTime || null]);
   if (rows.length) await markVolunteer(orgId, personId);
   return rows[0]?.id || null;
 }
@@ -10409,6 +10420,7 @@ require("./routes/volunteer").mount({
 let _supporterSession = null;
 require("./routes/supporter").mount({
   registerSupporterSession: fns => { _supporterSession = fns; },
+  volunteerSignUp: (...a) => _volunteerSignUp(...a),
   DONOR_MAIL_ADDR, actor, brandEmailHeaderHtml, checkWriteAccess, crypto, demoMailNote, donateLimiter,
   donorFacingOrgName, fromWithDisplayName, orgSendingIdentity, orgToday, orgTz, publicAppUrl,
   query, requireAuth, resend, resolveOrgBrandTheme, run, sendDonorLifecycleEmail, stripe, testMode,
@@ -10471,6 +10483,8 @@ require("./routes/volunteerScheduling").mount({
   // The reminder sweep registers itself here so the background tick can call
   // it without this file importing the router's internals.
   registerVolunteerReminders: fn => { _volunteerReminders = fn; },
+  registerVolunteerSignUp: fn => { _volunteerSignUp = fn; },
+  sendDraft: (...a) => _sendDraft(...a),
   supporterSession: { mint: (...a) => _supporterSession.mint(...a), setCookie: (...a) => _supporterSession.setCookie(...a) },
 });
 require("./routes/agent").mount({
@@ -10507,6 +10521,7 @@ require("./routes/give").mount({
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({
+  registerDraftSender: fn => { _sendDraft = fn; },
   // INT-5 — queueing a webhook. It never posts inline: a gift must not fail
   // because somebody's endpoint is down.
   emitWebhook,

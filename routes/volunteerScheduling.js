@@ -35,7 +35,7 @@ const {
   actor, checkWriteAccess, crypto, donateLimiter, escapeHtml, insertShift, markVolunteer, requireAdmin,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, run, uuid,
   volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, resend,
-  displayNameCase, donorFacingOrgName, supporterSession,
+  displayNameCase, donorFacingOrgName, supporterSession, sendDraft,
 } = ctx;
 
 let app = routers.r0;
@@ -197,10 +197,15 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   const v = VS.validateSlot(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
   const who = actor(req), id = "vsl_" + uuid().slice(0, 10);
-  await run(
-    `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, opp.id, v.slot.date, v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes, who.id, who.name]);
+  // PARITY-3 — its name, colour, venue, place, published flag and roles.
+  await withTransaction(async tx => {
+    await runTx(tx,
+      `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, req.user.orgId, opp.id, v.slot.date, v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes,
+       v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name]);
+    if (v.slot.roles && v.slot.roles.length) await saveRolesTx(tx, req.user.orgId, id, v.slot.roles.map(r => ({ ...r, id: null })), who);
+  });
   res.status(201).json({ id, hours: v.slot.hundredths / 100 });
 }));
 
@@ -261,7 +266,7 @@ app.get("/volunteer-hub/slots/:id/signups", requireAuth, wrap(async (req, res) =
     definitions: {
       confirmed: "People with a place on this shift.",
       waitlisted: "People who signed up after it filled, in the order they signed up. The first of them takes the next place that frees.",
-      hours: "Hours are written when somebody is checked OUT, not when they sign up.",
+      hours: "Hours are written when somebody is checked in, from the shift's times, never when they sign up.",
     },
   });
 }));
@@ -568,7 +573,7 @@ async function findOrCreatePerson(orgId, { name, email }, who, out) {
 // re-read and the status decided from it. Two people pressing the button in
 // the same second cannot both take the last place: the second one waits for
 // the lock, re-reads, and is waitlisted with the sentence that says so.
-async function signUp(orgId, slotId, personId, { source, groupId = null, who, note = null }) {
+async function signUp(orgId, slotId, personId, { source, groupId = null, who, note = null, roleId = null }) {
   await READY;
   return withTransaction(async tx => {
     const q = (sql, params) => queryTx(tx, sql, params);
@@ -578,29 +583,55 @@ async function signUp(orgId, slotId, personId, { source, groupId = null, who, no
     // waitlisted with the sentence that says so.
     const [slot] = await q("SELECT * FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL FOR UPDATE", [slotId, orgId]);
     if (!slot) return { status: null, error: "slot_gone" };
+    // PARITY-3 — a draft shift is the coordinator's, not yet the volunteers'.
+    // Staff may still put somebody on it; the public page and the portal may not.
+    if (slot.published === false && (source === "public" || source === "self")) return { status: null, error: "not_published" };
     const [existing] = await q(
       "SELECT id, status FROM volunteer_signups WHERE org_id=? AND slot_id=? AND person_id=? AND status <> 'cancelled'",
       [orgId, slotId, personId]);
     if (existing) return { status: existing.status, already: true, signupId: existing.id };
-    const [counts] = await q(
-      `SELECT COUNT(*) FILTER (WHERE status='confirmed')::int AS confirmed,
+    // PARITY-3 Part 4 — A SHIFT WITH ROLES DECIDES PER ROLE. The role named,
+    // or, when none is, the first role with a place (then the first role's
+    // waiting list). Everything is read under the slot lock taken above.
+    const roles = await q("SELECT * FROM volunteer_slot_roles WHERE slot_id=? ORDER BY sort, name, id", [slotId]);
+    let role = null, counts;
+    const countFor = async rid => (await q(
+      `SELECT COUNT(*) FILTER (WHERE status IN ('confirmed','completed'))::int AS confirmed,
               COUNT(*) FILTER (WHERE status='waitlisted')::int AS waitlisted
-         FROM volunteer_signups WHERE slot_id=?`, [slotId]);
-    const st = VS.slotState({ capacity: slot.capacity, confirmed: counts.confirmed, waitlisted: counts.waitlisted });
+         FROM volunteer_signups WHERE slot_id=? AND role_id IS NOT DISTINCT FROM ?`, [slotId, rid]))[0];
+    if (roles.length) {
+      if (roleId) {
+        role = roles.find(r => r.id === roleId);
+        if (!role) return { status: null, error: "role_gone" };
+        counts = await countFor(role.id);
+      } else {
+        for (const r of roles) {
+          const c = await countFor(r.id);
+          if (c.confirmed < Number(r.needed)) { role = r; counts = c; break; }
+        }
+        if (!role) { role = roles[0]; counts = await countFor(role.id); }
+      }
+    } else {
+      [counts] = await q(
+        `SELECT COUNT(*) FILTER (WHERE status='confirmed')::int AS confirmed,
+                COUNT(*) FILTER (WHERE status='waitlisted')::int AS waitlisted
+           FROM volunteer_signups WHERE slot_id=?`, [slotId]);
+    }
+    const st = VS.slotState({ capacity: role ? role.needed : slot.capacity, confirmed: counts.confirmed, waitlisted: counts.waitlisted });
     if (st.closed) return { status: null, error: "closed" };
     const status = st.nextStatus;
     const position = status === "waitlisted" ? counts.waitlisted + 1 : null;
     const id = "vsu_" + uuid().slice(0, 12);
     await runTx(tx,
-      `INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,group_id,status,position,source,note,created_by,created_by_name)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, orgId, slotId, personId, groupId, status, position, source, note, who.id, who.name]);
+      `INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,group_id,status,position,source,note,created_by,created_by_name,role_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [id, orgId, slotId, personId, groupId, status, position, source, note, who.id, who.name, role ? role.id : null]);
     await runTx(tx, `UPDATE donors SET person_types = CASE
         WHEN person_types IS NULL THEN '["donor","volunteer"]'::jsonb
         WHEN person_types @> '["volunteer"]'::jsonb THEN person_types
         ELSE (person_types - 'other') || '["volunteer"]'::jsonb END
       WHERE id=? AND org_id=?`, [personId, orgId]);
-    return { status, position, signupId: id, slot };
+    return { status, position, signupId: id, slot, roleId: role ? role.id : null, roleName: role ? role.name : null };
   });
 }
 
@@ -619,9 +650,12 @@ async function cancelSignUp(orgId, signupId, { by }) {
     await q("SELECT id FROM volunteer_slots WHERE id=? FOR UPDATE", [su.slot_id]);
     await runTx(tx, "UPDATE volunteer_signups SET status='cancelled', cancelled_at=NOW(), updated_at=NOW() WHERE id=?", [signupId]);
     if (su.status !== "confirmed") return { ok: true, promoted: null, slotId: su.slot_id };
+    // PARITY-3 — the place freed is a place in THAT role, so the first person
+    // waiting for that role takes it (role_id NULL matches NULL: no roles).
     const waiting = await q(
       `SELECT id, status, position, created_at AS "createdAt" FROM volunteer_signups
-        WHERE slot_id=? AND status='waitlisted' ORDER BY position NULLS LAST, created_at, id`, [su.slot_id]);
+        WHERE slot_id=? AND status='waitlisted' AND role_id IS NOT DISTINCT FROM ?
+        ORDER BY position NULLS LAST, created_at, id`, [su.slot_id, su.role_id || null]);
     const next = VS.promoteFromWaitlist(waiting);
     if (!next) return { ok: true, promoted: null, slotId: su.slot_id };
     await runTx(tx, "UPDATE volunteer_signups SET status='confirmed', position=NULL, updated_at=NOW() WHERE id=?", [next.id]);
@@ -665,7 +699,7 @@ app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
   const today = orgToday(await orgTz(o.org_id));                   // ORG_TZ_SEAM_OK
   const slots = await query(
     `SELECT s.*, ${SLOT_COUNTS} FROM volunteer_slots s
-      WHERE s.opportunity_id=? AND s.cancelled_at IS NULL AND s.date >= ?
+      WHERE s.opportunity_id=? AND s.cancelled_at IS NULL AND s.date >= ? AND s.published IS NOT FALSE
       ORDER BY s.date, s.start_time LIMIT 60`, [o.id, today]);
   res.setHeader("Cache-Control", "no-store");
   // EMBEDDABLE. The same rule the donation form follows: an org drops this on
@@ -713,11 +747,17 @@ app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
     body: `<div class="card"><h1>That page is not here.</h1></div>` }));
   const brand = await brandOf(o.org_id);
   const [r] = await query(`SELECT s.*, ${SLOT_COUNTS} FROM volunteer_slots s
-                            WHERE s.id=? AND s.opportunity_id=? AND s.cancelled_at IS NULL`,
+                            WHERE s.id=? AND s.opportunity_id=? AND s.cancelled_at IS NULL AND s.published IS NOT FALSE`,
     [String(req.query.slot || ""), o.id]);
   if (!r) return res.status(404).send(publicPage({ title: "Shift not found", brand,
     body: `<div class="card"><h1>That shift is not here.</h1><p class="muted"><a href="/volunteer/${escapeHtml(o.slug)}">See the other dates</a>.</p></div>` }));
   const s = shapeSlot(r);
+  // PARITY-3 — a shift with roles asks which one. Each says how many places
+  // it has left, and a full one says that choosing it is the waiting list.
+  const { shifts: [full] } = await scheduleRows(o.org_id, { slotIds: [r.id] });
+  const roleChoice = full && full.roles.length ? `<label for="ro">What you would like to do</label>
+        <select id="ro" name="role">${full.roles.map(x => `<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)}: ${
+          x.full ? "full, join the waiting list" : `${x.needed - x.scheduled} of ${x.needed} ${x.needed === 1 ? "place" : "places"} left`}</option>`).join("")}</select>` : "";
   res.setHeader("Cache-Control", "no-store");
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", "frame-ancestors *");
@@ -733,8 +773,9 @@ app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
         <label for="n">Your name</label><input id="n" name="name" required maxlength="200" autocomplete="name">
         <label for="e">Email</label><input id="e" name="email" type="email" required maxlength="200" autocomplete="email">
         <label for="p">Phone (optional)</label><input id="p" name="phone" maxlength="40" autocomplete="tel">
+        ${roleChoice}
         <label for="no">Anything we should know (optional)</label><textarea id="no" name="note" maxlength="500"></textarea>
-        <button class="btn" type="submit">${s.full ? "Put me on the waiting list" : "Sign me up"}</button>
+        <button class="btn" type="submit">${s.full && !roleChoice ? "Put me on the waiting list" : "Sign me up"}</button>
       </form>
       <p class="small" style="margin-top:14px">Your details go to ${escapeHtml(brand.displayName || "the organisation")} and nowhere else. No account, no password.</p>
     </div>` }));
@@ -760,15 +801,16 @@ app.post("/volunteer/:slug/signup", donateLimiter, express.urlencoded({ extended
       `<div class="card"><div class="err">Please give your name and an email address.</div>
        <p><a href="/volunteer/${escapeHtml(o.slug)}/signup?slot=${encodeURIComponent(String(req.body?.slot || ""))}">Go back</a></p></div>` }));
   }
-  const [slot] = await query("SELECT id FROM volunteer_slots WHERE id=? AND opportunity_id=? AND cancelled_at IS NULL",
+  const [slot] = await query("SELECT id FROM volunteer_slots WHERE id=? AND opportunity_id=? AND cancelled_at IS NULL AND published IS NOT FALSE",
     [String(req.body?.slot || ""), o.id]);
   if (!slot) return res.status(404).send(publicPage({ title: "Shift not found", brand,
     body: `<div class="card"><h1>That shift is not here any more.</h1><p class="muted"><a href="/volunteer/${escapeHtml(o.slug)}">See the other dates</a>.</p></div>` }));
 
   const pid = await findOrCreatePerson(o.org_id, { name, email }, SYS_PUBLIC, null);
   if (phone) await run("UPDATE donors SET phone = COALESCE(NULLIF(phone,''), ?) WHERE id=? AND org_id=?", [phone, pid, o.org_id]);
-  const r = await signUp(o.org_id, slot.id, pid, { source: "public", who: SYS_PUBLIC, note });
-  if (r.error === "closed") {
+  const pickedRole = req.body?.role ? String(req.body.role) : null;
+  const r = await signUp(o.org_id, slot.id, pid, { source: "public", who: SYS_PUBLIC, note, roleId: pickedRole });
+  if (r.error) {
     return res.send(publicPage({ title: "That shift is closed", brand,
       body: `<div class="card"><h1>That shift is closed.</h1><p class="muted"><a href="/volunteer/${escapeHtml(o.slug)}">See the other dates</a>.</p></div>` }));
   }
@@ -1093,7 +1135,7 @@ app.get("/volunteer-hub/kiosk/:slotId", requireAuth, wrap(async (req, res) => {
     slot: { ...shapeSlot(slot), opportunityName: slot.opp_name },
     people: rows.map(r => ({ signupId: r.id, personId: r.person_id, name: r.name, status: r.status,
       checkedInAt: r.checked_in_at, checkedOutAt: r.checked_out_at })),
-    sentence: "Tap a name to check somebody in, and again to check them out. Hours are the time between the two, and you can change them afterwards.",
+    sentence: "Tap a name to check somebody in. Their hours are logged from the shift's times at once, and you can change them afterwards on their record.",
   });
 }));
 
@@ -1102,23 +1144,47 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   const orgId = req.user.orgId;
   const who = req.body?.kiosk === true ? SYS_KIOSK : actor(req);
   const [su] = await query(
-    `SELECT su.*, s.date, s.start_time, s.end_time, o.name AS opp_name, d.name AS person_name
+    `SELECT su.*, s.date, s.start_time, s.end_time, s.name AS slot_name, s.opportunity_id, o.name AS opp_name,
+            d.name AS person_name, r.name AS role_name
        FROM volunteer_signups su
        JOIN volunteer_slots s ON s.id=su.slot_id
        JOIN volunteer_opportunities o ON o.id=s.opportunity_id
        JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
+       LEFT JOIN volunteer_slot_roles r ON r.id=su.role_id
       WHERE su.id=? AND su.org_id=?`, [String(req.body?.signupId || ""), orgId]);
   if (!su) return res.status(404).json({ error: "Not found" });
 
+  // PARITY-3 — CHECK-IN WRITES THE HOURS, from the shift's own times, on the
+  // shift's date: somebody checked in at a 9 to 12 shift gave three hours, and
+  // a coordinator at the door should not have to come back to the phone at
+  // noon for that to be true. The hours are a normal logged row, editable
+  // after on the person's record (a late arrival, an early finish). A
+  // thank-you DRAFT is written at the same moment; staff send it.
   if (!su.checked_in_at) {
-    await run("UPDATE volunteer_signups SET checked_in_at=NOW(), status='confirmed', updated_at=NOW() WHERE id=?", [su.id]);
-    return res.json({ ok: true, state: "checked_in",
-      message: `${su.person_name} is checked in. Tap again when they leave and Steward writes the hours.` });
+    const hundredths = VS.slotHundredths({ startTime: su.start_time, endTime: su.end_time }) || 25;
+    const before = await volunteerSummary(orgId, su.person_id);
+    const shiftId = su.hours_shift_id || await insertShift(orgId, su.person_id,
+      { date: su.date, hundredths, role: su.role_name || su.slot_name || su.opp_name, note: null,
+        opportunityId: su.opportunity_id, slotId: su.slot_id, startTime: su.start_time, endTime: su.end_time },
+      { via: "staff", who });
+    await run("UPDATE volunteer_signups SET checked_in_at=NOW(), status='confirmed', hours_shift_id=?, updated_at=NOW() WHERE id=?", [shiftId, su.id]);
+    const milestone = await noteMilestone(orgId, su.person_id, before.hundredths);
+    const thanksDraft = await draftThanksFor(orgId, su.id).catch(e => { console.error("[volunteer] thanks draft:", e.message); return null; });
+    return res.json({ ok: true, state: "checked_in", hours: hundredths / 100, shiftId, milestone, thanksDraft,
+      message: `${su.person_name} is checked in. ${hundredths / 100} hours logged from the shift's times; change them on their record if they came late or left early. A thank-you is drafted for you to send.` });
   }
   if (su.checked_out_at) {
     return res.json({ ok: true, state: "already_out", message: `${su.person_name} is already checked out.` });
   }
 
+  // PARITY-3 — hours already written at check-in: check-out only marks them
+  // done. A sign-up checked in before this build (no hours yet) still gets
+  // the clock below.
+  if (su.hours_shift_id) {
+    await run("UPDATE volunteer_signups SET checked_out_at=NOW(), status='completed', updated_at=NOW() WHERE id=?", [su.id]);
+    return res.json({ ok: true, state: "checked_out", shiftId: su.hours_shift_id,
+      message: `${su.person_name} is checked out. Their hours were logged at check-in.` });
+  }
   // CHECK-OUT: the hours are the clock, rounded to the nearest quarter hour.
   // Rounded rather than exact because nobody's day is 3.7166 hours, and a
   // grant report full of six-decimal figures is a report nobody trusts.
@@ -1162,12 +1228,16 @@ app.post("/volunteer-hub/signups", requireAuth, checkWriteAccess, wrap(async (re
   const personId = String(req.body?.personId || "");
   const [p] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [personId, orgId]);
   if (!p) return res.status(404).json({ error: "Not found", message: "That person is not on file." });
-  const r = await signUp(orgId, slot.id, p.id, { source: "staff", who });
+  const roleId = req.body?.roleId ? String(req.body.roleId) : null;
+  const r = await signUp(orgId, slot.id, p.id, { source: "staff", who, roleId });
   if (r.error === "closed") return res.status(409).json({ error: "closed", message: "That shift is closed." });
+  if (r.error === "role_gone") return res.status(404).json({ error: "Not found", message: "That role is not on this shift." });
+  const inRole = r.roleName ? ` as ${r.roleName}` : "";
+  delete r.slot;
   res.status(201).json({ ...r,
     message: r.already ? `${p.name} was already on this shift.`
-      : r.status === "waitlisted" ? `${p.name} is on the waiting list, number ${r.position}. The shift is full.`
-      : `${p.name} is confirmed.` });
+      : r.status === "waitlisted" ? `${p.name} is on the waiting list${inRole}, number ${r.position}. ${r.roleName ? "That role" : "The shift"} is full.`
+      : `${p.name} is confirmed${inRole}.` });
 }));
 
 app.post("/volunteer-hub/signups/:id/cancel", requireAuth, wrap(async (req, res) => {
@@ -1414,11 +1484,12 @@ app.get("/volunteer-hub/crossover/rows", requireAuth, wrap(async (req, res) => {
 // like every other sweep in this codebase.
 // ADMIN ONLY, the same bar as /workflows/run-sweeps: it is the scheduled
 // path, run by hand. It mails volunteers, so it is not a staff button.
+// PARITY-3: it DRAFTS now, for the caller's own org, and sends nothing.
 app.post("/volunteer-hub/run-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const out = await runVolunteerReminders();
-  res.json({ ...out, sentence: out.sent
-    ? `${out.sent} reminder${out.sent === 1 ? "" : "s"} sent for tomorrow's shifts.`
-    : "Nothing to send. Reminders go out the day before a shift, to confirmed volunteers, and only where the organisation has turned them on." });
+  const out = await runVolunteerReminders(req.user.orgId);
+  res.json({ ...out, sent: 0, sentence: out.drafted
+    ? `${out.drafted} reminder${out.drafted === 1 ? "" : "s"} drafted for tomorrow's shifts. Nothing is sent until somebody presses Send.`
+    : "Nothing new to draft. A reminder is drafted the day before a shift for each person confirmed on it." });
 }));
 
 // The switch. OFF by default and off on the demo org, and this is the only
@@ -1431,8 +1502,8 @@ app.get("/volunteer-hub/settings", requireAuth, wrap(async (req, res) => {
     waiverText: (o && o.volunteer_waiver_text) || null,
     defaultWaiverText: DEFAULT_WAIVER,
     canSend: !(o && o.is_demo_org === true),
-    sentence: "A reminder goes out the day before a shift, to the people confirmed on it, once each. "
-      + "It is off until you turn it on, and Steward sends nothing else to your volunteers.",
+    sentence: "The day before a shift, Steward drafts a reminder for each person confirmed on it. "
+      + "Nothing reaches a volunteer until somebody here presses Send.",
   });
 }));
 
@@ -1456,68 +1527,519 @@ app.patch("/volunteer-hub/settings", requireAuth, requireAdmin, checkWriteAccess
       : "Turned off. Steward will not write to your volunteers." });
 }));
 
-async function runVolunteerReminders() {
-  const out = { orgsConsidered: 0, orgsOff: 0, sent: 0, skipped: 0, failed: 0 };
-  const orgs = await query(
-    `SELECT id, name, volunteer_reminders_enabled, is_demo_org FROM orgs WHERE volunteer_reminders_enabled = TRUE`, []);
+// PARITY-3 — THE REMINDER IS A DRAFT NOW. It used to send by itself for an
+// org that had turned reminders on. The standing rule is that nothing reaches
+// a volunteer without a person pressing Send, so the hourly sweep writes a
+// draft per person on tomorrow's shifts (one per sign-up, keyed, so the extra
+// passes write nothing) and staff send them from Schedule, To send, in one
+// tap. The demo org gets drafts like any other; it never sends, at the press.
+async function runVolunteerReminders(onlyOrgId = null) {
+  const out = { orgsConsidered: 0, drafted: 0 };
+  const orgs = onlyOrgId ? [{ id: onlyOrgId }] : await query(
+    `SELECT DISTINCT s.org_id AS id FROM volunteer_slots s
+      WHERE s.cancelled_at IS NULL AND s.date BETWEEN to_char(NOW() - INTERVAL '1 day','YYYY-MM-DD') AND to_char(NOW() + INTERVAL '3 days','YYYY-MM-DD')`, []);
   for (const org of orgs) {
     out.orgsConsidered++;
-    // THE DEMO ORG NEVER SENDS. Belt and braces: orgMaySendEmail refuses it
-    // too, and this refuses it before the question is even asked.
-    if (org.is_demo_org === true) { out.orgsOff++; continue; }
-    const decision = await orgMaySendEmail(org.id);
-    if (!decision.send) { out.orgsOff++; continue; }
-    const today = orgToday(await orgTz(org.id));                   // ORG_TZ_SEAM_OK
-    const tomorrow = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10) + 1))
-      .toISOString().slice(0, 10);
-    const due = await query(
-      `SELECT su.id, d.email, d.name, s.date, s.start_time, s.end_time, o.name AS opp_name, o.location
-         FROM volunteer_signups su
-         JOIN volunteer_slots s ON s.id=su.slot_id
-         JOIN volunteer_opportunities o ON o.id=s.opportunity_id
-         JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
-        WHERE su.org_id=? AND su.status='confirmed' AND su.reminded_at IS NULL
-          AND (su.reminder_failed_at IS NULL OR su.reminder_failed_at < NOW() - INTERVAL '1 day')
-          AND s.cancelled_at IS NULL AND s.date = ? AND d.deleted_at IS NULL AND d.email IS NOT NULL`,
-      [org.id, tomorrow]);
-    const brand = await brandOf(org.id);
-    for (const r of due) {
-      // FIX-14 Part 4: the same per-person check as donor mail. A deceased,
-      // bounced, complained or unreachable volunteer gets nothing, and the
-      // row is left unclaimed so the reason is re-asked, never remembered.
-      const person = await donorMailDecision("volunteer_reminder", r.email, org.id);
-      if (!person.send) { out.skipped++; continue; }
-      // The row is CLAIMED first: a second run of the sweep finds it taken,
-      // so a retry cannot mail somebody twice.
-      const claimed = await query("UPDATE volunteer_signups SET reminded_at=NOW() WHERE id=? AND reminded_at IS NULL RETURNING id", [r.id]);
-      if (!claimed.length) { out.skipped++; continue; }
-      await resend.emails.send({
-        from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
-        to: r.email,
-        _stewardOrgId: org.id, _stewardKind: "volunteer_reminder",
-        subject: `Tomorrow: ${r.opp_name}`,
-        html: `<p>A reminder that you are signed up for <strong>${escapeHtml(r.opp_name)}</strong> tomorrow, `
-          + `${escapeHtml(VS.timeRangeWords(r.start_time, r.end_time))}.</p>`
-          + (r.location ? `<p>${escapeHtml(r.location)}</p>` : "")
-          + `<p style="font-size:13px;color:#5a554f">${escapeHtml(brand.displayName || org.name)}</p>`,
-      }).then(resp => {
-        // A refusal (the permanent block, mail off) comes back as an error, not a throw.
-        if (resp && resp.error) throw new Error(resp.error.message || resp.error.name || "refused");
-        out.sent++;
-        return run("UPDATE volunteer_signups SET reminder_error=NULL, reminder_failed_at=NULL WHERE id=?", [r.id]);
-      })
-        // WHY-1 Part 8 — NOT SENT IS NOT SENT. The claim is released and the
-        // reason kept, so the row reads as failed and the next run (no sooner
-        // than a day later, never a storm) tries once more.
-        .catch(e => { out.failed = (out.failed || 0) + 1; console.error("[volunteer] reminder not sent:", e.message);
-          return run("UPDATE volunteer_signups SET reminded_at=NULL, reminder_error=?, reminder_failed_at=NOW() WHERE id=?",
-            [String(e.message || "refused").slice(0, 300), r.id]).catch(() => {}); });
-    }
+    try {
+      const today = orgToday(await orgTz(org.id));                 // ORG_TZ_SEAM_OK
+      out.drafted += await draftRemindersFor(org.id, today);
+    } catch (e) { console.error(`[volunteer] reminder drafts ${org.id}:`, e.message); }
   }
   return out;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARITY-3 PART 4 · THE SCHEDULE: ROLES, FOOTERS, CONFLICTS, BULK, ROSTER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// A shift (a "slot" in the tables) has a name, a colour, a venue and a place
+// within it, roles that each need a number of people, and is published or a
+// draft. Every number under a shift comes from VS.shiftFooter, computed here
+// once and read by the calendar, the list, the roster and the CSV, so no two
+// of them can disagree. Capacity is still decided only by signUp above.
+
+const civilAdd = (iso, n) => VS.addDaysCivil(iso, n);
+function weekOf(today) {
+  // Monday to Sunday, the week containing the org's today.
+  const d = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10)));
+  const back = (d.getUTCDay() + 6) % 7;
+  const from = civilAdd(today, -back);
+  return { from, to: civilAdd(from, 6) };
+}
+
+// Every shift in a window (or a list of ids), with its roles, its people, its
+// footer and the conflicts its people are in.
+async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opportunityId = null } = {}) {
+  await READY;
+  const where = ["s.org_id=?", "s.cancelled_at IS NULL"], args = [orgId];
+  if (slotIds) { where.push("s.id = ANY(?)"); args.push(slotIds); }
+  else { where.push("s.date BETWEEN ? AND ?"); args.push(from, to); }
+  if (opportunityId) { where.push("s.opportunity_id = ?"); args.push(opportunityId); }
+  const slots = await query(
+    `SELECT s.*, o.name AS opp_name, o.slug AS opp_slug, o.location AS opp_location
+       FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id=s.opportunity_id AND o.org_id=s.org_id
+      WHERE ${where.join(" AND ")} ORDER BY s.date, s.start_time, s.id LIMIT 2000`, args);
+  const ids = slots.map(s => s.id);
+  const roles = ids.length ? await query(
+    `SELECT * FROM volunteer_slot_roles WHERE org_id=? AND slot_id = ANY(?) ORDER BY sort, name, id`, [orgId, ids]) : [];
+  const people = ids.length ? await query(
+    `SELECT su.id, su.slot_id, su.person_id, su.status, su.position, su.role_id, su.checked_in_at, su.checked_out_at,
+            su.hours_shift_id, d.name, d.email
+       FROM volunteer_signups su JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id AND d.deleted_at IS NULL
+      WHERE su.org_id=? AND su.slot_id = ANY(?) AND su.status IN ('confirmed','waitlisted','completed','no_show')
+      ORDER BY (su.status='waitlisted'), su.position NULLS FIRST, d.name`, [orgId, ids]) : [];
+  // Conflicts: a person's places on the same days, wherever those places are.
+  const dates = [...new Set(slots.map(s => s.date))];
+  const places = dates.length ? await query(
+    `SELECT su.person_id AS "personId", su.slot_id AS "slotId", s.date, s.start_time AS "startTime", s.end_time AS "endTime"
+       FROM volunteer_signups su JOIN volunteer_slots s ON s.id=su.slot_id AND s.org_id=su.org_id
+      WHERE su.org_id=? AND su.status IN ('confirmed','completed') AND s.cancelled_at IS NULL AND s.date = ANY(?)`,
+    [orgId, dates]) : [];
+  const conflicts = VS.findConflicts(places);
+  const inConflict = new Map();   // slotId -> Set(personId)
+  for (const c of conflicts) for (const sid of [c.a, c.b]) {
+    if (!inConflict.has(sid)) inConflict.set(sid, new Set());
+    inConflict.get(sid).add(c.personId);
+  }
+  const rolesBy = new Map(), peopleBy = new Map();
+  for (const r of roles) { if (!rolesBy.has(r.slot_id)) rolesBy.set(r.slot_id, []); rolesBy.get(r.slot_id).push(r); }
+  for (const p of people) { if (!peopleBy.has(p.slot_id)) peopleBy.set(p.slot_id, []); peopleBy.get(p.slot_id).push(p); }
+  const shapePerson = p => ({ signupId: p.id, personId: p.person_id, name: p.name, email: p.email || null,
+    status: p.status, position: p.position, roleId: p.role_id || null,
+    checkedInAt: p.checked_in_at, checkedOutAt: p.checked_out_at, hoursShiftId: p.hours_shift_id || null,
+    conflict: !!(inConflict.get(p.slot_id) && inConflict.get(p.slot_id).has(p.person_id)) });
+  const shifts = slots.map(s => {
+    const ps = peopleBy.get(s.id) || [];
+    const count = (list, st) => list.filter(p => p.status === st).length;
+    const rs = (rolesBy.get(s.id) || []).map(r => {
+      const mine = ps.filter(p => p.role_id === r.id);
+      const st = VS.roleState({ needed: r.needed, confirmed: count(mine, "confirmed"), completed: count(mine, "completed"), waitlisted: count(mine, "waitlisted") });
+      return { id: r.id, name: r.name, needed: r.needed, scheduled: st.scheduled, waitlisted: st.waitlisted, short: st.short,
+        full: st.full, people: mine.map(shapePerson) };
+    });
+    const hundredths = VS.slotHundredths({ startTime: s.start_time, endTime: s.end_time }) || 0;
+    const footer = VS.shiftFooter({ roles: rs.map(r => ({ needed: r.needed, confirmed: r.scheduled, waitlisted: r.waitlisted })),
+      capacity: s.capacity, confirmed: count(ps, "confirmed"), completed: count(ps, "completed"),
+      waitlisted: count(ps, "waitlisted"), hundredths });
+    return {
+      id: s.id, opportunityId: s.opportunity_id, opportunityName: s.opp_name, opportunitySlug: s.opp_slug,
+      name: s.name || s.opp_name, ownName: s.name || null, color: s.color || null,
+      venue: s.venue || s.opp_location || null, ownVenue: s.venue || null, locationDetail: s.location_detail || null,
+      published: s.published !== false, date: s.date, startTime: s.start_time, endTime: s.end_time,
+      when: `${dayWords(s.date)}, ${VS.timeRangeWords(s.start_time, s.end_time)}`,
+      hours: hundredths / 100, capacity: s.capacity, notes: s.notes || null,
+      roles: rs,
+      people: ps.filter(p => !p.role_id || !rs.length).map(shapePerson),
+      footer: { ...footer, hours: footer.hoursHundredths / 100 },
+      conflicts: inConflict.has(s.id) ? inConflict.get(s.id).size : 0,
+    };
+  });
+  return { shifts, conflicts };
+}
+
+// The two numbers the Volunteers screen leads with: shifts short of people
+// this week, and the conflicts in them. One function, so the count and the
+// list it opens are the same rows.
+async function weekProblems(orgId) {
+  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
+  const wk = weekOf(today);
+  const { shifts, conflicts } = await scheduleRows(orgId, { from: wk.from, to: wk.to });
+  const short = shifts.filter(s => s.published && s.footer.short > 0);
+  const names = new Map();
+  for (const s of shifts) for (const p of [...s.people, ...s.roles.flatMap(r => r.people)]) names.set(p.personId, p.name);
+  const byId = new Map(shifts.map(s => [s.id, s]));
+  const conflictRows = conflicts.filter(c => byId.has(c.a) || byId.has(c.b)).map(c => ({
+    personId: c.personId, name: names.get(c.personId) || "", date: c.date,
+    a: byId.get(c.a) ? { id: c.a, name: byId.get(c.a).name, when: byId.get(c.a).when } : { id: c.a },
+    b: byId.get(c.b) ? { id: c.b, name: byId.get(c.b).name, when: byId.get(c.b).when } : { id: c.b } }));
+  return { week: wk, today, short, conflicts: conflictRows };
+}
+
+app.get("/volunteer-hub/schedule", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
+  const okDate = d => VS.DATE_RE.test(String(d || ""));
+  const from = okDate(req.query.from) ? String(req.query.from) : weekOf(today).from;
+  let to = okDate(req.query.to) ? String(req.query.to) : civilAdd(from, 6);
+  if (to < from) to = from;
+  if (VS.daysBetweenCivil(from, to) > 62) to = civilAdd(from, 62);
+  const { shifts, conflicts } = await scheduleRows(orgId, { from, to, opportunityId: req.query.opportunityId ? String(req.query.opportunityId) : null });
+  const wp = await weekProblems(orgId);
+  const opps = await query(`SELECT id, name FROM volunteer_opportunities WHERE org_id=? AND archived_at IS NULL ORDER BY name`, [orgId]);
+  res.json({ from, to, today, shifts, conflicts: conflicts.length,
+    week: { from: wp.week.from, to: wp.week.to, short: wp.short.length, conflicts: wp.conflicts.length },
+    opportunities: opps, colours: VS.SHIFT_COLOURS, definitions: VS.FOOTER_SENTENCES,
+    sentence: shifts.length
+      ? `${shifts.length} ${shifts.length === 1 ? "shift" : "shifts"} from ${dayWords(from)} to ${dayWords(to)}. Short means a role still needs people; a conflict is somebody on two shifts at once.`
+      : "No shifts in these dates. Add one from an opportunity, or copy last week's." });
+}));
+
+// The rows behind the two week numbers: every short shift, every conflict.
+app.get("/volunteer-hub/schedule/problems", requireAuth, wrap(async (req, res) => {
+  const wp = await weekProblems(req.user.orgId);
+  res.json({ week: wp.week,
+    short: wp.short.map(s => ({ id: s.id, name: s.name, when: s.when, short: s.footer.short, needed: s.footer.needed, scheduled: s.footer.scheduled })),
+    conflicts: wp.conflicts,
+    definitions: { short: "Published shifts this week, Monday to Sunday, where at least one role still needs people.",
+      conflicts: "The same person with a place on two shifts that overlap in time. Back to back is not a conflict." } });
+}));
+
+// Fill a role from its waiting list while it has room, first come first.
+// Called inside the slot's transaction, after a role's number goes up.
+async function fillRoleTx(tx, slotId, roleId, needed) {
+  const q = (sql, params) => queryTx(tx, sql, params);
+  const promoted = [];
+  for (;;) {
+    const [c] = await q(`SELECT COUNT(*) FILTER (WHERE status IN ('confirmed','completed'))::int AS n FROM volunteer_signups
+                          WHERE slot_id=? AND role_id IS NOT DISTINCT FROM ?`, [slotId, roleId]);
+    if (needed !== null && c.n >= needed) break;
+    const waiting = await q(`SELECT id, status, position, created_at AS "createdAt" FROM volunteer_signups
+                              WHERE slot_id=? AND status='waitlisted' AND role_id IS NOT DISTINCT FROM ?
+                              ORDER BY position NULLS LAST, created_at, id`, [slotId, roleId]);
+    const next = VS.promoteFromWaitlist(waiting);
+    if (!next) break;
+    await runTx(tx, "UPDATE volunteer_signups SET status='confirmed', position=NULL, updated_at=NOW() WHERE id=?", [next.id]);
+    promoted.push(next.id);
+  }
+  return promoted;
+}
+
+// Replace a shift's roles with a list: a role with an id is updated, one
+// without is added, one left out is removed. A role somebody is on cannot be
+// removed (move them first), and is refused by name.
+async function saveRolesTx(tx, orgId, slotId, roles, who) {
+  const q = (sql, params) => queryTx(tx, sql, params);
+  const have = await q("SELECT * FROM volunteer_slot_roles WHERE slot_id=? AND org_id=?", [slotId, orgId]);
+  const keep = new Set(roles.filter(r => r.id).map(r => r.id));
+  for (const old of have) {
+    if (keep.has(old.id)) continue;
+    const [n] = await q(`SELECT COUNT(*)::int AS n FROM volunteer_signups WHERE role_id=? AND status IN ('confirmed','waitlisted','completed')`, [old.id]);
+    if (n.n) return { error: `${n.n} ${n.n === 1 ? "person is" : "people are"} on ${old.name}. Move them to another role before taking it off.` };
+    await runTx(tx, "DELETE FROM volunteer_slot_roles WHERE id=?", [old.id]);
+  }
+  let sort = 0;
+  const promoted = [];
+  for (const r of roles) {
+    if (r.id && have.some(h => h.id === r.id)) {
+      await runTx(tx, "UPDATE volunteer_slot_roles SET name=?, needed=?, sort=? WHERE id=? AND org_id=?", [r.name, r.needed, sort++, r.id, orgId]);
+      promoted.push(...await fillRoleTx(tx, slotId, r.id, r.needed));
+    } else {
+      await runTx(tx, `INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
+        ["vsr_" + uuid().slice(0, 10), orgId, slotId, r.name, r.needed, sort++, who.id, who.name]);
+    }
+  }
+  return { promoted };
+}
+
+// Change one shift: its settings, its times and its roles. A date or time
+// change keeps everybody on it; a role whose number goes up takes people
+// from its waiting list at once.
+app.patch("/volunteer-hub/slots/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId, who = actor(req);
+  const [cur] = await query("SELECT * FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL", [req.params.id, orgId]);
+  if (!cur) return res.status(404).json({ error: "Not found" });
+  const b = req.body || {};
+  const v = VS.validateSlot({
+    date: b.date !== undefined ? b.date : cur.date, startTime: b.startTime !== undefined ? b.startTime : cur.start_time,
+    endTime: b.endTime !== undefined ? b.endTime : cur.end_time, capacity: b.capacity !== undefined ? b.capacity : cur.capacity,
+    notes: b.notes !== undefined ? b.notes : cur.notes, name: b.name !== undefined ? b.name : cur.name,
+    color: b.color !== undefined ? b.color : cur.color, venue: b.venue !== undefined ? b.venue : cur.venue,
+    locationDetail: b.locationDetail !== undefined ? b.locationDetail : cur.location_detail,
+    published: b.published !== undefined ? b.published : cur.published, roles: b.roles,
+  });
+  if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
+  if (req.audit) req.audit.before({ date: cur.date, startTime: cur.start_time, endTime: cur.end_time, name: cur.name, published: cur.published });
+  const out = await withTransaction(async tx => {
+    await queryTx(tx, "SELECT id FROM volunteer_slots WHERE id=? FOR UPDATE", [cur.id]);
+    await runTx(tx, `UPDATE volunteer_slots SET date=?, start_time=?, end_time=?, capacity=?, notes=?, name=?, color=?, venue=?,
+                       location_detail=?, published=? WHERE id=? AND org_id=?`,
+      [v.slot.date, v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes, v.slot.name, v.slot.color, v.slot.venue,
+       v.slot.locationDetail, v.slot.published, cur.id, orgId]);
+    let promoted = [];
+    if (v.slot.roles) {
+      const r = await saveRolesTx(tx, orgId, cur.id, v.slot.roles, who);
+      if (r.error) return { error: r.error };
+      promoted = r.promoted;
+    } else if (v.slot.capacity !== cur.capacity) {
+      promoted = await fillRoleTx(tx, cur.id, null, v.slot.capacity);
+    }
+    return { promoted };
+  });
+  if (out.error) return res.status(409).json({ error: "role_in_use", message: out.error });
+  if (req.audit) req.audit.after({ date: v.slot.date, startTime: v.slot.startTime, endTime: v.slot.endTime, name: v.slot.name, published: v.slot.published });
+  const { shifts } = await scheduleRows(orgId, { slotIds: [cur.id] });
+  res.json({ shift: shifts[0], promoted: out.promoted.length,
+    message: out.promoted.length ? `Saved. ${out.promoted.length} ${out.promoted.length === 1 ? "person moved" : "people moved"} up from the waiting list.` : "Saved." });
+}));
+
+// ── BULK, ON SELECTED SHIFTS ─────────────────────────────────────────────
+// Copy (every week for N weeks, or to dates), move (by days, or to a date),
+// change settings, delete, or draft a message to everyone on them. Each one
+// says what it did in a sentence; a message is a DRAFT per person, never sent.
+app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId, who = actor(req);
+  const b = req.body || {};
+  const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(String))].slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: "Pick at least one shift." });
+  const slots = await query("SELECT * FROM volunteer_slots WHERE org_id=? AND id = ANY(?) AND cancelled_at IS NULL ORDER BY date, start_time", [orgId, ids]);
+  if (!slots.length) return res.status(404).json({ error: "Not found" });
+  const action = String(b.action || "");
+  if (req.audit) req.audit.action(`${action} ${slots.length} shift${slots.length === 1 ? "" : "s"}`);
+
+  if (action === "copy") {
+    let made = 0;
+    for (const s of slots) {
+      const dates = VS.copyDates(s.date, { weeks: b.weeks, dates: b.dates });
+      const roles = await query("SELECT name, needed, sort FROM volunteer_slot_roles WHERE slot_id=? ORDER BY sort", [s.id]);
+      for (const d of dates) {
+        const id = "vsl_" + uuid().slice(0, 10);
+        await run(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id, orgId, s.opportunity_id, d, s.start_time, s.end_time, s.capacity, s.notes, s.name, s.color, s.venue, s.location_detail,
+           b.published === undefined ? s.published : b.published === true, who.id, who.name]);
+        for (const r of roles) await run(`INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
+          ["vsr_" + uuid().slice(0, 10), orgId, id, r.name, r.needed, r.sort, who.id, who.name]);
+        made++;
+      }
+    }
+    if (!made) return res.status(400).json({ error: "Say how many weeks to repeat, or pick the dates to copy to." });
+    return res.json({ ok: true, made, message: `${made} ${made === 1 ? "shift" : "shifts"} made, with the same times and roles and nobody on them yet.` });
+  }
+  if (action === "move") {
+    const days = Number(b.days);
+    const toDate = VS.DATE_RE.test(String(b.date || "")) ? String(b.date) : null;
+    if (!toDate && (!Number.isInteger(days) || days === 0 || Math.abs(days) > 366)) return res.status(400).json({ error: "Move by a number of days, or to a date." });
+    for (const s of slots) await run("UPDATE volunteer_slots SET date=? WHERE id=? AND org_id=?", [toDate || civilAdd(s.date, days), s.id, orgId]);
+    const people = await query(`SELECT COUNT(DISTINCT person_id)::int AS n FROM volunteer_signups WHERE slot_id = ANY(?) AND status IN ('confirmed','waitlisted')`, [slots.map(s => s.id)]);
+    return res.json({ ok: true, moved: slots.length, message: `${slots.length} ${slots.length === 1 ? "shift" : "shifts"} moved. ${people[0].n ? `${people[0].n} ${people[0].n === 1 ? "person is" : "people are"} on them and kept their places; Steward has not told them, so draft a message if they need to know.` : "Nobody was on them."}` });
+  }
+  if (action === "settings") {
+    const sets = [], params = [];
+    if (b.published !== undefined) { sets.push("published=?"); params.push(b.published === true); }
+    if (b.color !== undefined) { if (b.color && !/^#[0-9a-fA-F]{6}$/.test(String(b.color))) return res.status(400).json({ error: "Pick one of the colours." }); sets.push("color=?"); params.push(b.color || null); }
+    if (b.venue !== undefined) { sets.push("venue=?"); params.push(String(b.venue || "").trim().slice(0, 160) || null); }
+    if (b.locationDetail !== undefined) { sets.push("location_detail=?"); params.push(String(b.locationDetail || "").trim().slice(0, 160) || null); }
+    if (b.name !== undefined) { sets.push("name=?"); params.push(String(b.name || "").trim().slice(0, 120) || null); }
+    if (!sets.length) return res.status(400).json({ error: "Nothing to change." });
+    await run(`UPDATE volunteer_slots SET ${sets.join(", ")} WHERE org_id=? AND id = ANY(?)`, [...params, orgId, slots.map(s => s.id)]);
+    return res.json({ ok: true, changed: slots.length, message: `${slots.length} ${slots.length === 1 ? "shift" : "shifts"} changed.` });
+  }
+  if (action === "delete") {
+    const affected = await query(
+      `UPDATE volunteer_signups SET status='cancelled', cancelled_at=NOW(), updated_at=NOW()
+        WHERE org_id=? AND slot_id = ANY(?) AND status IN ('confirmed','waitlisted') RETURNING person_id`, [orgId, slots.map(s => s.id)]);
+    await run("UPDATE volunteer_slots SET cancelled_at=NOW() WHERE org_id=? AND id = ANY(?)", [orgId, slots.map(s => s.id)]);
+    const n = new Set(affected.map(a => a.person_id)).size;
+    return res.json({ ok: true, deleted: slots.length, message: `${slots.length} ${slots.length === 1 ? "shift" : "shifts"} deleted. ${n ? `${n} ${n === 1 ? "person was" : "people were"} on them. Steward has not written to them: draft a message if they need to know.` : "Nobody was on them."}` });
+  }
+  if (action === "message") {
+    const subject = String(b.subject || "").trim().slice(0, 200), body = String(b.body || "").trim().slice(0, 8000);
+    if (!subject || !body) return res.status(400).json({ error: "A message needs a subject and some words." });
+    const rows = await query(
+      `SELECT DISTINCT ON (su.person_id) su.person_id, su.slot_id, d.name, d.email FROM volunteer_signups su
+         JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id AND d.deleted_at IS NULL
+        WHERE su.org_id=? AND su.slot_id = ANY(?) AND su.status IN ('confirmed','waitlisted','completed')
+        ORDER BY su.person_id, su.created_at`, [orgId, slots.map(s => s.id)]);
+    const batch = uuid().slice(0, 8);
+    let drafted = 0, noEmail = 0;
+    for (const r of rows) {
+      if (!r.email) { noEmail++; continue; }
+      const first = String(r.name || "").split(/\s+/)[0] || "there";
+      await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,'pending_review','volunteer_message',?,?,?) ON CONFLICT DO NOTHING`,
+        ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:msg:${batch}:${r.person_id}`, subject,
+         body.replace(/\{\{\s*first_name\s*\}\}/gi, first), r.slot_id, who.id, who.name]);
+      drafted++;
+    }
+    return res.json({ ok: true, drafted, batch,
+      message: `${drafted} ${drafted === 1 ? "draft" : "drafts"} written, one per person${noEmail ? `; ${noEmail} with no email were left out` : ""}. Nothing is sent until you press Send.` });
+  }
+  res.status(400).json({ error: "That is not something Steward can do to shifts." });
+}));
+
+// The selected shifts as a file: one row per person per shift, and one row
+// for a shift nobody is on yet, with the footer numbers on every row.
+app.get("/volunteer-hub/slots/export.csv", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const ids = String(req.query.ids || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: "Pick at least one shift." });
+  const { shifts } = await scheduleRows(orgId, { slotIds: ids });
+  const cell = v => { const t = v == null ? "" : String(v); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
+  const lines = [["Shift", "Opportunity", "Date", "Start", "End", "Venue", "Location", "Published", "Role", "Person", "Email", "Status", "Waiting list number",
+    "Needed", "Scheduled", "Short", "Waitlisted", "Hours scheduled"].join(",")];
+  for (const s of shifts) {
+    const base = [s.name, s.opportunityName, s.date, s.startTime, s.endTime, s.venue || "", s.locationDetail || "", s.published ? "yes" : "draft"];
+    const foot = [s.footer.needed == null ? "" : s.footer.needed, s.footer.scheduled, s.footer.short, s.footer.waitlisted, s.footer.hours];
+    const all = [...s.roles.flatMap(r => r.people.map(p => [r.name, p])), ...s.people.map(p => ["", p])];
+    if (!all.length) lines.push([...base, "", "", "", "", "", ...foot].map(cell).join(","));
+    for (const [role, p] of all) lines.push([...base, role, p.name, p.email || "", p.status, p.position || "", ...foot].map(cell).join(","));
+  }
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="shifts.csv"`);
+  res.send(lines.join("\r\n") + "\r\n");
+}));
+
+// Move somebody to another role on the same shift: cancelled from the old
+// place (which promotes the first person waiting there) and signed up for
+// the new one, which decides confirmed or waiting by the same rule.
+app.post("/volunteer-hub/signups/:id/move", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId, who = actor(req);
+  const [su] = await query(`SELECT su.*, d.name FROM volunteer_signups su JOIN donors d ON d.id=su.person_id
+                             WHERE su.id=? AND su.org_id=? AND su.status IN ('confirmed','waitlisted')`, [req.params.id, orgId]);
+  if (!su) return res.status(404).json({ error: "Not found" });
+  const slotId = req.body?.slotId ? String(req.body.slotId) : su.slot_id;
+  const roleId = req.body?.roleId ? String(req.body.roleId) : null;
+  const [slot] = await query("SELECT id FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL", [slotId, orgId]);
+  if (!slot) return res.status(404).json({ error: "Not found", message: "That shift does not exist." });
+  if (roleId) {
+    const [r] = await query("SELECT id FROM volunteer_slot_roles WHERE id=? AND slot_id=? AND org_id=?", [roleId, slotId, orgId]);
+    if (!r) return res.status(404).json({ error: "Not found", message: "That role is not on that shift." });
+  }
+  await cancelSignUp(orgId, su.id, { by: who.name });
+  const r = await signUp(orgId, slotId, su.person_id, { source: "staff", who, roleId });
+  delete r.slot;
+  res.json({ ...r, message: r.status === "waitlisted" ? `${su.name} is on the waiting list${r.roleName ? " for " + r.roleName : ""}, number ${r.position}.`
+    : `${su.name} is ${r.roleName ? "on " + r.roleName : "on that shift"}.` });
+}));
+
+// ── DRAFTS FOR STAFF TO SEND ─────────────────────────────────────────────
+// Reminders for tomorrow and thank-yous after a shift land in the one review
+// queue (milestone_drafts), keyed vol:<kind>:<signup>, so a sweep that runs
+// twice writes one draft. This is the list, and the one-tap send.
+const VOL_SOURCES = ["volunteer_reminder", "volunteer_thanks", "volunteer_message"];
+app.get("/volunteer-hub/drafts", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const kind = VOL_SOURCES.includes(String(req.query.kind || "")) ? String(req.query.kind) : null;
+  const rows = await query(
+    `SELECT md.id, md.donor_id, md.subject, md.body, md.source, md.slot_id, md.created_at, d.name, d.email
+       FROM milestone_drafts md JOIN donors d ON d.id=md.donor_id AND d.org_id=md.org_id
+      WHERE md.org_id=? AND md.status='pending_review' AND md.source = ANY(?)
+        ${kind ? "AND md.source = ?" : ""} ${req.query.slotId ? "AND md.slot_id = ?" : ""}
+      ORDER BY md.source, md.created_at, md.id LIMIT 500`,
+    [orgId, VOL_SOURCES, ...(kind ? [kind] : []), ...(req.query.slotId ? [String(req.query.slotId)] : [])]);
+  const label = { volunteer_reminder: "Reminder for tomorrow", volunteer_thanks: "Thank-you after a shift", volunteer_message: "Message about a shift" };
+  res.json({ drafts: rows.map(r => ({ id: r.id, personId: r.donor_id, name: r.name, email: r.email || null, subject: r.subject, body: r.body,
+      kind: r.source, kindLabel: label[r.source], slotId: r.slot_id, createdAt: r.created_at })),
+    sentence: "Steward wrote these. Nothing goes to a volunteer until you press Send, and each one is checked against the mail rules when you do." });
+}));
+
+app.post("/volunteer-hub/drafts/send", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map(String))].slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: "Pick the drafts to send." });
+  const drafts = await query(
+    `SELECT * FROM milestone_drafts WHERE org_id=? AND id = ANY(?) AND status='pending_review' AND source = ANY(?) ORDER BY created_at`,
+    [orgId, ids, VOL_SOURCES]);
+  let sent = 0; const failed = [];
+  for (const d of drafts) {
+    const r = await sendDraft(req, d);
+    if (r.status === 200) sent++;
+    else {
+      failed.push({ id: d.id, error: r.error });
+      // NOT SENT IS NOT SENT (WHY-1 Part 8): the draft keeps its reason, and a
+      // second press does not retry it on its own; somebody opens it.
+      await run("UPDATE milestone_drafts SET status='failed', send_error=? WHERE id=? AND status='pending_review'",
+        [String(r.error || "refused").slice(0, 300), d.id]).catch(() => {});
+    }
+  }
+  if (req.audit) req.audit.action(`sent ${sent} volunteer draft${sent === 1 ? "" : "s"}`);
+  res.json({ sent, failed, message: `${sent} sent.${failed.length ? ` ${failed.length} not sent: ${failed.map(f => f.error).filter(Boolean).slice(0, 3).join("; ")}.` : ""}` });
+}));
+
+app.post("/volunteer-hub/drafts/:id/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { changes } = await run(`UPDATE milestone_drafts SET status='dismissed' WHERE id=? AND org_id=? AND status='pending_review' AND source = ANY(?)`,
+    [req.params.id, req.user.orgId, VOL_SOURCES]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// A REMINDER, DRAFTED. For each person confirmed on tomorrow's shifts.
+async function draftRemindersFor(orgId, today) {
+  const tomorrow = civilAdd(today, 1);
+  const due = await query(
+    `SELECT su.id, su.person_id, su.slot_id, d.email, d.name, s.date, s.start_time, s.end_time,
+            COALESCE(s.name, o.name) AS shift_name, COALESCE(s.venue, o.location) AS venue, s.location_detail,
+            r.name AS role_name
+       FROM volunteer_signups su
+       JOIN volunteer_slots s ON s.id=su.slot_id
+       JOIN volunteer_opportunities o ON o.id=s.opportunity_id
+       JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
+       LEFT JOIN volunteer_slot_roles r ON r.id=su.role_id
+      WHERE su.org_id=? AND su.status='confirmed' AND s.cancelled_at IS NULL AND s.date = ?
+        AND d.deleted_at IS NULL AND d.email IS NOT NULL AND d.email <> ''`, [orgId, tomorrow]);
+  if (!due.length) return 0;
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  let n = 0;
+  for (const r of due) {
+    const first = String(r.name || "").split(/\s+/)[0] || "there";
+    const where = [r.venue, r.location_detail].filter(Boolean).join(", ");
+    const body = `Dear ${first},\n\nA reminder that you are on ${r.shift_name}${r.role_name ? ` (${r.role_name})` : ""} tomorrow, `
+      + `${dayWords(r.date)}, ${VS.timeRangeWords(r.start_time, r.end_time)}.${where ? `\n\nWhere: ${where}.` : ""}\n\n`
+      + `If you cannot make it, reply to this and we will find somebody.\n\nThank you,\n${orgName}`;
+    const ins = await query(
+      `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,'pending_review','volunteer_reminder',?,?,?)
+       ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
+      ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:reminder:${r.id}`, `Tomorrow: ${r.shift_name}`, body, r.slot_id,
+       "system:volunteer-reminders", "Steward, the day before a shift"]);
+    n += ins.length;
+  }
+  return n;
+}
+
+// A THANK-YOU, DRAFTED, after somebody is checked in. The org's own volunteer
+// thank-you template (COMMS-2, Communications, Templates) when it has saved
+// one, else Steward's starting words; the volunteer survey link (SURVEY-1)
+// when the org has chosen one. Still a draft: staff send it.
+async function draftThanksFor(orgId, signupId) {
+  await READY;
+  const [r] = await query(
+    `SELECT su.id, su.person_id, su.slot_id, d.name, d.email, COALESCE(s.name, o.name) AS shift_name
+       FROM volunteer_signups su JOIN donors d ON d.id=su.person_id AND d.org_id=su.org_id
+       JOIN volunteer_slots s ON s.id=su.slot_id JOIN volunteer_opportunities o ON o.id=s.opportunity_id
+      WHERE su.id=? AND su.org_id=?`, [signupId, orgId]);
+  if (!r || !r.email) return null;
+  const B = await import("../shared/brandKit.js");
+  const def = B.kindDef("volunteer_thanks");
+  const [tpl] = await query("SELECT subject, body FROM message_templates WHERE org_id=? AND kind='volunteer_thanks'", [orgId]);
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, org.name || "").catch(() => org.name || "");
+  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
+  const [yr] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h FROM volunteer_shifts WHERE org_id=? AND person_id=? AND LEFT(date,4)=?`,
+    [orgId, r.person_id, today.slice(0, 4)]);
+  const signature = [org.receipt_signature_name, org.receipt_signature_title, org.brand_signature_extra].filter(Boolean).join("\n") || orgName;
+  const values = { first_name: String(r.name || "").split(/\s+/)[0], full_name: r.name, org_name: orgName, year: today.slice(0, 4),
+    volunteer_hours: String(Number(yr.h || 0) / 100), signature };
+  const subject = B.renderTemplate((tpl && tpl.subject) || def.subject, values).text;
+  let body = B.renderTemplate((tpl && tpl.body) || def.body, values).text;
+  const [vs] = await query(
+    `SELECT s.id, s.slug, s.mode, o.org_slug FROM orgs o JOIN surveys s ON s.id = o.volunteer_survey_id AND s.org_id = o.id
+      WHERE o.id=? AND s.status='open'`, [orgId]).catch(() => []);
+  if (vs) body += `\n\nIf you have two minutes, tell us how it went: ${vs.mode === "named" ? SL.personalUrl(vs.org_slug, vs.slug, vs.id, r.person_id) : SL.publicUrl(vs.org_slug, vs.slug)}`;
+  const ins = await query(
+    `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,'pending_review','volunteer_thanks',?,?,?)
+     ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
+    ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:thanks:${r.id}`, subject, body, r.slot_id,
+     "system:volunteer-checkin", "Steward, after check-in"]);
+  return ins.length ? ins[0].id : null;
+}
+
+// Draft today's reminders now, for this org, rather than waiting for the hour.
+app.post("/volunteer-hub/drafts/reminders", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
+  const n = await draftRemindersFor(orgId, today);
+  res.json({ drafted: n, message: n ? `${n} ${n === 1 ? "reminder" : "reminders"} drafted for tomorrow. Nothing is sent until you press Send.` : "Every reminder for tomorrow is already drafted, or nobody is on tomorrow's shifts." });
+}));
+
 ctx.registerVolunteerReminders && ctx.registerVolunteerReminders(runVolunteerReminders);
+ctx.registerVolunteerSignUp && ctx.registerVolunteerSignUp(signUp);
 }
 
 module.exports = { routers, mount };

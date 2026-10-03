@@ -28,6 +28,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
+import { ScheduleView, RosterModeView, ToSendView } from "./VolunteerSchedule";   // PARITY-3 Part 4
 
 // ── VOL-1 · THE SAME SHAPE FUNDRAISING GOT ────────────────────────────────
 // Four sections, each one a question a coordinator actually asks, with the
@@ -45,6 +46,11 @@ const VOL_SECTIONS = [
     ] },
   { id: "schedule", label: "Schedule", question: "What is coming up, and who is coming?",
     parts: [
+      // PARITY-3 Part 4 — the calendar (Day, Week, Month, List), roster mode
+      // and the drafts to send, ahead of the opportunity list they read from.
+      { id: "calendar", label: "Calendar" },
+      { id: "rostermode", label: "Roster mode" },
+      { id: "tosend", label: "To send" },
       { id: "opportunities", label: "Opportunities and shifts" },
       // VOL-2 item 5 — the group sign-up had a route and a seed and no screen,
       // so a church group or a company day went in through the API or one
@@ -119,7 +125,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
   // FIX-15 Part 5: ?slot= and ?group= open Schedule on that shift or group,
   // so "Who is coming" and a group row work as real links in a new tab.
   const [section, setSection] = useState(() => (urlParam("volunteers", "slot") || urlParam("volunteers", "group")) ? "schedule" : "people");
-  const [partOf, setPartOf] = useState(() => ({ people: "roster", schedule: urlParam("volunteers", "group") ? "groups" : "opportunities", records: "shifts", reach: "signup" }));
+  const [partOf, setPartOf] = useState(() => ({ people: "roster", schedule: urlParam("volunteers", "group") ? "groups" : urlParam("volunteers", "slot") ? "opportunities" : "calendar", records: "shifts", reach: "signup" }));
   const [roster, setRoster] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpenRaw] = useState(null);   // the person whose panel is open
@@ -143,6 +149,13 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
     .map(sec => ({ ...sec, parts: sec.parts.filter(p => !(p.giving && isCoordinator)) }))
     .filter(sec => sec.parts.length);
 
+  // PARITY-3 — "Check in on this phone" from a shift opens Check-in on it.
+  const [kioskSlot, setKioskSlot] = useState("");
+  useEffect(() => {
+    const on = e => { setKioskSlot(String(e.detail || "")); setSection("schedule"); setPartOf(m => ({ ...m, schedule: "kiosk" })); };
+    window.addEventListener("steward:vol-checkin", on);
+    return () => window.removeEventListener("steward:vol-checkin", on);
+  }, []);
   const loadRoster = useCallback(() => {
     apiFetch("/volunteer-hub/roster").then(r => { setRoster(r); setErr(""); })
       .catch(e => setErr(errorMessage(e, "The roster did not load.")));
@@ -211,9 +224,12 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       {part === "shifts" && <ShiftsView roster={roster} narrow={narrow} isReadOnly={isReadOnly} onChanged={loadRoster} onOpen={setOpen} />}
       {part === "signup" && <SignupView />}
       {part === "givers" && <GiversView narrow={narrow} onOpenRecord={openRecord} onOpen={setOpen} />}
+      {part === "calendar" && <ScheduleView isReadOnly={isReadOnly} narrow={narrow} onOpenPerson={p => setOpen(p)} />}
+      {part === "rostermode" && <RosterModeView isReadOnly={isReadOnly} narrow={narrow} />}
+      {part === "tosend" && <ToSendView isReadOnly={isReadOnly} />}
       {part === "opportunities" && <OpportunitiesView isReadOnly={isReadOnly} narrow={narrow} />}
       {part === "groups" && <GroupsView isReadOnly={isReadOnly} narrow={narrow} onOpenRecord={openRecord} />}
-      {part === "kiosk" && <KioskView isReadOnly={isReadOnly} />}
+      {part === "kiosk" && <KioskView key={kioskSlot} isReadOnly={isReadOnly} initialSlot={kioskSlot} />}
       {part === "credentials" && <CredentialsView isReadOnly={isReadOnly} onOpenRecord={openRecord} />}
       {part === "report" && <HoursReportView narrow={narrow} />}
       {part === "crossover" && <CrossoverView onOpenRecord={openRecord} />}
@@ -1228,9 +1244,9 @@ function GroupPanel({ groupId, isReadOnly, onClose, onOpenRecord, onSignUp }) {
   );
 }
 
-function KioskView({ isReadOnly }) {
+function KioskView({ isReadOnly, initialSlot = "" }) {
   const [opps] = useLoad("/volunteer-hub/opportunities");
-  const [slotId, setSlotId] = useState("");
+  const [slotId, setSlotId] = useState(initialSlot);
   const [board, setBoard] = useState(null);
   const [busy, setBusy] = useState(null);
   const [note, setNote] = useState("");
@@ -1255,9 +1271,9 @@ function KioskView({ isReadOnly }) {
   return (
     <div data-testid="vol-kiosk" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Sentence>
-        A tablet at the door, or a phone in your hand. Tap a name to check somebody in and tap it again when they
-        leave; the hours are the time between the two, rounded to the nearest quarter hour, and you can change
-        them afterwards on the shift.
+        A tablet at the door, or a phone in your hand. Tap a name to check somebody in: their hours are logged
+        from the shift's times at once, and a thank-you is drafted for you to send from To send. Change the hours
+        afterwards on their record if they came late or left early.
       </Sentence>
       <div style={card}>
         <label style={lbl}>Which shift</label>

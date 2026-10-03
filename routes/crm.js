@@ -21486,7 +21486,10 @@ async function sendMilestoneDraft(req, draft) {
   const donor = donorRows[0];
   if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };
 
-  const decision = await donorMailDecision("milestone", donor.email, req.user.orgId);
+  // PARITY-3 — a volunteer's shift reminder is transactional (FIX-14), so it is
+  // asked as one: a marketing opt-out does not stop the reminder for a shift
+  // they signed up for. Everything else here is asked as a milestone.
+  const decision = await donorMailDecision(draft.source === "volunteer_reminder" ? "volunteer_reminder" : "milestone", donor.email, req.user.orgId);
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
   if (process.env.RESEND_API_KEY) {
@@ -21519,6 +21522,9 @@ async function sendMilestoneDraft(req, draft) {
   ).catch(() => {});
   return { status: 200 };
 }
+
+// PARITY-3 — the volunteer routes send their drafts through this one function.
+if (typeof ctx.registerDraftSender === "function") ctx.registerDraftSender(sendMilestoneDraft);
 
 app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const drafts = await query(

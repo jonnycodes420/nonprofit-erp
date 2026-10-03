@@ -1411,7 +1411,7 @@ async function main() {
   // interesting when it is the same record.
   const givers = (await q(
     `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
-      ORDER BY total_giving DESC OFFSET 12 LIMIT 6`, [ORG])).map(r => r.id);
+      ORDER BY total_giving DESC OFFSET 12 LIMIT 12`, [ORG])).map(r => r.id);   // PARITY-3: twelve who give
   for (const id of givers) {
     await q(`UPDATE donors SET person_types = CASE
                WHEN person_types @> '["volunteer"]'::jsonb THEN person_types
@@ -1426,13 +1426,13 @@ async function main() {
   // else, and a clash throws instead of shipping two people with one name.
   const VOL_FIRST = ["Marisol","Dev","Aiko","Tomas","Nell","Rufus","Priya","Odin","Clara","Bertie",
                      "Ines","Kofi","Saoirse","Milo","Freya","Hassan","Juno","Emeka","Lotte","Arjun",
-                     "Wren","Ottoline","Cassius","Maeve"];
+                     "Wren","Ottoline","Cassius","Maeve","Tamsin","Ezra","Lucian","Philippa"];
   const VOL_LAST = ["Vance","Okonjo","Brightwater","Mendel","Ashcroft","Iyer","Fairweather","Quill",
                     "Rosewood","Delacroix","Northcote","Abara","Winterbourne","Sallow",
                     "Tremaine","Oyelaran","Halliwell","Strand","Beaumaris","Ng","Castellan",
-                    "Fitzgibbon","Larkspur","Orsini"];
+                    "Fitzgibbon","Larkspur","Orsini","Hollowell","Penhaligon","Marchbank","Ravensworth"];
   const volOnly = [];
-  for (let i = 0; i < 24; i++) {
+  for (let i = 0; i < 28; i++) {   // PARITY-3: twenty-eight who have never given
     const id = `d_b72_vol${i}`;
     const name = `${VOL_FIRST[i]} ${VOL_LAST[i]}`;
     if (!takeName(name))
@@ -1463,10 +1463,13 @@ async function main() {
     { id: "vsl_b72_p2", opp: "vo_b72_shore", date: dAdd(TODAY, -21), s: "09:00", e: "13:00", cap: 12 },
     { id: "vsl_b72_p3", opp: "vo_b72_tutor", date: dAdd(TODAY, -14), s: "16:00", e: "17:00", cap: 6 },
     { id: "vsl_b72_p4", opp: "vo_b72_gala", date: dAdd(TODAY, -7),  s: "17:00", e: "23:00", cap: 20 },
-    { id: "vsl_b72_f1", opp: "vo_b72_shore", date: dAdd(TODAY, 5),  s: "09:00", e: "13:00", cap: 8,
+    // PARITY-3: the three future one-offs moved off the weekly shifts' hours
+    // (an afternoon clean-up, evening tutoring, an 18:00 gala), so the seeded
+    // month has exactly the one conflict it means to, whatever day it runs.
+    { id: "vsl_b72_f1", opp: "vo_b72_shore", date: dAdd(TODAY, 5),  s: "14:00", e: "18:00", cap: 8,
       notes: "Gloves and bags provided. Wear boots you do not mind ruining." },
-    { id: "vsl_b72_f2", opp: "vo_b72_tutor", date: dAdd(TODAY, 9),  s: "16:00", e: "17:00", cap: 6 },
-    { id: "vsl_b72_f3", opp: "vo_b72_gala", date: dAdd(TODAY, 30),  s: "17:00", e: "23:00", cap: 20 },
+    { id: "vsl_b72_f2", opp: "vo_b72_tutor", date: dAdd(TODAY, 9),  s: "18:00", e: "19:00", cap: 6 },
+    { id: "vsl_b72_f3", opp: "vo_b72_gala", date: dAdd(TODAY, 30),  s: "18:00", e: "23:00", cap: 20 },
   ];
   for (const sl of VOL_SLOTS) {
     await q(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,created_by,created_by_name)
@@ -1545,13 +1548,75 @@ async function main() {
   await cred(allVols[15], "background_check", dAdd(TODAY, -740), dAdd(TODAY, -12));   // LAPSED twelve days ago
   await cred(allVols[16], "waiver", dAdd(TODAY, -350), dAdd(TODAY, 11));              // expires in eleven days
 
+  // ── PARITY-3 Part 4 · A MONTH OF SHIFTS, WITH ROLES ───────────────────
+  // The two opportunities a coordinator runs every week, for the next four
+  // weeks: the Saturday clean-up (Litter pickers 6, Team lead 1, on brand
+  // emerald) and Tuesday tutoring (Tutors 4, brass). Some are short, the
+  // first Saturday has a waiting list for team lead, one is a draft, and one
+  // volunteer is on two shifts that overlap: the conflict the screen counts.
+  {
+    const SAT0 = (() => { let d = TODAY; for (let i = 0; i < 7; i++) { const w = new Date(Date.UTC(+d.slice(0,4), +d.slice(5,7)-1, +d.slice(8,10))).getUTCDay(); if (w === 6 && d !== TODAY) break; d = dAdd(d, 1); } return d; })();
+    const TUE0 = dAdd(SAT0, 3);
+    let rr = 0;
+    const mkSlot = async (id, opp, date, s, e, { name = null, color = null, venue = null, place = null, published = true, roles = [] } = {}) => {
+      await q(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$7,$8,$9,$10,$11,'u_b72demo','Dana Reyes')`,
+        [id, ORG, opp, date, s, e, name, color, venue, place, published]);
+      const out = {};
+      for (const [i, r] of roles.entries()) {
+        rr++;
+        const rid = `vsr_b72_${rr}`;
+        await q(`INSERT INTO volunteer_slot_roles (id,org_id,slot_id,name,needed,sort,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
+          [rid, ORG, id, r.name, r.needed, i]);
+        out[r.name] = rid;
+      }
+      return out;
+    };
+    const onRole = async (slotId, roleId, personId, status = "confirmed", position = null) => {
+      vsu++;
+      await q(`INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,status,position,source,role_id,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,'public',$7,'system:volunteer-public','The volunteer, from the sign-up page')`,
+        [`vsu_b72_${vsu}`, ORG, slotId, personId, status, position, roleId]);
+    };
+    // How full each week is: the first Saturday is full with a queue, the
+    // second is two pickers short, the third has no team lead, the fourth is
+    // a draft not yet published.
+    const SAT_FILL = [{ pick: 6, lead: 1, queue: 2 }, { pick: 4, lead: 1 }, { pick: 6, lead: 0 }, { pick: 0, lead: 0, draft: true }];
+    const TUE_FILL = [4, 3, 4, 2];
+    for (let w = 0; w < 4; w++) {
+      const sid = `vsl_b72_sat${w}`;
+      const sat = await mkSlot(sid, "vo_b72_shore", dAdd(SAT0, 7 * w), "09:00", "12:00", {
+        name: "Saturday clean-up", color: "#0d5c3a", venue: "Pier 4, Harborlight", place: "Meet at the boathouse steps",
+        published: !SAT_FILL[w].draft, roles: [{ name: "Litter pickers", needed: 6 }, { name: "Team lead", needed: 1 }] });
+      const pool = allVols.slice(2 + w * 3).concat(allVols.slice(0, 2 + w * 3));
+      for (let i = 0; i < SAT_FILL[w].pick; i++) await onRole(sid, sat["Litter pickers"], pool[i]);
+      if (SAT_FILL[w].lead) await onRole(sid, sat["Team lead"], pool[SAT_FILL[w].pick]);
+      for (let i = 0; i < (SAT_FILL[w].queue || 0); i++) await onRole(sid, sat["Team lead"], pool[SAT_FILL[w].pick + 1 + i], "waitlisted", i + 1);
+      const tid = `vsl_b72_tue${w}`;
+      const tue = await mkSlot(tid, "vo_b72_tutor", dAdd(TUE0, 7 * w), "16:00", "17:30", {
+        name: "Tuesday tutoring", color: "#c9a84c", venue: "The Annexe, 14 Mill Street", place: "Room 2",
+        roles: [{ name: "Tutors", needed: 4 }] });
+      const tpool = allVols.slice(20).concat(allVols.slice(0, 20));
+      for (let i = 0; i < TUE_FILL[w]; i++) await onRole(tid, tue["Tutors"], tpool[i]);
+    }
+    // THE CONFLICT: a Saturday food-drive sort, 11 to 2, overlapping the
+    // first clean-up, with one of that morning's litter pickers also on it.
+    const sat0Picker = allVols.slice(2)[0];
+    const fd = await mkSlot("vsl_b72_fooddrive", "vo_b72_shore", SAT0, "11:00", "14:00", {
+      name: "Food drive sort", color: "#0f1a12", venue: "Harborlight Hall", place: "Loading dock",
+      roles: [{ name: "Sorters", needed: 3 }] });
+    await onRole("vsl_b72_fooddrive", fd["Sorters"], sat0Picker);
+    await onRole("vsl_b72_fooddrive", fd["Sorters"], allVols[30]);
+    console.log(`[seed] a month of shifts: 4 Saturdays, 4 Tuesdays and a food drive; one conflict (${sat0Picker}), a waiting list for team lead, a draft`);
+  }
+
   const [volCount] = await q(
     `SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND person_types @> '["volunteer"]'::jsonb`, [ORG]);
   const [volHours] = await q(
     `SELECT COALESCE(SUM(hours),0)::float h FROM volunteer_shifts WHERE org_id=$1`, [ORG]);
   console.log(`[assert] volunteers ${volCount.c} · ${Math.round(volHours.h)} hours on file · ${givers.length} of them also give`);
-  if (volCount.c < 30) {
-    console.error(`\nREFUSED: the volunteer programme needs at least 30 volunteers and made ${volCount.c}.`);
+  if (volCount.c < 40) {
+    console.error(`\nREFUSED: the volunteer programme needs at least 40 volunteers and made ${volCount.c}.`);
     process.exit(1);
   }
 

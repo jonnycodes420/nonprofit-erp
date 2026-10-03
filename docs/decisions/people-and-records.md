@@ -149,11 +149,24 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   present only when they have actually given, and absent from the payload entirely for the
   volunteer coordinator role. The role is a security boundary, so the server decides it rather
   than the screen choosing what to draw. (VOL-2)
-- **The shift-reminder sweep has a timer.** Hourly, in server.js beside the other ticks and off
-  under `DISABLE_BACKGROUND_TICKS`. Nothing about who gets mail changed: the sweep still reads
-  only orgs with `volunteer_reminders_enabled = TRUE` (off for every org until one turns it on),
-  refuses the demo org outright, and claims each row before sending. Hourly rather than daily
-  because "tomorrow" is a different instant in every org's timezone. (VOL-2)
+- **A shift reminder is a DRAFT, and so is a shift's thank-you.** The hourly sweep writes one reminder
+  draft per person confirmed on tomorrow's shifts, and check-in writes one thank-you draft (the org's
+  COMMS-2 volunteer template, with the SURVEY-1 link) into `milestone_drafts`, keyed `vol:<kind>:<signup>`
+  so a second pass writes nothing. Staff send them from Schedule, To send, in one tap, through
+  `sendMilestoneDraft`, so every mail rule applies at the press; a refused one is marked failed with its
+  reason and is not retried by the next press. Nothing reaches a volunteer without a person pressing Send.
+  `volunteer_reminders_enabled` no longer decides anything. (PARITY-3, replacing VOL-2's sending sweep)
+- **A shift has roles, and capacity is decided per role.** `volunteer_slot_roles` (name, needed); a sign-up
+  carries `role_id`, and `signUp` counts and waitlists per role under the same slot lock, so a freed place
+  goes to the first person waiting for THAT role. A shift with no roles keeps its one capacity. Every
+  number under a shift (needed, scheduled, short, waitlisted, hours) is `VS.shiftFooter`, computed once
+  in `scheduleRows` and read by the calendar, the roster, the public page and the CSV; short is counted
+  role by role. A conflict is one person with a place on two shifts that overlap; back to back is not
+  one. A draft shift (`published = false`) is the coordinator's: the public page and Your page cannot see
+  or join it. (PARITY-3)
+- **Check-in writes the hours, from the shift's own times and date.** Linked to the opportunity and
+  shift (`volunteer_shifts.opportunity_id/slot_id`), editable after on the person's record. Check-out
+  only marks the sign-up done. (PARITY-3)
 - **A group signs up on a screen now.** Volunteers → Schedule → Groups. A group is a LABEL on a
   set of sign-ups, never a person: every member is their own record with their own hours, and
   capacity is still decided by the database, so a group of twelve at an eight-place shift gets
