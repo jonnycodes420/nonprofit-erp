@@ -394,7 +394,7 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (memLevelId) [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=?", [memLevelId, orgId]);
             }
             const MBm = memLevel ? await MB_READY : null;
-            // PARITY-2 Part 4 — an auction win, paid. The item is re-read
+            // PARITY-2 Part 4: an auction win, paid. The item is re-read
             // org-scoped and the bid in the metadata must STILL be its winning
             // bid (auctionCore's one ordering); the fair-market split is the
             // item's value, never more than was paid, so the receipt states

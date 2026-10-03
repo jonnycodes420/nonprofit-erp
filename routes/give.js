@@ -2681,7 +2681,7 @@ async function emailHoldsMembership(orgId, email) {
 // page hands it.
 const donateHandler = async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  // PARITY-2 Part 4 — `let` because an auction win names its payer from the
+  // PARITY-2 Part 4: `let` because an auction win names its payer from the
   // winning bid's own bidder row, never from the request.
   let { firstName, lastName, email } = req.body;
   const { campaignId } = req.body;
@@ -2727,7 +2727,7 @@ const donateHandler = async (req, res) => {
   if (membershipLevelId) {
     frequency = frequency === "annual" || frequency === "monthly" ? frequency : "once"; coverFees = false; amount = amount || "1";
   }
-  // PARITY-2 Part 4 — AN AUCTION WIN, priced by the SERVER from the winning
+  // PARITY-2 Part 4: AN AUCTION WIN, priced by the SERVER from the winning
   // bid that the pay link was signed for (auctionCore.resolvePayToken). The
   // page's amount, fee box, frequency, page and fundraiser are all ignored: a
   // winner pays exactly what they bid, once, to the org that ran the auction.
@@ -2971,7 +2971,7 @@ const donateHandler = async (req, res) => {
   const effectiveCampaignId = pageCampaignId || (eventGift && eventGift.campaignId) || campaignId || "";
 
   const productName = auctionWin
-    ? `${auctionWin.item.title}, ${auctionWin.auction.title} (auction) — ${org.name}`
+    ? `${auctionWin.item.title}, ${auctionWin.auction.title} (auction), ${org.name}`
     : memLevel
     ? `${memLevel.name} membership — ${org.name}`
     : eventLevel
@@ -3021,7 +3021,7 @@ const donateHandler = async (req, res) => {
     event_dietary: eventLevel ? String(req.body.dietary || "").trim().slice(0, 200) : "",
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
-    // PARITY-2 Part 4 — the webhook re-reads the item and checks this bid is
+    // PARITY-2 Part 4: the webhook re-reads the item and checks this bid is
     // still its winner before it writes the fair-market split.
     auction_item_id: auctionWin ? auctionWin.item.id : "",
     auction_bid_id: auctionWin ? auctionWin.item.bid_id : "",
@@ -3260,7 +3260,7 @@ app.post("/e/:slug/give", donateLimiter, express.urlencoded({ extended: false })
   if (!answered) back("That did not go through. Try again in a moment.");
 }));
 
-// PARITY-2 Part 4 — A WINNER PAYS. The same shim as the event page: a plain
+// PARITY-2 Part 4: A WINNER PAYS. The same shim as the event page: a plain
 // form POST from the pay page, the same `donateHandler`, the same Connect
 // account and webhook. The pay token is the only thing the page sends; the
 // handler finds the item, the winning bid and the winner from it.

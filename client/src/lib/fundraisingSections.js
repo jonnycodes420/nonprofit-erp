@@ -32,7 +32,7 @@ export const FR_SECTIONS = [
       // with the pages they are.
       { id: "pages", label: "Giving pages & forms" },
       { id: "events", label: "Events" },
-      // PARITY-2 Part 4 — an auction usually belongs to an event, so it sits
+      // PARITY-2 Part 4: an auction usually belongs to an event, so it sits
       // beside them.
       { id: "auctions", label: "Auctions" },
       // BUILD-103 — peer-to-peer. It sits beside the pages because a
@@ -89,7 +89,7 @@ export const FR_LEGACY = {
   // and navigateTo("fundraising", {frSection: "p2p"}) both land on it. Every
   // part id belongs in this map, or a link to it silently opens the Overview.
   p2p:             { section: "campaigns",  part: "p2p",             label: "Peer-to-peer" },
-  // PARITY-2 Part 4 — a new part id, registered for the same reason as p2p.
+  // PARITY-2 Part 4: a new part id, registered for the same reason as p2p.
   auctions:        { section: "campaigns",  part: "auctions",        label: "Auctions" },
 };
 

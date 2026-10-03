@@ -90,7 +90,7 @@ const cents = v => Math.round(Number(v) * 100);
 const bidsOn = itemId => q(`SELECT id, bidder_id, amount::text AS amount FROM auction_bids WHERE org_id=$1 AND item_id=$2 ORDER BY created_at, id`, [ORG, itemId]);
 
 (async () => {
-  console.log("PARITY-2 Part 4 — ties go to the earliest bid, the close is the close, and the receipt foots\n");
+  console.log("PARITY-2 Part 4: ties go to the earliest bid, the close is the close, and the receipt foots\n");
   mock = await startStripeMock();
   ok("the Stripe mock is listening (without it §3 proves nothing)", !!mock);
   await reset();

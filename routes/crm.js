@@ -21414,7 +21414,7 @@ async function sendMilestoneDraft(req, draft) {
   if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
   if (process.env.RESEND_API_KEY) {
-    // PARITY-2 Part 4 — a link in a draft (a winner's pay link, an auction
+    // PARITY-2 Part 4: a link in a draft (a winner's pay link, an auction
     // page, a video thank-you) is a link in the email, not text to retype.
     // Only http(s) links, matched AFTER escaping, so nothing typed can open a tag.
     const bodyHtml = `<p>${escapeHtml(draft.body).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`)

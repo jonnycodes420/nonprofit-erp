@@ -34,8 +34,8 @@
 const { query } = require("./db");
 const orgTime = require("./orgTime");
 const money = require("./money");
-const meetings = require("./meetings");
-const auctionCore = require("./auctionCore");   // PARITY-2 Part 4 — the one winner ordering   // FIX-14 Part 1 — meetings with a person, defined once
+const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
+const auctionCore = require("./auctionCore");   // PARITY-2 Part 4: the one winner ordering
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ID_RE = /^[A-Za-z0-9_.:\-]{1,120}$/;
@@ -137,7 +137,7 @@ function topGiversSql(orgId, p) {
   };
 }
 
-// PARITY-2 Part 4 — one row per item whose bidding has closed with a winner:
+// PARITY-2 Part 4: one row per item whose bidding has closed with a winner:
 // the winning bid, the winner, and whether they have paid.
 function auctionWinsSql(orgId, p) {
   return {
@@ -1035,7 +1035,7 @@ const SOURCES = {
       order: "amount DESC, id",
     }),
   },
-  // ── PARITY-2 Part 4 — AN AUCTION ──────────────────────────────────────
+  // ── PARITY-2 Part 4: AN AUCTION ──────────────────────────────────────
   // The winner of an item is auctionCore's one ordering (highest bid, then the
   // earliest), and an item is closed by the database clock, so these rows and
   // the auction screen cannot disagree about who won or what is still open.

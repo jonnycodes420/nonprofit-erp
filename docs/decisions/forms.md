@@ -250,7 +250,7 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   ladder. Capping the percentiles and then padding past the cap caps nothing. (CAMPAIGN-2, found on the
   GIVE-2 ladder by the campaign page's own walk)
 
-### PARITY-2 Part 4 — auctions
+### PARITY-2 Part 4: auctions
 - **Who won is decided once, in `auctionCore.js`: the highest bid, and between equal amounts the earliest
   (created_at, then id).** It is computed at read time from the bids, never stored, and the staff screen, the
   public page, the pay link, the checkout, the webhook and the `auction-*` figure sources all read it.

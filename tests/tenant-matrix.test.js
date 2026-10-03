@@ -80,7 +80,7 @@ const TODAY = iso(new Date());
 async function reset() {
   for (const org of [A, B]) {
     for (const t of ["memberships", "membership_levels", "api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
-      // PARITY-2 Part 4 — the auction's four tables, children first.
+      // PARITY-2 Part 4: the auction's four tables, children first.
       "auction_bids", "auction_bidders", "auction_items", "auctions",
       "group_sweep_seen", "group_members", "audiences", "statement_mappings", "gift_duplicate_questions",
       // INT-3 and INT-4 — the email tool and the staff mailbox. Ordered here,
@@ -376,7 +376,7 @@ async function seedOrg(o, tag) {
     [`grp_${o}`, o, `Group ${o}`]).catch(() => {});
   await q(`INSERT INTO group_members (org_id,group_id,donor_id,added_by,added_by_name) VALUES ($1,$2,$3,'system:test','test')`,
     [o, `grp_${o}`, `d_${o}`]).catch(() => {});
-  // PARITY-2 Part 4 — an auction with one item, per org, so org A aimed at
+  // PARITY-2 Part 4: an auction with one item, per org, so org A aimed at
   // org B's auction or item is refused because it is org B's.
   await q(`INSERT INTO auctions (id,org_id,title,public_slug,opens_at,closes_at,created_by,created_by_name)
            VALUES ($1,$2,$3,$4,NOW() - INTERVAL '1 day',NOW() + INTERVAL '1 day','system:test','test') ON CONFLICT DO NOTHING`,
@@ -526,8 +526,8 @@ function bResolver(routePath, param) {
     // and both sides of a change, so it is donor data by any reading.
     audit: `al_${B}`,
     "memberships": `mb_${B}`,        // BUILD-101 — org A cannot cancel org B's member
-    auctions: `auc_${B}`,            // PARITY-2 Part 4 — org A cannot read, edit or write drafts for org B's auction
-    "auction-items": `aui_${B}`,     // PARITY-2 Part 4 — nor edit, remove or book in-kind org B's item
+    auctions: `auc_${B}`,            // PARITY-2 Part 4: org A cannot read, edit or write drafts for org B's auction
+    "auction-items": `aui_${B}`,     // PARITY-2 Part 4: nor edit, remove or book in-kind org B's item
     people: `d_${B}`,                // FIX-1 D — a person IS a donors row; org A cannot read or re-role org B's
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
@@ -603,7 +603,7 @@ function bResolver(routePath, param) {
 // listed here FAILS §1.
 const PARAM_EXEMPT = [
   [/^\/(portal|org|give|donate|track|portal-assets|unsubscribe|auth|network|fundraiser)\//, "public / capability-token / slug-scoped surface — org-scoping is by slug or signed token, covered by portal.test.js + donor-front-door"],
-  // PARITY-2 Part 4 — the public auction page, its bid and register forms and
+  // PARITY-2 Part 4: the public auction page, its bid and register forms and
   // a winner's pay page. Org-scoping is by the public slug (one auction) or a
   // signed pay token (one item's winning bid); there is no staff token to
   // cross. The tie, the close and the pay path are pinned in parity2-auction.

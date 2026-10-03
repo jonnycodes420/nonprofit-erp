@@ -281,7 +281,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
         <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
       )}
 
-      {/* PARITY-2 Part 4 — auctions: items, bids, winners, pay links. */}
+      {/* PARITY-2 Part 4: auctions: items, bids, winners, pay links. */}
       {!loading && subtab === "auctions" && (
         <AuctionsView donors={data?.donors || []} isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}

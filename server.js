@@ -10430,7 +10430,7 @@ require("./routes/homeCalls").mount({
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,
 });
-// PARITY-2 Part 4 — an auction item's photo, on the BUILD-51 asset seam
+// PARITY-2 Part 4: an auction item's photo, on the BUILD-51 asset seam
 // (kind 'auction', the campaign-photo rules). A stored /portal-assets/ path
 // echoes through unchanged; a data URI is checked, normalised and stored.
 async function storeAuctionPhoto(orgId, v) {
