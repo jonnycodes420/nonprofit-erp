@@ -574,6 +574,24 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
            FROM bookkeeping_deposits WHERE org_id=? AND vendor=? AND deposit_on >= ?`,
         [orgId, key, since30]) : [{ sent: 0, cents: 0, held: 0 }];
       const sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
+      // rather than counting deposits that cannot have happened.
+      if (BK.VENDORS[key].sends === false) {
+        cards.push({
+          id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key, sends: false,
+          label: BK.VENDORS[key].label,
+          subtitle: BK.VENDORS[key].notSendingSentence,
+          connected: !!b, canDisconnect: !!b,
+          action: b ? null : "connect", actionLabel: b ? null : "Connect",
+          oauthProvider: OAUTH_BY_VENDOR[key] || null,
+          lastSentAt: null, lastSyncedAt: null,
+          status: !b ? "not_connected" : "healthy",
+          sentence: !b ? C.STATUSES.not_connected.definition
+            : `Connected. ${BK.VENDORS[key].notSendingSentence}`,
+          deposits30: 0, deposits30Cents: 0, held30: 0, heldSentence: null,
+        });
+        continue;
+      }
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,

@@ -133,6 +133,7 @@ CORE=(
   intpos-sale-is-not-a-gift
   int2-send-once
   parity2-qbo-sync
+  fix20-qbo-realm-switch
   oauth-state
   int3-optout
   int4-mailbox

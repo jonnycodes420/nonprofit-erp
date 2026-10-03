@@ -76,10 +76,16 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **Read the fiscal year through `orgPeriodBounds`/`finPeriodBounds`, never string arithmetic.** The
   boundary comes from `fiscal_year_start_month` (July default); receipts use the calendar year. (BUILD-86, BUILD-88a)
 - **A gift goes to QuickBooks once, and only where a person mapped it.** `gift_bookkeeping_syncs` is unique on
-  (org, gift, vendor) and claimed before the call; Intuit's `requestid` is kept across a retry whose outcome was
+  (org, gift, vendor, realm_id) and claimed before the call. The sent list belongs to a QuickBooks COMPANY: a
+  connection moved to a different company starts empty there, and a mapping chosen in another company is not
+  used (its account ids are that company's). Sync all runs in batches of 100 with progress; a payout is never
+  split across two batches (FIX-20); Intuit's `requestid` is kept across a retry whose outcome was
   unknown. A gift whose campaign and fund have no account stays in Pending with the sentence, never a default
   account. Nothing is sent until someone presses Sync or the org's admin turns auto-sync on; the per-org flag is
   the founder's until Intuit's assessment passes. See `docs/integrations/quickbooks.md`. (PARITY-2)
+- **Xero does not send yet, and says so.** Its old send posted to an endpoint Xero does not have. The route
+  refuses (409) and every Xero surface reads "Sending to Xero is not available yet." A real send is the
+  QuickBooks shape again (accounts and tracking categories from the org's own Xero, Pending, sent once). (FIX-20)
 - **The bookkeeper export must foot in cents before a byte is written.** Mismatch is a 409, nothing
   repaired; the database sum is asked for exactly, not pre-rounded (`bookkeeper.js`). (BUILD-87)
 

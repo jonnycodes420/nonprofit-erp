@@ -4033,8 +4033,20 @@ async function runSchemaInit(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       CONSTRAINT gift_bk_sync_status CHECK (status IN ('sending','synced','skipped','failed'))
     )`);
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_bookkeeping_one_per_gift
-                      ON gift_bookkeeping_syncs (org_id, gift_id, vendor)`);
+  // FIX-20: ONE ROW PER GIFT PER COMPANY. The sent list belongs to a
+  // QuickBooks company (realm_id), not to the org: a connection moved to a
+  // different company has sent nothing there yet. A row written before the
+  // company was part of the key takes its connection's company; one with no
+  // company at all keeps '' and so never counts as sent to a real company.
+  await pool.query(`UPDATE gift_bookkeeping_syncs s SET realm_id = c.realm_id
+                      FROM bookkeeping_connections c
+                     WHERE s.realm_id IS NULL AND c.id = s.connection_id AND c.org_id = s.org_id AND c.realm_id IS NOT NULL`);
+  await pool.query(`UPDATE gift_bookkeeping_syncs SET realm_id = '' WHERE realm_id IS NULL`);
+  await pool.query(`ALTER TABLE gift_bookkeeping_syncs ALTER COLUMN realm_id SET DEFAULT ''`);
+  await pool.query(`ALTER TABLE gift_bookkeeping_syncs ALTER COLUMN realm_id SET NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_bookkeeping_one_per_gift_company
+                      ON gift_bookkeeping_syncs (org_id, gift_id, vendor, realm_id)`);
+  await pool.query(`DROP INDEX IF EXISTS gift_bookkeeping_one_per_gift`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gift_bk_syncs_status
                       ON gift_bookkeeping_syncs (org_id, vendor, status)`);
   // The QuickBooks customer each donor became, per company file, so the same

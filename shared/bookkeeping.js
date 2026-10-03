@@ -45,11 +45,18 @@ export const VENDORS = {
     // They are the same idea and this is the only place that knows they differ.
     secondAxis: "class", secondAxisLabel: "Class",
     authNote: "Connect with Intuit's OAuth 2.0. Steward asks for accounting scope and nothing else.",
+    sends: true,
   },
   xero: {
     key: "xero", label: "Xero",
     secondAxis: "tracking", secondAxisLabel: "Tracking category",
     authNote: "Connect with Xero's OAuth 2.0. Steward asks for accounting transactions and settings, and nothing else.",
+    // FIX-20 Part 4: the Xero send was a stub that posted to an endpoint Xero
+    // does not have. Until a real one exists (bank transactions from the
+    // org's own accounts and tracking categories, a Pending list, sent once),
+    // every screen says plainly that nothing is sent, and the route refuses.
+    sends: false,
+    notSendingSentence: "Sending to Xero is not available yet. Steward has sent nothing to Xero, and the bookkeeper file on the Finance tab has the same gifts in Xero's columns.",
   },
 };
 export const VENDOR_KEYS = Object.keys(VENDORS);

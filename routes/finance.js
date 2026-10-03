@@ -780,6 +780,15 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
       sentence: `${O.PROVIDERS[key].label} is connected and Steward holds the token encrypted. Nothing is sent to it until you choose which ${EM.audienceNoun(vendorKey)} to keep in step.` });
   }
   if (O.PROVIDERS[key].kind === "bookkeeping") {
+    // FIX-20: a reconnect that lands on a DIFFERENT company keeps the mapping
+    // but marks which company it was chosen in (when it does not say), so
+    // qboSync.readMapping refuses to post this company's gifts to the other
+    // company's account numbers.
+    await run(`UPDATE bookkeeping_connections
+                  SET mapping = jsonb_set(mapping, '{qbo,realmId}', to_jsonb(realm_id::text))
+                WHERE org_id=? AND vendor=? AND status <> 'disconnected' AND realm_id IS NOT NULL
+                  AND realm_id IS DISTINCT FROM ? AND mapping->'qbo' IS NOT NULL AND mapping->'qbo'->'realmId' IS NULL`,
+      [req.user.orgId, vendorKey, account]);
     await run(
       `INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,credentials_sealed,token_expires_at,
                                             mapping,connected_by,connected_by_name,created_by,created_by_name)
@@ -2387,11 +2396,14 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
       feeAccountId: mapping.feeAccountId || null,
       depositAccounts: mapping.depositAccounts || {},
     }, { sources });
-    return { id: r.id, vendor: r.vendor, vendorLabel: BK.VENDORS[r.vendor]?.label || r.vendor,
+    const sends = BK.VENDORS[r.vendor]?.sends !== false;
+    return { id: r.id, vendor: r.vendor, vendorLabel: BK.VENDORS[r.vendor]?.label || r.vendor, sends,
       secondAxisLabel: BK.VENDORS[r.vendor]?.secondAxisLabel || null,
       status: r.status, realmId: r.realm_id || null, donorNames: r.donor_names === true,
       lastSentAt: r.last_sent_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
-      mapping, ...ready };
+      mapping, ...ready,
+      // FIX-20 Part 4: a vendor Steward does not send to is never "ready to send".
+      ...(sends ? {} : { ready: false, sentence: BK.VENDORS[r.vendor].notSendingSentence }) };
   });
   // PARITY-2 Part 5: where QuickBooks sync is on, its own panel (chosen from
   // the company's real chart of accounts) is the QuickBooks mapping, and this
@@ -2415,7 +2427,7 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
 app.put("/bookkeeping/:id/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const BK = await bookkeepingMod();
   const orgId = req.user.orgId;
-  const [c] = await query("SELECT id, mapping FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const [c] = await query("SELECT id, vendor, mapping FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!c) return res.status(404).json({ error: "Not found" });
   const m = req.body?.mapping;
   if (!m || typeof m !== "object") return res.status(400).json({ error: "mapping_required" });
@@ -2438,7 +2450,9 @@ app.put("/bookkeeping/:id/mapping", requireAuth, requireAdmin, checkWriteAccess,
   await run(`UPDATE bookkeeping_connections SET mapping=?::jsonb, donor_names=?, updated_at=NOW()
               WHERE id=? AND org_id=?`, [JSON.stringify(clean), donorNames, req.params.id, orgId]);
   res.json({ ok: true, mapping: clean, donorNames,
-    sentence: "Saved. Nothing has been sent; press Send, or leave it and Steward sends once a day." });
+    sentence: BK.VENDORS[c.vendor]?.sends === false
+      ? `Saved. ${BK.VENDORS[c.vendor].notSendingSentence}`
+      : "Saved. Nothing has been sent." });
 }));
 
 // ── THE SEND ───────────────────────────────────────────────────────────────
@@ -2452,6 +2466,10 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
   const [c] = await query("SELECT * FROM bookkeeping_connections WHERE id=? AND org_id=? AND status <> 'disconnected'",
     [req.params.id, orgId]);
   if (!c) return res.status(404).json({ error: "Not found" });
+  // FIX-20 Part 4: a vendor Steward cannot really send to is refused here,
+  // before anything is claimed, so no row ever says a deposit went.
+  if (BK.VENDORS[c.vendor] && BK.VENDORS[c.vendor].sends === false)
+    return res.status(409).json({ error: "send_not_available", sentence: BK.VENDORS[c.vendor].notSendingSentence });
   const mapping = { ...((typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping) || {}),
                     donorNames: c.donor_names === true };
 
@@ -2646,8 +2664,22 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
   const campaigns = await query(
     `SELECT id, name, type FROM campaigns WHERE org_id=? ORDER BY created_at DESC LIMIT 300`, [orgId]);
   const demo = org.is_demo_org === true || map.demo;
+  // FIX-20 Part 2 · A DIFFERENT COMPANY. Said once, before the first sync to
+  // it: what was sent to the other company is not in this one's books, so
+  // this company's sent list starts empty.
+  let companySentence = null;
+  if (c && c.realm_id) {
+    const [n] = await query(
+      `SELECT COUNT(*) FILTER (WHERE realm_id = ?)::int AS here, COUNT(*) FILTER (WHERE realm_id <> ?)::int AS elsewhere
+         FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor='quickbooks' AND status='synced'`,
+      [String(c.realm_id), String(c.realm_id), orgId]);
+    if (n && n.here === 0 && n.elsewhere > 0)
+      companySentence = `This is a different QuickBooks company from the one Steward sent ${n.elsewhere} ${n.elsewhere === 1 ? "gift" : "gifts"} to before, so nothing has been sent here yet and every gift in Pending goes to this company once, including ones already in the other company.`;
+  }
   res.json({
-    enabled: true, autoSync: org.qbo_auto_sync === true, demo,
+    enabled: true, autoSync: org.qbo_auto_sync === true, demo, companySentence,
+    mappingOtherCompany: map.otherCompany === true,
+    batchSize: QS.RUN_LIMIT,
     environment: QS.environment(),
     connection: c ? { id: c.id, realmId: c.realm_id, signedIn: !!c.credentials_sealed,
       connectedAt: c.created_at, lastSentAt: c.last_sent_at, lastError: c.last_error } : null,
@@ -2690,8 +2722,8 @@ app.get("/qbo/pending", requireAuth, wrap(async (req, res) => {
             g.date, ROUND(g.amount::numeric, 2) AS amount, d.name AS donor_name
        FROM gift_bookkeeping_syncs s JOIN gifts g ON g.id = s.gift_id AND g.org_id = s.org_id
        LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE s.org_id=? AND s.vendor='quickbooks' AND s.status IN ('synced','skipped')
-      ORDER BY COALESCE(s.synced_at, s.updated_at) DESC LIMIT 25`, [orgId]);
+      WHERE s.org_id=? AND s.vendor='quickbooks' AND s.realm_id=? AND s.status IN ('synced','skipped')
+      ORDER BY COALESCE(s.synced_at, s.updated_at) DESC LIMIT 25`, [orgId, c && c.realm_id ? String(c.realm_id) : ""]);
   res.json({
     since, mode: map.mode, count: rows.length, shown: shown.length,
     total: { value: totalCents / 100, cents: totalCents, kind: "money", label: "Waiting to go to QuickBooks",
@@ -2737,6 +2769,8 @@ app.put("/qbo/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async 
     depositAccount: acct(b.depositAccount), feeAccount: acct(b.feeAccount),
     funds: pick(b.funds, funds), campaigns: pick(b.campaigns, camps),
     items: prior.items, ...(prior.demo ? { demo: true } : {}),
+    // FIX-20: the company these account ids belong to.
+    realmId: c.realm_id ? String(c.realm_id) : null,
   };
   await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{qbo}', ?::jsonb),
                     updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(qbo), c.id, orgId]);
@@ -2782,7 +2816,11 @@ app.post("/qbo/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const orgId = req.user.orgId;
   const all = req.body?.all === true;
   const giftIds = Array.isArray(req.body?.giftIds) ? req.body.giftIds.map(String).filter(Boolean) : null;
-  const out = await QS.syncGifts({ orgId, giftIds, all, who: actor(req), tokenFor: qboTokenFor(orgId) });
+  // FIX-20 Part 3: Sync all runs in batches. The screen sends back the
+  // run's start (the server's own clock, from the first batch's answer) and
+  // asks again while `remaining` is above nought.
+  const runStartedAt = all && typeof req.body?.runStartedAt === "string" ? req.body.runStartedAt : null;
+  const out = await QS.syncGifts({ orgId, giftIds, all, runStartedAt, who: actor(req), tokenFor: qboTokenFor(orgId) });
   if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
   res.json(out);
 }));
@@ -2802,8 +2840,8 @@ app.post("/qbo/skip", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const who = actor(req);
   let n = 0;
   if (req.body?.restore === true) {
-    const r = await run(`DELETE FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND status='skipped' AND gift_id = ANY(?)`,
-      [orgId, QS.VENDOR, mine.map(g => g.id)]);
+    const r = await run(`DELETE FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND realm_id=? AND status='skipped' AND gift_id = ANY(?)`,
+      [orgId, QS.VENDOR, c && c.realm_id ? String(c.realm_id) : "", mine.map(g => g.id)]);
     n = (r && r.changes) || 0;
     return res.json({ ok: true, restored: n, sentence: `${n} ${n === 1 ? "gift is" : "gifts are"} back in Pending.` });
   }
@@ -2811,9 +2849,9 @@ app.post("/qbo/skip", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     const r = await run(
       `INSERT INTO gift_bookkeeping_syncs (id,org_id,gift_id,vendor,connection_id,realm_id,status,amount_cents,created_by,created_by_name)
        VALUES (?,?,?,?,?,?,'skipped',?,?,?)
-       ON CONFLICT (org_id, gift_id, vendor) DO UPDATE SET status='skipped', error=NULL, error_code=NULL, updated_at=NOW()
+       ON CONFLICT (org_id, gift_id, vendor, realm_id) DO UPDATE SET status='skipped', error=NULL, error_code=NULL, updated_at=NOW()
         WHERE gift_bookkeeping_syncs.status = 'failed'`,
-      ["gbs_" + uuid().slice(0, 12), orgId, g.id, QS.VENDOR, c ? c.id : null, c ? c.realm_id : null, Number(g.cents), who.id, who.name]);
+      ["gbs_" + uuid().slice(0, 12), orgId, g.id, QS.VENDOR, c ? c.id : null, c && c.realm_id ? String(c.realm_id) : "", Number(g.cents), who.id, who.name]);
     n += (r && r.changes) || 0;
   }
   res.json({ ok: true, skipped: n, sentence: `${n} ${n === 1 ? "gift" : "gifts"} skipped. ${n === 1 ? "It" : "They"} will not go to QuickBooks unless you put ${n === 1 ? "it" : "them"} back.` });
