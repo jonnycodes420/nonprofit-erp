@@ -2330,6 +2330,7 @@ async function main() {
     }
     console.log("[assert] the demo holds no provider credentials: 0 sealed rows across every connection");
   }
+  await require("./seed/parity2-qbo").seedParity2Qbo(q, ORG, { today: TODAY });   // PARITY-2 Part 5
 
   // ── GIVE-2 · THE DONATION FORM THAT RAISES MORE ────────────────────────
   // Four things a prospect should be able to see working, on real rows:

@@ -30,6 +30,9 @@ let sharedProcessEmailMarketing = null;
 // FIX-12 Part 7a — set by mount() to the composer behind Home's morning brief,
 // so the optional morning email is built from the very same rows.
 let sharedComposeTodayMeetings = null;
+// PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
+// tick runs the same engine the Sync button does.
+let sharedProcessQboAutoSync = null;
 
 function mount(ctx) {
 const {
@@ -567,6 +570,14 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+  // PARITY-2 Part 5: QuickBooks opens only where the founder turned it on,
+  // until Intuit's app assessment is passed and production keys exist.
+  if (key === "intuit") {
+    const [o] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [req.user.orgId]);
+    if (!o || o.qbo_sync_enabled !== true)
+      return res.status(403).json({ error: "qbo_not_enabled",
+        sentence: "QuickBooks sync is not turned on for this organisation yet. The bookkeeper file on this page works without it." });
+  }
   const { values, names } = oauthEnv(key, O.ENV_VARS);
   if (!values.clientId || !values.clientSecret || !values.redirectUri) {
     return res.status(503).json({ error: "not_configured",
@@ -1013,6 +1024,7 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdminUnlessMailbox, 
         ? `Disconnected, and the ${removed} conversation${removed === 1 ? "" : "s"} you logged from that mailbox ${removed === 1 ? "has" : "have"} been removed.`
         : "Disconnected. Steward will not read anything else from that mailbox, and the conversations already logged are still on the records." });
   }
+  if (key === "intuit") await revokeIntuit(req.user.orgId);
   const table = kind === "bookkeeping" ? "bookkeeping_connections"
               : kind === "email" ? "email_marketing_connections" : "giving_sources";
   const col = kind === "bookkeeping" ? "vendor" : "provider";
@@ -2381,7 +2393,12 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
       lastSentAt: r.last_sent_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
       mapping, ...ready };
   });
+  // PARITY-2 Part 5: where QuickBooks sync is on, its own panel (chosen from
+  // the company's real chart of accounts) is the QuickBooks mapping, and this
+  // typed-text one stays for Xero.
+  const [qboOrg] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [orgId]);
   res.json({
+    qboSyncEnabled: !!(qboOrg && qboOrg.qbo_sync_enabled === true),
     connections, vendors: BK.VENDORS, mappingParts: BK.MAPPING_PARTS,
     funds: funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
     sources, sourceLabels,
@@ -2398,7 +2415,7 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
 app.put("/bookkeeping/:id/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const BK = await bookkeepingMod();
   const orgId = req.user.orgId;
-  const [c] = await query("SELECT id FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const [c] = await query("SELECT id, mapping FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!c) return res.status(404).json({ error: "Not found" });
   const m = req.body?.mapping;
   if (!m || typeof m !== "object") return res.status(400).json({ error: "mapping_required" });
@@ -2413,6 +2430,10 @@ app.put("/bookkeeping/:id/mapping", requireAuth, requireAdmin, checkWriteAccess,
     feeAccountId: m.feeAccountId ? String(m.feeAccountId) : null,
     depositAccounts: m.depositAccounts && typeof m.depositAccounts === "object" ? m.depositAccounts : {},
   };
+  // PARITY-2 Part 5: the QuickBooks sync mapping lives beside this one and is
+  // saved by its own route; this save carries it over untouched.
+  const prior = (typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping) || {};
+  if (prior.qbo) clean.qbo = prior.qbo;
   const donorNames = req.body?.donorNames === true;
   await run(`UPDATE bookkeeping_connections SET mapping=?::jsonb, donor_names=?, updated_at=NOW()
               WHERE id=? AND org_id=?`, [JSON.stringify(clean), donorNames, req.params.id, orgId]);
@@ -2584,9 +2605,284 @@ app.get("/bookkeeping/:id/agreement", requireAuth, wrap(async (req, res) => {
     definition: "Every deposit Steward sent this month beside the ones in your accounting system, matched on the payout. Anything on either side with no partner is listed, never quietly netted off." });
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARITY-2 Part 5 · QUICKBOOKS ONLINE SYNC
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The connection is INT-OAUTH's (Intuit, accounting scope only); these routes
+// are what it is for: the mapping, chosen from the company's own chart of
+// accounts; the Pending list; and Sync, Sync all, Skip and Retry. The engine
+// is qboSync.js. NOTHING IS SENT UNTIL A PERSON PRESSES SYNC, unless the
+// organisation's admin turned on auto-sync, which runs the same engine on the
+// hourly tick as `system:qbo/auto-sync`.
+//
+// Every route answers only for the caller's org and takes no row id in its
+// path: there is one live QuickBooks connection per org, and gift ids in a
+// body are filtered by org inside the engine's own query.
+const qboSyncMod = () => require("../qboSync");
+async function qboConnection(orgId) {
+  const [c] = await query(
+    `SELECT * FROM bookkeeping_connections WHERE org_id=? AND vendor='quickbooks' AND status <> 'disconnected'`, [orgId]);
+  return c || null;
+}
+async function qboEnabled(orgId) {
+  const [o] = await query("SELECT qbo_sync_enabled, qbo_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  return o || null;
+}
+const qboOff = res => res.status(403).json({ error: "qbo_not_enabled",
+  sentence: "QuickBooks sync is not turned on for this organisation yet. The bookkeeper file on this page works without it." });
+const qboTokenFor = orgId => (conn, force) => accessTokenFor(orgId, conn, "intuit", { force });
+
+// The connection, the mapping and the switches.
+app.get("/qbo", requireAuth, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return res.json({ enabled: false,
+    sentence: "QuickBooks sync is not turned on for this organisation. The bookkeeper file does the same job by hand." });
+  const c = await qboConnection(orgId);
+  const map = QS.readMapping(c);
+  const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? ORDER BY name`, [orgId]);
+  const campaigns = await query(
+    `SELECT id, name, type FROM campaigns WHERE org_id=? ORDER BY created_at DESC LIMIT 300`, [orgId]);
+  const demo = org.is_demo_org === true || map.demo;
+  res.json({
+    enabled: true, autoSync: org.qbo_auto_sync === true, demo,
+    environment: QS.environment(),
+    connection: c ? { id: c.id, realmId: c.realm_id, signedIn: !!c.credentials_sealed,
+      connectedAt: c.created_at, lastSentAt: c.last_sent_at, lastError: c.last_error } : null,
+    mapping: { mode: map.mode, startDate: QS.startDateOf(c, map), depositAccount: map.depositAccount,
+      feeAccount: map.feeAccount, funds: map.funds, campaigns: map.campaigns },
+    funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+            { id: QS.NO_FUND, name: "No fund named", restricted: false }],
+    campaigns: campaigns.map(x => ({ id: x.id, name: x.name, type: x.type || null })),
+    definition: "Each gift becomes one sales receipt in QuickBooks, on the account its campaign or fund is mapped to, with the donor as the customer. Nothing is sent until somebody presses Sync, and a gift is never sent twice.",
+    demoSentence: demo ? "This is the demonstration file's example connection. It shows what would be sent, and sends nothing." : null,
+  });
+}));
+
+// The Pending list: every gift waiting, with where it will land, and its total
+// as a figure whose rows are exactly these.
+app.get("/qbo/pending", requireAuth, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const c = await qboConnection(orgId);
+  const map = QS.readMapping(c);
+  const since = QS.startDateOf(c, map);
+  const q = QS.pendingRowsSql(orgId, since);
+  const rows = await query(q.sql, q.args);
+  const totalCents = rows.reduce((t, r) => t + Number(r.cents), 0);
+  const shown = rows.slice(0, 50).map(r => {
+    const landing = QS.landingFor(r, map);
+    const where = !landing.ok ? null
+      : map.mode === "deposit"
+        ? (r.deposit_ref ? `${landing.sentence}, in the deposit for payout ${r.deposit_ref}` : `${landing.sentence}, once it is matched to its payout`)
+        : landing.sentence;
+    return { giftId: r.id, donorId: r.donor_id, donorName: r.donor_name, date: String(r.date).slice(0, 10),
+      amount: Number(r.amount), cents: Number(r.cents), fund: r.fund_name || null, campaign: r.campaign_name || null,
+      lands: where, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : (landing.ok ? null : landing.sentence),
+      tried: r.sync_status === "failed", source: { key: "one-gift", params: { id: r.id } } };
+  });
+  const recent = await query(
+    `SELECT s.gift_id, s.status, s.qbo_id, s.txn_type, COALESCE(s.synced_at, s.updated_at) AS at, s.created_by_name,
+            g.date, ROUND(g.amount::numeric, 2) AS amount, d.name AS donor_name
+       FROM gift_bookkeeping_syncs s JOIN gifts g ON g.id = s.gift_id AND g.org_id = s.org_id
+       LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE s.org_id=? AND s.vendor='quickbooks' AND s.status IN ('synced','skipped')
+      ORDER BY COALESCE(s.synced_at, s.updated_at) DESC LIMIT 25`, [orgId]);
+  res.json({
+    since, mode: map.mode, count: rows.length, shown: shown.length,
+    total: { value: totalCents / 100, cents: totalCents, kind: "money", label: "Waiting to go to QuickBooks",
+      definition: `Every gift dated on or after ${since} that has not been sent to QuickBooks or skipped. Real money only: never a sample, a refund, stock or in-kind.`,
+      source: { key: "qbo-pending", params: { since } } },
+    rows: shown,
+    recent: recent.map(r => ({ giftId: r.gift_id, status: r.status, donorName: r.donor_name, date: String(r.date).slice(0, 10),
+      amount: Number(r.amount), qboId: r.qbo_id, link: r.status === "synced" ? QS.txnLink(r.txn_type, r.qbo_id) : null,
+      at: r.at, by: r.created_by_name || null, source: { key: "one-gift", params: { id: r.gift_id } } })),
+  });
+}));
+
+// The mapping, saved as one document. Fund and campaign ids are checked
+// against THIS org's own rows; an id off a request body is never trusted.
+app.put("/qbo/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const c = await qboConnection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first, then choose where each gift lands." });
+  const b = req.body || {};
+  const funds = new Set((await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId])).map(f => f.id).concat([QS.NO_FUND]));
+  const camps = new Set((await query("SELECT id FROM campaigns WHERE org_id=?", [orgId])).map(x => x.id));
+  const str = (v, n = 200) => (v === null || v === undefined || v === "") ? null : String(v).slice(0, n);
+  const pick = (obj, allowed) => {
+    const out = {};
+    for (const [k, v] of Object.entries(obj && typeof obj === "object" ? obj : {})) {
+      if (!allowed.has(k) || !v || typeof v !== "object") continue;
+      const accountId = str(v.accountId), classId = str(v.classId);
+      if (!accountId && !classId) continue;
+      out[k] = { accountId, accountName: str(v.accountName), classId, className: str(v.className) };
+    }
+    return out;
+  };
+  const acct = v => (v && typeof v === "object" && str(v.id)) ? { id: str(v.id), name: str(v.name) } : null;
+  if (b.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate)))
+    return res.status(400).json({ error: "bad_date", sentence: "The start date must be written 2026-10-01." });
+  const prior = QS.readMapping(c);
+  const qbo = {
+    mode: b.mode === "deposit" ? "deposit" : "salesreceipt",
+    startDate: b.startDate ? String(b.startDate) : prior.startDate,
+    depositAccount: acct(b.depositAccount), feeAccount: acct(b.feeAccount),
+    funds: pick(b.funds, funds), campaigns: pick(b.campaigns, camps),
+    items: prior.items, ...(prior.demo ? { demo: true } : {}),
+  };
+  await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{qbo}', ?::jsonb),
+                    updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(qbo), c.id, orgId]);
+  res.json({ ok: true, mapping: { ...qbo, items: undefined },
+    sentence: "Saved. Nothing has been sent: gifts wait in Pending until somebody presses Sync." });
+}));
+
+// The company's own chart of accounts and classes, for the mapping's lists. A
+// POST because asking may renew the token, and a GET never changes state.
+app.post("/qbo/lists", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const c = await qboConnection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", fallback: true, sentence: "Connect QuickBooks first, and its accounts appear here to choose from." });
+  const map = QS.readMapping(c);
+  // The demo has no company to ask: its lists are the names already mapped.
+  if (org.is_demo_org === true || map.demo) {
+    const accts = new Map(), classes = new Map();
+    for (const m of [...Object.values(map.funds), ...Object.values(map.campaigns)]) {
+      if (m.accountId) accts.set(m.accountId, { id: m.accountId, name: m.accountName || m.accountId, type: "Income" });
+      if (m.classId) classes.set(m.classId, { id: m.classId, name: m.className || m.classId });
+    }
+    const dep = map.depositAccount ? [{ ...map.depositAccount, type: "Bank" }] : [];
+    const fee = map.feeAccount ? [{ ...map.feeAccount, type: "Expense" }] : [];
+    const income = [...accts.values()];
+    return res.json({ ok: true, demo: true, accounts: [...income, ...dep, ...fee], income, deposit: dep, expense: fee,
+      classes: [...classes.values()], sentence: "The demonstration file's example accounts. A real company's chart of accounts appears here once it is connected." });
+  }
+  if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
+    return res.status(409).json({ error: "not_signed_in", fallback: true, sentence: "QuickBooks is not signed in yet, so Steward cannot read its accounts. Type them for now, or connect it first." });
+  const out = await QS.fetchLists({ orgId, realmId: String(c.realm_id), token: c.credentials_sealed ? qboTokenFor(orgId).bind(null, c) : null });
+  if (!out.ok) return res.status(502).json({ error: "lists_failed", fallback: true, sentence: out.sentence });
+  res.json({ ok: true, ...out, sentence: `${out.accounts.length} accounts and ${out.classes.length} classes from your QuickBooks company.` });
+}));
+
+// SYNC, SYNC ALL AND RETRY are this one route: Retry is Sync on a gift whose
+// last try failed, and the engine sends the same request again where the
+// outcome was unknown.
+app.post("/qbo/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const all = req.body?.all === true;
+  const giftIds = Array.isArray(req.body?.giftIds) ? req.body.giftIds.map(String).filter(Boolean) : null;
+  const out = await QS.syncGifts({ orgId, giftIds, all, who: actor(req), tokenFor: qboTokenFor(orgId) });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  res.json(out);
+}));
+
+// SKIP: a gift the bookkeeper entered by hand, or one that should never go.
+// `restore: true` puts skipped gifts back in Pending. A synced gift is never
+// touched by either.
+app.post("/qbo/skip", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const ids = Array.isArray(req.body?.giftIds) ? [...new Set(req.body.giftIds.map(String))].slice(0, 500) : [];
+  if (!ids.length) return res.status(400).json({ error: "nothing_chosen", sentence: "Choose the gifts to skip." });
+  const mine = (await query("SELECT id, ROUND(amount::numeric * 100)::bigint AS cents FROM gifts WHERE org_id=? AND id = ANY(?)", [orgId, ids]));
+  const c = await qboConnection(orgId);
+  const who = actor(req);
+  let n = 0;
+  if (req.body?.restore === true) {
+    const r = await run(`DELETE FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND status='skipped' AND gift_id = ANY(?)`,
+      [orgId, QS.VENDOR, mine.map(g => g.id)]);
+    n = (r && r.changes) || 0;
+    return res.json({ ok: true, restored: n, sentence: `${n} ${n === 1 ? "gift is" : "gifts are"} back in Pending.` });
+  }
+  for (const g of mine) {
+    const r = await run(
+      `INSERT INTO gift_bookkeeping_syncs (id,org_id,gift_id,vendor,connection_id,realm_id,status,amount_cents,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,'skipped',?,?,?)
+       ON CONFLICT (org_id, gift_id, vendor) DO UPDATE SET status='skipped', error=NULL, error_code=NULL, updated_at=NOW()
+        WHERE gift_bookkeeping_syncs.status = 'failed'`,
+      ["gbs_" + uuid().slice(0, 12), orgId, g.id, QS.VENDOR, c ? c.id : null, c ? c.realm_id : null, Number(g.cents), who.id, who.name]);
+    n += (r && r.changes) || 0;
+  }
+  res.json({ ok: true, skipped: n, sentence: `${n} ${n === 1 ? "gift" : "gifts"} skipped. ${n === 1 ? "It" : "They"} will not go to QuickBooks unless you put ${n === 1 ? "it" : "them"} back.` });
+}));
+
+// AUTO-SYNC, the org admin's own switch. Off by default; on means the hourly
+// tick sends what is waiting, exactly as Sync all would.
+app.put("/qbo/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const on = req.body?.on === true;
+  await run("UPDATE orgs SET qbo_auto_sync=? WHERE id=?", [on, orgId]);
+  res.json({ ok: true, autoSync: on, sentence: on
+    ? "Auto-sync is on. Once an hour Steward sends whatever is waiting, as Steward's own entry in the log."
+    : "Auto-sync is off. Nothing goes to QuickBooks until somebody presses Sync." });
+}));
+
+// THE HOURLY TICK, published to routes/jobs.js. The same engine as the
+// button, for every org whose admin turned auto-sync on, as a system actor.
+sharedProcessQboAutoSync = async function processQboAutoSync() {
+  const QS = qboSyncMod();
+  const orgs = await query(
+    `SELECT o.id FROM orgs o
+       JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='quickbooks' AND c.status <> 'disconnected'
+      WHERE o.qbo_sync_enabled = true AND o.qbo_auto_sync = true AND COALESCE(o.is_demo_org, false) = false`, []);
+  const touched = [];
+  let sent = 0, waiting = 0;
+  for (const { id } of orgs) {
+    const r = await QS.syncGifts({ orgId: id, all: true, limit: 50, tokenFor: qboTokenFor(id),
+      who: { id: "system:qbo/auto-sync", name: "Steward (QuickBooks auto-sync)" } })
+      .catch(e => { console.error("[qbo-auto-sync]", id, e.message); return null; });
+    if (r && r.ok && (r.synced || r.failed)) { touched.push(id); sent += r.synced; waiting += r.failed; }
+  }
+  return { detail: `${orgs.length} org(s) with auto-sync on; ${sent} sent, ${waiting} left in Pending`, orgs: touched,
+           summary: `QuickBooks auto-sync sent ${sent} and left ${waiting} in Pending.` };
+};
+
 // Disconnecting stops the sending and DELETES NOTHING, in Steward or in the
 // accounting system. What was sent was sent.
+// PARITY-2 Part 5: DISCONNECTING QUICKBOOKS ALSO TELLS INTUIT. The refresh
+// token is revoked at Intuit's revoke endpoint before Steward forgets it, so a
+// copy of it anywhere is worthless. Best effort: a revoke Intuit does not
+// answer still disconnects, because keeping a token somebody asked to drop is
+// the worse failure. Nothing is logged but the outcome.
+async function revokeIntuit(orgId) {
+  try {
+    const [c] = await query(`SELECT credentials_sealed FROM bookkeeping_connections
+                              WHERE org_id=? AND vendor='quickbooks' AND status <> 'disconnected'`, [orgId]);
+    if (!c || !c.credentials_sealed) return;
+    const { openBag } = await import("../shared/secretBox.js");
+    const bag = openBag(c.credentials_sealed, { aad: orgId });
+    const O = await oauthMod();
+    const { values } = oauthEnv("intuit", O.ENV_VARS);
+    const token = bag.refreshToken || bag.accessToken;
+    if (!token || !values.clientId || !values.clientSecret) return;
+    const r = await fetch(process.env.INTUIT_REVOKE_URL || "https://developer.api.intuit.com/v2/oauth2/tokens/revoke", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json",
+                 Authorization: "Basic " + Buffer.from(`${values.clientId}:${values.clientSecret}`).toString("base64") },
+      body: JSON.stringify({ token }), signal: AbortSignal.timeout(15000) });
+    if (!r.ok) console.error(`[oauth] intuit revoke answered ${r.status}`);
+  } catch (e) { console.error("[oauth] intuit revoke failed:", e.message); }
+}
+
 app.post("/bookkeeping/:id/disconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [bkc] = await query("SELECT vendor FROM bookkeeping_connections WHERE id=? AND org_id=? AND status <> 'disconnected'",
+    [req.params.id, req.user.orgId]);
+  if (bkc && bkc.vendor === "quickbooks") await revokeIntuit(req.user.orgId);
   const r = await run(`UPDATE bookkeeping_connections SET status='disconnected', credentials_sealed=NULL, updated_at=NOW()
                         WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
   if (r && r.changes === 0) return res.status(404).json({ error: "Not found" });
@@ -3337,5 +3633,9 @@ module.exports = {
   processEmailMarketing: (...args) => {
     if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
     return sharedProcessEmailMarketing(...args);
+  },
+  processQboAutoSync: (...args) => {
+    if (!sharedProcessQboAutoSync) throw new Error("processQboAutoSync called before routes/finance mount()");
+    return sharedProcessQboAutoSync(...args);
   },
 };

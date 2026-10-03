@@ -772,6 +772,24 @@ const SOURCES = {
     },
   },
   // PARITY-1 Part C · ONE GIFT, as the Home panel's amount opens it.
+  // PARITY-2 Part 5 · QUICKBOOKS PENDING. The rule is qboSync.js
+  // pendingWhere, the one the Pending list itself is drawn from, so the total
+  // above the list and the rows behind it are one filter.
+  "qbo-pending": {
+    label: "Waiting to go to QuickBooks",
+    measure: () => "sum",
+    params: { since: "date:required" },
+    sentence: (p, dd) => `Every gift dated on or after ${dd(p.since)} that has not been sent to QuickBooks or skipped. Real money only: never a sample, a refund, stock or in-kind.`,
+    sql: (orgId, p) => {
+      const w = require("./qboSync").pendingWhere(orgId, p.since);
+      return {
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                     COALESCE(f.name, 'Unrestricted') AS detail
+                FROM ${w.from} WHERE ${w.where}`,
+        args: w.args,
+      };
+    },
+  },
   "one-gift": {
     label: "The gift",
     measure: () => "sum",

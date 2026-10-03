@@ -113,6 +113,7 @@ async function reset() {
       // too.
       "form_events",
       "volunteer_group_members", "volunteer_signups", "volunteer_slots", "volunteer_opportunities", "volunteer_groups",
+      "gift_bookkeeping_syncs", "bookkeeping_customers",
       "bookkeeping_deposits", "bookkeeping_connections", "pos_sales", "pos_item_mappings",
       "matching_employers",
       "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",

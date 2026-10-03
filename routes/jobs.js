@@ -81,6 +81,15 @@ if (!backgroundTicksDisabled()) {
     .catch(e => console.error("[email-marketing]", e.message)), EMAIL_MARKETING_SYNC_INTERVAL_MS);
 }
 
+// PARITY-2 Part 5: QUICKBOOKS AUTO-SYNC, hourly, and only for orgs whose
+// admin turned it on. Off, nothing goes to QuickBooks until a person presses
+// Sync. The tick is the same engine as the button, as `system:qbo/auto-sync`.
+if (!backgroundTicksDisabled()) {
+  const runQboAutoSync = () => require("./finance").processQboAutoSync();
+  setInterval(() => recordTick("processQboAutoSync", runQboAutoSync)
+    .catch(e => console.error("[qbo-auto-sync]", e.message)), 60 * 60 * 1000);
+}
+
 // Fires due scheduled campaigns (status='scheduled', scheduled_at passed)
 // through the exact same send path as the manual route. The claim UPDATE is
 // conditional on status so two overlapping ticks can't double-send. A
