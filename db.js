@@ -131,8 +131,44 @@ async function schemaUnchanged() {
   return r.rows.length > 0 && r.rows[0].schema_hash === SCHEMA_HASH;
 }
 
+// FIX-20 Part 10 — schema init runs while the OLD instance is still serving
+// (Railway now waits for /ready before it switches). An ALTER TABLE queued
+// behind a long read holds every later read on that table behind it, so a
+// deploy could stall the live site. Init therefore runs on ONE session with a
+// short lock_timeout: a statement that cannot take its lock at once gives up,
+// waits, and tries again, and never sits in the queue in front of live reads.
+const DDL_LOCK_TIMEOUT = "1s";
+const DDL_RETRIES = 40;
+async function ddlSession() {
+  const client = await pool.connect();
+  await client.query(`SET lock_timeout = '${DDL_LOCK_TIMEOUT}'`);
+  return {
+    async query(sql, params) {
+      for (let attempt = 1; ; attempt++) {
+        try { return await client.query(sql, params); }
+        catch (e) {
+          if (e.code !== "55P03" || attempt >= DDL_RETRIES) throw e;   // 55P03: lock_not_available
+          console.warn(`[schema] a lock was busy (attempt ${attempt}); waiting so live reads go first`);
+          await new Promise(r => setTimeout(r, Math.min(5000, 250 * attempt)));
+        }
+      }
+    },
+    async release() {
+      await client.query("RESET lock_timeout").catch(() => {});
+      client.release();
+    },
+  };
+}
+
 async function initSchema() {
   if (await schemaUnchanged()) return;
+  const ddl = await ddlSession();
+  try { await runSchemaInit(ddl); }
+  finally { await ddl.release(); }
+}
+
+// The DDL itself. `pool` here is the init session above, not the module pool.
+async function runSchemaInit(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orgs (
       id TEXT PRIMARY KEY,
