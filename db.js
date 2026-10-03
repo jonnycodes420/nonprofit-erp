@@ -71,15 +71,24 @@ function setPool() {
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
     options: "-c steward.app_connection=on -c enable_nestloop=off",
-    max: 4,
-    idleTimeoutMillis: 60000,
+    max: 3,
+    // Kept open: these reads are rare, so a pool that let its connections go
+    // after a minute idle paid a fresh TLS connect to prod's database (1 to 2
+    // seconds) on most first clicks. A connection the server drops is
+    // reported here and replaced on the next read.
+    idleTimeoutMillis: 0,
     allowExitOnIdle: true,
   }));
+}
+function setPoolReady() {
+  const p = setPool();
+  if (!p.listenerCount("error")) p.on("error", err => console.error("[db] set-wise pool connection dropped:", err.message));
+  return p;
 }
 async function querySetwise(sql, params = []) {
   let i = 0;
   const pgSql = sql.replace(/\?/g, () => `$${++i}`);
-  const result = await setPool().query(pgSql, params);
+  const result = await setPoolReady().query(pgSql, params);
   return result.rows;
 }
 
