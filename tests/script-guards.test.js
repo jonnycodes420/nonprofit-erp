@@ -226,6 +226,8 @@ const LOOPBACK_HARDCODED = [
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
 const PROD_READONLY = [
+  // CLEAN-1 follow-up: counts rows the July merge left pointing at folded records, in a READ ONLY transaction.
+  "clean1-orphan-report",
   "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "build61-prod-verify", "check-webhook-subscriptions",
   "consistency-audit", "finance-overview-capture",
