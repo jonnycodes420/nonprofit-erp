@@ -203,7 +203,8 @@ async function restoreAsset(id) {
 // Every id currently referenced by a LIVE pointer, across every pointer
 // table an asset kind is stored into (portal_settings logo/header ·
 // impact_updates photos · campaigns hero · portal_pages draft+published
-// widget images · donors photo_asset_id · gifts cheque_asset_id). The purge guard reads this — an asset on this list is
+// widget images · donors photo_asset_id · gifts cheque_asset_id ·
+// interaction_attachments asset_id). The purge guard reads this — an asset on this list is
 // never destroyed no matter how old its deleted_at is. Kept in ONE place on
 // purpose; the asset-retention battery pins that all four tables are here.
 async function collectLiveAssetRefs(orgId) {
@@ -233,6 +234,11 @@ async function collectLiveAssetRefs(orgId) {
   // cheque photo above, higher stakes — without this line the 90-day sweep
   // would destroy them.
   for (const r of await query(`SELECT asset_id FROM grant_documents${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+  }
+  // PARITY-1 Part B — a file attached to a conversation or a note. A live
+  // attachment row keeps its bytes; a soft-deleted one lets them age out.
+  for (const r of await query(`SELECT asset_id FROM interaction_attachments WHERE deleted_at IS NULL${orgId ? " AND org_id = ?" : ""}`, p)) {
     if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
   }
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {

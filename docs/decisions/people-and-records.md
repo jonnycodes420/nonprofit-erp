@@ -51,6 +51,18 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   that the other record carried. (BUILD-58)
 - **Check every client-supplied donor, member or household id with an org-scoped ownership check**
   (`orgOwns`). A foreign id is a 404 and writes nothing. (BUILD-14)
+- **A file on a conversation or a note is a row in `interaction_attachments`, and its bytes live in the
+  asset seam.** `assetStore.js` under kind `ixfile`: the S3-compatible bucket when `PORTAL_ASSETS_S3_*` is
+  set, Postgres (`portal_assets`) otherwise. The cap is 10 MB of decoded file, and it and the 16mb body
+  parser on `POST /interactions/:id/attachments` are one decision (move both or neither). The types are a
+  closed list (PDF, PNG, JPEG, GIF, WebP, HEIC, Word, Excel, CSV, plain text; never SVG or HTML) and the first
+  bytes must match the declared type where a signature exists (`interactionFiles.js`). A file opens only
+  through `/interaction-files/<assetId>?e=&s=`, a thirty-minute link minted per read for signed-in staff of
+  the org, always as a download with nosniff. Delete is soft (`deleted_at`); the bytes age out through the
+  90-day retention sweep, and a live row keeps them (`collectLiveAssetRefs`). **Nothing scans these files for
+  viruses**: Railway offers no scanner and Steward runs none, which the form says. Adding one means a ClamAV
+  sidecar service (or a hosted scanning API) called between the byte check and `putThemeAsset`, with the file
+  held back until it answers clean. (PARITY-1)
 - **Serve person photos only through the signed, expiring `/person-photos/<assetId>?e=&s=` link.** The HMAC
   covers the org id on the stored row. Expired and wrong-org both get the same 403. Never use
   `/portal-assets`. (BUILD-94)

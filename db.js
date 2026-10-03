@@ -6131,6 +6131,33 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS giving_level_mid_cents INTEGER`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS giving_level_major_cents INTEGER`);
 
+  // ── PARITY-1 Part B — A FILE ON A CONVERSATION OR A NOTE ────────────────
+  // The bytes live in the asset seam (assetStore.js, kind 'ixfile'); this row
+  // names the file, ties it to one interaction on one person, and says who
+  // attached it. Delete is SOFT (deleted_at): the row stays, the signed door
+  // stops serving it, and the asset retention sweep keeps the bytes 90 days.
+  // No FK to interactions on purpose: a trashed interaction is deleted and
+  // restorable (FIX-14 Undo), and its files come back with it because every
+  // read joins the live interaction.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS interaction_attachments (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      interaction_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      mime TEXT NOT NULL,
+      bytes INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      deleted_at TIMESTAMPTZ,
+      deleted_by TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ix_attach_donor ON interaction_attachments (org_id, donor_id) WHERE deleted_at IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ix_attach_interaction ON interaction_attachments (org_id, interaction_id)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

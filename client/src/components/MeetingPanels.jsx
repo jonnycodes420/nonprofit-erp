@@ -25,6 +25,8 @@ import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
 import { noteFields } from "../../../shared/meetingNote.js";
+import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
+  TimelineListView, AttachmentChips, AttachButton } from "./ProfileTimelineParts";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -180,75 +182,156 @@ const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2, talk: T.white };
 // timeline (the old Touchpoint timeline is gone), with a speech-mark tile.
 ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null }) {
-  const [filter, setFilter] = useState("all");
+// PARITY-1 Part B — the filters are the leader's set (All, Gifts,
+// Conversations, Tasks, Notes, Emails, Attachments), Emails carries "Hide mass
+// emails", and a list view sits beside the cards. The chosen filter, the switch
+// and the view are remembered per viewer (ProfileTimelineParts.jsx). A meeting
+// is a Conversation; a note is a Note; a campaign, appeal or sequence send is a
+// MASS email; the donor's open and done tasks are Tasks; Attachments lists
+// every file on a conversation or a note.
+ICON.task = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>;
+ICON.file = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>;
+TILE_BG.task = T.white; TILE_BG.file = T.bg;
+const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", task: "Task", file: "File" };
+const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Letter", text: "Text" };
+
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
+  tasks = [], attachments = [], canWrite = false }) {
+  const [prefs, setPrefs] = useState(loadTimelinePrefs);
+  const { filter, hideMass, view } = prefs;
+  const setPref = patch => setPrefs(p => { const n = { ...p, ...patch }; saveTimelinePrefs(n); return n; });
+  const setFilter = f => setPref({ filter: f });
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(12);
   if (!rel) return null;
   const first = firstNameOf(donor?.name) || "them";
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
+  const filesBy = {};
+  for (const f of attachments || []) (filesBy[f.interactionId] = filesBy[f.interactionId] || []).push(f);
   const calendarMeetingIds = new Set((rel.past || []).map(e => e.id));
-  const loggedFromCalendar = new Set((rel.past || []).map(e => e.interactionId).filter(Boolean));
   const items = [];
-  for (const t of rel.emailThreads || []) items.push({ kind: "email", id: "t:" + t.key, date: t.lastDate, t });
+  for (const t of rel.emailThreads || []) items.push({ kind: "email", bucket: "email", id: "t:" + t.key, date: t.lastDate, t });
   if (Array.isArray(rel.meetings)) {
     // FIX-14 Part 1 — the meetings are the server's ONE source (meetings.js),
-    // so this list, its chip, the rail and the header count the same rows.
+    // so this list, the rail and the header count the same rows.
     for (const m of rel.meetings) {
-      if (m.kind === "calendar") items.push({ kind: "meeting", id: "c:" + m.id, date: m.date, m });
-      else items.push({ kind: "meeting", id: "i:" + m.id, date: m.date, logged: { ...m, ...(byId[m.id] || {}), date: m.date } });
+      if (m.kind === "calendar") items.push({ kind: "meeting", bucket: "conversation", id: "c:" + m.id, date: m.date, m });
+      else items.push({ kind: "meeting", bucket: "conversation", id: "i:" + m.id, date: m.date, logged: { ...m, ...(byId[m.id] || {}), date: m.date } });
     }
   } else {
-    for (const m of rel.past || []) items.push({ kind: "meeting", id: "c:" + m.id, date: m.date || String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
+    for (const m of rel.past || []) items.push({ kind: "meeting", bucket: "conversation", id: "c:" + m.id, date: m.date || String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
     for (const i of interactions || []) {
       if (i.type !== "meeting" || calendarMeetingIds.has(i.id)) continue;
       let meta = {}; try { meta = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch {}
       if (meta.calendar_event_id) continue;    // shown as its calendar meeting
-      items.push({ kind: "meeting", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
+      items.push({ kind: "meeting", bucket: "conversation", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
     }
   }
-  for (const g of gifts || []) items.push({ kind: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  for (const g of gifts || []) items.push({ kind: "gift", bucket: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
   // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
   // stewardship touch, an email typed in by hand) is on this one timeline too.
   const inThreads = new Set((rel.emailThreads || []).flatMap(t => t.ids || []));
   const meetingIds = new Set(items.filter(i => i.kind === "meeting" && i.logged).map(i => i.logged.id));
   for (const i of interactions || []) {
     if (!i || !i.id || i.type === "gift" || i.type === "meeting" || meetingIds.has(i.id) || inThreads.has(i.id)) continue;
-    items.push({ kind: "talk", id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
+    items.push({ kind: "talk", bucket: interactionBucket(i), mass: isMassEmail(i), id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
+  }
+  for (const t of tasks || []) {
+    items.push({ kind: "task", bucket: "task", id: "k:" + t.id, date: String(t.due || t.created_at || "").slice(0, 10), task: t });
   }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0),
-    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length,
-    talk: items.filter(i => i.kind === "talk").length };
+  const fileItems = (attachments || []).map(f => ({ kind: "file", bucket: "file", id: "f:" + f.id,
+    date: String(f.createdAt || "").slice(0, 10), f }));
+  const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0), meeting: items.filter(i => i.kind === "meeting").length };
   // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
   const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
-  const shown = items.filter(i => filter === "all" || i.kind === filter);
+  const massCount = items.filter(i => i.mass).length;
+  const shown = filter === "file" ? fileItems
+    : items.filter(i => (filter === "all" || i.bucket === filter) && !(hideMass && i.mass));
   const chip = (key, label) => (
-    <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key}
+    <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key} data-filter={key}
       style={{ padding: "8px 14px", borderRadius: 999, border: filter === key ? 0 : "1px solid " + CHIP_EDGE,
         background: filter === key ? T.ink : "transparent", color: filter === key ? T.inkInverse : T.ink,
         font: "500 14px 'DM Sans',sans-serif", cursor: "pointer" }}>{label}</button>
   );
+  const seg = (key, label) => (
+    <button type="button" onClick={() => setPref({ view: key })} aria-pressed={view === key} data-view={key}
+      style={{ padding: "6px 12px", border: 0, borderRadius: 8, background: view === key ? T.bg2 : "transparent", color: T.ink,
+        font: (view === key ? "600" : "500") + " 13px 'DM Sans',sans-serif", cursor: "pointer" }}>{label}</button>
+  );
+  const describe = (it) => {
+    let title, body = null, meta = null, by = "", type = KIND_LABEL[it.kind] || "";
+    if (it.kind === "email") {
+      const t = it.t;
+      title = t.subject;
+      body = t.lastQuote ? `${t.lastDirection === "inbound" ? first : "You"}: "${t.lastQuote}"` : null;
+      meta = `${t.count} message${t.count === 1 ? "" : "s"}${t.attachments ? ` · ${t.attachments} attachment${t.attachments === 1 ? "" : "s"}` : ""}`;
+      by = t.lastDirection === "inbound" ? first : "";
+    } else if (it.kind === "meeting" && it.m) {
+      const m = it.m;
+      title = `${m.title}${durationOf(m.startsAt, m.endsAt) ? ` · ${durationOf(m.startsAt, m.endsAt)}` : ""}`;
+      body = m.note ? `${ownerFirst(m)}'s note: "${m.note}"` : "No note yet.";
+      meta = m.nextStep ? `Next step set: ${m.nextStep}` : null;
+      by = ownerFirst(m);
+    } else if (it.kind === "talk" || it.kind === "meeting") {
+      const i = it.logged;
+      title = conversationTitle(i);
+      body = <NoteBody note={i.note}/>;
+      by = i.logged_by_name || i.ownerName || i.created_by_name || "";
+      meta = by ? `Logged by ${by}` : null;
+      type = it.mass ? "Email" : it.bucket === "note" ? "Note" : it.bucket === "email" ? "Email" : (TYPE_WORD[i.type] || "Conversation");
+    } else if (it.kind === "task") {
+      const t = it.task;
+      const done = Number(t.done) === 1 || t.done === true;
+      title = t.title;
+      body = done ? "Done." : t.due ? `Due ${relDay(String(t.due).slice(0, 10))}.` : "Open, no due date.";
+      by = t.assigned_to_name || "";
+      meta = by ? `For ${by}` : null;
+    } else if (it.kind === "file") {
+      const f = it.f;
+      title = f.fileName;
+      body = `On a ${String(f.interactionType || "conversation").replace(/_/g, " ")}${f.interactionDate ? ` from ${relDay(f.interactionDate)}` : ""}.`;
+      by = f.createdByName || "";
+      meta = by ? `Attached by ${by}` : null;
+    } else {
+      const g = it.g;
+      title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
+      body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
+      by = g.created_by_name || "";
+    }
+    return { title, body, meta, by, type };
+  };
+  const loggedOf = it => it.logged || (it.m && byId[it.m.interactionId]) || null;
   return (
     <section aria-label="Conversations and meetings" data-testid="dp-timeline" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {chip("all", "All")}{counts.talk > 0 && chip("talk", `Conversations ${counts.talk}`)}{!quietInbox && chip("email", `Emails ${counts.email}`)}{!quietInbox && chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
+        <div role="group" aria-label="View" style={{ display: "inline-flex", gap: 2, padding: 2, border: "1px solid " + CHIP_EDGE, borderRadius: 10 }}>
+          {seg("cards", "Timeline")}{seg("list", "List")}
         </div>
       </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
+        {TIMELINE_FILTERS.map(([k, l]) => chip(k, l))}
+      </div>
+      {(filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
+        <input type="checkbox" checked={hideMass} onChange={e => setPref({ hideMass: e.target.checked })} style={{ accentColor: T.greenDk }}/>
+        Hide mass emails <span style={{ color: T.ink3 }}>(campaigns, appeals and sequence steps sent to many people)</span>
+      </label>}
       {quietInbox && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
         {onConnect ? <button type="button" onClick={onConnect} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Connect your inbox</button> : "Connect your inbox"} to see emails and meetings.
       </div>}
-      {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>Nothing here yet.</div>}
-      {shown.slice(0, limit).map(it => {
+      {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>{filter === "file" ? "No files attached to conversations or notes yet." : filter === "task" ? `No tasks for ${first}.` : "Nothing here yet."}</div>}
+      {view === "list" && shown.length > 0 && <TimelineListView
+        rows={shown.slice(0, limit).map(it => { const d = describe(it); const lg = loggedOf(it);
+          return { id: it.id, kind: it.kind, dateLabel: relDay(it.date), type: d.type, mass: !!it.mass,
+            summary: typeof d.title === "string" ? d.title : "", by: d.by, files: lg ? (filesBy[lg.id] || []) : [] }; })}
+        onOpen={r => { setPref({ view: "cards" }); setOpenId(r.id); }}/>}
+      {view !== "list" && shown.slice(0, limit).map(it => {
         const isOpen = openId === it.id;
-        let title, body, meta, extra = null;
+        const { title, body, meta } = describe(it);
+        let extra = null;
         if (it.kind === "email") {
           const t = it.t;
-          title = t.subject;
-          body = t.lastQuote ? `${t.lastDirection === "inbound" ? first : "You"}: "${t.lastQuote}"` : null;
-          meta = `${t.count} message${t.count === 1 ? "" : "s"}${t.attachments ? ` · ${t.attachments} attachment${t.attachments === 1 ? "" : "s"}` : ""}`;
           if (isOpen) extra = (t.ids || []).map(id => byId[id]).filter(Boolean).map(x => {
             let mm = {}; try { mm = typeof x.metadata === "string" ? JSON.parse(x.metadata || "{}") : (x.metadata || {}); } catch {}
             return <div key={x.id} style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, marginTop: 10, fontSize: 14, lineHeight: 1.55 }}>
@@ -262,48 +345,42 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           });
         } else if (it.kind === "meeting" && it.m) {
           const m = it.m;
-          title = `${m.title}${durationOf(m.startsAt, m.endsAt) ? ` · ${durationOf(m.startsAt, m.endsAt)}` : ""}`;
-          body = m.note ? `${ownerFirst(m)}'s note: "${m.note}"` : "No note yet.";
-          meta = m.nextStep ? `Next step set: ${m.nextStep}` : null;
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8, lineHeight: 1.6 }}>
             {m.location && <div>{m.location}</div>}
             <div>{whenLabel(m.startsAt)} · from {ownerFirst(m)}'s {PROVIDER_CAL[m.provider] || "calendar"}</div>
             {!m.loggedAt && onLog && <button type="button" onClick={e => { e.stopPropagation(); onLog(m); }} style={{ ...btnOutline, marginTop: 10, padding: "8px 14px", minHeight: 36, fontSize: 14 }}>Log how it went</button>}
           </div>;
-        } else if (it.kind === "talk") {
-          const i = it.logged;
-          title = conversationTitle(i);
-          body = <NoteBody note={i.note}/>;
-          meta = (i.logged_by_name || i.ownerName || i.created_by_name) ? `Logged by ${i.logged_by_name || i.ownerName || i.created_by_name}` : null;
-        } else if (it.kind === "meeting") {
-          // FIX-14 Part 1 — a logged meeting is titled by its type and place,
-          // and its note keeps its lines: "Label: value" lines are rows.
-          const i = it.logged;
-          title = conversationTitle(i);
-          body = <NoteBody note={i.note}/>;
-          meta = (i.logged_by_name || i.ownerName) ? `Logged by ${i.logged_by_name || i.ownerName}` : null;
-        } else {
+        } else if (it.kind === "gift") {
           const g = it.g;
-          title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
-          body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
+        } else if (it.kind === "file") {
+          extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }
+        // PARITY-1 Part B — the files on this entry, and "Attach a file".
+        const lg = it.kind === "file" ? null : loggedOf(it);
+        const files = lg ? (filesBy[lg.id] || []) : [];
+        const attachRow = lg && lg.id && (files.length > 0 || (canWrite && isOpen)) ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+            <AttachmentChips files={files} canRemove={canWrite}/>
+            {canWrite && isOpen && <AttachButton interactionId={lg.id}/>}
+          </div>) : null;
         return (
           <div key={it.id} id={it.kind === "gift" ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
-            onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
+            onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
-              border: it.kind === "talk" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
+              border: it.kind === "talk" || it.kind === "task" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
               display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" ? "$" : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{title}{it.mass && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, color: T.ink3 }}>Mass email</span>}</div>
               {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3, whiteSpace: typeof body === "string" ? "pre-wrap" : undefined }}>{body}</div>}
               {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
               {extra}
+              {attachRow}
             </div>
             <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}
               {/* FIX-14 Part 2: Edit/Delete and "Edited" on a logged meeting. */}
-              {renderActions && (it.logged || (it.m && byId[it.m.interactionId])) && <div>{renderActions(it.logged || byId[it.m.interactionId])}</div>}
+              {renderActions && lg && <div>{renderActions(lg)}</div>}
             </div>
           </div>
         );
