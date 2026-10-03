@@ -13,8 +13,6 @@ import { apiFetch } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { displayDateShort } from "../../../shared/displayDate";
 
-// Only an object URL this page made is ever put in a src.
-const blobUrlOf = b => { const u = URL.createObjectURL(b); return /^blob:/.test(u) ? u : ""; };
 import { T, Modal } from "./shared";
 
 // ── Shared consts (above every reader) ─────────────────────────────────────
@@ -73,7 +71,7 @@ export default function VideoThanksModal({ donor, onClose, onSaved }) {
         const type = baseMime(mr.mimeType || mimeType) || "video/webm";
         const blob = new Blob(chunksRef.current, { type });
         blobRef.current = blob;
-        setPlayUrl(blobUrlOf(blob));
+        setPlayUrl(URL.createObjectURL(blob));
         setPhase("recorded");
         stopStream();
       };
@@ -96,13 +94,17 @@ export default function VideoThanksModal({ donor, onClose, onSaved }) {
   };
 
   // The phone's own camera, for a browser that cannot record here.
-  const onFile = e => {
+  const onFile = async e => {
     setError("");
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    if (!ALLOWED.includes(baseMime(f.type))) { setError("That video is not WebM or MP4. Record it again here, or choose an MP4."); return; }
-    if (f.size > MAX_BYTES) { setError(`That video is over ${MAX_BYTES / 1024 / 1024} MB. Keep it under two minutes.`); return; }
-    const url = blobUrlOf(f);
+    const picked = e.target.files && e.target.files[0];
+    if (!picked) return;
+    if (!ALLOWED.includes(baseMime(picked.type))) { setError("That video is not WebM or MP4. Record it again here, or choose an MP4."); return; }
+    if (picked.size > MAX_BYTES) { setError(`That video is over ${MAX_BYTES / 1024 / 1024} MB. Keep it under two minutes.`); return; }
+    // The bytes, under a type this page names itself, so nothing the file
+    // input said about itself reaches the player (the server checks the
+    // bytes again on upload).
+    const f = new Blob([await picked.arrayBuffer()], { type: baseMime(picked.type) === "video/mp4" ? "video/mp4" : "video/webm" });
+    const url = URL.createObjectURL(f);
     const probe = document.createElement("video");
     probe.preload = "metadata";
     probe.onloadedmetadata = () => {
