@@ -35,12 +35,17 @@ const pool = new Pool({
 // `steward.audit_purge` flag reaches only rows older than that, and closing an
 // organisation's account (routes/billing.js) leaves its audit rows in place.
 async function getDb() {
-  await initSchema();
+  const ranInit = await initSchema();
   // The demo seed must never take the API down: schema is required to serve,
   // org_creo's demo sugar is not. A seed failure logs CRITICAL and the server
   // boots anyway (found live 2026-08-05: a seed 23505 crash-looped boot).
-  try { await seedData(); }
-  catch (err) { console.error("[seed] CRITICAL: demo seed failed (server continues):", err.message); }
+  const seed = seedData().catch(err => console.error("[seed] CRITICAL: demo seed failed (server continues):", err.message));
+  // FIX-20 Part 10: when the schema hash is unchanged the seed has already
+  // run against this database, so the server opens at once and the seed
+  // re-checks in the background (on prod it took ~30s of every deploy). A new
+  // or changed schema still waits for it, so a fresh database never serves
+  // before its fixture rows exist.
+  if (ranInit) await seed;
   return pool;
 }
 
@@ -160,11 +165,13 @@ async function ddlSession() {
   };
 }
 
+// Returns true when the DDL ran, false when the unchanged hash skipped it.
 async function initSchema() {
-  if (await schemaUnchanged()) return;
+  if (await schemaUnchanged()) return false;
   const ddl = await ddlSession();
   try { await runSchemaInit(ddl); }
   finally { await ddl.release(); }
+  return true;
 }
 
 // The DDL itself. `pool` here is the init session above, not the module pool.
