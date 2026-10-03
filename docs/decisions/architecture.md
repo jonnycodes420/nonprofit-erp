@@ -346,3 +346,14 @@ Diagnostic tooling added after manually deleting test-user rows in Supabase's Ta
 - All donor/grant/task/volunteer/board endpoints use AND org_id = ? on SELECT, UPDATE, DELETE
 - calcWealthScore scopes gifts and interactions queries by both donor_id AND org_id
 - Stripe webhook looks up org by stripe_account_id (per-org), then inserts scoped records
+
+## An import ends with ANALYZE (PARITY-3)
+
+- Postgres plans from statistics it gathers on its own schedule, not when a file lands. With none it
+  guesses one row per table and re-runs the giving-level aggregate once per gift: Harborlight's Mid group
+  page took 31.8 seconds cold and 0.29 after one ANALYZE. `middleware/analyzeAfterImport.js` runs ANALYZE
+  on the import tables after every successful import write, and `scripts/seed-demo.js` runs the same list
+  last. A new import route is covered by the middleware's path list, so add its path there.
+- The giving-level condition computes its aggregate once (`WITH s AS MATERIALIZED` in
+  `donorStatus.tagCondition`), so even a database with no statistics stays near two seconds, not thirty.
+

@@ -489,6 +489,8 @@ const invitationLimiter = rateLimit({
 // Everything about WHAT a row says lives in auditTrail.js and
 // middleware/auditTrail.js. Nothing about it lives in a route.
 app.use(require("./middleware/auditTrail").auditTrail());
+// PARITY-3 6b: an import that succeeds ends with ANALYZE (middleware/analyzeAfterImport.js).
+app.use(require("./middleware/analyzeAfterImport").analyzeAfterImport());
 
 app.use(require("./routes/webhooks").routers.r0);
 

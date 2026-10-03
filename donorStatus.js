@@ -124,7 +124,7 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
   const { sql, args } = statusSql(orgId, today, cuts);
   const col = LEVELS[key] ? "s.level = ?" : LIFECYCLES[key] ? "s.lifecycle = ?" : "s.retained";
   return {
-    sql: `${a}id IN (SELECT s.donor_id FROM (${sql}) s WHERE ${col})`,
+    sql: `${a}id IN (WITH s AS MATERIALIZED (${sql}) SELECT s.donor_id FROM s WHERE ${col})`,
     args: col.endsWith("?") ? [...args, key] : args,
   };
 }
