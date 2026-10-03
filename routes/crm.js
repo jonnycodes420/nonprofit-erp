@@ -30,6 +30,13 @@ const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
+const { rateLimit } = require("express-rate-limit");
+// FIX-20 Part 0: the private file doors (conversation attachments, grant
+// documents). Signed-in staff open a handful at a time; this is per IP.
+const fileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false,
+  skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
+});
 
 const routers = {
   r0: express.Router(),
@@ -52,7 +59,7 @@ const {
   checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
-  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter, fileLimiter,
+  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
   demoMailNote,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
