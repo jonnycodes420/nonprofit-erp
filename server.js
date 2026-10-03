@@ -3761,6 +3761,7 @@ app.use(require("./routes/videoThanks").routers.r0);   // PARITY-1 Part F
 app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
+app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -10364,6 +10365,9 @@ require("./routes/why").mount({
 });
 require("./routes/profileStatus").mount({
   actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,
+});
+require("./routes/homeCalls").mount({
+  actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, uuid, wrap,
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,

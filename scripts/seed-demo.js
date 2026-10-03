@@ -349,8 +349,10 @@ async function main() {
   // Goal is set AFTER the gifts exist, from what was actually raised (below) —
   // a demo whose first screen reads "666% · $1,018,277 over" looks broken, not
   // successful. Created here with a placeholder; corrected once totals are in.
-  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
-           VALUES ('camp_b72demo',$1,'Annual Fund ' || $2,'appeal','active',1,$3,$4)`,
+  // PARITY-1 Part C — the Annual Fund is the org's ANNUAL goal (goal_category),
+  // which is what Home's goal bar under "Calls to make" draws.
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date,goal_category)
+           VALUES ('camp_b72demo',$1,'Annual Fund ' || $2,'appeal','active',1,$3,$4,'annual')`,
           [ORG, String(YEAR), dateIn(YEAR, 1, 1), dateIn(YEAR, 12, 31)]);
 
   const donors = [], gifts = [];

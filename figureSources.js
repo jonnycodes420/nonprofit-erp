@@ -720,11 +720,15 @@ const SOURCES = {
   // amount on each row is what they gave in the last 12 months.
   "donors-by-status": {
     label: "Donors with this tag",
-    measure: () => "count",
-    params: { tag: "word:required", today: "date:required" },
+    // PARITY-1 Part C · the giving-level chart asks the same rows for their
+    // sum (what the level gave in the last 12 months) as well as their count,
+    // and narrows a level to the people who gave in those 12 months (gave12),
+    // so a lapsed donor is not counted as General.
+    measure: p => p.measure || "count",
+    params: { tag: "word:required", today: "date:required", measure: "measure", gave12: "bool" },
     sentence: p => {
       const DS = require("./donorStatus");
-      return `Everyone tagged ${DS.tagLabel(p.tag)}. ${DS.tagSentence(p.tag, DS.DEFAULT_CUTS).replace(/^Giving level is what they gave.*?: /, "Giving level is what they gave in the last 12 months, against your cut points. ")} The amount is what each gave in the last 12 months, refunds taken off.`;
+      return `Everyone tagged ${DS.tagLabel(p.tag)}${p.gave12 ? " who gave in the last 12 months" : ""}. ${DS.tagSentence(p.tag, DS.DEFAULT_CUTS).replace(/^Giving level is what they gave.*?: /, "Giving level is what they gave in the last 12 months, against your cut points. ")} The amount is what each gave in the last 12 months, refunds taken off.`;
     },
     sql: async (orgId, p) => {
       const DS = require("./donorStatus");
@@ -736,11 +740,76 @@ const SOURCES = {
         sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
                      'Given in the last 12 months' AS detail
                 FROM (${st.sql}) s JOIN donors d ON d.id = s.donor_id AND d.org_id = ?
-               WHERE ${col}`,
+               WHERE ${col}${p.gave12 ? " AND s.lifecycle <> 'lapsed'" : ""}`,
         args: [...st.args, orgId, ...(col.endsWith("?") ? [p.tag] : [])],
         order: "amount DESC NULLS LAST, id",
       };
     },
+  },
+  // PARITY-1 Part C · ONE GIFT, as the Home panel's amount opens it.
+  "one-gift": {
+    label: "The gift",
+    measure: () => "sum",
+    params: { id: "id:required" },
+    sentence: () => "This one gift, at its own amount, with the fund it went to.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                   COALESCE(f.name, 'Unrestricted') AS detail
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+              LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+             WHERE g.org_id = ? AND g.id = ?`,
+      args: [orgId, p.id],
+    }),
+  },
+  // PARITY-1 Part C · HOME'S CALLS TO MAKE. The rule is callsToMake.js
+  // callsSql, the one the panel lists from. `floor` is the org's call floor in
+  // cents, carried so the sentence can say it; the panel passes the org's own.
+  "calls-to-make": {
+    label: "Calls to make",
+    measure: () => "count",
+    params: { today: "date:required", floor: "word:required" },
+    sentence: p => require("./callsToMake").sentence(Number(p.floor)),
+    sql: (orgId, p) => {
+      if (!/^\d{1,9}$/.test(p.floor)) throw new FigureParamError("floor must be a whole number of cents.");
+      return require("./callsToMake").callsSql(orgId, p.today, Number(p.floor));
+    },
+  },
+  // PARITY-1 Part C · RETENTION OVER ANY TWO WINDOWS. Of the people who gave
+  // in the earlier window (from1 to to1), the share who gave again in the
+  // later one (from0 to to0). The Fundraising dashboard asks it for the fiscal
+  // year and for rolling 12 months; the calendar year stays `retention`.
+  // "Gave" is a gift above zero, so a refund never counts as giving.
+  "retention-window-prior": {
+    label: "Gave in the earlier window",
+    measure: () => "count",
+    params: { from1: "date:required", to1: "date:required" },
+    sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)}: the people retention is measured against.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+                   'Given in the earlier window' AS detail
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.from1, p.to1],
+      order: "amount DESC, id",
+    }),
+  },
+  "retention-window-kept": {
+    label: "Gave in both windows",
+    measure: () => "count",
+    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required" },
+    sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)} who gave again ${dd(p.from0)} to ${dd(p.to0)}. The amount is what they gave in the later window.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+                   'Given in the later window' AS detail
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
+               AND EXISTS (SELECT 1 FROM gifts g1 WHERE g1.org_id = g.org_id AND g1.donor_id = g.donor_id AND g1.amount > 0
+                             AND LEFT(g1.date,10) >= ? AND LEFT(g1.date,10) <= ?)
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.from0, p.to0, p.from1, p.to1],
+      order: "amount DESC, id",
+    }),
   },
   // PARITY-1 Part 1e · two of the closeness facts that had no source.
   "donor-membership": {
@@ -1150,6 +1219,16 @@ const SOURCES = {
       if (!r.thinData && r.retentionRate != null) return null;
       return retentionBlank(orgId, r, dd, deps);
     },
+  },
+  "retention-window": {
+    label: "Retention",
+    ratio: "share",
+    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required" },
+    sentence: (p, dd) => `Of the people who gave ${dd(p.from1)} to ${dd(p.to1)}, the share who gave again ${dd(p.from0)} to ${dd(p.to0)}.`,
+    parts: p => [
+      { role: "numerator", label: "Gave again", key: "retention-window-kept", params: p },
+      { role: "denominator", label: "Gave in the earlier window", key: "retention-window-prior", params: { from1: p.from1, to1: p.to1 } },
+    ],
   },
   "concentration-share": {
     label: "Share of givers who carry ninety per cent",

@@ -1280,6 +1280,45 @@ async function orgForYears(orgId) {
   return { ...(await orgTz(orgId)), vocabulary_json: row ? row.vocabulary_json : null };
 }
 
+// THE MONTHS OF A FISCAL YEAR, as civil dates: each month's first and last
+// day, and the same month `back` years earlier. The Board's line and the
+// Fundraising dashboard's month-by-month chart both read this one list.
+function fiscalMonths(fyStart, DD, back = 2) {
+  const ym = idx => `${Math.floor(idx / 12)}-${String(idx % 12 + 1).padStart(2, "0")}`;
+  const endOf = idx => orgTime.addDays(`${ym(idx + 1)}-01`, -1);
+  const c = orgTime.parseCivil(fyStart);
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const idx = (c.y * 12 + c.m - 1) + i;
+    const mStart = `${ym(idx)}-01`;
+    const prior = [];
+    for (let k = 1; k <= back; k++) prior.push({ start: `${ym(idx - 12 * k)}-01`, end: endOf(idx - 12 * k) });
+    out.push({ month: mStart.slice(0, 7), label: DD.displayMonth(mStart).slice(0, 3), mStart, mEnd: endOf(idx),
+               prevMonth: ym(idx - 12), pEnd: prior[0].end, prior });
+  }
+  return out;
+}
+
+// ONE GOAL, AS FIGURES: what has been raised (opening its gifts), the target
+// and the share. The Fundraising dashboard's goal rows and Home's annual goal
+// bar are both this, so the two screens cannot show the goal two ways.
+async function goalFigureRow(g, fig) {
+  const [raised, target, pct] = await Promise.all([
+    fig({ key: "goal-raised", params: { campaign: g.id } }),
+    fig({ key: "campaign-goal", params: { campaign: g.id } }),
+    fig({ key: "goal-progress", params: { campaign: g.id } }),
+  ]);
+  // FIX-7 Part 5 — the badge carries the reason it is a badge.
+  return { id: g.id, label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
+    paceSentence: g.paceSentence || null,
+    also: [
+      { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
+        definition: "The target set on this goal's record." },
+      { key: "percent", label: "Of the goal", kind: "percent", value: pct.value, source: pct.source,
+        definition: "What has been raised toward this goal, as a share of its target." },
+    ] };
+}
+
 async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   const D = await dashboardsMod();
   const def = D.dashboardByKey(key);
@@ -1317,20 +1356,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
         WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
         GROUP BY f.id, f.name, f.restricted`, [orgId, yr.from, yr.to]);
     // THE MONTHS OF THE FISCAL YEAR, this year to today and last year in full.
-    const months = [];
-    for (let i = 0; i < 12; i++) {
-      const c = orgTime.parseCivil(fy.start);
-      const idx = (c.y * 12 + c.m - 1) + i;
-      const y = Math.floor(idx / 12), m = idx % 12 + 1;
-      const mStart = `${y}-${String(m).padStart(2, "0")}-01`;
-      const nIdx = idx + 1;
-      const mEnd = orgTime.addDays(`${Math.floor(nIdx / 12)}-${String(nIdx % 12 + 1).padStart(2, "0")}-01`, -1);
-      const pIdx = idx - 12, py = Math.floor(pIdx / 12), pm = pIdx % 12 + 1;
-      const pnIdx = pIdx + 1;
-      const pEnd = orgTime.addDays(`${Math.floor(pnIdx / 12)}-${String(pnIdx % 12 + 1).padStart(2, "0")}-01`, -1);
-      months.push({ month: mStart.slice(0, 7), label: DD.displayMonth(mStart).slice(0, 3), mStart, mEnd,
-                    prevMonth: `${py}-${String(pm).padStart(2, "0")}`, pEnd });
-    }
+    const months = fiscalMonths(fy.start, DD, 1);
     const seriesDef = D.dashboardByKey("board").metrics.find(m => m.key === "givingByMonth");
     const [, , , diff, , , , , , desRows, series] = await Promise.all([
       put("revenueThisYear", { key: "gifts", params: yr }),
@@ -1408,22 +1434,73 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
       put("pledgedOutstanding", { key: "pledges-open", params: {} }),
       put("pledgedPaid", { key: "pledge-payments", params: {} }),
       (async () => {
-        values.goals = await Promise.all(goals.map(async g => {
-          const [raised, target, pct] = await Promise.all([
-            fig({ key: "goal-raised", params: { campaign: g.id } }),
-            fig({ key: "campaign-goal", params: { campaign: g.id } }),
-            fig({ key: "goal-progress", params: { campaign: g.id } }),
+        values.goals = await Promise.all(goals.map(g => goalFigureRow(g, fig)));
+      })(),
+      // PARITY-1 Part C · GIVING BY LEVEL. General, Mid and Major on the last
+      // 12 months (donorStatus.js), among the people who gave in them: what
+      // each level gave and how many people it is, both opening the same rows.
+      (async () => {
+        const levelDef = def.metrics.find(m => m.key === "byGivingLevel");
+        values.byGivingLevel = await Promise.all(Object.keys(DS.LEVELS).map(async tag => {
+          const base = { tag, today, gave12: true };
+          const [sum, count] = await Promise.all([
+            fig({ key: "donors-by-status", params: { ...base, measure: "sum" } }),
+            fig({ key: "donors-by-status", params: base }),
           ]);
-          // FIX-7 Part 5 — the badge carries the reason it is a badge.
-          return { label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
-            paceSentence: g.paceSentence || null,
-            also: [
-              { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
-                definition: "The target set on this goal's record." },
-              { key: "percent", label: "Of the goal", kind: "percent", value: pct.value, source: pct.source,
-                definition: "What has been raised toward this goal, as a share of its target." },
-            ] };
+          return { key: tag, label: DS.tagLabel(tag), kind: "money", value: sum.value, source: sum.source,
+            definition: levelDef.definition,
+            also: [{ key: "count", label: `${DS.tagLabel(tag)} donors`, kind: "count", value: count.value, source: count.source,
+              definition: "How many people at this level gave in the last 12 months." }] };
         }));
+      })(),
+      // PARITY-1 Part C · GIVING EACH MONTH, this fiscal year against the two
+      // before it. Each point is that month's gifts and opens them.
+      (async () => {
+        const mDef = def.metrics.find(m => m.key === "givingEachMonth");
+        const months = fiscalMonths(fy.start, DD, 2);
+        const pt = f => f && ({ value: f.value, kind: "money", source: f.source, definition: mDef.definition,
+          label: `Giving ${DD.displayDate(f.source.params.from)} to ${DD.displayDate(f.source.params.to)}` });
+        values.givingEachMonth = await Promise.all(months.map(async mo => {
+          const [cur, ly, yb] = await Promise.all([
+            mo.mStart <= today ? fig({ key: "gifts", params: { from: mo.mStart, to: mo.mEnd < today ? mo.mEnd : today } }) : null,
+            fig({ key: "gifts", params: { from: mo.prior[0].start, to: mo.prior[0].end } }),
+            fig({ key: "gifts", params: { from: mo.prior[1].start, to: mo.prior[1].end } }),
+          ]);
+          return { month: mo.month, label: mo.label, thisYear: pt(cur), lastYear: pt(ly), yearBefore: pt(yb) };
+        }));
+      })(),
+      // PARITY-1 Part C · RETENTION, THREE WAYS. The screen picks one; each is
+      // a percentage whose two halves open their people.
+      (async () => {
+        const w = DS.windowsFor(today);
+        const fyWin = { from1: fyPrev.start, to1: fyPrev.end, from0: fy.start, to0: today };
+        const rollWin = { from1: w.w1From, to1: w.w1To, from0: w.w0From, to0: today };
+        const opt = async (k, label, definition, source, parts) => {
+          const f = await fig(source);
+          const ps = await Promise.all(parts.map(async ([pk, plabel, pdef, psrc]) => {
+            const v = await fig(psrc);
+            return { key: pk, label: plabel, kind: "count", value: v.value, source: v.source, definition: pdef };
+          }));
+          return { key: k, label, kind: "percent", value: f.value, source, blank: f.blank || null, blankShort: f.blankShort || null,
+            definition, also: ps };
+        };
+        values.retentionChoice = await Promise.all([
+          opt("calendar", "Calendar year", "Of the people who gave last calendar year, the share who have given again this one.",
+            { key: "retention", params: {} }, [
+              ["kept", "Gave again this year", "Everyone who gave last calendar year and has given again this one.", { key: "retention-retained", params: {} }],
+              ["prior", "Gave last year", "Everyone who gave last calendar year: the people retention is measured against.", { key: "retention-prior", params: {} }],
+            ]),
+          opt("fiscal", "Fiscal year", `Of the people who gave last fiscal year (${DD.displayDate(fyPrev.start)} to ${DD.displayDate(fyPrev.end)}), the share who have given again this fiscal year.`,
+            { key: "retention-window", params: fyWin }, [
+              ["kept", "Gave again this fiscal year", "Everyone who gave last fiscal year and has given again this one.", { key: "retention-window-kept", params: fyWin }],
+              ["prior", "Gave last fiscal year", "Everyone who gave last fiscal year: the people retention is measured against.", { key: "retention-window-prior", params: { from1: fyWin.from1, to1: fyWin.to1 } }],
+            ]),
+          opt("rolling", "Rolling 12 months", "Of the people who gave in the 12 months before the last 12, the share who also gave in the last 12 months.",
+            { key: "retention-window", params: rollWin }, [
+              ["kept", "Gave in both", "Everyone who gave in the 12 months before the last 12 and gave again in the last 12.", { key: "retention-window-kept", params: rollWin }],
+              ["prior", "Gave in the 12 months before", "Everyone who gave in the 12 months before the last 12: the people retention is measured against.", { key: "retention-window-prior", params: { from1: rollWin.from1, to1: rollWin.to1 } }],
+            ]),
+        ]);
       })(),
       (async () => {
         values.grantDeadlines = await Promise.all(grants.map(async g => {
@@ -1556,6 +1633,19 @@ app.get("/dashboards/:key", requireAuth, wrap(async (req, res) => {
   res.json(out);
 }));
 
+// PARITY-1 Part C · HOME'S ANNUAL GOAL BAR. The org's annual goal (the most
+// recent active top-level goal whose category is Annual), drawn from the SAME
+// goal row the Fundraising dashboard draws (goalFigureRow), so the raised
+// figure opens the gifts behind it. No annual goal, no bar: `goal` is null.
+app.get("/home/annual-goal", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const out = await fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null);
+  const g = ((out && out.goals) || []).find(x => x.isTopLevel && x.lifecycle !== "ended" && x.active !== false && x.goalCategory === "annual");
+  if (!g) return res.json({ goal: null });
+  const fig = async source => ({ ...(await figureSources.figureValue(orgId, source, {})), source });
+  res.json({ goal: await goalFigureRow(g, fig) });
+}));
+
 // ── THE BOARD PACKET ───────────────────────────────────────────────────────
 // A dashboard, as a PDF, for a packet. Rendered from the SAME payload the
 // screen renders, so the totals are equal by construction rather than by two
@@ -1609,6 +1699,11 @@ async function renderDashboardPdf(board, org) {
           doc.font("Helvetica").fillColor(EMERALD).text(p.thisYear ? `${fmtMoney(p.thisYear.value)} this year` : "", 180, y, { width: 170, align: "right" });
           doc.font("Helvetica").fillColor(GREY).text(p.lastYear ? `${fmtMoney(p.lastYear.value)} last year` : "", 360, y, { width: PW - 410, align: "right" });
           y = Math.max(doc.y, y + 13);
+          // PARITY-1 Part C — a series with a third year prints it on its own line.
+          if (p.yearBefore) {
+            doc.font("Helvetica").fontSize(9.5).fillColor(GREY).text(`${fmtMoney(p.yearBefore.value)} the year before`, 360, y, { width: PW - 410, align: "right" });
+            y = Math.max(doc.y, y + 13);
+          }
         }
         y += 10;
       } else if (m.kind === "breakdown") {
@@ -1621,7 +1716,9 @@ async function renderDashboardPdf(board, org) {
           doc.font(r.group ? "Helvetica-Bold" : "Helvetica").fontSize(9.5).fillColor(INK).text(label, 58, y, { width: PW - 220 });
           const kind = r.kind || (m.rowsAre === "money" || r.money ? "money" : "count");
           const goal = (r.also || []).find(a => a.key === "goal"), pct = (r.also || []).find(a => a.key === "percent");
+          const cnt = (r.also || []).find(a => a.key === "count");
           const right = goal ? `${fmtMoney(r.value)} of ${fmtMoney(goal.value)}${pct && pct.value != null ? ` · ${pct.value}%` : ""}`
+            : cnt ? `${fmtFigure(kind, r.value, r.suffix)} · ${cnt.value} ${cnt.value === 1 ? "person" : "people"}`
             : fmtFigure(kind, r.value, r.suffix);
           doc.font("Helvetica-Bold").fillColor(EMERALD).text(right, PW - 210, y, { width: 160, align: "right" });
           y = Math.max(doc.y, y + 13);
