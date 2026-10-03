@@ -15,12 +15,15 @@
 import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
-import { ART2 } from "./data/articles2.js";
+import { ARTICLES } from "./articles/index.js";
+import { GLOSSARY, GLOSSARY_UPDATED } from "./data/glossary.js";
 import { HELP_ARTICLES } from "../../../shared/helpArticles.js";
 
 // Titles drop the headline markup. The copy uses only <b>, <em> and <br>.
 const plain = s => s.replace(/<\/?(?:b|em|br)\s*\/?>/g, "");
 const T = h => "Steward · " + plain(h);
+// A search snippet: the whole sentence when it fits, else cut at a word.
+const clip = (s, n = 158) => s.length <= n ? s : s.slice(0, s.lastIndexOf(" ", n - 1)).replace(/[,;:]$/, "") + "…";
 
 export const HOME_TITLE = "Steward · Keep the donors you already have";
 
@@ -45,9 +48,10 @@ export const ROUTES = [
 
   { path: "/why", page: "why", title: T("The money is in the donors you keep."), description: "Fewer people give each year, and most first-time donors never give twice. Steward exists to close that gap for organizations that cannot hire a data team to do it." },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
-  { path: "/move", page: "move", title: T("Move in about a day."), description: "Tell us where your donors live today, drop in the export, and check the Move Report. Every total matches to the cent against what came out, and you can undo the whole move for 30 days." },
-  { path: "/move/spreadsheet", page: "moveSpreadsheet", title: T("From a spreadsheet to a real record."), description: "Most small shops start in Excel or Google Sheets. Steward reads your columns, finds households and duplicates, and shows you the totals before anything is final." },
-  { path: "/move/crm", page: "moveCrm", title: T("Bring everything. Lose nothing."), description: "Steward knows the export format for common donor systems. Run the reports we name, drop in the files, and the Move Report checks every gift and every dollar." },
+  { path: "/move", page: "move", title: T("Move in about a day."), description: "Tell us where your donors live today, drop in the export, and check the Move Report. Every total is checked to the cent against what came out, and your old system keeps running until you are sure." },
+  { path: "/move/spreadsheet", page: "moveSpreadsheet", title: T("Moving from a spreadsheet, column by column."), description: "Which columns to bring from Excel or Google Sheets, how gifts and households map, and a starter CSV template to download. Steward checks the totals before you rely on them." },
+  { path: "/move/crm", page: "moveCrm", title: T("Moving from your old donor system."), description: "Export two files from almost any donor system, contacts and gifts. Steward joins them on the donor ID and the Move Report checks every dollar to the cent." },
+  { path: "/move/giving-platform", page: "moveGivingPlatform", title: T("Starting from your giving platform."), description: "If your donor list lives in Stripe, PayPal, Givebutter or Square, connect it with your own account and Steward reads your past gifts in. Anything older comes in from an export." },
   { path: "/for", page: "for", title: T("Built for the organizations doing the work."), description: "Steward is made for nonprofits with a development team of one to five, a few hundred to ten thousand active donors and no time to babysit software." },
   ...AUDIENCE_SLUGS.map(s => ({ path: "/for/" + s, page: "audience", slug: s, title: T(AUD[s].h), description: AUD[s].l })),
   { path: "/security", page: "security", title: T("Built like it's holding someone else's money."), description: "Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so." },
@@ -64,14 +68,14 @@ export const ROUTES = [
   { path: "/resources", page: "resources", title: T("Learn from people who've done the work."), description: "Guides, templates, free tools and the research behind them, for development teams of one to five." },
   { path: "/guides", page: "guides", title: T("Practical guides for small teams."), description: "Plans you can run this month, written for a development office of one to five people." },
   ...GUIDE_SLUGS.map(s => ({ path: "/guides/" + s, page: "guide", slug: s, title: T(GUIDES[s].t), description: GUIDES[s].d })),
-  { path: "/templates", page: "templates", title: T("Templates you can use today."), description: "Copy, adapt and send. Every template is free." },
+  { path: "/templates", page: "templates", title: T("Templates you can use today."), description: "Thank-you letters, win-back emails and other templates for a small development team. Copy, adapt and send. Every template is free." },
   { path: "/articles", page: "articles", title: T("Ideas worth a coffee break."), description: "Short reads on retention, stewardship and running a calm development office." },
-  { path: "/articles/state-of-retention", page: "stateOfRetention", title: T("The state of donor retention, in plain words."), description: "What the latest sector data says about who gives again, and what a small shop can do about it." },
-  // LANDING-3 · the six new articles, each on its own route.
-  ...Object.keys(ART2).filter(s => ART2[s]).map(s => ({ path: "/articles/" + s, page: "article", slug: s, title: T(ART2[s].h), description: ART2[s].d })),
+  // CONTENT-1 · one route per markdown file in articles/, dated by its frontmatter.
+  ...ARTICLES.map(a => ({ path: "/articles/" + a.slug, page: "article", slug: a.slug, title: T(a.headline), description: a.description, lastmod: a.date, kind: "article" })),
   // PROOF-2 · every source the site quotes, so anyone can verify us.
   { path: "/research", page: "research", title: T("Every number, and where it came from."), description: "Every statistic on the Steward site, with the source's own words, a link to the report and the date we last checked it." },
   { path: "/glossary", page: "glossary", title: T("Fundraising terms, in plain words."), description: "The words you will hear in board meetings and on software demos, explained without jargon." },
+  ...GLOSSARY.map(g => ({ path: "/glossary/" + g.slug, page: "glossaryTerm", slug: g.slug, title: "Steward · " + g.term + ": " + (g.calc ? "definition, formula and example" : "what it means and why it matters"), description: clip(g.def), lastmod: GLOSSARY_UPDATED, kind: "term" })),
   { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
   { path: "/help", page: "help", title: T("How do I do this in Steward?"), description: "An article for every screen in Steward and for the jobs people come for, searchable. If it is not here, a person answers." },
   ...HELP_ARTICLES.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),
@@ -79,9 +83,11 @@ export const ROUTES = [
 
   { path: "/tools", page: "tools", title: T("Free tools, no signup."), description: "Run them on your own numbers. Nothing you type leaves your browser." },
   { path: "/tools/lost-and-found", page: "toolLostAndFound", title: T("See who you're about to lose."), description: "Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored." },
-  { path: "/tools/retention", page: "toolRetention", title: "Steward \u00b7 Keep Rate calculator", description: "Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." },
-  { path: "/tools/lapsed-cost", page: "toolLapsed", title: "Steward \u00b7 Lapse Ledger", description: "A quick way to put a dollar figure on the people who quietly stopped." },
-  { path: "/tools/thermometer", page: "toolThermometer", title: "Steward \u00b7 Goal Gauge", description: "Set your goal and amount raised and see the bar." },
+  { path: "/tools/retention", page: "toolRetention", title: "Steward · Donor retention rate calculator (Keep Rate)", description: "Work out your donor retention rate from two numbers, see it beside the national figure, and what a five-point lift would be worth. Free, in your browser." },
+  { path: "/tools/lapsed-cost", page: "toolLapsed", title: "Steward · Lapsed donor cost calculator (Lapse Ledger)", description: "Put a dollar figure on the donors who quietly stopped: what they used to give each year, and what a round of calls could be worth. Free, in your browser." },
+  { path: "/tools/thermometer", page: "toolThermometer", title: "Steward · Fundraising thermometer (Goal Gauge)", description: "A free fundraising thermometer: type your campaign goal and what you have raised so far, and see how full the bar is. Nothing you type leaves your browser." },
+  { path: "/tools/lybunt-sybunt", page: "toolLybunt", title: T("Find your LYBUNT and SYBUNT donors."), description: "Drop in a gifts CSV and see who gave last year but not this year, and who gave in an earlier year. Totals foot to your file. Nothing leaves your browser." },
+  { path: "/tools/thank-you-letter", page: "toolThankYou", title: "Steward · Donor thank-you letter builder", description: "Pick the gift: a first gift, monthly, major, in memory or year-end. Fill in a few details and copy a warm, specific thank-you letter. Free, no signup." },
 
   { path: "/legal/privacy", page: "legalPrivacy", title: "Steward · Privacy policy", description: "How Steward handles the information organizations put into it and the information about the people who sign in. Draft for attorney review." },
   { path: "/legal/terms", page: "legalTerms", title: "Steward · Terms of service", description: "The terms for using Steward, the donor management service. Draft for attorney review." },

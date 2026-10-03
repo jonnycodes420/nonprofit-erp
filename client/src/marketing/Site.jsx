@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import "./site.css";
+import "./content.css";
 import { A, Arrow, Icon, Photo, useHead } from "./lib";
 import { PAGES } from "./pages";
 import { OPEN_API_HREF } from "./data/features";

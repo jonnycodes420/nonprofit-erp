@@ -132,7 +132,11 @@ const srv = http.createServer(async (req, res) => {
   let file = path.join(DIST, url);
   if (!file.startsWith(DIST)) { res.statusCode = 403; return res.end(); }   // no traversal
   if (url === "/giving") file = path.join(DIST, "giving.html");
-  if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, "index.html");
+  // CONTENT-1: a marketing page is prerendered to <path>/index.html, as Vercel
+  // serves it; anything else gets the app shell (app.html), as vercel.json's
+  // catch-all does. A dist from before the prerender has no app.html.
+  if (fs.existsSync(file) && fs.statSync(file).isDirectory() && fs.existsSync(path.join(file, "index.html"))) file = path.join(file, "index.html");
+  else if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
 
   res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
   if (url.startsWith("/assets/")) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

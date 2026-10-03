@@ -70,7 +70,7 @@ export const FEAT = {
     problem: "Imports usually fail quietly. A few hundred gifts go missing and nobody notices until a donor calls.",
     steps: [["Pick your source", "Common donor systems and spreadsheets are mapped for you."], ["Check the Move Report", "Every count and dollar from your file beside what landed."], ["Clean up with care", "Possible duplicates are suggested, never merged without you."]],
     ui: ["Move Report", "check", null, [["Donors", "from file", "4,812"], ["Gifts", "from file", "38,206"], ["Total given", "matched", "$6,914,250.18", 1], ["Duplicates", "to review", "46"]]],
-    incl: ["Common donor systems mapped", "Spreadsheets and CSV", "Move Report to the cent", "Undo the move for 30 days", "Re-import only new gifts", "Duplicate suggestions"], rel: ["audit", "reports", "finance"] },
+    incl: ["Common donor systems mapped", "Spreadsheets and CSV", "Move Report to the cent", "Run both systems side by side", "Re-import only new gifts", "Duplicate suggestions"], rel: ["audit", "reports", "finance"] },
   "finance": { name: "Finance and month end", icon: "finance", short: "A gift file your bookkeeper trusts.", h: "Month end <b>without the scramble.</b>", lede: "Stripe payouts matched to their gifts, fees shown, and a monthly gift file for your bookkeeper that foots to the cent.", photo: "high-five-desk",
     problem: "Development says one number, finance says another, and month end turns into a hunt for the difference.",
     steps: [["Gifts flow in", "From Stripe and your other giving tools."], ["Payouts matched", "Every payout checked against its gifts, fees included."], ["Hand off the file", "A clean monthly file for your bookkeeper, by fund."]],

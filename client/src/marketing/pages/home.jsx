@@ -74,7 +74,7 @@ function WhyTabs() {
         <div className="panes">
           {TABS.map((t, i) => (
             <div className="pane" key={t.label} role="tabpanel" hidden={tab !== i}>
-              <div><h3 className="mix h-m">{t.h}</h3><p>{t.p}</p><Pill href={t.href}>Learn more</Pill></div>
+              <div><h3 className="mix h-m">{t.h}</h3><p>{t.p}</p><Pill href={t.href}>Learn more<span className="vh"> about {t.label.toLowerCase()}</span></Pill></div>
               <div className="stage"><div className="bg" style={{ background: "var(--" + t.bg + ")" }}></div>{t.ui}</div>
             </div>
           ))}

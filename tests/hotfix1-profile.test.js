@@ -67,7 +67,8 @@ async function frontendBase() {
   // anything is read — a request path is user input even in a test rig
   // (CodeQL js/path-injection), and an index.html fallback for anything that
   // escapes is also the right SPA behaviour.
-  const INDEX = path.join(DIST, "index.html");
+  // CONTENT-1: index.html is the prerendered homepage now; app.html is the shell.
+  const INDEX = fs.existsSync(path.join(DIST, "app.html")) ? path.join(DIST, "app.html") : path.join(DIST, "index.html");
   const resolveInDist = url => {
     const full = path.resolve(DIST, "." + path.posix.normalize("/" + url));
     const inside = full === DIST || full.startsWith(DIST + path.sep);

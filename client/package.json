@@ -5,9 +5,10 @@
   "scripts": {
     "dev": "vite",
     "lint": "eslint src",
-    "build": "node ../tests/brand-allowlist.test.js && eslint src && vite build",
+    "build": "node ../tests/brand-allowlist.test.js && eslint src && vite build && vite build -c vite.prerender.config.js --logLevel warn && node scripts/prerender.mjs",
     "brand-guard": "node ../tests/brand-allowlist.test.js",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "prerender": "vite build -c vite.prerender.config.js --logLevel warn && node scripts/prerender.mjs"
   },
   "dependencies": {
     "@sentry/react": "^10.56.0",

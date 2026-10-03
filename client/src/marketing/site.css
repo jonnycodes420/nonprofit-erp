@@ -630,3 +630,54 @@
 .mk .gapline{margin-top:34px;font-size:18px;text-align:center}
 .mk .gapline a{font-weight:700;color:var(--emerald)}
 .mk .gapline .srcnote a{font-weight:400;color:inherit}
+/* CONTENT-1 · the free tool pages: the tool in the hero, glossary line, the LYBUNT finder and the letter builder */
+.mk .tool-hero{margin-top:40px}
+.mk .hero .srcnote{margin-top:22px}
+.mk .gloss-line{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:baseline;font-size:17px}
+.mk .gloss-line span{font:700 13px var(--sans);letter-spacing:.06em;text-transform:uppercase}
+.mk .gloss-line a{font-weight:700;color:var(--emerald)}
+.mk .lyb{margin-top:40px;display:grid;gap:28px;min-width:0}
+.mk .lyb-in{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:28px;align-items:start}
+@media (max-width:900px){.mk .lyb-in{grid-template-columns:minmax(0,1fr)}}
+.mk .lyb-drop{background:var(--paper);border:2px dashed var(--line);border-radius:6px;padding:34px 30px;display:grid;gap:12px}
+.mk .lyb-drop.over{border-color:var(--emerald);background:var(--emerald-tint)}
+.mk .lyb-drop-h{font:400 28px/1.15 var(--serif)}
+.mk .lyb-drop p{color:var(--grey);font-size:16.5px}
+.mk .lyb-drop .lyb-drop-h{color:var(--ink)}
+.mk .lyb-btns{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center;margin-top:8px}
+.mk .lyb-file{position:relative;overflow:hidden}
+.mk .lyb-file input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:16px}
+.mk .lyb-file:focus-within{outline:2px solid var(--emerald);outline-offset:3px}
+.mk .lyb-sample{background:none;border:0;padding:6px 0;font:700 16px var(--sans);color:var(--emerald);text-decoration:underline;cursor:pointer}
+.mk .lyb-map{margin-top:0;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:28px}
+.mk .lyb-fname{font-weight:700;overflow-wrap:anywhere}
+.mk .lyb-note{font-size:17px;max-width:900px}
+.mk .lyb-note a,.mk .lyb-list-h a,.mk .lyb-foot a{color:var(--emerald);font-weight:700}
+.mk .lyb-out{display:grid;gap:36px;min-width:0}
+.mk .lyb-list,.mk .lyb-foot{min-width:0}
+.mk .lyb-list-h{display:flex;flex-wrap:wrap;gap:14px 24px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.mk .lyb-list-h h3,.mk .lyb-foot h3{font:700 22px/1.3 var(--sans)}
+.mk .lyb-list-h .pill{min-height:48px;padding:0 22px;font-size:13px}
+.mk .lyb-foot p{color:var(--grey);font-size:16px;margin:6px 0 14px}
+.mk .lyb-empty,.mk .lyb-more,.mk .lyb-small{color:var(--grey);font-size:15px;margin-top:10px}
+.mk .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:6px;background:var(--white);max-width:100%}
+.mk .tt{width:100%;border-collapse:collapse;font-size:16px}
+.mk .tt th,.mk .tt td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+.mk .tt th{font:700 13px var(--sans);letter-spacing:.04em;text-transform:uppercase;background:var(--cream)}
+.mk .tt td:first-child{white-space:normal;min-width:160px}
+.mk .tt .n{text-align:right;font-variant-numeric:tabular-nums}
+.mk .tt tbody tr:last-child td{border-bottom:0}
+.mk .tt tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:0}
+.mk .letter-tool .form{gap:16px}
+.mk .form .check{display:flex;gap:12px;align-items:flex-start;font-weight:500}
+.mk .form .check input{width:20px;height:20px;margin:3px 0 0;flex:none;accent-color:var(--emerald)}
+.mk .kind-btns{display:flex;flex-wrap:wrap;gap:8px}
+.mk .kind-btns button{font:600 15px var(--sans);padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--white);color:var(--ink);cursor:pointer}
+.mk .kind-btns button[aria-pressed="true"]{background:var(--emerald);border-color:var(--emerald);color:var(--white)}
+.mk .letter-col{display:grid;gap:16px;min-width:0}
+.mk .letter{background:var(--cream);border-radius:6px;padding:40px 38px;font:18px/1.65 var(--sans);color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+@media (max-width:600px){.mk .letter{padding:26px 22px;font-size:17px}.mk .lyb-drop,.mk .lyb-map{padding:24px 20px}}
+.mk .letter-btns{display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center}
+.mk .letter-ok{font-weight:700;color:var(--emerald)}
+.mk .letter-ta{width:100%;font:16px/1.6 var(--sans);padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);resize:vertical}
+@media (max-width:600px){.mk .form input,.mk .form select{font-size:16px}}
