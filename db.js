@@ -131,7 +131,7 @@ async function schemaUnchanged() {
   return r.rows.length > 0 && r.rows[0].schema_hash === SCHEMA_HASH;
 }
 
-// FIX-20 Part 10 — schema init runs while the OLD instance is still serving
+// FIX-20 Part 10: schema init runs while the OLD instance is still serving
 // (Railway now waits for /ready before it switches). An ALTER TABLE queued
 // behind a long read holds every later read on that table behind it, so a
 // deploy could stall the live site. Init therefore runs on ONE session with a

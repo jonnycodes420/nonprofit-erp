@@ -77,7 +77,7 @@ const PRIV = ["zzmarkb", "6377.89", "63778"];
 const iso = d => d.toISOString().slice(0, 10);
 const TODAY = iso(new Date());
 
-// FIX-20 Part 9 — THE TEARDOWN IS DISCOVERED, NOT LISTED. It used to be a
+// FIX-20 Part 9: THE TEARDOWN IS DISCOVERED, NOT LISTED. It used to be a
 // hand-kept list of tables, and every build that added a table the battery
 // writes to (saved_dashboards was the last) made the suite pass once and then
 // die on its own leftovers with an FK error that reads like a product bug.
@@ -1061,7 +1061,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   // needs a signed-in user of the org that owns it, and every refusal is the
   // same 404 a missing id gets. Fails if the door goes back to serving by id
   // alone (the signed-out and cross-org probes get the bytes).
-  console.log("\n— §11 · files and assets: signed out, other org, public page —");
+  console.log("\n§11 · files and assets: signed out, other org, public page");
   const IXF = require("../interactionFiles");
   const aid = (k) => "pa_" + crypto.createHash("sha256").update(B + "|" + k).digest("hex").slice(0, 24);
   const bytes = Buffer.from("ZZMARKB private file bytes");
