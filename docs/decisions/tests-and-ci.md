@@ -70,6 +70,9 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)
+- **A rebased branch still has the `client/dist` built before the rebase, and the battery reuses it.**
+  Smoke-walk then walks the old screens and passes. Rebuild dist after every rebase or merge that
+  touches `client/`, before the battery. (PARITY-2)
 - **For a browser leg, build dist with `scripts/build-local-dist.sh` and serve it with
   `scripts/local-preview.js` on :4173.** A dist with only `VITE_API_URL` breaks the portal paths.
   `vite preview` has no rewrites, whatever that script's closing echo says. (BUILD-75, BUILD-89S)

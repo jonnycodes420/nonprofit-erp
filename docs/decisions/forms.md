@@ -81,7 +81,7 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **`/e/*` and `/ticket/*` are `vercel.json` rewrites.** EVENTS-1 shipped the public event page
   without one, so it was unreachable from www.stewardapp.dev until EVENTS-2. (EVENTS-2)
 
-### PARITY-2 — the public event page, complete
+### PARITY-2 Part 3: the public event page, complete
 - **The page's fields have one set of rules: `shared/eventPage.js`.** Times, the video hosts, the
   address, the share row and when the gallery shows are decided there, and both the server page and
   the staff editor read it. (PARITY-2)
