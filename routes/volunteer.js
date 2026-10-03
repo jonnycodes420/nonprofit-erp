@@ -47,6 +47,37 @@ function verifyVolunteerToken(token) {
   return { orgId, personId };
 }
 
+// PARITY-3 — change a logged shift: its date, its hours (as hours, hours and
+// minutes, or a start and end time), its opportunity and its note. The audit
+// write records before and after; nothing here writes an audit row itself.
+app.patch("/volunteer-shifts/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [cur] = await query("SELECT * FROM volunteer_shifts WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!cur) return res.status(404).json({ error: "Not found" });
+  const VHm = await import("../shared/volunteerHours.js");
+  const b = req.body || {};
+  let opp = null;
+  if (b.opportunityId) {
+    [opp] = await query("SELECT id, name FROM volunteer_opportunities WHERE id=? AND org_id=?", [String(b.opportunityId), orgId]);
+    if (!opp) return res.status(404).json({ error: "That opportunity is not one of yours." });
+  }
+  const timed = b.startTime !== undefined || b.endTime !== undefined || b.minutes !== undefined || b.hours !== undefined;
+  const v = VHm.validateShift({
+    date: b.date !== undefined ? b.date : cur.date,
+    ...(timed ? { hours: b.hours, minutes: b.minutes, startTime: b.startTime, endTime: b.endTime } : { hours: cur.hours }),
+    role: opp ? opp.name : cur.role, note: b.note !== undefined ? b.note : cur.note,
+  });
+  if (!v.ok) return res.status(400).json({ error: `A shift needs ${v.errors.join("; ")}.` });
+  if (req.audit) req.audit.before({ date: cur.date, hours: Number(cur.hours), opportunityId: cur.opportunity_id, note: cur.note });
+  await run(`UPDATE volunteer_shifts SET date=?, hours=?, role=?, note=?, opportunity_id=?, start_time=?, end_time=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [v.shift.date, v.shift.hundredths / 100, v.shift.role, v.shift.note,
+     b.opportunityId !== undefined ? (opp ? opp.id : null) : cur.opportunity_id,
+     timed ? v.shift.startTime : cur.start_time, timed ? v.shift.endTime : cur.end_time, cur.id, orgId]);
+  if (req.audit) req.audit.after({ date: v.shift.date, hours: v.shift.hundredths / 100, opportunityId: b.opportunityId !== undefined ? (opp ? opp.id : null) : cur.opportunity_id, note: v.shift.note });
+  res.json({ ok: true, hours: v.shift.hundredths / 100 });
+}));
+
 app.delete("/volunteer-shifts/:id", requireAuth, wrap(async (req, res) => {
   const { changes } = await run("DELETE FROM volunteer_shifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" });
@@ -707,8 +738,10 @@ app.post("/volunteer-hub/notes", requireAuth, checkWriteAccess, wrap(async (req,
   const who = actor(req);
   const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
   const id = "vn_" + uuid().slice(0, 12);
-  await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, p.id, kind, body, noteDate, who.id, (me && me.name) || who.name]);
+  // PARITY-3 — internal unless she says the volunteer may see it.
+  const visibility = req.body?.visibility === "volunteer" ? "volunteer" : "internal";
+  await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name,visibility) VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, p.id, kind, body, noteDate, who.id, (me && me.name) || who.name, visibility]);
   res.status(201).json({ id });
 }));
 

@@ -32,6 +32,9 @@ export const ATTACHMENTS_CHANGED = "steward:attachments-changed";
 export const TIMELINE_FILTERS = [
   ["all", "All"], ["gift", "Gifts"], ["conversation", "Conversations"], ["task", "Tasks"],
   ["note", "Notes"], ["email", "Emails"], ["file", "Attachments"],
+  // PARITY-3 — a logged volunteer shift. Shown as a chip only on a record
+  // that has one.
+  ["service", "Volunteer service"],
 ];
 const FILTER_KEYS = new Set(TIMELINE_FILTERS.map(f => f[0]));
 

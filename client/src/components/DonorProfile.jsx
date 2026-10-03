@@ -1753,6 +1753,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [impactPdfLoading,setImpactPdfLoading]=useState(false);
   // PARITY-1 Part F: record a video thank-you; saving drafts the email.
   const [videoThanksOpen,setVideoThanksOpen]=useState(false);
+  const [volOpen,setVolOpen]=useState(false);   // PARITY-3 Part 1: Volunteering, under More
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -2004,6 +2005,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 ["Brief me",()=>setBriefOpen(true),false],
                 // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
                 ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
+                // PARITY-3 Part 1 — the volunteer record, for somebody with no hours yet
+                // (anyone with hours has it in the main column already).
+                ["Volunteering",()=>setVolOpen(true),false,"dp-volunteering"],
                 // WHY-1 — only for a lapsed donor: the facts on their record
                 // before they stopped, and the one touch that fits.
                 ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
@@ -2025,6 +2029,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               ))}
             </div>
           )}
+          {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
           {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
           {whyStopOpen&&<WhyPanel payload={{key:"stopped",donor:donor.id}} isReadOnly={isReadOnly} onClose={()=>setWhyStopOpen(false)}/>}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}

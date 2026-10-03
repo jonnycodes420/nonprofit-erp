@@ -192,7 +192,20 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
     closeness(orgId, d, today, w),
     nextAction(orgId, d, today, status, latest.value),
   ]);
-  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts });
+  // PARITY-3 — one plain line for a volunteer: "44 hours since 2023, last
+  // served May 22", opening the shifts it adds up.
+  const [vh] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h, MIN(date) AS first, MAX(date) AS last
+                              FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, d.id]);
+  let volunteer = null;
+  if (vh && Number(vh.h) > 0) {
+    const hrs = Number(vh.h) / 100, first = String(vh.first).slice(0, 10), last = String(vh.last).slice(0, 10);
+    const md = iso => new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)))
+      .toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }) + (iso.slice(0, 4) !== today.slice(0, 4) ? `, ${iso.slice(0, 4)}` : "");
+    volunteer = { line: `${hrs} ${hrs === 1 ? "hour" : "hours"} volunteered since ${first.slice(0, 4)}, last served ${md(last)}`,
+      sentence: "Every volunteer shift logged for this person, added up. Each shift also counts toward their engagement score.",
+      source: { key: "volunteer-hours", params: { from: "1900-01-01", to: "2999-12-31", donor: d.id } } };
+  }
+  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer });
 }));
 
 app.get("/settings/giving-levels", requireAuth, wrap(async (req, res) => {

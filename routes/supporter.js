@@ -186,7 +186,12 @@ async function whatTheyHave(orgId, personId, email) {
         AND s.date >= ? AND s.date <= to_char(?::date + 35, 'YYYY-MM-DD')
         AND NOT EXISTS (SELECT 1 FROM volunteer_signups su WHERE su.slot_id=s.id AND su.person_id=? AND su.status <> 'cancelled')
       ORDER BY s.date, s.start_time LIMIT 12`, [orgId, today, today, personId]).catch(() => []) : [];
-  return { today, membership, tickets, shifts, fundraisers, gifts, recurring, vol, openShifts };
+  // PARITY-3 Part 1 — notes a coordinator marked for the volunteer to see.
+  // Internal notes never reach this page; the WHERE says so.
+  const volNotes = isVol ? await query(
+    `SELECT body, created_by_name, created_at FROM volunteer_notes
+      WHERE org_id=? AND person_id=? AND visibility='volunteer' ORDER BY created_at DESC LIMIT 5`, [orgId, personId]).catch(() => []) : [];
+  return { today, membership, tickets, shifts, fundraisers, gifts, recurring, vol, openShifts, volNotes };
 }
 
 // ── THE PAGE ─────────────────────────────────────────────────────────────
@@ -316,8 +321,10 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
       <p class="muted">${esc(SP.dayWordsFull(s.date instanceof Date ? s.date.toISOString() : s.date))}${s.start_time ? " · " + esc(String(s.start_time).slice(0, 5)) : ""}</p>
       ${s.location ? `<p class="small">${esc(s.location)}</p>` : ""}
     </div>`).join("");
+    const notes = (have.volNotes || []).map(n => `<p class="small">${esc(n.body)}<br><span class="muted">${esc(n.created_by_name || "")}</span></p>`).join("");
     sections.push(`<h2 style="margin:22px 2px 10px">Your shifts</h2>
       ${have.vol && have.vol.totalHours ? `<div class="card"><p class="muted">You have given ${esc(String(have.vol.totalHours))} hours to ${esc(brand.displayName || "us")}.</p></div>` : ""}
+      ${notes ? `<div class="card"><h2>A note for you</h2>${notes}</div>` : ""}
       ${cards}`);
   }
   // PARITY-3 — shifts they can join, one tap each. The same sign-up path as

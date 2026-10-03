@@ -192,11 +192,14 @@ ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="
 ICON.task = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/></svg>;
 ICON.file = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>;
 TILE_BG.task = T.white; TILE_BG.file = T.bg;
-const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", task: "Task", file: "File" };
+// PARITY-3 — a volunteer shift: a hand, in the same stroke as the others.
+ICON.service = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M7 11V6a1.5 1.5 0 0 1 3 0v5"/><path d="M10 10V4.5a1.5 1.5 0 0 1 3 0V10"/><path d="M13 10V5.5a1.5 1.5 0 0 1 3 0V12"/><path d="M16 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a6 6 0 0 1-5-2.7L3.5 14a1.5 1.5 0 0 1 2.5-1.7L7 14"/></svg>;
+TILE_BG.service = T.white;
+const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", task: "Task", file: "File", service: "Volunteer service" };
 const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Letter", text: "Text" };
 
 export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
-  tasks = [], attachments = [], canWrite = false }) {
+  tasks = [], attachments = [], service = [], canWrite = false }) {
   const [prefs, setPrefs] = useState(loadTimelinePrefs);
   const { filter, hideMass, view } = prefs;
   const setPref = patch => setPrefs(p => { const n = { ...p, ...patch }; saveTimelinePrefs(n); return n; });
@@ -238,6 +241,10 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   }
   for (const t of tasks || []) {
     items.push({ kind: "task", bucket: "task", id: "k:" + t.id, date: String(t.due || t.created_at || "").slice(0, 10), task: t });
+  }
+  // PARITY-3 Part 1 — each logged volunteer shift, with its hours.
+  for (const v of service || []) {
+    items.push({ kind: "service", bucket: "service", id: "v:" + v.id, date: String(v.date || "").slice(0, 10), v });
   }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const fileItems = (attachments || []).map(f => ({ kind: "file", bucket: "file", id: "f:" + f.id,
@@ -287,6 +294,13 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       body = done ? "Done." : t.due ? `Due ${relDay(String(t.due).slice(0, 10))}.` : "Open, no due date.";
       by = t.assigned_to_name || "";
       meta = by ? `For ${by}` : null;
+    } else if (it.kind === "service") {
+      const v = it.v;
+      title = `${v.hours} ${Number(v.hours) === 1 ? "hour" : "hours"}${v.opportunityName || v.role ? ` · ${v.opportunityName || v.role}` : ""}`;
+      body = v.note || (v.startTime ? `${v.startTime} to ${v.endTime}.` : null);
+      by = v.enteredBy || "";
+      meta = by ? `Logged by ${by}` : null;
+      type = "Volunteer service";
     } else if (it.kind === "file") {
       const f = it.f;
       title = f.fileName;
@@ -311,7 +325,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
-        {TIMELINE_FILTERS.map(([k, l]) => chip(k, l))}
+        {TIMELINE_FILTERS.filter(([k]) => k !== "service" || (service || []).length > 0).map(([k, l]) => chip(k, l))}
       </div>
       {(filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
         <input type="checkbox" checked={hideMass} onChange={e => setPref({ hideMass: e.target.checked })} style={{ accentColor: T.greenDk }}/>

@@ -572,6 +572,9 @@ function bResolver(routePath, param) {
   if (routePath.startsWith("/volunteer-hub/groups/")) return `vgrp_${B}`;
   if (routePath.startsWith("/volunteer-hub/kiosk/")) return `vslot_${B}`;
   if (routePath.startsWith("/volunteer-hub/signups/")) return `vsu_${B}`;
+  // PARITY-3 Part 1 — a volunteer's skill, certification or tag: org B's own
+  // row, which org A may not remove.
+  if (routePath.startsWith("/volunteer-qualifications/")) return `vq_${B}`;
   // PARITY-3 — a draft reminder or thank-you is a milestone_drafts row: org
   // B's own draft, which org A may neither read nor discard.
   if (routePath.startsWith("/volunteer-hub/drafts/")) return `md_${B}`;

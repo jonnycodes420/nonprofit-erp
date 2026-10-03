@@ -1360,15 +1360,19 @@ const SOURCES = {
     label: "Volunteer hours",
     measure: () => "sum",
     amountKind: "hours",
-    params: { from: "date:required", to: "date:required", donor: "id" },
-    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}${p.donor ? " by this person" : ""}, with the hours recorded on it.`,
+    // PARITY-3 — and for one opportunity, and each row says which opportunity
+    // the hours went to. The profile's totals, its glance line and the
+    // Volunteers screen's hour columns all open this one source.
+    params: { from: "date:required", to: "date:required", donor: "id", opportunity: "id" },
+    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}${p.donor ? " by this person" : ""}${p.opportunity ? " for this opportunity" : ""}, with the hours recorded on it.`,
     sql: (orgId, p) => ({
       sql: `SELECT v.id, 'shift' AS type, v.person_id AS donor_id, d.name, v.date,
-                   ROUND(v.hours::numeric, 2) AS amount, NULLIF(v.role, '') AS detail
+                   ROUND(v.hours::numeric, 2) AS amount, COALESCE(o.name, NULLIF(v.role, '')) AS detail
               FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
-             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?${p.donor ? " AND v.person_id = ?" : ""}`,
-      args: p.donor ? [orgId, p.from, p.to, p.donor] : [orgId, p.from, p.to],
-      order: "amount DESC NULLS LAST, id DESC",
+              LEFT JOIN volunteer_opportunities o ON o.id = v.opportunity_id AND o.org_id = v.org_id
+             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?${p.donor ? " AND v.person_id = ?" : ""}${p.opportunity ? " AND v.opportunity_id = ?" : ""}`,
+      args: [orgId, p.from, p.to, ...(p.donor ? [p.donor] : []), ...(p.opportunity ? [p.opportunity] : [])],
+      order: "date DESC NULLS LAST, id DESC",
     }),
   },
   "volunteers-served": {
