@@ -1337,7 +1337,7 @@ export function TouchpointTimeline({interactions,onDelete,renderActions}){
             {/* FIX-14 Part 2: a profile passes its Edit/Delete menu (with Undo). */}
             {renderActions&&int.id?renderActions(int):onDelete&&int.id&&(
               <button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
-                onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))onDelete(int);}}
+                onClick={()=>onDelete(int)}
                 style={{background:"transparent",border:"none",cursor:"pointer",color:T.terracotta,fontSize:14,padding:"2px 4px",alignSelf:"flex-start",flexShrink:0,lineHeight:1}}>
                 ✕
               </button>

@@ -510,6 +510,13 @@ app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
     const missing = Object.entries(names)
       .filter(([k]) => k === "clientId" || k === "clientSecret" || k === "redirectUri")
       .filter(([k]) => !values[k]).map(([, name]) => name);
+    // FIX-22: a provider held back (Xero, until its scopes are right) is not
+    // ready whatever is configured, and says only that.
+    if (O.PROVIDERS[key].held) {
+      out[key] = { label: O.PROVIDERS[key].label, kind: O.PROVIDERS[key].kind, ready: false, held: true, missing: [],
+        scopes: O.PROVIDERS[key].scopes, note: null, sentence: O.PROVIDERS[key].held };
+      continue;
+    }
     out[key] = {
       label: O.PROVIDERS[key].label, kind: O.PROVIDERS[key].kind,
       ready: missing.length === 0, missing,
@@ -570,6 +577,7 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+  if (O.PROVIDERS[key].held) return res.status(503).json({ error: "not_available", sentence: O.PROVIDERS[key].held });
   // PARITY-2 Part 5: QuickBooks opens only where the founder turned it on,
   // until Intuit's app assessment is passed and production keys exist.
   if (key === "intuit") {

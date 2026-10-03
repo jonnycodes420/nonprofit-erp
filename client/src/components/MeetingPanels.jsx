@@ -21,6 +21,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
@@ -362,8 +363,8 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             return <div key={x.id} style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, marginTop: 10, fontSize: 14, lineHeight: 1.55 }}>
               <div style={{ fontSize: 12, color: T.ink3 }}>{relDay(x.date)} · {mm.direction === "inbound" ? `From ${first}` : mm.direction === "outbound" ? `To ${first}` : "Email"}</div>
               <div style={{ whiteSpace: "pre-wrap" }}>{String(x.note || "").split("\n").slice(1).join("\n").trim() || String(x.note || "")}</div>
-              {mm.provider && mm.message_id && <button type="button" onClick={e => { e.stopPropagation();
-                if (!window.confirm("Remove this email from the record? Steward will not log it again.")) return;
+              {mm.provider && mm.message_id && <button type="button" onClick={async e => { e.stopPropagation();
+                if (!(await askConfirm({ title: "Remove this email from the record?", body: "Steward will not log it again. This cannot be undone.", yes: "Remove", danger: true }))) return;
                 apiFetch("/mailbox/forget", { method: "POST", body: JSON.stringify({ interactionId: x.id }) }).then(() => onChanged && onChanged()).catch(() => {}); }}
                 style={{ background: "none", border: "none", padding: 0, marginTop: 6, color: T.ink3, fontSize: 13, cursor: "pointer", textDecoration: "underline", font: "inherit" }}>Remove from the record</button>}
             </div>;

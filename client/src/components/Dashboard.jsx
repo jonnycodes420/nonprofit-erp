@@ -2,6 +2,8 @@ import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
+import { orgTodayPlus } from "../lib/orgToday";
+import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
@@ -2605,6 +2607,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     return m;
   },[data.donors]);
   const openRailDonor=(donorId,threadId)=>setRailView({kind:"donor",donorId,threadId});
+  // FIX-22: BIRTHDAYS THIS WEEK. today and the six days after it, each a
+  // civil date in the organisation's timezone (orgToday.js), matched against
+  // the month and day on the record (a Feb 29 birthday falls on Feb 28 in a
+  // common year, shared/birthday.js). Read from the donors already loaded, so
+  // it costs no query. None, and the rail shows nothing for it.
+  const birthdaysThisWeek=useMemo(()=>{
+    const days=[0,1,2,3,4,5,6].map(n=>orgTodayPlus(n)).filter(Boolean);
+    const out=[];
+    for(const d of (data.donors||[])){
+      const b=d.birthday;
+      if(!b||!b.month||!b.day||d.deceased)continue;
+      const at=days.findIndex(c=>isBirthdayOn(Number(b.month),Number(b.day),c));
+      if(at>=0)out.push({id:d.id,name:d.name,at,label:at===0?"today":`${BIRTH_MONTHS[b.month-1].slice(0,3)} ${b.day}`});
+    }
+    return out.sort((x,y)=>x.at-y.at||String(x.name).localeCompare(String(y.name)));
+  },[data.donors]);
   const railRow=(key,label,meta,onOpen)=>(
     <div key={key} {...interactive(onOpen,{label})}
       className="home-rail-row"
@@ -2632,6 +2650,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
+    if(key==="birthdays") return {
+      title:"Birthdays this week",
+      rows:birthdaysThisWeek.map(r=>({id:r.id,label:r.name,meta:r.label,onOpen:()=>openRailDonor(r.id,null)})),
+      empty:"No birthdays this week.",
+    };
     if(key==="failed") return {
       title:"Cards that failed this week",
       rows:(recurringHealth?.atRisk||[]).filter(r=>r.first_failed_at&&(Date.now()-new Date(r.first_failed_at).getTime())<=7*86400000)
@@ -2736,6 +2759,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           ))}
         </div>
+        {/* FIX-22: one quiet line, only when somebody has a birthday this week. */}
+        {birthdaysThisWeek.length>0&&(
+          <div {...interactive(()=>setRailView({kind:"list",key:"birthdays"}),{label:`${birthdaysThisWeek.length} birthday${birthdaysThisWeek.length===1?"":"s"} this week`})}
+            className="home-rail-row" data-testid="rail-birthdays"
+            style={{display:"flex",alignItems:"baseline",gap:10,padding:"10px 12px",borderRadius:8,margin:"6px -12px 0"}}>
+            <span style={{flex:1,minWidth:0,fontSize:13,color:T.ink}}>Birthdays this week</span>
+            <span style={{flexShrink:0,fontSize:12,color:T.ink3}}>{birthdaysThisWeek.length}</span>
+          </div>
+        )}
         {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
         <CallsToMake isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
       </div>

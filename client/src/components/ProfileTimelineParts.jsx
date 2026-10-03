@@ -22,6 +22,7 @@
 import { useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import { downloadFile } from "../lib/downloadFile";
 
@@ -124,7 +125,7 @@ export function AttachmentChips({ files = [], canRemove = false, onRemoved }) {
   const [busy, setBusy] = useState("");
   if (!files.length) return null;
   const remove = async (f) => {
-    if (!window.confirm(`Remove ${f.fileName} from this entry?`)) return;
+    if (!(await askConfirm({ title: `Remove ${f.fileName}?`, body: "The file comes off this entry and is not kept. This cannot be undone.", yes: "Remove file", danger: true }))) return;
     setBusy(f.id);
     try {
       await apiFetch(`/interactions/${f.interactionId}/attachments`, { method: "DELETE", body: JSON.stringify({ attachmentId: f.id }) });

@@ -25,6 +25,7 @@ import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
 import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
 import { errorMessage } from "../lib/domainError";
+import { askConfirm } from "../components/ConfirmDialog";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -259,7 +260,7 @@ export default function PortalEditor() {
 
   const publish = async () => {
     if (publishing) return;
-    if (!window.confirm("Publish this page? Donors will see it immediately.")) return;
+    if (!(await askConfirm({ title: "Publish this page?", body: "Donors will see it immediately.", yes: "Publish" }))) return;
     setPublishing(true); setErr("");
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
@@ -273,7 +274,7 @@ export default function PortalEditor() {
     setPublishing(false);
   };
   const revert = async () => {
-    if (!window.confirm("Discard the draft and go back to the last published page?")) return;
+    if (!(await askConfirm({ title: "Discard the draft?", body: "The page goes back to the last published version.", yes: "Discard draft", danger: true }))) return;
     try {
       const r = await apiFetch(apiBase + "/revert", { method: "POST", body: "{}" });
       setWidgets(Array.isArray(r.draft) ? r.draft : []);
