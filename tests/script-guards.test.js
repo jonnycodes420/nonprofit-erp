@@ -1,4 +1,5 @@
-// Script prod-write guard (BUILD-55 Part 1, 2026-08-15). Pure Node, no DB.
+// Script prod-write guard (BUILD-55 Part 1, 2026-08-15). Pure Node; the last
+// section (FIX-23) reads the scratch database and re-seeds the demo twice.
 // Run: node tests/script-guards.test.js
 //
 // Pins the load-bearing rule born from the 2026-08-15 incident (a bare
@@ -475,5 +476,57 @@ const nulFiles = [];
 ok(nulFiles.length === 0,
    "no source file contains a raw NUL byte (grep reads such a file as binary and skips it): " + nulFiles.join(", "));
 
-console.log(`script-guards: ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+// ── FIX-23 · THE DEMO TEARDOWN IS COMPLETE BY CONSTRUCTION ─────────────────
+// On prod, seed-demo.js refused with "the teardown could not remove org
+// org_b72demo; still refusing: (the orgs row itself)": every table it knew to
+// clear was clear, and something it did not know about still pointed at the
+// org. The teardown now reads every table and foreign key from pg_catalog and
+// deletes children first. Two things are pinned here, against the battery's
+// own scratch database (the shard seeds the demo before this suite):
+//   1. no foreign key can block a demo row's delete from a table the teardown
+//      cannot pin by org_id. A new table that points at orgs (or at any
+//      org-scoped table) through some other column, and has no org_id, fails
+//      this line until it gets one.
+//   2. seeding twice in a row on one database passes.
+// PROVEN ABLE TO FAIL: a table pointing at orgs through owner_org, with no
+// org_id, is created inside a transaction that is rolled back, and the plan
+// must name it as uncovered.
+(async () => {
+  const { Client } = require("pg");
+  const { execFileSync } = require("child_process");
+  const { teardownPlan } = require("../scripts/seed-demo.js");
+  const url = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
+  const client = new Client({ connectionString: url });
+  try { await client.connect(); }
+  catch (e) { ok(false, `the demo-teardown guard needs the scratch database (${e.message})`); return; }
+  const q = (sql, params = []) => client.query(sql, params).then(r => r.rows);
+  try {
+    const plan = await teardownPlan(q);
+    ok(plan.tables.length > 100 && plan.order.length === plan.tables.length,
+       `the teardown plan covers every org-scoped table (${plan.order.length} of ${plan.tables.length})`);
+    ok(plan.uncovered.length === 0,
+       "no table can block the demo teardown without an org_id to pin it by: "
+       + plan.uncovered.map(f => `${f.child}.${f.cols} → ${f.parent} (${f.conname})`).join(", "));
+    const pos = new Map(plan.order.map((t, i) => [t, i]));
+    const late = plan.fks.filter(f => f.child !== f.parent && pos.has(f.child) && pos.has(f.parent)
+      && "ar".includes(f.on_delete) && pos.get(f.child) > pos.get(f.parent));
+    ok(late.length === 0, "the teardown deletes every child before its parent: " + late.map(f => f.conname).join(", "));
+
+    await q("BEGIN");
+    await q("CREATE TABLE zz_fix23_planted (id serial PRIMARY KEY, owner_org TEXT REFERENCES orgs(id))");
+    const planted = await teardownPlan(q);
+    await q("ROLLBACK");
+    ok(planted.uncovered.some(f => f.child === "zz_fix23_planted"),
+       "a planted table that points at orgs without an org_id is caught (proven able to fail)");
+  } finally { await client.end(); }
+
+  for (const run of [1, 2]) {
+    let out = "", code = 0;
+    try { out = execFileSync("node", ["scripts/seed-demo.js"], { cwd: root, env: process.env, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status; out = String(e.stdout || "") + String(e.stderr || ""); }
+    ok(code === 0, `the demo seeds on run ${run} of 2 in a row on one database` + (code ? `:\n${out.split("\n").slice(-12).join("\n")}` : ""));
+  }
+})().catch(e => ok(false, `the demo-teardown guard crashed: ${e.stack}`)).finally(() => {
+  console.log(`script-guards: ${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+});

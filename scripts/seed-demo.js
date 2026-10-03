@@ -312,11 +312,6 @@ async function main() {
   // ── TEARDOWN — idempotent by dropping, never by importing over ──────────
   console.log("[teardown] removing any previous demo org…");
   await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [ORG]).catch(() => {});
-  for (const t of ["threads","workflow_runs","workflows","digest_sends","moves","opportunities","tasks",
-    "payment_recovery_events","recurring_subscriptions","receipts","pledges","fin_audit_log",
-    "fin_transactions","interactions","gifts","milestone_drafts","note_reminders","donor_materials",
-    "households","donors","campaigns","fin_funds","accounts","budgets","users"])
-    await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await teardownOrg(q, ORG);
 
   // ── The organization ────────────────────────────────────────────────────
@@ -3373,28 +3368,116 @@ async function removeRealPeople(q, orgId, { seededUserEmails = SEEDED_USER_EMAIL
 // a foreign key, the org row survived and the re-seed crashed on its INSERT).
 // Every DELETE is pinned to org_id = orgId; the org row goes last, and a
 // teardown that cannot remove it refuses rather than seeding over it.
-async function teardownOrg(q, orgId) {
+//
+// FIX-23: the tables and their foreign keys come from pg_catalog, not
+// information_schema (which hides any table the connecting role holds no
+// privilege on, while the foreign-key check on the org row still sees it).
+// The deletes run children first, by the foreign-key graph, so the order is
+// right by construction rather than by retrying. A refusal now names the
+// table and constraint that still points at the org.
+async function teardownPlan(q) {
   const tables = (await q(
-    `SELECT DISTINCT c.table_name FROM information_schema.columns c JOIN information_schema.tables t
-        ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
-      WHERE c.table_schema = current_schema() AND c.column_name = 'org_id' AND c.table_name <> 'orgs'
-      ORDER BY 1`)).map(r => r.table_name);
-  let pending = tables;
-  for (let pass = 0; pass < 10 && pending.length; pass++) {
-    const retry = [];
-    for (const t of pending) { try { await q(`DELETE FROM "${t}" WHERE org_id=$1`, [orgId]); } catch { retry.push(t); } }
-    if (retry.length === pending.length) break;
-    pending = retry;
+    `SELECT c.relname AS t FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'org_id' AND NOT a.attisdropped
+      WHERE n.nspname = current_schema() AND c.relkind IN ('r','p') AND NOT c.relispartition AND c.relname <> 'orgs'
+      ORDER BY 1`)).map(r => r.t);
+  const scoped = new Set(tables);
+  // Every foreign key in the schema: which table points at which, and what a
+  // delete of the parent does to the child (a = no action, r = restrict,
+  // c = cascade, n = set null, d = set default).
+  const fks = await q(
+    `SELECT k.conname, cc.relname AS child, pc.relname AS parent, k.confdeltype AS on_delete,
+            (SELECT string_agg(a.attname, ',' ORDER BY a.attnum) FROM pg_attribute a
+              WHERE a.attrelid = k.conrelid AND a.attnum = ANY(k.conkey)) AS cols
+       FROM pg_constraint k
+       JOIN pg_class cc ON cc.oid = k.conrelid JOIN pg_namespace cn ON cn.oid = cc.relnamespace
+       JOIN pg_class pc ON pc.oid = k.confrelid
+      WHERE k.contype = 'f' AND cn.nspname = current_schema()
+      ORDER BY 1`);
+  // A row that can block a demo row's delete but has no org_id to pin it by:
+  // a blocking key (no action / restrict) from a table outside the org scope
+  // into orgs or into an org-scoped table. The teardown cannot reach it.
+  const uncovered = fks.filter(f => (f.parent === "orgs" || scoped.has(f.parent))
+    && f.child !== "orgs" && !scoped.has(f.child) && (f.on_delete === "a" || f.on_delete === "r"));
+  // Children before parents: a table goes once no other undeleted scoped
+  // table holds a blocking key into it. A cycle (two tables pointing at each
+  // other) is left for the retry passes, in name order.
+  const blocks = new Map(tables.map(t => [t, new Set()]));   // parent → children that must go first
+  for (const f of fks)
+    if (scoped.has(f.child) && scoped.has(f.parent) && f.child !== f.parent && (f.on_delete === "a" || f.on_delete === "r"))
+      blocks.get(f.parent).add(f.child);
+  const order = [], done = new Set();
+  let left = [...tables];
+  while (left.length) {
+    const ready = left.filter(t => [...blocks.get(t)].every(c => done.has(c)));
+    if (!ready.length) { order.push(...left); break; }
+    for (const t of ready) { order.push(t); done.add(t); }
+    left = left.filter(t => !done.has(t));
   }
-  await q(`DELETE FROM orgs WHERE id=$1`, [orgId]).catch(() => {});
-  const [left] = await q(`SELECT COUNT(*)::int AS n FROM orgs WHERE id=$1`, [orgId]);
-  if (left.n) {
-    console.error(`\nREFUSED: the teardown could not remove org ${orgId}; still refusing: ${pending.join(", ") || "(the orgs row itself)"}\n`);
-    process.exit(1);
-  }
+  return { tables, order, fks, uncovered };
 }
 
-module.exports = { DRIFTED, SHAPE, GALA, ORG, ADMIN_EMAIL, ADMIN_PASSWORD, SEEDED_USER_EMAILS, removeRealPeople };
+// One transaction, the org row locked first: while the teardown runs, the
+// live server cannot write a new row that points at the org (an insert's key
+// check needs a share lock the FOR UPDATE holds off), so nothing lands
+// between the last table's DELETE and the org's. Each DELETE sits in its own
+// savepoint so a failure is retried, not fatal. A teardown that cannot finish
+// rolls back whole: the old demo stays as it was, and the refusal says why.
+async function teardownOrg(q, orgId, { exit = true } = {}) {
+  const { order, fks, uncovered } = await teardownPlan(q);
+  const step = async (sql, params) => {
+    await q(`SAVEPOINT td`);
+    try { const rows = await q(sql, params); await q(`RELEASE SAVEPOINT td`); return { rows }; }
+    catch (error) { await q(`ROLLBACK TO SAVEPOINT td`); await q(`RELEASE SAVEPOINT td`); return { error }; }
+  };
+  await q(`BEGIN`);
+  let msg;
+  try {
+    await q(`SET LOCAL lock_timeout = '30s'`);   // a held lock is reported, not waited on forever
+    await q(`SELECT id FROM orgs WHERE id=$1 FOR UPDATE`, [orgId]);
+    let pending = order;
+    const lastError = {};
+    for (let pass = 0; pass < 10 && pending.length; pass++) {
+      const retry = [];
+      for (const t of pending) {
+        const { error } = await step(`DELETE FROM "${t}" WHERE org_id=$1`, [orgId]);
+        if (error) { retry.push(t); lastError[t] = error; }
+      }
+      if (retry.length === pending.length) break;
+      pending = retry;
+    }
+    const { error: orgError } = await step(`DELETE FROM orgs WHERE id=$1`, [orgId]);
+    const [left] = await q(`SELECT COUNT(*)::int AS n FROM orgs WHERE id=$1`, [orgId]);
+    if (!left.n) { await q(`COMMIT`); return { ok: true }; }
+    // Say exactly what still points at the org: every key into orgs that a
+    // remaining row holds, with its count, then the error Postgres gave.
+    const lines = [];
+    for (const f of fks.filter(f => f.parent === "orgs" && !f.cols.includes(","))) {
+      const { rows, error } = await step(`SELECT COUNT(*)::int AS n FROM "${f.child}" WHERE "${f.cols}" = $1`, [orgId]);
+      if (error) { lines.push(`  ${f.child}.${f.cols} — could not be read (${error.message}), constraint ${f.conname}`); continue; }
+      const n = rows[0].n;
+      if (n) lines.push(`  ${f.child}.${f.cols} — ${n} row(s), constraint ${f.conname}`);
+    }
+    for (const t of pending) {
+      const e = lastError[t] || {};
+      lines.push(`  DELETE FROM ${t} failed: ${e.message || "?"}${e.constraint ? ` (constraint ${e.constraint}${e.table ? ` on ${e.table}` : ""})` : ""}`);
+    }
+    for (const f of uncovered) lines.push(`  ${f.child}.${f.cols} → ${f.parent} has no org_id to pin by (constraint ${f.conname})`);
+    msg = `the teardown could not remove org ${orgId}, and rolled back (nothing was deleted).\n`
+      + (orgError ? `  DELETE FROM orgs: ${orgError.message}${orgError.detail ? ` — ${orgError.detail}` : ""}`
+          + `${orgError.constraint ? ` [table ${orgError.table || "?"}, constraint ${orgError.constraint}]` : ""}\n` : "")
+      + (lines.length ? lines.join("\n") : "  (no remaining row points at it; the org row itself refused)");
+  } catch (e) {
+    msg = `the teardown of org ${orgId} failed and rolled back (nothing was deleted): ${e.message}`;
+  }
+  await q(`ROLLBACK`).catch(() => {});
+  if (!exit) return { ok: false, message: msg };
+  console.error(`\nREFUSED: ${msg}\n`);
+  process.exit(1);
+}
+
+module.exports = { DRIFTED, SHAPE, GALA, ORG, ADMIN_EMAIL, ADMIN_PASSWORD, SEEDED_USER_EMAILS, removeRealPeople, teardownPlan, teardownOrg };
 
 // Only run when invoked directly — tests/demo-shape.test.js requires this file
 // for DRIFTED/SHAPE and must not trigger a seed by importing it.
