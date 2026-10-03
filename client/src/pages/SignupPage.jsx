@@ -155,7 +155,7 @@ export default function SignupPage() {
             {TICKS.map(t => <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><Tick />{t}</li>)}
           </ul>
           <p style={{ marginTop: 26, color: SAGE_GREY, fontSize: 16 }}>
-            Rather talk first? <a href={CAL} target="_blank" rel="noreferrer" data-testid="signup-book" style={{ color: EMERALD, fontWeight: 700 }}>Book a 20-minute demo</a>
+            Rather talk first? <a href={CAL} target="_blank" rel="noreferrer" data-testid="signup-book" style={{ color: EMERALD, fontWeight: 700 }}>Book a 20-minute call</a>
           </p>
         </div>
 

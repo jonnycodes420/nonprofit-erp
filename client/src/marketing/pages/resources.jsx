@@ -61,7 +61,7 @@ export function Guide({ slug }) {
       <article className="prose">
         {g.s.map((s, i) => <React.Fragment key={i}><h2 id={"g" + i}>{s[0]}</h2><p>{s[1]}</p></React.Fragment>)}
         {g.src && <p className="srcnote">Sources: {g.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC_ALL[k][1]}>{SRC_ALL[k][0]}</A></React.Fragment>)}</p>}
-        <div className="callout"><b>Run this plan in Steward.</b><p>Journeys schedule every touch, name who owns it and put today's steps on your Home screen.</p><Pill href="/demo">Book a demo</Pill></div>
+        <div className="callout"><b>Run this plan in Steward.</b><p>Journeys schedule every touch, name who owns it and put today's steps on your Home screen.</p><Pill href="/demo">Book a call</Pill></div>
       </article>
     </div></section>
     <Cards eb="More guides" h="Keep <b>reading.</b>" list={GUIDE_SLUGS.filter(x => x !== slug).slice(0, 3).map(x => ["/guides/" + x, GUIDES[x].t, GUIDES[x].d, "forms"])} />
@@ -149,9 +149,9 @@ function Block({ b }) {
 const longDate = iso => new Date(iso + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
 // The closing pair every article and glossary page ends on: find who is
-// slipping in your own file, then bring that file to a demo.
+// slipping in your own file, then bring that file to a call.
 export function LostAndFoundCallout({ b = "See who is slipping in your own file." }) {
-  return <div className="callout"><b>{b}</b><p>The free Lost & Found audit reads a giving export in your browser and shows your lapsing donors and what they used to give. Nothing is uploaded. Then bring the same file to a 20-minute demo.</p><div className="ctas" style={{ marginTop: 6 }}><Pill href="/tools/lost-and-found">Run Lost & Found</Pill><Pill kind="soft" href="/demo">Book a demo</Pill></div></div>;
+  return <div className="callout"><b>{b}</b><p>The free Lost & Found audit reads a giving export in your browser and shows your lapsing donors and what they used to give. Nothing is uploaded. Then bring the same file to a 20-minute call.</p><div className="ctas" style={{ marginTop: 6 }}><Pill href="/tools/lost-and-found">Run Lost & Found</Pill><Pill kind="soft" href="/demo">Book a call</Pill></div></div>;
 }
 
 // The one template for every article in articles/*.md.

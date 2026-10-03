@@ -106,7 +106,7 @@ export function Crumbs({ list }) {
   );
 }
 
-// LANDING-3 · EVERY hero shows Book a demo and Start free, and the reference's
+// LANDING-3 · EVERY hero shows Book a call and Start free, and the reference's
 // updated hero() is what settled it: it stopped reading cta2 at all and
 // hardcodes the pair whenever noCta is not set. A page no longer gets to
 // choose its second button, so the twelve noCta pages (articles, guides, the
@@ -124,7 +124,7 @@ export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float, chi
             <p className="lede">{rich(lede)}</p>
             {!noCta && (
               <div className="ctas">
-                <Pill href="/demo">Book a demo</Pill>
+                <Pill href="/demo">Book a call</Pill>
                 <Pill kind="soft" href="/signup">Start free</Pill>
               </div>
             )}
@@ -249,8 +249,8 @@ export function FinalCta() {
       <section style={{ paddingTop: 0 }}><div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
         <div className="eyebrow">Ready to get started?</div>
         <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b style={{ color: "var(--emerald-lt)" }}>Keep them.</b></h2>
-        <p>Book a 20-minute demo with your own file, or start free for 30 days.</p>
-        <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+        <p>Book a 20-minute call with your own file, or start free for 30 days.</p>
+        <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
       </div></div></section>
     </>
   );
@@ -261,7 +261,7 @@ export function FinalCta() {
 export function ReadyPair() {
   return (
     <section className="ready"><div className="wrap ready-g">
-      <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a demo</Pill></div>
+      <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a call</Pill></div>
       <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
     </div></section>
   );

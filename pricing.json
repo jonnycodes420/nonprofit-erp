@@ -14,7 +14,7 @@
     { "id": "t5000",  "name": "Sapling", "maxDonors": 5000,  "band": "Up to 5,000 active donors",  "monthlyUsd": 299, "yearlyUsd": 2990, "featured": true,  "envMonthly": "STRIPE_PRICE_T5000_MONTHLY",  "envYearly": "STRIPE_PRICE_T5000_YEARLY" },
     { "id": "t10000", "name": "Orchard", "maxDonors": 10000, "band": "Up to 10,000 active donors", "monthlyUsd": 499, "yearlyUsd": 4990, "featured": false, "envMonthly": "STRIPE_PRICE_T10000_MONTHLY", "envYearly": "STRIPE_PRICE_T10000_YEARLY" }
   ],
-  "talkToUs": { "id": "talk", "name": "Forest", "band": "More than 10,000 active donors", "copy": "Talk to us.", "line": "More than 10,000 active donors. Same product, priced for your size.", "cta": "Talk to us" },
+  "talkToUs": { "id": "talk", "name": "Forest", "band": "More than 10,000 active donors", "copy": "Talk to us.", "line": "More than 10,000 active donors. Same product, priced for your size.", "cta": "Book a call" },
   "included": [
     "The full donor CRM — gift history, households, soft credit, planned giving",
     "Volunteers — people, shifts, hours and the sign-up link",

@@ -516,7 +516,7 @@ export const HELP_ARTICLES = [
     summary: `Giving Pages is where you create the pages donors give through, and set your time zone and processing fees.`,
     sections: [
       { h: `What you see`, p: [
-        `Three cards: "Time Zone", "Let Donors Cover Processing Costs" and "Giving Pages". Your pages are listed with "Edit" and "Archive". Archived pages can be brought back with "Reactivate". Fundraising lists the same pages with links to open and copy.`,
+        `Three cards: "Time Zone", "Let Donors Cover Processing Costs" and "Giving Pages". Your pages are listed with "Edit" and "Archive". Archived pages can be restored with "Reactivate". Fundraising lists the same pages with links to open and copy.`,
         `You need Stripe connected for a page to take card gifts. See Connect Stripe.`,
       ]},
       { h: `Create a giving page`, steps: [
@@ -692,7 +692,7 @@ export const HELP_ARTICLES = [
     summary: `Bring your donors, and their gift history if you have it, into Steward from a spreadsheet or another system.`,
     sections: [
       { h: `Before you start`, p: [
-        `Steward reads .csv, .tsv, .xlsx and .xls files. You can also paste CSV text and click "Parse →". Steward has a short how-to for exporting from DonorPerfect, Salesforce, Bloomerang, Neon, Little Green Light and others.`,
+        `Steward reads .csv, .tsv, .xlsx and .xls files. You can also paste CSV text and click "Parse →". Steward has a short how-to for exporting from your old donor system.`,
       ]},
       { h: `Import`, steps: [
         `Open Donors and click "↑ Import & tools ▾".`,

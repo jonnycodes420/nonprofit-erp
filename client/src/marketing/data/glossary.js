@@ -615,7 +615,8 @@ export const GLOSSARY = [
       "NCOA processing is done by licensed service providers, often your mail house, and the Postal Service requires a move update check for discounted presorted mail. Run your list before each big mailing, such as the year-end appeal, and update the new addresses in your donor system so the next mailing starts clean.",
     ],
     steward: [
-      "Steward does not run NCOA processing. When you print acknowledgment letters, donors with no postal address are left out by name, so you can see whose address is missing.",
+      "Data health, on the Donors screen, has a card called People who moved. It prepares an address update file of your donors' mailing addresses to send to an NCOA provider, and when the provider sends back its results you bring the file in. Each change of address then waits for you: review the moves, apply the ones you accept and skip the rest. Steward never changes an address on its own, and the old address is kept in the donor's history.",
+      "The NCOA matching itself is done by a licensed provider, not by Steward. When you print acknowledgment letters, donors with no postal address are left out by name, so you can see whose address is missing.",
     ],
     related: ["deduplication", "year-end-appeal", "household"],
     see: ["/articles/spreadsheet-to-donor-system", "/articles/lybunt-sybunt-before-year-end"],
@@ -630,8 +631,8 @@ export const GLOSSARY = [
       "Check for duplicates after every import and on a regular schedule. Match first on email, then look at similar names by hand, and when you merge, keep every gift and carry over any do-not-contact flag.",
     ],
     steward: [
-      "\"Merge duplicates\" in the Donors menu finds people with the same email or a similar name and shows them side by side. You choose which profile to keep. Gifts, conversations and tasks move across, blank fields fill in from the other profile, and a do-not-contact or deceased flag is always kept.",
-      "When you import a file, people already on file are matched rather than added twice, and each match has an Undo.",
+      "Data health, on the Donors screen, lists possible duplicates as pairs, each with the reason in words and a confidence of high, medium or low. You choose which profile to keep and press merge. Every gift, note and task moves across, and the money is checked to the cent before anything is saved. A do-not-contact or deceased flag is always kept.",
+      "Any merge can be undone for 30 days, and undo brings back both people exactly as they were. Mark a pair \"Not a duplicate\" and it stays that way, even after your next import. When you import a file, people already on file are matched rather than added twice.",
     ],
     related: ["household", "ncoa", "soft-credit"],
     see: ["/articles/spreadsheet-to-donor-system", "/tools/lost-and-found"],

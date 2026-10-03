@@ -16,7 +16,7 @@ import { SkeletonCards } from "../../components/Skeleton";
 // only at /lost-and-found. Now this page renders that same component, so the
 // drop zone and the Run the free audit button sit in the hero, and every
 // Lost & Found link on the site (menu, tools, feature finder) lands on a page
-// that can run it. Book a demo and Start free stay below the result.
+// that can run it. Book a call and Start free stay below the result.
 // Lazy, so the audit's code loads only for the people who come here.
 const LostAndFoundAudit = React.lazy(() => import("../../pages/LostAndFound").then(m => ({ default: m.LostAndFoundAudit })));
 
@@ -57,7 +57,7 @@ export function ToolLostAndFound() {
         <div data-lf-audit><LostAndFoundAudit compact /></div>
       </React.Suspense>
       <div className="ctas" style={{ marginTop: 34 }} data-lf-ctas>
-        <Pill href="/demo">Book a demo</Pill>
+        <Pill href="/demo">Book a call</Pill>
         <Pill kind="soft" href="/signup">Start free</Pill>
       </div>
     </Hero>

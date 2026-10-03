@@ -126,7 +126,7 @@ export default function Home() {
             <h1 className="mix h-xl">Keep the donors <b>you already have.</b></h1>
             <p className="lede">Steward shows you who is drifting while a phone call still fixes it, then runs the rest of your development office: gifts, events, volunteers, email and month end, in one calm place.</p>
             <div className="ctas">
-              <Pill href="/demo">Book a demo</Pill>
+              <Pill href="/demo">Book a call</Pill>
               <Pill kind="soft" href="/signup">Start free</Pill>
             </div>
             <div className="proof"><span>Move in about a day</span><span>Month to month</span><span>No platform fee</span></div>
@@ -198,13 +198,13 @@ export default function Home() {
           <div className="eyebrow">Our commitment</div>
           <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b>Keep them.</b></h2>
           <p>Keep, raise and run more, with Steward.</p>
-          <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a demo</Pill></div>
+          <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a call</Pill></div>
         </div></div>
       </section>
 
       <section className="ready">
         <div className="wrap ready-g">
-          <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a demo</Pill></div>
+          <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a call</Pill></div>
           <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
         </div>
       </section>

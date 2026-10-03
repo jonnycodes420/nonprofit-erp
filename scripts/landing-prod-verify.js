@@ -63,7 +63,6 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
   console.log(`landing-prod-verify → ${BASE}\n`);
   const { ROUTES, APP_LINK_TARGETS, FILE_LINK_TARGETS, HOME_TITLE } = await import("../client/src/marketing/routes.js");
   const { STATS, SRC, QUOTES } = await import("../client/src/marketing/data/research.js");
-  const { TEAM } = await import("../client/src/marketing/data/team.js");
   const { LEGAL_ENTITY_NAME } = await import("../shared/legalEntity.js");
   const known = new Set([...ROUTES.map(r => r.path), ...APP_LINK_TARGETS, ...FILE_LINK_TARGETS]);
   const quoteTexts = QUOTES.map(q => q[0]);
@@ -155,20 +154,14 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
   ok("the homepage title", (await page.title()) === HOME_TITLE, await page.title());
   ok("the H1 is the reference's", (await page.evaluate(() => document.querySelector("h1").textContent.trim())) === "Keep the donors you already have.");
   const home = texts["/"];
-  const SECTIONS = ["What the research says", "Donor software that keeps", "AI that drafts.", "Three products,", "Everything included,", "People who pick up the phone.", "Only 19.4% of first-time donors", "Questions?", "Every donor is a person.", "Twenty minutes,"];
+  const SECTIONS = ["What the research says", "Donor software that keeps", "AI that drafts.", "Three products,", "Everything included,", "A founder who answers,", "Only 19.4% of first-time donors", "Questions?", "Every donor is a person.", "Twenty minutes,"];
   const pos = SECTIONS.map(s => home.indexOf(s));
   ok("every homepage section is present, in the reference's order", pos.every((p, i) => p >= 0 && (i === 0 || p > pos[i - 1])), SECTIONS.filter((_, i) => pos[i] < 0));
   ok("the research strip carries every STATS figure", STATS.every(s => home.includes(s[0])));
-  ok("the people reel names the four people with their titles", TEAM.every(t => home.includes(t[0]) && home.includes(t[1])));
-  const portraits = await page.evaluate(async () => {
-    const imgs = [...document.querySelectorAll(".reel img")].slice(0, 4);
-    for (const i of imgs) { i.loading = "eager"; i.scrollIntoView(); }
-    await new Promise(r => setTimeout(r, 1500));
-    return imgs.map(i => ({ src: i.getAttribute("src"), loaded: i.naturalWidth > 0 }));
-  });
-  ok("…with their real portraits, each loaded", portraits.length === 4 && portraits.every((p, i) => p.loaded && p.src === TEAM[i][2]), portraits);
-  ok("the reel moves on its own and pauses on hover", await page.evaluate(() => {
-    const t = document.querySelector(".reel .track"); return getComputedStyle(t).animationName.includes("reel") && !document.querySelector(".reel button"); }));
+  // LANDING-3 deleted the people reel. The homepage has one leadership band
+  // (a line and a Meet our leadership button) and no carousel of people.
+  ok("the leadership band links to /leadership, and no people reel or carousel is on the page",
+    await page.evaluate(() => !!document.querySelector('.lead-band a[href="/leadership"]') && !document.querySelector(".reel, .track-of-people, .tm")));
   // Feature finder: the search narrows the list.
   await page.fill('#feat-home input[type="search"]', "volunteer");
   ok("the feature search narrows the list", /Showing \d+ of \d+/.test(await page.textContent(".fcount")) && (await page.$$(".fgrid .fc")).length < 6);
@@ -176,12 +169,12 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
   await page.click('#why-tabs [role="tab"]:nth-child(3)');
   ok("the Why tabs switch panes", await page.evaluate(() => [...document.querySelectorAll("#why-tabs .pane")].filter(p => !p.hidden).length === 1 && document.querySelector('#why-tabs [role="tab"][aria-selected="true"]').textContent === "Run lighter"));
   ok("NO auto popup, modal or interstitial covers the page on load", !(await page.$('[role="dialog"], .modal')));
-  const ctaKinds = await page.evaluate(() => [...document.querySelectorAll(".mk .pill")].filter(e => /Book a demo|Start free|Tour Steward|Take a tour/.test(e.textContent)).map(e => e.tagName));
+  const ctaKinds = await page.evaluate(() => [...document.querySelectorAll(".mk .pill")].filter(e => /Book a call|Start free|Tour Steward|Take a tour/.test(e.textContent)).map(e => e.tagName));
   ok("every navigating CTA is a REAL anchor, never a <button>", ctaKinds.length > 3 && ctaKinds.every(t => t === "A"), ctaKinds);
 
   // ── §5 · the shell ─────────────────────────────────────────────────────
   console.log("\n— §5 · header, menus, footer —");
-  for (const [label, needs] of [["Platform", "/features/drift"], ["Why Steward", "/leadership"], ["Resources", "/tools/retention"]]) {
+  for (const [label, needs] of [["Product", "/features/drift"], ["Why switch", "/leadership"], ["Learn", "/tools/retention"]]) {
     await page.click(`.menu button:has-text("${label}")`);
     const open = await page.evaluate(n => { const m = [...document.querySelectorAll(".mega")].find(x => !x.hidden); return m ? [...m.querySelectorAll("a")].map(a => a.getAttribute("href")).includes(n) : false; }, needs);
     ok(`the ${label} mega menu opens on click and links ${needs}`, open);
@@ -199,7 +192,9 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
   const m = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await m.goto(BASE + "/", { waitUntil: "networkidle" });
   await m.click(".burger");
-  ok("the mobile drawer opens from the burger at 390", await m.evaluate(() => !document.getElementById("drawer").hidden && document.querySelectorAll("#drawer details").length === 4));
+  // LANDING-3's drawer: Product, Why switch and Learn, then Pricing and Leadership.
+  ok("the mobile drawer opens from the burger at 390", await m.evaluate(() => !document.getElementById("drawer").hidden
+    && ["Product", "Why switch", "Learn", "Pricing", "Leadership"].every(w => [...document.querySelectorAll("#drawer details summary")].some(x => x.textContent.trim() === w))));
   await m.close();
 
   // ── §6 · tools, demo, legal ────────────────────────────────────────────
@@ -229,7 +224,9 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
     dupsShown: [...document.querySelectorAll("[data-dup]")].filter(d => getComputedStyle(d).display !== "none").length,
     people: document.querySelectorAll(".reel .tm").length,
   }));
-  ok("with reduced motion on, the reel and the research strip do not move", rmInfo.anim.length === 2 && rmInfo.anim.every(a => a === "none"), rmInfo.anim);
+  // LANDING-3 deleted the reel and FIX-13 made the research strip a still row,
+  // so with reduced motion (and without) nothing on the homepage moves.
+  ok("with reduced motion on, the research strip does not move and there is no reel", rmInfo.anim.length >= 1 && rmInfo.anim.every(a => a === "none") && rmInfo.people === 0, rmInfo);
   ok("…and show one copy of each, not three", rmInfo.dupsShown === 0, rmInfo);
   await rm.close();
 
