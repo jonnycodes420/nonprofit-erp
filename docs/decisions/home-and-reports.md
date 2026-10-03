@@ -3,6 +3,12 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Last conversation has one rule: `meetings.js conversationsWith`.** A held meeting (logged or on
+  a calendar), or a call, email, ask or stewardship touch, dated on or before the org's today. A
+  note is never a conversation, whoever wrote it (the Agent included), and a newsletter line is not
+  one. Last met is `lastMeetingWith`, so last conversation is never older than last met. The header's
+  closeness line and the Last contact figure both read it. Engagement's "most recent touch" is
+  worded at read time (`engagement.reasonFor`), never from text stored on the day scores ran. (FIX-24)
 - **Calls to make is one rule.** `callsToMake.js callsSql`: first gifts in the last 7 days, and gifts at
   or over `orgs.call_gift_floor_cents` (WHY-1's $250 by default) in the last 60, with no call logged with
   that person on or after the gift date. Mark called writes a call interaction; Snooze hides one gift for
