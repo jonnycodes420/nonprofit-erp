@@ -159,7 +159,6 @@ const ALL = Object.values(SRC_TEXT).join("\n");
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
         if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
-        if (v === "/billing/create-checkout") continue;              // LANDING-3: the API route /pricing posts a signed-in upgrade to
         if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
         linkish.push([f, v]);
       }
@@ -194,8 +193,10 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     // is the opposite: the marketing page owns the path AND still posts to
     // /billing/create-checkout, or a paying organisation cannot change plan.
     ok("/pricing is the marketing page now", !appPaths.includes("/pricing") && ROUTES.some(r => r.path === "/pricing"));
-    ok("…and it kept the signed-in checkout the app page had",
-      /\/billing\/create-checkout/.test(SRC_TEXT["client/src/marketing/pages/pricing.jsx"])
+    // FIX-22: a signed-in organisation changes plan in Settings, Billing; a
+    // fresh checkout from this page failed for an org already subscribed.
+    ok("…and it sends a signed-in organisation to Settings, Billing to change plan",
+      /navigate\("\/app\/settings\?section=billing"\)/.test(SRC_TEXT["client/src/marketing/pages/pricing.jsx"])
       && /useAuth/.test(SRC_TEXT["client/src/marketing/pages/pricing.jsx"]));
     ok("/lost-and-found stays the app's audit", appPaths.includes("/lost-and-found") && !ROUTES.some(r => r.path === "/lost-and-found"));
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));

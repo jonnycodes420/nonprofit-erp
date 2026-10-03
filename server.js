@@ -447,7 +447,7 @@ const whyAskLimiter = rateLimit({
   keyGenerator: (req) => "why:" + (tokenUserId(req) || ipKeyGenerator(req.ip)),
   skip: (req) => rateLimitDisabled() && !req.headers["x-test-enforce-limits"],
 });
-app.post("/why/ask", whyAskLimiter);
+// Mounted on the route itself (routes/why.js), so the route inventory has one /why/ask.
 
 // Per-IP: stops one attacker from spraying attempts across many different
 // accounts (each account-scoped limiter below would look "clean" individually).
@@ -10492,7 +10492,7 @@ require("./routes/templates").mount({
   actor, checkWriteAccess, money, orgTime, query, requireAdmin, requireAuth, run, uuid, volunteerSummary, wrap,
 });
 require("./routes/why").mount({
-  AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
+  whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
 });
 require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
 require("./routes/groups").mount({

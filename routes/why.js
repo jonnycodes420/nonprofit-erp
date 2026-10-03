@@ -22,7 +22,7 @@ const P = require("../prospect");
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
-const { AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
+const { whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
 const app = routers.r0;
 let S = null;
 const shape = async () => (S = S || await import("../shared/whyShape.js"));
@@ -153,7 +153,7 @@ app.get("/donors/:id/journey-suggestion", requireAuth, wrap(async (req, res) => 
 
 // POST /why/ask — { text } typed, or { key, campaign?, donor? } tapped.
 // Writes the question to the log and nothing else.
-app.post("/why/ask", requireAuth, wrap(async (req, res) => {
+app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const Sx = await shape();
   const orgId = req.user.orgId;
   const body = req.body || {};

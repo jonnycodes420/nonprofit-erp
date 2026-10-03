@@ -14,9 +14,10 @@
 //
 //   · a visitor gets Start 30 days free, linking to /signup?plan=<id> so the
 //     signup page opens on the band they picked;
-//   · a signed-in org gets the same "Choose <tier>" button, posting to the
-//     same /billing/create-checkout with the same body, and the same "Your
-//     current plan" label on the band it is already on.
+//   · a signed-in org gets the same "Choose <tier>" button, which opens
+//     Settings, Billing (FIX-22: a checkout started from here failed for an
+//     org that already has a subscription), and the same "Your current plan"
+//     label on the band it is already on.
 //
 // Dropping the second one would have made the brief's own words ("keep any
 // query parameters the app reads") impossible to honour and broken billing
