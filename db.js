@@ -6158,6 +6158,32 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ix_attach_donor ON interaction_attachments (org_id, donor_id) WHERE deleted_at IS NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ix_attach_interaction ON interaction_attachments (org_id, interaction_id)`);
 
+  // ── PARITY-1 Part F · VIDEO THANK-YOUS ────────────────────────────────────
+  // A short video she records on the donor profile. The bytes live in the
+  // org's asset store (portal_assets, kind 'video_thanks'); this row is the
+  // pointer, the unguessable token the donor's link carries, and how often
+  // the donor has watched it. Saving one writes a DRAFT email in the review
+  // queue (milestone_drafts, source 'video_thanks'); nothing sends by itself.
+  // A view is recorded by a POST from the page, never by the GET.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS video_thanks (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      asset_id TEXT,
+      mime TEXT,
+      bytes INTEGER,
+      duration_seconds INTEGER,
+      token TEXT NOT NULL UNIQUE,
+      draft_id TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      first_viewed_at TIMESTAMPTZ,
+      view_count INTEGER NOT NULL DEFAULT 0
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_video_thanks_donor ON video_thanks (org_id, donor_id, created_at DESC)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

@@ -241,6 +241,12 @@ async function collectLiveAssetRefs(orgId) {
   for (const r of await query(`SELECT asset_id FROM interaction_attachments WHERE deleted_at IS NULL${orgId ? " AND org_id = ?" : ""}`, p)) {
     if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
   }
+  // PARITY-1 Part F: a video thank-you is a donor's own message from this
+  // office, linked from an email they may open months later. Same rule as the
+  // grant documents above: a live pointer is never purged.
+  for (const r of await query(`SELECT asset_id FROM video_thanks${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+  }
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }
