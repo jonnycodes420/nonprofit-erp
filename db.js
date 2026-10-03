@@ -6504,6 +6504,41 @@ async function initSchema() {
   // in which case it shows on their own page. Every note before this is internal.
   await pool.query(`ALTER TABLE volunteer_notes ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'internal'`);
 
+  // Part 2. THE RECRUITMENT PAGE, one per org: what the coordinator wrote
+  // (rich text, sanitised by shared/richText.js before it is stored), the
+  // questions the application asks, and whether it is live.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_recruitment (
+      org_id TEXT PRIMARY KEY REFERENCES orgs(id),
+      title TEXT NOT NULL DEFAULT 'Volunteer with us',
+      body_html TEXT NOT NULL DEFAULT '',
+      questions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      published BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_by TEXT, updated_by_name TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // An APPLICATION is what somebody sent from that page. It is not a person
+  // until a coordinator approves it; approving matches them by email to the
+  // record already on file (a donor stays one person) or makes one.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_applications (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT,
+      answers JSONB NOT NULL DEFAULT '[]'::jsonb,
+      availability JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','declined')),
+      person_id TEXT REFERENCES donors(id) ON DELETE SET NULL,
+      matched_existing BOOLEAN,
+      submitted_at TIMESTAMPTZ DEFAULT NOW(),
+      decided_at TIMESTAMPTZ, decided_by TEXT, decided_by_name TEXT,
+      created_by TEXT NOT NULL DEFAULT 'system:volunteer-apply', created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_org ON volunteer_applications (org_id, status, submitted_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_person ON volunteer_applications (org_id, person_id) WHERE person_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

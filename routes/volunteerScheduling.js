@@ -1154,8 +1154,8 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
       WHERE su.id=? AND su.org_id=?`, [String(req.body?.signupId || ""), orgId]);
   if (!su) return res.status(404).json({ error: "Not found" });
 
-  // PARITY-3 — CHECK-IN WRITES THE HOURS, from the shift's own times, on the
-  // shift's date: somebody checked in at a 9 to 12 shift gave three hours, and
+  // PARITY-3 — CHECK-IN WRITES THE HOURS, from the shift's own times, dated
+  // the day they are here: somebody checked in at a 9 to 12 shift gave three hours, and
   // a coordinator at the door should not have to come back to the phone at
   // noon for that to be true. The hours are a normal logged row, editable
   // after on the person's record (a late arrival, an early finish). A
@@ -1163,15 +1163,19 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
   if (!su.checked_in_at) {
     const hundredths = VS.slotHundredths({ startTime: su.start_time, endTime: su.end_time }) || 25;
     const before = await volunteerSummary(orgId, su.person_id);
+    // Dated the day they are HERE (the org's today), the rule check-out
+    // always kept: a shift moved, or checked in early, must not write hours
+    // on a planned date that has not happened.
+    const hereOn = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
     const shiftId = su.hours_shift_id || await insertShift(orgId, su.person_id,
-      { date: su.date, hundredths, role: su.role_name || su.slot_name || su.opp_name, note: null,
+      { date: hereOn, hundredths, role: su.role_name || su.slot_name || su.opp_name, note: null,
         opportunityId: su.opportunity_id, slotId: su.slot_id, startTime: su.start_time, endTime: su.end_time },
       { via: "staff", who });
     await run("UPDATE volunteer_signups SET checked_in_at=NOW(), status='confirmed', hours_shift_id=?, updated_at=NOW() WHERE id=?", [shiftId, su.id]);
     const milestone = await noteMilestone(orgId, su.person_id, before.hundredths);
     const thanksDraft = await draftThanksFor(orgId, su.id).catch(e => { console.error("[volunteer] thanks draft:", e.message); return null; });
     return res.json({ ok: true, state: "checked_in", hours: hundredths / 100, shiftId, milestone, thanksDraft,
-      message: `${su.person_name} is checked in. ${hundredths / 100} hours logged from the shift's times; change them on their record if they came late or left early. A thank-you is drafted for you to send.` });
+      message: `${su.person_name} is checked in. ${hundredths / 100} ${hundredths === 100 ? "hour" : "hours"} logged from the shift's times; change them on their record if they came late or left early. A thank-you is drafted for you to send.` });
   }
   if (su.checked_out_at) {
     return res.json({ ok: true, state: "already_out", message: `${su.person_name} is already checked out.` });
@@ -1676,6 +1680,25 @@ app.get("/volunteer-hub/schedule", requireAuth, wrap(async (req, res) => {
 }));
 
 // The rows behind the two week numbers: every short shift, every conflict.
+// PARITY-3 Part 3 — the four numbers across the top of the Volunteers screen.
+// Each opens its rows: active volunteers (the list's volActive rule), pending
+// applications (Applications), and this week's conflicts and short shifts
+// (the problems below), from the same functions those screens call.
+app.get("/volunteer-hub/counts", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const GRP = require("../groups");
+  const f = await GRP.buildDonorFilter(orgId, { role: "volunteer", volActive: "1" });
+  const [a] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE ${f.whereSql}`, f.params);
+  const [p] = await query(`SELECT COUNT(*)::int AS n FROM volunteer_applications WHERE org_id=? AND status='pending'`, [orgId]);
+  const wp = await weekProblems(orgId);
+  res.json({
+    active: { value: a.n, sentence: "Volunteers with an hour logged in the last twelve months, or a place on a shift still to come." },
+    pending: { value: p.n, sentence: "Applications from your volunteer page waiting for Approve or Decline." },
+    conflicts: { value: wp.conflicts.length, sentence: "This week, the same person with a place on two shifts that overlap in time." },
+    short: { value: wp.short.length, sentence: "Published shifts this week, Monday to Sunday, where at least one role still needs people." },
+  });
+}));
+
 app.get("/volunteer-hub/schedule/problems", requireAuth, wrap(async (req, res) => {
   const wp = await weekProblems(req.user.orgId);
   res.json({ week: wp.week,
@@ -2036,6 +2059,307 @@ app.post("/volunteer-hub/drafts/reminders", requireAuth, checkWriteAccess, wrap(
   const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
   const n = await draftRemindersFor(orgId, today);
   res.json({ drafted: n, message: n ? `${n} ${n === 1 ? "reminder" : "reminders"} drafted for tomorrow. Nothing is sent until you press Send.` : "Every reminder for tomorrow is already drafted, or nobody is on tomorrow's shifts." });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARITY-3 PART 2 · THE RECRUITMENT PAGE AND ITS APPLICATIONS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// One public volunteer page per org (/volunteer-with/<org>): what the
+// coordinator wrote, the opportunities open now, and an Apply button. The
+// application lands in Pending applications. APPROVING is the only thing that
+// turns it into a person, and it matches by email first, so somebody who
+// already gives is approved onto the record they already have.
+let RT = null, VA = null;
+const RT_READY = import("../shared/richText.js").then(m => { RT = m; });
+const VA_READY = import("../shared/volunteerApply.js").then(m => { VA = m; });
+const P2_READY = Promise.all([READY, RT_READY, VA_READY]);
+const { withAdvisoryLock } = require("../db");
+const ASSETS = require("../assetStore");
+const IXF = require("../interactionFiles");
+const SYS_APPLY = { id: "system:volunteer-apply", name: "The volunteer, from the application form" };
+const APPLY_FILE_MAX = 8 * 1024 * 1024;
+const APPLY_FILE_MIME = ["application/pdf", "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"];
+const PAGE_IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+async function recruitmentOf(orgId) {
+  const [r] = await query("SELECT * FROM volunteer_recruitment WHERE org_id=?", [orgId]);
+  const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || []); } catch { return []; } };
+  return r ? { title: r.title, bodyHtml: r.body_html, questions: parse(r.questions), published: !!r.published, updatedAt: r.updated_at, updatedBy: r.updated_by_name || "" }
+    : { title: "Volunteer with us", bodyHtml: "", questions: [], published: false, updatedAt: null, updatedBy: "" };
+}
+async function orgBySlugPublic(slug) {
+  const [o] = await query("SELECT id, name, org_slug FROM orgs WHERE org_slug=?", [String(slug || "")]);
+  return o || null;
+}
+const recruitUrl = slug => `${publicAppUrl()}/volunteer-with/${encodeURIComponent(slug)}`;
+// A data URL from the browser, checked: a type on the list, bytes that match
+// it, and a size under the limit. Returns { buffer, mime } or { error }.
+function decodeDataUrl(dataUrl, allowed, max) {
+  const m = /^data:([a-z0-9.+\/-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(String(dataUrl || ""));
+  if (!m) return { error: "That file could not be read." };
+  const mime = m[1].toLowerCase();
+  if (!allowed.includes(mime)) return { error: "That kind of file is not one Steward takes here." };
+  const buffer = Buffer.from(m[2], "base64");
+  if (!buffer.length || buffer.length > max) return { error: `Files here can be up to ${Math.round(max / 1024 / 1024)} MB.` };
+  if (!IXF.bytesMatchMime(buffer, mime)) return { error: "That file is not what its name says it is." };
+  return { buffer, mime };
+}
+
+app.get("/volunteer-hub/recruitment", requireAuth, wrap(async (req, res) => {
+  await P2_READY;
+  const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ ...(await recruitmentOf(req.user.orgId)), publicUrl: o && o.org_slug ? recruitUrl(o.org_slug) : null,
+    types: VA.QUESTION_TYPES.map(t => ({ key: t, label: VA.TYPE_WORDS[t] })), availability: VA.AVAILABILITY,
+    sentence: "Your public volunteer page: what you write here, the opportunities open now, and an Apply button. Applications wait for you in Pending applications." });
+}));
+
+app.put("/volunteer-hub/recruitment", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await P2_READY;
+  const b = req.body || {}, who = actor(req);
+  const title = String(b.title || "").trim().slice(0, 120) || "Volunteer with us";
+  const bodyHtml = RT.sanitizeRichText(b.bodyHtml || "");
+  const v = VA.validateQuestions(b.questions);
+  if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
+  const prior = await recruitmentOf(req.user.orgId);
+  if (req.audit) req.audit.before({ title: prior.title, published: prior.published, questions: prior.questions.length });
+  await run(`INSERT INTO volunteer_recruitment (org_id,title,body_html,questions,published,updated_by,updated_by_name,updated_at)
+             VALUES (?,?,?,?::jsonb,?,?,?,NOW())
+             ON CONFLICT (org_id) DO UPDATE SET title=EXCLUDED.title, body_html=EXCLUDED.body_html, questions=EXCLUDED.questions,
+               published=EXCLUDED.published, updated_by=EXCLUDED.updated_by, updated_by_name=EXCLUDED.updated_by_name, updated_at=NOW()`,
+    [req.user.orgId, title, bodyHtml, JSON.stringify(v.questions), b.published === true, who.id, who.name]);
+  if (req.audit) req.audit.after({ title, published: b.published === true, questions: v.questions.length });
+  res.json({ ...(await recruitmentOf(req.user.orgId)), message: b.published === true ? "Saved, and the page is live." : "Saved. The page is not live until you publish it." });
+}));
+
+// An image for the page, uploaded from the editor. Images only; served from
+// the org's asset store like a logo.
+app.post("/volunteer-hub/recruitment/image", requireAuth, checkWriteAccess, express.json({ limit: "8mb" }), wrap(async (req, res) => {
+  const f = decodeDataUrl(req.body && req.body.file, PAGE_IMAGE_MIME, 5 * 1024 * 1024);
+  if (f.error) return res.status(400).json({ error: f.error });
+  const out = await ASSETS.putThemeAsset({ orgId: req.user.orgId, kind: "volpage", buffer: f.buffer, contentType: f.mime });
+  res.status(201).json({ path: out.path });
+}));
+
+// ── THE PUBLIC PAGE ──────────────────────────────────────────────────────
+app.get("/volunteer-with/:orgSlug", donateLimiter, wrap(async (req, res) => {
+  await P2_READY;
+  const o = await orgBySlugPublic(req.params.orgSlug);
+  const rec = o ? await recruitmentOf(o.id) : null;
+  if (!o || !rec.published) return res.status(404).send(publicPage({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">Ask the organisation for its current link.</p></div>` }));
+  const brand = await brandOf(o.id);
+  const today = orgToday(await orgTz(o.id));                       // ORG_TZ_SEAM_OK
+  const opps = await query(
+    `SELECT o.name, o.slug, o.description, o.location,
+            COUNT(s.id)::int AS shifts, MIN(s.date) AS next_date
+       FROM volunteer_opportunities o
+       JOIN volunteer_slots s ON s.opportunity_id=o.id AND s.org_id=o.org_id AND s.cancelled_at IS NULL AND s.published IS NOT FALSE AND s.date >= ?
+      WHERE o.org_id=? AND o.is_public=TRUE AND o.archived_at IS NULL
+      GROUP BY o.id ORDER BY MIN(s.date), o.name`, [today, o.id]);
+  res.setHeader("Cache-Control", "no-store");
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "frame-ancestors *");
+  const cards = opps.length ? opps.map(x => `<div class="card">
+      <h2>${escapeHtml(x.name)}</h2>
+      ${x.location ? `<p class="muted">${escapeHtml(x.location)}</p>` : ""}
+      ${x.description ? `<p class="small">${escapeHtml(x.description)}</p>` : ""}
+      <p class="small">${x.shifts} ${x.shifts === 1 ? "date" : "dates"} coming up, the next on ${escapeHtml(dayWords(x.next_date))}.</p>
+      <a class="btn quiet" href="/volunteer/${escapeHtml(x.slug)}">See the dates</a>
+    </div>`).join("") : `<div class="card"><p class="muted">No dates are up just now. Apply below and we will be in touch.</p></div>`;
+  res.send(publicPage({ title: `${rec.title} · ${brand.displayName}`, brand, wide: true, body: `
+    <style>.rich img{max-width:100%;height:auto;border-radius:10px}.rich iframe{width:100%;aspect-ratio:16/9;border:0;border-radius:10px}.rich h2{margin:18px 0 6px}</style>
+    <div class="card"><h1>${escapeHtml(rec.title)}</h1><div class="rich">${RT.sanitizeRichText(rec.bodyHtml)}</div>
+      <p style="margin-top:16px"><a class="btn" href="/volunteer-with/${escapeHtml(o.org_slug)}/apply">Apply to volunteer</a></p></div>
+    <h2 style="margin:18px 2px 10px">Open now</h2>
+    ${cards}
+    <div class="card"><a class="btn" href="/volunteer-with/${escapeHtml(o.org_slug)}/apply">Apply to volunteer</a></div>` }));
+}));
+
+function applyForm(o, rec, { values = {}, error = "" } = {}) {
+  const esc = escapeHtml;
+  const qs = rec.questions.map(q => {
+    const name = `q_${q.id}`, req = q.required ? " required" : "", star = q.required ? "" : " (optional)";
+    if (q.type === "text") return `<label for="${name}">${esc(q.label)}${star}</label><textarea id="${name}" name="${name}" maxlength="2000"${req}>${esc(values[name] || "")}</textarea>`;
+    if (q.type === "choice") return `<label for="${name}">${esc(q.label)}${star}</label><select id="${name}" name="${name}"${req}><option value="">Choose one</option>${q.options.map(op => `<option${values[name] === op ? " selected" : ""}>${esc(op)}</option>`).join("")}</select>`;
+    if (q.type === "yesno") return `<fieldset style="border:0;padding:0;margin:12px 0 0"><legend style="font-weight:600;font-size:14px">${esc(q.label)}${star}</legend>
+      <label style="display:inline-flex;gap:6px;margin-right:18px"><input type="radio" name="${name}" value="yes"${values[name] === "yes" ? " checked" : ""}${req}> Yes</label>
+      <label style="display:inline-flex;gap:6px"><input type="radio" name="${name}" value="no"${values[name] === "no" ? " checked" : ""}> No</label></fieldset>`;
+    return `<label for="pick_${q.id}">${esc(q.label)}${star}</label><input id="pick_${q.id}" type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/heic,image/heif" data-into="f_${q.id}"${req}>
+      <input type="hidden" name="f_${q.id}"><input type="hidden" name="fn_${q.id}"><p class="small muted">A PDF or a photo, up to 8 MB.</p>`;
+  }).join("\n");
+  const avail = VA.AVAILABILITY.map(a => `<label style="display:flex;gap:8px;align-items:center;font-weight:400"><input type="checkbox" name="availability" value="${esc(a)}"${(values.availability || []).includes(a) ? " checked" : ""}> ${esc(a)}</label>`).join("");
+  return `<div class="card">
+    <h1>Apply to volunteer</h1>
+    ${error ? `<div class="err">${esc(error)}</div>` : ""}
+    <form method="post" action="/volunteer-with/${esc(o.org_slug)}/apply" id="apply">
+      <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <label for="n">Your name</label><input id="n" name="name" required maxlength="200" autocomplete="name" value="${esc(values.name || "")}">
+      <label for="e">Email</label><input id="e" name="email" type="email" required maxlength="200" autocomplete="email" value="${esc(values.email || "")}">
+      <label for="p">Phone (optional)</label><input id="p" name="phone" maxlength="40" autocomplete="tel" value="${esc(values.phone || "")}">
+      ${qs}
+      <fieldset style="border:0;padding:0;margin:14px 0 0"><legend style="font-weight:600;font-size:14px">When are you usually free? (optional)</legend>${avail}</fieldset>
+      <button class="btn" type="submit" style="margin-top:16px">Send my application</button>
+    </form>
+    <p class="small" style="margin-top:14px">Your details go to ${esc(o.name)} and nowhere else. Somebody there reads every application.</p>
+  </div>
+  <script>
+  // A file question: read it here and send it with the form, because this
+  // page posts a plain form. Nothing is uploaded until you press Send.
+  document.querySelectorAll('input[type=file][data-into]').forEach(function (inp) {
+    inp.addEventListener('change', function () {
+      var f = inp.files && inp.files[0], form = inp.form, into = inp.getAttribute('data-into');
+      if (!f) return;
+      if (f.size > ${APPLY_FILE_MAX}) { alert('That file is over 8 MB.'); inp.value = ''; return; }
+      var r = new FileReader();
+      r.onload = function () { form.elements[into].value = r.result; form.elements['fn_' + into.slice(2)].value = f.name; };
+      r.readAsDataURL(f);
+    });
+  });
+  </script>`;
+}
+
+app.get("/volunteer-with/:orgSlug/apply", donateLimiter, wrap(async (req, res) => {
+  await P2_READY;
+  const o = await orgBySlugPublic(req.params.orgSlug);
+  const rec = o ? await recruitmentOf(o.id) : null;
+  if (!o || !rec.published) return res.status(404).send(publicPage({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
+    body: `<div class="card"><h1>That page is not here.</h1></div>` }));
+  const brand = await brandOf(o.id);
+  res.setHeader("Cache-Control", "no-store");
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "frame-ancestors *");
+  res.send(publicPage({ title: `Apply · ${brand.displayName}`, brand, body: applyForm(o, rec) }));
+}));
+
+app.post("/volunteer-with/:orgSlug/apply", donateLimiter, express.urlencoded({ extended: false, limit: "12mb" }), wrap(async (req, res) => {
+  await P2_READY;
+  const o = await orgBySlugPublic(req.params.orgSlug);
+  const rec = o ? await recruitmentOf(o.id) : null;
+  if (!o || !rec.published) return res.status(404).send("Not found");
+  const brand = await brandOf(o.id);
+  const b = req.body || {};
+  const thanks = publicPage({ title: "Thank you", brand, body: `<div class="card"><h1>Thank you.</h1>
+    <p>Your application is with ${escapeHtml(brand.displayName || o.name)}. Somebody there reads every one and will be in touch.</p>
+    <p class="small"><a href="/volunteer-with/${escapeHtml(o.org_slug)}">Back to the volunteer page</a></p></div>` });
+  if (String(b.website || "").trim()) return res.send(thanks);       // the honeypot: thanked, nothing written
+  const name = String(b.name || "").trim().slice(0, 200);
+  const email = String(b.email || "").trim().toLowerCase().slice(0, 200);
+  const phone = String(b.phone || "").trim().slice(0, 40) || null;
+  const again = error => res.status(400).send(publicPage({ title: "Check the form", brand, body: applyForm(o, rec, { values: { ...b, availability: [].concat(b.availability || []) }, error }) }));
+  if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return again("Please give your name and an email address.");
+  const id = "vap_" + uuid().slice(0, 12);
+  const files = {};
+  for (const q of rec.questions.filter(x => x.type === "file")) {
+    if (!b[`f_${q.id}`]) continue;
+    const f = decodeDataUrl(b[`f_${q.id}`], APPLY_FILE_MIME, APPLY_FILE_MAX);
+    if (f.error) return again(`${q.label}: ${f.error}`);
+    // A waiver is personal: stored under its own kind, never written into a
+    // public page, and opened by staff only through the signed-in route below.
+    const out = await ASSETS.putThemeAsset({ orgId: o.id, kind: "volapply", buffer: f.buffer, contentType: f.mime });
+    files[q.id] = { assetId: out.id, fileName: IXF.sanitizeFilename(b[`fn_${q.id}`] || "file", f.mime) };
+  }
+  const v = VA.validateAnswers(rec.questions, b, files);
+  if (!v.ok) return again(v.errors[0]);
+  await run(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?::jsonb,?::jsonb,?,?)`,
+    [id, o.id, name, email, phone, JSON.stringify(v.answers), JSON.stringify(v.availability), SYS_APPLY.id, SYS_APPLY.name]);
+  res.send(thanks);
+}));
+
+// ── PENDING APPLICATIONS ─────────────────────────────────────────────────
+function shapeApp(a, matches) {
+  const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || []); } catch { return []; } };
+  return { id: a.id, name: a.name, email: a.email, phone: a.phone || null, status: a.status,
+    answers: parse(a.answers).map(x => ({ ...x, answer: x.type === "file" && x.answer ? { fileName: x.answer.fileName } : x.answer })),
+    availability: parse(a.availability), submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "",
+    personId: a.person_id || null, matchedExisting: a.matched_existing,
+    onFile: (matches || []).map(m => ({ id: m.id, name: m.name, gives: Number(m.total_giving || 0) > 0 })) };
+}
+async function onFileByEmail(orgId, email) {
+  // "Gives" is read from the gifts themselves, not the stored total.
+  return query(`SELECT d.id, d.name,
+                       CASE WHEN EXISTS (SELECT 1 FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id AND g.amount > 0) THEN 1 ELSE 0 END AS total_giving
+                  FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND LOWER(d.email)=? ORDER BY d.created_at LIMIT 5`, [orgId, String(email || "").toLowerCase()]);
+}
+app.get("/volunteer-hub/applications", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const status = ["pending", "approved", "declined"].includes(String(req.query.status)) ? String(req.query.status) : "pending";
+  const rows = await query(`SELECT * FROM volunteer_applications WHERE org_id=? AND status=? ORDER BY submitted_at DESC LIMIT 300`, [orgId, status]);
+  const out = [];
+  for (const a of rows) out.push(shapeApp(a, a.status === "pending" ? await onFileByEmail(orgId, a.email) : []));
+  const [c] = await query(`SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM volunteer_applications WHERE org_id=?`, [orgId]);
+  res.json({ status, applications: out, pending: c.pending,
+    sentence: "People who applied from your volunteer page. Approving one adds them as a volunteer, onto the record they already have when their email is on file." });
+}));
+
+app.get("/volunteer-hub/applications/:id/file/:qid", requireAuth, wrap(async (req, res) => {
+  const [a] = await query(`SELECT answers FROM volunteer_applications WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  const answers = typeof a.answers === "string" ? JSON.parse(a.answers) : (a.answers || []);
+  const x = answers.find(z => z.questionId === req.params.qid && z.type === "file" && z.answer);
+  const asset = x ? await ASSETS.getThemeAsset(x.answer.assetId) : null;
+  if (!asset) return res.status(404).json({ error: "Not found" });
+  res.set("Content-Type", asset.contentType);
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Cache-Control", "private, no-store");
+  res.set("Content-Disposition", `attachment; filename="${String(x.answer.fileName || "file").replace(/["\r\n]/g, "")}"`);
+  res.send(asset.buffer);
+}));
+
+// APPROVE. Email first: exactly one person with it is that person (a donor
+// stays one record, now also a Volunteer); two or more and the coordinator
+// picks which, never a guess; none and a new person is made, under the same
+// per-email lock live donor creation uses, so two approvals cannot make two.
+app.post("/volunteer-hub/applications/:id/approve", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const [a] = await query(`SELECT * FROM volunteer_applications WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  if (!a) return res.status(404).json({ error: "Not found" });
+  if (a.status !== "pending") return res.status(409).json({ error: "already_decided", message: `This application was already ${a.status}.` });
+  const email = String(a.email).toLowerCase();
+  const out = await withAdvisoryLock(`donor:${orgId}:${email}`, async () => {
+    const matches = await onFileByEmail(orgId, email);
+    let personId = null, matched = false;
+    if (req.body && req.body.personId) {
+      const pick = matches.find(m => m.id === String(req.body.personId));
+      if (!pick) return { error: 404 };
+      personId = pick.id; matched = true;
+    } else if (matches.length === 1) { personId = matches[0].id; matched = true; }
+    else if (matches.length > 1) return { choose: matches };
+    else {
+      personId = "d_" + uuid().slice(0, 10);
+      await run(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
+        [personId, orgId, a.name, email, a.phone || null, who.id, who.name]);
+    }
+    if (matched) {
+      await markVolunteer(orgId, personId);
+      if (a.phone) await run("UPDATE donors SET phone = COALESCE(NULLIF(phone,''), ?) WHERE id=? AND org_id=?", [a.phone, personId, orgId]);
+    }
+    const { changes } = await run(`UPDATE volunteer_applications SET status='approved', person_id=?, matched_existing=?, decided_at=NOW(), decided_by=?, decided_by_name=?
+                                    WHERE id=? AND org_id=? AND status='pending'`, [personId, matched, who.id, who.name, a.id, orgId]);
+    if (!changes) return { error: 409 };
+    return { personId, matched };
+  });
+  if (out.error === 404) return res.status(404).json({ error: "Not found", message: "That person does not have this email." });
+  if (out.error === 409) return res.status(409).json({ error: "already_decided", message: "Somebody decided this one a moment ago." });
+  if (out.choose) return res.status(409).json({ error: "choose_person", choices: out.choose.map(m => ({ id: m.id, name: m.name })),
+    message: `${out.choose.length} people on file share ${email}. Choose which one this is.` });
+  maybeStartJourneyFromServer(orgId, out.personId, "new_volunteer", {}).catch(e => console.error("[journey] approve:", e.message));
+  const [p] = await query(`SELECT d.name, (SELECT COUNT(*) FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id AND g.amount > 0)::int AS total_giving
+                             FROM donors d WHERE d.id=?`, [out.personId]);
+  res.json({ ok: true, personId: out.personId, matchedExisting: out.matched,
+    message: out.matched
+      ? `Approved onto ${p.name}'s record, which was already on file${Number(p.total_giving) > 0 ? " as somebody who gives" : ""}. One person, one record.`
+      : `Approved. ${p.name} is on the roster as a new volunteer.` });
+}));
+
+app.post("/volunteer-hub/applications/:id/decline", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const who = actor(req);
+  const { changes } = await run(`UPDATE volunteer_applications SET status='declined', decided_at=NOW(), decided_by=?, decided_by_name=?
+                                  WHERE id=? AND org_id=? AND status='pending'`, [who.id, who.name, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, message: "Declined. Nothing is sent to them; if they should hear from you, that is yours to write." });
 }));
 
 ctx.registerVolunteerReminders && ctx.registerVolunteerReminders(runVolunteerReminders);

@@ -456,6 +456,7 @@ function bResolver(routePath, param) {
     return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
   }
   const byParam = {
+    qid: "q1",   // PARITY-3: a question on an application
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",
     // BUILD-99 (major gifts) Part 2 — a portfolio is READ by officer id, so the
@@ -575,6 +576,9 @@ function bResolver(routePath, param) {
   // PARITY-3 Part 1 — a volunteer's skill, certification or tag: org B's own
   // row, which org A may not remove.
   if (routePath.startsWith("/volunteer-qualifications/")) return `vq_${B}`;
+  // PARITY-3 Part 2 — an application from org B's public volunteer page:
+  // org A may not read its answers, open its waiver, approve or decline it.
+  if (routePath.startsWith("/volunteer-hub/applications/")) return `vap_${B}`;
   // PARITY-3 — a draft reminder or thank-you is a milestone_drafts row: org
   // B's own draft, which org A may neither read nor discard.
   if (routePath.startsWith("/volunteer-hub/drafts/")) return `md_${B}`;

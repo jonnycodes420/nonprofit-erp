@@ -134,6 +134,13 @@ app.get("/groups/:id", requireAuth, wrap(async (req, res) => {
     await fig({ key: "group-gifts", params: { ...gp, kind: "count" } }, "Gifts"),
   ];
   figures[0].kind = "count"; figures[1].kind = "money"; figures[2].kind = "money"; figures[3].kind = "money"; figures[4].kind = "count";
+  // PARITY-3 Part 5 — on a group of volunteers, the ones who have never
+  // given, opening the list: the people to think about asking.
+  if (g.rules && g.rules.volunteer === "1") {
+    const ng = await fig({ key: "group-never-gave", params: gp }, "Volunteers who have never given");
+    ng.kind = "count";
+    figures.push(ng);
+  }
 
   // The last twelve months, one figure per month, each opening its gifts.
   const t = orgTime.parseCivil(today);

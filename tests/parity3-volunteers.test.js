@@ -105,7 +105,52 @@ const T = civilToday();
   ok("§1 the other two still wait, in order", JSON.stringify(after.filter(p => p.status === "waitlisted").sort((a, b) => a.position - b.position).map(p => p.personId)) === JSON.stringify(people.slice(4)));
   footIs("after one came off", s.footer, { needed: 5, scheduled: 5, short: 0, waitlisted: 3, hours: 15 });
 
-  // ── §2 THE APPLICATION THAT IS ALREADY A DONOR (with Part 2) ─────────────
+  // ── §2 THE APPLICATION THAT IS ALREADY A DONOR ──────────────────────────
+  // A donor on file applies from the public page with the same email in other
+  // capitals. Approving puts volunteering on THAT record: no second person.
+  const GIVER = "d_par3v_giver";
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ($1,$2,'Gale Giver','gale.giver@par3v.local','cultivate','system:test','test')`, [GIVER, ORG]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ('g_par3v_1',$1,$2,250,$3,'system:test','test')`, [ORG, GIVER, civilPlusDays(-40)]);
+  const onFileCount = async () => Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND LOWER(email)='gale.giver@par3v.local'`, [ORG]))[0].n);
+  const pub = await api("PUT", "/volunteer-hub/recruitment", tok, { title: "Help at the pantry", bodyHtml: "<h2>Why</h2><p>Hands needed.</p><script>x()</script>",
+    published: true, questions: [{ label: "Have you volunteered before?", type: "yesno", required: true }] });
+  ok("§2 the recruitment page is published, its words kept and the script dropped", pub.status === 200 && pub.body.published && !/script/.test(pub.body.bodyHtml) && /<h2>Why<\/h2>/.test(pub.body.bodyHtml), pub.body);
+  const qid = pub.body.questions[0].id;
+  const form = new URLSearchParams({ name: "Gale Giver", email: "Gale.Giver@PAR3V.local", phone: "555-0199", [`q_${qid}`]: "yes", availability: "Saturdays" });
+  const sent = await fetch(`${require("./helpers").BASE}/volunteer-with/parity-vol-t/apply`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form.toString() });
+  ok("§2 the public application is accepted", sent.status === 200 && /Thank you/.test(await sent.text()));
+  ok("§2 applying makes no person: still exactly one record with that email", await onFileCount() === 1);
+  const pend = await api("GET", "/volunteer-hub/applications", tok);
+  const app = (pend.body.applications || []).find(a => a.email === "gale.giver@par3v.local");
+  ok("§2 it waits in Pending applications, naming the donor already on file", app && pend.body.pending >= 1 && app.onFile.some(m => m.id === GIVER && m.gives), pend.body);
+  const appr = await api("POST", `/volunteer-hub/applications/${app.id}/approve`, tok, {});
+  ok("§2 approving puts it on the donor's own record", appr.status === 200 && appr.body.personId === GIVER && appr.body.matchedExisting === true, appr.body);
+  ok("§2 …and there is still exactly one person with that email", await onFileCount() === 1);
+  const [pt] = await q(`SELECT person_types FROM donors WHERE id=$1`, [GIVER]);
+  ok("§2 the donor is now also a Volunteer", JSON.stringify(pt.person_types).includes("volunteer"), pt.person_types);
+  const again = await api("POST", `/volunteer-hub/applications/${app.id}/approve`, tok, {});
+  ok("§2 a second approval is refused, not repeated", again.status === 409);
+
+  // Hours from check-in: a 09:00 to 12:00 shift is 3 hours, plus 1h30 logged
+  // by hand. The profile, its CSV and the Volunteers screen all say 4.5.
+  const mk2 = await api("POST", "/volunteer-hub/slots", tok, { opportunityId: opp.body.id, date: civilPlusDays(-1), startTime: "09:00", endTime: "12:00", capacity: 5 });
+  const su = await api("POST", "/volunteer-hub/signups", tok, { slotId: mk2.body.id, personId: GIVER });
+  const ci = await api("POST", "/volunteer-hub/checkin", tok, { signupId: su.body.signupId });
+  ok("§2 check-in logs 3 hours from the shift's times", ci.status === 200 && ci.body.hours === 3, ci.body);
+  const ci2 = await api("POST", "/volunteer-hub/checkin", tok, { signupId: su.body.signupId });
+  ok("§2 check-out writes no second set of hours", ci2.status === 200 && ci2.body.state === "checked_out");
+  const hand = await api("POST", `/donors/${GIVER}/volunteer-hours`, tok, { date: civilPlusDays(-2), hours: "1", minutes: "30", opportunityId: opp.body.id });
+  ok("§2 an hour and a half logged by hand", hand.status === 201, hand.body);
+  const prof = await api("GET", `/donors/${GIVER}/volunteer-hours`, tok);
+  ok("§2 the profile says 4.5 hours in all", prof.body.lifetime.hours === 4.5 && prof.body.shifts.length === 2, prof.body.lifetime);
+  const figRows = await api("GET", `/figures/volunteer-hours/rows?${new URLSearchParams({ ...prof.body.lifetime.source.params, pageSize: "50" })}`, tok);
+  ok("§2 the total opens rows that add up to it", figRows.status === 200 && Math.round(figRows.body.rows.reduce((a, r) => a + Number(r.amount) * 100, 0)) === 450, figRows.body.value);
+  const csv = await fetch(`${require("./helpers").BASE}/donors/${GIVER}/volunteer-hours.csv`, { headers: { Authorization: "Bearer " + tok } }).then(r => r.text());
+  const totalLine = csv.trim().split(/\r?\n/).pop();
+  ok("§2 the log CSV totals 4.5", /^Total,,,4\.5,/.test(totalLine), totalLine);
+  const roster = await api("GET", "/volunteer-hub/roster", tok);
+  const me = (roster.body.people || []).find(x => x.id === GIVER);
+  ok("§2 the Volunteers screen says 4.5 hours", me && me.hundredths === 450, me);
 
   await closeDb();
   summary();
