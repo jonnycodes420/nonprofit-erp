@@ -408,6 +408,31 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                                             LEFT JOIN events e ON e.id=a.event_id AND e.org_id=a.org_id WHERE a.id=? AND a.org_id=?`, [ai.auction_id, orgId]);
                 if (st && au && st.bid_id === pi.metadata.auction_bid_id) auWin = { item: st, auction: au };
                 else console.error(`[auction] ${pi.id} names item ${pi.metadata.auction_item_id} whose winning bid is not ${pi.metadata.auction_bid_id}; recording the payment without the split`);
+                // FIX-20 Part 1: ONE ITEM, ONE PAID WINNER. Two checkouts opened
+                // at the same moment can both be paid, and each arrives here
+                // with its own payment intent, so the gift's Stripe key cannot
+                // tell them apart. The item is CLAIMED by the first payment in
+                // one UPDATE: Postgres serialises the two on the row lock and
+                // the second re-reads a claimed row. A redelivery of the winning
+                // payment passes the claim again and recordGift's own key makes
+                // it a no-op. The losing payment records NO gift: it is flagged
+                // for a refund that a person makes in Stripe. Steward never
+                // refunds on its own.
+                const [claim] = await query(
+                  `UPDATE auction_items
+                      SET paid_payment_id = CASE WHEN paid_payment_id IS NULL AND paid_gift_id IS NULL THEN ? ELSE paid_payment_id END
+                    WHERE id=? AND org_id=? RETURNING paid_payment_id`,
+                  [pi.id, pi.metadata.auction_item_id, orgId]);
+                if (claim && claim.paid_payment_id !== pi.id) {
+                  await run(
+                    `INSERT INTO auction_refund_flags (id,org_id,auction_id,item_id,stripe_payment_id,amount,payer_name,payer_email,donor_id,
+                                                       kept_payment_id,created_by,created_by_name)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (org_id, stripe_payment_id) DO NOTHING`,
+                    ["arf_" + uuid().replace(/-/g, "").slice(0, 12), orgId, ai.auction_id, pi.metadata.auction_item_id, pi.id, amount,
+                     donorName || null, email || null, donorId, claim.paid_payment_id || null, SYS_STRIPE.id, SYS_STRIPE.name]);
+                  console.error(`[auction] ${pi.id} paid for item ${pi.metadata.auction_item_id}, which another payment already paid; no gift recorded, flagged for a refund in Stripe`);
+                  return res.json({ received: true, auctionAlreadyPaid: true });
+                }
               }
             }
             const written = await recordGift({

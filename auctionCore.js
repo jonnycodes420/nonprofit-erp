@@ -45,7 +45,7 @@ const ITEM_STATE_SQL = `
        n AS (SELECT item_id, COUNT(*)::int AS bids FROM auction_bids WHERE org_id = ? AND auction_id = ? GROUP BY item_id)
   SELECT i.id, i.auction_id, i.title, i.description, i.category, i.photos, i.donor_id,
          i.fmv::text AS fmv, i.starting_bid::text AS starting_bid, i.bid_increment::text AS bid_increment,
-         i.buy_now::text AS buy_now, i.position, i.closed_at, i.in_kind_gift_id, i.paid_gift_id, i.paid_at,
+         i.buy_now::text AS buy_now, i.position, i.closed_at, i.in_kind_gift_id, i.paid_gift_id, i.paid_at, i.paid_payment_id,
          dd.name AS donor_name,
          top.bid_id, top.bidder_id, top.amount::text AS high_amount, top.created_at AS high_at, top.buy_now AS bought_now,
          bd.name AS bidder_name, bd.email AS bidder_email, bd.bidder_number, bd.donor_id AS bidder_donor_id,

@@ -2844,7 +2844,7 @@ const donateHandler = async (req, res) => {
   if (auctionPayToken) {
     auctionWin = await AC.resolvePayToken(query, auctionPayToken);
     if (!auctionWin || auctionWin.orgId !== org.id) return res.status(400).json({ error: "This pay link is no longer valid. Ask the organisation for a new one." });
-    if (auctionWin.item.paid_gift_id) return res.status(409).json({ error: "This item has already been paid for." });
+    if (auctionWin.item.paid_gift_id || auctionWin.item.paid_payment_id) return res.status(409).json({ error: "This item has already been paid for." });
     baseCents = AC.cents(auctionWin.item.high_amount);
     email = auctionWin.item.bidder_email;
     const nm = String(auctionWin.item.bidder_name || "").trim().split(/\s+/);
@@ -3177,9 +3177,40 @@ const donateHandler = async (req, res) => {
     ),
   };
 
-  const session = await stripe.checkout.sessions.create(sessionParams, {
-    stripeAccount: org.stripe_account_id,
-  });
+  // FIX-20 Part 1: ONE OPEN CHECKOUT PER AUCTION ITEM. Two taps on Pay (two
+  // tabs, two devices) used to open two live Stripe checkouts for one item,
+  // and both could be paid. Under a per-item lock, a new checkout first
+  // re-reads the item: paid is refused; an earlier checkout that is already
+  // complete is refused (its payment is on its way to the webhook); an earlier
+  // one still open is expired in Stripe so it can no longer take a card. The
+  // webhook's claim is the backstop for anything that slips past this.
+  let session;
+  if (auctionWin) {
+    const itemId = auctionWin.item.id, acct = { stripeAccount: org.stripe_account_id };
+    const got = await withAdvisoryLock(`auction-checkout:${itemId}`, async () => {
+      const [cur] = await query(`SELECT paid_payment_id, paid_gift_id, checkout_session_id FROM auction_items WHERE id=? AND org_id=?`, [itemId, org.id]);
+      if (!cur || cur.paid_payment_id || cur.paid_gift_id) return { refused: "This item has already been paid for." };
+      if (cur.checkout_session_id) {
+        try {
+          const prev = await stripe.checkout.sessions.retrieve(cur.checkout_session_id, {}, acct);
+          if (prev && prev.status === "complete") return { refused: "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organisation." };
+          if (prev && prev.status === "open") await stripe.checkout.sessions.expire(cur.checkout_session_id, {}, acct);
+        } catch (e) {
+          console.error(`[auction] could not close the earlier checkout for ${itemId}:`, e.message);
+          return { refused: "We could not check on an earlier payment for this item. Try again in a minute." };
+        }
+      }
+      const s = await stripe.checkout.sessions.create(sessionParams, acct);
+      await run(`UPDATE auction_items SET checkout_session_id=? WHERE id=? AND org_id=?`, [s.id, itemId, org.id]);
+      return { session: s };
+    });
+    if (got.refused) return res.status(409).json({ error: got.refused });
+    session = got.session;
+  } else {
+    session = await stripe.checkout.sessions.create(sessionParams, {
+      stripeAccount: org.stripe_account_id,
+    });
+  }
   if (eventHoldId) await run(`UPDATE event_seat_holds SET stripe_session_id=? WHERE id=?`, [session.id, eventHoldId]).catch(() => {});
   res.json({ url: session.url });
 };
@@ -3293,7 +3324,7 @@ app.post("/auction/pay/:token", donateLimiter, express.urlencoded({ extended: fa
   const win = await AC.resolvePayToken(query, req.params.token);
   if (!win) return res.status(404).send("Not found");
   const [org] = await query(`SELECT org_slug FROM orgs WHERE id=?`, [win.orgId]);
-  const back = () => res.redirect(303, `/auction/pay/${encodeURIComponent(req.params.token)}`);
+  const back = (m) => res.redirect(303, `/auction/pay/${encodeURIComponent(req.params.token)}${m ? `?m=${m}` : ""}`);
   const inner = { params: { orgSlug: org.org_slug },
     body: { firstName: "Bidder", lastName: "Bidder", email: "winner@auction.invalid", amount: "1", frequency: "once",
             coverFees: false, auctionPayToken: String(req.params.token) } };
@@ -3305,7 +3336,10 @@ app.post("/auction/pay/:token", donateLimiter, express.urlencoded({ extended: fa
       answered = true;
       if (payload && payload.url) return res.redirect(303, payload.url);
       console.error("[auction] pay checkout refused:", payload && payload.error);
-      return back();
+      // FIX-20 Part 1: the refusals a winner can act on, said on the pay page.
+      const why = String(payload && payload.error || "");
+      return back(/already been paid/.test(why) ? "paid_already" : /already going through/.test(why) ? "pay_in_progress"
+        : /Try again in a minute/.test(why) ? "pay_try_again" : "");
     },
   };
   await donateHandler(inner, shim);

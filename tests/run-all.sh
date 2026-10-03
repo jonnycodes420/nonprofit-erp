@@ -126,6 +126,7 @@ CORE=(
   members2-isolation
   events2-checkout
   parity2-auction
+  fix20-auction-double-checkout
   fix11-seating
   build103-soft-credit
   agents1-persona-scope
