@@ -251,6 +251,13 @@ async function collectLiveAssetRefs(orgId) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }
   for (const r of await query(`SELECT hero_image_url FROM campaigns${w}`, p)) add(r.hero_image_url);
+  // PARITY-2 Part 3: an event's hero and every photograph in its gallery.
+  // The gallery is the record of a night that will not happen again: a live
+  // pointer here is never purged, whatever kind the asset was stored under.
+  for (const r of await query(`SELECT hero_image_url, gallery FROM events${w}`, p)) {
+    add(r.hero_image_url);
+    for (const ph of (Array.isArray(r.gallery) ? r.gallery : [])) add(ph && ph.path);
+  }
   for (const r of await query(`SELECT draft, published FROM portal_pages${w}`, p)) {
     for (const list of [r.draft, r.published]) {
       for (const wd of (Array.isArray(list) ? list : [])) {

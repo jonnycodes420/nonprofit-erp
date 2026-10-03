@@ -22242,7 +22242,8 @@ function eventLevelPayload(l, taken = 0) {
   return { id: l.id, kind: l.kind, name: l.name, price: Number(l.price), fmv: Number(l.fmv),
     memberPrice: l.member_price == null ? null : Number(l.member_price),
     deductible: (rbCentsEv(l.price) - rbCentsEv(l.fmv)) / 100, capacity: l.capacity, taken,
-    remaining: l.capacity == null ? null : Math.max(0, l.capacity - taken), recognition: l.recognition };
+    remaining: l.capacity == null ? null : Math.max(0, l.capacity - taken), recognition: l.recognition,
+    benefits: Array.isArray(l.benefits) ? l.benefits : [] };
 }
 
 // Find the person by id, or by email, or create them — the same shape a
@@ -22551,9 +22552,9 @@ app.post("/events/:id/levels", requireAuth, checkWriteAccess, wrap(async (req, r
   const v = EV.validateLevel(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level, id = "evl_" + uuid().slice(0, 8);
-  await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,member_price,capacity,recognition,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,member_price,capacity,recognition,benefits,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?)`,
     [id, req.user.orgId, ev.id, L.kind, L.name, L.priceCents / 100, L.fmvCents / 100,
-     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, actor(req).id, actor(req).name]);
+     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, JSON.stringify(L.benefits), actor(req).id, actor(req).name]);
   res.status(201).json({ id });
 }));
 
@@ -22564,9 +22565,9 @@ app.put("/event-levels/:id", requireAuth, checkWriteAccess, wrap(async (req, res
   const v = EV.validateLevel({ ...eventLevelPayload(l), ...req.body });
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level;
-  await run("UPDATE event_levels SET kind=?, name=?, price=?, fmv=?, member_price=?, capacity=?, recognition=? WHERE id=? AND org_id=?",
+  await run("UPDATE event_levels SET kind=?, name=?, price=?, fmv=?, member_price=?, capacity=?, recognition=?, benefits=?::jsonb WHERE id=? AND org_id=?",
     [L.kind, L.name, L.priceCents / 100, L.fmvCents / 100,
-     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, l.id, req.user.orgId]);
+     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, JSON.stringify(L.benefits), l.id, req.user.orgId]);
   res.json({ ok: true });
 }));
 
@@ -22919,7 +22920,10 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
 let PPG = null;
 const PPG_READY = import("../shared/publicPage.js").then(m => { PPG = m; return m; });
 const evPage = opts => PPG.publicPage({ footer: "Registration by Steward.", ...opts });
-const EV_PUBLIC_READY = Promise.all([EV_READY, PPG_READY]);
+// PARITY-2 Part 3: the page's own rules (times, video, share row, gallery).
+let EPG = null;
+const EPG_READY = import("../shared/eventPage.js").then(m => { EPG = m; return m; });
+const EV_PUBLIC_READY = Promise.all([EV_READY, PPG_READY, EPG_READY]);
 
 // FIX-7 Part 2 — A PUBLIC EVENT SLUG CARRIES NO ORG, SO IT MUST NAME ONE
 // EVENT. `/e/:slug` has no organisation in the path: the slug IS the address.
@@ -22985,7 +22989,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
   const levels = await query(
-    `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition
+    `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits
        FROM event_levels WHERE org_id=? AND event_id=? ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
   const esc = PPG.escapeHtml;
   res.setHeader("Cache-Control", "no-store");
@@ -22995,27 +22999,21 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
 
   const seats = new Map();
   for (const l of levels) seats.set(l.id, await evSeatsLeft(l));
+  const slugPath = `/e/${esc(e.public_slug)}`;
+  const tickets = levels.filter(l => l.kind === "ticket");
+  const sponsors = levels.filter(l => l.kind === "sponsor");
 
   const levelCard = l => {
     const left = seats.get(l.id);
     const soldOut = left === 0;
     const deductible = Number(l.price) - Number(l.fmv);
     const memberDeductible = l.member_price != null ? Number(l.member_price) - Number(l.fmv) : null;
+    const benefits = Array.isArray(l.benefits) ? l.benefits : [];
     const priceLine = l.member_price != null
       ? `<p class="small">Members pay ${esc(evMoney(l.member_price))}. Enter the email your membership is under and the price changes when you check out; it is checked against the membership, never taken on trust.</p>`
       : "";
-    return `<div class="card">
-      <div class="row"><h2>${esc(l.name)}</h2>${soldOut
-        ? `<span class="pill shut">Sold out</span>`
-        : `<span class="pill open">${esc(evMoney(l.price))}</span>`}</div>
-      ${Number(l.fmv) > 0
-        ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive on the night, so ${esc(evMoney(deductible))} is tax deductible${memberDeductible != null ? `, or ${esc(evMoney(memberDeductible))} at the member price` : ""}.</p>`
-        : `<p class="small">The whole amount is tax deductible: nothing is given in return.</p>`}
-      ${priceLine}
-      ${l.recognition ? `<p class="small">Listed as ${esc(l.recognition)}.</p>` : ""}
-      ${left != null && !soldOut && left <= 10 ? `<p class="small">${left} place${left === 1 ? "" : "s"} left.</p>` : ""}
-      ${soldOut ? `
-      <form method="post" action="/e/${esc(e.public_slug)}/waitlist">
+    const form = soldOut ? `
+      <form method="post" action="${slugPath}/waitlist">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <p class="small">Leave your name and ${esc(brand.displayName || "the organisation")} will be in touch if a place comes free. Nothing is charged and you are under no obligation.</p>
@@ -23023,7 +23021,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
         <button class="btn quiet" type="submit">Put me on the waiting list</button>
       </form>` : `
-      <form method="post" action="/e/${esc(e.public_slug)}/${canTakeACard ? "checkout" : "register"}">
+      <form method="post" action="${slugPath}/${canTakeACard ? "checkout" : "register"}">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <label>Your name<input name="name" required autocomplete="name"></label>
@@ -23036,30 +23034,121 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
         <button class="btn" type="submit">${canTakeACard
           ? (l.kind === "sponsor" ? "Sponsor and pay" : "Buy and pay")
           : (l.kind === "sponsor" ? "Sponsor" : "Register")}</button>
-      </form>`}
+      </form>`;
+    return `<div class="card${l.kind === "sponsor" ? " sponsor" : ""}" data-level-kind="${esc(l.kind)}">
+      <div class="row"><h2>${esc(l.name)}</h2>${soldOut
+        ? `<span class="pill shut">Sold out</span>`
+        : `<span class="pill open">${esc(evMoney(l.price))}</span>`}</div>
+      ${benefits.length ? `<ul class="benefits">${benefits.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : ""}
+      ${Number(l.fmv) > 0
+        ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive${l.kind === "sponsor" ? "" : " on the night"}, so ${esc(evMoney(deductible))} is tax deductible${memberDeductible != null ? `, or ${esc(evMoney(memberDeductible))} at the member price` : ""}.</p>`
+        : `<p class="small">The whole amount is tax deductible: nothing is given in return.</p>`}
+      ${priceLine}
+      ${l.recognition ? `<p class="small">Listed as ${esc(String(l.recognition).replace(/\{\{\s*name\s*\}\}/g, "your name"))}.</p>` : ""}
+      ${left != null && !soldOut && left <= 10 ? `<p class="small">${left} place${left === 1 ? "" : "s"} left.</p>` : ""}
+      ${l.kind === "sponsor" || tickets.length > 1
+        ? `<details${soldOut ? " open" : ""}><summary class="btn${l.kind === "sponsor" ? " quiet" : ""}">${soldOut ? "Join the waiting list" : l.kind === "sponsor" ? "Sponsor at this level" : canTakeACard ? "Buy tickets" : "Register"}</summary>${form}</details>`
+        : form}
     </div>`;
   };
-  const tickets = levels.filter(l => l.kind === "ticket");
-  const sponsors = levels.filter(l => l.kind === "sponsor");
   const problem = String(req.query.problem || "").slice(0, 200);
 
-  res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, body: `
+  // ── PARITY-2 Part 3: THE TOP OF THE PAGE ─────────────────────────────
+  // The picture (or the film), then when and where, in the words a poster
+  // uses. Times are the org's wall clock (orgTime.js) and are printed as
+  // typed; the calendar file is what converts them.
+  const video = EPG.parseEventVideo(e.hero_video_url);
+  const hero = video
+    ? `<div class="hero video"><iframe src="${esc(video.embedUrl)}" title="${esc(e.name)}" loading="lazy"
+         allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`
+    : /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(e.hero_image_url || ""))
+    ? `<div class="hero"><img src="${esc(e.hero_image_url)}?w=1280" srcset="${esc(e.hero_image_url)}?w=640 640w, ${esc(e.hero_image_url)}?w=1280 1280w, ${esc(e.hero_image_url)}?w=1920 1920w" sizes="(max-width: 760px) 100vw, 720px" alt=""></div>`
+    : "";
+  const day = EPG.civil(e.date), lastDay = EPG.civil(e.end_date);
+  const dateWords = lastDay && lastDay !== day ? `${evDayWords(day)} to ${evDayWords(lastDay)}` : evDayWords(day);
+  const times = EPG.timeRangeWords(e.start_time, e.end_time);
+  const mapHref = e.location ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.location)}` : "";
+
+  // THE SHARE ROW. Plain links built on the one public address (publicAppUrl),
+  // and a copy button that is the only script on the page and is not needed
+  // to read it: the address is printed in the box beside it.
+  const shareUrl = `${publicAppUrl()}/e/${encodeURIComponent(e.public_slug)}`;
+  const share = `<div class="card share" data-testid="event-share">
+      <h2>Tell a friend</h2>
+      <div class="copy"><input readonly value="${esc(shareUrl)}" aria-label="The page address" onfocus="this.select()">
+        <button class="btn small quiet" type="button" onclick="var i=this.previousElementSibling;i.select();(navigator.clipboard?navigator.clipboard.writeText(i.value):Promise.reject()).then(function(){},function(){document.execCommand&&document.execCommand('copy')});this.textContent='Copied'">Copy link</button></div>
+      <p class="links">${EPG.shareLinks(shareUrl, e.name).map(s => `<a href="${esc(s.href)}" target="_blank" rel="noopener noreferrer">${esc(s.label)}</a>`).join("")}</p>
+    </div>`;
+
+  // THE PHOTOGRAPHS, once the night is over (shared/eventPage.js galleryShows).
+  const today = orgToday(await orgTz(e.org_id));   // ORG_TZ_SEAM_OK
+  const photos = (Array.isArray(e.gallery) ? e.gallery : []).filter(p => /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(p && p.path || "")));
+  const isOver = EPG.galleryShows({ date: day, endDate: lastDay, today });
+  const gallery = isOver && photos.length ? `<h2 class="sec">On the night</h2><div class="gallery" data-testid="event-gallery">${photos.map(p => `
+      <figure><a href="${esc(p.path)}?w=1920" target="_blank" rel="noopener"><img src="${esc(p.path)}?w=640" alt="${esc(p.caption || "")}" loading="lazy"></a>${p.caption ? `<figcaption>${esc(p.caption)}</figcaption>` : ""}</figure>`).join("")}</div>` : "";
+
+  // GIVE INSTEAD, tied to THIS event. The same donation checkout every gift
+  // takes (POST /e/:slug/give -> donateHandler); the event and its campaign
+  // are the server's to name, never the form's.
+  const giveCard = `<div class="card" data-testid="event-give">
+      <h2>${isOver ? "Give to what the night was for" : "Cannot come?"}</h2>
+      <p class="small">You can still give. It goes to the same place the evening does, and the whole amount is tax deductible because nothing is given in return.</p>
+      ${canTakeACard ? `<details><summary class="btn">Donate</summary>
+        <form method="post" action="${slugPath}/give">
+          <input class="hp" name="website" tabindex="-1" autocomplete="off">
+          <label>Amount in dollars<input name="amount" type="number" min="1" step="1" inputmode="numeric" required placeholder="50"></label>
+          <label>Your name<input name="name" required autocomplete="name"></label>
+          <label>Email, for your receipt<input name="email" type="email" required autocomplete="email"></label>
+          <button class="btn" type="submit">Give and pay</button>
+        </form></details>`
+      : `<a class="btn quiet" href="/give/${esc((org && org.org_slug) || "")}">Give instead</a>`}
+    </div>`;
+
+  const style = `<style>
+    .hero{margin:0 0 14px;border-radius:14px;overflow:hidden;background:#0f1a12}
+    .hero img{display:block;width:100%;height:auto;max-height:420px;object-fit:cover}
+    .hero.video{position:relative;padding-top:56.25%}
+    .hero.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+    .when p{margin:0 0 4px}
+    .sec{margin:22px 0 10px}
+    .sponsors{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    .sponsors .card{margin:0;border-top:4px solid #c9a84c}
+    .benefits{margin:6px 0 10px;padding:0;list-style:none}
+    .benefits li{font-size:14px;padding:3px 0 3px 22px;position:relative}
+    .benefits li:before{content:"";position:absolute;left:4px;top:10px;width:8px;height:8px;border-radius:50%;background:#0d5c3a}
+    details summary{list-style:none}
+    details summary::-webkit-details-marker{display:none}
+    details[open] summary{display:none}
+    .share .copy{display:flex;gap:8px;align-items:center}
+    .share .copy input{flex:1;min-width:0}
+    .share .links{display:flex;flex-wrap:wrap;gap:8px 16px;margin:12px 0 0}
+    .share .links a{color:#0d5c3a;font-weight:700;font-size:14px}
+    .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:0 0 14px}
+    .gallery figure{margin:0}
+    .gallery img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:10px}
+    .gallery figcaption{font-size:12px;color:#5a554f;margin-top:4px}
+    a{color:#0d5c3a}
+  </style>`;
+
+  res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, wide: true, body: `${style}
     ${problem ? `<div class="err">${esc(problem)}</div>` : ""}
     ${req.query.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organisation")} will be in touch if a place comes free.</div>` : ""}
-    <div class="card">
+    ${req.query.gave === "1" ? `<div class="ok">Thank you. Your gift went through, and your receipt is on its way by email.</div>` : ""}
+    ${hero}
+    <div class="card when" data-testid="event-when">
       <h1>${esc(e.name)}</h1>
-      <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
-      ${e.description ? `<p>${esc(e.description)}</p>` : ""}
-      ${e.location ? `<p class="small"><a href="https://maps.google.com/?q=${encodeURIComponent(e.location)}">Directions</a> · <a href="/e/${esc(e.public_slug)}/calendar.ics">Add to calendar</a></p>` : ""}
+      <p><strong>${esc(dateWords)}</strong>${times ? `<br>${esc(times)}` : ""}</p>
+      ${e.location ? `<p>${esc(e.location)} · <a href="${esc(mapHref)}" target="_blank" rel="noopener">Map and directions</a></p>` : ""}
+      ${isOver ? "" : `<p class="small"><a href="${slugPath}/calendar.ics" data-testid="event-ics">Add to my calendar</a></p>`}
+      ${e.description ? `<p style="margin-top:10px">${esc(e.description)}</p>` : ""}
     </div>
-    ${tickets.length ? `<h2 style="margin:18px 0 10px">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
-    ${sponsors.length ? `<h2 style="margin:18px 0 10px">Sponsor it</h2>${sponsors.map(levelCard).join("")}` : ""}
-    <div class="card">
-      <h2>Cannot come?</h2>
-      <p class="small">You can still give. It goes to the same place the evening does, and the whole amount is tax deductible because nothing is given in return.</p>
-      <a class="btn quiet" href="/give/${esc((org && org.org_slug) || "")}">Give instead</a>
-    </div>
-    <p class="small" style="text-align:center">${canTakeACard
+    ${gallery}
+    ${!isOver && tickets.length ? `<h2 class="sec">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
+    ${!isOver && sponsors.length ? `<h2 class="sec">Sponsor it</h2><div class="sponsors" data-testid="event-sponsors">${sponsors.map(levelCard).join("")}</div>` : ""}
+    ${isOver && (tickets.length || sponsors.length) ? `<div class="card"><p class="muted">This event has happened. Thank you to everybody who came.</p></div>` : ""}
+    ${giveCard}
+    ${share}
+    <p class="small" style="text-align:center">${isOver && !canTakeACard ? "" : canTakeACard
       ? `Your card is taken by ${esc(brand.displayName || "the organisation")}'s own payment account. Steward never holds the money and never sees the card.`
       : `Registering here tells ${esc(brand.displayName || "the organisation")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
   ` }));
@@ -23101,9 +23190,9 @@ app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
   }
   const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
   const CAL = await import("../shared/calendarLinks.js");
-  const calEvent = { uid: `event-${e.id}@steward`, subject: e.name, dueCivil: day,
-                     description: [e.description || "", e.location ? `Where: ${e.location}` : ""].filter(Boolean).join("\n") };
-  const whenWhere = `<p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
+  const calEvent = await evCalendarEvent(e);
+  const times = EPG.timeRangeWords(e.start_time, e.end_time);
+  const whenWhere = `<p class="muted">${esc(evDayWords(e.date))}${times ? `, ${esc(times)}` : ""}${e.location ? ` · ${esc(e.location)}` : ""}</p>
     <p class="small">
       <a href="/e/${esc(e.public_slug)}/calendar.ics">Add to calendar</a>
       · <a href="${esc(CAL.googleUrl(calEvent))}">Google</a>
@@ -23175,18 +23264,37 @@ async function evTicketQr(orgId, attendee, eventDay) {
   } catch { return null; }
 }
 
+// PARITY-2 Part 3: THE EVENT AS A CALENDAR ENTRY, built once for the .ics
+// file and the Google and Outlook links so the three cannot disagree. A start
+// time is the ORG's wall clock, converted to an instant through the one
+// timezone seam; an end before the start is the small hours of the next day.
+// A start with no end is entered as two hours. No start at all is an all-day
+// entry (across every day of a multi-day event), never an invented evening.
+async function evCalendarEvent(e) {
+  const day = EPG.civil(e.date), last = EPG.civil(e.end_date) || day;
+  let startInstant = null, endInstant = null;
+  if (e.start_time) {
+    const tz = await orgTzName(e.org_id);
+    startInstant = orgTime.localToInstant(`${day}T${e.start_time}`, tz);   // ORG_TZ_SEAM_OK
+    if (startInstant && e.end_time) {
+      const endDay = last === day && e.end_time <= e.start_time ? orgTime.addDays(day, 1) : last;
+      endInstant = orgTime.localToInstant(`${endDay}T${e.end_time}`, tz);   // ORG_TZ_SEAM_OK
+    }
+  }
+  return {
+    uid: `event-${e.id}@steward`, subject: e.name, dueCivil: day, endCivil: last,
+    startInstant, endInstant, minutes: 120, location: e.location || "",
+    description: [e.description || "", e.public_slug ? `${publicAppUrl()}/e/${e.public_slug}` : ""].filter(Boolean).join("\n\n"),
+  };
+}
+
 // The event in a calendar. A GET, and it writes nothing.
 app.get("/e/:slug/calendar.ics", donateLimiter, wrap(async (req, res) => {
   await EV_PUBLIC_READY;
   const e = await publicEvent(req.params.slug);
   if (!e) return res.status(404).send("Not found");
   const CAL = await import("../shared/calendarLinks.js");
-  const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null);
-  const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
-  const ics = CAL.buildIcs({
-    uid: `event-${e.id}@steward`, subject: e.name, dueCivil: day,
-    description: [e.description || "", e.location ? `Where: ${e.location}` : ""].filter(Boolean).join("\n"),
-  }, { prodId: "-//Steward//Event//EN" });
+  const ics = CAL.buildIcs(await evCalendarEvent(e), { prodId: "-//Steward//Event//EN" });
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${String(e.public_slug || "event")}.ics"`);
   res.send(ics);
@@ -23624,6 +23732,10 @@ app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
        goalAmount === undefined || goalAmount === null || goalAmount === "" ? null : parseFloat(goalAmount) || null,
        actor(req).id, actor(req).name]
     );
+    // PARITY-2 Part 3: a start and an end time may come with the new event.
+    const { goalAmount: _g, publicSlug: _s, ...pageBody } = req.body || {};
+    const pageErr = await saveEventPageFields(orgId, id, pageBody);
+    if (pageErr) console.error("[events] new event's page fields:", pageErr.error);
     const [row] = await query("SELECT * FROM events WHERE id=$1", [id]);
     res.json({ ...row, attendee_count: 0, confirmed_count: 0, no_show_count: 0, invited_count: 0, total_revenue: 0 });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -23633,15 +23745,26 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
     const { name, eventType, date, endDate, location, description, capacity, status, revenue, cost, notes } = req.body;
-    const affected = await run(
-      `UPDATE events SET name=$1, event_type=$2, date=$3, end_date=$4, location=$5,
-       description=$6, capacity=$7, status=$8, revenue=$9, cost=$10, notes=$11
-       WHERE id=$12 AND org_id=$13`,
-      [name, eventType, date, endDate || null, location || null, description || null,
-       capacity || null, status || 'upcoming', parseFloat(revenue) || 0, parseFloat(cost) || 0,
-       notes || null, req.params.id, orgId]
-    );
-    if (!affected.changes) return res.status(404).json({ error: "Event not found" });
+    const [exists] = await query("SELECT id FROM events WHERE id=$1 AND org_id=$2", [req.params.id, orgId]);
+    if (!exists) return res.status(404).json({ error: "Event not found" });
+    // PARITY-2 Part 3: the public page's fields, each written only when the
+    // request names it, so a screen that saves the notes does not clear the
+    // page somebody published from another. Checked and written FIRST: a
+    // refused time or address leaves the whole event as it was.
+    const pageErr = await saveEventPageFields(orgId, req.params.id, req.body || {});
+    if (pageErr) return res.status(pageErr.status || 400).json({ error: pageErr.error, code: pageErr.code });
+    // The event's own fields are a whole-form save, as they always were. A
+    // request that carries no name is a page-only save and leaves them alone.
+    if (name !== undefined) {
+      await run(
+        `UPDATE events SET name=$1, event_type=$2, date=$3, end_date=$4, location=$5,
+         description=$6, capacity=$7, status=$8, revenue=$9, cost=$10, notes=$11
+         WHERE id=$12 AND org_id=$13`,
+        [name, eventType, date, endDate || null, location || null, description || null,
+         capacity || null, status || 'upcoming', parseFloat(revenue) || 0, parseFloat(cost) || 0,
+         notes || null, req.params.id, orgId]
+      );
+    }
     const rows = await query(`
       SELECT e.*, COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
         COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
@@ -23654,6 +23777,129 @@ app.put("/events/:id", requireAuth, checkWriteAccess, async (req, res) => {
     res.json(rows[0] || {});
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── PARITY-2 Part 3 · THE PUBLIC PAGE, FROM THE STAFF SIDE ─────────────────
+// Times, the film, the goal and the page address ride PUT /events/:id; the
+// pictures have their own routes because a camera photo is bigger than the
+// 5mb every other JSON body is held to (server.js gives these 22mb, the same
+// cap the campaign hero has).
+async function saveEventPageFields(orgId, eventId, b) {
+  await EPG_READY;
+  const sets = [], params = [];
+  for (const [key, col] of [["startTime", "start_time"], ["endTime", "end_time"]]) {
+    const t = EPG.parseEventTime(b[key]);
+    if (t === undefined) continue;
+    if (t && t.error) return { error: t.error, code: "bad_time" };
+    sets.push(`${col}=?`); params.push(t);
+  }
+  if (b.heroVideoUrl !== undefined) {
+    const raw = String(b.heroVideoUrl || "").trim();
+    const v = raw ? EPG.parseEventVideo(raw) : null;
+    if (raw && !v) return { error: `That video link is not one Steward can show. ${EPG.VIDEO_HOSTS_SENTENCE}`, code: "bad_video" };
+    sets.push("hero_video_url=?"); params.push(v ? v.watchUrl : null);
+  }
+  if (b.goalAmount !== undefined) {
+    const g = b.goalAmount === null || b.goalAmount === "" ? null : Number(b.goalAmount);
+    if (g !== null && !(Number.isFinite(g) && g >= 0)) return { error: "A goal is an amount of zero or more.", code: "bad_goal" };
+    sets.push("goal_amount=?"); params.push(g);
+  }
+  if (b.publicSlug !== undefined) {
+    const n = EPG.normalizeEventSlug(b.publicSlug);
+    if (n.error) return { error: n.error, code: "bad_slug" };
+    const [cur] = await query("SELECT public_slug, previous_slug FROM events WHERE id=? AND org_id=?", [eventId, orgId]);
+    if (n.slug && n.slug !== (cur && cur.public_slug)) {
+      // /e/:slug carries no organisation, so an address held by ANY org, now
+      // or as the old name a poster still prints, is taken (FIX-7 Part 2).
+      const [clash] = await query(
+        `SELECT id FROM events WHERE id <> ? AND (public_slug=? OR previous_slug=?) LIMIT 1`, [eventId, n.slug, n.slug]);
+      if (clash) return { status: 409, error: `/e/${n.slug} is already taken. Try adding the year or the town.`, code: "slug_taken" };
+    }
+    if (n.slug !== (cur && cur.public_slug)) {
+      // A RENAMED ADDRESS KEEPS THE OLD ONE (EVENTS-2): /e/<old> 301s here.
+      // Taking the page down keeps nothing, so the old address stops too.
+      let previous = null;
+      if (n.slug && cur && cur.public_slug) previous = cur.public_slug;
+      else if (n.slug && cur && cur.previous_slug !== n.slug) previous = cur.previous_slug || null;
+      sets.push("public_slug=?", "previous_slug=?");
+      params.push(n.slug, previous);
+    }
+  }
+  if (!sets.length) return null;
+  await run(`UPDATE events SET ${sets.join(", ")} WHERE id=? AND org_id=?`, [...params, eventId, orgId]);
+  return null;
+}
+
+// One photograph onto the asset seam, kind 'event'. A stored /portal-assets/
+// path echoes back unchanged.
+async function storeEventImage(orgId, dataUri) {
+  if (typeof dataUri === "string" && /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(dataUri)) return { url: dataUri };
+  const uerr = uploadImageError(dataUri);
+  if (uerr) return { error: "bad_image", message: uerr };
+  const m = String(dataUri).match(/^data:([^;]+);base64,(.*)$/s);
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image", message: "That image did not decode." }; }
+  const dims = checkThemeImageDimensions("event", m[1], buffer);
+  if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
+  const norm = await normalizeUploadImage("event", m[1], buffer);
+  if (norm.error) return { error: norm.error, message: norm.message };
+  const asset = await putThemeAsset({ orgId, kind: "event", buffer: norm.buffer, contentType: norm.contentType,
+    width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  return { url: asset.path };
+}
+// Every event photo still pointed at stays; the rest go into the 90-day
+// retention window, never straight to deletion (assetStore.js).
+async function pruneEventAssets(orgId) {
+  const keep = [];
+  const id = v => { const m = /^\/portal-assets\/(pa_[a-f0-9]{24})$/.exec(String(v || "")); if (m) keep.push(m[1]); };
+  for (const r of await query("SELECT hero_image_url, gallery FROM events WHERE org_id=?", [orgId])) {
+    id(r.hero_image_url);
+    for (const ph of (Array.isArray(r.gallery) ? r.gallery : [])) id(ph && ph.path);
+  }
+  await pruneUnreferencedAssets(orgId, "event", keep);
+}
+
+app.post("/events/:id/hero", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [ev] = await query("SELECT id, hero_image_url FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const v = req.body?.image;
+  let url = null;
+  if (v) {
+    const stored = await storeEventImage(req.user.orgId, v);
+    if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
+    url = stored.url;
+  }
+  await run("UPDATE events SET hero_image_url=? WHERE id=? AND org_id=?", [url, ev.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "event.hero", ev.id, ev.hero_image_url || null, url, req.user);
+  await pruneEventAssets(req.user.orgId);
+  res.json({ heroImageUrl: url });
+}));
+
+app.post("/events/:id/photos", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EPG_READY;
+  const [ev] = await query("SELECT id, gallery FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const gallery = Array.isArray(ev.gallery) ? ev.gallery : [];
+  if (gallery.length >= EPG.MAX_GALLERY) return res.status(400).json({ error: "too_many", message: `A gallery holds ${EPG.MAX_GALLERY} photographs. Remove one to add another.` });
+  const stored = await storeEventImage(req.user.orgId, req.body?.image);
+  if (stored.error) return res.status(400).json({ error: stored.error, message: stored.message });
+  if (gallery.some(p => p && p.path === stored.url)) return res.json({ gallery });
+  const next = [...gallery, { path: stored.url, caption: String(req.body?.caption || "").trim().slice(0, 200) }];
+  await run("UPDATE events SET gallery=?::jsonb WHERE id=? AND org_id=?", [JSON.stringify(next), ev.id, req.user.orgId]);
+  res.status(201).json({ gallery: next });
+}));
+
+app.post("/events/:id/photos/remove", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [ev] = await query("SELECT id, gallery FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const gallery = Array.isArray(ev.gallery) ? ev.gallery : [];
+  const path = String(req.body?.path || "");
+  const next = gallery.filter(p => !(p && p.path === path));
+  if (next.length === gallery.length) return res.status(404).json({ error: "That photograph is not in this gallery." });
+  await run("UPDATE events SET gallery=?::jsonb WHERE id=? AND org_id=?", [JSON.stringify(next), ev.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "event.gallery", ev.id, path, null, req.user);
+  await pruneEventAssets(req.user.orgId);
+  res.json({ gallery: next });
+}));
 
 app.delete("/events/:id", requireAuth, async (req, res) => {
   try {
@@ -23684,7 +23930,9 @@ app.get("/events/:id", requireAuth, async (req, res) => {
       WHERE ea.event_id=$1
       ORDER BY ea.created_at ASC
     `, [req.params.id]);
-    res.json({ ...evts[0], attendees });
+    // PARITY-2 Part 3: the page's address, built on the one public origin.
+    const public_page_url = evts[0].public_slug ? `${publicAppUrl()}/e/${encodeURIComponent(evts[0].public_slug)}` : null;
+    res.json({ ...evts[0], attendees, public_page_url });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

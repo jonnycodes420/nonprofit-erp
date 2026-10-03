@@ -2689,6 +2689,11 @@ const donateHandler = async (req, res) => {
   // cost this repo five builds and now fails the pre-push hook.
   let formAsks = null;
   let { givingPageId, peerFundraiserId } = req.body;
+  // PARITY-2 Part 3: a plain gift given from an event's public page. It is
+  // set ONLY by the POST /e/:slug/give shim below, on the request object it
+  // builds itself, never read from a body: which event a gift belongs to is
+  // the server's to say. It carries the event's id, slug and campaign.
+  const eventGift = req.eventGift && !req.body.eventLevelId && !req.body.membershipLevelId ? req.eventGift : null;
   // GIVE-2 §4 — "remember me", for a plain one-time gift only. A subscription
   // already saves its own method by definition, and a ticket or a membership is
   // a purchase: neither is a reason to keep somebody's card.
@@ -2938,7 +2943,7 @@ const donateHandler = async (req, res) => {
   // the admin explicitly declared where this page's money counts. Validated by
   // construction — pageCampaignId was written through the org-scoped
   // POST/PUT /giving-pages validation, never trusted raw from this request.
-  const effectiveCampaignId = pageCampaignId || campaignId || "";
+  const effectiveCampaignId = pageCampaignId || (eventGift && eventGift.campaignId) || campaignId || "";
 
   const productName = memLevel
     ? `${memLevel.name} membership — ${org.name}`
@@ -2965,6 +2970,10 @@ const donateHandler = async (req, res) => {
     // split and the guest-list row from these, re-reading the level itself.
     event_level_id: eventLevel ? eventLevel.id : "",
     event_qty: eventLevel ? String(eventQty) : "",
+    // PARITY-2 Part 3: a gift from the event page with no ticket: the
+    // webhook stamps gifts.event_id from this, so the event's raised figure
+    // counts it by id, the way a ticket is counted.
+    event_gift_id: eventGift ? eventGift.id : "",
     // BUILD-103 — whether this donor chose to let the fundraiser see their
     // first name. Off unless they ticked it, and the webhook writes the
     // column from here: a gift through a friend's page is still a gift to
@@ -3033,6 +3042,8 @@ const donateHandler = async (req, res) => {
 
   const returnPath = eventRow && eventRow.public_slug
     ? `/e/${eventRow.public_slug}`
+    : eventGift
+    ? `/e/${eventGift.slug}`
     : peerFundraiserId
     ? `/give/${req.params.orgSlug}/${givingPageSlug}/${fundraiserSlug}`
     : givingPageId
@@ -3072,6 +3083,8 @@ const donateHandler = async (req, res) => {
     metadata,
     success_url: eventRow && eventRow.public_slug
       ? `${frontendUrl}${returnPath}/thanks?s={CHECKOUT_SESSION_ID}`
+      : eventGift
+      ? `${frontendUrl}${returnPath}?gave=1`
       : `${frontendUrl}${returnPath}?donated=true`,
     cancel_url: `${frontendUrl}${returnPath}`,
     ...(isRecurring
@@ -3159,6 +3172,44 @@ app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: fals
       guests: String(req.body?.guests || ""),
       dietary: String(req.body?.dietary || ""),
     },
+  };
+  let answered = false;
+  const shim = {
+    status(code) { this._code = code; return this; },
+    json(payload) {
+      if (answered) return;
+      answered = true;
+      if (payload && payload.url) return res.redirect(303, payload.url);
+      return back(payload && payload.error ? payload.error : "That did not go through. Try again in a moment.");
+    },
+  };
+  await donateHandler(inner, shim);
+  if (!answered) back("That did not go through. Try again in a moment.");
+}));
+
+// PARITY-2 Part 3: GIVE FROM THE EVENT PAGE, for somebody who cannot come.
+// The same donation checkout as everything else on this page: donateHandler,
+// priced by the amount the donor typed, to the org's own connected account,
+// recorded by the webhook through recordGift. The only thing this adds is
+// WHICH EVENT, and that is read from the slug, never from the form.
+app.post("/e/:slug/give", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  const evRows = await query(`SELECT e.*, o.org_slug FROM events e JOIN orgs o ON o.id=e.org_id
+                             WHERE e.public_slug=? AND e.status <> 'cancelled' LIMIT 2`, [String(req.params.slug || "")]);
+  const ev = evRows.length === 1 ? evRows[0] : null;
+  if (!ev) return res.status(404).send("Not found");
+  if (String(req.body?.website || "").trim()) return res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}`);
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  const email = String(req.body?.email || "").trim().slice(0, 320);
+  const parts = name.split(/\s+/);
+  const back = msg => res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}?problem=${encodeURIComponent(String(msg).slice(0, 200))}`);
+  if (!name || !email.includes("@")) return back("A name and an email, so your receipt reaches you.");
+  const amount = String(req.body?.amount || "").trim();
+  if (!(Number(amount) >= 1)) return back("An amount of at least one dollar.");
+  const inner = {
+    params: { orgSlug: ev.org_slug },
+    eventGift: { id: ev.id, slug: ev.public_slug, campaignId: ev.campaign_id || "" },
+    body: { firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0], email,
+            amount, frequency: "once", coverFees: false },
   };
   let answered = false;
   const shim = {

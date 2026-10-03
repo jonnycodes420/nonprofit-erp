@@ -5,6 +5,7 @@ import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
+import { EventPageEditor } from "./EventPageEditor";
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 const EVENT_TYPES = {
@@ -525,7 +526,7 @@ function EventSeating({ eventId }) {
                   () => setMsg(registrationUrl));
               }} style={btn}>Share the registration page</button>
             : <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center" }}>
-                Give this event a public page to take registrations.
+                Give this event a public page (below) to take registrations.
               </span>}
         </div>
         {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>{msg}</div>}
@@ -748,7 +749,7 @@ function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd }) {
 // The kiosk shape VOL-1 built, for a guest list: type a few letters, tap the
 // name, and they are in. It is deliberately one big list and one big box,
 // because it is used standing up, on a tablet, by somebody holding a pen.
-function EventKiosk({ eventId }) {
+export function EventKiosk({ eventId }) {
   const [data, setData] = useState(null);
   const [term, setTerm] = useState("");
   const [msg, setMsg] = useState("");
@@ -1001,6 +1002,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             }} />
             <EventSeating eventId={eventId} />
             <EventKiosk eventId={eventId} />
+            <EventPageEditor eventId={eventId} />
           </div>
 
           {/* Stat tiles */}

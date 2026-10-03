@@ -5584,6 +5584,19 @@ async function initSchema() {
   // and forwarded round a family cannot be taken away because somebody fixed a
   // spelling. Renaming a slug keeps the old one here and /e/:slug redirects.
   await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS previous_slug TEXT`);
+  // PARITY-2 Part 3: THE PUBLIC EVENT PAGE, COMPLETE. A start and an end are
+  // civil HH:MM in the ORG's zone (orgTime.js); none means an all-day event.
+  // The hero is an image on the asset seam (kind 'event') or a YouTube/Vimeo
+  // link parsed by shared/eventPage.js. The gallery is a list of asset paths
+  // on the event row ({path, caption}), shown on the page once the night is
+  // over, and collectLiveAssetRefs reads it so no photo in it is ever pruned.
+  // A sponsor level's benefits are one line each.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS start_time TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS end_time TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS hero_image_url TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS hero_video_url TEXT`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS gallery JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE event_levels ADD COLUMN IF NOT EXISTS benefits JSONB NOT NULL DEFAULT '[]'::jsonb`);
 
   // ── MEMBERS-2 — "YOUR PAGE": ONE PAGE PER PERSON PER ORG ────────────────
   // A member, a ticket buyer, a fundraiser and a volunteer were each heading

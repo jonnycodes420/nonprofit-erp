@@ -41,6 +41,12 @@ function addCivilDay(civil) {
 }
 
 export const DEFAULT_MINUTES = 30;
+// PARITY-2 Part 3: an event carries its own end (`endInstant`), a multi-day
+// all-day event its own last day (`endCivil`), and a place (`location`). A
+// task has none of the three and reads exactly as it did.
+const endOf = (event) => event.endInstant
+  ? new Date(event.endInstant)
+  : new Date(new Date(event.startInstant).getTime() + (event.minutes || DEFAULT_MINUTES) * 60000);
 
 // ── THE THREE OUTPUTS ──────────────────────────────────────────────────────
 // event: { uid, subject, description, startInstant|null, dueCivil, minutes }
@@ -77,16 +83,16 @@ export function buildIcs(event, { now = new Date(), prodId = "-//Steward//Task//
   ];
   if (event.startInstant) {
     const start = new Date(event.startInstant);
-    const end = new Date(start.getTime() + (event.minutes || DEFAULT_MINUTES) * 60000);
-    lines.push(`DTSTART:${utcStamp(start)}`, `DTEND:${utcStamp(end)}`);
+    lines.push(`DTSTART:${utcStamp(start)}`, `DTEND:${utcStamp(endOf(event))}`);
   } else {
     // All-day, and DTEND is EXCLUSIVE in RFC 5545 — the day after, or the
     // event shows as ending the day before it starts.
     lines.push(`DTSTART;VALUE=DATE:${civilStamp(event.dueCivil)}`,
-               `DTEND;VALUE=DATE:${civilStamp(addCivilDay(event.dueCivil))}`);
+               `DTEND;VALUE=DATE:${civilStamp(addCivilDay(event.endCivil || event.dueCivil))}`);
   }
   lines.push(`SUMMARY:${escIcs(event.subject)}`);
   if (event.description) lines.push(`DESCRIPTION:${escIcs(event.description)}`);
+  if (event.location) lines.push(`LOCATION:${escIcs(event.location)}`);
   lines.push("END:VEVENT", "END:VCALENDAR");
   return lines.map(fold).join("\r\n") + "\r\n";
 }
@@ -99,12 +105,13 @@ export function outlookUrl(event) {
   if (event.startInstant) {
     const start = new Date(event.startInstant);
     p.set("startdt", start.toISOString());
-    p.set("enddt", new Date(start.getTime() + (event.minutes || DEFAULT_MINUTES) * 60000).toISOString());
+    p.set("enddt", endOf(event).toISOString());
   } else {
     p.set("allday", "true");
     p.set("startdt", event.dueCivil);
-    p.set("enddt", addCivilDay(event.dueCivil));
+    p.set("enddt", addCivilDay(event.endCivil || event.dueCivil));
   }
+  if (event.location) p.set("location", event.location);
   return "https://outlook.office.com/calendar/0/deeplink/compose?" + p.toString();
 }
 
@@ -114,11 +121,12 @@ export function googleUrl(event) {
   if (event.description) p.set("details", event.description);
   if (event.startInstant) {
     const start = new Date(event.startInstant);
-    const end = new Date(start.getTime() + (event.minutes || DEFAULT_MINUTES) * 60000);
+    const end = endOf(event);
     p.set("dates", `${utcStamp(start).replace(/[-:]/g, "")}/${utcStamp(end).replace(/[-:]/g, "")}`);
   } else {
-    p.set("dates", `${civilStamp(event.dueCivil)}/${civilStamp(addCivilDay(event.dueCivil))}`);
+    p.set("dates", `${civilStamp(event.dueCivil)}/${civilStamp(addCivilDay(event.endCivil || event.dueCivil))}`);
   }
+  if (event.location) p.set("location", event.location);
   return "https://calendar.google.com/calendar/render?" + p.toString();
 }
 

@@ -77,6 +77,30 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **`/e/*` and `/ticket/*` are `vercel.json` rewrites.** EVENTS-1 shipped the public event page
   without one, so it was unreachable from www.stewardapp.dev until EVENTS-2. (EVENTS-2)
 
+### PARITY-2 — the public event page, complete
+- **The page's fields have one set of rules: `shared/eventPage.js`.** Times, the video hosts, the
+  address, the share row and when the gallery shows are decided there, and both the server page and
+  the staff editor read it. (PARITY-2)
+- **A time is civil HH:MM in the org's zone (`events.start_time`/`end_time`); none means all day.**
+  The calendar file converts through `orgTime.localToInstant`, an end before the start is the next
+  morning, a start with no end is entered as two hours, and no time is an all-day entry. The .ics,
+  Google and Outlook links come from one builder (`evCalendarEvent`), so they cannot disagree. (PARITY-2)
+- **A video is a YouTube or Vimeo link, parsed for an id and rebuilt by us**, embedded from
+  youtube-nocookie or Vimeo with `dnt=1`. A pasted embed code or any other host is refused. (PARITY-2)
+- **The gallery shows only once the event is over**, and staff may add photos any time. Its paths
+  live on `events.gallery` and `collectLiveAssetRefs` reads them, with the hero, so an event photo is
+  never purged while the page points at it. (PARITY-2)
+- **"Donate" on the event page is the donation checkout, tied to the event by the server.**
+  `POST /e/:slug/give` hands `donateHandler` an `eventGift` on the request object it builds (never
+  from a body); the event's campaign rides the metadata and the webhook stamps `gifts.event_id` from
+  `event_gift_id`, re-checked against the org. No new payment path. (PARITY-2)
+- **The share row is plain links built on `publicAppUrl()`**: no third-party script loads on the page. (PARITY-2)
+- **Staff publish the page by giving it an address in the event's "public page" card.** An address
+  held by any org, current or as a `previous_slug`, is refused (409), because `/e/:slug` carries no
+  org. A rename keeps the old address; taking the page down keeps nothing. `PUT /events/:id` writes
+  each page field only when named, and leaves the event's own fields alone when the body has no
+  `name`, so a page save never blanks the event. (PARITY-2)
+
 ### BUILD-103 — peer-to-peer
 - **A peer-to-peer campaign is a giving page with `p2p_enabled`.** There is no second kind of
   page and no second campaign attribution: the thermometer is the one Fundraising already shows.
