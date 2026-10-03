@@ -580,6 +580,25 @@ async function second(orgId) {
 // reasons behind their word, the staff member who knows them best (who logged
 // most of their conversations, else their owner) and the suggested ask. Only
 // admins and major gifts staff reach this question (routes/why.js).
+// Who knows them best: the staff member who logged most of their
+// conversations, else their relationship owner, else nobody. One read of the
+// loggers for everybody asked about. `people` is [{id, assigned_to}]. The
+// demo seed checks itself through this same function (FIX-22).
+async function knowsBest(orgId, people, q = query) {
+  const ids = people.map(p => p.id);
+  const loggers = ids.length ? await q(`SELECT i.donor_id, i.created_by, u.name, COUNT(*)::int AS n FROM interactions i
+     JOIN users u ON u.id = i.created_by AND u.org_id = i.org_id
+     WHERE i.org_id = ? AND i.donor_id = ANY(?) GROUP BY 1,2,3 ORDER BY n DESC, u.name`, [orgId, ids]) : [];
+  const users = new Map((await q(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL`, [orgId])).map(u => [u.id, u.name]));
+  const out = new Map();
+  for (const p of people) {
+    const l = loggers.find(x => x.donor_id === p.id && users.has(x.created_by));
+    if (l) out.set(p.id, { userId: l.created_by, name: l.name, why: `logged ${l.n === 1 ? "their one conversation" : `${l.n} of their conversations`}` });
+    else if (p.assigned_to && users.has(p.assigned_to)) out.set(p.id, { userId: p.assigned_to, name: users.get(p.assigned_to), why: "is their relationship owner" });
+  }
+  return out;
+}
+
 async function more(orgId) {
   const P = require("./prospect");
   const RT = await P.rtg();
@@ -592,17 +611,8 @@ async function more(orgId) {
   const roomAbove = a => (a.screening && a.screening.capacityLowCents != null ? a.screening.capacityLowCents - a.annualCents : 0);
   const all = people.map(p => ({ ...p, a: room.get(p.id) })).filter(p => p.a && p.a.word !== "unknown")
     .sort((x, y) => y.a.rank - x.a.rank || Number(y.engagement) - Number(x.engagement) || roomAbove(y.a) - roomAbove(x.a) || x.name.localeCompare(y.name));
-  const ids = all.map(p => p.id);
-  const loggers = ids.length ? await query(`SELECT i.donor_id, i.created_by, u.name, COUNT(*)::int AS n FROM interactions i
-     JOIN users u ON u.id = i.created_by AND u.org_id = i.org_id
-     WHERE i.org_id = ? AND i.donor_id = ANY(?) GROUP BY 1,2,3 ORDER BY n DESC, u.name`, [orgId, ids]) : [];
-  const users = new Map((await query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL`, [orgId])).map(u => [u.id, u.name]));
-  const knows = p => {
-    const l = loggers.find(x => x.donor_id === p.id && users.has(x.created_by));
-    if (l) return { userId: l.created_by, name: l.name, why: `logged ${l.n === 1 ? "their one conversation" : `${l.n} of their conversations`}` };
-    if (p.assigned_to && users.has(p.assigned_to)) return { userId: p.assigned_to, name: users.get(p.assigned_to), why: "is their relationship owner" };
-    return null;
-  };
+  const knowsMap = await knowsBest(orgId, all);
+  const knows = p => knowsMap.get(p.id) || null;
   const E = require("./engagement");
   const top = all.slice(0, 5);
   const asks = new Map();
@@ -649,4 +659,4 @@ async function answer(orgId, key, ctx = {}, deps = {}) {
   return key === "lapse" ? fn(orgId, deps) : fn(orgId, ctx, deps);
 }
 
-module.exports = { answer, defaultCampaign, ANSWERS, sumRows, BIG_GIFT_FLOOR_CENTS, BIG_GIFT_DAYS, orgCallFloorCents };
+module.exports = { answer, knowsBest, defaultCampaign, ANSWERS, sumRows, BIG_GIFT_FLOOR_CENTS, BIG_GIFT_DAYS, orgCallFloorCents };
