@@ -214,7 +214,9 @@ app.get("/volunteer-hub/people/search", requireAuth, wrap(async (req, res) => {
 // it picked somebody already on file. Both are makeVolunteer (server.js), the
 // one function the Agent calls too. The same person, never a second one.
 async function makeVolunteerAnswer(req, res, personId) {
-  const r = await makeVolunteer(req.user.orgId, personId, req.body || {}, actor(req));
+  // AGENT-2: the Agent's call (agentCall.js, verified for this person) says so on the record.
+  const byAgent = !!require("../agentCall").verify(req.headers["x-steward-agent"], req.user.userId);
+  const r = await makeVolunteer(req.user.orgId, personId, { ...(req.body || {}), via: byAgent ? "agent" : undefined }, actor(req));
   if (r.error === "not_found") return res.status(404).json({ error: "not_found", message: r.message });
   if (r.error) return res.status(400).json({ error: r.error, message: r.message });
   if (r.created) maybeStartJourneyFromServer(req.user.orgId, r.personId, "new_volunteer", {}).catch(e => console.error("[journey] make volunteer:", e.message));

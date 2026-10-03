@@ -3,6 +3,23 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **The Agent does the work through the screens' own routes.** A real action (contact details, owner,
+  stage, groups, household, a logged call/meeting/email, the next step, make a volunteer, a shift, hours,
+  start or stop a journey, a free event's guest list, mark a gift thanked, propose a merge) is the route a
+  person's click calls, made in-process as the person who confirmed (`agentCall.js`). The route's own
+  checks apply, and `middleware/auditTrail.js` records each write with the Agent as actor ("Agent, approved
+  by"), from a header signed with the server secret, and the instruction as the summary. No raw SQL for a
+  new tool, and no new money path: a gift is still only prepared, and `recordGift` runs on the person's
+  press. (AGENT-2)
+- **Done means Steward looked.** Each executor reads its result back (the volunteer record, the group
+  member, the plan, the interaction, the gift to the cent) and returns `{ failed }` with the reason when it
+  is not there. `OUTCOME_FAILED` is never counted Done, and the plan list says "Failed" or "Partly done".
+  The run holds no transaction (`withClient`): each step commits and is its own undo. (AGENT-2)
+- **No substitutes.** The planner may not put a note, tag or task in place of an action a tool can do; a
+  part no tool can do goes in the plan's one-sentence `cannot`. An identity-confirming task ("which Ada")
+  is dropped at plan time; two matches ask before planning. Every id a step uses must come from the lists
+  Steward gave the model (staff, groups, households, journeys, shifts, events, gifts), or the step is
+  dropped. A strict tool schema allows only 16 nullable fields, so new fields are plain types. (AGENT-2)
 - **"Every gift in a window" is planned from the gift rows, not by the model guessing.** One `create_task`
   per gift, due dates from `dueDays` resolved on the server in the org's calendar, behind the AI switch and
   the plan sheet. A plan cut off at `max_tokens` is refused (422 `plan_truncated`), never half-run. (PARITY-1)

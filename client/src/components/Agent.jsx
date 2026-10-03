@@ -38,7 +38,7 @@ import { Workflows } from "./Workflows";
 import { errorMessage } from "../lib/domainError";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDateShort } from "../../../shared/displayDate";
-import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING } from "../../../shared/agentShape";
+import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
 import { DonorLink } from "./RecordLink";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
@@ -56,6 +56,9 @@ const PILL = {
   confirm: { background: T.gold, color: T.ink, border: "1px solid " + T.gold },
   waiting: { background: "transparent", color: T.gold700, border: "1px solid " + T.gold },
   after: { background: "transparent", color: T.ink3, border: "1px solid " + T.ink3 },
+  // AGENT-2: it ran and the result is not there. Brass, never red: red is
+  // only for a destructive confirm.
+  failed: { background: "transparent", color: T.gold700, border: "1px dashed " + T.gold700 },
 };
 const WAIT_KIND = {
   gift_to_confirm: "Gift to confirm",
@@ -149,7 +152,12 @@ function planState(p) {
     // The sheet lists the read first, and it is always done: count it, so the
     // list and the sheet agree (FIX-2 handoff §6: "2 of 2" beside three rows).
     const done = (run.steps || []).filter(s => s.outcome === OUTCOME_DONE || s.outcome === OUTCOME_WAITING).length + 1;
-    return { word: `Done · ${done} of ${(run.steps || []).length + 1} steps`, brass: false };
+    const of = (run.steps || []).length + 1;
+    // AGENT-2: a plan with a Failed step is never "Done" in the list, and one
+    // that did only part of the work says so.
+    if ((run.steps || []).some(s => s.outcome === OUTCOME_FAILED)) return { word: `Failed · ${done} of ${of} steps`, brass: true };
+    if (done < of) return { word: `Partly done · ${done} of ${of} steps`, brass: true };
+    return { word: `Done · ${done} of ${of} steps`, brass: false };
   }
   return { word: "Done", brass: false };
 }
@@ -181,7 +189,7 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
     ...steps.map((s, i) => {
       const r = run && run.steps ? run.steps[i] : null;
       if (r && r.outcome) {
-        const kind = r.outcome === OUTCOME_DONE ? "done" : r.outcome === OUTCOME_WAITING ? "waiting" : "after";
+        const kind = r.outcome === OUTCOME_DONE ? "done" : r.outcome === OUTCOME_WAITING ? "waiting" : r.outcome === OUTCOME_FAILED ? "failed" : "after";
         return { key: i, describes: s.describes, detail: s.detail || "", pill: kind, label: r.label || "Done", on: kind === "done" };
       }
       const kind = s.state === STEP_CONFIRM ? "confirm" : s.state === STEP_WAITS ? "after" : "after";
@@ -199,6 +207,8 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
       <div style={EYEBROW}>{eyebrow}</div>
       <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 6px", overflowWrap: "anywhere" }}>{plan.summary}</h2>
       <p style={{ color: T.ink3, margin: "0 0 18px", fontSize: 15, lineHeight: 1.5, overflowWrap: "anywhere" }}>“{item.text}”</p>
+      {/* AGENT-2: what Steward cannot do, said first, never a note in its place. */}
+      {plan.cannot && <div data-testid="agent-cannot" style={{ ...REFUSAL, margin: "0 0 16px" }}>{plan.cannot}</div>}
       <div role="table" style={{ fontSize: 14 }}>
         {wide && (
           <div role="row" style={{ display: "grid", gridTemplateColumns: "30px 1.3fr 1fr 190px", gap: 10, padding: "8px 0",
@@ -457,6 +467,8 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
       // One name, several records: ask which, and keep her words for the pick.
       // Her earlier picks ride along, one per name ("Margaret and Robert").
       else if (r && r.which) { setWhich({ ...r.which, text: said, picks: picks || [] }); setText(""); }
+      // AGENT-2: nothing in it Steward can do: said plainly, and nothing planned.
+      else if (r && r.cannot) { setAskErr(r.cannot.sentence); }
       else {
         await loadPlans(); loadWaiting();
         setAskedId(r.id); setOpenId(r.id); setText("");

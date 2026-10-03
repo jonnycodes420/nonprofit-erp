@@ -265,7 +265,33 @@ app.get("/data-health/duplicates", requireAuth, wrap(async (req, res) => {
   const people = await livePeople(req.user.orgId);
   const pairs = await duplicatePairs(req.user.orgId, people);
   const byId = new Map(people.map(d => [d.id, d]));
-  res.json({ pairs: pairs.map(p => ({ ...p, left: brief(byId.get(p.a)), right: brief(byId.get(p.b)) })) });
+  // AGENT-2: a pair somebody PROPOSED (the Agent, on an instruction) comes
+  // first, saying who proposed it and why. It is still a person who merges.
+  const proposed = await query(`SELECT a, b, reason, created_by_name FROM merge_proposals WHERE org_id=? ORDER BY created_at DESC`, [req.user.orgId]);
+  const key = (x, y) => [x, y].sort().join("|");
+  const seen = new Map(pairs.map(p => [key(p.a, p.b), p]));
+  const top = proposed.filter(m => byId.has(m.a) && byId.has(m.b)).map(m => ({
+    ...(seen.get(key(m.a, m.b)) || { a: m.a, b: m.b, reasons: [] }),
+    proposed: { by: m.created_by_name || "Somebody", reason: m.reason || null } }));
+  const topKeys = new Set(top.map(p => key(p.a, p.b)));
+  const all = [...top, ...pairs.filter(p => !topKeys.has(key(p.a, p.b)))];
+  res.json({ pairs: all.map(p => ({ ...p, left: brief(byId.get(p.a)), right: brief(byId.get(p.b)) })) });
+}));
+// AGENT-2: propose that two people are one. Nothing merges here: the pair
+// joins the duplicate queue above, and a person commits it with Merge.
+app.post("/data-health/proposals", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { a, b } = req.body || {};
+  if (!a || !b || a === b) return res.status(400).json({ error: "Two different people are needed." });
+  const own = await query("SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [req.user.orgId, [String(a), String(b)]]);
+  if (own.length !== 2) return res.status(404).json({ error: "Donor not found" });
+  const [x, y] = [String(a), String(b)].sort();
+  const me = await who(req);
+  const id = "mp_" + uuid().slice(0, 12);
+  const ins = await query(`INSERT INTO merge_proposals (id, org_id, a, b, reason, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)
+                           ON CONFLICT (org_id, a, b) DO NOTHING RETURNING id`,
+    [id, req.user.orgId, x, y, String(req.body.reason || "").slice(0, 300) || null, me.id, me.name]);
+  res.status(ins.length ? 201 : 200).json({ id: ins.length ? id : null, already: !ins.length,
+    sentence: `${own[0].name} and ${own[1].name} are at the top of the duplicate queue in Data health. Nothing is merged until somebody presses Merge there.` });
 }));
 app.post("/data-health/pairs/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { a, b } = req.body || {};

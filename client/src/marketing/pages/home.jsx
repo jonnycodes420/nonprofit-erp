@@ -169,7 +169,7 @@ export default function Home() {
           <div className="prods">
             <div className="prod p1"><span className="tag">Steward CRM</span><h3>Keep more.</h3><p>See drift early, keep new donors close through their first year and give the board numbers that open.</p><Pill href="/crm">Learn about CRM</Pill></div>
             <div className="prod p2"><span className="tag">Steward Volunteer</span><h3>Count every hour.</h3><p>Shifts, kiosk check-in, waivers and hours, with volunteers and donors on one record.</p><Pill href="/volunteer">Learn about Volunteer</Pill></div>
-            <div className="prod p3"><span className="tag">Steward Agent</span><h3>Say it. Approve it.</h3><p>Six assistants that draft and organize, show you the plan and wait for your yes.</p><Pill href="/agent">Learn about Agent</Pill></div>
+            <div className="prod p3"><span className="tag">Steward Agent</span><h3>Say it. Approve it.</h3><p>Tell it what happened and it does the work in Steward, after showing you the plan and waiting for your yes.</p><Pill href="/agent">Learn about Agent</Pill></div>
           </div>
         </div>
       </section>

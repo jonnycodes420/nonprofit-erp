@@ -129,6 +129,13 @@ function resolveActor(req, desc) {
   // took responsibility for it. `req.auditApproverName` is the person's NAME,
   // looked up once by the middleware (an email reads as the software talking
   // to itself), falling back to the address when there is no name on file.
+  // AGENT-2: a write the Agent made through a screen's own route, on a plan
+  // this person confirmed (agentCall.js signs the header; it is verified here,
+  // for THIS user, or ignored).
+  if (req.auditAgent && req.user && req.user.userId) {
+    const by = req.auditApproverName || req.user.email || req.user.userId;
+    return { kind: "agent", id: "agent:approved_by:" + req.user.userId, name: `Agent, approved by ${by}` };
+  }
   if (desc && desc.agentApproved && req.user && req.user.userId) {
     const by = req.auditApproverName || req.user.email || req.user.userId;
     return { kind: "agent", id: "agent:approved_by:" + req.user.userId, name: `Agent, approved by ${by}` };
@@ -488,8 +495,13 @@ function auditTrail(opts = {}) {
         if (!orgId && d.actorFromBody && req.body && req.body[d.actorFromBody]) {
           orgId = await orgFromLoginEmail(req.body[d.actorFromBody]);
         }
+        // AGENT-2: the Agent's signed header, for the signed-in person only.
+        if (req.headers["x-steward-agent"] && req.user && req.user.userId) {
+          const ag = require("../agentCall").verify(req.headers["x-steward-agent"], req.user.userId);
+          if (ag) req.auditAgent = ag;
+        }
         // The approver's NAME, read once and only where the row will carry it.
-        if (d.agentApproved && req.user && req.user.userId) {
+        if ((d.agentApproved || req.auditAgent) && req.user && req.user.userId) {
           try {
             const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?",
               [req.user.userId, orgId]);
@@ -571,7 +583,7 @@ function auditTrail(opts = {}) {
           // isCreate keeps `after`; isDelete keeps `before`. Both are the
           // record, redacted, because for those two actions the record IS the
           // change and there is no other copy of it in the log.
-          summary: bulk ? bulk.text : null,
+          summary: bulk ? bulk.text : (req.auditAgent && req.auditAgent.reason ? `On the instruction "${req.auditAgent.reason}"` : null),
           recordCount: extra.recordCount,
           method, path: req.originalUrl || req.path, status, ip: extra.noIp ? null : req.ip,
         });

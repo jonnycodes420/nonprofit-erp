@@ -3886,7 +3886,7 @@ async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
   } else {
     recordId = "vap_" + uuid().slice(0, 12);
     created = true;
-    const via = String(who.id || "").startsWith("system:agent") ? "agent" : "staff";
+    const via = opts.via === "agent" || String(who.id || "").startsWith("system:agent") ? "agent" : "staff";
     await w(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,status,person_id,matched_existing,
                                                  decided_at,decided_by,decided_by_name,created_by,created_by_name,hours_per_week,roles,via)
              VALUES (?,?,?,?,?,'[]'::jsonb,?::jsonb,'approved',?,TRUE,NOW(),?,?,?,?,?,?::jsonb,?)`,
