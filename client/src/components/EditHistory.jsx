@@ -6,11 +6,15 @@
 //   · EditedMarker  "Edited" with who and when; tapping it shows the previous
 //                   versions, read from the audit log (the only copy of an old
 //                   value once an edit is saved).
-//   · useUndo       Delete asks once, then offers Undo for ten seconds. The
-//                   server moved the row aside rather than destroying it, so
-//                   Undo puts back exactly what was there.
+//   · useUndo       Delete happens at once, then offers Undo for ten seconds.
+//                   The server moved the row aside rather than destroying it,
+//                   so Undo puts back exactly what was there. (FIX-22: no
+//                   browser confirm in front of a delete that can be undone.)
+//   (askConfirm in ConfirmDialog.jsx is the in-app confirm, for the few
+//   deletes that cannot be undone or that move money. Never window.confirm.)
 // And HistoryList, the person's own audit rows on their profile.
 import { useEffect, useRef, useState } from "react";
+import { createRoot } from "react-dom/client";
 import { apiFetch } from "../api";
 import { T, firstNameOf } from "./shared";
 import { errorMessage } from "../lib/domainError";
@@ -46,7 +50,7 @@ export function ItemMenu({ onEdit, onDelete, label = "entry", disabled = false }
         <div role="menu" style={{ position: "absolute", right: 0, top: "100%", zIndex: 20, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, minWidth: 120, boxShadow: "0 6px 18px rgba(15,26,18,0.12)", overflow: "hidden" }}>
           {onEdit && <button type="button" role="menuitem" style={item} onClick={() => { setOpen(false); onEdit(); }}>Edit</button>}
           {onDelete && <button type="button" role="menuitem" style={item}
-            onClick={() => { setOpen(false); if (window.confirm(`Delete this ${label}? You can undo it for ten seconds.`)) onDelete(); }}>Delete</button>}
+            onClick={() => { setOpen(false); onDelete(); }}>Delete</button>}
         </div>
       )}
     </div>
@@ -118,14 +122,45 @@ export function useUndo() {
       s.onRestored && s.onRestored(r);
     } catch (e) { setState({ ...s, err: errorMessage(e, "It could not be put back.") }); }
   };
-  const toast = state ? (
+  return [<UndoToastView key="undo" state={state} onUndo={undo} />, offer];
+}
+
+function UndoToastView({ state, onUndo }) {
+  if (!state) return null;
+  return (
     <div role="status" data-testid="undo-toast"
       style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.white, borderRadius: 12, padding: "12px 18px", display: "flex", gap: 14, alignItems: "center", fontSize: 13, boxShadow: "0 8px 24px rgba(15,26,18,0.25)", maxWidth: "calc(100vw - 32px)" }}>
       <span>{state.err || `Deleted the ${state.label}.`}</span>
-      <button type="button" onClick={undo} style={{ ...linkBtn, color: T.gold, fontWeight: 800 }}>Undo ({state.left})</button>
+      <button type="button" onClick={onUndo} style={{ ...linkBtn, color: T.gold, fontWeight: 800 }}>Undo ({state.left})</button>
     </div>
-  ) : null;
-  return [toast, offer];
+  );
+}
+
+// FIX-22: THE SAME TOAST, FROM ANYWHERE. A screen that has no useUndo of its
+// own calls offerUndo(resp, label, onRestored) after its DELETE; the host
+// mounts itself on first use, so the screen renders nothing for it.
+let undoHostOffer = null;
+let undoHostMounted = false;
+const undoWaiting = [];
+function UndoHost() {
+  const [toast, offer] = useUndo();
+  useEffect(() => {
+    undoHostOffer = offer;
+    while (undoWaiting.length) offer(...undoWaiting.shift());
+  });
+  return toast;
+}
+export function offerUndo(resp, label, onRestored) {
+  if (!resp || !resp.undoId) return;
+  if (undoHostOffer) { undoHostOffer(resp, label, onRestored); return; }
+  undoWaiting.push([resp, label, onRestored]);
+  if (!undoHostMounted && typeof document !== "undefined") {
+    undoHostMounted = true;
+    const el = document.createElement("div");
+    el.setAttribute("data-undo-host", "");
+    document.body.appendChild(el);
+    createRoot(el).render(<UndoHost />);
+  }
 }
 
 // ONE PERSON'S HISTORY: every audit row about them, newest first, each a

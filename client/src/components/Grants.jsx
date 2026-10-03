@@ -5,6 +5,7 @@ import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
 import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
 
@@ -511,7 +512,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
   // deleted (not a soft delete), so it asks first and says so.
   const onDelete=async(id)=>{
     const g=(data.grants||[]).find(x=>x.id===id);
-    if(!window.confirm(`Delete the ${g&&g.funder?g.funder+" ":""}grant? It is removed for good, with its deadlines and notes. This can't be undone.`))return;
+    if(!(await askConfirm({title:`Delete the ${g&&g.funder?g.funder+" ":""}grant?`,body:"It is removed for good, with its deadlines and notes. This can't be undone.",yes:"Delete grant",danger:true})))return;
     try{ await apiFetch(`/grants/${id}`,{method:"DELETE"}); }
     catch(e){ alert(errorMessage(e,"That grant could not be deleted.")); return; }
     setData(prev=>({...prev,grants:prev.grants.filter(g=>g.id!==id)}));

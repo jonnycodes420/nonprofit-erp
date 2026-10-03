@@ -2,6 +2,7 @@ import { useState, useEffect, Fragment } from "react";
 import { RestrictedView } from "./RestrictedView";
 import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { apiFetch, API, getToken } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
@@ -932,7 +933,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   };
 
   const handleDeleteTxn = async (id) => {
-    if (!window.confirm("Delete this transaction?")) return;
+    if (!(await askConfirm({ title: "Delete this transaction?", body: "It comes off the ledger, the fund balances and the budget now. This cannot be undone.", yes: "Delete transaction", danger: true }))) return;
     try {
       await apiFetch(`/finance/transactions/${id}`, { method:"DELETE" });
       setTransactions(prev => prev.filter(t => t.id !== id));

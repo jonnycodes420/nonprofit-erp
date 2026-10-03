@@ -579,7 +579,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
                 credentials on this deployment is disabled and says why
                 underneath, because a button that opens a page nobody can
                 complete is worse than no button. */}
-            {!c.connected && c.action && !(c.parts || []).length && !isReadOnly && isAdmin && (
+            {!c.connected && c.action && !(c.parts || []).length && !isReadOnly && isAdmin && !(c.oauthProvider && oauth?.[c.oauthProvider]?.held) && (
               c.oauthProvider ? (
                 <button style={{ ...btn(oauthReady(c) !== false), marginLeft: "auto",
                                  opacity: oauthReady(c) === false ? 0.5 : 1,
@@ -1029,6 +1029,8 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
         detail: c.kind === "statements" ? () => giving(null) : detail };
     }
     if (status === "not_connected" && oauthNotReady(c)) reason = oauth[c.oauthProvider].sentence;
+    // FIX-22: a provider Steward is holding back (Xero) has no Connect at all.
+    if (status === "not_connected" && oauthNotReady(c) && oauth[c.oauthProvider].held) button = null;
     // Square is listed only where it is live: an unconnected Square card on a
     // deployment with no Square app is a button that cannot finish.
     if (c.provider === "square" && status === "not_connected" && oauthNotReady(c)) continue;

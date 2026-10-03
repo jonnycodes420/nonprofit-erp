@@ -152,6 +152,17 @@ function PublicOnly({ children }) {
   return children;
 }
 
+// FIX-22: the old Integrations addresses. Settings, Integrations became
+// Connections (FIX-13, INT builds), and an old bookmark used to fall through to
+// the home page. Signed in, it opens the Connections page in the app; signed
+// out, the public Connections page.
+function OldIntegrations() {
+  const { auth } = useAuth();
+  const hash = typeof window !== "undefined" ? window.location.hash : "";
+  if (auth && auth.org?.onboarding_complete) return <Navigate to={"/app/settings?section=connections" + hash} replace />;
+  return <Navigate to={"/connections" + hash} replace />;
+}
+
 function RequireSuperAdmin({ children }) {
   const raw = localStorage.getItem("npe_user");
   try {
@@ -229,6 +240,9 @@ function Root() {
               filters in the query), /app/:tab every other tab. Same shell; App
               reads the URL (lib/appUrls.js) on load and on back/forward. */}
           <Route path="/donors" element={<RequireOnboarded><App /></RequireOnboarded>} />
+          <Route path="/integrations" element={<OldIntegrations />} />
+          <Route path="/integrations/*" element={<OldIntegrations />} />
+          <Route path="/app/integrations" element={<OldIntegrations />} />
           <Route path="/app/:tab" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in

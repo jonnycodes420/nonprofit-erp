@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
+import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
@@ -872,9 +873,9 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   };
 
   const removeAttendee = async (attId) => {
-    if (!confirm("Remove this attendee?")) return;
-    await apiFetch(`/events/${eventId}/attendees/${attId}`, { method: "DELETE" });
+    const r = await apiFetch(`/events/${eventId}/attendees/${attId}`, { method: "DELETE" });
     setEvent(ev => ({ ...ev, attendees: ev.attendees.filter(a => a.id !== attId) }));
+    offerUndo(r, "attendee", () => apiFetch(`/events/${eventId}`).then(ev => ev && ev.id && setEvent(ev)).catch(() => {}));
   };
 
   const saveNotes = async () => {

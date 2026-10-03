@@ -273,7 +273,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       {!loading && subtab === "campaigns" && (
         <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} focusId={focusCampaign} onOpenCampaign={openCampaign}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
-          onTemplateCreated={() => load()}
+          onTemplateCreated={out => { if (out && out.campaignId) setFocusCampaign(out.campaignId); load(); }}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
       )}
 
@@ -642,16 +642,11 @@ function GoalThermometerDark({ goal }) {
 // pressing the button actually creates. It says so BEFORE the press rather than
 // after: a button that silently makes a campaign, a public page and seven tasks
 // is a button nobody presses twice.
-function CampaignTemplates({ isReadOnly, onCreated }) {
-  const [data, setData] = useState(null);
+function CampaignTemplates({ data, reload, isReadOnly, onCreated, onOpenCampaign }) {
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);     // the key whose detail is showing
   const [goal, setGoal] = useState("");
-
-  useEffect(() => {
-    apiFetch("/campaign-templates").then(setData).catch(() => setData({ templates: [] }));
-  }, []);
 
   async function create(key) {
     if (busy) return;
@@ -662,8 +657,7 @@ function CampaignTemplates({ isReadOnly, onCreated }) {
         body: JSON.stringify({ template: key, goalAmount: goal === "" ? null : Number(goal) }),
       });
       setGoal(""); setOpen(null);
-      const fresh = await apiFetch("/campaign-templates").catch(() => data);
-      setData(fresh);
+      if (reload) await reload();
       if (onCreated) onCreated(out);
     } catch (e) { setErr(errorMessage(e, "That did not start.")); }
     setBusy("");
@@ -687,8 +681,11 @@ function CampaignTemplates({ isReadOnly, onCreated }) {
               {t.campaign.startDate} to {t.campaign.endDate} &middot; {t.steps.length} dated reminders
             </div>
             {t.existingCampaignId ? (
-              <div className="camp-tpl-done" style={{ fontSize: 12, color: T.gold, marginTop: 8, fontWeight: 600 }}>
-                You already have {t.campaign.name}.
+              <div className="camp-tpl-done" style={{ fontSize: 12.5, color: T.ink2, marginTop: 8 }}>
+                You started {t.campaign.name}.{" "}
+                <a href={campaignHref(t.existingCampaignId)} data-testid="camp-tpl-open"
+                  onClick={e => { if (onOpenCampaign && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onOpenCampaign(t.existingCampaignId); } }}
+                  style={{ color: T.greenDk, fontWeight: 700 }}>Open it</a>
               </div>
             ) : !isReadOnly ? (
               <>
@@ -819,6 +816,15 @@ function CampaignPlanPanel({ campaignId, isReadOnly }) {
 }
 
 function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpenCampaign, onTemplateCreated }) {
+  // FIX-22: the templates are read here so the list can show a campaign that
+  // was started from one. The goal is optional on a template, and the list
+  // below is the goal portfolio (goal > 0), so a goal-less template campaign
+  // was nowhere to be found. It now sits at the top of the list.
+  const [tpl, setTpl] = useState(null);
+  const loadTpl = () => apiFetch("/campaign-templates").then(setTpl).catch(() => setTpl({ templates: [] }));
+  useEffect(() => { loadTpl(); }, []);
+  const inList = new Set(goals.map(g => g.id));
+  const started = ((tpl && tpl.templates) || []).filter(t => t.existingCampaignId && !inList.has(t.existingCampaignId));
   const editBtn = c => !isReadOnly ? (
     <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
   ) : null;
@@ -833,9 +839,27 @@ function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpe
       {/* CAMPAIGN-2 — the two starting points a small shop asks for by name,
           above the list rather than hidden behind the New button: the point is
           that somebody who has not thought about GivingTuesday sees it. */}
-      <CampaignTemplates isReadOnly={isReadOnly} onCreated={onTemplateCreated} />
+      <CampaignTemplates data={tpl} reload={loadTpl} isReadOnly={isReadOnly} onCreated={onTemplateCreated} onOpenCampaign={onOpenCampaign} />
 
-      {goals.length === 0 ? (
+      {started.map(t => {
+        const focused = focusId === t.existingCampaignId;
+        return (
+          <div key={t.existingCampaignId} data-campaign-id={t.existingCampaignId} data-testid="campaign-started-from-plan"
+            ref={el => { if (el && focused && !el.dataset.scrolled) { el.dataset.scrolled = "1"; el.scrollIntoView({ block: "center" }); } }}
+            style={{ background: T.white, border: "1px solid " + (focused ? T.greenDk : T.bg3), borderRadius: 16, padding: "18px 22px", marginBottom: 16,
+                     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink }}>{t.campaign.name}</div>
+              <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
+                Started from a plan &middot; {t.campaign.startDate} to {t.campaign.endDate} &middot; no goal set yet
+              </div>
+            </div>
+            {editBtn({ id: t.existingCampaignId, name: t.campaign.name, startDate: t.campaign.startDate, endDate: t.campaign.endDate, goalAmount: null })}
+          </div>
+        );
+      })}
+
+      {goals.length === 0 && started.length === 0 ? (
         <>
           <StartHere line="A campaign is a specific ask — Spring Appeal, a capital push, a year-end drive. Give it a goal and a deadline, and Steward tracks every attributed gift toward it automatically." actionLabel="+ Start your first campaign" onAction={onNew} dismissKey="fundraising_campaigns_intro" />
           <div style={{ marginTop: 20 }}>

@@ -22,6 +22,8 @@ import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
 import { fmtInZone } from "./EditHistory";
+import { askConfirm } from "./ConfirmDialog";
+import { offerUndo } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
@@ -339,7 +341,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   }
 
   async function deletePage(p){
-    if(!window.confirm(`Delete "${p.title}"? This removes the page and its shareable link permanently — gifts already given through it are not deleted. This cannot be undone.`))return;
+    if(!(await askConfirm({title:`Delete "${p.title}"?`,body:"This removes the page and its shareable link for good. Gifts already given through it are not deleted. This cannot be undone.",yes:"Delete page",danger:true})))return;
     try{
       await apiFetch(`/giving-pages/${p.id}`,{method:"DELETE"});
       setPages(prev=>prev.filter(x=>x.id!==p.id));
@@ -1241,7 +1243,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
   }
 
   async function generateAndSend(){
-    if(!window.confirm(`Generate and email year-end statements to every donor with a ${yearEndYear} gift? This sends real emails.`))return;
+    if(!(await askConfirm({title:"Send year-end statements?",body:`Steward generates and emails a statement to every donor with a ${yearEndYear} gift. This sends real emails.`,yes:"Send statements"})))return;
     setRunLoading(true); setRunErr("");
     try{
       const r=await apiFetch("/receipts/year-end-run",{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),dryRun:false})});
@@ -1552,7 +1554,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           {isAdmin&&<div style={{display:"flex",gap:8}}>
             <button onClick={()=>{setCropIdx(null);setForm({id:u.id,title:u.title,body:u.body||"",photos:Array.isArray(u.photos)?u.photos:[],photoCrops:Array.isArray(u.photo_crops)?u.photo_crops:[],targets:Array.isArray(u.targets)?u.targets:[],orgWide:u.org_wide===true});}}
               style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",color:T.ink}}>Edit</button>
-            <button onClick={async()=>{if(confirm("Delete this impact update?")){await apiFetch(`/impact-updates/${u.id}`,{method:"DELETE"});load();}}}
+            <button onClick={async()=>{if(await askConfirm({title:"Delete this impact update?",body:"Donors stop seeing it, and its photos are removed. This cannot be undone.",yes:"Delete update",danger:true})){await apiFetch(`/impact-updates/${u.id}`,{method:"DELETE"});load();}}}
               style={{background:"none",border:"1px solid "+T.terra200,borderRadius:8,padding:"5px 12px",fontSize:12,cursor:"pointer",color:T.terra700}}>Delete</button>
           </div>}
         </div>
@@ -2136,7 +2138,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect}){
   const disconnect=async(s)=>{
     // Disconnect KEEPS every gift, and the confirm says so rather than asking
     // a frightening question about deletion that is not what happens.
-    if(!window.confirm(`Stop checking ${s.displayName}? The ${s.giftsTotal} gift${s.giftsTotal===1?"":"s"} already read from it stay on your records.`)) return;
+    if(!(await askConfirm({title:`Stop checking ${s.displayName}?`,body:`The ${s.giftsTotal} gift${s.giftsTotal===1?"":"s"} already read from it stay on your records.`,yes:"Stop checking"}))) return;
     setBusy(s.id); setErr("");
     try{ await apiFetch(`/giving-sources/${s.id}`,{method:"DELETE"}); await load(); }
     catch(e){ setErr(errorMessage(e,"Could not disconnect that source.")); }
@@ -3022,7 +3024,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   }
 
   async function clearSampleData(){
-    if(!window.confirm("Remove all sample data? This cannot be undone."))return;
+    if(!(await askConfirm({title:"Remove all sample data?",body:"Every sample record goes. This cannot be undone.",yes:"Remove sample data",danger:true})))return;
     setSampleClearing(true);
     try{
       await apiFetch("/org/clear-sample-data",{method:"POST"});
@@ -3204,9 +3206,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   }
 
   async function deleteImMetric(id){
-    if(!window.confirm("Delete this impact metric? Donors won't reference it in future milestone emails."))return;
-    await apiFetch(`/impact-metrics/${id}`,{method:"DELETE"}).catch(()=>{});
+    const r=await apiFetch(`/impact-metrics/${id}`,{method:"DELETE"}).catch(()=>null);
     setImpactMetrics(prev=>prev.filter(m=>m.id!==id));
+    offerUndo(r,"impact metric",()=>apiFetch("/impact-metrics").then(rows=>Array.isArray(rows)&&setImpactMetrics(rows)).catch(()=>{}));
   }
 
   function closeInvite(){
@@ -3338,7 +3340,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                  their name. Quiet terracotta outline per the destructive-action
                  convention. */
               <button onClick={async()=>{
-                if(!window.confirm(`Remove ${m.name||m.email} from the organization? Their sign-in stops working immediately; everything they logged keeps their name. Their assigned donors return to the Directory unassigned.`))return;
+                if(!(await askConfirm({title:`Remove ${m.name||m.email}?`,body:"Their sign-in stops working immediately; everything they logged keeps their name. Their assigned donors return to the Directory unassigned.",yes:"Remove",danger:true})))return;
                 try{
                   await apiFetch(`/users/${m.id}`,{method:"DELETE"});
                   setTeam(t=>t.filter(x=>x.id!==m.id));

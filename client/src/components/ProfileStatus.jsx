@@ -15,6 +15,7 @@ import { T } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate } from "../../../shared/displayDate";
+import { birthdayLabel } from "../../../shared/birthday.js";
 
 export function useDonorStatus(donorId, refreshKey) {
   const [status, setStatus] = useState(null);
@@ -101,9 +102,11 @@ function Tile({ label, figure, kind = "money", sub }) {
 
 const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : null);
 
-export function ProfileGlance({ status, onOpenDonor }) {
+export function ProfileGlance({ status, onOpenDonor, birthday }) {
   const [why, setWhy] = useState(false);
   if (!status) return null;
+  // FIX-22: the birthday was stored and shown nowhere a person looks first.
+  const bday = birthday ? birthdayLabel(birthday.month, birthday.day, birthday.year) : "";
   const g = status.glance || {};
   return (
     <div data-testid="dp-glance" style={{ padding: "8px 20px 4px 24px", flexShrink: 0 }}>
@@ -112,6 +115,11 @@ export function ProfileGlance({ status, onOpenDonor }) {
           <Tile label="First gift" figure={g.first} sub={g.first.value != null ? monthOf(g.first.date) : null} />
           <Tile label="Largest gift" figure={g.largest} sub={g.largest && g.largest.value != null ? monthOf(g.largest.date) : null} />
           <Tile label="Average gift" figure={g.average} sub={g.average && g.average.count ? `of ${g.average.count} gift${g.average.count === 1 ? "" : "s"}` : null} />
+        </div>
+      )}
+      {bday && (
+        <div data-testid="dp-glance-birthday" style={{ marginTop: 8, fontSize: 13, color: T.ink2 }}>
+          Birthday: {bday}
         </div>
       )}
       {/* PARITY-3 — the volunteer line, opening the shifts it adds up. */}

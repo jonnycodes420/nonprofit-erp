@@ -47,6 +47,11 @@ export const PROVIDERS = {
     // consent, from the connections endpoint, never guessed.
     tenantStep: "https://api.xero.com/connections",
     sandboxNote: "Connect the Xero demo company first: it is a real tenant with fake books.",
+    // FIX-22: Connect landed on Xero's invalid_scope page. Xero apps made
+    // after 2 March 2026 take only granular scopes, and accounting.transactions
+    // is not one of them. Until the scope list is proved against a real Xero
+    // app, the card says so and offers no button (routes/finance.js reads it).
+    held: "Xero isn't available yet.",
   },
   intuit: {
     key: "intuit", label: "QuickBooks Online", kind: "bookkeeping",
