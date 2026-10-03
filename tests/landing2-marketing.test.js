@@ -511,7 +511,7 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     const shell = fs.readFileSync(path.join(CLIENT, "index.html"), "utf8");
     const base = seo.pageShell(shell);
     const extraFor = r => r.page === "article" ? { article: ARTICLE[r.slug] } : r.page === "glossaryTerm" ? { term: TERM[r.slug] } : r.page === "glossary" ? { terms: GLOSSARY } : {};
-    const text = s => s.replace(/<!--[\s\S]*?-->/g, "").replace(/<[^>]*>/g, "").replace(/[<>]/g, "").replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
+    const text = s => seo.stripTags(s).replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/[<>]/g, "").replace(/\s+/g, " ").trim();
 
     // 16 · every route in the sitemap: a unique title, a description, one h1,
     // a canonical, and its prerendered HTML carries that h1.
