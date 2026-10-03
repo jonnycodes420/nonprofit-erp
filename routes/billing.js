@@ -2400,6 +2400,8 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   await run("DELETE FROM email_suppressions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM financials WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM funds WHERE org_id=?", [orgId]).catch(() => {});
+  // PARITY-2 Part 4: an auction's items, bidders and bids cascade from it.
+  await run("DELETE FROM auctions WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM ai_log WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM gmail_connections WHERE org_id=?", [orgId]).catch(() => {});
   await run("DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE org_id=?)", [orgId]).catch(() => {});

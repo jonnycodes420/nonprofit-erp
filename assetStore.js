@@ -247,6 +247,11 @@ async function collectLiveAssetRefs(orgId) {
   for (const r of await query(`SELECT asset_id FROM video_thanks${w}`, p)) {
     if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
   }
+  // PARITY-2 Part 4: an auction item's photos are on a public page and in a
+  // winner's pay page; a live item keeps them.
+  for (const r of await query(`SELECT photos FROM auction_items${w}`, p)) {
+    for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
+  }
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }

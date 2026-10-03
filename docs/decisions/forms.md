@@ -250,6 +250,30 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   ladder. Capping the percentiles and then padding past the cap caps nothing. (CAMPAIGN-2, found on the
   GIVE-2 ladder by the campaign page's own walk)
 
+### PARITY-2 Part 4: auctions
+- **Who won is decided once, in `auctionCore.js`: the highest bid, and between equal amounts the earliest
+  (created_at, then id).** It is computed at read time from the bids, never stored, and the staff screen, the
+  public page, the pay link, the checkout, the webhook and the `auction-*` figure sources all read it.
+  `tests/parity2-auction.test.js` plants the reversed order. (PARITY-2)
+- **A bid is accepted inside one transaction that locks the item row, by the database clock.** Bidding
+  stops at the close to the second (`clock_timestamp()`), the next bid must be at least the high bid plus the
+  increment, and two equal bids at the same moment give one high bid. A bid at or over the buy-now price
+  closes that item at the buy-now price. (PARITY-2)
+- **A bidder is a donors row matched by exact email, plus an `auction_bidders` row with a hashed session
+  token in an HttpOnly cookie.** Somebody unknown becomes a person typed "other". An email already registered
+  for the auction is refused on a second browser rather than handed a session: a bid is a promise to pay.
+  (PARITY-2)
+- **The public page is `/auction/:slug` (server-rendered, `shared/publicPage.js`, a `vercel.json` rewrite).**
+  GET writes nothing; registering and bidding are form POSTs; the page polls `/status` for "You're the high
+  bidder" / "You've been outbid". Donors of items are not named publicly. (PARITY-2)
+- **A winner pays through the donation checkout.** `POST /auction/pay/:token` is a shim onto `donateHandler`
+  like `/e/:slug/checkout`; the server prices from the winning bid the token was signed for and takes the
+  payer's email from the bidder row. The pay token is the item id plus an HMAC of (item, winning bid): nothing
+  stored, and it dies if that bid stops being the winner. (PARITY-2)
+- **The donated item is an in-kind gift at fair market value, recorded once by a person pressing "Record as
+  in-kind gift"** (`recordGift`, `idempotency_key auction-inkind:<item>`, `auction_items.in_kind_gift_id`).
+  Never on item creation: the value may be corrected after listing. (PARITY-2)
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)

@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 
 const routers = {
   r0: express.Router(),
@@ -2680,7 +2681,10 @@ async function emailHoldsMembership(orgId, email) {
 // page hands it.
 const donateHandler = async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { firstName, lastName, email, campaignId } = req.body;
+  // PARITY-2 Part 4: `let` because an auction win names its payer from the
+  // winning bid's own bidder row, never from the request.
+  let { firstName, lastName, email } = req.body;
+  const { campaignId } = req.body;
   // BUILD-102 Part 2 — `fundId` is a `let` because the FORM's designation
   // replaces whatever the request carried (a fixed form was never asking).
   let { amount, frequency, coverFees, fundId } = req.body;
@@ -2698,7 +2702,7 @@ const donateHandler = async (req, res) => {
   // already saves its own method by definition, and a ticket or a membership is
   // a purchase: neither is a reason to keep somebody's card.
   const rememberMe = req.body.rememberMe === true && frequency !== "monthly" && frequency !== "annual"
-    && !req.body.eventLevelId && !req.body.membershipLevelId;
+    && !req.body.eventLevelId && !req.body.membershipLevelId && !req.body.auctionPayToken;
   // THE SAME PERSON IS THE SAME STRIPE CUSTOMER. `donors.stripe_customer_id`
   // already exists on this row for the recurring layer, so a one-time gift that
   // asks to be remembered attaches to THAT customer rather than minting a
@@ -2722,6 +2726,15 @@ const donateHandler = async (req, res) => {
   const membershipLevelId = !eventLevelId && req.body.membershipLevelId ? String(req.body.membershipLevelId) : null;
   if (membershipLevelId) {
     frequency = frequency === "annual" || frequency === "monthly" ? frequency : "once"; coverFees = false; amount = amount || "1";
+  }
+  // PARITY-2 Part 4: AN AUCTION WIN, priced by the SERVER from the winning
+  // bid that the pay link was signed for (auctionCore.resolvePayToken). The
+  // page's amount, fee box, frequency, page and fundraiser are all ignored: a
+  // winner pays exactly what they bid, once, to the org that ran the auction.
+  const auctionPayToken = !eventLevelId && !membershipLevelId && req.body.auctionPayToken ? String(req.body.auctionPayToken) : null;
+  if (auctionPayToken) {
+    frequency = "once"; coverFees = false; amount = amount || "1";
+    givingPageId = null; peerFundraiserId = null;
   }
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
@@ -2801,6 +2814,16 @@ const donateHandler = async (req, res) => {
     const renewsOn = memLevel.term === "12_months" ? "annual" : memLevel.term === "1_month" ? "monthly" : null;
     if (frequency !== "once" && frequency !== renewsOn) return res.status(400).json({ error: "This membership cannot renew automatically." });
     baseCents = Math.round(Number(memLevel.price) * 100);
+  }
+  let auctionWin = null;
+  if (auctionPayToken) {
+    auctionWin = await AC.resolvePayToken(query, auctionPayToken);
+    if (!auctionWin || auctionWin.orgId !== org.id) return res.status(400).json({ error: "This pay link is no longer valid. Ask the organisation for a new one." });
+    if (auctionWin.item.paid_gift_id) return res.status(409).json({ error: "This item has already been paid for." });
+    baseCents = AC.cents(auctionWin.item.high_amount);
+    email = auctionWin.item.bidder_email;
+    const nm = String(auctionWin.item.bidder_name || "").trim().split(/\s+/);
+    firstName = nm[0] || "Bidder"; lastName = nm.slice(1).join(" ") || firstName;
   }
   if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
   if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
@@ -2947,7 +2970,9 @@ const donateHandler = async (req, res) => {
   // POST/PUT /giving-pages validation, never trusted raw from this request.
   const effectiveCampaignId = pageCampaignId || (eventGift && eventGift.campaignId) || campaignId || "";
 
-  const productName = memLevel
+  const productName = auctionWin
+    ? `${auctionWin.item.title}, ${auctionWin.auction.title} (auction), ${org.name}`
+    : memLevel
     ? `${memLevel.name} membership — ${org.name}`
     : eventLevel
     ? `${eventQty} × ${eventLevel.name} — ${eventRow.name}`
@@ -2996,6 +3021,10 @@ const donateHandler = async (req, res) => {
     event_dietary: eventLevel ? String(req.body.dietary || "").trim().slice(0, 200) : "",
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
+    // PARITY-2 Part 4: the webhook re-reads the item and checks this bid is
+    // still its winner before it writes the fair-market split.
+    auction_item_id: auctionWin ? auctionWin.item.id : "",
+    auction_bid_id: auctionWin ? auctionWin.item.bid_id : "",
     // GIVE-2 §4 — the donor ticked "remember me". The webhook reads this to
     // decide whether to store the saved method against their donor record;
     // without it a card is saved on the org's Stripe account and Steward never
@@ -3042,7 +3071,9 @@ const donateHandler = async (req, res) => {
   const reconnectDecoded = req.body.reconnectToken ? verifyReconnectToken(req.body.reconnectToken) : null;
   if (reconnectDecoded && reconnectDecoded.orgId === org.id) metadata.reconnect_donor_id = reconnectDecoded.donorId;
 
-  const returnPath = eventRow && eventRow.public_slug
+  const returnPath = auctionWin
+    ? `/auction/pay/${auctionPayToken}`
+    : eventRow && eventRow.public_slug
     ? `/e/${eventRow.public_slug}`
     : eventGift
     ? `/e/${eventGift.slug}`
@@ -3083,7 +3114,9 @@ const donateHandler = async (req, res) => {
       quantity: 1,
     }],
     metadata,
-    success_url: eventRow && eventRow.public_slug
+    success_url: auctionWin
+      ? `${frontendUrl}${returnPath}?paid=1`
+      : eventRow && eventRow.public_slug
       ? `${frontendUrl}${returnPath}/thanks?s={CHECKOUT_SESSION_ID}`
       : eventGift
       ? `${frontendUrl}${returnPath}?gave=1`
@@ -3225,6 +3258,33 @@ app.post("/e/:slug/give", donateLimiter, express.urlencoded({ extended: false })
   };
   await donateHandler(inner, shim);
   if (!answered) back("That did not go through. Try again in a moment.");
+}));
+
+// PARITY-2 Part 4: A WINNER PAYS. The same shim as the event page: a plain
+// form POST from the pay page, the same `donateHandler`, the same Connect
+// account and webhook. The pay token is the only thing the page sends; the
+// handler finds the item, the winning bid and the winner from it.
+app.post("/auction/pay/:token", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  const win = await AC.resolvePayToken(query, req.params.token);
+  if (!win) return res.status(404).send("Not found");
+  const [org] = await query(`SELECT org_slug FROM orgs WHERE id=?`, [win.orgId]);
+  const back = () => res.redirect(303, `/auction/pay/${encodeURIComponent(req.params.token)}`);
+  const inner = { params: { orgSlug: org.org_slug },
+    body: { firstName: "Bidder", lastName: "Bidder", email: "winner@auction.invalid", amount: "1", frequency: "once",
+            coverFees: false, auctionPayToken: String(req.params.token) } };
+  let answered = false;
+  const shim = {
+    status() { return this; },
+    json(payload) {
+      if (answered) return;
+      answered = true;
+      if (payload && payload.url) return res.redirect(303, payload.url);
+      console.error("[auction] pay checkout refused:", payload && payload.error);
+      return back();
+    },
+  };
+  await donateHandler(inner, shim);
+  if (!answered) back();
 }));
 
 // ── Demo request (no auth — public landing page) ──────────────────────────

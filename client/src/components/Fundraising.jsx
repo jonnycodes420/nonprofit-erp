@@ -15,6 +15,7 @@ import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { PeerToPeerView } from "./PeerToPeer";
+import { AuctionsView } from "./Auctions";
 import { HowDidItDo } from "./HowDidItDo";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
@@ -278,6 +279,11 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
 
       {!loading && subtab === "pages" && (
         <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
+      )}
+
+      {/* PARITY-2 Part 4: auctions: items, bids, winners, pay links. */}
+      {!loading && subtab === "auctions" && (
+        <AuctionsView donors={data?.donors || []} isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
 
       {/* BUILD-103 Part 6 — the screen an org runs a walk from. */}

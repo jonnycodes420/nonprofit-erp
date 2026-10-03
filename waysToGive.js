@@ -13,7 +13,9 @@
 //   · the membership page, when at least one level is for sale and not hidden;
 //   · each peer-to-peer giving page that is live (status 'active', p2p on);
 //   · each upcoming event with a public page (`/e/:slug`), not cancelled and
-//     not sample data.
+//     not sample data;
+//   · each auction still taking bids or about to open (`/auction/:slug`,
+//     PARITY-2 Part 4), not archived.
 // Every query is scoped by org_id. Nothing here names a donor or a sum.
 
 const { query } = require("./db");
@@ -57,6 +59,17 @@ async function waysToGive(orgId, orgSlug) {
     ways.push({ kind: "event", title: e.name, date: e.date,
       sentence: "An upcoming event. Get tickets or register on its page.",
       href: `/e/${encodeURIComponent(e.public_slug)}` });
+  }
+  // PARITY-2 Part 4: an auction is a door while it has not closed. The
+  // database clock decides, the same clock the bid route closes on.
+  const auctions = await query(
+    `SELECT title, public_slug, opens_at <= NOW() AS open FROM auctions
+      WHERE org_id = ? AND status = 'active' AND closes_at > NOW()
+      ORDER BY closes_at ASC LIMIT ?`, [orgId, MAX_EVENTS]);
+  for (const a of auctions) {
+    ways.push({ kind: "auction", title: a.title,
+      sentence: a.open ? "An online auction, taking bids now." : "An online auction. See the items before bidding opens.",
+      href: `/auction/${encodeURIComponent(a.public_slug)}` });
   }
   return ways;
 }

@@ -16,6 +16,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const AC = require("../auctionCore");   // PARITY-2 Part 4: who won, and the split
 const { rateLimit } = require("express-rate-limit");
 
 const routers = {
@@ -393,7 +394,29 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (memLevelId) [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=?", [memLevelId, orgId]);
             }
             const MBm = memLevel ? await MB_READY : null;
+            // PARITY-2 Part 4: an auction win, paid. The item is re-read
+            // org-scoped and the bid in the metadata must STILL be its winning
+            // bid (auctionCore's one ordering); the fair-market split is the
+            // item's value, never more than was paid, so the receipt states
+            // the amount over it as the deductible part, as a ticket's does.
+            let auWin = null;
+            if (!evLevel && !memLevel && pi.metadata?.auction_item_id) {
+              const [ai] = await query(`SELECT org_id, auction_id FROM auction_items WHERE id=? AND org_id=?`, [pi.metadata.auction_item_id, orgId]);
+              if (ai) {
+                const st = (await AC.itemStates(query, orgId, ai.auction_id)).find(x => x.id === pi.metadata.auction_item_id);
+                const [au] = await query(`SELECT a.title, e.name AS event_name, a.event_id FROM auctions a
+                                            LEFT JOIN events e ON e.id=a.event_id AND e.org_id=a.org_id WHERE a.id=? AND a.org_id=?`, [ai.auction_id, orgId]);
+                if (st && au && st.bid_id === pi.metadata.auction_bid_id) auWin = { item: st, auction: au };
+                else console.error(`[auction] ${pi.id} names item ${pi.metadata.auction_item_id} whose winning bid is not ${pi.metadata.auction_bid_id}; recording the payment without the split`);
+              }
+            }
             const written = await recordGift({
+              ...(auWin ? {
+                quidProQuoValue: Math.min(Number(auWin.item.fmv) || 0, amount),
+                quidProQuoDesc: AC.quidProQuoDesc(auWin.item),
+                campaign: auWin.auction.event_name || "",
+                membershipRenewal: false,
+              } : {}),
               ...(memLevel ? {
                 quidProQuoValue: Math.min(Number(memLevel.fmv), amount),
                 quidProQuoDesc: MBm.quidProQuoDescription({ levelName: memLevel.name, benefits: memLevel.benefits || [] }),
@@ -411,7 +434,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               utmSource: pi.metadata?.utm_source || null,
               utmMedium: pi.metadata?.utm_medium || null,
               utmCampaign: pi.metadata?.utm_campaign || null,
-              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
+              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership`
+                : auWin ? `Auction: ${auWin.item.title}, ${auWin.auction.title}` : "Online payment via Stripe",
               // GIVE-2 §5 — the method the donor actually used, and what the
               // processor actually took, both read off the charge above.
               paymentMethod: methodLabel, processorFeeAmount: feeAmount, processorFeeSource: feeSource,
@@ -484,6 +508,13 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (pi.metadata?.event_hold_id) {
                 await run(`UPDATE event_seat_holds SET confirmed_at=NOW() WHERE id=? AND org_id=? AND confirmed_at IS NULL`,
                   [pi.metadata.event_hold_id, orgId]).catch(() => {});
+              }
+            }
+            if (auWin) {
+              await run(`UPDATE auction_items SET paid_gift_id=?, paid_at=NOW() WHERE id=? AND org_id=? AND paid_gift_id IS NULL`,
+                [giftId, auWin.item.id, orgId]).catch(e => console.error("[auction] marking paid:", e.message));
+              if (auWin.auction.event_id) {
+                await run(`UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL`, [auWin.auction.event_id, giftId, orgId]).catch(() => {});
               }
             }
             if (memLevel) {

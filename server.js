@@ -3802,6 +3802,7 @@ app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
+app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -10428,6 +10429,34 @@ require("./routes/homeCalls").mount({
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,
+});
+// PARITY-2 Part 4: an auction item's photo, on the BUILD-51 asset seam
+// (kind 'auction', the campaign-photo rules). A stored /portal-assets/ path
+// echoes through unchanged; a data URI is checked, normalised and stored.
+async function storeAuctionPhoto(orgId, v) {
+  if (typeof v !== "string" || !v) return { url: null };
+  if (v.startsWith("/portal-assets/")) {
+    const id = v.slice("/portal-assets/".length);
+    if (!ASSET_ID_RE.test(id)) return { error: "bad_image", message: "That photo could not be read." };
+    const [own] = await query(`SELECT id FROM portal_assets WHERE id=? AND org_id=?`, [id, orgId]);
+    return own ? { url: v } : { error: "bad_image", message: "That photo could not be read." };
+  }
+  const uerr = uploadImageError(v);
+  if (uerr) return { error: "bad_image", message: uerr };
+  const m = String(v).match(/^data:([^;]+);base64,(.*)$/s);
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); } catch { return { error: "bad_image", message: "That photo could not be read." }; }
+  const dims = checkThemeImageDimensions("campaign", m[1], buffer);
+  if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
+  const norm = await normalizeUploadImage("campaign", m[1], buffer);
+  if (norm.error) return { error: norm.error, message: norm.message || "That photo could not be read." };
+  const asset = await putThemeAsset({ orgId, kind: "auction", buffer: norm.buffer, contentType: norm.contentType,
+    width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  return { url: asset.path };
+}
+require("./routes/auctions").mount({
+  actor, checkWriteAccess, donateLimiter, publicAppUrl, query, queryTx, recordGift, requireAuth,
+  resolveOrgBrandTheme, run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
 });
 require("./routes/videoThanks").mount({
   actor, checkWriteAccess, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, videoLimiter, wrap,
