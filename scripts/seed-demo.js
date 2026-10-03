@@ -1687,6 +1687,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`[assert] peer-to-peer: ${P2P_TEAMS.length} teams, ${fundraisers.length} fundraisers (2 of them new people typed volunteer), $${p2pRaised.toLocaleString()} raised through their pages, $${p2pSoft.toLocaleString()} of it soft-credited, one gift anonymous to its fundraiser · none of the ${storyIds.length} story people was drawn into it`);
+  await require("./seed/parity2-p2p.js")({ q, ORG, TODAY, dAdd, storyIds, candidates: noStory.filter(d => !p2pTouched.includes(d.id)) });   // PARITY-2 Part 2: the Spring Paddle
 
   // ── MEMBERS-2 · THE MEMBER SIDE ────────────────────────────────────────
   // Three levels an org this size would really sell, and four people whose

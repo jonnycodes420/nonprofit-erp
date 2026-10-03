@@ -181,3 +181,129 @@ export function shareLinks({ link, fundraiserSlug, text }) {
 export function mailtoFor(draft) {
   return `mailto:?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
 }
+
+// ── PARITY-2 Part 2 · THE PUBLIC CAMPAIGN PAGE ───────────────────────────
+// A fundraiser page is 'active' (public, takes gifts), 'pending' (waiting for
+// a staff member to approve it; the page asked for approval) or 'archived'
+// (taken down). Only 'active' is ever shown to the public or takes a gift.
+export const FUNDRAISER_STATUSES = ["active", "pending", "archived"];
+
+// THE NUMBER BESIDE THE THERMOMETER. Computed once, on the server, over the
+// same gift rows the bar sums; this is the sentence that defines it.
+export const DONOR_COUNT_SENTENCE =
+  "Each person who has given to this campaign counts once, however many gifts they made, including gifts given through a supporter's own page.";
+
+export function donorCountLine(n) {
+  const c = Math.max(0, Math.round(Number(n) || 0));
+  return c === 1 ? "1 donor" : `${c.toLocaleString("en-US")} donors`;
+}
+
+// The goal bar on a fundraiser's own public page, in a stranger's voice
+// (raisedSentence above is in the fundraiser's own voice, for their dashboard).
+export function publicRaisedSentence({ name, raisedCents, goalCents }) {
+  const first = firstNameOf(name) || "This fundraiser";
+  const raised = money(raisedCents);
+  const what = `Every gift given through ${first}'s page, as it arrives. It all goes to the organisation.`;
+  if (!goalCents) return `${raised} raised. ${what}`;
+  const left = Number(goalCents) - Number(raisedCents);
+  return left > 0
+    ? `${raised} of ${first}'s ${money(goalCents)} goal. ${what}`
+    : `${raised}, past ${first}'s ${money(goalCents)} goal. ${what}`;
+}
+
+export const LEADERBOARD_SENTENCE =
+  "Ranked by what each page has raised, summed live from the gifts given through it. A team's total is every gift through its members' pages.";
+
+export const RECENT_DONORS_SENTENCE =
+  "Gifts given through this page, newest first. A first name shows only where the donor chose to show it; everybody else is Anonymous.";
+
+// ── COACHING: WORDS STAFF SEND A FUNDRAISER ──────────────────────────────
+// The four moments a fundraiser most often needs a word from the office: the
+// welcome, the nudge at halfway, the last days and the thank-you. Steward
+// sends none of these. A staff member reads one, changes what they like, and
+// sends it from their own mail client (a mailto:) or copies it. The merge
+// fields are the fundraiser's own; this function takes no donor and so cannot
+// leak one.
+export function coachDrafts({ fundraiserName, orgName, causeName, goalCents, raisedCents, link, daysLeft = null, staffName = "" }) {
+  const first = firstNameOf(fundraiserName) || "there";
+  const cause = causeName || orgName;
+  const goal = goalCents ? money(goalCents) : null;
+  const raised = money(raisedCents);
+  const sign = staffName ? staffName : `The team at ${orgName}`;
+  const pct = goalCents ? Math.round((Number(raisedCents) / Number(goalCents)) * 100) : null;
+  const left = goalCents ? Math.max(0, Number(goalCents) - Number(raisedCents)) : null;
+  const daysWords = daysLeft == null ? "the last few days" : daysLeft <= 0 ? "the last day" : daysLeft === 1 ? "one day" : `${daysLeft} days`;
+  return [
+    {
+      key: "welcome",
+      label: "Welcome",
+      when: "Send when they sign up. The first gift usually comes from the first three people they ask.",
+      subject: `Thank you for fundraising for ${cause}`,
+      body: [
+        `Hi ${first},`,
+        ``,
+        `Thank you for starting a page for ${cause}. Here it is, ready to share:`,
+        link,
+        ``,
+        `The fastest start is three messages today to the people closest to you. Your page has a few words ready to copy if that helps.`,
+        ``,
+        `If you have any questions, just reply.`,
+        ``,
+        sign,
+      ].join("\n"),
+    },
+    {
+      key: "halfway",
+      label: "Halfway nudge",
+      when: goal ? `Send when they reach about half of their goal${pct != null ? ` (they are at ${pct}% now)` : ""}.` : "Send once a few gifts have come in.",
+      subject: `${raised} so far. You are doing brilliantly`,
+      body: [
+        `Hi ${first},`,
+        ``,
+        `${raised} raised for ${cause}${goal ? `, which is ${pct}% of your ${goal} goal` : ""}. Thank you.`,
+        ``,
+        goal ? `${money(left)} to go. A short update to the people who have not given yet, saying how far you have come, tends to bring in the next few gifts.` : `A short update to the people who have not given yet, saying how far you have come, tends to bring in the next few gifts.`,
+        link,
+        ``,
+        sign,
+      ].join("\n"),
+    },
+    {
+      key: "lastdays",
+      label: "Last days",
+      when: "Send in the final week. A deadline is the most persuasive thing a page can say.",
+      subject: `${daysWords === "the last day" ? "The last day" : `${daysWords.charAt(0).toUpperCase() + daysWords.slice(1)} left`} for ${cause}`,
+      body: [
+        `Hi ${first},`,
+        ``,
+        `There ${daysLeft === 1 ? "is" : "are"} ${daysWords} left on ${cause}, and you have raised ${raised}${goal ? ` of your ${goal}` : ""}.`,
+        ``,
+        `One last message to anyone who meant to give and has not yet, with the date in it, is usually the best-performing message of the whole campaign.`,
+        link,
+        ``,
+        sign,
+      ].join("\n"),
+    },
+    {
+      key: "thanks",
+      label: "Thank you",
+      when: "Send when the campaign closes, whatever they raised.",
+      subject: `Thank you, ${first}`,
+      body: [
+        `Hi ${first},`,
+        ``,
+        `${cause} has closed, and your page raised ${raised}. Every bit of it goes to ${orgName}, and it will do real work.`,
+        ``,
+        `Thank you for asking the people you know. It is not an easy thing to do, and you did it.`,
+        ``,
+        sign,
+      ].join("\n"),
+    },
+  ];
+}
+
+// A mailto: TO the fundraiser, for staff. The staff member's own mail client
+// opens with the words in it; Steward never touches the send.
+export function coachMailto(email, draft) {
+  return `mailto:${encodeURIComponent(String(email || "")).replace(/%40/g, "@")}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`;
+}

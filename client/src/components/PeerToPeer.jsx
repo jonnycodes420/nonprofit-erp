@@ -12,6 +12,11 @@ import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
+// PARITY-2 Part 2: a fundraiser's Raised opens the gifts behind it, and the
+// coaching drafts come from the one shared module the public side uses.
+import { Figure } from "./Figure";
+import { coachDrafts, coachMailto } from "../../../shared/p2p.js";
+import { displayDate } from "../../../shared/displayDate";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -70,6 +75,101 @@ function RowMenu({ label, confirmText, onConfirm }) {
     </div>);
 }
 
+// ── PARITY-2 Part 2 · ONE FUNDRAISER, OPENED ────────────────────────────
+// Their gifts (every row, footing to the total in cents), their page's words
+// for staff to correct, and four coaching drafts. Steward sends none of the
+// drafts: each is text with a Copy button and a mailto: that opens the staff
+// member's own mail client addressed to the fundraiser.
+function FundraiserDetail({ f, page, orgSlug, canEdit, onSaved }) {
+  const [g, setG] = useState(null);
+  const [err, setErr] = useState("");
+  const [edit, setEdit] = useState(null);
+  const [copied, setCopied] = useState("");
+  useEffect(() => {
+    apiFetch(`/peer-fundraisers/${f.id}/gifts`).then(setG).catch(e => setErr(errorMessage(e, "Their gifts did not load.")));
+  }, [f.id]);
+  const save = async () => {
+    setErr("");
+    try {
+      await apiFetch(`/peer-fundraisers/${f.id}`, { method: "PUT", body: JSON.stringify({
+        name: edit.name, story: edit.story, imageUrl: edit.imageUrl,
+        personalGoalAmount: edit.goal === "" ? null : edit.goal }) });
+      setEdit(null); onSaved(`${edit.name}'s page is saved.`);
+    } catch (e) { setErr(errorMessage(e, "That did not save.")); }
+  };
+  const link = orgSlug ? `${window.location.origin}/give/${orgSlug}/${page.slug}/${f.slug}` : "";
+  const drafts = coachDrafts({ fundraiserName: f.name, orgName: page.orgName || "", causeName: page.title,
+    goalCents: f.goalCents, raisedCents: f.raisedCents, link, daysLeft: page.daysLeft });
+  const copy = d => {
+    const text = `Subject: ${d.subject}\n\n${d.body}`;
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(() => setCopied(d.key)).catch(() => setCopied(""));
+  };
+  return (
+    <div data-testid="p2p-fundraiser-detail" style={{ width: "100%", background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 10,
+      padding: "12px 14px", margin: "6px 0 4px", display: "flex", flexDirection: "column", gap: 14 }}>
+      {err && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
+      <div>
+        <div style={h}>Gifts through {f.name.split(" ")[0]}'s page</div>
+        {!g && !err && <div style={{ fontSize: 12.5, color: T.ink3 }}>Loading…</div>}
+        {g && !g.gifts.length && <div style={{ fontSize: 12.5, color: T.ink3 }}>No gifts through this page yet.</div>}
+        {g && g.gifts.map(x => (
+          <div key={x.id} data-testid="p2p-fundraiser-gift" style={{ display: "flex", gap: 10, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
+            <span style={{ minWidth: 96, color: T.ink3 }}>{displayDate(x.date) || x.date}</span>
+            <span style={{ flex: 1 }}>{x.donorName}{x.shownPublicly ? "" : <span style={{ color: T.ink3 }}> (Anonymous on the page)</span>}</span>
+            <span style={{ fontWeight: 700 }}>{money(x.amountCents)}</span>
+          </div>))}
+        {g && g.gifts.length > 0 && (
+          <div style={{ display: "flex", gap: 10, fontSize: 12.5, borderTop: "1px solid " + T.bg3, paddingTop: 4, marginTop: 2 }}>
+            <span style={{ flex: 1 }}>Total</span><strong data-testid="p2p-fundraiser-gift-total" data-cents={g.totalCents}>{money(g.totalCents)}</strong>
+          </div>)}
+        {g && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>{g.sentence}</div>}
+      </div>
+
+      {canEdit && (edit ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={h}>Their page</div>
+          <input aria-label="Name" value={edit.name} onChange={e => setEdit(x => ({ ...x, name: e.target.value }))} style={inp} />
+          <textarea aria-label="Story" rows={4} value={edit.story} onChange={e => setEdit(x => ({ ...x, story: e.target.value }))} style={{ ...inp, fontFamily: "inherit" }} />
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <input aria-label="Goal" placeholder="Goal ($)" type="number" value={edit.goal} onChange={e => setEdit(x => ({ ...x, goal: e.target.value }))} style={{ ...inp, width: 110 }} />
+            <input aria-label="Photo URL" placeholder="Photo URL (https://)" value={edit.imageUrl} onChange={e => setEdit(x => ({ ...x, imageUrl: e.target.value }))} style={{ ...inp, flex: 1, minWidth: 180 }} />
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button style={btn(true)} onClick={save} data-testid="p2p-fundraiser-save">Save</button>
+            <button style={btn(false)} onClick={() => setEdit(null)}>Cancel</button>
+          </div>
+          <div style={{ fontSize: 11.5, color: T.ink3 }}>The fundraiser can change these too, from their own manage link. The page address never changes.</div>
+        </div>
+      ) : (
+        <div>
+          <button style={btn(false)} data-testid="p2p-fundraiser-edit"
+            onClick={() => setEdit({ name: f.name, story: f.story || "", imageUrl: f.imageUrl || "", goal: f.goalCents ? String(f.goalCents / 100) : "" })}>
+            Edit their page
+          </button>
+        </div>
+      ))}
+
+      <div>
+        <div style={h}>Coach {f.name.split(" ")[0]}</div>
+        <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 8, lineHeight: 1.5 }}>
+          Drafts for you to send to the fundraiser yourself. Steward sends none of them: copy one, or open it in your own mail{f.email ? ` addressed to ${f.email}` : ""}.
+        </div>
+        {drafts.map(d => (
+          <details key={d.key} data-testid="p2p-coach-draft" style={{ borderTop: "1px solid " + T.bg3, padding: "6px 0" }}>
+            <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: T.ink }}>{d.label} <span style={{ fontWeight: 400, color: T.ink3 }}>· {d.when}</span></summary>
+            <div style={{ fontSize: 12.5, color: T.ink, margin: "6px 0 4px" }}><strong>Subject:</strong> {d.subject}</div>
+            <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 12.5, color: T.ink, margin: 0, background: T.white,
+              border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px" }}>{d.body}</pre>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              <button style={btn(false)} onClick={() => copy(d)} data-testid="p2p-coach-copy">{copied === d.key ? "Copied" : "Copy"}</button>
+              {f.email && <a href={coachMailto(f.email, d)} style={{ ...btn(false), textDecoration: "none" }} data-testid="p2p-coach-mailto">Open in my mail</a>}
+            </div>
+          </details>))}
+      </div>
+    </div>
+  );
+}
+
 export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNavigate, openPageId = "" }) {
   const [pages, setPages] = useState(null);
   const [pageId, setPageId] = useState("");
@@ -78,6 +178,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   const [undo, setUndo] = useState(null);
   const [openRaised, setOpenRaised] = useState(false);
   const [newTeam, setNewTeam] = useState(null);
+  const [openF, setOpenF] = useState("");
 
   useEffect(() => {
     apiFetch("/giving-pages")
@@ -99,7 +200,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   };
   useEffect(() => { load(); }, [pageId]);
 
-  const takedown = async (kind, id, status, name) => {
+  const takedown = async (kind, id, status, name, prevStatus = "") => {
     setMsg(""); setUndo(null);
     try {
       const r = kind === "team"
@@ -108,7 +209,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
       setMsg(r.sentence || (status === "archived"
         ? `${name} is off the public site. Past gifts still count.`
         : `${name} is back up.`));
-      setUndo({ kind, id, name, status: status === "archived" ? "active" : "archived" });
+      setUndo(prevStatus === "pending" ? null : { kind, id, name, status: status === "archived" ? "active" : "archived" });
       load();
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
@@ -118,6 +219,19 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
       await apiFetch(`/giving-pages/${pageId}/teams`, { method: "POST", body: JSON.stringify(newTeam) });
       setNewTeam(null); load();
     } catch (e) { setMsg(errorMessage(e, "That team did not save.")); }
+  };
+  // PARITY-2 Part 2: the page's own settings for its peer-to-peer side.
+  const savePage = async (body, done) => {
+    setMsg("");
+    try { await apiFetch(`/giving-pages/${pageId}`, { method: "PUT", body: JSON.stringify(body) }); setMsg(done); load(); }
+    catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+  const setCaptain = async (teamId, captainFundraiserId) => {
+    setMsg("");
+    try {
+      const r = await apiFetch(`/p2p-teams/${teamId}`, { method: "PUT", body: JSON.stringify({ captainFundraiserId: captainFundraiserId || null }) });
+      setMsg(r.sentence || "Saved."); load();
+    } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
   };
   const turnOn = async () => {
     setMsg("");
@@ -206,7 +320,40 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
                 else setMsg(url);
               }}>Copy link</button>
           </div>}
+          {/* PARITY-2 Part 2: approval and the countdown's date. */}
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginTop: 10, fontSize: 12.5, color: T.ink2 }}>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" data-testid="p2p-approval" checked={!!d.page.requiresApproval} disabled={isReadOnly || !isAdmin}
+                onChange={e => savePage({ p2pRequiresApproval: e.target.checked }, e.target.checked
+                  ? "New fundraiser pages now wait for approval before they go public."
+                  : "New fundraiser pages go public as soon as they are made.")} />
+              New fundraiser pages need approval
+            </label>
+            {d.page.campaignEndDate
+              ? <span>The public countdown runs to the campaign's end, {displayDate(d.page.campaignEndDate) || d.page.campaignEndDate}.</span>
+              : <label style={{ display: "flex", gap: 6, alignItems: "center" }}>Ends on
+                  <input type="date" data-testid="p2p-ends-on" value={d.page.endsOn || ""} disabled={isReadOnly || !isAdmin} style={inp}
+                    onChange={e => savePage({ endsOn: e.target.value }, e.target.value ? "The public page counts down to that date." : "The countdown is off.")} />
+                </label>}
+          </div>
         </Card>
+
+        {/* PARITY-2 Part 2: WAITING FOR APPROVAL. */}
+        {d.pending && d.pending.length > 0 && (
+          <Card style={{ padding: "16px 18px" }} data-testid="p2p-pending">
+            <div style={h}>{d.pending.length} {d.pending.length === 1 ? "page is" : "pages are"} waiting for approval</div>
+            <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10, lineHeight: 1.5 }}>{d.pendingSentence}</div>
+            {d.pending.map(f => (
+              <div key={f.id} data-testid="p2p-pending-row" style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 13, color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3 }}>
+                <strong style={{ minWidth: 160 }}>{f.name}</strong>
+                {f.teamName && <span style={{ color: T.ink3 }}>{f.teamName}</span>}
+                <span style={{ color: T.ink2, flex: "1 1 220px", fontSize: 12.5 }}>{f.story ? (f.story.length > 140 ? f.story.slice(0, 140) + "…" : f.story) : "No story yet."}</span>
+                {!isReadOnly && isAdmin && <span style={{ display: "flex", gap: 6 }}>
+                  <button style={btn(true)} data-testid="p2p-approve" onClick={() => takedown("fundraiser", f.id, "active", f.name, "pending")}>Approve</button>
+                  <button style={btn(false)} data-testid="p2p-hide" onClick={() => takedown("fundraiser", f.id, "archived", f.name, "pending")}>Hide</button>
+                </span>}
+              </div>))}
+          </Card>)}
 
         {/* WHO HAS NOT RAISED ANYTHING YET. First, because it is the list
             somebody actually does something about. */}
@@ -235,6 +382,17 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
               <strong style={{ minWidth: 170 }}>{tm.name}{tm.status === "archived" ? " (taken down)" : ""}</strong>
               {goalLine(tm.raisedCents, tm.goalCents)}
               <span style={{ color: T.ink3 }}>{tm.members} {tm.members === 1 ? "fundraiser" : "fundraisers"}</span>
+              {/* PARITY-2 Part 2: the captain: whoever started the team, or
+                  whoever staff hand it to. */}
+              {!isReadOnly && isAdmin
+                ? <label style={{ color: T.ink3, display: "flex", gap: 6, alignItems: "center" }}>Captain
+                    <select value={tm.captainId || ""} data-testid="p2p-team-captain" style={inp}
+                      onChange={e => setCaptain(tm.id, e.target.value)}>
+                      <option value="">None</option>
+                      {d.fundraisers.filter(f => f.teamId === tm.id && f.status !== "archived").map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                  </label>
+                : tm.captainName && <span style={{ color: T.ink3 }}>Captain: {tm.captainName}</span>}
               {!isReadOnly && isAdmin && <RowMenu
                 label={tm.status === "active" ? "Take it down" : "Put it back"}
                 confirmText={tm.status === "active"
@@ -254,26 +412,40 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
         <Card style={{ padding: "16px 18px" }} data-testid="p2p-fundraisers">
           <div style={h}>Fundraisers</div>
           <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10, lineHeight: 1.5 }}>
-            In the order the public leaderboard shows them. Raised is a live sum over the gifts each one brought in, in cents.
+            In the order the public leaderboard shows them. Raised is a live sum over the gifts each one brought in, in cents; click it for the gifts. Open a name for their gifts, their page and words to coach them with.
           </div>
           {!d.fundraisers.length && <div style={{ fontSize: 13, color: T.ink3 }}>
             Nobody has signed up yet. The button is on the public page.
           </div>}
           {d.fundraisers.map((f, i) => (
             <div key={f.id} data-testid="p2p-fundraiser-row" style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: 13,
-              color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap", opacity: f.status === "active" ? 1 : 0.55 }}>
+              color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap", opacity: f.status === "active" || openF === f.id ? 1 : 0.55 }}>
               <span style={{ color: T.ink3, width: 22 }}>{i + 1}</span>
-              <strong style={{ minWidth: 160 }}>{f.name}{f.status === "archived" ? " (taken down)" : ""}</strong>
-              {goalLine(f.raisedCents, f.goalCents)}
+              <button type="button" data-testid="p2p-fundraiser-open" aria-expanded={openF === f.id}
+                onClick={() => setOpenF(x => (x === f.id ? "" : f.id))}
+                style={{ minWidth: 160, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer",
+                         font: "inherit", fontWeight: 700, color: T.ink, textDecoration: "underline", textDecorationColor: T.bg3 }}>
+                {f.name}{f.status === "archived" ? " (taken down)" : f.status === "pending" ? " (waiting for approval)" : ""}
+              </button>
+              {/* PARITY-2 Part 2: Raised opens the gifts behind it. */}
+              <span>
+                <Figure variant="cell" kind="money" value={f.raisedCents / 100} label={`Raised by ${f.name}`}
+                  definition="Every gift given through this fundraiser's own page, added up to the cent."
+                  source={{ key: "fundraiser-gifts", params: { fundraiser: f.id } }} />
+                {f.goalCents ? <span style={{ color: f.raisedCents > f.goalCents ? T.greenDk : T.ink3 }}>{f.raisedCents > f.goalCents ? `, goal ${money(f.goalCents)} passed` : ` of ${money(f.goalCents)}`}</span> : null}
+              </span>
               {f.teamName && <span style={{ color: T.ink3 }}>{f.teamName}</span>}
               <span style={{ color: T.ink3 }}>{f.giftCount} {f.giftCount === 1 ? "gift" : "gifts"}</span>
               {!f.isPerson && <span style={{ color: T.ink3 }} title="This fundraiser is not matched to a person in the CRM, so no soft credit is being recorded for them. Matching is by exact email only.">no record matched</span>}
               {!isReadOnly && isAdmin && <RowMenu
-                label={f.status === "active" ? "Take it down" : "Put it back"}
+                label={f.status === "active" ? "Take it down" : f.status === "pending" ? "Approve" : "Put it back"}
                 confirmText={f.status === "active"
                   ? `${f.name}'s page comes off the public site and stops taking gifts. Their past gifts still count. You can put it back.`
+                  : f.status === "pending" ? `${f.name}'s page goes public and can take gifts.`
                   : `${f.name}'s page goes back on the public site and can take gifts again.`}
-                onConfirm={() => takedown("fundraiser", f.id, f.status === "active" ? "archived" : "active", f.name)} />}
+                onConfirm={() => takedown("fundraiser", f.id, f.status === "active" ? "archived" : "active", f.name, f.status)} />}
+              {openF === f.id && <FundraiserDetail f={f} page={d.page} orgSlug={orgSlug} canEdit={!isReadOnly && isAdmin}
+                onSaved={m => { setMsg(m); load(); }} />}
             </div>))}
         </Card>
       </>}

@@ -114,6 +114,33 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **Every new Fundraising part id goes in `FR_LEGACY`**, or a link to it silently opens the
   Overview. (BUILD-103)
 
+### PARITY-2 Part 2: the peer-to-peer page
+- **The donor count beside the thermometer is computed once, on the server, over the same rows the
+  bar sums** (the page's gifts, or its campaign's when it counts toward one): each person once,
+  `amount > 0`. `DONOR_COUNT_SENTENCE` in `shared/p2p.js` is its definition. (PARITY-2)
+- **The countdown runs to the campaign's end date, or `giving_pages.ends_on` on a page with no
+  campaign**, through `countdownSentence` in `shared/campaignPage.js`, in the org's own day. (PARITY-2)
+- **One board query per kind (`p2pTeamBoard`, `p2pIndividualBoard` in routes/crm.js)** feeds both
+  the top ten on the page and "See all" (`GET /org/:org/giving-page/:page/leaderboard`), so they
+  cannot rank differently. Public money on these pages is net of a covered fee, like the page's
+  own bar. (PARITY-2)
+- **A team page is a mode, `?team=<slug>`, never a path segment**, so it cannot collide with a
+  fundraiser's slug. It shows names and totals only, never who gave. (PARITY-2)
+- **Whoever starts a team at sign-up is its captain** (`p2p_teams.captain_fundraiser_id`); staff
+  can hand it to another member of the same team, and only to one. (PARITY-2)
+- **Recent donors on a fundraiser's page go through `publicGiftLine`, amounts on**: a first name
+  only where `gifts.show_name_publicly` is true, otherwise Anonymous. The form asks that question
+  in its own box, separate from "let the fundraiser see my name". (PARITY-2)
+- **"New fundraiser pages need approval" (`giving_pages.p2p_requires_approval`) is off by
+  default.** On, a sign-up is written `status = 'pending'`, which is never public and takes no
+  gift (every public read and the donate route filter `status = 'active'`), and its email says it
+  is waiting rather than live. (PARITY-2)
+- **Coaching drafts (`coachDrafts` in `shared/p2p.js`) are words staff send a fundraiser
+  themselves**, by Copy or a `mailto:` to the fundraiser. Steward sends none of them and nothing
+  is scheduled. The function takes no donor. (PARITY-2)
+- **A fundraiser's Raised on the staff screen is a `<Figure>` on `fundraiser-gifts`**, the same set
+  `GET /peer-fundraisers/:id/gifts` lists and foots. (PARITY-2)
+
 ### GIVE-2 — the form that raises more
 - **Never pin Checkout to `payment_method_types`.** Omitting it is what turns on Stripe's dynamic
   payment methods, and it is the ONLY way to be certain nothing is offered that the org's account
