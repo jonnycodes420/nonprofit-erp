@@ -6425,6 +6425,22 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_bids_item ON auction_bids (item_id, amount DESC, created_at, id)`);
 
+  // ── PARITY-3 · VOLUNTEERS, AND THE TWO LEFTOVERS FROM PARITY-1 ───────────
+  // 6a. A birthday is a month and a day; the year is optional, because most
+  // people tell a charity the day and not their age (shared/birthday.js).
+  // Month and day are set together or not at all, enforced here as well as by
+  // the route, so an import cannot leave half a birthday behind.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS birth_month SMALLINT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS birth_day SMALLINT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS birth_year SMALLINT`);
+  await pool.query(`DO $$ BEGIN
+    ALTER TABLE donors ADD CONSTRAINT donors_birthday_whole CHECK (
+      (birth_month IS NULL AND birth_day IS NULL AND birth_year IS NULL)
+      OR (birth_month BETWEEN 1 AND 12 AND birth_day BETWEEN 1 AND 31
+          AND (birth_year IS NULL OR birth_year BETWEEN 1900 AND 2100)));
+  EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_birthday ON donors (org_id, birth_month, birth_day) WHERE birth_month IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

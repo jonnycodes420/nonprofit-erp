@@ -2986,6 +2986,18 @@ async function main() {
     console.log(`[seed] engagement and generosity scored for ${scored} people`);
   }
 
+  // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
+  // from no statistics, guesses one row per table, and the Mid group page took
+  // 31.8 seconds on a fresh seed (0.13 after). The same list the server runs
+  // after every import (middleware/analyzeAfterImport.js).
+  {
+    const { TABLES } = require("../middleware/analyzeAfterImport");
+    for (const t of TABLES) {
+      try { await q(`ANALYZE ${t}`); } catch (e) { console.warn(`[seed] ANALYZE ${t}: ${e.message}`); }
+    }
+    console.log(`[seed] analysed ${TABLES.length} tables so the first filter is planned from real counts`);
+  }
+
   console.log(`\n─── Harborlight Youth Collective (${ORG}) ───`);
   console.log(`  donors ${sum.donors} · gifts ${sum.gifts} · lifetime $${Math.round(sum.dollars).toLocaleString()}`);
   console.log(`  top 200 donors carry ${((top200.d / sum.dollars) * 100).toFixed(1)}% of lifetime revenue (FEP shape)`);

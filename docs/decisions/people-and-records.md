@@ -158,6 +158,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   set of sign-ups, never a person: every member is their own record with their own hours, and
   capacity is still decided by the database, so a group of twelve at an eight-place shift gets
   eight confirmed and four waitlisted. (VOL-2)
+- **A birthday is a month and a day; the year is optional.** `donors.birth_month/birth_day/birth_year`,
+  whole or empty by a CHECK, one parser for every door (`shared/birthday.js`: the profile, both import
+  paths, the server's re-check). A cell it cannot read is refused, never guessed. February 29 is
+  remembered on the 28th in a year without one, and the Birthday journey fires on the org's own date. (PARITY-3)
 - **Count volunteer hours in integer hundredths.** A shift must be more than 0 and at most 24 hours, enforced
   by the route and a CHECK. An imported shift is unique on (person, day, hours, role). (BUILD-98)
 - **Staff copy the volunteer self-log link; Steward never sends it.** It is an HMAC over org, person and a

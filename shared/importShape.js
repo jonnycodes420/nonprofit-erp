@@ -7,6 +7,7 @@
 import { membershipColumns } from "./membershipImport.js";
 import { parseExclusionValue } from "./customFieldShape.js";
 import { tokenizeText, containsTokenRun, eitherContainsTokenRun } from "./textMatch.js";
+import { parseBirthday } from "./birthday.js";
 // Pure, JSX/React-free import-shape detection + transaction grouping — kept in a
 // lib (like client/src/lib/money.js) so the Node suite can unit-test it directly
 // (tests/import-shape.test.js dynamic-imports it). Donors.jsx imports these so
@@ -503,6 +504,9 @@ const DECEASED_HDR = /^(is\s+)?deceased\??$/i;
 // WRITTEN (a capacity is often a range) and never folds them into its own
 // wealth score. A plain "Score" or "Rating" is not claimed: it needs a
 // vendor or "wealth" in front of it.
+// PARITY-3 6a — a birthday column. Month and day are what matter; a year
+// rides along when the file has one (shared/birthday.js).
+export const BIRTHDAY_HDR = /^(birthday|birth[ _-]*date|date[ _-]*of[ _-]*birth|dob|birthdate|bday)$/;
 export const WEALTH_HDR = {
   rating:   /^(ds|donor ?search|iwave|wealth)[ _-]*(rating|score)$/,
   capacity: /^((ds|donor ?search|iwave|wealth)[ _-]*(estimated[ _-]*)?|estimated[ _-]*|gift[ _-]*)capacity([ _-]*range)?$/,
@@ -1551,6 +1555,8 @@ export function autoDetectTxMapping(headers, rows) {
                 softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"",
                 // BUILD-98 Part 6 — a wealth screen the old CRM already paid for.
                 wealthRating:"",wealthCapacity:"",wealthDate:"",
+                // PARITY-3 6a — the person's birthday (month and day; year optional).
+                birthday:"",
                 // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, and
                 // the mapper has to be able to say so. A row carrying an ask
                 // amount and an open stage is money that has NOT arrived; without
@@ -1592,6 +1598,7 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.wealthRating   && WEALTH_HDR.rating.test(hl))   map.wealthRating = h;
     if (!map.wealthCapacity && WEALTH_HDR.capacity.test(hl)) map.wealthCapacity = h;
     if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
+    if (!map.birthday       && BIRTHDAY_HDR.test(hl))        map.birthday = h;
     if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
     if (!map.phone    && /^(phone|phone.?number|telephone|mobile|cell)$/.test(hl))     map.phone    = h;
     if (!map.address  && /^(address|street(.?address)?|address.?1|mailing.?address)$/.test(hl)) map.address = h;
@@ -2342,6 +2349,10 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const _ws = wealthScreenOf({ rating: txMap.wealthRating && row[txMap.wealthRating], capacity: txMap.wealthCapacity && row[txMap.wealthCapacity],
       date: txMap.wealthDate && row[txMap.wealthDate], headers: [txMap.wealthRating, txMap.wealthCapacity, txMap.wealthDate] });
     if (_ws && !donor.wealthScreen) donor.wealthScreen = _ws;
+    if (txMap.birthday && row[txMap.birthday] && !donor.birthday) {
+      const _bd = parseBirthday(row[txMap.birthday]);
+      if (_bd) donor.birthday = _bd;
+    }
 
     const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
     const markers = detectNoteMarkers(noteText);
@@ -3492,6 +3503,7 @@ export const STANDARD_DONOR_FIELDS = [
   { key: "wealthRating",   label: "Wealth screen rating",   aliases: ["ds rating", "donorsearch rating", "donor search rating", "iwave score", "iwave rating", "wealth rating", "wealth score"] },
   { key: "wealthCapacity", label: "Wealth screen capacity", aliases: ["ds capacity", "donorsearch capacity", "iwave capacity", "wealth capacity", "estimated capacity", "gift capacity", "capacity range"] },
   { key: "wealthDate",     label: "Wealth screen date",     aliases: ["ds date", "donorsearch date", "iwave date", "wealth screen date", "screening date"] },
+  { key: "birthday",   label: "Birthday",     aliases: ["birthday", "birth date", "birthdate", "date of birth", "dob", "bday"] },
   // The flag family (BUILD-58/BUILD-80) — detectExclusionColumn routes these;
   // they are here so the DROPDOWN shows them as standard targets too.
   { key: "doNotMail",    label: "Do not mail",    aliases: ["do not mail", "dnm", "no mail"], flag: true },
@@ -4099,6 +4111,9 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     { const _ws = wealthScreenOf({ rating: get("wealthRating"), capacity: get("wealthCapacity"), date: get("wealthDate"),
         headers: [col("wealthRating"), col("wealthCapacity"), col("wealthDate")] });
       if (_ws) d.wealthScreen = _ws; }
+    { const _bc = cellOf("birthday");
+      const _bd = _bc == null || _bc === "" ? null : parseBirthday(_bc);
+      if (_bd) d.birthday = _bd; }
     const xid = get("donorId");
     if (xid) d.externalDonorId = xid;
     if (d.email) { const { value } = normalizeEmail(d.email); d.email = value || d.email; }

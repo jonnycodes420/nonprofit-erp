@@ -141,6 +141,7 @@ const wrapImport = fn => (req, res, next) => Promise.resolve(fn(req, res, next))
 // was asking for it first. Six real emails instead, in the org's own words and
 // colours.
 const templatesMod = () => import("../shared/emailTemplates.js");
+const birthdayMod = () => import("../shared/birthday.js");   // PARITY-3 6a
 
 app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -4409,6 +4410,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // the old system's id" is the claim the move is sold on.
   let matchedByExternalId = 0, matchedByEmail = 0;
   const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
+  const matchedBirthdayFills = []; // PARITY-3 6a: matched people with no birthday on file yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
@@ -4581,6 +4583,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     // only: a re-run never clobbers what is already on the record.
     const cfv = donorCfById.get(idx);
     if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
+    // PARITY-3 6a — and a birthday, fill-missing the same way.
+    if (d.birthday && typeof d.birthday === "object") matchedBirthdayFills.push({ donorId: priorId, b: d.birthday });
     // A person matched by email who ALSO carries a source id teaches Steward
     // that id, so the NEXT export matches on the stable key even if she
     // corrects the address in the old system first. Fill-missing only, and
@@ -4713,6 +4717,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         if (w) await runTx(txc, `UPDATE donors SET wealth_screen_source=?, wealth_screen_rating=?, wealth_screen_capacity=?, wealth_screen_date=?
                                    WHERE id=? AND org_id=?`, [w.source, w.rating, w.capacity, w.date, d._id, orgId]);
       }
+      // PARITY-3 6a — a birthday the file carried, re-checked here rather than
+      // trusted from the browser. Half a birthday, or February 30, is dropped.
+      const _B = await birthdayMod();
+      for (const d of batch) {
+        const b = d.birthday;
+        if (!b || typeof b !== "object") continue;
+        const y = b.year == null || b.year === "" ? null : Number(b.year);
+        if (!_B.validBirthday(Number(b.month), Number(b.day), y)) continue;
+        await runTx(txc, `UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=?`,
+          [Number(b.month), Number(b.day), y, d._id, orgId]);
+      }
     } else {
       console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
@@ -4736,6 +4751,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     await runTx(txc,
       `UPDATE donors SET external_donor_id = ? WHERE id=? AND org_id=? AND external_donor_id IS NULL`,
       [f.externalDonorId, f.donorId, orgId]);
+  }
+  if (matchedBirthdayFills.length) {
+    const _B = await birthdayMod();
+    for (const f of matchedBirthdayFills) {
+      const y = f.b.year == null || f.b.year === "" ? null : Number(f.b.year);
+      if (!_B.validBirthday(Number(f.b.month), Number(f.b.day), y)) continue;
+      await runTx(txc,
+        `UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=? AND birth_month IS NULL`,
+        [Number(f.b.month), Number(f.b.day), y, f.donorId, orgId]);
+    }
   }
 
   // ── Build gift+interaction records ──
@@ -5295,6 +5320,24 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     const refused = await donorRemovalProblem(req.user.orgId, req.params.id, req.body.personTypes);
     if (refused) return res.status(409).json(refused);
   }
+  // PARITY-3 6a — the birthday, read once and refused before any write. Only
+  // touched when the request carries it, so older callers never clear one.
+  // { month, day, year? }, a typed cell ("May 22"), or null / "" to clear.
+  let birthday;
+  if (req.body.birthday !== undefined) {
+    const B = await birthdayMod();
+    const v = req.body.birthday;
+    if (v === null || v === "" || (typeof v === "object" && !v.month && !v.day && !v.year)) birthday = null;
+    else if (typeof v === "object") {
+      const year = v.year === "" || v.year == null ? null : Number(v.year);
+      if (!B.validBirthday(Number(v.month), Number(v.day), year))
+        return res.status(400).json({ error: "A birthday needs a real month and day. The year is optional." });
+      birthday = { month: Number(v.month), day: Number(v.day), year };
+    } else {
+      birthday = B.parseBirthday(v);
+      if (!birthday) return res.status(400).json({ error: "A birthday needs a real month and day, like May 22. The year is optional." });
+    }
+  }
 
   const affected = await run(
     `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
@@ -5304,6 +5347,11 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+  if (birthday !== undefined) {
+    await run(`UPDATE donors SET birth_month=?, birth_day=?, birth_year=? WHERE id=? AND org_id=?`,
+      [birthday ? birthday.month : null, birthday ? birthday.day : null, birthday ? birthday.year : null,
+       req.params.id, req.user.orgId]);
+  }
 
   // BUILD-94 Part 2 — the person's type(s). Only touched when the request
   // carries the field, so every existing caller leaves it alone; a caller that
@@ -10835,6 +10883,7 @@ function journeyEventKey(triggerKey, opts = {}, today = "") {
     case "stage_change": case "became_prospect": return `stage:${opts.toStage || ""}:${today}`;
     case "joined_group": return `group:${opts.groupId || ""}:${today}`;
     case "giving_anniversary": return `anniversary:${String(today).slice(0, 4)}`;
+    case "birthday": return `birthday:${String(today).slice(0, 4)}`;   // PARITY-3 6a: once a year
     case "attended_event": return opts.eventId ? `event:${opts.eventId}` : null;
     default: return null;
   }
@@ -10985,12 +11034,13 @@ registerJourneyEngine(maybeStartJourney);
 // idempotent: the group look remembers who it has seen, and every plan holds
 // its event key. Latency: a group join that is not a gift is seen within the
 // hour; an anniversary fires on the day, within the hour after midnight in
-// the org's own timezone. Birthdays are not a trigger: there is no birth date
-// on a person record.
-async function runJourneySweep() {
+// the org's own timezone. PARITY-3 6a: a birthday fires the same way, on the
+// org's own date, for people with a birthday on file (shared/birthday.js).
+async function runJourneySweep(onlyOrgId = null) {
   const orgs = await query(
     `SELECT DISTINCT org_id FROM cultivation_templates
-      WHERE journey_enabled=true AND archived_at IS NULL AND trigger_key IN ('joined_group','giving_anniversary')`);
+      WHERE journey_enabled=true AND archived_at IS NULL AND trigger_key IN ('joined_group','giving_anniversary','birthday')
+        ${onlyOrgId ? "AND org_id = ?" : ""}`, onlyOrgId ? [onlyOrgId] : []);
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
     try {
@@ -11013,10 +11063,36 @@ async function runJourneySweep() {
           if (out && out.started) fired++;
         }
       }
+      // PARITY-3 6a — birthdays, on the org's own date. February 29 is
+      // remembered on the 28th in a year without one (shared/birthday.js).
+      const [bdArmed] = await query(
+        `SELECT 1 FROM cultivation_templates WHERE org_id=? AND trigger_key='birthday'
+            AND journey_enabled=true AND archived_at IS NULL LIMIT 1`, [orgId]);
+      if (bdArmed) {
+        const B = await birthdayMod();
+        const mm = Number(today.slice(5, 7));
+        const born = await query(
+          `SELECT id, birth_month, birth_day FROM donors
+            WHERE org_id=? AND deleted_at IS NULL AND birth_month=? AND birth_day IN (?, 29)`,
+          [orgId, mm, Number(today.slice(8, 10))]);
+        for (const r of born) {
+          if (!B.isBirthdayOn(Number(r.birth_month), Number(r.birth_day), today)) continue;
+          const out = await maybeStartJourney(orgId, r.id, "birthday", { today });
+          if (out && out.started) fired++;
+        }
+      }
     } catch (e) { console.error(`[journey] sweep ${orgId}:`, e.message); }
   }
   return fired;
 }
+// PARITY-3 6a — the morning look, run now for the caller's own org only, so
+// a birthday or anniversary journey can be checked without waiting an hour.
+// It starts only what the hourly sweep would start anyway (every plan holds
+// its event key, so running it twice starts nothing twice).
+app.post("/journeys/run-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const fired = await runJourneySweep(req.user.orgId);
+  res.json({ fired });
+}));
 if (process.env.DISABLE_BACKGROUND_TICKS !== "1") {
   setTimeout(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 90000);
   setInterval(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 60 * 60 * 1000);

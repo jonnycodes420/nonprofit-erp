@@ -72,6 +72,9 @@ export const TRIGGERS = [
     sentence: "Starts when somebody joins the group you pick. Added by hand, it starts at once; for a group by rule, it starts when a gift moves them in, or at the next morning's check." },
   { key: "giving_anniversary", label: "The anniversary of their first gift",
     sentence: "Starts each year on the day of somebody's first gift, checked every morning." },
+  // PARITY-3 6a — the one PARITY-1 had to skip: there was no birth date.
+  { key: "birthday",       label: "Their birthday",
+    sentence: "Starts each year on somebody's birthday, by your organisation's date, checked every morning. Only people with a birthday on file." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own — you choose who goes in it." },
 ];

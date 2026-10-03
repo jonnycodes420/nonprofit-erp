@@ -37,6 +37,7 @@ import { WhyPanel } from "./WhyAnswer";
 import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { ProfileGroups } from "./Groups";
+import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -375,6 +376,7 @@ function EditDonorModal({donor,onSave,onClose}){
     stage:donor.stage||"cultivate",status:donor.status||"new",
     city:donor.city||"",state:donor.state||"",zip:donor.zip||"",
     employer:donor.employer||"",
+    bMonth:donor.birthday?String(donor.birthday.month):"",bDay:donor.birthday?String(donor.birthday.day):"",bYear:donor.birthday&&donor.birthday.year?String(donor.birthday.year):"",
   });
   const[loading,setLoading]=useState(false);
   const[err,setErr]=useState("");
@@ -385,7 +387,10 @@ function EditDonorModal({donor,onSave,onClose}){
     setLoading(true);setErr("");
     try{
       const tags=form.tags.split(",").map(t=>t.trim()).filter(Boolean);
-      const res=await apiFetch(`/donors/${donor.id}`,{method:"PUT",body:JSON.stringify({...form,tags})});
+      if((form.bMonth&&!form.bDay)||(!form.bMonth&&form.bDay)||(form.bYear&&!form.bMonth)){setErr("A birthday needs both a month and a day. The year is optional.");setLoading(false);return;}
+      const{bMonth,bDay,bYear,...rest}=form;
+      const birthday=bMonth&&bDay?{month:Number(bMonth),day:Number(bDay),year:bYear?Number(bYear):null}:null;
+      const res=await apiFetch(`/donors/${donor.id}`,{method:"PUT",body:JSON.stringify({...rest,tags,birthday})});
       onSave(res);
     }catch(e){setErr(errorMessage(e, "Failed to save"));}
     setLoading(false);
@@ -405,6 +410,18 @@ function EditDonorModal({donor,onSave,onClose}){
             <input value={form.city} onChange={set("city")} placeholder="City" style={{...inp,flex:2}}/>
             <input value={form.state} onChange={set("state")} placeholder="State" style={{...inp,flex:1}}/>
             <input value={form.zip} onChange={set("zip")} placeholder="ZIP" style={{...inp,flex:1}}/>
+          </div>
+          {/* PARITY-3 6a — month and day; the year is optional. */}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Birthday</div>
+            <div style={{display:"flex",gap:8}}>
+              <select aria-label="Birthday month" data-testid="edit-birth-month" value={form.bMonth} onChange={set("bMonth")} style={{...inp,flex:2}}>
+                <option value="">Month</option>
+                {BIRTH_MONTHS.map((m,i)=><option key={m} value={String(i+1)}>{m}</option>)}
+              </select>
+              <input aria-label="Birthday day" data-testid="edit-birth-day" inputMode="numeric" value={form.bDay} onChange={set("bDay")} placeholder="Day" style={{...inp,flex:1}}/>
+              <input aria-label="Birth year (optional)" inputMode="numeric" value={form.bYear} onChange={set("bYear")} placeholder="Year (optional)" style={{...inp,flex:1.4}}/>
+            </div>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Stage</div>
@@ -3653,6 +3670,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
               {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.birthday&&<><dt style={{color:RAIL.dim}}>Birthday</dt><dd style={{margin:0}} data-testid="dp-birthday">{birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year)}</dd></>}
               {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
             </dl>
