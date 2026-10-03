@@ -198,6 +198,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   (`volunteer_qualifications`: skill, certification with expiry, tag), checks and waivers, application
   answers, and notes kept `internal` or shown to the volunteer on Your page. Each logged shift is on the
   timeline as Volunteer service. The glance line opens the same source. (PARITY-3)
+- **Make a volunteer through `makeVolunteer`, and only through it.** The profile's More > Make a
+  volunteer, Volunteers > Add a volunteer (which searches people on file and links the one picked)
+  and the Agent all call it. It never makes a person: it marks the Volunteer role and keeps ONE
+  approved `volunteer_applications` row on them (`via` staff, agent or page) with hours a week,
+  days and roles; a second call updates that row. That row is what puts them in the Volunteers
+  group. (FIX-24)
 - **A volunteer applies; a coordinator approves.** `volunteer_applications` holds what the public page
   sent and is not a person. Approve matches by email under `withAdvisoryLock('donor:org:email')`: one match
   is that person (a donor stays one record, now also a Volunteer); two or more and staff choose; none and

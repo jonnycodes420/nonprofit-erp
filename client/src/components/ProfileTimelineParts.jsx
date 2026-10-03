@@ -37,7 +37,26 @@ export const TIMELINE_FILTERS = [
   // PARITY-3 — a logged volunteer shift. Shown as a chip only on a record
   // that has one.
   ["service", "Volunteer service"],
+  // FIX-24 2a: a stage change is its own kind, never a Meeting. A chip only
+  // on a record that has one.
+  ["stage", "Stage changes"],
 ];
+
+// FIX-24 2a: A STAGE CHANGE, READ. Every writer stores "Moved <from> →
+// <to>: <why>" (or the older "Stage moved from <from> → <to>"). A missing old
+// stage was written as the word "null" before this build; it reads "Not set".
+const STAGE_WORD = { prospect: "Prospect", qualify: "Qualify", cultivate: "Cultivate", solicit: "Solicit", steward: "Steward", lapsed: "Lapsed" };
+export function stageWord(s) {
+  const k = String(s ?? "").trim();
+  if (!k || /^(null|undefined|none|not set)$/i.test(k)) return "Not set";
+  return STAGE_WORD[k.toLowerCase()] || k.charAt(0).toUpperCase() + k.slice(1);
+}
+export function stageMoveOf(note) {
+  const t = String(note || "").trim();
+  const m = t.match(/^Moved (.+?) → ([^:]+?)(?::\s*([\s\S]*))?$/) || t.match(/^Stage moved from (.+?) → (\S+)()$/);
+  if (!m) return null;
+  return { from: stageWord(m[1]), to: stageWord(m[2]), why: (m[3] || "").trim() };
+}
 const FILTER_KEYS = new Set(TIMELINE_FILTERS.map(f => f[0]));
 
 export function loadTimelinePrefs() {
@@ -78,6 +97,7 @@ export function isMassEmail(i) {
 // Email. A gift's own entry is the gift.
 export function interactionBucket(i) {
   const t = String(i?.type || "");
+  if (t === "stage_change") return "stage";   // FIX-24 2a: its own type, never a conversation
   if (t === "email") return "email";
   if (t === "note") return "note";
   if (t === "gift") return "gift";

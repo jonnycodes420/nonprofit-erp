@@ -5463,7 +5463,7 @@ app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAcces
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "stage_change",
-       `Stage moved from ${oldStage} → ${stage}`,
+       `Stage moved from ${oldStage || "Not set"} → ${stage}`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, userName]   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
     );
   } catch(e) { console.error("Stage change log:", e.message); }
@@ -9903,7 +9903,7 @@ app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWrite
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
       ["int_" + uuid().slice(0, 8), req.user.orgId, req.params.donorId, "stage_change",
-       `Moved ${fromStage} → ${toStage}: ${String(description).trim()}`,
+       `Moved ${fromStage || "Not set"} → ${toStage}: ${String(description).trim()}`,
        orgToday(await orgTz(req.user.orgId)), req.user.userId, officerName]);   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
   } catch (e) { console.error("move interaction log:", e.message); }
   res.status(201).json({ ok: true, moveId, stage: toStage, fromStage });
@@ -12740,7 +12740,8 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   res.json({
     donorId: d.id,
     engagement: row ? row.engagement : 0, generosity: row ? row.generosity : 0,
-    band: band.key, bandLabel: band.label, reason: row ? row.reason : null,
+    // FIX-24 2b: "the most recent touch N days ago" said for today, not for the day the scores ran.
+    band: band.key, bandLabel: band.label, reason: row ? engagementMod.reasonFor(row, orgToday(await orgTz(orgId))) : null,   // ORG_TZ_SEAM_OK
     computedFor: row ? row.computed_for : null, computedAt: row ? row.computed_at : null,
     parts: {
       engagement: parts.engagement.map(x => ({ ...x, label: W.TOUCH_POINTS[x.key].label, how: W.TOUCH_POINTS[x.key].how, one: W.TOUCH_POINTS[x.key].one, many: W.TOUCH_POINTS[x.key].many,
@@ -14743,7 +14744,7 @@ app.get("/donors/:id/volunteer-profile", requireAuth, wrap(async (req, res) => {
                               WHERE org_id=? AND person_id=? ORDER BY kind, lower(name)`, [orgId, d.id]);
   const creds = await query(`SELECT DISTINCT ON (kind) kind, signed_on, expires_on, reference FROM volunteer_credentials
                               WHERE org_id=? AND person_id=? AND superseded_at IS NULL ORDER BY kind, signed_on DESC`, [orgId, d.id]);
-  const apps = await query(`SELECT id, status, answers, availability, submitted_at, decided_at, decided_by_name FROM volunteer_applications
+  const apps = await query(`SELECT id, status, answers, availability, submitted_at, decided_at, decided_by_name, hours_per_week, roles, via FROM volunteer_applications
                              WHERE org_id=? AND person_id=? ORDER BY submitted_at DESC LIMIT 5`, [orgId, d.id]).catch(() => []);
   const notes = await query(`SELECT id, kind, body, note_date, visibility, created_by_name, created_at FROM volunteer_notes
                               WHERE org_id=? AND person_id=? ORDER BY created_at DESC LIMIT 100`, [orgId, d.id]);
@@ -14754,7 +14755,13 @@ app.get("/donors/:id/volunteer-profile", requireAuth, wrap(async (req, res) => {
     credentials: creds.map(c => ({ kind: c.kind, signedOn: c.signed_on, expiresOn: c.expires_on || null, reference: c.reference || null,
       ...VS.credentialState({ kind: c.kind, signedOn: c.signed_on, expiresOn: c.expires_on }, today) })),
     applications: apps.map(a => ({ id: a.id, status: a.status, answers: parse(a.answers) || [], availability: parse(a.availability) || [],
-      submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "" })),
+      submittedAt: a.submitted_at, decidedAt: a.decided_at, decidedBy: a.decided_by_name || "",
+      hoursPerWeek: a.hours_per_week != null ? Number(a.hours_per_week) : null, roles: parse(a.roles) || [], via: a.via || "page" })),
+    // FIX-24 Part 1: their volunteer record (makeVolunteer): the approved
+    // application, or null when they have none and are not on Volunteers yet.
+    record: (() => { const a = apps.find(x => x.status === "approved"); return a ? { id: a.id,
+      hoursPerWeek: a.hours_per_week != null ? Number(a.hours_per_week) : null, availability: parse(a.availability) || [],
+      roles: parse(a.roles) || [], via: a.via || "page", since: a.decided_at } : null; })(),
     notes: notes.map(n => ({ id: n.id, kind: n.kind, body: n.body, date: n.note_date, visibility: n.visibility || "internal",
       by: n.created_by_name || "", at: n.created_at })),
     sentences: {

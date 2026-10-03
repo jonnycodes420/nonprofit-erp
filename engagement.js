@@ -179,8 +179,22 @@ function reasonOf(w, byPart, lastDate, today) {
   if (!counted.length) return "No meeting, call, reply, event or volunteer shift in the last 24 months.";
   const say = x => `${x.n} ${x.n === 1 ? w.TOUCH_POINTS[x.k].one : w.TOUCH_POINTS[x.k].many}`;
   const top = counted.slice(0, 2).map(say).join(" and ");
+  return `${top.charAt(0).toUpperCase() + top.slice(1)} in the last 24 months${latestWords(lastDate, today)}.`;
+}
+// FIX-24 2b: "the most recent touch N days ago" was baked into the stored
+// reason on the day the scores ran, so a week later the profile said "16 days
+// ago" about something 23 days old. The stored reason ends with these words for
+// the day it ran; reasonFor re-says them for the day it is read.
+function latestWords(lastDate, today) {
+  if (!lastDate) return "";
   const ago = ageDays(today, lastDate);
-  return `${top.charAt(0).toUpperCase() + top.slice(1)} in the last 24 months, the latest ${ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}.`;
+  return `, the most recent touch ${ago <= 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}`;
+}
+function reasonFor(row, today) {
+  const r = row && row.reason;
+  if (!r) return null;
+  const last = row.last_touch ? civil(row.last_touch) : null;
+  return r.replace(/, the (?:latest|most recent touch) [^.,]*\.$/, `${latestWords(last, today)}.`);
 }
 
 // ── THE COMPUTE ─────────────────────────────────────────────────────────────
@@ -290,4 +304,4 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     sentence: `${own.sentence.replace(/: ask \$[\d,.]+\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
-module.exports = { touchRows, givingRows, generosityParts, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights };
+module.exports = { touchRows, givingRows, generosityParts, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };

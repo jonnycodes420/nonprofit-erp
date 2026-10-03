@@ -589,7 +589,9 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 4, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
               {personaBadge(p.personaName)}
               <span style={{ color: st.brass ? T.gold700 : T.ink3, fontWeight: st.brass ? 700 : 400 }}>{st.word}</span>
-              <span>· {fmtWhen(p.created_at)}</span>
+              {/* FIX-24 2d: the date the run happened, the one the sheet says
+                  ("Ran today, 4:58 PM"); the day it was asked only before it runs. */}
+              <span>· {fmtWhen((p.run && (p.run.finished_at || p.run.started_at)) || p.created_at)}</span>
             </div>
           </button>
         );

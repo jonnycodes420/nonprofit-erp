@@ -3042,7 +3042,7 @@ async function recordAutoMove(orgId, donorId, fromStage, toStage, description) {
     await run(
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,logged_by_name) VALUES (?,?,?,?,?,?,?)",
       ["int_" + uuid().slice(0, 8), orgId, donorId, "stage_change",
-       `Moved ${fromStage} → ${toStage}: ${description}`,
+       `Moved ${fromStage || "Not set"} → ${toStage}: ${description}`,
        orgToday(await orgTz(orgId)), AUTO_MOVE_OFFICER]);   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   } catch (e) { console.error("[smart-move] interaction log:", e.message); }
 }
@@ -3833,6 +3833,80 @@ async function markVolunteer(orgId, personId, client = null) {
     WHERE id=? AND org_id=?`;
   if (client) await runTx(client, sql, [personId, orgId]);
   else await run(sql, [personId, orgId]);
+}
+
+// ── FIX-24 Part 1 · MAKE A PERSON A VOLUNTEER ─────────────────────────────
+// The ONE server function behind "Make a volunteer" (the profile's More menu),
+// Volunteers > Add a volunteer when it links somebody already on file, and the
+// Agent's volunteer step (AGENT-2). It never makes a person: it takes the one
+// already on file, gives them the Volunteer role (markVolunteer), and keeps ONE
+// volunteer record on them, an approved volunteer_applications row with their
+// availability (hours a week, the days they can come) and roles. That row is
+// what the Volunteers group's rule reads (volunteer=1), so they are on
+// Volunteers the moment this returns. A second call updates that row.
+// `client`: inside a transaction (the Agent's run), the same writes on it.
+// Returns { error } or { personId, recordId, created, name, hoursPerWeek, availability, roles }.
+let VOL_DAYS = null;
+const VOL_DAYS_READY = import("./shared/volunteerApply.js").then(m => { VOL_DAYS = m.AVAILABILITY; return m; });
+function volunteerRecordFields(opts = {}) {
+  const errors = [];
+  let hoursPerWeek = null;
+  if (opts.hoursPerWeek !== undefined && opts.hoursPerWeek !== null && String(opts.hoursPerWeek).trim() !== "") {
+    const n = Number(String(opts.hoursPerWeek).trim());
+    if (!Number.isFinite(n) || n <= 0 || n > 80) errors.push("Hours a week is a number from 1 to 80.");
+    else hoursPerWeek = Math.round(n * 100) / 100;
+  }
+  const availability = [...new Set((Array.isArray(opts.availability) ? opts.availability : []).map(String).filter(a => VOL_DAYS.includes(a)))];
+  const rawRoles = Array.isArray(opts.roles) ? opts.roles : String(opts.roles || "").split(",");
+  const roles = [...new Set(rawRoles.map(r => String(r).trim().slice(0, 60)).filter(Boolean))].slice(0, 10);
+  return { errors, hoursPerWeek, availability, roles };
+}
+async function makeVolunteer(orgId, personId, opts = {}, who, client = null) {
+  await VOL_DAYS_READY;
+  const q = (sql, p) => client ? queryTx(client, sql, p) : query(sql, p);
+  const w = (sql, p) => client ? runTx(client, sql, p) : run(sql, p);
+  const f = volunteerRecordFields(opts);
+  if (f.errors.length) return { error: "bad_fields", message: f.errors[0] };
+  const [p] = await q("SELECT id, name, email, phone FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [personId, orgId]);
+  if (!p) return { error: "not_found", message: "That person is not on file." };
+  await markVolunteer(orgId, p.id, client);
+  const [had] = await q(`SELECT id, hours_per_week, availability, roles FROM volunteer_applications
+                          WHERE org_id=? AND person_id=? AND status='approved' ORDER BY decided_at DESC NULLS LAST LIMIT 1`, [orgId, p.id]);
+  let recordId, created = false;
+  if (had) {
+    recordId = had.id;
+    // Only what was given changes; a field left out keeps what it had.
+    await w(`UPDATE volunteer_applications SET
+               hours_per_week = CASE WHEN ? THEN ?::numeric ELSE hours_per_week END,
+               availability = CASE WHEN ? THEN ?::jsonb ELSE availability END,
+               roles = CASE WHEN ? THEN ?::jsonb ELSE roles END
+             WHERE id=? AND org_id=?`,
+      [opts.hoursPerWeek !== undefined, f.hoursPerWeek, opts.availability !== undefined, JSON.stringify(f.availability),
+       opts.roles !== undefined, JSON.stringify(f.roles), had.id, orgId]);
+  } else {
+    recordId = "vap_" + uuid().slice(0, 12);
+    created = true;
+    const via = String(who.id || "").startsWith("system:agent") ? "agent" : "staff";
+    await w(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,status,person_id,matched_existing,
+                                                 decided_at,decided_by,decided_by_name,created_by,created_by_name,hours_per_week,roles,via)
+             VALUES (?,?,?,?,?,'[]'::jsonb,?::jsonb,'approved',?,TRUE,NOW(),?,?,?,?,?,?::jsonb,?)`,
+      [recordId, orgId, p.name, String(p.email || "").toLowerCase(), p.phone || null, JSON.stringify(f.availability), p.id,
+       who.id, who.name, who.id, who.name, f.hoursPerWeek, JSON.stringify(f.roles), via]);
+  }
+  const [now] = await q("SELECT hours_per_week, availability, roles FROM volunteer_applications WHERE id=? AND org_id=?", [recordId, orgId]);
+  const parse = v => { try { return typeof v === "string" ? JSON.parse(v) : (v || []); } catch { return []; } };
+  return { personId: p.id, recordId, created, name: p.name,
+    hoursPerWeek: now && now.hours_per_week != null ? Number(now.hours_per_week) : null,
+    availability: parse(now && now.availability), roles: parse(now && now.roles) };
+}
+async function checkVolunteerFields(opts) { await VOL_DAYS_READY; return volunteerRecordFields(opts); }
+// The sentence a screen (or the Agent's step) says after makeVolunteer.
+function volunteerRecordSentence(r) {
+  const bits = [];
+  if (r.hoursPerWeek) bits.push(`${r.hoursPerWeek} ${r.hoursPerWeek === 1 ? "hour" : "hours"} a week`);
+  if (r.availability && r.availability.length) bits.push(r.availability.join(", "));
+  if (r.roles && r.roles.length) bits.push(`as ${r.roles.join(", ")}`);
+  return `${r.name} ${r.created ? "is now a volunteer, on the record they already had" : "was already a volunteer; their record is updated"}${bits.length ? ": " + bits.join(" · ") : ""}.`;
 }
 
 async function insertShift(orgId, personId, shift, { via, importKey = null, who }) {
@@ -10473,6 +10547,7 @@ require("./routes/volunteer").mount({
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
   volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
+  makeVolunteer, volunteerRecordSentence, checkVolunteerFields,
 });
 // MEMBERS-2 — "Your page" owns the supporter session, and VOL-1's
 // /volunteer/me exchanges an old volunteer link for one. It hands the minter

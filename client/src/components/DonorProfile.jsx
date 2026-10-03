@@ -2,12 +2,12 @@
 //
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
-import { useState, useEffect, useRef, useContext, useMemo } from "react";
+import { useState, useEffect, useRef, useContext, useMemo, useCallback } from "react";
 import { ScoreCard, useScores, SuggestedAskLine } from "./ScoreWhy";
 import { RoomToGiveBlock, PublicFilingBlock, usePublicFiling, PublicFilingLookupModal, ProspectBriefModal } from "./RoomToGive";
 import { useCanMajorGifts } from "../lib/majorGifts";
 import { FunderPanel } from "./FunderPanel";
-import { VolunteerPanel } from "./VolunteerPanel";
+import { VolunteerPanel, AddVolunteerModal } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
 import { apiFetch, API, getToken } from "../api";
 import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
@@ -16,6 +16,7 @@ import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
+import { stepAgainstProposals } from "../../../shared/nextStepAgree.js";   // FIX-24 2c
 import { renderCustomValue } from "../../../shared/customFieldShape";
 import { InboxNudge, useMailbox } from "./InboxConnect";
 import { RecordLink } from "./RecordLink";
@@ -1006,12 +1007,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // "what do I do next" can never answer with nothing while a follow-up or a
   // proposal sits open on the same screen.
   const [dpItemsLoaded,setDpItemsLoaded]=useState(false);
-  const [openProposals,setOpenProposals]=useState([]);
+  const [openProposals,setOpenProposalsRaw]=useState([]);
+  // FIX-24 2c: whether The Ask has read the proposals yet; until it has, the
+  // next step is shown as typed.
+  const [proposalsKnown,setProposalsKnown]=useState(false);
+  const setOpenProposals=useCallback(ps=>{setOpenProposalsRaw(ps);setProposalsKnown(true);},[]);
   const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
     setDpItems(Array.isArray(r.list)?r.list:[]);
     setDpThread((r.list||[]).find(x=>x.kind!=="task")||null);
   }).catch(()=>{}).finally(()=>setDpItemsLoaded(true));
-  useEffect(()=>{setDpItemsLoaded(false);setOpenProposals([]);loadDpThread();
+  useEffect(()=>{setDpItemsLoaded(false);setOpenProposalsRaw([]);setProposalsKnown(false);loadDpThread();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id]);
 
@@ -1763,6 +1768,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // PARITY-1 Part F: record a video thank-you; saving drafts the email.
   const [videoThanksOpen,setVideoThanksOpen]=useState(false);
   const [volOpen,setVolOpen]=useState(false);   // PARITY-3 Part 1: Volunteering, under More
+  // FIX-24 Part 1: "Make a volunteer" for somebody who is not one; once they
+  // are, the same item reads "Volunteer record" and opens it.
+  const [makeVolOpen,setMakeVolOpen]=useState(false);
+  const [madeVol,setMadeVol]=useState(false);
+  useEffect(()=>{setMadeVol(false);setMakeVolOpen(false);},[donor.id]);
+  const isVolunteer=madeVol||(donor.personTypes||[]).includes("volunteer");
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
@@ -2018,9 +2029,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 ...(canMajorGifts&&donor.kind==="organisation"?[["Look up public filing",()=>setFilingLookupOpen(true),isReadOnly,"dp-filing-lookup"]]:[]),
                 // PARITY-1 Part F: a short video from her; saving drafts the email, she sends it.
                 ["Record a video thank-you",()=>setVideoThanksOpen(true),isReadOnly||!donor.email||!!donor.deceased||!!donor.doNotContact,"dp-video-thanks"],
-                // PARITY-3 Part 1 — the volunteer record, for somebody with no hours yet
-                // (anyone with hours has it in the main column already).
-                ["Volunteering",()=>setVolOpen(true),false,"dp-volunteering"],
+                // PARITY-3 Part 1, FIX-24 Part 1: the volunteer record; for
+                // somebody who is not a volunteer yet, the form that makes them one.
+                isVolunteer?["Volunteer record",()=>setVolOpen(true),false,"dp-volunteering"]
+                  :["Make a volunteer",()=>setMakeVolOpen(true),isReadOnly,"dp-make-volunteer"],
                 // WHY-1 — only for a lapsed donor: the facts on their record
                 // before they stopped, and the one touch that fits.
                 ...(donor.stage==="lapsed"?[["Why did they stop?",()=>setWhyStopOpen(true),false,"dp-why-stop"]]:[]),
@@ -2043,6 +2055,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>
           )}
           {volOpen&&<Modal onClose={()=>setVolOpen(false)} width={760} ariaLabel={`Volunteering, ${donor.name}`}><VolunteerPanel donor={donor} isReadOnly={isReadOnly} always/></Modal>}
+          {makeVolOpen&&<AddVolunteerModal person={{id:donor.id,name:donor.name,email:donor.email,phone:donor.phone}} onClose={()=>setMakeVolOpen(false)} onDone={()=>{setMadeVol(true);if(onInteractionAdded)onInteractionAdded();}}/>}
           {videoThanksOpen&&<VideoThanksModal donor={{id:donor.id,name:donor.name}} onClose={()=>setVideoThanksOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
           {prospectBriefOpen&&<ProspectBriefModal donorId={donor.id} name={donor.name} onClose={()=>setProspectBriefOpen(false)} onSaved={()=>{if(onInteractionAdded)onInteractionAdded();}}/>}
           {filingLookupOpen&&<PublicFilingLookupModal donorId={donor.id} onClose={()=>setFilingLookupOpen(false)} onLoaded={r=>setPublicFiling(r)}/>}
@@ -2330,8 +2343,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </button>;
               })}
             </div>
-            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}}>
-              {STAGE_ACTION[donor.stage||"cultivate"]}
+            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}} data-testid="dp-ask-suggest">
+              {/* FIX-24 2c: The Ask says the same next step as the rail; the
+                  stage's general advice only when there is no open step. */}
+              {dpItems.length>0&&dpItems[0].nextStep?.label
+                ?`Next step: ${proposalsKnown?stepAgainstProposals(dpItems[0].nextStep.label,openProposals.length).label:dpItems[0].nextStep.label}.`
+                :STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
             {(() => {
               // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
@@ -3307,7 +3324,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   {dpItems.map(it=>(
                     <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                       <div style={{flex:"1 1 240px",minWidth:0}}>
-                        <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{it.nextStep.label}</div>
+                        {(()=>{
+                          // FIX-24 2c: with no proposal open, the step is to write it.
+                          const ag=proposalsKnown?stepAgainstProposals(it.nextStep.label,openProposals.length):{label:it.nextStep.label,changed:false};
+                          return <>
+                            <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{ag.label}</div>
+                            {ag.changed&&<div data-testid="dp-step-agree" style={{fontSize:12.5,color:T.ink3,lineHeight:1.5,marginBottom:4}}>{ag.why}</div>}
+                          </>;
+                        })()}
                         {it.suggestedAsk&&<SuggestedAskLine ask={it.suggestedAsk} style={{marginBottom:4}}/>}
                         <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
                           {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}

@@ -436,26 +436,19 @@ const SOURCES = {
     measure: () => "sum",
     amountKind: "days",
     params: { donor: "id:required", today: "date:required" },
-    sentence: (p, dd) => `Every call, meeting, email, ask and note logged with this person, most recent first. The figure is the whole days from the most recent one to ${dd(p.today)}; only that conversation carries the count, so the rows still add to it.`,
+    sentence: (p, dd) => `Every conversation with this person, most recent first: a meeting (logged, or on a connected calendar and held), a call, an email, an ask or a stewardship touch. A note is not a conversation, whoever wrote it, the Agent included, and a newsletter is not one either. The figure is the whole days from the most recent one to ${dd(p.today)}; only that conversation carries the count, so the rows still add to it.`,
     js: async (orgId, p) => {
-      const rows = await query(
-        `SELECT i.id, i.donor_id, i.type, i.note, i.date, i.logged_by_name
-           FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
-          WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL
-            AND i.type = ANY(?) AND i.date IS NOT NULL AND i.date <> ''
-          ORDER BY i.date DESC, i.id DESC LIMIT ?`,
-        [orgId, p.donor, CONVERSATION_TYPES, CONTACT_ROWS_MAX]);
+      // FIX-24 2b: the one rule (meetings.js conversationsWith).
+      const rows = await meetings.conversationsWith(orgId, p.donor, { limit: CONTACT_ROWS_MAX });
       return rows.map((r, i) => {
         const date = String(r.date).slice(0, 10);
-        // A conversation logged for a date still to come is not a negative
-        // gap; it is today.
         const gap = Math.max(0, orgTime.daysBetween(date, p.today) ?? 0);
-        const word = String(r.type || "");
+        const word = r.kind === "calendar" ? "Meeting, from a calendar" : String(r.type || "");
         return {
-          id: r.id, type: "interaction", donor_id: r.donor_id, name: r.note || "", date,
+          id: r.id, type: r.kind === "calendar" ? "meeting" : "interaction", donor_id: r.donor_id, name: r.note || "", date,
           amount: i === 0 ? gap : null,
           detail: [word ? word.charAt(0).toUpperCase() + word.slice(1) : null,
-                   r.logged_by_name ? `logged by ${r.logged_by_name}` : null].filter(Boolean).join(" · ") || null,
+                   r.who ? `logged by ${r.who}` : null].filter(Boolean).join(" · ") || null,
         };
       });
     },

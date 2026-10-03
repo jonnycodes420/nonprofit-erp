@@ -156,7 +156,16 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   const lc = status.row ? status.row.lifecycle : null;
   const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, d.id]);
   let step, why;
-  if (thread) { step = thread.next_step_label; why = `This is the open next step, due ${thread.due_date}.`; }
+  if (thread) {
+    step = thread.next_step_label; why = `This is the open next step, due ${thread.due_date}.`;
+    // FIX-24 2c: with no proposal open, the step cannot be "send the proposal".
+    const NA = await import("../shared/nextStepAgree.js");
+    const PS = await import("../shared/proposalShape.js");
+    const [{ n: openProps }] = await query(`SELECT COUNT(*)::int AS n FROM opportunities WHERE org_id = ? AND donor_id = ? AND proposal_stage = ANY(?::text[])`,
+      [orgId, d.id, PS.OPEN_STAGE_KEYS]);
+    const agreed = NA.stepAgainstProposals(step, openProps);
+    if (agreed.changed) { step = agreed.label; why = agreed.why; }
+  }
   else if (unthanked) { step = `thank them for their ${glanceLast ? fmt(glanceLast) + " " : ""}gift`; why = "Their latest gift has a thank-you waiting to be sent."; }
   else if (lc === "lapsed" || drifting) { step = "ask them back"; why = lc === "lapsed" ? DS.LIFECYCLES.lapsed.sentence : "They are past their usual gap between gifts."; }
   else if (lc === "new" && giftCount === 1) { step = "ask for a second gift"; why = "Their first gift was in the last 12 months and they have not given again."; }

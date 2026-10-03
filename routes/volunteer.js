@@ -25,6 +25,7 @@ const {
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
   volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
+  makeVolunteer, volunteerRecordSentence, checkVolunteerFields,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -195,9 +196,39 @@ const VI_READY = import("../shared/volunteerImport.js").then(m => { VI = m; retu
 // file it is the SAME PERSON: they gain the Volunteer role on the record they
 // already have, which is the one-person-one-record rule, and the answer says
 // so rather than quietly doing something different from what was asked.
+// FIX-24 Part 1: searching for somebody already on file. Name, email and
+// phone only, never giving: a volunteer coordinator uses this screen too.
+app.get("/volunteer-hub/people/search", requireAuth, wrap(async (req, res) => {
+  const q = String(req.query.q || "").trim().toLowerCase().slice(0, 80);
+  if (q.length < 2) return res.json({ people: [] });
+  const like = "%" + q.replace(/[%_\\]/g, m => "\\" + m) + "%";
+  const rows = await query(`SELECT id, name, email, phone, person_types FROM donors
+                             WHERE org_id=? AND deleted_at IS NULL AND (LOWER(name) LIKE ? OR LOWER(COALESCE(email,'')) LIKE ?)
+                             ORDER BY (LOWER(name) LIKE ?) DESC, name LIMIT 8`, [req.user.orgId, like, like, q + "%"]);
+  const types = v => { try { return Array.isArray(v) ? v : JSON.parse(v || "[]"); } catch { return []; } };
+  res.json({ people: rows.map(r => ({ id: r.id, name: r.name, email: r.email || "", phone: r.phone || "",
+    volunteer: types(r.person_types).includes("volunteer") })) });
+}));
+
+// FIX-24 Part 1: "Make a volunteer" from the profile, and Add a volunteer when
+// it picked somebody already on file. Both are makeVolunteer (server.js), the
+// one function the Agent calls too. The same person, never a second one.
+async function makeVolunteerAnswer(req, res, personId) {
+  const r = await makeVolunteer(req.user.orgId, personId, req.body || {}, actor(req));
+  if (r.error === "not_found") return res.status(404).json({ error: "not_found", message: r.message });
+  if (r.error) return res.status(400).json({ error: r.error, message: r.message });
+  if (r.created) maybeStartJourneyFromServer(req.user.orgId, r.personId, "new_volunteer", {}).catch(e => console.error("[journey] make volunteer:", e.message));
+  if (req.audit) { req.audit.action(r.created ? "made a volunteer" : "updated the volunteer record"); req.audit.entity("donor", r.personId, r.name); }
+  res.status(r.created ? 201 : 200).json({ ...r, id: r.personId, linked: true, sentence: volunteerRecordSentence(r) });
+}
+app.post("/donors/:id/make-volunteer", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  return makeVolunteerAnswer(req, res, String(req.params.id));
+}));
+
 app.post("/volunteer-hub/people", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId, who = actor(req);
   const b = req.body || {};
+  if (b.personId) return makeVolunteerAnswer(req, res, String(b.personId));
   const name = String(b.name || "").trim().slice(0, 200);
   const email = String(b.email || "").trim().toLowerCase().slice(0, 200);
   const phone = String(b.phone || "").trim().slice(0, 40);
@@ -207,17 +238,22 @@ app.post("/volunteer-hub/people", requireAuth, checkWriteAccess, wrap(async (req
   if (email) {
     const m = await query("SELECT id, name, total_giving FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
     if (m.length === 1) {
-      await markVolunteer(orgId, m[0].id);
       if (phone) await run("UPDATE donors SET phone=? WHERE id=? AND org_id=? AND COALESCE(phone,'')=''", [phone, m[0].id, orgId]);
+      const r = await makeVolunteer(orgId, m[0].id, b, who);
+      if (r.error) return res.status(400).json({ error: r.error, message: r.message });
       return res.json({ id: m[0].id, name: m[0].name, created: false, linked: true,
         sentence: `${m[0].name} was already on file, so they keep the one record they have and are now a volunteer on it.` });
     }
   }
+  // FIX-24: the record's fields are checked before anybody is made.
+  const chk = await checkVolunteerFields(b);
+  if (chk.errors.length) return res.status(400).json({ error: "bad_fields", message: chk.errors[0] });
   const id = "d_" + uuid().slice(0, 10);
   await run(
     `INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
      VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
     [id, orgId, name || email, email || null, phone || null, who.id, who.name]);
+  await makeVolunteer(orgId, id, b, who);   // their volunteer record: on Volunteers from now
   res.status(201).json({ id, name: name || email, created: true, linked: false,
     sentence: `${name || email} is on the roster. Nothing on this record says donor, because they have not given.` });
 }));
