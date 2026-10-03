@@ -3567,6 +3567,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>)}
 
       {section==="data"&&<>
+      {/* CLEAN-1 4d: said plainly, where an admin looks for what Steward does with addresses. */}
+      <div data-testid="settings-ncoa-line" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"18px 28px",marginBottom:14}}>
+        <SectionLabel>Change of address (NCOA)</SectionLabel>
+        <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,maxWidth:620}}>
+          Steward doesn't run the change-of-address check itself yet. Donors, Data health prepares an address update file that works with any USPS-licensed NCOA provider, and reads the file they send back so you can approve each move.
+        </div>
+      </div>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>
         <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>

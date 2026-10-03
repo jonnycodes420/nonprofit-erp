@@ -6649,6 +6649,112 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_org ON volunteer_applications (org_id, status, submitted_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_person ON volunteer_applications (org_id, person_id) WHERE person_id IS NOT NULL`);
 
+  // ── CLEAN-1 · DATA HEALTH ─────────────────────────────────────────────────
+  // A MERGE IS UNDOABLE FOR 30 DAYS. Both people as they were, every row that
+  // moved (table, column, row id) and every row set aside because the kept
+  // record already had its twin, so undo restores both records and every row
+  // exactly. The pure rules are dataHealth.js; the writer is routes/dataHealth.js.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_merges (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      kept_id TEXT NOT NULL,
+      merged_id TEXT NOT NULL,
+      kept_name TEXT, merged_name TEXT,
+      kept_before JSONB NOT NULL,
+      merged_before JSONB NOT NULL,
+      moved JSONB NOT NULL DEFAULT '[]'::jsonb,
+      set_aside JSONB NOT NULL DEFAULT '[]'::jsonb,
+      choices JSONB,
+      note_id TEXT,
+      confidence TEXT,
+      reasons JSONB,
+      bulk BOOLEAN DEFAULT false,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      undone_at TIMESTAMPTZ, undone_by TEXT, undone_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_merges_org ON donor_merges (org_id, created_at DESC)`);
+  // "Not a duplicate", "this role address is right" and the like: remembered
+  // by key, so the same pair never comes back after the next import.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS data_health_dismissals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      key TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, kind, key)
+    )`);
+  // One row per run (after an import, once a night, or by hand): the counts
+  // as they stood, and how many possible duplicates the import itself left.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS data_health_runs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      trigger TEXT NOT NULL CHECK (trigger IN ('import','nightly','manual')),
+      import_id TEXT,
+      counts JSONB NOT NULL,
+      new_duplicates INTEGER NOT NULL DEFAULT 0,
+      dismissed_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_data_health_runs_org ON data_health_runs (org_id, created_at DESC)`);
+  // The old address, kept. A tidy or a change of address never overwrites
+  // without leaving the previous one here.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_address_history (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      source TEXT NOT NULL CHECK (source IN ('tidy','ncoa','ncoa_unmailable')),
+      before JSONB NOT NULL,
+      after JSONB,
+      ncoa_move_id TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_addr_history_donor ON donor_address_history (org_id, donor_id, created_at DESC)`);
+  // A change-of-address (NCOA) file a licensed provider returned, and each
+  // move in it. A move waits for a person to approve it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ncoa_batches (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      filename TEXT,
+      rows_in INTEGER NOT NULL DEFAULT 0,
+      moves INTEGER NOT NULL DEFAULT 0,
+      no_forwarding INTEGER NOT NULL DEFAULT 0,
+      no_move INTEGER NOT NULL DEFAULT 0,
+      unmatched INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ncoa_moves (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      batch_id TEXT NOT NULL REFERENCES ncoa_batches(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('move','no_forwarding')),
+      code TEXT, words TEXT,
+      move_type TEXT, move_date TEXT,
+      old_address JSONB NOT NULL,
+      new_address JSONB,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','dismissed')),
+      decided_at TIMESTAMPTZ, decided_by TEXT, decided_by_name TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ncoa_moves_org ON ncoa_moves (org_id, status)`);
+  // A change of address with no forwarding address: the address stays as it
+  // was (it is history, not a guess) and is marked not mailable.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_reason TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS address_unmailable_at TIMESTAMPTZ`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

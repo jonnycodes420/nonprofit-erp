@@ -314,6 +314,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // field, so it is offered once and never nags.
   const [wordsOpen,setWordsOpen]=useState(false);
   const [wordsDone,setWordsDone]=useState(false);
+  // CLEAN-1: one quiet Thread item when the last import left more than ten
+  // possible duplicates. It opens Donors, Data health; it changes nothing.
+  const [dhNotice,setDhNotice]=useState(null);
+  useEffect(()=>{
+    if(surface!=="home")return;
+    apiFetch("/data-health/notice").then(r=>setDhNotice(r.notice||null)).catch(()=>setDhNotice(null));
+  },[surface]);
   // IT ASKS, IT DOES NOT WALL. The brief puts the five questions in the import
   // moment; this build does not touch the receipt, so Home offers them instead.
   // A MODAL here would be a wall in front of every existing org's Home on its
@@ -2226,6 +2233,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {/* HOME-CALM — AND THEN THE LIST, on the screen. Part E folded it
                 behind two "Show them" links, which made the one thing she
                 opened Home for the one thing not on it. */}
+            {surface==="home"&&dhNotice&&(
+              <div data-testid="home-data-health-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{dhNotice.sentence}</span>
+                <button onClick={()=>onNavigate&&onNavigate("donors",{view:"health"})}
+                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{dhNotice.step}</button>
+                <button aria-label="Hide this" disabled={isReadOnly}
+                  onClick={()=>apiFetch(`/data-health/notice/${dhNotice.id}/dismiss`,{method:"POST",body:"{}"}).then(()=>setDhNotice(null)).catch(()=>{})}
+                  style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
+              </div>)}
             {homeCalm&&homeRows.length>0&&(
               <ul data-testid="home-thread-list" style={{listStyle:"none",margin:0,padding:0}}>
                 {homeRows.map(r=>r.el)}

@@ -201,7 +201,8 @@ ok("Donors has ONE 'Import & tools' menu", donors.includes("Import &amp; tools")
 ok("menu reaches Import + History (recommended default)", menuBlock.includes("setShowCombinedImport(true)") && menuBlock.includes('badge:"Recommended"'));
 ok("menu reaches donor-only import", menuBlock.includes("setShowImport(true)"));
 ok("menu reaches giving-history import", menuBlock.includes("setShowGiftImport(true)"));
-ok("menu reaches merge duplicates", menuBlock.includes("setShowMerge(true)"));
+// CLEAN-1: merging lives in Data health now (pairs, side by side, undo); the menu opens it.
+ok("menu reaches merge duplicates", menuBlock.includes("setShowMerge(true)") || menuBlock.includes('setView("health")'));
 ok("the four sibling toolbar buttons are gone", !donors.includes("↑ Giving History</button>") && !donors.includes("⇆ Merge duplicates</button>"));
 // BUILD-81 — "Log a conversation" is the directory's gold primary action
 // (logging a conversation IS creating the follow-up); + Add steps down to a

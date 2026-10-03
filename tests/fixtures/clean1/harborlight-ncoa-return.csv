@@ -1,0 +1,6 @@
+Record ID,Full Name,Address Line 1,Address Line 2,City,State,ZIP Code,NCOA Return Code,Move Type,Move Effective Date,New Address Line 1,New Address Line 2,New City,New State,New ZIP,New Plus4
+d_c1_mv1,Annika Bergstrom,18 Danforth St,,Portland,ME,04101,A,I,202607,412 Fore St,Apt 3,Portland,ME,04101,2214
+d_c1_mv2,Caspian Moore,61 Pleasant St,,Brunswick,ME,04011,A,F,202605,27 Maquoit Rd,,Brunswick,ME,04011,
+d_c1_mv3,Delphine Okafor,5 Mill Pond Rd,,Yarmouth,ME,04096,02,I,202608,,,,,,
+d_c1_mv4,Evander Hale,140 State St,,Portland,ME,04101,00,,,,,,,,
+d_c1_gone,Wren Calloway,3 Old County Rd,,Gorham,ME,04038,A,I,202604,9 Main St,,Gorham,ME,04038,
