@@ -1751,6 +1751,7 @@ async function main() {
           [memberB.id, ORG]);
   const [mbCount] = await q(`SELECT COUNT(*)::int c FROM memberships WHERE org_id=$1`, [ORG]);
   console.log(`[assert] memberships ${mbCount.c} on ${MEMBERSHIP_LEVELS.length} levels · ${memberA.name} renews in 35 days · ${memberB.name} lapsed · ${volMember.name} volunteers and is a member · ${monthlyMember ? monthlyMember.name + " gives monthly" : "no monthly giver found"}`);
+  await require("./seed/parity2-memberships").seedParity2Memberships({ q, ORG }); // PARITY-2 Part 1
 
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(

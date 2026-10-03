@@ -1241,6 +1241,8 @@ async function orgStewardStart(orgId) {
 // figure leaves here carrying that `source`, and a blank carries the sentence
 // that says what is missing and when it will appear.
 const figureSources = require("../figureSources");
+// PARITY-2 Part 1: the one list of an org's public doors (the give hub).
+const { waysToGive } = require("../waysToGive");
 // FIX-19: every user id that comes from the request is checked against the org here.
 const OU = require("../orgUsers");
 // PARITY-1: giving level, lifecycle, retained and closeness, defined once.
@@ -18488,7 +18490,9 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // Listing is already public via the directory, so this reveals nothing new.
   const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
   // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true }, funds });
+  // PARITY-2 Part 1: the give hub: the org's other open doors (waysToGive.js).
+  const ways = await waysToGive(org.id, req.params.orgSlug);
+  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true, ways }, funds });
 }));
 
 // Public — org info + giving page + real live progress. Same shape as
@@ -22270,6 +22274,11 @@ function membershipLevelPayload(l, counts = null) {
   return { id: l.id, name: l.name, price: priceCents / 100, fmv: fmvCents / 100, deductible: (priceCents - fmvCents) / 100,
     term: l.term, termLabel: MB ? MB.TERM_LABEL[l.term] : l.term, scope: l.scope,
     benefits: Array.isArray(l.benefits) ? l.benefits : [], active: l.active !== false,
+    // PARITY-2 Part 1: the card's words, whether it is on the public page,
+    // where it sorts, and the one frequency it may renew on by itself.
+    description: l.description || "", hidden: l.hidden === true, position: Number(l.position) || 0,
+    priceSuffix: MB ? MB.TERM_PRICE_SUFFIX[l.term] || "" : "",
+    autoRenewFrequency: MB ? MB.autoRenewFrequency(l.term) : null,
     fmvSentence: MB ? MB.fmvSentence({ priceCents, fmvCents }) : null, counts };
 }
 
@@ -22288,13 +22297,39 @@ app.post("/membership-levels", requireAuth, requireAdmin, checkWriteAccess, wrap
   const v = MB.validateLevel(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level, id = "mbl_" + uuid().slice(0, 8), who = actor(req);
-  await run(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,created_by,created_by_name)
-             VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
-    [id, req.user.orgId, L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), who.id, who.name]);
+  // A new level sorts last on the public page until somebody moves it.
+  const [last] = await query(`SELECT COALESCE(MAX(position), 0)::int AS p FROM membership_levels WHERE org_id=?`, [req.user.orgId]);
+  await run(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,description,hidden,position,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?::jsonb,?,?,?,?,?)`,
+    [id, req.user.orgId, L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits),
+     L.description || null, L.hidden, (last?.p || 0) + 1, who.id, who.name]);
   res.status(201).json({ id, sentence: MB.fmvSentence(L) });
 }));
 
-app.put("/membership-levels/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+// PARITY-2 Part 1: THE ORDER OF THE PUBLIC PAGE, in one write. Admin-only,
+// like every other change to what is for sale. The body is every level id in
+// the order wanted; an id that is not this org's is refused, not skipped.
+// Registered ABOVE `/membership-levels/:id` so "order" is never read as an id.
+app.put("/membership-levels/order", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : null;
+  if (!ids || !ids.length || ids.length > 200 || new Set(ids).size !== ids.length)
+    return res.status(400).json({ error: "Send every level id once, in the order wanted." });
+  const mine = await query(`SELECT id FROM membership_levels WHERE org_id=? AND id = ANY(?)`, [req.user.orgId, ids]);
+  if (mine.length !== ids.length) return res.status(404).json({ error: "Not found" });
+  const [all] = await query(`SELECT COUNT(*)::int AS n FROM membership_levels WHERE org_id=?`, [req.user.orgId]);
+  if (all.n !== ids.length) return res.status(400).json({ error: "Send every level id once, in the order wanted." });
+  await withTransaction(async client => {
+    for (let i = 0; i < ids.length; i++)
+      await runTx(client, `UPDATE membership_levels SET position=? WHERE id=? AND org_id=?`, [i + 1, ids[i], req.user.orgId]);
+  });
+  res.json({ ok: true, ids });
+}));
+
+// The words on a level (name, description, benefits) and whether it shows on
+// the public page are anybody's with write access. What it COSTS, what it is
+// worth, its term, scope and whether it is for sale at all stay admin-only:
+// those are the org's policy and they change what a receipt says.
+app.put("/membership-levels/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await MB_READY;
   const [l] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
   if (!l) return res.status(404).json({ error: "Not found" });
@@ -22303,8 +22338,16 @@ app.put("/membership-levels/:id", requireAuth, requireAdmin, checkWriteAccess, w
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level;
   const active = typeof req.body?.active === "boolean" ? req.body.active : l.active !== false;
-  await run(`UPDATE membership_levels SET name=?, price=?, fmv=?, term=?, scope=?, benefits=?::jsonb, active=? WHERE id=? AND org_id=?`,
-    [L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), active, l.id, req.user.orgId]);
+  const policyChanged = L.priceCents !== mbCents(l.price) || L.fmvCents !== mbCents(l.fmv) || L.term !== l.term
+    || L.scope !== l.scope || active !== (l.active !== false);
+  if (policyChanged) {
+    const [u] = await query(`SELECT role FROM users WHERE id=?`, [req.user.userId]);
+    if (!u || u.role !== "admin") return res.status(403).json({ error: "Only an admin changes a level's price, value, term or whether it is for sale." });
+  }
+  await run(`UPDATE membership_levels SET name=?, price=?, fmv=?, term=?, scope=?, benefits=?::jsonb, active=?, description=?, hidden=?
+              WHERE id=? AND org_id=?`,
+    [L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), active,
+     L.description || null, L.hidden, l.id, req.user.orgId]);
   res.json({ ok: true, sentence: MB.fmvSentence(L) });
 }));
 
@@ -22489,10 +22532,35 @@ app.get("/org/:orgSlug/membership/:levelId/public", wrap(async (req, res) => {
   if (!org) return res.status(404).json({ error: "Not found" });
   const [l] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [req.params.levelId, org.id]);
   if (!l) return res.status(404).json({ error: "Not found" });
-  const p = membershipLevelPayload(l);
   res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
-    level: { id: p.id, name: p.name, price: p.price, fmv: p.fmv, deductible: p.deductible, term: p.term, termLabel: p.termLabel,
-             scope: p.scope, benefits: p.benefits, autoRenew: l.term === "12_months" } });
+    level: publicLevelPayload(l) });
+}));
+
+// The public face of a level: what the card and the checkout state, and
+// nothing about who holds it. One shape for the single-level page and the
+// membership page, so the two cannot describe one level differently.
+function publicLevelPayload(l) {
+  const p = membershipLevelPayload(l);
+  return { id: p.id, name: p.name, price: p.price, fmv: p.fmv, deductible: p.deductible, term: p.term, termLabel: p.termLabel,
+           priceSuffix: p.priceSuffix, description: p.description, scope: p.scope, benefits: p.benefits,
+           autoRenew: !!p.autoRenewFrequency, autoRenewFrequency: p.autoRenewFrequency };
+}
+
+// PARITY-2 Part 1: THE MEMBERSHIP PAGE (`/give/:orgSlug?memberships`). Every
+// level that is for sale and not hidden, in the org's order, with the org's
+// own theme so the page is theirs. Public by slug, like the single level.
+app.get("/org/:orgSlug/memberships/public", wrap(async (req, res) => {
+  await MB_READY;
+  const [org] = await query(
+    `SELECT o.id, o.name, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug=?`,
+    [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const levels = await query(
+    `SELECT * FROM membership_levels WHERE org_id=? AND active IS NOT FALSE AND hidden IS NOT TRUE
+      ORDER BY position, price, name`, [org.id]);
+  res.json({ orgName: String(org.display_name || "").trim() || org.name, slug: req.params.orgSlug,
+    theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true,
+    levels: levels.map(publicLevelPayload) });
 }));
 
 app.post("/memberships/:id/renew", requireAuth, checkWriteAccess, wrap(async (req, res) => {

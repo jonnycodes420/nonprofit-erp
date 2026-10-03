@@ -104,6 +104,38 @@ Read this when you touch memberships, levels, renewals or member benefits.
   `sizes: "any"`. Declaring `192x192` for a logo nobody measured is how an installed app gets a
   blurred tile. (MEMBERS-2)
 
+### PARITY-2 Part 1: the membership page
+- **The membership page is a MODE of the org's giving page, `/give/:orgSlug?memberships`, never a path
+  segment.** A page slug "join" must stay the org's to use (the forms.md mode rule). It lists every level
+  that is for sale and not hidden, in `position` order, from `GET /org/:orgSlug/memberships/public`.
+  (PARITY-2)
+- **Hidden is not retired.** `hidden` takes a level off the page and the hub count; its own
+  `?membership=` link still sells it. Retired (`active=false`) cannot be bought at all. (PARITY-2)
+- **One public shape for a level (`publicLevelPayload`)**, used by the single-level page and the
+  membership page, so the two cannot describe one level differently. Every card states the deductible
+  part in a sentence before payment. (PARITY-2)
+- **Join is the existing checkout.** The card posts `membershipLevelId` to `/donate/:orgSlug`; the
+  server prices it, the webhook writes the membership, gift and receipt through
+  `attachOnlineMembership`. A buyer who already holds a membership is renewed onto the level chosen,
+  starting the day after the current one ends. (PARITY-2)
+- **A signed-in member is known by the portal session only** (`GET /portal/:slug/give-default` now
+  also returns `membership` and `prefill`, read through `req.portal`, never the URL). Their card shows
+  the level and expiry and offers Renew; an auto-renewing or lifetime holder is offered no button. With
+  the org's portal off there is no sign-in, and Join still renews a holder by exact email. (PARITY-2)
+- **Words are anybody's with write access; money is an admin's.** `PUT /membership-levels/:id` lets
+  any writer change name, description, benefits and hidden, and refuses (403) a change to price, FMV,
+  term, scope or `active` from a non-admin. `PUT /membership-levels/order` (admin) takes EVERY level id
+  once and writes `position` 1..n in one transaction. (PARITY-2)
+- **A one-month term (`1_month`) runs from the start date through the day before the same date next
+  month, clamped (31 Jan runs through 27 Feb).** It auto-renews as a MONTHLY subscription on the
+  existing recurring path (`autoRenewFrequency`); the donate handler refuses any other frequency for
+  it, as it refuses monthly for a 12-month level. (PARITY-2)
+- **A monthly level opens no renewal thread and is never matched from a plain gift
+  (`NO_RENEWAL_THREAD_TERMS`).** With a 30-day window a monthly member is always "due", so the sweep
+  would raise a thread every month and every gift of the price would be read as a renewal. It renews
+  by its subscription or by its own Renew button; the sweep still writes grace and lapsed from the
+  dates, with the org's one grace period. (PARITY-2)
+
 ## Gotchas
 - **Generate a renewal-window fixture from today.** The window is a fact about today, so a fixed-date
   file goes stale. (BUILD-101 Part 6)
@@ -125,6 +157,8 @@ Read this when you touch memberships, levels, renewals or member benefits.
 - `GET /memberships/:id/card.pdf` — the one-page member card (ack-letter pdfkit pattern)
 - `client/src/components/Memberships.jsx` — `MembershipPanel` (profile) and `MembersView` (Fundraising → Members)
 - `client/src/pages/Donate.jsx` `MembershipPage` — `/give/:slug?membership=<levelId>`
+- `client/src/pages/MembershipsPage.jsx`: `/give/:slug?memberships`, every level as a card (PARITY-2)
+- `waysToGive.js`: the give hub's list of the org's open doors (PARITY-2)
 - `routes/supporter.js` — "Your page"; `shared/supporterPage.js` (what shows, and every sentence),
   `shared/passCode.js` (the one QR), `memberCard.js` (the card PDF)
 - `tests/members2-isolation.test.js` — a link opens one person's page and nobody else's

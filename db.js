@@ -5393,6 +5393,20 @@ async function initSchema() {
       CHECK (fmv <= price)
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_membership_levels_org ON membership_levels (org_id, position)`);
+  // PARITY-2 Part 1: the public signup page. A level carries a short
+  // DESCRIPTION for its card, and HIDDEN takes it off the page without
+  // retiring it (a retired level cannot be bought at all; a hidden one is
+  // still sold by its own link). A ONE-MONTH term joins the three: it renews
+  // by a monthly subscription on the existing recurring path.
+  await pool.query(`ALTER TABLE membership_levels ADD COLUMN IF NOT EXISTS description TEXT`);
+  await pool.query(`ALTER TABLE membership_levels ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='membership_levels_term_check'
+                       AND pg_get_constraintdef(oid) LIKE '%1_month%') THEN
+        ALTER TABLE membership_levels DROP CONSTRAINT IF EXISTS membership_levels_term_check;
+        ALTER TABLE membership_levels ADD CONSTRAINT membership_levels_term_check
+          CHECK (term IN ('12_months','calendar_year','lifetime','1_month'));
+      END IF; END $$`);
   // A membership: one person on one level. The payment is a GIFT (recordGift,
   // quid-pro-quo = the level's FMV); gift_id points at it. Dates are civil.
   await pool.query(`
