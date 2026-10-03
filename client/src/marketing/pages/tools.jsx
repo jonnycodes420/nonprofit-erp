@@ -9,6 +9,7 @@ import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A } from "../lib";
 import { SRC, SRC_ALL } from "../data/research";
 import PRICING from "../../../../pricing.json";
 import { RETENTION_GAP } from "../../../../shared/sources.js";
+import { SkeletonCards } from "../../components/Skeleton";
 
 // FIX-13 · the page runs the audit. It used to promise "run the free audit"
 // and "drop it in" with nothing to drop a file on: the working audit lived
@@ -52,7 +53,7 @@ export function ToolLostAndFound() {
     <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
       lede="Drop in a giving export and see your lapsing donors and what they used to give, free and with no signup."
       noCta>
-      <React.Suspense fallback={<div className="lf-loading" style={{ minHeight: 220 }} />}>
+      <React.Suspense fallback={<div className="lf-loading" style={{ minHeight: 220 }}><SkeletonCards count={3} label="Loading the audit" /></div>}>
         <div data-lf-audit><LostAndFoundAudit compact /></div>
       </React.Suspense>
       <div className="ctas" style={{ marginTop: 34 }} data-lf-ctas>

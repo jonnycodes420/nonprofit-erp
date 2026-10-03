@@ -68,6 +68,13 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Never set a test-only seam in production** (`TEST_MODE`, `DISABLE_RATE_LIMIT`, `*_API_BASE`,
   `RESEND_BASE_URL`, `DISABLE_BACKGROUND_TICKS`, `SESSION_CACHE_TTL_MS=0`). A test-only route checks
   `testMode()`, a function, and 404s otherwise. (BUILD-45, BUILD-84, BUILD-90)
+- **A screen's numbers are one read, not one read per number.** Prod's database is a round trip
+  of about 20 ms away, so 50 small queries is a second before any of them is slow. Batch a
+  screen's figures into one statement (`figureSources.groupFigureValues` is the pattern) and
+  send independent reads side by side with `Promise.all`. (FIX-21)
+- **Read a whole set through `querySetwise` (db.js), not `query`.** Its pool has nested loops
+  off, because an org added since the last ANALYZE is estimated at one row and a nested loop
+  over 1,000 real rows took a group page from 20 ms to 35 s. Lookups by id stay on `query`. (FIX-21)
 
 ## Gotchas
 - **Use a regex route (`app.all(/^\/api\/v1.../)`) and the route inventory breaks**, because it

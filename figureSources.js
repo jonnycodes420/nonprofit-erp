@@ -31,7 +31,7 @@
 // person reads ("Jan 14, 2026", shared/displayDate.js).
 "use strict";
 
-const { query } = require("./db");
+const { query, querySetwise } = require("./db");
 const orgTime = require("./orgTime");
 const money = require("./money");
 const meetings = require("./meetings");   // FIX-14 Part 1 — meetings with a person, defined once
@@ -1622,4 +1622,67 @@ async function figureValue(orgId, source, deps = {}) {
   return { value: f.value, cents: f.cents, blank: f.blank || null, blankShort: f.blankShort || null, totalRows: f.totalRows || 0 };
 }
 
-module.exports = { SOURCES, figure, figureValue, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES };
+// FIX-21 · A GROUP'S PAGE IN ONE READ. The group page shows five figures and
+// twelve months, every one of them a group-members, group-never-gave or
+// group-gifts source. Asked one at a time that was 22 aggregates, each
+// re-reading the group and re-running its rule: 50 to 100 round trips to the
+// database and about six seconds on prod. This is the same arithmetic, over
+// the same rows, in one statement: the members are worked out once, their
+// gifts are read once, and each source is a FILTER over those rows with the
+// conditions its own `sql` builder writes. `m` is groups.js memberSql for the
+// group, resolved by the caller. The values come back in the shape
+// figureValue returns, and the drawer (figure(), unchanged) still opens rows
+// that foot to each one: tests/parity1-groups-journeys.test.js checks every
+// figure on the page against its drawer.
+const GROUP_KINDS = ["total", "count", "average"];
+async function groupFigureValues(orgId, m, sources) {
+  const scalars = [], scalarArgs = [], aggs = [], aggArgs = [];
+  const plan = sources.map((s, i) => {
+    const key = String(s && s.key || "");
+    const def = sourceDef(key);
+    if (!def || !/^group-/.test(key)) throw new Error(`figureSources: "${key}" is not a group source`);
+    const p = readParams(def, s.params || {});
+    if (key === "group-members") {
+      scalars.push(`(SELECT COUNT(*)::int FROM mem) AS n${i}`);
+    } else if (key === "group-never-gave") {
+      scalars.push(`(SELECT COUNT(*)::int FROM mem WHERE NOT EXISTS
+                      (SELECT 1 FROM gifts ng WHERE ng.org_id = ? AND ng.donor_id = mem.id AND ng.amount > 0)) AS n${i}`);
+      scalarArgs.push(orgId);
+    } else {
+      if (p.kind && !GROUP_KINDS.includes(p.kind)) throw new FigureParamError("kind is total, count or average.");
+      const c = ["true"], own = [];
+      if (p.from) { c.push("day >= ?"); own.push(p.from); }
+      if (p.to) { c.push("day <= ?"); own.push(p.to); }
+      if (p.kind === "count" || p.kind === "average") c.push("raw > 0");
+      const w = c.join(" AND ");
+      // The condition is written twice, once for the count and once for the sum.
+      aggs.push(`COUNT(*) FILTER (WHERE ${w})::int AS n${i}, COALESCE(SUM(amount) FILTER (WHERE ${w}), 0)::text AS s${i}`);
+      aggArgs.push(...own, ...own);
+    }
+    return { def, p };
+  });
+  const sql = `
+    WITH m AS MATERIALIZED (${m.sql}),
+         mem AS MATERIALIZED (SELECT d.id FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (SELECT id FROM m)),
+         gx AS MATERIALIZED (SELECT LEFT(g.date,10) AS day, g.amount AS raw, ROUND(g.amount::numeric, 2) AS amount
+                               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id IN (SELECT id FROM m))
+    SELECT ${[...scalars, "a.*"].join(", ")}
+      FROM (SELECT ${aggs.length ? aggs.join(", ") : "1 AS none"} FROM gx) a`;
+  const [row] = await querySetwise(sql, [...m.args, orgId, orgId, ...scalarArgs, ...aggArgs]);
+  return plan.map(({ def, p }, i) => {
+    const agg = { n: row[`n${i}`], s: row[`s${i}`] ?? "0" };
+    const { value, cents } = valueOf(def.measure(p), agg);
+    return { value, cents, blank: null, blankShort: null, totalRows: Number(agg.n) || 0 };
+  });
+}
+
+// A source's defining sentence, without computing it.
+async function figureSentence(source) {
+  const def = sourceDef(String(source && source.key || ""));
+  if (!def) return null;
+  const DD = await displayDateMod();
+  return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
+}
+
+module.exports = { SOURCES, figure, figureValue, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES };

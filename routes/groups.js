@@ -16,6 +16,7 @@
 // group-members and group-gifts), so each one opens rows that foot to it.
 const express = require("express");
 const GR = require("../groups");
+const { querySetwise } = require("../db");
 const DS = require("../donorStatus");
 
 const routers = { r0: express.Router() };
@@ -54,17 +55,15 @@ async function orgOf(orgId) {
   return o || {};
 }
 
-// GET /groups — the list. Counts are the live members, one read per group.
+// GET /groups, the list. FIX-21: every group's count in ONE statement
+// (groups.js memberCounts), not one read per group.
 app.get("/groups", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const groups = await GR.listGroups(orgId);
-  const out = [];
-  for (const g of groups) {
-    out.push({ ...g, count: (await GR.memberIds(orgId, g)).length,
-      countSource: { key: "group-members", params: { group: g.id } } });
-  }
+  const counts = await GR.memberCounts(orgId, groups);
   res.json({
-    groups: out,
+    groups: groups.map((g, i) => ({ ...g, count: counts[i],
+      countSource: { key: "group-members", params: { group: g.id } } })),
     ruleKeys: GR.RULE_KEYS,
     countSentence: "Everyone in the group right now. For a group by rule, that is everyone the rule finds today.",
   });
@@ -119,53 +118,56 @@ app.get("/groups/:id", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const g = await GR.groupById(orgId, req.params.id);
   if (!g) return res.status(404).json({ error: "Not found" });
-  const org = await orgOf(orgId);
+  // FIX-21 · ONE READ FOR THE NUMBERS, ONE FOR THE PEOPLE. The group is read
+  // once and its rule run once; the five figures and the twelve months are
+  // one statement (figureSources groupFigureValues), the people another, and
+  // the two go to the database side by side. Asked one figure at a time this
+  // page was 22 aggregates and up to 100 round trips: six seconds on prod.
+  const [org, cuts, m] = await Promise.all([orgOf(orgId), DS.cutsFor(orgId), GR.memberSql(orgId, g)]);
   const today = orgTime.orgToday(org);   // ORG_TZ_SEAM_OK
   const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0);
   const FS = require("../figureSources");
-  const fig = async (source, label) => ({ label, source, ...(await FS.figureValue(orgId, source)),
-    sentence: (await FS.figure(orgId, source, {}, { rows: false })).sentence });
   const gp = { group: g.id };
   const figures = [
-    await fig({ key: "group-members", params: gp }, "People"),
-    await fig({ key: "group-gifts", params: { ...gp, kind: "average" } }, "Average gift"),
-    await fig({ key: "group-gifts", params: { ...gp, kind: "total", from: fy.start, to: fy.end } }, "This fiscal year"),
-    await fig({ key: "group-gifts", params: { ...gp, kind: "total" } }, "Lifetime"),
-    await fig({ key: "group-gifts", params: { ...gp, kind: "count" } }, "Gifts"),
+    { label: "People", kind: "count", source: { key: "group-members", params: gp } },
+    { label: "Average gift", kind: "money", source: { key: "group-gifts", params: { ...gp, kind: "average" } } },
+    { label: "This fiscal year", kind: "money", source: { key: "group-gifts", params: { ...gp, kind: "total", from: fy.start, to: fy.end } } },
+    { label: "Lifetime", kind: "money", source: { key: "group-gifts", params: { ...gp, kind: "total" } } },
+    { label: "Gifts", kind: "count", source: { key: "group-gifts", params: { ...gp, kind: "count" } } },
   ];
-  figures[0].kind = "count"; figures[1].kind = "money"; figures[2].kind = "money"; figures[3].kind = "money"; figures[4].kind = "count";
   // PARITY-3 Part 5 — on a group of volunteers, the ones who have never
   // given, opening the list: the people to think about asking.
   if (g.rules && g.rules.volunteer === "1") {
-    const ng = await fig({ key: "group-never-gave", params: gp }, "Volunteers who have never given");
-    ng.kind = "count";
-    figures.push(ng);
+    figures.push({ label: "Volunteers who have never given", kind: "count", source: { key: "group-never-gave", params: gp } });
   }
 
   // The last twelve months, one figure per month, each opening its gifts.
   const t = orgTime.parseCivil(today);
   const months = [];
   for (let i = 11; i >= 0; i--) {
-    let y = t.y, m = t.m - i;
-    while (m <= 0) { m += 12; y -= 1; }
-    const from = `${y}-${String(m).padStart(2, "0")}-01`;
-    const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    const to = `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
-    const source = { key: "group-gifts", params: { ...gp, kind: "total", from, to } };
-    const v = await FS.figureValue(orgId, source);
-    months.push({ month: from.slice(0, 7), label: `${MONTHS[m - 1]} ${String(y).slice(2)}`, value: v.value, source });
+    let y = t.y, mo = t.m - i;
+    while (mo <= 0) { mo += 12; y -= 1; }
+    const from = `${y}-${String(mo).padStart(2, "0")}-01`;
+    const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+    const to = `${y}-${String(mo).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+    months.push({ month: from.slice(0, 7), label: `${MONTHS[mo - 1]} ${String(y).slice(2)}`,
+      source: { key: "group-gifts", params: { ...gp, kind: "total", from, to } } });
   }
 
   // The people, with their giving level so the page can show Mid and Major.
-  const m = await GR.memberSql(orgId, g);
-  const cuts = await DS.cutsFor(orgId);
   const st = DS.statusSql(orgId, today, cuts);
-  const people = await query(
-    `SELECT d.id, d.name, d.email, d.total_giving, d.last_gift_date, s.level, s.last12
-       FROM donors d LEFT JOIN (${st.sql}) s ON s.donor_id = d.id
-      WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})
-      ORDER BY lower(d.name), d.id LIMIT 1000`,
-    [...st.args, orgId, ...m.args]);
+  const [values, people, sentences] = await Promise.all([
+    FS.groupFigureValues(orgId, m, [...figures, ...months].map(x => x.source)),
+    querySetwise(
+      `SELECT d.id, d.name, d.email, d.total_giving, d.last_gift_date, s.level, s.last12
+         FROM donors d LEFT JOIN (${st.sql}) s ON s.donor_id = d.id
+        WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})
+        ORDER BY lower(d.name), d.id LIMIT 1000`,
+      [...st.args, orgId, ...m.args]),
+    Promise.all(figures.map(f => FS.figureSentence(f.source))),
+  ]);
+  figures.forEach((f, i) => Object.assign(f, values[i], { sentence: sentences[i] }));
+  months.forEach((mo, i) => { mo.value = values[figures.length + i].value; });
   res.json({
     group: g, figures, months,
     monthsSentence: "What the people in this group gave each month, refunds taken off. Each month opens its gifts.",

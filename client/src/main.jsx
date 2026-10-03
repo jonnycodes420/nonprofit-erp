@@ -12,6 +12,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch } from "./api";
 import { safeNext } from "./lib/appUrls";
+import { SkeletonAppShell, SkeletonPublic } from "./components/Skeleton";
 // The marketing site (LANDING-2) stays an eager import: "/" is the public
 // entry page and must not wait on a second network hop. Everything else is
 // route-split (React.lazy) so visiting "/" does not download the
@@ -68,13 +69,14 @@ const PAL = {
 };
 
 
-// Matches the app shell's own loading state (cream ground, small spinner)
-// so a chunk load doesn't flash a bare white page.
+// FIX-21 · NEVER A WHITE SCREEN. While a route's code loads, the signed-in
+// app draws its own shape (top bar, rail, a page of quiet blocks) and a
+// public page draws a card's shape, instead of a bare ground and a spinner.
+// The location is read directly: this sits above the router's own context.
+const APP_PATHS = /^\/(app|dashboard|donors)(\/|$)/;
 function RouteFallback() {
-  return <div style={{ minHeight: "100vh", background: PAL.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
-    <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid "+PAL.cream3, borderTopColor: PAL.emerald, borderRadius: "50%", animation: "lpsp 0.7s linear infinite" }} />
-    <style>{`@keyframes lpsp{to{transform:rotate(360deg)}}`}</style>
-  </div>;
+  const path = typeof window !== "undefined" ? window.location.pathname : "/";
+  return APP_PATHS.test(path) ? <SkeletonAppShell /> : <SkeletonPublic />;
 }
 
 const AuthCtx = createContext(null);

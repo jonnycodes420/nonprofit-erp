@@ -14,9 +14,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Zap } from "lucide-react";
 import { apiFetch } from "../api";
-import { T, Spin } from "./shared";
+import { T } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { errorMessage } from "../lib/domainError";
+import { SkeletonCards, SkeletonPage } from "./Skeleton";
 
 const ACTION = T.greenDk;
 const card = { background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" };
@@ -108,7 +109,13 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly }) {
   }, [groupId]);
   useEffect(() => { load(); }, [load]);
   if (err) return <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>;
-  if (!data) return <div style={{ padding: 24 }}><Spin /></div>;
+  // FIX-21: the page's own shape at once, never a white screen while it loads.
+  if (!data) return (
+    <div data-testid="group-page-loading">
+      {onBack && <button type="button" style={{ ...quiet, marginBottom: 12 }} onClick={onBack}>All groups</button>}
+      <SkeletonPage label="Loading the group" />
+    </div>
+  );
   const g = data.group;
   const members = (data.members || []).filter(m => level === "all" || m.level === level);
   const max = Math.max(1, ...data.months.map(m => Math.abs(Number(m.value) || 0)));
@@ -195,7 +202,7 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
         {!isReadOnly && !making && <button type="button" style={{ ...primary, marginBottom: 16 }} onClick={() => setMaking(true)}>New group</button>}
         {making && <NewGroup onCancel={() => setMaking(false)} onMade={g => { setMaking(false); load(); if (g && g.id) setOpen(g.id); }} />}
         {err && <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>}
-        {!list && !err && <Spin />}
+        {!list && !err && <SkeletonCards count={4} label="Loading groups" />}
         {list && !list.groups.length && (
           <div style={{ ...card, color: T.ink3, fontSize: 14 }}>No groups yet. Make one for the people you think of together: table hosts, board prospects, or warm volunteers who have never given.</div>
         )}

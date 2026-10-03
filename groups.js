@@ -11,7 +11,7 @@
 // routes/crm.js so it can be called with a plain params object: the list, the
 // export and every dynamic Group run the same code. A list and a group built
 // on the same rule cannot disagree.
-const { query } = require("./db");
+const { query, querySetwise } = require("./db");
 const DS = require("./donorStatus");
 
 let _pt = null;
@@ -280,6 +280,16 @@ async function memberIds(orgId, group) {
   const m = await memberSql(orgId, group);
   return (await query(m.sql, m.args)).map(r => r.id);
 }
+// FIX-21 · every group's member count in ONE statement: the count of the same
+// memberSql rows memberIds returns, so a card's count is the group's own
+// People figure. The rules are built side by side, then counted together.
+async function memberCounts(orgId, groups) {
+  if (!groups.length) return [];
+  const ms = await Promise.all(groups.map(g => memberSql(orgId, g)));
+  const cols = ms.map((m, i) => `(SELECT COUNT(*)::int FROM (${m.sql}) c${i}) AS n${i}`);
+  const [row] = await querySetwise(`SELECT ${cols.join(", ")}`, ms.flatMap(m => m.args));
+  return ms.map((_, i) => Number(row[`n${i}`]) || 0);
+}
 async function isMember(orgId, group, donorId) {
   const m = await memberSql(orgId, group);
   const rows = await query(`SELECT 1 FROM (${m.sql}) gx WHERE gx.id = ? LIMIT 1`, [...m.args, donorId]);
@@ -351,5 +361,5 @@ async function dynamicJoins(orgId, { donorId = null, today = "", fire } = {}) {
 module.exports = {
   baselineGroup, dynamicJoins, watchedDynamicGroups,
   DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS,
-  buildDonorFilter, normalizeRules, rulesSentence, groupById, listGroups, memberSql, memberIds, isMember, groupsFor, shapeGroup,
+  buildDonorFilter, normalizeRules, rulesSentence, groupById, listGroups, memberSql, memberIds, memberCounts, isMember, groupsFor, shapeGroup,
 };
