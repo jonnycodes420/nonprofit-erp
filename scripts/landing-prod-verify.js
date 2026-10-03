@@ -61,11 +61,11 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
 
 (async () => {
   console.log(`landing-prod-verify → ${BASE}\n`);
-  const { ROUTES, APP_LINK_TARGETS, HOME_TITLE } = await import("../client/src/marketing/routes.js");
+  const { ROUTES, APP_LINK_TARGETS, FILE_LINK_TARGETS, HOME_TITLE } = await import("../client/src/marketing/routes.js");
   const { STATS, SRC, QUOTES } = await import("../client/src/marketing/data/research.js");
   const { TEAM } = await import("../client/src/marketing/data/team.js");
   const { LEGAL_ENTITY_NAME } = await import("../shared/legalEntity.js");
-  const known = new Set([...ROUTES.map(r => r.path), ...APP_LINK_TARGETS]);
+  const known = new Set([...ROUTES.map(r => r.path), ...APP_LINK_TARGETS, ...FILE_LINK_TARGETS]);
   const quoteTexts = QUOTES.map(q => q[0]);
 
   const browser = await chromium.launch();

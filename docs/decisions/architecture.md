@@ -303,6 +303,26 @@ Mobile "More" drawer (`MORE_TABS`): pipeline, fundraising, communications, tasks
 - /admin → AdminDashboard (super admin only — RequireSuperAdmin guard checks localStorage npe_user.isSuperAdmin)
 - App.jsx renders <AppShell /> directly — NO internal router
 
+### The marketing site is prerendered (CONTENT-1, 2026-10-03)
+- Every marketing route (client/src/marketing/routes.js) is rendered to static HTML at build time, so a crawler's
+  first response holds the h1, the body text, the head tags and the structured data with no JavaScript run.
+  `npm --prefix client run build` = browser build, then `vite build -c vite.prerender.config.js` (a Node build of
+  marketing/prerender.jsx), then `client/scripts/prerender.mjs`, which writes `dist/<path>/index.html` per route plus
+  sitemap.xml, rss.xml and robots.txt. It adds about a second and fails the build on a page with no h1, two h1s,
+  or a title or description another page has.
+- The untouched SPA shell is `dist/app.html`. vercel.json's catch-all rewrites to `/app.html`, never `/index.html`
+  (which is now the prerendered homepage), so the app, /login and an org's giving page never open on top of the
+  homepage's HTML. Vercel serves a file before any rewrite. scripts/local-preview.js does the same.
+- In the browser main.jsx is unchanged: it renders over the prerendered HTML with createRoot (no hydration), so a
+  page that renders differently signed in (pricing) is correct either way.
+- A marketing page must render on the server: no window, document or navigator during render (only in effects and
+  handlers). The prerender build points pricing.jsx's `useAuth` import at a signed-out stub instead of main.jsx.
+- Head tags and structured data come from client/src/marketing/seo.js (Organization on Home, BreadcrumbList from the
+  page's crumbs, FAQPage from any FaqS, DefinedTerm on glossary pages, Article on articles). The sitemap and robots.txt
+  are written from it too; client/public no longer holds either.
+- Articles are one markdown file each in client/src/marketing/articles/ (frontmatter documented in articles/index.js).
+  The glossary is one module, client/src/marketing/data/glossary.js, one page per term.
+
 ## The actor on every write (moved from the old CRITICAL WORKING RULES)
 
 - **The actor on every write (BUILD-75 C.1):** every INSERT into an actor table (gifts, donors, pledges, tasks, campaigns, grants, events, households, opportunities, receipts, giving_pages, planned_gifts, volunteers, board_members, fin_transactions, sequences) records `created_by`/`created_by_name` — a user id for a human, a system identity string ("system:stripe-webhook", "system:workflow:<recipe>", "system:auto") for a non-human path, never null on a new write. `tests/actor-stamp.test.js` fails the build on an unstamped, unclassified insert. NULL means "predates BUILD-75" — never backfill guesses.

@@ -97,3 +97,6 @@ export const ROUTES = [
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
 export const APP_LINK_TARGETS = ["/login", "/signup", "/lost-and-found"];
+// CONTENT-1 · files the pages link to: the articles feed (written by the
+// prerender) and the move page's starter template (client/public).
+export const FILE_LINK_TARGETS = ["/rss.xml", "/marketing/steward-starter-template.csv"];

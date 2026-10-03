@@ -545,6 +545,8 @@ const ALL = Object.values(SRC_TEXT).join("\n");
       ld("/glossary/lybunt").join() === "BreadcrumbList,DefinedTerm" && ld("/articles/donor-retention-rate").join() === "BreadcrumbList,Article"
         && ld("/tools/lybunt-sybunt").includes("FAQPage") && ld("/move").includes("FAQPage"), [ld("/glossary/lybunt"), ld("/articles/donor-retention-rate"), ld("/tools/lybunt-sybunt")]);
     const dis = seo.ROBOTS.split("\n").filter(l => l.startsWith("Disallow: ")).map(l => l.slice(10));
+    const { FILE_LINK_TARGETS } = await import(path.join(MK, "routes.js"));
+    ok("every file a page links to exists (the feed is written by the prerender)", FILE_LINK_TARGETS.every(p => p === "/rss.xml" ? /prerender[^]*rss\.xml/.test(fs.readFileSync(path.join(CLIENT, "scripts", "prerender.mjs"), "utf8")) : fs.existsSync(path.join(CLIENT, "public", p))), FILE_LINK_TARGETS);
     ok("robots.txt points at the sitemap and keeps the app out", /Sitemap: https:\/\/www\.stewardapp\.dev\/sitemap\.xml/.test(seo.ROBOTS)
       && ["/dashboard", "/donors", "/app/", "/login", "/signup", "/admin"].every(p => dis.includes(p))
       && ROUTES.every(r => !dis.some(d => r.path === d || r.path.startsWith(d.endsWith("/") ? d : d + "/"))), dis);

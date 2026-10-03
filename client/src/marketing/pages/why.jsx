@@ -76,7 +76,7 @@ export function MoveSpreadsheet() {
       <div className="callout">
         <b>Start from our template.</b>
         <p>One row per gift, with every column below already named the way Steward reads it. Open it in Excel or Google Sheets, put your list under the headings, and save it as a CSV.</p>
-        <a className="pill pill-ink" href="/marketing/steward-starter-template.csv" download><i></i>Download the starter CSV template</a>
+        <a className="pill pill-ink" href="/marketing/steward-starter-template.csv" download><i></i>Download the CSV template</a>
       </div>
     </div></section>
     <Incl eb="What to bring" h="The columns <b>worth bringing.</b>" list={["First name", "Last name", "Organization", "Email", "Phone", "Address lines", "City", "State", "Postal code", "Gift date", "Gift amount", "Fund or designation", "Payment method", "Campaign or appeal", "Notes", "Household or spouse name"]} />
