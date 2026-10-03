@@ -5634,133 +5634,36 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
 // blank fields from the secondary, soft-delete the secondary, log a merge
 // note as an interaction on the primary. Aggregates recalced after commit.
 app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { primaryId, secondaryId } = req.body;
+  // CLEAN-1: the one merge is Data health's (routes/dataHealth.js): every
+  // column in db.js that points at a person, the money footed to the cent, and
+  // undo for 30 days. This older entry point keeps its request and response
+  // shape and its rule (the primary's values win; its blanks fill from the
+  // other record).
+  const { primaryId, secondaryId } = req.body || {};
   const orgId = req.user.orgId;
   if (!primaryId || !secondaryId) return res.status(400).json({ error: "primaryId and secondaryId required" });
   if (primaryId === secondaryId) return res.status(400).json({ error: "Cannot merge a donor into itself" });
-
   const rows = await query("SELECT * FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL", [orgId, [primaryId, secondaryId]]);
-  const primary = rows.find(d => d.id === primaryId);
-  const secondary = rows.find(d => d.id === secondaryId);
+  const primary = rows.find(d => d.id === primaryId), secondary = rows.find(d => d.id === secondaryId);
   if (!primary || !secondary) return res.status(404).json({ error: "Donor not found" });
-
-  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-  const userName = userRow[0]?.name || "";
-  const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK FIX-14 Part 1 — was the UTC day
-
-  // Straight donor_id reassigns — no unique constraint on donor_id in these.
-  const PLAIN_CHILD_TABLES = [
-    "gifts", "interactions", "pledges", "receipts", "milestone_drafts",
-    "note_reminders", "donor_materials", "planned_gifts",
-    "payment_recovery_events", "recurring_subscriptions", "tasks",
-    "volunteers", "campaign_recipients",
-    "tribute_notices",                       // BUILD-98 Part 1
-    "interaction_attachments",               // PARITY-1 Part B
-  ];
-  // UNIQUE(x, donor_id) tables: the primary's own row wins a conflict, the
-  // secondary's duplicate is dropped, non-conflicting rows are reassigned.
-  const UNIQUE_CHILD_TABLES = [
-    ["custom_field_values", "field_id"],
-    ["sequence_enrollments", "sequence_id"],
-    ["event_attendees", "event_id"],
-    ["gift_soft_credits", "gift_id"],        // BUILD-98 Part 1
-  ];
-
-  const reassigned = {};
-  await withTransaction(async (client) => {
-    for (const t of PLAIN_CHILD_TABLES) {
-      const r = await runTx(client, `UPDATE ${t} SET donor_id=? WHERE org_id=? AND donor_id=?`, [primaryId, orgId, secondaryId]);
-      if (r.changes) reassigned[t] = r.changes;
-    }
-    for (const [t, keyCol] of UNIQUE_CHILD_TABLES) {
-      await runTx(client,
-        `DELETE FROM ${t} WHERE org_id=? AND donor_id=? AND ${keyCol} IN
-           (SELECT ${keyCol} FROM ${t} WHERE org_id=? AND donor_id=?)`,
-        [orgId, secondaryId, orgId, primaryId]);
-      const r = await runTx(client, `UPDATE ${t} SET donor_id=? WHERE org_id=? AND donor_id=?`, [primaryId, orgId, secondaryId]);
-      if (r.changes) reassigned[t] = r.changes;
-    }
-    // Relationships: both sides, then drop any now-self-referencing row.
-    await runTx(client, "UPDATE donor_relationships SET donor_id_a=? WHERE org_id=? AND donor_id_a=?", [primaryId, orgId, secondaryId]);
-    await runTx(client, "UPDATE donor_relationships SET donor_id_b=? WHERE org_id=? AND donor_id_b=?", [primaryId, orgId, secondaryId]);
-    await runTx(client, "DELETE FROM donor_relationships WHERE org_id=? AND donor_id_a=donor_id_b", [orgId]);
-    // BUILD-98 Part 1 — a gift that names the secondary as its honouree or
-    // its matching employer names the primary now; and a soft credit that
-    // landed the merged person on their OWN gift is not a soft credit (the
-    // hard credit already counts it), so it goes.
-    // BUILD-98 (switch) Part 5 — shifts are keyed by person_id, not donor_id,
-    // so the generic list above cannot move them; a merged volunteer keeps
-    // every hour they gave.
-    await runTx(client, "UPDATE volunteer_shifts SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
-    // FIX-1 C — the coordinator's notes follow the person the same way.
-    await runTx(client, "UPDATE volunteer_notes SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
-    await runTx(client, "UPDATE volunteer_applications SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);   // PARITY-3
-    // PARITY-3 — qualifications move too; one the primary already holds by
-    // the same kind and name stays theirs, and the duplicate goes.
-    await runTx(client, `DELETE FROM volunteer_qualifications sq WHERE sq.org_id=? AND sq.person_id=?
-                           AND EXISTS (SELECT 1 FROM volunteer_qualifications pq WHERE pq.org_id=sq.org_id AND pq.person_id=?
-                                         AND pq.kind=sq.kind AND lower(pq.name)=lower(sq.name))`, [orgId, secondaryId, primaryId]);
-    await runTx(client, "UPDATE volunteer_qualifications SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
-    await runTx(client, "UPDATE gifts SET tribute_donor_id=? WHERE org_id=? AND tribute_donor_id=?", [primaryId, orgId, secondaryId]);
-    await runTx(client, "UPDATE gifts SET match_employer_id=? WHERE org_id=? AND match_employer_id=?", [primaryId, orgId, secondaryId]);
-    await runTx(client,
-      `DELETE FROM gift_soft_credits sc USING gifts g
-        WHERE sc.gift_id = g.id AND sc.org_id=? AND sc.donor_id = g.donor_id`, [orgId]);
-
-    // Fill the primary's blanks from the secondary (never overwrite a
-    // non-empty primary value — the officer chose the primary for a reason).
-    const FILL_FIELDS = [
-      "email", "phone", "city", "state", "zip", "country", "employer",
-      "assigned_to", "assigned_to_name", "notes",
-      "stripe_customer_id", "stripe_subscription_id", "stripe_subscription_status",
-      "wealth_score", "capacity_tier", "score_confidence", "score_last_updated", "score_rationale",
-      "first_gift_date",
-    ];
-    const sets = [], vals = [];
-    for (const f of FILL_FIELDS) {
-      const pv = primary[f], sv = secondary[f];
-      if ((pv === null || pv === undefined || pv === "") && sv !== null && sv !== undefined && sv !== "") {
-        sets.push(`${f}=?`); vals.push(sv);
-      }
-    }
-    const parseTags = v => { try { const t = typeof v === "string" ? JSON.parse(v || "[]") : v; return Array.isArray(t) ? t : []; } catch { return []; } };
-    const pTags = parseTags(primary.tags), sTags = parseTags(secondary.tags);
-    const unionTags = [...new Set([...pTags, ...sTags])];
-    if (unionTags.length > pTags.length) { sets.push("tags=?"); vals.push(JSON.stringify(unionTags)); }
-    if (!primary.planned_giving && secondary.planned_giving) { sets.push("planned_giving=?"); vals.push(true); }
-    // BUILD-58 Part 2: safety flags OR on merge — a deceased/do-not-contact
-    // mark on EITHER record survives consolidation (losing it re-opens the
-    // solicit-a-deceased-donor wound).
-    if (!primary.deceased && secondary.deceased) { sets.push("deceased=?"); vals.push(true); }
-    if (!primary.do_not_contact && secondary.do_not_contact) { sets.push("do_not_contact=?"); vals.push(true); }
-    // BUILD-78: custom-field values ride the donor row now (JSONB). Merge
-    // keeps the non-primary's data (Data Hygiene reference pattern): the
-    // secondary's keys fill in, the primary wins any per-key conflict.
-    const pCf = primary.custom_fields && typeof primary.custom_fields === "object" ? primary.custom_fields : {};
-    const sCf = secondary.custom_fields && typeof secondary.custom_fields === "object" ? secondary.custom_fields : {};
-    if (Object.keys(sCf).some(k => pCf[k] === undefined)) { sets.push("custom_fields=?::jsonb"); vals.push(JSON.stringify({ ...sCf, ...pCf })); }
-    if (sets.length) await runTx(client, `UPDATE donors SET ${sets.join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...vals, primaryId, orgId]);
-
-    // Soft-delete the secondary — recoverable via trash until purge, like
-    // bulk-delete. Hard deletion stays purge-trash's job.
-    await runTx(client, "UPDATE donors SET deleted_at=NOW() WHERE id=? AND org_id=?", [secondaryId, orgId]);
-
-    const movedSummary = Object.entries(reassigned).map(([t, n]) => `${n} ${t.replace(/_/g, " ")}`).join(", ") || "no linked records";
-    await runTx(client,
-      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_" + uuid().slice(0, 8), orgId, primaryId, "note",
-       `Merged duplicate record "${secondary.name}"${secondary.email ? ` <${secondary.email}>` : ""} into this record (${movedSummary} reassigned).`,
-       today, req.user.userId, userName]);
-  });
-
-  await recalcDonorSummary(primaryId, orgId);
-  // BUILD-84 P0-4 — a merge FILLS the survivor's empty fields from the folded
-  // record, city/state/zip/country among them, so it can change an address.
-  // Both records are re-marked: the survivor may need a new lookup, and the
-  // folded one drops off the map by being soft-deleted.
+  const DH = require("../dataHealth");
+  const blank = v => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+  const choices = Object.fromEntries(DH.MERGE_FIELDS.map(([f]) => [f, blank(primary[f]) && !blank(secondary[f]) ? "other" : "kept"]));
+  const addrBlank = blank(primary.address) && blank(primary.city) && blank(primary.zip);
+  for (const f of DH.ADDRESS_GROUP) choices[f] = addrBlank ? "other" : "kept";
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  let out;
+  try {
+    out = await require("./dataHealth").mergePeople(orgId, primaryId, secondaryId,
+      { choices, me: { id: req.user.userId, name: (u && u.name) || req.user.email || "" } });
+  } catch (e) {
+    if (e && e.sentence) return res.status(e.status || 409).json({ error: "merge_refused", sentence: e.sentence });
+    throw e;
+  }
   try { await markDonorsForGeocoding(orgId, { donorIds: [primaryId] }); }
   catch (e) { console.error("[geocode] mark after merge failed:", e.message); }
-  res.json({ merged: true, primaryId, secondaryId, reassigned });
+  const reassigned = Object.fromEntries(out.moved.map(m => [m.table, m.rows]));
+  res.json({ merged: true, primaryId, secondaryId, reassigned, mergeId: out.mergeId });
 }));
 
 // ── Interactions ───────────────────────────────────────────────────────────
@@ -7458,6 +7361,7 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
      act.id, actorName, JSON.stringify(summary), migrationSource]);
   const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
+  require("./dataHealth").afterImport(orgId, id);   // CLEAN-1: Data health runs after every import
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
   res.json({ ok: true, id, name, reconciled: findings.length === 0, findings });
@@ -8326,6 +8230,7 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
      plan.counts.total, created.gifts, created.donors, 0, plan.counts.notAGift, 0,
      money.toDollars(plan.totals.slipCents || 0), money.toDollars(created.giftCents),
      actorInfo.id, actorInfo.name, JSON.stringify(summary)]);
+  require("./dataHealth").afterImport(orgId, importId2);   // CLEAN-1
 
   // THE ARITHMETIC, READ BACK FROM THE DATABASE. The plan is a promise; this is
   // what landed. A disagreement is reported, never repaired.
@@ -25225,6 +25130,8 @@ reportHooks.sendCsv = sendReportCsv;
 // Handed out here rather than exported from module scope, where it does not
 // exist: everything in this file is declared inside mount().
 reportHooks.runBoardPackSchedule = runBoardPackScheduleForOrg;
+// CLEAN-1: Data health's merge and address tidy mark the survivor for geocoding.
+giftHooks.markDonorsForGeocoding = markDonorsForGeocoding;
 }
 
 module.exports = { routers, mount, giftHooks, reportHooks };

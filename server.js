@@ -529,6 +529,8 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
 app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+// CLEAN-1: a returned change-of-address file for a large file of people.
+app.use("/data-health/ncoa/results", express.json({ limit: "20mb" }));
 // PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.
 app.use((req, res, next) =>
   req.method === "POST" && /^\/events\/[^/]+\/(hero|photos)$/.test(req.path)
@@ -2316,6 +2318,7 @@ async function recordSourceRun(orgId, source, summary, { actorId, actorName, day
      summary.rowsRead, summary.giftsCreated, summary.donorsCreated, setAside,
      summary.centsCreated / 100, summary.centsCreated / 100,
      actorId, actorName, JSON.stringify(summary)]);
+  require("./routes/dataHealth").afterImport(orgId, id);   // CLEAN-1: Data health runs after every import
   return id;
 }
 
@@ -3825,6 +3828,7 @@ app.use(require("./routes/videoThanks").routers.r0);   // PARITY-1 Part F
 app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
+app.use(require("./routes/dataHealth").routers.r0);    // CLEAN-1
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -10446,6 +10450,11 @@ require("./routes/why").mount({
 });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
+});
+require("./routes/dataHealth").mount({
+  backgroundTicksDisabled, checkWriteAccess, orgToday, orgTz, query, queryTx, recalcDonorSummary, recordTick,
+  requireAuth, run, runTx, uuid, withAdvisoryLock, withTransaction, wrap,
+  markDonorsForGeocoding: (...a) => require("./routes/crm").giftHooks.markDonorsForGeocoding(...a),
 });
 require("./routes/profileStatus").mount({
   actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,

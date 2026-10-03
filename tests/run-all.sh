@@ -145,6 +145,8 @@ CORE=(
   comms2-statement-total
   sec1-two-factor
   trust2-erase
+  clean1-merge
+  clean1-duplicates
   help1-ask
   why1-appeal-variance
   parity1-donor-tags

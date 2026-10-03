@@ -58,9 +58,20 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   rank. (BUILD-98)
 - **Keep households loose.** A person belongs to at most one. Deleting a household unlinks its members
   (SET NULL) and never cascades. Only one proposal per fund may be open per household. (BUILD-14, BUILD-99)
-- **Wire every new donor-scoped table into `POST /donors/merge`** (reassign it, or let the primary win on a
-  unique key) **and into purge-trash's FK-safe order.** Merge also moves shifts, soft credits, tribute
-  notices and honouree/employer pointers, and drops any soft credit that became self-credit. (BUILD-08, BUILD-98)
+- **A merge is Data health's `mergePeople` (routes/dataHealth.js), and every person pointer is in `MERGE_REFS`.**
+  `POST /donors/merge` delegates to it. A new column that points at a person (REFERENCES donors, or named
+  donor_id / person_id / *_donor_id / *_person_id) goes into `MERGE_REFS` in the same commit, or into
+  `NOT_MOVED` with the reason; `tests/clean1-merge.test.js` reads db.js and fails otherwise. A row that
+  would break a unique key is set aside whole (the kept person's twin wins) and comes back on undo; a table
+  where both rows are real records a person must end first (current membership, year-end statement, open
+  proposal per fund, active plan, a source's recurring gift) is `refuse` and the merge stops with a sentence.
+  The money foots inside the transaction or nothing is written. Undo restores both people and every row
+  exactly for 30 days. Never merge two people from different households in bulk. (BUILD-08, BUILD-98, CLEAN-1)
+- **Steward suggests; staff apply.** Data health (`dataHealth.js` is the pure rules) proposes duplicates,
+  address tidies (offline, `parse-address`, flagged rather than guessed whenever a word would be lost),
+  email fixes and change-of-address moves; each change is a POST a person pressed. "Not a duplicate" is a
+  `data_health_dismissals` row by the two ids, so it survives every later import. A bounce mark clears only
+  on a separate confirm. The old address is kept in `donor_address_history`. (CLEAN-1)
 - **OR the mail-blocking flags on merge** (`deceased`, `do_not_contact`). A survivor never loses a restriction
   that the other record carried. (BUILD-58)
 - **Check every client-supplied donor, member or household id with an org-scoped ownership check**
