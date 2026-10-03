@@ -10464,7 +10464,7 @@ async function storeAuctionPhoto(orgId, v) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("campaign", m[1], buffer);
   if (norm.error) return { error: norm.error, message: norm.message || "That photo could not be read." };
-  const asset = await putThemeAsset({ orgId, kind: "auction", buffer: norm.buffer, contentType: norm.contentType,
+  const asset = await putThemeAsset({ orgId, kind: "auction", isPublic: true, buffer: norm.buffer, contentType: norm.contentType,
     width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }

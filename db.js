@@ -3437,6 +3437,20 @@ async function initSchema() {
   // Pinned by tests/asset-retention.test.js (incl. the one-seam battery).
   await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
+  // FIX-20 Part 0: an asset is PRIVATE unless an admin placed it on a public
+  // page. /portal-assets/:id serves a public one to anyone and a private one
+  // only to a signed-in user of the owning org. The backfill runs once, when
+  // the column first appears: every existing asset of a public-page kind (the
+  // logo, the header, impact, widget, campaign, event, auction and volunteer
+  // page images) was placed there by an admin, and nothing else ever was.
+  {
+    const had = await pool.query(`SELECT 1 FROM information_schema.columns WHERE table_name='portal_assets' AND column_name='is_public'`);
+    await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE`);
+    if (!had.rows.length) {
+      await pool.query(`UPDATE portal_assets SET is_public = TRUE
+        WHERE kind IN ('logo','header','impact','widget','campaign','event','auction','volpage')`);
+    }
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS asset_pointer_history (
       id TEXT PRIMARY KEY,

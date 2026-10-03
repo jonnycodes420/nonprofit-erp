@@ -29,6 +29,7 @@ const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
+const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
 
 const routers = {
   r0: express.Router(),
@@ -13811,13 +13812,17 @@ app.get("/funders/:donorId/documents", requireAuth, wrap(async (req, res) => {
 // GET /grant-documents/:id — the signed, expiring, PRIVATE door.
 // Unauthenticated by design (a browser fetches a file with no auth header);
 // the URL carries its own signature and the org comes from the STORED ROW.
-app.get("/grant-documents/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: the signature is no longer enough on its own. The link also
+// needs a signed-in user of the org on the stored row (the client fetches it
+// with the session and saves the bytes), so a copied link opened anywhere
+// else is a 404.
+app.get("/grant-documents/:id", requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
     `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`,
     [id, grantDocs.DOC_ASSET_KIND]);
-  if (!row) return res.status(404).json({ error: "not_found" });
+  if (!row || row.org_id !== req.user.orgId) return res.status(404).json({ error: "not_found" });
   const v = grantDocs.verifyDocUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
   // ONE answer for expired and for wrong-org alike, so a probe cannot tell
   // "this agreement exists in another tenant" from "this link is old".
@@ -13943,12 +13948,13 @@ app.delete("/interactions/:id/attachments", requireAuth, wrap(async (req, res) =
 // header (a browser fetches a file with none); the URL carries its signature,
 // minted only for signed-in staff of the org, and the org comes from the
 // STORED ROW. A removed attachment stops serving even inside its thirty minutes.
-app.get("/interaction-files/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: and a signed-in user of that org, as /grant-documents.
+app.get("/interaction-files/:id", requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
     `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`, [id, IXF.FILE_ASSET_KIND]);
-  if (!row) return res.status(404).json({ error: "not_found" });
+  if (!row || row.org_id !== req.user.orgId) return res.status(404).json({ error: "not_found" });
   const v = IXF.verifyFileUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
   if (!v.ok) return res.status(403).json({ error: "link_expired" });
   const [meta] = await query(
@@ -24124,7 +24130,7 @@ async function storeEventImage(orgId, dataUri) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("event", m[1], buffer);
   if (norm.error) return { error: norm.error, message: norm.message };
-  const asset = await putThemeAsset({ orgId, kind: "event", buffer: norm.buffer, contentType: norm.contentType,
+  const asset = await putThemeAsset({ orgId, kind: "event", isPublic: true, buffer: norm.buffer, contentType: norm.contentType,
     width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
@@ -25093,7 +25099,7 @@ async function storeCampaignHero(orgId, heroIn) {
   if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
   const norm = await normalizeUploadImage("campaign", m[1], buffer);
   if (norm.error) return norm;
-  const asset = await putThemeAsset({ orgId, kind: "campaign", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  const asset = await putThemeAsset({ orgId, kind: "campaign", isPublic: true, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
 async function pruneCampaignAssets(orgId) {

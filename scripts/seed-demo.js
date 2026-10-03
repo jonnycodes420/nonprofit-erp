@@ -1654,8 +1654,8 @@ async function main() {
     const photo = async name => {
       const buf = fs.readFileSync(path.join(__dirname, "..", "client", "public", "photos", name));
       const id = "pa_" + crypto.createHash("sha256").update(ORG + "|volpage|" + name).digest("hex").slice(0, 24);
-      await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'volpage','image/webp',$3,'db',$4)
-               ON CONFLICT (id) DO NOTHING`, [id, ORG, buf.length, buf.toString("base64")]);
+      await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data,is_public) VALUES ($1,$2,'volpage','image/webp',$3,'db',$4,TRUE)
+               ON CONFLICT (id) DO UPDATE SET is_public = TRUE`, [id, ORG, buf.length, buf.toString("base64")]);
       return `/portal-assets/${id}`;
     };
     const hands = await photo("potter-2x.webp"), students = await photo("museum-2x.webp");

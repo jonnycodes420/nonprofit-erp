@@ -140,4 +140,16 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
-module.exports = { signToken, requireAuth, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+// FIX-20 Part 0: the session check for a FILE door. Same check as
+// requireAuth, but a refusal is a plain 404, so a signed-out probe or another
+// org cannot tell "this file exists" from "there is no such file". The org
+// match itself is the route's job (it reads the org from the stored row).
+function requireAuth404(req, res, next) {
+  const status = res.status.bind(res);
+  res.status = (code) => (code === 401 || code === 403)
+    ? { json: () => status(404).json({ error: "not_found" }) }
+    : status(code);
+  return requireAuth(req, res, (err) => { res.status = status; next(err); });
+}
+
+module.exports = { signToken, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

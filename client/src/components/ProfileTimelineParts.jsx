@@ -23,6 +23,7 @@ import { useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { downloadFile } from "../lib/downloadFile";
 
 export const FILE_MAX_BYTES = 10 * 1024 * 1024;
 export const FILE_ACCEPT = ".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.doc,.docx,.xls,.xlsx,.csv,.txt";
@@ -116,9 +117,8 @@ export async function uploadAttachment(interactionId, file) {
 const linkBtn = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 13,
   textDecoration: "underline", cursor: "pointer", font: "inherit" };
 
-// `/interaction-files/*` is proxied in vercel.json, like /grant-documents: a
-// bare-path link a browser fetches with no auth header.
-function fileHref(url) { return url || null; }
+// FIX-20 Part 0: the file is fetched with the session and saved from the
+// bytes (lib/downloadFile.js); a bare link opened elsewhere is a 404.
 
 export function AttachmentChips({ files = [], canRemove = false, onRemoved }) {
   const [busy, setBusy] = useState("");
@@ -138,7 +138,8 @@ export function AttachmentChips({ files = [], canRemove = false, onRemoved }) {
       {files.map(f => (
         <span key={f.id} style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid " + T.bg3,
           borderRadius: 999, padding: "5px 12px", background: T.bg, fontSize: 13, maxWidth: "100%" }}>
-          <a href={fileHref(f.url)} download={f.fileName} rel="noreferrer" title={`${f.fileName}, ${fileSize(f.bytes)}`}
+          <a href={f.url || undefined} download={f.fileName} rel="noreferrer" title={`${f.fileName}, ${fileSize(f.bytes)}`}
+            onClick={e => { e.preventDefault(); if (f.url) downloadFile(f.url, f.fileName).catch(x => window.alert(x.message)); }}
             style={{ color: T.ink, fontWeight: 600, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 260 }}>
             {f.fileName}
           </a>

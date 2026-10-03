@@ -105,10 +105,15 @@ const assetPath = (id) => `/portal-assets/${id}`;
 
 // Store a validated theme image; returns { id, path }. Content-addressed:
 // identical bytes for the same org+type return the existing asset untouched.
-async function putThemeAsset({ orgId, kind, buffer, contentType, width, height }) {
+// FIX-20 Part 0: `isPublic` is passed ONLY where an admin places the asset on
+// a public page (the logo, a campaign hero, an event photo, a recruitment page
+// image). Everything else is private: a waiver, an application upload, a
+// conversation attachment, a grant document, a cheque, a face, a video.
+async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, isPublic = false }) {
   const id = assetIdFor(orgId, kind, contentType, buffer);
-  const existing = await query(`SELECT id, deleted_at FROM portal_assets WHERE id = ?`, [id]);
+  const existing = await query(`SELECT id, deleted_at, is_public FROM portal_assets WHERE id = ?`, [id]);
   if (existing.length) {
+    if (isPublic && !existing[0].is_public) await run(`UPDATE portal_assets SET is_public = TRUE WHERE id = ?`, [id]);
     // BUILD-56 — re-uploading bytes that are sitting in the retention window
     // RESURRECTS the soft-deleted object (content addressing makes this free).
     if (existing[0].deleted_at != null) {
@@ -138,9 +143,9 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height }
   }
   if (storage === "db") data = buffer.toString("base64");
   await run(
-    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data)
-     VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
-    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data]);
+    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
+    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true]);
   return { id, path: assetPath(id) };
 }
 
@@ -161,7 +166,15 @@ async function getThemeAsset(id) {
   } else {
     buffer = Buffer.from(row.data || "", "base64");
   }
-  return { id: row.id, contentType: row.content_type, buffer };
+  return { id: row.id, orgId: row.org_id, isPublic: row.is_public === true, contentType: row.content_type, buffer };
+}
+
+// FIX-20 Part 0: who may read an asset, without touching its bytes. The
+// door checks this first, so a probe for a private id costs one row read.
+async function getAssetMeta(id) {
+  if (!ASSET_ID_RE.test(String(id || ""))) return null;
+  const [row] = await query(`SELECT id, org_id, kind, is_public FROM portal_assets WHERE id = ? AND deleted_at IS NULL`, [id]);
+  return row ? { id: row.id, orgId: row.org_id, kind: row.kind, isPublic: row.is_public === true } : null;
 }
 
 // BUILD-56 — the retention window. Rationale (decided, don't re-litigate):
@@ -377,7 +390,7 @@ function assetHealth() {
 }
 
 module.exports = {
-  s3Config, putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
+  s3Config, putThemeAsset, getThemeAsset, getAssetMeta, pruneThemeAssets, pruneUnreferencedAssets,
   refreshAssetFallbackCount, refreshRetentionCounts, assetHealth,
   restoreAsset, collectLiveAssetRefs, purgeExpiredAssets, ASSET_RETENTION_DAYS,
   assetIdFor, assetPath, ASSET_ID_RE,

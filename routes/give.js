@@ -16,6 +16,8 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
+const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
+const { getAssetMeta } = require("../assetStore");
 
 const routers = {
   r0: express.Router(),
@@ -5723,9 +5725,23 @@ app.post("/portal/:orgSlug/recurring/:subId/update-card", portalMutationLimiter,
 // (id,w) is a stable, immutable URL — the CDN caches each width once. SVGs and
 // non-raster types pass through untouched (they scale losslessly).
 const PORTAL_ASSET_WIDTHS = [400, 800, 1280, 1920, 2560];
-app.get("/portal-assets/:id", wrap(async (req, res) => {
+// FIX-20 Part 0: only an asset an admin placed on a public page is served to
+// anyone. Any other asset needs a signed-in user of the org that owns it, and
+// every refusal is the same 404 as a missing id.
+async function assetDoor(req, res, next) {
+  const meta = await getAssetMeta(req.params.id);
+  if (!meta) return res.status(404).json({ error: "not_found" });
+  req.assetMeta = meta;
+  if (meta.isPublic) return next();
+  return requireAuth404(req, res, (err) => {
+    if (err) return next(err);
+    if (!req.user || req.user.orgId !== meta.orgId) return res.status(404).json({ error: "not_found" });
+    next();
+  });
+}
+app.get("/portal-assets/:id", wrap(assetDoor), wrap(async (req, res) => {
   const asset = await getThemeAsset(req.params.id);
-  if (!asset) return res.status(404).json({ error: "not_found" });
+  if (!asset || asset.orgId !== req.assetMeta.orgId) return res.status(404).json({ error: "not_found" });
   let buffer = asset.buffer, contentType = asset.contentType, variantTag = "";
   const w = parseInt(req.query.w, 10);
   if (PORTAL_ASSET_WIDTHS.includes(w) && contentType !== "image/svg+xml" && contentType !== "image/gif") {
@@ -5742,7 +5758,8 @@ app.get("/portal-assets/:id", wrap(async (req, res) => {
     } catch (e) { console.error("[portal-assets] resize failed, serving master:", e.message); }
   }
   res.set("Content-Type", contentType);
-  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.set("Cache-Control", asset.isPublic ? "public, max-age=31536000, immutable" : "private, no-store");
+  if (!asset.isPublic) res.set("X-Content-Type-Options", "nosniff");
   res.set("ETag", `"${asset.id}${variantTag}"`);
   res.set("Vary", "Accept");
   res.send(buffer);
@@ -5772,7 +5789,7 @@ async function rescueLegacyImageValue(orgId, kind, dataUri) {
   const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
   if (!m) return null;
   try {
-    const asset = await putThemeAsset({ orgId, kind, buffer: Buffer.from(m[2], "base64"), contentType: m[1] });
+    const asset = await putThemeAsset({ orgId, kind, buffer: Buffer.from(m[2], "base64"), contentType: m[1], isPublic: true });
     return asset.path;
   } catch (e) { console.error("[assets] legacy-image rescue failed:", e.message); return "legacy:unrecoverable"; }
 }
@@ -5804,7 +5821,7 @@ async function storeImpactPhotos(orgId, photosIn, cropsIn) {
     if (!dims.ok) return { error: "bad_image_dimensions", message: dims.message };
     const norm = await normalizeUploadImage("impact", m[1], buffer);
     if (norm.error) return norm;
-    const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+    const asset = await putThemeAsset({ orgId, kind: "impact", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
     out.push(asset.path); crops.push(crop);
   }
   return { photos: out, crops };
@@ -5847,7 +5864,7 @@ async function storeWidgetImage(orgId, v) {
   if (!dims.ok) return { error: dims.message };
   const norm = await normalizeUploadImage("widget", m[1], buffer);
   if (norm.error) return { error: norm.message };
-  const asset = await putThemeAsset({ orgId, kind: "widget", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+  const asset = await putThemeAsset({ orgId, kind: "widget", buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
   return { url: asset.path };
 }
 
@@ -6222,7 +6239,7 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     if (!dims.ok) return res.status(400).json({ error: "bad_image_dimensions", message: dims.message });
     const norm = await normalizeUploadImage(kind, contentType, buffer);
     if (norm.error) return res.status(400).json({ error: norm.error, message: norm.message });
-    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height });
+    const asset = await putThemeAsset({ orgId: req.user.orgId, kind, buffer: norm.buffer, contentType: norm.contentType, width: norm.width ?? dims.width, height: norm.height ?? dims.height, isPublic: true });
     updates.push(`${colBase}_url = ?`); params.push(asset.path);
     updates.push(`${colBase}_data = ?`); params.push(null);
     assetOps.push({ kind, keepId: asset.id, entity: `portal_settings.${colBase}`, fromVal, toVal: asset.path });
