@@ -3,6 +3,10 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **The give form's returning-donor sign-in uses the portal's magic link and shows only when the org's
+  portal is on.** The tribute question is on step one. The exit nudge (`form_config.exitNudge`) is off by
+  default, desktop only, once per visit. PayPal and Venmo buttons stay hidden until the partner program
+  is real. (PARITY-1)
 - **Declare a widget only in `shared/pageWidgets.js`.** The server validator, the renderer
   (`PortalWidgets.jsx`) and the editor all read it. `tests/page-widgets.test.js` requires a renderer branch
   for every widget. (BUILD-95 §5B)

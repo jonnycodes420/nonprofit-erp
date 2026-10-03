@@ -3,6 +3,12 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **Calls to make is one rule.** `callsToMake.js callsSql`: first gifts in the last 7 days, and gifts at
+  or over `orgs.call_gift_floor_cents` (WHY-1's $250 by default) in the last 60, with no call logged with
+  that person on or after the gift date. Mark called writes a call interaction; Snooze hides one gift for
+  7 days (`call_snoozes`). The panel and its count read the same SQL (`calls-to-make` source). (PARITY-1)
+- **Retention has three definitions, each a ratio whose halves open.** Calendar year (`retention`),
+  fiscal year and rolling 12 months (`retention-window`). The dashboard says which one is showing. (PARITY-1)
 - **Home is hers at 7:40 and the board view is the board meeting: one `<Dashboard surface>` over one
   `HOME_SECTIONS` registry.** Add a section there with its `surface`. The `dashboard` tab id keeps its
   route and "Home" label, and the board is `board`. (BUILD-86 A)

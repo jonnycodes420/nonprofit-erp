@@ -3,6 +3,20 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **The tags under a donor's name are computed, never stored, from one definition.** `donorStatus.js`
+  `statusSql` gives the giving level (General, Mid, Major on the last 12 months against
+  `orgs.giving_level_mid_cents` / `giving_level_major_cents`, Settings, Giving levels; defaults $1,000 and
+  $10,000), the lifecycle (New, Current, Recaptured, Lapsed on two 12-month windows) and Retained (last
+  calendar year and this one). The profile, the list filters, Groups, the dashboard's level chart and the
+  `donors-by-status` source all read it. A refund comes off the 12-month total but never counts as "gave".
+  `tests/parity1-donor-tags.test.js` pins the edges. (PARITY-1)
+- **The closeness word is ENGAGE-1's band in words.** Close and Warm are the bands; Distant reads New
+  when the person's first gift, conversation or shift is in the last 90 days, otherwise Cooling
+  (`closenessFor` in shared/engagementWeights.js; `closenessSql` in donorStatus.js for lists). Never a
+  second score. (PARITY-1)
+- **A Group is an `audiences` row.** `kind` 'dynamic' keeps `rules` (the donor list filters, evaluated
+  live by `groups.js buildDonorFilter`, so membership is never stored); 'static' keeps its people in
+  `group_members`. No second list table. (PARITY-1)
 - **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
   night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
   registration sets. Before this the only link was the campaign NAME, so a renamed event lost its
