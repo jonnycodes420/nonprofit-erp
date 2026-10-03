@@ -40,7 +40,7 @@ const {
   actor, checkWriteAccess, crypto, demoMailNote, donateLimiter, donorFacingOrgName, orgSendingIdentity,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, resend, run,
   sendDonorLifecycleEmail, stripe, testMode, uuid, volunteerSummary, withAdvisoryLock, wrap,
-  brandEmailHeaderHtml, fromWithDisplayName, DONOR_MAIL_ADDR, writeAuditLog,
+  brandEmailHeaderHtml, fromWithDisplayName, DONOR_MAIL_ADDR, writeAuditLog, volunteerSignUp,
 } = ctx;
 
 // The shell and the two pure modules arrive by dynamic import, exactly as
@@ -170,7 +170,23 @@ async function whatTheyHave(orgId, personId, email) {
       ORDER BY created_at DESC`, [orgId, personId]);
   const vol = shifts.length || (await volunteerSummary(orgId, personId).catch(() => null))?.hundredths
     ? await volunteerSummary(orgId, personId).catch(() => null) : null;
-  return { today, membership, tickets, shifts, fundraisers, gifts, recurring, vol };
+  // PARITY-3 — shifts a volunteer can join from here: published, public,
+  // in the next five weeks, and not ones they are already on. Only for
+  // somebody who volunteers (a shift, hours, or the Volunteer role).
+  const [pt] = await query(`SELECT person_types FROM donors WHERE id=? AND org_id=?`, [personId, orgId]);
+  const isVol = !!(vol || shifts.length || (pt && JSON.stringify(pt.person_types || []).includes("volunteer")));
+  const openShifts = isVol ? await query(
+    `SELECT s.id, s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS name, COALESCE(s.venue, o.location) AS venue,
+            s.capacity,
+            (SELECT COUNT(*) FROM volunteer_signups su WHERE su.slot_id=s.id AND su.status IN ('confirmed','completed'))::int AS taken,
+            (SELECT COALESCE(SUM(r.needed),0) FROM volunteer_slot_roles r WHERE r.slot_id=s.id)::int AS role_places,
+            (SELECT COUNT(*) FROM volunteer_slot_roles r WHERE r.slot_id=s.id)::int AS role_count
+       FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id=s.opportunity_id AND o.org_id=s.org_id
+      WHERE s.org_id=? AND s.cancelled_at IS NULL AND s.published IS NOT FALSE AND o.is_public = TRUE AND o.archived_at IS NULL
+        AND s.date >= ? AND s.date <= to_char(?::date + 35, 'YYYY-MM-DD')
+        AND NOT EXISTS (SELECT 1 FROM volunteer_signups su WHERE su.slot_id=s.id AND su.person_id=? AND su.status <> 'cancelled')
+      ORDER BY s.date, s.start_time LIMIT 12`, [orgId, today, today, personId]).catch(() => []) : [];
+  return { today, membership, tickets, shifts, fundraisers, gifts, recurring, vol, openShifts };
 }
 
 // ── THE PAGE ─────────────────────────────────────────────────────────────
@@ -303,6 +319,26 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
     sections.push(`<h2 style="margin:22px 2px 10px">Your shifts</h2>
       ${have.vol && have.vol.totalHours ? `<div class="card"><p class="muted">You have given ${esc(String(have.vol.totalHours))} hours to ${esc(brand.displayName || "us")}.</p></div>` : ""}
       ${cards}`);
+  }
+  // PARITY-3 — shifts they can join, one tap each. The same sign-up path as
+  // the public page and the coordinator's screen, so a full shift puts them
+  // on the waiting list here exactly as it would there.
+  if (have.openShifts && have.openShifts.length) {
+    const flash = req.query.joined === "1" ? `<div class="ok">You are on it. Thank you.</div>`
+      : req.query.joined === "w" ? `<div class="ok">That one is full, so you are on the waiting list. If a place frees, the first person waiting takes it.</div>` : "";
+    const cards = have.openShifts.map(s => {
+      const places = s.role_count ? s.role_places : s.capacity;
+      const left = places == null ? null : Math.max(0, Number(places) - Number(s.taken));
+      return `<div class="card">
+      <div class="row"><h2>${esc(s.name)}</h2><span class="pill ${left === 0 ? "full" : "open"}">${left == null ? "Open" : left === 0 ? "Full" : left + " left"}</span></div>
+      <p class="muted">${esc(SP.dayWordsFull(s.date))} · ${esc(String(s.start_time).slice(0, 5))} to ${esc(String(s.end_time).slice(0, 5))}</p>
+      ${s.venue ? `<p class="small">${esc(s.venue)}</p>` : ""}
+      <form method="post" action="/you/${esc(org.org_slug)}/shift-signup">
+        <input type="hidden" name="slot" value="${esc(s.id)}">
+        <button class="btn${left === 0 ? " quiet" : ""}" type="submit">${left === 0 ? "Join the waiting list" : "Sign me up"}</button>
+      </form>
+    </div>`; }).join("");
+    sections.push(`<h2 style="margin:22px 2px 10px">Shifts you can join</h2>${flash}${cards}`);
   }
 
   // ── Your fundraising ──────────────────────────────────────────────────
@@ -512,6 +548,26 @@ ctx.registerSupporterSession({ mint: mintSupporterSession, setCookie: setYouCook
 // this mints a FRESH one and the old one stops working, which is the right way
 // round. It goes to the address on the fundraiser record and nowhere else, and
 // the token never reaches this page.
+// PARITY-3 — a volunteer joins a published shift from their own page. The
+// session says who; the shift must be this org's, published and public; the
+// one sign-up path decides confirmed or waiting. A GET never gets here.
+app.post("/you/:orgSlug/shift-signup", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  await READY;
+  const org = await orgBySlug(req.params.orgSlug);
+  if (!org) return res.status(404).send("Not found");
+  const sess = await youSession(req, org);
+  const back = `/you/${encodeURIComponent(req.params.orgSlug)}`;
+  if (!sess) return res.redirect(303, back);
+  const [slot] = await query(
+    `SELECT s.id FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id=s.opportunity_id AND o.org_id=s.org_id
+      WHERE s.id=? AND s.org_id=? AND s.cancelled_at IS NULL AND s.published IS NOT FALSE AND o.is_public = TRUE AND o.archived_at IS NULL`,
+    [String(req.body?.slot || ""), org.id]);
+  if (!slot) return res.redirect(303, back);
+  const r = await volunteerSignUp(org.id, slot.id, sess.person.id,
+    { source: "self", who: { id: "system:your-page", name: "The volunteer, from Your page" } });
+  res.redirect(303, `${back}?joined=${r && r.status === "waitlisted" ? "w" : "1"}#shifts`);
+}));
+
 app.post("/you/:orgSlug/fundraiser-link", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
   await READY;
   const org = await orgBySlug(req.params.orgSlug);

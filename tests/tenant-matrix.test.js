@@ -572,6 +572,9 @@ function bResolver(routePath, param) {
   if (routePath.startsWith("/volunteer-hub/groups/")) return `vgrp_${B}`;
   if (routePath.startsWith("/volunteer-hub/kiosk/")) return `vslot_${B}`;
   if (routePath.startsWith("/volunteer-hub/signups/")) return `vsu_${B}`;
+  // PARITY-3 — a draft reminder or thank-you is a milestone_drafts row: org
+  // B's own draft, which org A may neither read nor discard.
+  if (routePath.startsWith("/volunteer-hub/drafts/")) return `md_${B}`;
   // THREAD-2a — a journey IS a cultivation template, so the cross-tenant
   // probe is org B's own template row. These three routes read, rewrite and
   // APPLY a journey to people, which is the most consequential of the set:

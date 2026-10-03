@@ -283,8 +283,18 @@ export function validateSlot(raw = {}) {
     }
   }
   const notes = String(raw.notes || "").trim().slice(0, 1000) || null;
+  // PARITY-3 Part 4 — a shift's own name, colour, venue and the place within
+  // it, and whether volunteers can see it yet. Published by default, so every
+  // shift made before this stays visible.
+  const name = String(raw.name || "").trim().slice(0, 120) || null;
+  const color = raw.color && /^#[0-9a-fA-F]{6}$/.test(String(raw.color)) ? String(raw.color) : null;
+  const venue = String(raw.venue || "").trim().slice(0, 160) || null;
+  const locationDetail = String(raw.locationDetail || "").trim().slice(0, 160) || null;
+  const published = raw.published !== false;
+  const r = validateRoles(raw.roles);
+  errors.push(...r.errors);
   return { ok: errors.length === 0, errors,
-    slot: { date, startTime, endTime, capacity, notes, hundredths } };
+    slot: { date, startTime, endTime, capacity, notes, hundredths, name, color, venue, locationDetail, published, roles: r.roles } };
 }
 
 export function validateCredential(raw = {}, today = null) {
@@ -334,6 +344,115 @@ export function crossoverSentences({ bothCount, volunteerNeverAskedCount, orgNam
         + `and ${one ? "has" : "have"} never been asked to give. They already say yes to ${orgName} with their time.` });
   }
   return out;
+}
+
+// ── PARITY-3 Part 4 · A SHIFT HAS ROLES, AND A FOOTER THAT ADDS UP ─────────
+// A shift ("slot" in the tables) may carry ROLES, each with the number of
+// people it needs: "Sorting, 3" and "Driver, 2". When it does, capacity and
+// the waiting list are decided PER ROLE, inside the same locked transaction
+// that has always decided them (routes/volunteerScheduling.js signUp), and a
+// shift with no roles keeps its one capacity exactly as before.
+// The four-colour rule: a shift is emerald, brass or ink, nothing invented.
+export const SHIFT_COLOURS = ["#0d5c3a", "#c9a84c", "#0f1a12"];
+export const MAX_ROLES = 12;
+
+export function validateRoles(raw) {
+  if (raw === undefined) return { ok: true, roles: undefined, errors: [] };
+  const list = Array.isArray(raw) ? raw : [];
+  const errors = [], roles = [], seen = new Set();
+  if (list.length > MAX_ROLES) errors.push({ field: "roles", message: `A shift can have up to ${MAX_ROLES} roles.` });
+  list.slice(0, MAX_ROLES).forEach((r, i) => {
+    const name = String((r && r.name) || "").trim().slice(0, 80);
+    const needed = Number(r && r.needed);
+    if (!name) { errors.push({ field: `roles.${i}.name`, message: `Role ${i + 1} needs a name, like Sorting or Driver.` }); return; }
+    if (seen.has(name.toLowerCase())) { errors.push({ field: `roles.${i}.name`, message: `There are two roles called ${name}.` }); return; }
+    if (!Number.isInteger(needed) || needed < 0 || needed > 500) {
+      errors.push({ field: `roles.${i}.needed`, message: `How many people ${name} needs is a whole number from 0 to 500.` }); return;
+    }
+    seen.add(name.toLowerCase());
+    roles.push({ id: r && r.id ? String(r.id) : null, name, needed });
+  });
+  return { ok: errors.length === 0, roles, errors };
+}
+
+// One role's state: the same arithmetic as slotState, with the role's number.
+export function roleState({ needed, confirmed = 0, waitlisted = 0, completed = 0 }) {
+  const scheduled = Number(confirmed || 0) + Number(completed || 0);
+  const st = slotState({ capacity: needed, confirmed: scheduled, waitlisted });
+  return { ...st, needed: Number(needed), scheduled, short: Math.max(0, Number(needed) - scheduled) };
+}
+
+// THE FOOTER. Five numbers under every shift, each with its sentence:
+//   needed       the roles' numbers added up (or the shift's capacity)
+//   scheduled    people with a place: confirmed, or checked in and done
+//   short        places nobody has taken. Counted ROLE BY ROLE, so three
+//                extra sorters do not hide a missing driver.
+//   waitlisted   people waiting for a place
+//   hours        the hours of work scheduled: each scheduled person times
+//                the shift's length
+// A shift with no limit has no "needed" and is never short.
+export function shiftFooter({ roles = [], capacity = null, confirmed = 0, waitlisted = 0, completed = 0, hundredths = 0 }) {
+  let needed, scheduled, short, waiting;
+  if (roles.length) {
+    const states = roles.map(r => roleState(r));
+    needed = states.reduce((a, r) => a + r.needed, 0);
+    scheduled = states.reduce((a, r) => a + r.scheduled, 0);
+    short = states.reduce((a, r) => a + r.short, 0);
+    waiting = roles.reduce((a, r) => a + Number(r.waitlisted || 0), 0);
+  } else {
+    scheduled = Number(confirmed || 0) + Number(completed || 0);
+    needed = capacity === null || capacity === undefined ? null : Number(capacity);
+    short = needed === null ? 0 : Math.max(0, needed - scheduled);
+    waiting = Number(waitlisted || 0);
+  }
+  return { needed, scheduled, short, waitlisted: waiting, hoursHundredths: scheduled * Number(hundredths || 0) };
+}
+export const FOOTER_SENTENCES = Object.freeze({
+  needed: "The people this shift needs: every role's number added up, or the shift's capacity when it has no roles.",
+  scheduled: "People with a place on it: confirmed, or already checked in.",
+  short: "Places nobody has taken yet, counted role by role, so extra people in one role do not hide a gap in another.",
+  waitlisted: "People waiting for a place, in the order they signed up. The first of them takes the next place that frees.",
+  hours: "Hours of work scheduled: each person with a place, times the length of the shift.",
+});
+
+// Two shifts overlap when they are on the same day and each starts before the
+// other ends. Back to back (one ends at 12:00, the next starts at 12:00) is
+// not a conflict: that is somebody doing the morning and the afternoon.
+export function overlaps(a, b) {
+  if (!a || !b || a.date !== b.date) return false;
+  return minutesOf(a.startTime) < minutesOf(b.endTime) && minutesOf(b.startTime) < minutesOf(a.endTime);
+}
+// Every pair of a person's places that overlap. `places` are
+// { personId, slotId, date, startTime, endTime }, only places that count
+// (confirmed or done; a waiting-list spot is not a promise to be anywhere).
+export function findConflicts(places = []) {
+  const byPerson = new Map();
+  for (const p of places) {
+    if (!byPerson.has(p.personId)) byPerson.set(p.personId, []);
+    byPerson.get(p.personId).push(p);
+  }
+  const out = [];
+  for (const [personId, list] of byPerson) {
+    list.sort((x, y) => (x.date + x.startTime).localeCompare(y.date + y.startTime));
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      if (list[j].date !== list[i].date) break;
+      if (list[i].slotId !== list[j].slotId && overlaps(list[i], list[j])) out.push({ personId, a: list[i].slotId, b: list[j].slotId, date: list[i].date });
+    }
+  }
+  return out;
+}
+
+// Copy a shift to other dates: every week for N weeks, or a list of dates.
+// The original date is never in the answer (it already exists).
+export function addDaysCivil(iso, n) {
+  return new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n)).toISOString().slice(0, 10);
+}
+export function copyDates(fromDate, { weeks = 0, dates = [] } = {}) {
+  const out = new Set();
+  const w = Math.max(0, Math.min(52, Math.floor(Number(weeks) || 0)));
+  for (let i = 1; i <= w; i++) out.add(addDaysCivil(fromDate, 7 * i));
+  for (const d of Array.isArray(dates) ? dates : []) if (DATE_RE.test(String(d)) && d !== fromDate) out.add(String(d));
+  return [...out].sort();
 }
 
 export { hoursToHundredths, hundredthsToHours, MAX_SHIFT_HOURS };

@@ -243,8 +243,20 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
                  VALUES ($1,$2,$3,$4,'confirmed','system:test','Test')`, ["su_" + uniq(), orgId, slotId, pid]);
     }
     state.captured.length = 0;
+    // PARITY-3: the sweep DRAFTS (it sends nothing), and a person presses
+    // Send. The suppression rules apply at that press, to every draft.
     const run = await api("POST", "/volunteer-hub/run-reminders", tok, {});
     ok("the reminder sweep runs", run.status === 200, run.body);
+    await settle();
+    ok("…and sends nothing by itself", to(CLEAN).length === 0 && to(bouncedEmail).length === 0 && to(deadEmail).length === 0,
+      { clean: to(CLEAN).length });
+    const sendAll = async () => {
+      const d = await api("GET", "/volunteer-hub/drafts?kind=volunteer_reminder", tok);
+      const ids = ((d.body && d.body.drafts) || []).map(x => x.id);
+      return api("POST", "/volunteer-hub/drafts/send", tok, { ids });
+    };
+    const pressed = await sendAll();
+    ok("staff press Send on the reminder drafts", pressed.status === 200, pressed.body);
     await settle();
     ok("the clean volunteer got exactly one shift reminder", to(CLEAN).length === 1, { delivered: to(CLEAN).length });
     ok("the bounced volunteer got NO shift reminder", to(bouncedEmail).length === 0, { delivered: to(bouncedEmail).length });
@@ -269,13 +281,15 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
                VALUES ($1,$2,$3,$4,'confirmed','system:test','Test')`, ["su_" + uniq(), orgId, slot_id, lateId]);
     state.mode = "fail";
     await api("POST", "/volunteer-hub/run-reminders", tok, {});
+    await sendAll();
     await settle();
-    const lateRows = await q(`SELECT reminded_at, reminder_error, reminder_failed_at FROM volunteer_signups WHERE org_id=$1 AND person_id=$2 AND reminder_failed_at IS NOT NULL`, [orgId, lateId]);
-    ok("§8c a refused reminder is not marked sent, and keeps its reason", lateRows.length === 1 && lateRows[0].reminded_at === null && !!lateRows[0].reminder_error, lateRows);
+    const lateRows = await q(`SELECT status, send_error FROM milestone_drafts WHERE org_id=$1 AND donor_id=$2 AND source='volunteer_reminder'`, [orgId, lateId]);
+    ok("§8c a refused reminder is not marked sent, and keeps its reason", lateRows.length === 1 && lateRows[0].status === "failed" && !!lateRows[0].send_error, lateRows);
     const before = state.attempts;
     await api("POST", "/volunteer-hub/run-reminders", tok, {});
+    await sendAll();
     await settle();
-    ok("§8c the next run inside a day does not try it again (no storm)", state.attempts === before, { before, after: state.attempts });
+    ok("§8c the next run and the next press do not try it again (no storm)", state.attempts === before, { before, after: state.attempts });
     state.mode = "ok";
     await q("UPDATE orgs SET volunteer_reminders_enabled=false WHERE id=$1", [orgId]);
   }

@@ -6441,6 +6441,48 @@ async function initSchema() {
   EXCEPTION WHEN duplicate_object THEN NULL; END $$`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_birthday ON donors (org_id, birth_month, birth_day) WHERE birth_month IS NOT NULL`);
 
+  // Part 4. A shift has a name, a colour, a venue and a place within it, and
+  // is published or a draft (volunteers see only published shifts). Published
+  // by default, so every shift made before this stays visible.
+  await pool.query(`ALTER TABLE volunteer_slots ADD COLUMN IF NOT EXISTS name TEXT`);
+  await pool.query(`ALTER TABLE volunteer_slots ADD COLUMN IF NOT EXISTS color TEXT`);
+  await pool.query(`ALTER TABLE volunteer_slots ADD COLUMN IF NOT EXISTS venue TEXT`);
+  await pool.query(`ALTER TABLE volunteer_slots ADD COLUMN IF NOT EXISTS location_detail TEXT`);
+  await pool.query(`ALTER TABLE volunteer_slots ADD COLUMN IF NOT EXISTS published BOOLEAN NOT NULL DEFAULT TRUE`);
+  // A ROLE on a shift, with the number of people it needs. When a shift has
+  // roles, capacity and the waiting list are decided per role, in the same
+  // locked transaction as before (routes/volunteerScheduling.js signUp).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_slot_roles (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      slot_id TEXT NOT NULL REFERENCES volunteer_slots(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      needed INTEGER NOT NULL CHECK (needed >= 0 AND needed <= 500),
+      sort INTEGER NOT NULL DEFAULT 0,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_slot_roles_slot ON volunteer_slot_roles (slot_id, sort)`);
+  await pool.query(`ALTER TABLE volunteer_signups ADD COLUMN IF NOT EXISTS role_id TEXT REFERENCES volunteer_slot_roles(id) ON DELETE SET NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_signups_role ON volunteer_signups (role_id, status) WHERE role_id IS NOT NULL`);
+  // Shift reminders and per-shift thank-yous are DRAFTS in the one review
+  // queue (milestone_drafts), keyed vol:<kind>:<signup id> so a sweep that
+  // runs twice writes one draft, not two. Staff send them, in one tap.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_milestone_drafts_vol_key
+                      ON milestone_drafts (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%'`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS slot_id TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS send_error TEXT`);
+
+  // Part 1. An hour logged knows the opportunity and shift it was given to,
+  // the clock times when it was logged that way, and who last changed it.
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS opportunity_id TEXT`);
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS slot_id TEXT`);
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS start_time TEXT`);
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS end_time TEXT`);
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_opp ON volunteer_shifts (org_id, opportunity_id, date) WHERE opportunity_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

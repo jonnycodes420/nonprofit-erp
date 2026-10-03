@@ -14,9 +14,9 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   http(s) links are now clickable. (PARITY-2)
 - **No workflow recipe sends to a donor (FIX-12).** It writes a draft to Drafts to review. The automatic
   donor-facing sends that remain are listed in the FIX-12 entry of `docs/HISTORY.md`; a new one needs Jonathan.
-- **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/HISTORY.md`, plus: **volunteer
-  shift reminders** (`runVolunteerReminders`, org opt-in via `volunteer_reminders_enabled`, off by default,
-  never on the demo org), confirmed by Jonathan on 2026-10-02. (FIX-14)
+- **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/HISTORY.md`. Volunteer shift
+  reminders were on it (FIX-14) and came OFF it in PARITY-3, by Jonathan's brief: they are drafted the day
+  before and staff send them in one tap (`docs/decisions/people-and-records.md`).
 - **Volunteer mail goes through `donorMailDecision` like donor mail.** Kinds `volunteer_reminder` and
   `volunteer_link` are transactional: deceased, bounced/complained, `email_unreachable` and `is_sample`
   refuse, as do the block list, the org switch and the demo org; the marketing opt-out does not. (FIX-14)
