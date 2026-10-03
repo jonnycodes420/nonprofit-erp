@@ -3163,6 +3163,26 @@ async function main() {
     const scored = await E.recomputeOrgScores(qq, ORG, TODAY);
     console.log(`[seed] engagement and generosity scored for ${scored} people`);
   }
+  // FIX-22 · BIRTHDAYS. Stored and now shown (the profile's At a glance line,
+  // and "Birthdays this week" on Home), so the demo carries some: about one
+  // person in eight, spread through the year by their place in the list, and
+  // three in the coming week (the biggest giver among them) so Home has the
+  // item on the day it is seeded. No randomness: the same file every run.
+  {
+    const rows = await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND COALESCE(deceased,false)=false
+                          ORDER BY total_giving DESC, id`, [ORG]);
+    const soon = [1, 3, 5].map(n => orgTime.addDays(TODAY, n));
+    let n = 0;
+    for (let i = 0; i < rows.length; i++) {
+      let m, d;
+      if (i < 3) { m = Number(soon[i].slice(5, 7)); d = Number(soon[i].slice(8, 10)); }
+      else if (i % 8 === 0) { m = 1 + ((i * 7) % 12); d = 1 + ((i * 11) % 28); }
+      else continue;
+      await q(`UPDATE donors SET birth_month=$1, birth_day=$2 WHERE id=$3 AND org_id=$4`, [m, d, rows[i].id, ORG]);
+      n++;
+    }
+    console.log(`[seed] birthdays on file for ${n} people, three of them this week`);
+  }
   await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
   await require("./seed/prospect1-prospects").checkKnowsBest(q, ORG);   // FIX-22: a name under who knows them best
 

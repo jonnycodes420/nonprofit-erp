@@ -54,6 +54,12 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Design for 25k donors, 200k gifts and 150k interactions per org.** A per-donor aggregate is
   one `LEFT JOIN … GROUP BY`, never a correlated subquery, and a new per-donor lookup gets its
   index in `initSchema`. (BUILD-05)
+- **Rate limits: per user when signed in, per IP when not.** A valid bearer token keys the
+  general limiter by user (6,000 per 15 minutes); everything else keeps the per-IP 1,000, and the
+  stricter per-route limiters (login, forms, portal) sit on top. Never key a signed-in limit by IP:
+  an office on one wifi is one IP. Ask why has its own 60 an hour per user. A 429 says when, in one
+  sentence. The client shares identical in-flight GETs and keeps a short list of reference reads
+  for 60 seconds (`client/src/api.js SHARED_READS`); add a read there only if a write clears it. (FIX-22)
 - **A list route paginates with `limit`/`offset` and a whitelisted sort that has an `, id`
   tiebreak.** `GET /donors` keeps the legacy unpaginated array when `limit` is absent. The Home
   stack reads `/donors/summaries`. (BUILD-06)

@@ -76,6 +76,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   that the other record carried. (BUILD-58)
 - **Check every client-supplied donor, member or household id with an org-scoped ownership check**
   (`orgOwns`). A foreign id is a 404 and writes nothing. (BUILD-14)
+- **An email's attachment stays in the mailbox it came to.** Mailbox sync counts attachments and
+  never stores them (the sentence a person agrees to when connecting says so). Every count the app
+  shows links to the message in that Gmail or Outlook mailbox, on the email and under the
+  Attachments filter (`routes/finance.js mailFileOf`). Storing them would change that promise: a
+  decision for Jonathan, not a build. (FIX-22)
 - **A file on a conversation or a note is a row in `interaction_attachments`, and its bytes live in the
   asset seam.** `assetStore.js` under kind `ixfile`: the S3-compatible bucket when `PORTAL_ASSETS_S3_*` is
   set, Postgres (`portal_assets`) otherwise. The cap is 10 MB of decoded file, and it and the 16mb body
