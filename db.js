@@ -6200,6 +6200,46 @@ async function initSchema() {
       UNIQUE (org_id, gift_id)
     )`);
 
+  // PARITY-1 Part D · GROUPS AND JOURNEY TRIGGERS.
+  // A Group is an audiences row with a `kind`: 'dynamic' (its `rules` are the
+  // donor list filters, evaluated live, so nothing about membership is stored)
+  // or 'static' (its people are rows in group_members, added and removed by
+  // hand). A row with no kind is a saved audience from BUILD-97 and reads as
+  // before. One store for every named list; no second list table.
+  await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS kind TEXT`);
+  await pool.query(`ALTER TABLE audiences ADD COLUMN IF NOT EXISTS rules JSONB`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_members (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      group_id TEXT NOT NULL REFERENCES audiences(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL,
+      added_by TEXT NOT NULL,
+      added_by_name TEXT,
+      added_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (group_id, donor_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_group_members_donor ON group_members (org_id, donor_id)`);
+  // Journeys: what narrows a trigger beyond its amount (fund, campaign, the
+  // group a "joins a group" journey watches), and the event a plan was started
+  // by, so one event enrols a donor in one journey once and only once.
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS trigger_filters JSONB NOT NULL DEFAULT '{}'::jsonb`);
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS ever_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`UPDATE cultivation_templates SET ever_enabled = true WHERE journey_enabled = true AND ever_enabled = false`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS trigger_event TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_event_once
+                    ON cultivation_plans (org_id, template_id, donor_id, trigger_event) WHERE trigger_event IS NOT NULL`);
+  // The daily sweep's own memory of who was in each dynamic group yesterday,
+  // so "joins a group" can fire for a rule-based group. It is a cache of the
+  // last sweep, never the membership itself (that is always the live rule).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_sweep_seen (
+      org_id TEXT NOT NULL,
+      group_id TEXT NOT NULL REFERENCES audiences(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL,
+      seen_on TEXT NOT NULL,
+      PRIMARY KEY (group_id, donor_id)
+    )`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

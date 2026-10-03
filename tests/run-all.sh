@@ -144,6 +144,7 @@ CORE=(
   help1-ask
   why1-appeal-variance
   parity1-donor-tags
+  parity1-groups-journeys
   why1-sentence-check
   fix12-ai-switch
   fix12-recipe-drafts

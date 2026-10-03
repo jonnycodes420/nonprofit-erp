@@ -58,9 +58,49 @@ export const TRIGGERS = [
     sentence: "Starts when somebody is marked as having attended an event." },
   { key: "became_member",  label: "They become a member",
     sentence: "Starts when somebody's membership begins." },
+  // PARITY-1 Part D — the rest of the entry triggers a fundraiser expects.
+  // Each one is an event Steward already records; none of them sends anything.
+  { key: "first_recurring", label: "They start giving monthly", gift: true,
+    sentence: "Starts on the first successful payment of someone's first recurring gift." },
+  { key: "next_gift",      label: "They give again", gift: true,
+    sentence: "Starts on any gift after somebody's first." },
+  { key: "membership_payment", label: "They pay for a membership", gift: true,
+    sentence: "Starts when a membership is paid for: a new one, or a renewal." },
+  { key: "became_prospect", label: "They become a prospect",
+    sentence: "Starts when somebody is moved into the Prospect stage." },
+  { key: "joined_group",   label: "They join a group", needsGroup: true,
+    sentence: "Starts when somebody joins the group you pick. Added by hand, it starts at once; for a group by rule, it starts when a gift moves them in, or at the next morning's check." },
+  { key: "giving_anniversary", label: "The anniversary of their first gift",
+    sentence: "Starts each year on the day of somebody's first gift, checked every morning." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own — you choose who goes in it." },
 ];
+// The triggers a gift fires. Each can be narrowed by an amount, a fund and a
+// campaign (gift_over needs the amount; the rest take it if you set one).
+const GIFT_ORIGINALS = ["first_gift", "gift_over", "lapsed_return"];
+for (const t of TRIGGERS) if (GIFT_ORIGINALS.includes(t.key)) t.gift = true;
+export const GIFT_TRIGGER_KEYS = TRIGGERS.filter(t => t.gift).map(t => t.key);
+export const isGiftTrigger = k => GIFT_TRIGGER_KEYS.includes(k);
+
+// ── PARITY-1 Part D · THE FOUR STATES A JOURNEY IS IN ──────────────────────
+// Derived, never stored, so `journey_enabled` keeps meaning exactly what it
+// always has (it fires on its own):
+//   archived  it was archived
+//   running   it is switched on
+//   paused    it is off now, but it has been on, or somebody is in it
+//   draft     it has never been switched on and nobody has ever been in it
+export const STATES = [
+  { key: "running", label: "Running", sentence: "Switched on: it starts by itself when its trigger happens." },
+  { key: "paused", label: "Paused", sentence: "Switched off after running. Nobody new goes in; people already in it carry on." },
+  { key: "draft", label: "Draft", sentence: "Never switched on and nobody has been in it yet." },
+  { key: "archived", label: "Archived", sentence: "Put away. It starts nothing and is kept so the people who went through it still have a record." },
+];
+export function journeyState({ enabled, everEnabled, archived, everIn } = {}) {
+  if (archived) return "archived";
+  if (enabled) return "running";
+  if (everEnabled || Number(everIn) > 0) return "paused";
+  return "draft";
+}
 export const TRIGGER_KEYS = TRIGGERS.map(t => t.key);
 export const triggerByKey = k => TRIGGERS.find(t => t.key === k) || null;
 
@@ -94,6 +134,9 @@ export const AUDIENCE_FILTERS = [
     sentence: "Only people carrying the tag you name." },
   { key: "giftSize",      kind: "range", label: "Gift size",
     sentence: "Only people whose largest single gift falls inside the range you set." },
+  // PARITY-1 Part D — a Group is an audience: only the people in it right now.
+  { key: "groupId",       kind: "group", label: "Group",
+    sentence: "Only people in the group you pick, at the moment the trigger happens." },
 ];
 export const AUDIENCE_KEYS = AUDIENCE_FILTERS.map(f => f.key);
 
@@ -107,7 +150,7 @@ export function validateAudience(input = {}) {
     const v = raw[f.key];
     if (v === undefined || v === null || v === "" || v === false) continue;
     if (f.kind === "flag") { out[f.key] = true; continue; }
-    if (f.kind === "choice" || f.kind === "text") {
+    if (f.kind === "choice" || f.kind === "text" || f.kind === "group") {
       const s = String(v).trim().slice(0, 80);
       if (s) out[f.key] = s;
       continue;
@@ -136,6 +179,7 @@ export function audienceSentence(audience = {}) {
   if (!set.length) return "Everyone the trigger touched. No filters are set.";
   const parts = set.map(f => {
     if (f.kind === "flag") return f.label.toLowerCase();
+    if (f.kind === "group") return "membership of the group you picked";
     if (f.key === "giftSize") {
       const r = audience.giftSize || {};
       const d = c => "$" + Math.round(Number(c) / 100).toLocaleString("en-US");
@@ -379,6 +423,23 @@ export function validateJourney(input = {}) {
       errors.push({ field: "amountCents",
         message: "Set the amount that counts as a big gift for your organisation. There is no universal figure and Steward will not pick one for you." });
     }
+  } else if (t && t.gift && input.amountCents !== undefined && input.amountCents !== null && input.amountCents !== "") {
+    // PARITY-1 Part D — any gift trigger may carry a floor. Optional here.
+    const a = Number(input.amountCents);
+    if (Number.isInteger(a) && a > 0) amountCents = a;
+  }
+  // PARITY-1 Part D — what narrows a trigger beyond its amount. A fund and a
+  // campaign only mean something on a gift; the group only on "joins a group".
+  const rawF = input.triggerFilters && typeof input.triggerFilters === "object" ? input.triggerFilters : {};
+  const triggerFilters = {};
+  const idOf = v => (v === undefined || v === null || v === "" ? null : String(v).trim().slice(0, 80) || null);
+  if (t && t.gift) {
+    if (idOf(rawF.fundId)) triggerFilters.fundId = idOf(rawF.fundId);
+    if (idOf(rawF.campaignId)) triggerFilters.campaignId = idOf(rawF.campaignId);
+  }
+  if (t && t.needsGroup) {
+    if (idOf(rawF.groupId)) triggerFilters.groupId = idOf(rawF.groupId);
+    else errors.push({ field: "triggerFilters.groupId", message: "Pick the group this journey watches." });
   }
 
   let priority = input.priority === undefined || input.priority === null
@@ -414,7 +475,7 @@ export function validateJourney(input = {}) {
   });
 
   return { ok: errors.length === 0, name: base.name, description: sanitizeDescription(input.description),
-           trigger, amountCents, priority, steps,
+           trigger, amountCents, priority, steps, triggerFilters,
            audience: validateAudience(input.audience), errors };
 }
 

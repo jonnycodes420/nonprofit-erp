@@ -23,6 +23,7 @@ import { Tasks } from "./components/Tasks";
 import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import JourneyBuilder from "./components/JourneyBuilder";
+import GroupsPage from "./components/Groups";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
@@ -944,6 +945,8 @@ function AppShell() {
           <JourneyBuilder key={navNonce} isAdmin={auth?.user?.role==="admin"} isReadOnly={isReadOnly} initialJourneyId={journeysIntent?.journeyId}/>
         </div>
       )}
+      {/* PARITY-1 Part D — Groups, under Relationships. */}
+      {tab==="groups"&&<GroupsPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="events"&&<Events key={navNonce} data={data} isReadOnly={isReadOnly}/>}
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not

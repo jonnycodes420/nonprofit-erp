@@ -54,7 +54,7 @@ async function download(path, name) {
 
 const qsOf = f => {
   const q = new URLSearchParams();
-  for (const k of ["from", "to", "fund", "campaign", "owner"]) if (f[k]) q.set(k, f[k]);
+  for (const k of ["from", "to", "fund", "campaign", "owner", "group"]) if (f[k]) q.set(k, f[k]);
   return q.toString();
 };
 
@@ -62,7 +62,7 @@ const qsOf = f => {
 // Date range, fund, campaign and owner. They save with the dashboard and they
 // live in the URL, so a dashboard opens, reloads and shares as the same
 // numbers rather than as whatever today's defaults happen to be.
-function FilterBar({ value, funds, campaigns, officers, onChange, onSaveDefault, saving }) {
+function FilterBar({ value, funds, campaigns, officers, groups = [], onChange, onSaveDefault, saving }) {
   const set = (k, v) => onChange({ ...value, [k]: v || "" });
   return <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 14 }}>
     <input type="date" aria-label="From" value={value.from || ""} onChange={e => set("from", e.target.value)} style={fieldStyle} />
@@ -80,6 +80,11 @@ function FilterBar({ value, funds, campaigns, officers, onChange, onSaveDefault,
       <option value="">Anyone</option>
       {officers.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
     </select>
+    {/* PARITY-1 Part D — gift figures from one Group's people only. */}
+    <select aria-label="Group" value={value.group || ""} onChange={e => set("group", e.target.value)} style={fieldStyle}>
+      <option value="">Every group</option>
+      {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+    </select>
     {onSaveDefault && <button type="button" style={quiet} onClick={onSaveDefault} disabled={saving}>
       {saving ? "Saving…" : "Save these filters"}
     </button>}
@@ -90,24 +95,26 @@ function useFilterLists() {
   const [funds, setFunds] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [officers, setOfficers] = useState([]);
+  const [groups, setGroups] = useState([]);
   useEffect(() => {
+    apiFetch("/groups").then(r => setGroups((r && r.groups) || [])).catch(() => {});
     apiFetch("/finance/funds").then(r => setFunds(Array.isArray(r) ? r : [])).catch(() => {});
     apiFetch("/campaigns").then(r => setCampaigns(Array.isArray(r) ? r : [])).catch(() => {});
     // The officer list every other screen reads, so "owner" here means the
     // same person it means in the donor directory.
     apiFetch("/portfolio/officers").then(r => setOfficers(r.officers || [])).catch(() => {});
   }, []);
-  return { funds, campaigns, officers };
+  return { funds, campaigns, officers, groups };
 }
 
 // ── ONE SAVED DASHBOARD ────────────────────────────────────────────────────
 export function SavedDashboardView({ id, onNavigate, onEdit, onDeleted }) {
   const goUrl = useUrlWriter();
-  const { funds, campaigns, officers } = useFilterLists();
+  const { funds, campaigns, officers, groups } = useFilterLists();
   const urlFilters = () => {
     const q = new URLSearchParams(window.location.search);
     const out = {};
-    for (const k of ["from", "to", "fund", "campaign", "owner"]) if (q.get(k)) out[k] = q.get(k);
+    for (const k of ["from", "to", "fund", "campaign", "owner", "group"]) if (q.get(k)) out[k] = q.get(k);
     return out;
   };
   const [filters, setFilters] = useState(urlFilters);
@@ -123,7 +130,7 @@ export function SavedDashboardView({ id, onNavigate, onEdit, onDeleted }) {
   useEffect(() => {
     if (!/^\/app\/reports\/?$/.test(window.location.pathname)) return;
     goUrl(tabHref("reports", { report: "sdash:" + id, from: filters.from, to: filters.to,
-      fundId: filters.fund, campaignId: filters.campaign, owner: filters.owner }), true);
+      fundId: filters.fund, campaignId: filters.campaign, owner: filters.owner, group: filters.group }), true);
   }, [id, qs]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -186,7 +193,7 @@ export function SavedDashboardView({ id, onNavigate, onEdit, onDeleted }) {
         <button type="button" style={btn()} onClick={pdf} disabled={busy}>{busy ? "Building…" : "Download PDF"}</button>
       </div>
     </div>
-    <FilterBar value={filters} funds={funds} campaigns={campaigns} officers={officers}
+    <FilterBar value={filters} funds={funds} campaigns={campaigns} officers={officers} groups={groups}
       onChange={setFilters} onSaveDefault={saveFilters} saving={saving} />
     <div style={{ opacity: loading ? 0.45 : 1, transition: "opacity .15s" }} aria-busy={loading ? "true" : undefined}>
       <TileGrid sections={data.sections} onNavigate={onNavigate} />

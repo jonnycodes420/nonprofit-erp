@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
+import { AddToGroup } from "./Groups";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
@@ -488,6 +489,9 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             style={{background:"transparent",border:"1px solid "+T.gold500,borderRadius:8,padding:"7px 12px",color:T.gold500,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
             Plan a follow-up
           </button>}
+
+          {/* PARITY-1 Part D — put the ticked people in a group kept by hand. */}
+          {!isReadOnly&&<AddToGroup donorIds={selFiltered.map(d=>d.id)}/>}
 
           {/* Add to pipeline — the deliberate act that puts prospects on the board (Team). */}
           {teamPortfolios&&<button onClick={bulkAddPipeline} disabled={busy}

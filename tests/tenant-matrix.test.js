@@ -80,7 +80,7 @@ const TODAY = iso(new Date());
 async function reset() {
   for (const org of [A, B]) {
     for (const t of ["memberships", "membership_levels", "api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
-      "audiences", "statement_mappings", "gift_duplicate_questions",
+      "group_sweep_seen", "group_members", "audiences", "statement_mappings", "gift_duplicate_questions",
       // INT-3 and INT-4 — the email tool and the staff mailbox. Ordered here,
       // before the org delete, for exactly the reason the ack_letter_templates
       // note below gives: a teardown list one table short is a suite that
@@ -368,6 +368,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // PARITY-1 Part D — a Group kept by hand, with one member, per org.
+  await q(`INSERT INTO audiences (id,org_id,name,description,segment,kind)
+           VALUES ($1,$2,$3,'probe','{"mode":"group"}'::jsonb,'static')`,
+    [`grp_${o}`, o, `Group ${o}`]).catch(() => {});
+  await q(`INSERT INTO group_members (org_id,group_id,donor_id,added_by,added_by_name) VALUES ($1,$2,$3,'system:test','test')`,
+    [o, `grp_${o}`, `d_${o}`]).catch(() => {});
   // INT-5 — a webhook endpoint and one delivery against it, per org. Org A
   // aimed at org B's endpoint must be refused because it is org B's, not
   // because there was nothing there.
@@ -498,6 +504,7 @@ function bResolver(routePath, param) {
     "giving-recurring": `grec_${B}`, // BUILD-89S 89a — a recognised recurring commitment
     "statement-mappings": `smap_${B}`, // BUILD-92 A4 — a saved statement mapping
     audiences: `aud_${B}`,           // BUILD-97 — a named audience is org B's business
+    groups: `grp_${B}`,              // PARITY-1 Part D — a Group is org B's business
     "tribute-notices": `tn_${B}`,    // BUILD-98 Part 1 — a notice to a family is org B's business
     acknowledgments: `alt_${B}`,     // BUILD-98 Part 2 — a letter template is org B's business
     "saved-reports": `rpt_${B}`,     // BUILD-98 Part 3 — a saved report is org B's business

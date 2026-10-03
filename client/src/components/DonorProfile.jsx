@@ -36,6 +36,7 @@ import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
+import { ProfileGroups } from "./Groups";
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -1909,6 +1910,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 opening its donors, and the closeness word with its facts. */}
             <StatusTags status={status}/>
             <ClosenessLine status={status}/>
+            {/* PARITY-1 Part D — the groups this person is in. */}
+            <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}/>
             {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
                 to read donors.total_giving while the tile below it now reads
                 the gifts themselves (figureSources donor-lifetime), and on the

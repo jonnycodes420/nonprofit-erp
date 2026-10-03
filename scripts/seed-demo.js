@@ -2935,6 +2935,41 @@ async function main() {
     }
   }
 
+  // PARITY-1 Part D — GROUPS AND TWO RUNNING JOURNEYS. Three groups: one by
+  // rule (Mid-level donors, worked out live from the gifts) and two kept by
+  // hand with a handful of people each. The first-year journey above is the
+  // "first ever gift" one and is already Running; the second watches the gala
+  // hosts group, so adding somebody to it starts their welcome. Written once
+  // per seed: the teardown clears both tables with the org.
+  console.log("[seed] groups, and a journey for joining one…");
+  {
+    await q(`INSERT INTO audiences (id,org_id,name,description,segment,kind,rules,created_by,created_by_name)
+             VALUES ('grp_b72_mid',$1,'Mid-level donors','Everyone giving $1,000 to $9,999 over the last 12 months.','{"mode":"group"}'::jsonb,'dynamic','{"level":"mid"}'::jsonb,'u_b72demo','Dana Reyes'),
+                    ('grp_b72_hosts',$1,'Gala table hosts','The people who fill a table at the Harbor Lights Gala.','{"mode":"group"}'::jsonb,'static',NULL,'u_b72demo','Dana Reyes'),
+                    ('grp_b72_board',$1,'Board prospects','People Dana thinks could join the board in the next two years.','{"mode":"group"}'::jsonb,'static',NULL,'u_b72demo','Dana Reyes')`, [ORG]);
+    const hosts = await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND COALESCE(kind,'') NOT IN ('organisation','anonymous')
+                             AND total_giving >= 2500 ORDER BY total_giving DESC, id OFFSET 6 LIMIT 6`, [ORG]);
+    const board = await q(`SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND COALESCE(kind,'') NOT IN ('organisation','anonymous')
+                             AND stage = 'cultivate' AND total_giving >= 1000 ORDER BY total_giving DESC, id LIMIT 4`, [ORG]);
+    for (const [gid, people] of [["grp_b72_hosts", hosts], ["grp_b72_board", board]]) {
+      for (const d of people) {
+        await q(`INSERT INTO group_members (org_id,group_id,donor_id,added_by,added_by_name) VALUES ($1,$2,$3,'u_b72demo','Dana Reyes')
+                 ON CONFLICT (group_id, donor_id) DO NOTHING`, [ORG, gid, d.id]);
+      }
+    }
+    const steps = [
+      { type: "thank", label: "Call to thank them for hosting", offsetDays: 2, draft: null },
+      { type: "send", label: "Send the table host pack", offsetDays: 7, draft: null },
+      { type: "follow_up", label: "Check in the week before the gala", offsetDays: 30, draft: null },
+    ];
+    await q(`INSERT INTO cultivation_templates
+               (id,org_id,name,description,steps,trigger_key,priority,journey_enabled,ever_enabled,trigger_filters,created_by,created_by_name)
+             VALUES ('ct_b72_hosts',$1,'Welcome, table hosts','When somebody joins the gala table hosts, thank them and get them ready.',$2::jsonb,
+                     'joined_group',40,true,true,'{"groupId":"grp_b72_hosts"}'::jsonb,'u_b72demo','Dana Reyes')`, [ORG, JSON.stringify(steps)]);
+    await q(`UPDATE cultivation_templates SET ever_enabled = true WHERE org_id=$1 AND journey_enabled = true`, [ORG]);
+    console.log(`[seed] groups: Mid-level donors (by rule), Gala table hosts (${hosts.length}), Board prospects (${board.length}); two journeys running`);
+  }
+
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
   // `?` placeholders; this adapter numbers them for this client.

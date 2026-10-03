@@ -224,6 +224,12 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
     onChange({ audience: next });
   };
   const gift = aud.giftSize || {};
+  const tf = value.triggerFilters || {};
+  const setTf = (key, v) => {
+    const next = { ...tf };
+    if (!v) delete next[key]; else next[key] = v;
+    onChange({ triggerFilters: next });
+  };
   return (
     <div data-testid={tid + "-trigger-fields"}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12 }}>
@@ -275,6 +281,51 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
         </label>
       </div>
 
+      {/* PARITY-1 Part D — what narrows the trigger: a floor on any gift
+          trigger, a fund or a campaign, and the group "joins a group" watches. */}
+      {trigger && (trigger.gift || trigger.needsGroup) && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, marginTop: 12 }}>
+          {trigger.gift && !trigger.needsAmount && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>Only gifts of at least</span>
+              <input data-testid={tid + "-min-amount"} type="number" min="0" step="1" placeholder="$ (optional)" style={INP}
+                value={value.amountCents ? Math.round(value.amountCents / 100) : ""}
+                onChange={e => {
+                  const d = parseInt(e.target.value, 10);
+                  onChange({ amountCents: Number.isInteger(d) && d > 0 ? d * 100 : null });
+                }} />
+            </label>
+          )}
+          {trigger.gift && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>To the fund</span>
+              <select data-testid={tid + "-fund"} value={tf.fundId || ""} style={INP} onChange={e => setTf("fundId", e.target.value)}>
+                <option value="">Any fund</option>
+                {(data.funds || []).map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </label>
+          )}
+          {trigger.gift && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>In the campaign or appeal</span>
+              <select data-testid={tid + "-campaign"} value={tf.campaignId || ""} style={INP} onChange={e => setTf("campaignId", e.target.value)}>
+                <option value="">Any campaign</option>
+                {(data.campaigns || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
+          {trigger.needsGroup && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>The group</span>
+              <select data-testid={tid + "-trigger-group"} value={tf.groupId || ""} style={INP} onChange={e => setTf("groupId", e.target.value)}>
+                <option value="">Pick a group</option>
+                {(data.groups || []).map(g => <option key={g.id} value={g.id}>{g.name}{g.kind === "dynamic" ? " (by rule)" : ""}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
       {trigger && (
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, marginTop: 10 }}>{trigger.sentence}</div>
       )}
@@ -301,6 +352,16 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
               {(data.stages || []).map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
+          {(data.groups || []).length > 0 && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>Group</span>
+              <select data-testid={tid + "-cond-group"} value={aud.groupId || ""} style={INP}
+                onChange={e => setAud("groupId", e.target.value)}>
+                <option value="">Any group</option>
+                {(data.groups || []).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </select>
+            </label>
+          )}
           <label style={{ display: "block" }}>
             <span style={LBL}>Tag</span>
             <select data-testid={tid + "-cond-tag"} value={aud.tag || ""} style={INP}
@@ -492,7 +553,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
     setDraft((j.steps || []).map(s => ({ ...s })));
     setMeta({ name: j.name || "", description: j.description || "", trigger: j.trigger || "",
               amountCents: j.amountCents ?? null, priority: j.priority ?? 50,
-              audience: j.audience || {}, enabled: !!j.enabled });
+              audience: j.audience || {}, triggerFilters: j.triggerFilters || {}, enabled: !!j.enabled });
     setPreview(null); setStats(null); setErr("");
     try { setPreview(await apiFetch(`/journeys/${j.id}/preview`)); } catch { setPreview({ unavailable: true }); }
     try { setStats(await apiFetch(`/journeys/${j.id}/stats`)); } catch { setStats(null); }
@@ -537,7 +598,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
         method: "PATCH",
         body: JSON.stringify({ name: meta.name, description: meta.description, trigger: meta.trigger,
                                amountCents: meta.amountCents, priority: meta.priority,
-                               audience: meta.audience, enabled: meta.enabled, steps: draft, retimeExisting }),
+                               audience: meta.audience, triggerFilters: meta.triggerFilters || {}, enabled: meta.enabled, steps: draft, retimeExisting }),
       });
       setAffects(null);
       await load();
@@ -784,11 +845,16 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
               </span>
               <span style={{ fontSize: 12, color: T.ink3 }}>{j.touches}</span>
               <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "2px 9px",
+                {/* PARITY-1 Part D — Running, Paused, Draft (Archived ones are
+                    not in this list), and entered, in it, exited, completed. */}
+                <span data-testid="jb-state" title={((data.states || []).find(x => x.key === j.state) || {}).sentence || ""}
+                  style={{ fontSize: 11.5, fontWeight: 700, borderRadius: 99, padding: "2px 9px",
                                background: j.enabled ? T.green100 : T.bg2, color: j.enabled ? T.greenDk : T.ink3 }}>
-                  {j.enabled ? "On" : "Off"}
+                  {((data.states || []).find(x => x.key === j.state) || {}).label || (j.enabled ? "Running" : "Paused")}
                 </span>
-                <span style={{ fontSize: 12, color: T.ink3 }}>{j.inIt} in it</span>
+                <span style={{ fontSize: 12, color: T.ink3 }} title="Entered: everyone who has gone in. In it: still running. Exited: left early. Completed: reached the end.">
+                  {j.everIn} entered · {j.inIt} in it · {j.exited || 0} exited · {j.completed || 0} completed
+                </span>
               </span>
             </RecordLink>
 

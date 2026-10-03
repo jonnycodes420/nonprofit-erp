@@ -54,7 +54,7 @@ export function SurveysPanel({ isReadOnly, orgName, onOpenDrafts }) {
           <div style={{ flex: "1 1 260px", minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{s.title}</div>
             <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>
-              {s.mode === "anonymous" ? "Anonymous" : "Named"} · {s.audience === "volunteers" ? "for volunteers" : s.audience === "donors" ? "for donors" : "for anyone"} · {s.status === "open" ? "open" : "closed"}
+              {s.mode === "anonymous" ? "Anonymous" : "Named"} · {s.audience === "volunteers" ? "for volunteers" : s.audience === "donors" ? "for donors" : String(s.audience || "").startsWith("group:") ? "for a group" : "for anyone"} · {s.status === "open" ? "open" : "closed"}
             </div>
           </div>
           <div style={{ fontSize: 13, color: T.ink2 }}>
@@ -97,6 +97,9 @@ export function SurveysPanel({ isReadOnly, orgName, onOpenDrafts }) {
 
 function SurveyBuilder({ initial, orgName, onClose, onSaved }) {
   const [s, setS] = useState(() => JSON.parse(JSON.stringify(initial)));
+  // PARITY-1 Part D — a survey can be for one of the org's Groups.
+  const [groupOpts, setGroupOpts] = useState([]);
+  useEffect(() => { apiFetch("/groups").then(r => setGroupOpts((r && r.groups) || [])).catch(() => setGroupOpts([])); }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const setSec = (si, f) => setS(x => ({ ...x, sections: x.sections.map((sec, i) => (i === si ? f(sec) : sec)) }));
@@ -122,6 +125,7 @@ function SurveyBuilder({ initial, orgName, onClose, onSaved }) {
           </label>
           <select aria-label="Who it is for" value={s.audience} onChange={e => setS({ ...s, audience: e.target.value })} style={{ ...field, width: 200 }}>
             <option value="donors">For donors</option><option value="volunteers">For volunteers</option><option value="anyone">For anyone</option>
+            {groupOpts.map(g => <option key={g.id} value={`group:${g.id}`}>For the group {g.name}</option>)}
           </select>
         </div>
         <div data-testid="survey-privacy-preview" style={{ fontSize: 12.5, color: T.ink2, background: T.bg, borderRadius: 8, padding: "9px 11px", lineHeight: 1.55 }}>

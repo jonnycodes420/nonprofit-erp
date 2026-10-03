@@ -17,6 +17,7 @@
 // IP (req.audit.withoutIp). It is never put on a timeline.
 const express = require("express");
 const SL = require("../surveyLinks");
+const GR = require("../groups");   // PARITY-1 Part D: a survey can be for a Group
 
 const routers = { r0: express.Router() };
 
@@ -70,6 +71,8 @@ app.post("/surveys", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await READY;
   const n = S.normalizeSurvey(req.body);
   if (n.error) return res.status(400).json({ error: n.error });
+  if (S.groupOfAudience(n.audience) && !(await GR.groupById(req.user.orgId, S.groupOfAudience(n.audience))))
+    return res.status(404).json({ error: "group_not_found", sentence: "That group is not one of yours." });
   const id = "sv_" + uuid().slice(0, 10), who = actor(req);
   const slug = await uniqueSlug(req.user.orgId, n.title);
   await run(`INSERT INTO surveys (id,org_id,slug,title,intro,thank_you,mode,audience,sections,created_by,created_by_name)
@@ -91,6 +94,8 @@ app.put("/surveys/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => 
   }
   const n = S.normalizeSurvey(b);
   if (n.error) return res.status(400).json({ error: n.error });
+  if (S.groupOfAudience(n.audience) && !(await GR.groupById(req.user.orgId, S.groupOfAudience(n.audience))))
+    return res.status(404).json({ error: "group_not_found", sentence: "That group is not one of yours." });
   // A survey's promise to the people who already answered it cannot change
   // under them: named stays named, anonymous stays anonymous.
   const [{ c }] = await query("SELECT COUNT(*)::int AS c FROM survey_responses WHERE survey_id=?", [r.id]);
@@ -174,6 +179,12 @@ app.post("/surveys/:id/drafts", requireAuth, checkWriteAccess, wrap(async (req, 
   if (Array.isArray(req.body && req.body.donorIds) && req.body.donorIds.length) {
     people = await query(`SELECT id, name, email FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL AND COALESCE(email,'') <> ''`,
       [orgId, req.body.donorIds.map(String).slice(0, 200)]);
+  } else if (S.groupOfAudience(r.audience)) {
+    // PARITY-1 Part D — the group's members now (a group by rule is read live).
+    const g = await GR.groupById(orgId, S.groupOfAudience(r.audience));
+    const m = await GR.memberSql(orgId, g);
+    people = await query(`SELECT d.id, d.name, d.email FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.email,'') <> ''
+       AND d.id IN (${m.sql}) ORDER BY lower(d.name) LIMIT 200`, [orgId, ...m.args]);
   } else if (r.audience === "volunteers") {
     people = await query(`SELECT DISTINCT d.id, d.name, d.email FROM donors d JOIN volunteer_shifts s ON s.person_id = d.id AND s.org_id = d.org_id
        WHERE d.org_id=? AND d.deleted_at IS NULL AND COALESCE(d.email,'') <> '' AND s.date >= (CURRENT_DATE - 365)::text LIMIT 200`, [orgId]);

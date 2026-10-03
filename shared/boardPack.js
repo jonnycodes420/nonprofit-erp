@@ -38,10 +38,11 @@ export const PACK_PERIOD = { monthly: "month", quarterly: "quarter" };
 // The filters a dashboard or a pack may carry. They are saved with the
 // dashboard and live in the URL, so a dashboard opens, reloads and shares as
 // the same numbers.
-export const FILTER_KEYS = ["from", "to", "fund", "campaign", "owner"];
+// PARITY-1 Part D — and a Group: gift figures count only its members' gifts.
+export const FILTER_KEYS = ["from", "to", "fund", "campaign", "owner", "group"];
 // A filter's name on a figure source. `owner` is the person a DONOR is
 // assigned to, which every gifts-shaped source calls `assigned`.
-export const FILTER_PARAM = { fund: "fund", campaign: "campaign", owner: "assigned" };
+export const FILTER_PARAM = { fund: "fund", campaign: "campaign", owner: "assigned", group: "group" };
 
 // A tile on a saved dashboard is one of three things, and each one already
 // exists somewhere in the product. Nothing here invents a fourth.
@@ -60,7 +61,7 @@ export const CHART_KEYS = ["givingByMonth"];
 // that says so rather than as a zero.
 const filt = w => {
   const p = {};
-  for (const k of ["fund", "campaign", "owner"]) if (w.filters && w.filters[k]) p[FILTER_PARAM[k]] = w.filters[k];
+  for (const k of ["fund", "campaign", "owner", "group"]) if (w.filters && w.filters[k]) p[FILTER_PARAM[k]] = w.filters[k];
   return p;
 };
 const win = w => ({ from: w.from, to: w.to, ...filt(w) });

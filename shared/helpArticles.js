@@ -90,6 +90,24 @@ export const HELP_ARTICLES = [
     ],
   },
   {
+    slug: `groups`,
+    title: `Groups`,
+    screens: [`groups`],
+    summary: `A group is a list of people with a name, kept by hand or by a rule, that works wherever a list does.`,
+    sections: [
+      { h: `Two kinds`, p: [
+        `A group kept by hand holds the people you put in it until somebody takes them out. Add people from the Donors list (click "Select", tick them, then "Add to a group") or from a person's profile, under their name.`,
+        `A group by rule carries a lightning mark. Its rule is the same filters the Donors list has: role, giving level, lifecycle, closeness, whether they have given, and stage. Every rule must hold. Who is in it is worked out fresh each time, so a gift that takes somebody to Mid moves them into a Mid group the moment it is recorded, and a refund that takes them back under moves them out. "Warm volunteers who have never given" is one rule: Volunteers, Warm, Has never given.`,
+      ]},
+      { h: `A group's page`, p: [
+        `Each group shows how many people are in it, their average gift, what they gave this fiscal year and in total, how many gifts that is, and the last twelve months month by month. Click any number to see the people or gifts behind it. The list of people can be narrowed to Mid or Major.`,
+      ]},
+      { h: `Where a group works`, p: [
+        `A group can be the audience of a campaign, a tag in your email tool (Settings, Connections), who a journey is for, what starts a journey ("They join a group"), who a survey goes to, and a filter on a saved dashboard and its board pack, where it narrows the gift figures to the group's people.`,
+      ]},
+    ],
+  },
+  {
     slug: `journeys`,
     title: `Journeys`,
     screens: [`journeys`, `settings:journeys`],
