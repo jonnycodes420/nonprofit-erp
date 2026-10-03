@@ -640,8 +640,8 @@ getDb()
   .catch(err => { console.error("Database init failed:", err); process.exit(1); });
 
 // FIX-20 Part 10: THE READINESS CHECK Railway's healthcheck points at
-// (railway.json). It answers 200 only once schema init and the seed have
-// finished and the database answers, so during a deploy the OLD instance keeps
+// (a service setting; see docs/decisions/tests-and-ci.md). It answers 200 only
+// once schema init has finished and the database answers, so during a deploy the OLD instance keeps
 // serving until this one is ready, and nobody sees "Database initializing".
 // It sits above the gate on purpose: it is the one route that must answer
 // while the gate is shut.

@@ -226,7 +226,8 @@ Full before/after + break-glass: `audit/deploy-rewire.md`. The shape:
 - The pre-push hook (full local suite) is unchanged — the INNER gate; Actions is the OUTER gate and the only deployer.
 
 ## Deploys without downtime (FIX-20 Part 10)
-- `railway.json` points Railway's healthcheck at `GET /ready` (timeout 600s). `/ready` answers 200 only after schema init, the seed and a `SELECT 1`, so Railway keeps the old instance serving until the new one is ready. Before this there was no healthcheck at all and traffic switched the moment the container started: the PARITY-3 deploy on 3 Oct returned 503 "Database initializing" for 4m45s, measured by UptimeRobot.
+- Railway's healthcheck is a SERVICE SETTING: path `/ready`, timeout 600s (set 3 Oct 2026 through the Railway API). A `railway.json` does nothing: Railway has deprecated config-as-code and the first FIX-20 deploy ignored it. `/ready` answers 200 only after schema init and a `SELECT 1`, so Railway keeps the old instance serving until the new one is ready. Before this there was no healthcheck at all and traffic switched the moment the container started: the PARITY-3 deploy on 3 Oct returned 503 "Database initializing" for 4m45s, measured by UptimeRobot.
+- An unchanged schema hash skips init AND opens the server before the org_creo demo seed, which re-checks in the background (it was ~30s of every prod boot). A new or changed schema still waits for the seed.
 - Schema init runs on ONE session with `lock_timeout = 1s` and retries on `55P03` (`ddlSession` in db.js), so an ALTER never queues in front of reads the old instance is serving. Planted without the timeout, a live read blocked 7s; with it, under 1s.
 - `/health` stays behind the readiness gate on purpose: the CI poll waits for `status:ok` and the new buildSha.
 
