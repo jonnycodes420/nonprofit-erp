@@ -184,6 +184,7 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
 - `shared/majorGiftsDash.js` — dashboard tiles and their definitions
 - `shared/importShape.js` — `detectOwnerColumn`, `matchOwnersToUsers`, `groupOwnerMatches`, `WEALTH_HDR`
 - `client/src/components/MajorGifts.jsx` — proposals, portfolio, plans, brief, dashboard; `Pipeline.jsx` — the board
+- `prospect.js` `lookupFiling` / `shapeFiling` + `scripts/load-irs-bmf.js`: the public filing, read from `irs_bmf` (FIX-22)
 - `scripts/build99-brief-drill.js` — the manual real-model brief drill (not in the battery)
 
 ---
@@ -235,9 +236,22 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - **The screening file never leaves by itself.** A staff member downloads it and gives it to the provider. The
   file carries the Steward ID, the name split in two, the mailing address, the email and the spouse's name, and
   nothing else. Organisations and erased people are never in it.
-- **A public filing is looked up when a person presses the button, never on a page render, and cached a day.**
-  ProPublica Nonprofit Explorer, no key. Grants paid is a 990-PF line; on a regular 990 it stays unknown, not
-  zero. A TEST_MODE server reads `tests/fixtures/propublica/<ein>.json`, so no test reaches the network.
+- **A public filing comes from the IRS's own public-domain file, never from a site whose terms forbid a paid
+  product.** (FIX-22; PROSPECT-1 used ProPublica, whose terms forbid charging people to see the data.) The source
+  is the Exempt Organizations Business Master File (EO BMF,
+  https://www.irs.gov/charities-non-profits/exempt-organizations-business-master-file-extract-eo-bmf), which the
+  IRS refreshes monthly. `scripts/load-irs-bmf.js` loads eo1.csv to eo4.csv (or local files with `--file`) into
+  `irs_bmf`, one row per EIN, replacing the whole table in one transaction; `source_date` is the IRS file's own
+  date (its Last-Modified). Load it once a month on prod:
+  `DATABASE_URL=<prod> node scripts/load-irs-bmf.js --i-know-this-is-prod`.
+- **A lookup reads `irs_bmf` and nothing else.** Pressing Look up copies the row onto the person in
+  `public_filings` (with the file and its date); no page render and no button press reaches the network. When the
+  table is empty the answer says so in words ("The IRS file ... has not been loaded"), never "no filing found".
+  It shows total assets, revenue and the last filing year (the year TAX_PERIOD ends), each under
+  "Source: IRS, Exempt Organizations Business Master File, <month year>". Grants paid is not in the BMF, so it is
+  listed as not known. A `public_filings` row without `source_date` predates FIX-22 and is never shown.
+- **Tests load `tests/fixtures/irs-bmf/eo_fixture.csv` through the loader's own `load()`.** Made-up organisations
+  in the BMF's real columns (including a quoted name with a comma); no test reaches the network.
 - **The prospect brief is assembled from rows, not written by a model.** Steward's record, the screening results
   and the public filing; every line names its source and a "Not known" list says what none of them holds. It is
   saved to the person's files as `major_gifts_only` and never sent.

@@ -26,7 +26,7 @@ async function build(orgId, donorId) {
   const contacts = await query(`SELECT type, LEFT(date,10) AS date FROM interactions WHERE org_id = ? AND donor_id = ?
       AND type IN ('call','meeting','email','visit','stewardship','note') ORDER BY date DESC LIMIT 3`, [orgId, donorId]);
   const room = (await P.roomToGive(orgId, [donorId])).get(donorId);
-  const [filing] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ? AND found = true`, [orgId, donorId]);
+  const [filing] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ? AND found = true AND source_date IS NOT NULL`, [orgId, donorId]);
 
   const REC = "Steward record";
   const GIFTS = "Steward gifts";
@@ -62,11 +62,12 @@ async function build(orgId, donorId) {
 
   // Public filing
   if (filing) {
-    const src = `ProPublica Nonprofit Explorer, fetched ${String(new Date(filing.fetched_at).toISOString()).slice(0, 10)}, ${filing.source_url}`;
-    if (filing.total_assets_cents != null) line("Public filing", `Total assets at the end of ${filing.tax_year}: ${$(Number(filing.total_assets_cents))}.`, src);
-    if (filing.grants_paid_cents != null) line("Public filing", `Grants paid in ${filing.tax_year}: ${$(Number(filing.grants_paid_cents))}.`, src);
-    else notKnown.push("Grants paid: not on the filing found (only a private foundation's 990-PF reports it).");
-    line("Public filing", `Latest filing: ${filing.form || "Form 990"} for ${filing.tax_year}, ${filing.filing_url}`, src);
+    const src = `${P.sourceLine(filing.source_date)}${filing.source_file ? ` (${filing.source_file})` : ""}, ${filing.source_url}`;
+    if (filing.total_assets_cents != null) line("Public filing", `Total assets: ${$(Number(filing.total_assets_cents))}.`, src);
+    if (filing.revenue_cents != null) line("Public filing", `Revenue: ${$(Number(filing.revenue_cents))}.`, src);
+    if (filing.tax_year) line("Public filing", `Last filing year: ${filing.tax_year} (tax period ending ${String(filing.tax_period).slice(4, 6)}/${filing.tax_year}).`, src);
+    else notKnown.push("Last filing year: the IRS file gives no tax period for this EIN.");
+    notKnown.push("Grants paid: not in the IRS file Steward reads.");
   } else if (d.kind === "organisation") {
     notKnown.push(d.funder_ein ? "Public filing: not looked up yet, or none was found for the EIN on file." : "Public filing: no EIN on file.");
   }
@@ -77,7 +78,7 @@ async function build(orgId, donorId) {
 
   const fileName = `Prospect brief, ${d.name}, ${t}.txt`;
   return { title: `Prospect brief: ${d.name}`, date: t, fileName, persona: "Researcher",
-    sources: ["Steward's own record", "screening results, where a provider returned them", "the public filing, where one was looked up"],
+    sources: ["Steward's own record", "screening results, where a provider returned them", "the IRS public file, where the organisation was looked up"],
     lines, notKnown };
 }
 

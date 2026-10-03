@@ -8,8 +8,8 @@
 //   POST   /screening/import                 bring the results in; unmatched rows are listed
 //   DELETE /donors/:id/screening             one person's screening rows
 //   DELETE /screening                        the whole organisation's (admin)
-//   GET    /donors/:id/public-filing         the cached public filing (never calls out)
-//   POST   /donors/:id/public-filing/refresh look it up now (a person pressed the button)
+//   GET    /donors/:id/public-filing         the public filing as last looked up (never calls out)
+//   POST   /donors/:id/public-filing/refresh look it up in the loaded IRS file (irs_bmf), never the network
 //   POST   /donors/:id/prospect-brief        the Researcher's one-page brief, saved to their files
 //   PUT    /org/users/:id/major-gifts        an admin gives or takes the permission
 //
@@ -167,32 +167,34 @@ app.get("/donors/:id/public-filing", requireAuth, mg, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const d = await donorRow(orgId, req.params.id);
   if (!d) return res.status(404).json({ error: "Donor not found" });
-  const [r] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
+  const [r] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ? AND source_date IS NOT NULL`, [orgId, d.id]);
   res.json({ ein: d.funder_ein ? P.cleanEin(d.funder_ein) : null, isOrganization: isOrg(d), filing: r && r.found ? P.shapeFiling(r) : null,
-    notFound: r && !r.found ? { ein: r.ein, fetchedAt: r.fetched_at } : null });
+    notFound: r && !r.found ? { ein: r.ein, fetchedAt: r.fetched_at, source: P.sourceLine(r.source_date) } : null });
 }));
+// Reads irs_bmf (loaded by scripts/load-irs-bmf.js) and records what it found
+// on the person. Nothing here reaches the network.
 app.post("/donors/:id/public-filing/refresh", requireAuth, checkWriteAccess, mg, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const d = await donorRow(orgId, req.params.id);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const ein = P.cleanEin(d.funder_ein);
   if (!ein) return res.status(400).json({ error: "Add the organisation's EIN to its record first." });
-  // A filing changes once a year: a lookup in the last day is the answer.
-  const [cached] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ? AND ein = ? AND fetched_at > NOW() - INTERVAL '1 day'`, [orgId, d.id, ein]);
-  if (cached) return res.json({ ein, cached: true, filing: cached.found ? P.shapeFiling(cached) : null, notFound: cached.found ? null : { ein, fetchedAt: cached.fetched_at } });
-  const got = await P.fetchFiling(ein);
-  if (got.error) return res.status(502).json({ error: got.error });
+  const got = await P.lookupFiling(ein);
+  if (got.error) return res.status(400).json({ error: got.error });
+  if (got.notLoaded) return res.json({ ein, notLoaded: true, message: got.message, filing: null, notFound: null });
   const who = await actor(req);
   const f = got.filing;
-  await run(`INSERT INTO public_filings (org_id, donor_id, ein, name, total_assets_cents, grants_paid_cents, tax_year, form, filing_url, source_url, found, fetched_at, created_by, created_by_name)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),?,?)
+  await run(`INSERT INTO public_filings (org_id, donor_id, ein, name, total_assets_cents, grants_paid_cents, revenue_cents, income_cents, tax_year, tax_period,
+               form, filing_url, source_url, source_file, source_date, found, fetched_at, created_by, created_by_name)
+             VALUES (?,?,?,?,?,NULL,?,?,?,?,NULL,NULL,?,?,?::date,?,NOW(),?,?)
              ON CONFLICT (org_id, donor_id) DO UPDATE SET ein = EXCLUDED.ein, name = EXCLUDED.name, total_assets_cents = EXCLUDED.total_assets_cents,
-               grants_paid_cents = EXCLUDED.grants_paid_cents, tax_year = EXCLUDED.tax_year, form = EXCLUDED.form, filing_url = EXCLUDED.filing_url,
-               source_url = EXCLUDED.source_url, found = EXCLUDED.found, fetched_at = NOW(), created_by = EXCLUDED.created_by, created_by_name = EXCLUDED.created_by_name`,
-    [orgId, d.id, ein, f ? f.name : null, f ? f.totalAssetsCents : null, f ? f.grantsPaidCents : null, f ? f.taxYear : null, f ? f.form : null,
-      f ? f.filingUrl : null, f ? f.sourceUrl : null, !!f, who.id, who.name]);
+               grants_paid_cents = NULL, revenue_cents = EXCLUDED.revenue_cents, income_cents = EXCLUDED.income_cents, tax_year = EXCLUDED.tax_year,
+               tax_period = EXCLUDED.tax_period, form = NULL, filing_url = NULL, source_url = EXCLUDED.source_url, source_file = EXCLUDED.source_file,
+               source_date = EXCLUDED.source_date, found = EXCLUDED.found, fetched_at = NOW(), created_by = EXCLUDED.created_by, created_by_name = EXCLUDED.created_by_name`,
+    [orgId, d.id, ein, f ? f.name : null, f ? f.totalAssetsCents : null, f ? f.revenueCents : null, f ? f.incomeCents : null,
+      f ? f.taxYear : null, f ? f.taxPeriod : null, P.BMF_PAGE, f ? f.sourceFile : null, f ? f.sourceDate : got.sourceDate, !!f, who.id, who.name]);
   const [r] = await query(`SELECT * FROM public_filings WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
-  res.json({ ein, cached: false, filing: r.found ? P.shapeFiling(r) : null, notFound: r.found ? null : { ein, fetchedAt: r.fetched_at } });
+  res.json({ ein, filing: r.found ? P.shapeFiling(r) : null, notFound: r.found ? null : { ein, fetchedAt: r.fetched_at, source: P.sourceLine(r.source_date) } });
 }));
 
 // ── The Researcher's prospect brief ─────────────────────────────────────────

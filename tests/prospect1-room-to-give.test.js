@@ -22,7 +22,7 @@
 // matched), or let `more` name a Not yet known person (§3). Planted: setting
 // STRONG_CAPACITY_MULTIPLE to 50 turned §2 red (Solvang stayed Some).
 //
-// Standard scratch stack (tests/README.md). Never calls ProPublica.
+// Standard scratch stack (tests/README.md). Never reaches the network.
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");

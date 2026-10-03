@@ -88,11 +88,10 @@ export function PublicFilingBlock({ data }) {
     <div data-testid="dp-public-filing" style={{ borderTop: "1px solid " + T.bg2, marginTop: 12, paddingTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.6 }}>
       <div style={LABEL}>Public filing</div>
       {f.totalAssetsCents != null && <div>Total assets: <strong style={{ color: T.ink }}>{dollarsOf(f.totalAssetsCents)}</strong></div>}
-      {f.grantsPaidCents != null && <div>Grants paid: <strong style={{ color: T.ink }}>{dollarsOf(f.grantsPaidCents)}</strong></div>}
+      {f.revenueCents != null && <div>Revenue: <strong style={{ color: T.ink }}>{dollarsOf(f.revenueCents)}</strong></div>}
       {f.taxYear && <div>Last filing year: <strong style={{ color: T.ink }}>{f.taxYear}</strong></div>}
-      {f.filingUrl && <div><a data-testid="dp-filing-link" href={f.filingUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.greenDk, fontWeight: 700 }}>Open the filing</a></div>}
       <div style={{ fontSize: 12, color: T.ink3 }}>
-        Source: {f.sourceUrl ? <a href={f.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.ink3 }}>{f.source || "ProPublica Nonprofit Explorer"}</a> : (f.source || "ProPublica Nonprofit Explorer")}, fetched {dateWords(f.fetchedAt)}.
+        Source: {f.sourceUrl ? <a href={f.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.ink3 }}>{f.source}</a> : f.source}.
         {f.ein ? ` EIN ${f.ein}.` : ""}
       </div>
     </div>
@@ -113,10 +112,11 @@ export function PublicFilingLookupModal({ donorId, onClose, onLoaded }) {
   return (
     <Modal onClose={onClose} title="Public filing" width={460}>
       <div data-testid="filing-lookup">
-        {state.busy && !r && !state.err && <div style={{ fontSize: 13.5, color: T.ink3 }}>Looking up their filing…</div>}
+        {state.busy && !r && !state.err && <div style={{ fontSize: 13.5, color: T.ink3 }}>Looking them up in the IRS file…</div>}
         {state.err && <div style={{ fontSize: 13.5, color: T.ink2 }}>{state.err}</div>}
         {r && !r.ein && <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>There is no EIN on this record, so there is no filing to look up. Add the EIN to the organization's record and try again.</div>}
-        {r && r.ein && !r.filing && <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>No public filing was found for EIN {r.ein}.</div>}
+        {r && r.notLoaded && <div data-testid="filing-not-loaded" style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>{r.message}</div>}
+        {r && r.ein && !r.filing && !r.notLoaded && <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>EIN {r.ein} is not in the IRS file{r.notFound && r.notFound.source ? ` (${r.notFound.source})` : ""}.</div>}
         {r && r.filing && <PublicFilingBlock data={r} />}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}><button type="button" style={GHOST} onClick={onClose}>Close</button></div>
       </div>
