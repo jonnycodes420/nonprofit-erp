@@ -263,13 +263,13 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
           ? "Renewing early adds a term to the end of the one you have; it never shortens it."
           : "Rejoining starts a fresh term from the day it is paid."}</p>
         <a class="btn" href="${renewHref}">${m.status === "active" ? "Renew my membership" : "Rejoin"}</a>
-        ${m.term === "12_months" ? (autoRenew
+        ${m.term === "12_months" || m.term === "1_month" ? (autoRenew
           ? `<form method="post" action="/you/${esc(org.org_slug)}/auto-renew">
                <input type="hidden" name="on" value="0">
-               <p class="small" style="margin-top:12px">It renews itself each year. Turning that off leaves the membership you have paid for exactly as it is; it simply will not renew again.</p>
+               <p class="small" style="margin-top:12px">It renews itself each ${m.term === "1_month" ? "month" : "year"}. Turning that off leaves the membership you have paid for exactly as it is; it simply will not renew again.</p>
                <button class="btn quiet small" type="submit">Turn off automatic renewal</button>
              </form>`
-          : `<p class="small" style="margin-top:12px">This membership does not renew itself. Choose "renew automatically each year" when you renew and it will.</p>`) : ""}
+          : `<p class="small" style="margin-top:12px">This membership does not renew itself. Choose "renew automatically each ${m.term === "1_month" ? "month" : "year"}" when you renew and it will.</p>`) : ""}
       </div>`);
   }
 

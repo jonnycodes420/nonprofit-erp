@@ -2716,11 +2716,12 @@ const donateHandler = async (req, res) => {
     frequency = "once"; coverFees = false; amount = amount || "1";
   }
   // BUILD-101 Part 4 — a MEMBERSHIP, priced by the SERVER from the level (the
-  // page's amount is ignored). One-time, or auto-renewing yearly through the
-  // existing recurring path — only a 12-month level can auto-renew.
+  // page's amount is ignored). One-time, or auto-renewing through the
+  // existing recurring path: yearly for a 12-month level, monthly for a
+  // one-month level (PARITY-2), checked against the level once it is read.
   const membershipLevelId = !eventLevelId && req.body.membershipLevelId ? String(req.body.membershipLevelId) : null;
   if (membershipLevelId) {
-    frequency = frequency === "annual" ? "annual" : "once"; coverFees = false; amount = amount || "1";
+    frequency = frequency === "annual" || frequency === "monthly" ? frequency : "once"; coverFees = false; amount = amount || "1";
   }
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
@@ -2797,7 +2798,8 @@ const donateHandler = async (req, res) => {
   if (membershipLevelId) {
     [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [membershipLevelId, org.id]);
     if (!memLevel) return res.status(400).json({ error: "This membership is no longer available." });
-    if (frequency === "annual" && memLevel.term !== "12_months") return res.status(400).json({ error: "This membership cannot renew automatically." });
+    const renewsOn = memLevel.term === "12_months" ? "annual" : memLevel.term === "1_month" ? "monthly" : null;
+    if (frequency !== "once" && frequency !== renewsOn) return res.status(400).json({ error: "This membership cannot renew automatically." });
     baseCents = Math.round(Number(memLevel.price) * 100);
   }
   if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
@@ -5183,13 +5185,30 @@ app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, 
   // name. Nothing here is anybody else's.
   const firstName = donors.length ? String(donors[0].first_name || String(donors[0].name || "").split(" ")[0] || "").trim() : "";
   const signedInAs = firstName || email;
-  if (!donors.length) return res.json({ arrangement: null, signedInAs });
+  if (!donors.length) return res.json({ arrangement: null, signedInAs, membership: null, prefill: { firstName: "", lastName: "", email } });
+  // PARITY-2 Part 1: the membership page asks who is here so a member sees
+  // their own level and expiry on its card, and Join or Renew needs no typing.
+  // Every value is this session's own: the email it signed in with, and the
+  // record(s) that email already is in this org.
+  const d0 = donors[0];
+  const nameParts = String(d0.name || "").trim().split(/\s+/);
+  const prefill = { firstName: nameParts[0] || "", lastName: nameParts.slice(1).join(" "), email };
+  const [mem] = await query(
+    `SELECT m.level_id, m.status, m.expires_on, l.name AS level_name, l.term, l.active,
+            EXISTS (SELECT 1 FROM recurring_subscriptions rs WHERE rs.org_id=m.org_id AND rs.donor_id=m.donor_id
+                     AND rs.membership_level_id=m.level_id AND rs.status IN ('active','recovered','past_due','recovering')) AS auto_renew
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+      WHERE m.org_id = ? AND m.donor_id = ANY(?) AND m.status IN ('active','grace')
+      ORDER BY m.starts_on DESC LIMIT 1`, [org.id, donors.map(d => d.id)]);
+  const membership = mem ? { levelId: mem.level_id, levelName: mem.level_name, status: mem.status,
+                             expiresOn: mem.expires_on || null, term: mem.term, autoRenew: mem.auto_renew === true,
+                             forSale: mem.active !== false } : null;
   const rows = await query(
     `SELECT amount, cover_fee_amount, interval FROM recurring_subscriptions
      WHERE org_id = ? AND donor_id = ANY(?) AND status IN ('active','recovered','past_due','recovering')
      ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1`,
     [org.id, donors.map(d => d.id)]);
-  if (!rows.length) return res.json({ arrangement: null, signedInAs });
+  if (!rows.length) return res.json({ arrangement: null, signedInAs, membership, prefill });
   const s = rows[0];
   // BUILD-73 Part 2 — was Math.max(1, Math.round(amount - cover_fee_amount)).
   // This figure is shown to the DONOR as what they currently give, and it seeds
@@ -5197,7 +5216,7 @@ app.get("/portal/:orgSlug/give-default", requirePortalSession, wrap(async (req, 
   // $33 and would then have changed their subscription to exactly that. Cents
   // are kept; the floor stays $1.00, expressed in cents.
   const baseCentsNow = Math.max(100, (toCents(s.amount) || 0) - (toCents(s.cover_fee_amount) || 0));
-  res.json({ signedInAs, arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
+  res.json({ signedInAs, membership, prefill, arrangement: { frequency: s.interval === "year" ? "annual" : "monthly", amount: toDollars(baseCentsNow) } });
 }));
 
 // ── §3 — the dashboard: every figure from the SAME gifts ledger the CRM

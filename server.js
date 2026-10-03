@@ -9316,8 +9316,9 @@ async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, ac
     `SELECT m.id FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
       WHERE m.org_id=? AND m.donor_id=? AND m.status IN ('active','grace') AND m.expires_on IS NOT NULL
         AND l.active IS NOT FALSE AND round(l.price::numeric * 100)::bigint = ?
+        AND l.term <> ALL(?::text[])   -- PARITY-2: a monthly level is never "due" from a plain gift
         AND (m.status='grace' OR m.expires_on <= ?)
-      LIMIT 1`, [orgId, donorId, cents, MB.addDaysCivil(today, renewalDays)]);
+      LIMIT 1`, [orgId, donorId, cents, MB.NO_RENEWAL_THREAD_TERMS, MB.addDaysCivil(today, renewalDays)]);
   if (!m) return null;
   return renewMembership({ orgId, membershipId: m.id, existingGiftId: giftId, source: "payment",
                            who: { id: actorId || SYS_AUTO.id, name: actorName || SYS_AUTO.name } });
@@ -9356,9 +9357,10 @@ async function processMembershipRenewals(opts = {}) {
          JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
         WHERE m.org_id=? AND m.status='active' AND m.expires_on BETWEEN ? AND ?
           AND m.renewal_thread_for IS DISTINCT FROM m.expires_on
+          AND l.term <> ALL(?::text[])   -- PARITY-2: a monthly level opens no thread
           AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
           AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE
-        ORDER BY m.expires_on`, [org.id, today, MB.addDaysCivil(today, renewalDays)]);
+        ORDER BY m.expires_on`, [org.id, today, MB.addDaysCivil(today, renewalDays), MB.NO_RENEWAL_THREAD_TERMS]);
     const samples = Array.isArray(org.voice_samples) ? org.voice_samples
       : (typeof org.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
     const voice = draftMod.voiceFrom(samples);

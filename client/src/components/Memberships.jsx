@@ -138,6 +138,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("expiry_asc");
   const [draft, setDraft] = useState(null); // new level form
+  const [edit, setEdit] = useState(null);   // PARITY-2 Part 1: one level being edited
   const [msg, setMsg] = useState("");
   const [settings, setSettings] = useState(null);
   const [lapsed, setLapsed] = useState(null);
@@ -163,6 +164,31 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
       setDraft(null); setMsg(r.sentence || ""); loadLevels();
     } catch (e) { setMsg(errorMessage(e, "That level did not save.")); }
   };
+  // PARITY-2 Part 1: edit a level's words, hide it from the public page, and
+  // set the page's order. The server decides who may change what: price,
+  // value, term and scope stay with an admin.
+  const saveEdit = async () => {
+    setMsg("");
+    try {
+      const r = await apiFetch(`/membership-levels/${edit.id}`, { method: "PUT", body: JSON.stringify({ ...edit, benefits: String(edit.benefits || "").split("\n") }) });
+      setEdit(null); setMsg(r.sentence || "Saved."); loadLevels();
+    } catch (e) { setMsg(errorMessage(e, "That level did not save.")); }
+  };
+  const setHidden = async (l, hidden) => {
+    setMsg("");
+    try { await apiFetch(`/membership-levels/${l.id}`, { method: "PUT", body: JSON.stringify({ hidden }) });
+      setMsg(hidden ? `${l.name} is off the membership page. Its own join link still works.` : `${l.name} is back on the membership page.`); loadLevels(); }
+    catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+  const move = async (i, dir) => {
+    const ids = levels.map(x => x.id);
+    const j = i + dir; if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    setMsg("");
+    try { await apiFetch("/membership-levels/order", { method: "PUT", body: JSON.stringify({ ids }) }); loadLevels(); }
+    catch (e) { setMsg(errorMessage(e, "The order did not save.")); }
+  };
+  const pageUrl = orgSlug ? `${window.location.origin}/give/${orgSlug}?memberships` : "";
   if (!levels || !list) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   const by = list.byStatus || {};
   return (
@@ -191,25 +217,65 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: T.ink }}>Levels</h3>
           {isAdmin && !isReadOnly && !draft && (
-            <button style={quietBtn} data-testid="level-add" onClick={() => setDraft({ name: "", price: "", fmv: "", term: "12_months", scope: "individual", benefits: "" })}>Add a level</button>)}
+            <button style={quietBtn} data-testid="level-add" onClick={() => setDraft({ name: "", price: "", fmv: "", term: "12_months", scope: "individual", benefits: "", description: "" })}>Add a level</button>)}
         </div>
+        {pageUrl && levels.some(l => l.active && !l.hidden) && (
+          <div data-testid="membership-page-link" style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+            <span>Your membership page lists every level that is for sale and not hidden, in this order.</span>
+            <a href={pageUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.greenDk, fontWeight: 700, fontSize: 12 }}>Open page</a>
+            <button style={{ background: "transparent", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
+              data-testid="membership-page-copy"
+              onClick={async () => { try { await navigator.clipboard.writeText(pageUrl); setMsg(`Link copied: ${pageUrl}`); } catch { setMsg(pageUrl); } }}>Copy page link</button>
+          </div>)}
         {!levels.length && !draft && (
           <div style={{ fontSize: 13, color: T.ink3 }}>No levels yet. Add one with its price, its term and the value of what members receive, and receipts will state the deductible part.</div>)}
-        {levels.map(l => {
+        {levels.map((l, i) => {
           const c = l.counts || {};
+          const linkBtn = { background: "transparent", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 };
           return (
-            <div key={l.id} data-testid="level-row" style={{ display: "flex", gap: 14, alignItems: "baseline", padding: "8px 0", borderBottom: "1px solid " + T.bg3, opacity: l.active ? 1 : 0.6 }}>
-              <span style={{ fontWeight: 700, color: T.ink, minWidth: 140 }}>{l.name}{!l.active ? " (retired)" : ""}</span>
+            <div key={l.id}>
+            <div data-testid="level-row" style={{ display: "flex", gap: 14, alignItems: "baseline", flexWrap: "wrap", padding: "8px 0", borderBottom: "1px solid " + T.bg3, opacity: l.active ? 1 : 0.6 }}>
+              {isAdmin && !isReadOnly && (
+                <span style={{ display: "inline-flex", gap: 2 }}>
+                  <button style={{ ...linkBtn, color: T.ink3 }} aria-label={`Move ${l.name} up`} disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
+                  <button style={{ ...linkBtn, color: T.ink3 }} aria-label={`Move ${l.name} down`} disabled={i === levels.length - 1} onClick={() => move(i, 1)}>↓</button>
+                </span>)}
+              <span style={{ fontWeight: 700, color: T.ink, minWidth: 140 }}>{l.name}{!l.active ? " (retired)" : l.hidden ? " (hidden)" : ""}</span>
               <span style={{ fontSize: 13, color: T.ink }} title={l.fmvSentence} aria-label={l.fmvSentence} tabIndex={0}>{usd(l.price)} · {l.termLabel}</span>
               <span style={{ fontSize: 12, color: T.ink3 }}>{l.scope === "household" ? "Household" : "Individual"}</span>
               {orgSlug && l.active && <button style={{ background: "transparent", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                 data-testid="level-link"
                 onClick={async () => { const url = `${window.location.origin}/give/${orgSlug}?membership=${l.id}`;
                   try { await navigator.clipboard.writeText(url); setMsg(`Link copied: ${url}`); } catch { setMsg(url); } }}>Copy join link</button>}
+              {!isReadOnly && l.active && (
+                <button style={linkBtn} data-testid="level-hide" onClick={() => setHidden(l, !l.hidden)}>{l.hidden ? "Show on page" : "Hide from page"}</button>)}
+              {!isReadOnly && (
+                <button style={linkBtn} data-testid="level-edit"
+                  onClick={() => setEdit({ id: l.id, name: l.name, description: l.description || "", benefits: (l.benefits || []).join("\n"),
+                                           price: l.price, fmv: l.fmv, term: l.term, scope: l.scope })}>Edit</button>)}
               <span style={{ fontSize: 12, color: T.ink3, marginLeft: "auto" }}
                 title="People holding this level now, and people whose membership at this level has lapsed.">
                 {c.active + c.grace} current · {c.lapsed} lapsed
               </span>
+            </div>
+            {edit && edit.id === l.id && (
+              <div data-testid="level-edit-form" style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0", maxWidth: 560 }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  <input aria-label="Level name" value={edit.name} onChange={e => setEdit({ ...edit, name: e.target.value })} style={{ ...inp, width: 160 }} />
+                  <input aria-label="Price" inputMode="decimal" value={edit.price} disabled={!isAdmin} onChange={e => setEdit({ ...edit, price: e.target.value })} style={{ ...inp, width: 90 }} />
+                  <input aria-label="Value of benefits" inputMode="decimal" value={edit.fmv} disabled={!isAdmin} onChange={e => setEdit({ ...edit, fmv: e.target.value })} style={{ ...inp, width: 130 }} />
+                  <select aria-label="Term" value={edit.term} disabled={!isAdmin} onChange={e => setEdit({ ...edit, term: e.target.value })} style={inp}>
+                    <option value="12_months">12 months</option><option value="1_month">Monthly</option><option value="calendar_year">Calendar year</option><option value="lifetime">Lifetime</option>
+                  </select>
+                </div>
+                <textarea aria-label="Description" placeholder="A sentence or two for the card on your membership page" rows={2} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} style={{ ...inp, fontFamily: "inherit" }} />
+                <textarea aria-label="Benefits" placeholder="Benefits, one per line" rows={3} value={edit.benefits} onChange={e => setEdit({ ...edit, benefits: e.target.value })} style={{ ...inp, fontFamily: "inherit" }} />
+                {!isAdmin && <div style={{ fontSize: 12, color: T.ink3 }}>An admin sets a level's price, the value of its benefits and its term.</div>}
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button style={primaryBtn} onClick={saveEdit} data-testid="level-edit-save">Save</button>
+                  <button style={quietBtn} onClick={() => setEdit(null)}>Cancel</button>
+                </div>
+              </div>)}
             </div>);
         })}
         {draft && (
@@ -219,12 +285,13 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
               <input placeholder="Price" inputMode="decimal" value={draft.price} onChange={e => setDraft({ ...draft, price: e.target.value })} style={{ ...inp, width: 90 }} />
               <input placeholder="Value of benefits" inputMode="decimal" value={draft.fmv} onChange={e => setDraft({ ...draft, fmv: e.target.value })} style={{ ...inp, width: 130 }} />
               <select value={draft.term} onChange={e => setDraft({ ...draft, term: e.target.value })} style={inp}>
-                <option value="12_months">12 months</option><option value="calendar_year">Calendar year</option><option value="lifetime">Lifetime</option>
+                <option value="12_months">12 months</option><option value="1_month">Monthly</option><option value="calendar_year">Calendar year</option><option value="lifetime">Lifetime</option>
               </select>
               <select value={draft.scope} onChange={e => setDraft({ ...draft, scope: e.target.value })} style={inp}>
                 <option value="individual">Individual</option><option value="household">Household</option>
               </select>
             </div>
+            <textarea placeholder="A sentence or two for the card on your membership page" rows={2} value={draft.description} onChange={e => setDraft({ ...draft, description: e.target.value })} style={inp} />
             <textarea placeholder="Benefits, one per line" rows={3} value={draft.benefits} onChange={e => setDraft({ ...draft, benefits: e.target.value })} style={inp} />
             <div style={{ fontSize: 12, color: T.ink3 }}>The value of benefits is your number. Steward never estimates it; at $0 receipts call the whole payment deductible.</div>
             <div style={{ display: "flex", gap: 6 }}>

@@ -19,6 +19,10 @@ import { thankYouText } from "../../../shared/formConfig.js";
 // page's own fetch so the server can serve the right variant in one round trip.
 import { assignVariant, currentVariant } from "../lib/abVariant";
 import { displayDate } from "../../../shared/displayDate";
+// PARITY-2 Part 1: the share row and the membership page live in their own files
+// so the membership page can use the row too.
+import ShareRow from "./ShareRow";
+import MembershipsPage from "./MembershipsPage";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -428,49 +432,6 @@ function DonorSignIn({ orgSlug, enabled, signedInAs, th }) {
   );
 }
 
-// ── PARITY-1 E · SHARE THIS PAGE ────────────────────────────────────────────
-// Plain links and nothing else: no share widget, no third-party script, nothing
-// that tells another company who gave. Each one opens the network's own page
-// with the giving page's address in it, and the donor decides from there.
-// PARITY-2 Part 2: a fundraiser's page passes `p2pShare` (shared/p2p.js
-// shareLinks, from the server): every link carries its UTM tags, so a gift
-// that arrives through one is attributed like any other. `heading` says what
-// the row is for on that page.
-function ShareRow({ url, orgName, th, p2pShare = null, heading = "" }) {
-  const [copied, setCopied] = useState(false);
-  const text = `I just gave to ${orgName}. Join me:`;
-  const enc = encodeURIComponent;
-  const links = p2pShare ? [
-    ["Email", p2pShare.email], ["Text", p2pShare.text], ["Facebook", p2pShare.facebook], ["WhatsApp", p2pShare.whatsapp],
-  ] : [
-    ["Email", `mailto:?subject=${enc(`Give to ${orgName}`)}&body=${enc(`${text} ${url}`)}`],
-    ["Facebook", `https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`],
-    ["X", `https://twitter.com/intent/tweet?url=${enc(url)}&text=${enc(text)}`],
-    ["LinkedIn", `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}`],
-  ];
-  const copyUrl = p2pShare ? p2pShare.copy : url;
-  function copy() {
-    try {
-      navigator.clipboard.writeText(copyUrl).then(() => setCopied(true), () => setCopied(false));
-    } catch { setCopied(false); }
-  }
-  const pill = { display: "inline-block", padding: "8px 14px", borderRadius: 99, border: `1px solid ${T.bg3}`,
-                 background: T.white, color: T.ink, fontSize: 13, fontWeight: 600, textDecoration: "none",
-                 cursor: "pointer", fontFamily: th.sans };
-  return (
-    <div className="thanks-share" style={{ marginTop: 26, maxWidth: 420 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>{heading || "Ask a friend to give too"}</div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
-        <button type="button" className="thanks-share-copy" onClick={copy} style={pill}>{copied ? "Link copied" : "Copy link"}</button>
-        {links.map(([label, href]) => (
-          <a key={label} className="thanks-share-link" data-net={label} href={href}
-             target={label === "Email" || label === "Text" ? undefined : "_blank"} rel="noopener noreferrer" style={pill}>{label}</a>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── PARITY-2 Part 2 · THE PEER-TO-PEER PAGE ─────────────────────────────────
 // A thin progress bar in the org's own colour. Every bar on these pages is
 // this one, so a fundraiser's, a team's and the campaign's look alike.
@@ -637,6 +598,8 @@ export default function Donate() {
   // PARITY-2 Part 2: ?team=<slug> turns a peer-to-peer campaign page into
   // that team's page (a mode, not a path segment: forms.md).
   const teamSlug = useMemo(() => new URLSearchParams(window.location.search).get("team"), []);
+  // PARITY-2 Part 1: ?memberships turns the org page into its membership page.
+  const membershipsMode = useMemo(() => new URLSearchParams(window.location.search).has("memberships"), []);
   const [org, setOrg] = useState(null);
   const [givingPage, setGivingPage] = useState(null);
   const [peerFundraiser, setPeerFundraiser] = useState(null);
@@ -1237,6 +1200,11 @@ export default function Donate() {
   );
   if (ticketEventId) return <TicketsPage orgSlug={orgSlug} eventId={ticketEventId} th={th} BASE={BASE} card={card} />;
   if (membershipLevelId) return <MembershipPage orgSlug={orgSlug} levelId={membershipLevelId} th={th} BASE={BASE} card={card} />;
+  if (membershipsMode) return (
+    <MembershipsPage orgSlug={orgSlug} th={th} BASE={BASE} card={card} monogram={monogram}
+      portalBase={PORTAL_BASE} portalSignIn={!!org.portalSignIn}
+      signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org.portalSignIn} signedInAs={signedInAs} th={th} />} />
+  );
 
   // The goal bar, drawn once: at the top of a campaign page, or under the
   // story on any other giving page (FIX-15 Part 6).
@@ -1706,6 +1674,25 @@ export default function Donate() {
           {th.poweredBy && <><br />Powered by Steward</>}
         </div>
       </form>
+
+      {/* PARITY-2 Part 1: THE GIVE HUB. The org's other open doors, from the
+          one server list (waysToGive.js), on the org-wide page only: a campaign
+          or a fundraiser's page is about that one thing. */}
+      {!pageSlug && !isEmbed && Array.isArray(org.ways) && org.ways.length > 0 && (
+        <div data-testid="ways-to-give" style={{ width: "100%", maxWidth: 480, marginTop: 28, order: 4 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>More ways to give</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {org.ways.map(w => (
+              <a key={w.kind + w.href} href={w.href} data-kind={w.kind}
+                style={{ ...card, padding: "14px 18px", textDecoration: "none", display: "block" }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: th.primary }}>
+                  {w.title}{w.date ? <span style={{ fontWeight: 500, color: T.ink3 }}> · {displayDate(w.date)}</span> : null}
+                </div>
+                <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5, marginTop: 3 }}>{w.sentence}</div>
+              </a>))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

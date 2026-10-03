@@ -36,6 +36,10 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
   or widgets.** `/give/:org/:page/:fundraiser` would swallow a path segment. (BUILD-98 P4, BUILD-101)
 - **Price tickets and memberships on the server from the level.** Ignore the page's amount, apply no fee
   gross-up, and have the webhook re-read the level org-scoped. (BUILD-98 P4, BUILD-101)
+- **The org's other open doors come from ONE helper, `waysToGive(orgId, slug)` (waysToGive.js).** It
+  feeds "More ways to give" on the org-wide giving page only (`org.ways` on `/org/:slug/public`): the
+  membership page when a level is for sale and not hidden, each live P2P page, each upcoming event with
+  a public page. A new kind of door is one block there. Links are site paths, never a host. (PARITY-2)
 - **Render the org name on the three public give payloads via `donorFacingOrgName()`**
   (`portal_settings.display_name`), never the staff "(Demo)" name. (BUILD-58 W-2)
 - **Build every share, QR and embed URL with `publicAppUrl()` (publicUrl.js).** Never use a deployment host

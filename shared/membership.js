@@ -15,8 +15,22 @@
 //
 // Pure: no DB, no network, no clock, no JSX. Money is integer cents.
 
-export const TERMS = ["12_months", "calendar_year", "lifetime"];
-export const TERM_LABEL = { "12_months": "12 months", calendar_year: "Calendar year", lifetime: "Lifetime" };
+export const TERMS = ["12_months", "calendar_year", "lifetime", "1_month"];
+export const TERM_LABEL = { "12_months": "12 months", calendar_year: "Calendar year", lifetime: "Lifetime", "1_month": "Monthly" };
+// PARITY-2 Part 1: what follows the price on the public card: "$60 a year".
+export const TERM_PRICE_SUFFIX = { "12_months": "a year", calendar_year: "for the calendar year", lifetime: "once, for life", "1_month": "a month" };
+// The one recurring frequency a term may renew on by itself, or null. A
+// 12-month level renews yearly and a one-month level monthly, both on the
+// existing recurring path; a calendar-year or lifetime level never does.
+export function autoRenewFrequency(term) {
+  return term === "12_months" ? "annual" : term === "1_month" ? "monthly" : null;
+}
+// A one-month membership never opens a renewal thread and is never matched
+// from a plain gift of its price: with a 30-day window it would always be
+// "due", so every month would raise a thread and every $10 gift would be
+// read as a renewal. It renews by its subscription or by its own button.
+export const NO_RENEWAL_THREAD_TERMS = ["1_month"];
+export const MAX_DESCRIPTION = 400;
 export const SCOPES = ["individual", "household"];
 export const STATUSES = ["active", "grace", "lapsed", "cancelled", "renewed"];
 // The org's two settings and their defaults (the brief's numbers).
@@ -45,8 +59,11 @@ export function validateLevel(raw) {
   const lines = Array.isArray(raw?.benefits) ? raw.benefits : String(raw?.benefits || "").split("\n");
   const benefits = lines.map(b => String(b || "").trim().slice(0, 200)).filter(Boolean);
   if (benefits.length > MAX_BENEFITS) errors.push(`no more than ${MAX_BENEFITS} benefit lines`);
+  const description = String(raw?.description || "").trim();
+  if (description.length > MAX_DESCRIPTION) errors.push(`a description of no more than ${MAX_DESCRIPTION} characters`);
+  const hidden = raw?.hidden === true;
   return errors.length ? { ok: false, errors }
-    : { ok: true, level: { name, priceCents, fmvCents, term, scope, benefits } };
+    : { ok: true, level: { name, priceCents, fmvCents, term, scope, benefits, description, hidden } };
 }
 
 // The one sentence the level screen owes an org about what its receipts say.
@@ -65,6 +82,12 @@ export function addDaysCivil(d, n) {
   const t = new Date(Date.UTC(p.y, p.mo - 1, p.d + n));
   return fmt(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
 }
+// One month on, clamped: 31 January + 1 month is 28 (or 29) February.
+function addMonth(d) {
+  const p = parse(d); if (!p) return null;
+  const y = p.mo === 12 ? p.y + 1 : p.y, mo = p.mo === 12 ? 1 : p.mo + 1;
+  return fmt(y, mo, Math.min(p.d, daysIn(y, mo)));
+}
 // One year on, clamped: 29 Feb + 1 year is 28 Feb.
 function addYear(d) {
   const p = parse(d); if (!p) return null;
@@ -78,6 +101,8 @@ export function expiryFor({ term, startsOn }) {
   if (term === "lifetime") return null;
   const p = parse(startsOn); if (!p) return null;
   if (term === "calendar_year") return fmt(p.y, 12, 31);
+  // PARITY-2: a month bought on 15 March runs THROUGH 14 April.
+  if (term === "1_month") return addDaysCivil(addMonth(startsOn), -1);
   return addDaysCivil(addYear(startsOn), -1);
 }
 
