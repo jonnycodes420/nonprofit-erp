@@ -25,7 +25,7 @@
 // /donors/export/csv add the columns by default (§4). Planted: making canSee
 // return true for every role turned twenty checks red.
 //
-// Standard scratch stack (tests/README.md). Never calls ProPublica.
+// Standard scratch stack (tests/README.md). Never reaches the network.
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
@@ -80,8 +80,33 @@ const carries = t => MARK.some(m => String(t).includes(m));
   const mapping = Object.fromEntries(Object.entries(pv.body.proposal || {}).map(([h, v]) => [h, v.replace(/^std:/, "")]));
   const im = await call(admin, "POST", "/screening/import", { csv, mapping, provider: PROVIDER, screenedOn: "2026-09-30" });
   ok("the admin brings in Rosa's screening result", im.status === 200 && im.body.matched === 1, im.body);
+  // FIX-22: the filing comes from the IRS EO BMF in irs_bmf, never the network.
+  // Empty first: the answer says the file is not loaded, and records nothing.
+  await q(`DELETE FROM irs_bmf`);
+  const nl = await call(admin, "POST", `/donors/${D}_fdn/public-filing/refresh`);
+  ok("FIX-22 with no IRS file loaded, the lookup says so plainly and writes nothing",
+    nl.status === 200 && nl.body.notLoaded === true && /IRS file .* has not been loaded/.test(nl.body.message) && !nl.body.filing
+      && (await q(`SELECT 1 FROM public_filings WHERE org_id=$1`, [ORG])).length === 0, nl.body);
+  // Then the fixture, through the loader's own load(): made-up rows in the BMF's columns.
+  const { Client } = require("pg");
+  const pgc = new Client({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest", ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false } });
+  await pgc.connect();
+  const loaded = await require("../scripts/load-irs-bmf").load(pgc, { sources: [{ file: require("path").join(__dirname, "fixtures", "irs-bmf", "eo_fixture.csv") }], date: "2026-09-07" });
+  await pgc.end();
+  const [quoted] = await q(`SELECT name FROM irs_bmf WHERE ein='271000103'`);
+  ok("FIX-22 the loader reads every fixture row, a quoted name with a comma whole", loaded[0].rows === 3 && quoted && quoted.name === "BRAMBLEWICK, PELL AND OARSMAN FUND", { loaded, quoted });
   const fl = await call(admin, "POST", `/donors/${D}_fdn/public-filing/refresh`);
-  ok("the admin looks up the foundation's filing (from the saved answer, never the network)", fl.status === 200 && fl.body.filing && fl.body.filing.taxYear === 2023, fl.body);
+  const SRC = "IRS, Exempt Organizations Business Master File, September 2026";
+  ok("the admin looks up the foundation's filing (from the IRS file in irs_bmf, never the network)", fl.status === 200 && fl.body.filing && fl.body.filing.taxYear === 2023, fl.body);
+  ok("FIX-22 it shows assets, revenue and the last filing year, to the cent, under the IRS source line",
+    fl.body.filing && fl.body.filing.totalAssetsCents === 482500000 && fl.body.filing.revenueCents === 59840000 && fl.body.filing.source === SRC
+      && /irs\.gov/.test(fl.body.filing.sourceUrl) && !/propublica/i.test(JSON.stringify(fl.body)), fl.body.filing);
+  const fg = await call(admin, "GET", `/donors/${D}_fdn/public-filing`);
+  ok("FIX-22 the page's read returns the same filing and calls nothing", fg.status === 200 && fg.body.filing && fg.body.filing.source === SRC && fg.body.filing.totalAssetsCents === 482500000, fg.body);
+  const fb = await call(admin, "POST", `/donors/${D}_fdn/prospect-brief`);
+  ok("FIX-22 the foundation's brief cites the IRS file for its assets and lists grants paid as not known",
+    fb.status === 201 && fb.body.brief.lines.some(l => l.section === "Public filing" && /Total assets: \$4,825,000/.test(l.text) && l.source.startsWith(SRC))
+      && fb.body.brief.notKnown.some(t => /Grants paid/.test(t)), fb.body.brief && fb.body.brief.lines.filter(l => l.section === "Public filing"));
   const br = await call(admin, "POST", `/donors/${D}/prospect-brief`);
   ok("the admin's brief is written, saved, and carries the screening line with its source",
     br.status === 201 && br.body.brief.lines.some(l => /Capacity range from the screening file/.test(l.text) && new RegExp(PROVIDER).test(l.source)), br.status);

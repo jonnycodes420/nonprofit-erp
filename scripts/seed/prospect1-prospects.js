@@ -1,9 +1,10 @@
 // scripts/seed/prospect1-prospects.js · PROSPECT-1 Part 7. Believable prospects.
 //
 // Ten people whose own files give Room to give something to say (three Strong,
-// four Some, three Not yet known), and two foundations with EINs whose public
-// filings are saved answers in tests/fixtures/propublica (a TEST_MODE server
-// reads those; production asks ProPublica when a person presses Look up).
+// four Some, three Not yet known), and two foundations with made-up EINs. Their
+// public filing rows are in tests/fixtures/irs-bmf/eo_fixture.csv, made-up
+// rows in the IRS EO BMF's own columns; production reads the real IRS file
+// that scripts/load-irs-bmf.js loads, where these two EINs are not.
 // The sample screening file a provider might return is
 // tests/fixtures/prospect1/harborlight-screening-return.csv: it matches six of
 // the ten (by the Steward ID sent out, or by email) and has one row that

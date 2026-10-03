@@ -4,8 +4,8 @@
 // shared/roomToGive.js, which turns them into a word and its reasons. Also the
 // screening file both ways (out: the layout providers accept; in: what came
 // back, stored as ranges with the provider's name and the date), and the
-// public filing for an organisation with an EIN (ProPublica Nonprofit
-// Explorer, looked up only when a person presses the button and cached).
+// public filing for an organisation with an EIN (read from the IRS EO BMF
+// that scripts/load-irs-bmf.js loads into irs_bmf; never the network).
 //
 // WHO SEES ANY OF IT: admins, and staff an admin gave the major gifts
 // permission. `canSee` reads the LIVE row on every request, never the JWT.
@@ -259,67 +259,61 @@ async function matchRows(orgId, rows) {
   return out;
 }
 
-// ── PUBLIC FILINGS (ProPublica Nonprofit Explorer) ──────────────────────────
-// GET https://projects.propublica.org/nonprofits/api/v2/organizations/:ein.json
-// No key. Called only when a person presses Look up, never on a page render,
-// and the answer is cached in public_filings (a second press within a day
-// reads the cache). A TEST_MODE server, or PROPUBLICA_FIXTURES, reads saved
-// answers instead, so no test reaches the network; production refuses both.
-const PP_BASE = "https://projects.propublica.org/nonprofits/api/v2";
-const PP_PAGE = ein => `https://projects.propublica.org/nonprofits/organizations/${ein}`;
+// ── PUBLIC FILINGS (the IRS Exempt Organizations Business Master File) ─────
+// The IRS publishes the EO BMF as public-domain CSV files, refreshed monthly:
+// https://www.irs.gov/charities-non-profits/exempt-organizations-business-master-file-extract-eo-bmf
+// scripts/load-irs-bmf.js loads them into irs_bmf. A lookup reads that table
+// and nothing else: no page render and no button press reaches the network.
+// When the table is empty the answer says so plainly. Tests load
+// tests/fixtures/irs-bmf/eo_fixture.csv (made-up organisations) the same way.
+const BMF_PAGE = "https://www.irs.gov/charities-non-profits/exempt-organizations-business-master-file-extract-eo-bmf";
+const BMF_NAME = "Exempt Organizations Business Master File";
+const NOT_LOADED = "The IRS file of exempt organisations has not been loaded into Steward yet, so there is nothing to look up.";
 const cleanEin = e => String(e || "").replace(/\D/g, "");
-function parseFiling(ein, json) {
-  if (!json || !json.organization) return null;
-  const withData = Array.isArray(json.filings_with_data) ? [...json.filings_with_data] : [];
-  withData.sort((a, b) => Number(b.tax_prd || 0) - Number(a.tax_prd || 0));
-  const f = withData[0] || null;
-  const noData = Array.isArray(json.filings_without_data) ? [...json.filings_without_data].sort((a, b) => Number(b.tax_prd || 0) - Number(a.tax_prd || 0))[0] : null;
-  const num = v => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Math.round(Number(v) * 100));
-  const form = f ? ({ 0: "990", 1: "990-EZ", 2: "990-PF" }[f.formtype] || null) : (noData && noData.formtype_str) || null;
-  return {
-    ein, name: json.organization.name || null,
-    totalAssetsCents: f ? num(f.totassetsend) : null,
-    // Grants paid is a 990-PF line (contributions, gifts, grants paid). A
-    // regular 990 has no such line here, so it stays unknown, not zero.
-    grantsPaidCents: f && f.formtype === 2 ? num(f.contrpdpbks) : null,
-    taxYear: f ? Number(f.tax_prd_yr) || null : noData ? Number(noData.tax_prd_yr) || null : null,
-    form,
-    filingUrl: (f && f.pdf_url) || (noData && noData.pdf_url) || PP_PAGE(ein),
-    sourceUrl: PP_PAGE(ein),
-  };
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// A pg DATE arrives as a JS Date at local midnight: read the local parts.
+function ymd(d) {
+  if (!d) return null;
+  if (d instanceof Date) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return String(d).slice(0, 10);
 }
-async function fetchFiling(ein) {
+function monthYear(d) {
+  const s = ymd(d);
+  if (!s) return null;
+  return `${MONTHS[Number(s.slice(5, 7)) - 1]} ${s.slice(0, 4)}`;
+}
+// "Source: IRS, Exempt Organizations Business Master File, September 2026"
+const sourceLine = sourceDate => `IRS, ${BMF_NAME}${sourceDate ? `, ${monthYear(sourceDate)}` : ""}`;
+// The last filing year is the year the tax period ends (TAX_PERIOD is YYYYMM).
+const taxYearOf = p => (/^\d{6}$/.test(String(p || "")) ? Number(String(p).slice(0, 4)) : null);
+
+async function bmfStatus() {
+  const [r] = await query(`SELECT COUNT(*)::int AS n, MAX(source_date) AS source_date FROM irs_bmf`);
+  return { loaded: !!(r && r.n > 0), rows: r ? r.n : 0, sourceDate: r ? ymd(r.source_date) : null };
+}
+// { notLoaded } when there is no IRS file; { notFound, ein } when the EIN is
+// not in it; { filing } otherwise.
+async function lookupFiling(ein) {
   const e = cleanEin(ein);
   if (e.length !== 9) return { error: "That EIN is not nine digits." };
-  // TEST_MODE servers (the battery, CI, a local walk) always read the saved
-  // answers in tests/fixtures/propublica, so no test can reach the network.
-  const dir = process.env.PROPUBLICA_FIXTURES || (process.env.TEST_MODE === "1" ? require("path").join(__dirname, "tests", "fixtures", "propublica") : null);
-  if (dir) {
-    if (process.env.NODE_ENV === "production") throw new Error("PROPUBLICA_FIXTURES is a test setting and is refused in production.");
-    const fs = require("fs"), path = require("path");
-    const p = path.join(dir, `${e}.json`);
-    if (!fs.existsSync(p)) return { notFound: true, ein: e };
-    return { filing: parseFiling(e, JSON.parse(fs.readFileSync(p, "utf8"))) };
-  }
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 8000);
-  try {
-    const r = await fetch(`${PP_BASE}/organizations/${e}.json`, { signal: ctl.signal, headers: { "User-Agent": "Steward (stewardapp.dev)" } });
-    if (r.status === 404) return { notFound: true, ein: e };
-    if (!r.ok) return { error: `The public filing service answered ${r.status}. Try again later.` };
-    return { filing: parseFiling(e, await r.json()) };
-  } catch (err) {
-    return { error: "The public filing service could not be reached just now." };
-  } finally { clearTimeout(timer); }
+  const st = await bmfStatus();
+  if (!st.loaded) return { notLoaded: true, message: NOT_LOADED };
+  const [r] = await query(`SELECT * FROM irs_bmf WHERE ein = ?`, [e]);
+  if (!r) return { notFound: true, ein: e, sourceDate: st.sourceDate };
+  const n = v => (v == null ? null : Number(v));
+  return { filing: {
+    ein: e, name: r.name, totalAssetsCents: n(r.assets_cents), incomeCents: n(r.income_cents), revenueCents: n(r.revenue_cents),
+    taxPeriod: r.tax_period || null, taxYear: taxYearOf(r.tax_period), sourceFile: r.source_file, sourceDate: ymd(r.source_date),
+  } };
 }
 function shapeFiling(r) {
-  if (!r) return null;
+  if (!r || !r.source_date) return null;     // a row from before FIX-22 had another source; it is not shown
   const n = v => (v == null ? null : Number(v));
-  return { ein: r.ein, name: r.name, found: r.found, totalAssetsCents: n(r.total_assets_cents), grantsPaidCents: n(r.grants_paid_cents),
-    taxYear: r.tax_year, form: r.form, filingUrl: r.filing_url, sourceUrl: r.source_url,
-    source: "ProPublica Nonprofit Explorer", fetchedAt: r.fetched_at };
+  return { ein: r.ein, name: r.name, found: r.found, totalAssetsCents: n(r.total_assets_cents), revenueCents: n(r.revenue_cents),
+    incomeCents: n(r.income_cents), taxYear: r.tax_year, taxPeriod: r.tax_period, sourceFile: r.source_file, sourceDate: ymd(r.source_date),
+    sourceUrl: BMF_PAGE, source: sourceLine(r.source_date), fetchedAt: r.fetched_at };
 }
 
 module.exports = { canSee, requireMajorGifts, today, loadFacts, roomToGive, latestScreening, shapeScreening,
   FILE_FIELDS, fileRows, fileCsv, filePreview, RESULT_FIELDS, proposeMapping, parseCsv, readRow, matchRows, parseRange, parseMoney,
-  fetchFiling, parseFiling, shapeFiling, cleanEin, rtg };
+  lookupFiling, bmfStatus, shapeFiling, sourceLine, cleanEin, BMF_PAGE, BMF_NAME, NOT_LOADED, rtg };

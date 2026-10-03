@@ -32,7 +32,6 @@ export const SUBPROCESSORS = [
   // PROSPECT-1 — no provider is chosen yet. Steward never sends the file:
   // a staff member downloads it and gives it to the provider they chose.
   { name: "Screening provider, to be named", what: "Only the people a staff member puts in a screening file: their names, mailing addresses, emails and spouse names where known. The provider returns capacity and real estate ranges, known gifts to other charities, foundation ties and business affiliations, which Steward stores with the provider's name and the date.", why: "Wealth screening, so major gifts staff can see who has room to give more.", when: "used" },
-  { name: "ProPublica Nonprofit Explorer", what: "The EIN of an organisation on your file, when a staff member looks up its public filing. No person's data.", why: "Shows a foundation's or charity's public tax filing on its record.", when: "used" },
   { name: "Google Fonts", what: "The visitor's network address when a page loads its typefaces.", why: "Serves the typefaces Steward's pages use.", when: "always" },
 ];
 
