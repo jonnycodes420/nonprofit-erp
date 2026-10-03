@@ -3,6 +3,14 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **"Every gift in a window" is planned from the gift rows, not by the model guessing.** One `create_task`
+  per gift, due dates from `dueDays` resolved on the server in the org's calendar, behind the AI switch and
+  the plan sheet. A plan cut off at `max_tokens` is refused (422 `plan_truncated`), never half-run. (PARITY-1)
+- **Journeys start themselves, and still send nothing.** Triggers: first gift, first recurring gift, next
+  gift, membership payment, becomes a prospect, joins a group, giving anniversary (birthday waits for a
+  birth date field). A live trigger respects the journey's audience and `trigger_filters` (amount, fund,
+  campaign). `cultivation_plans.trigger_event` with a unique index enrols a donor once per event.
+  `tests/parity1-groups-journeys.test.js`. (PARITY-1)
 - **Every model call goes through `aiClient.js`, and it asks the org's AI switch first.** `anthropicFor(orgId)`
   for Anthropic, `transcribeAudio(orgId, …)` for OpenAI. No `new Anthropic()`, `@anthropic-ai/sdk` or provider
   URL anywhere else in the server; `tests/fix12-ai-switch.test.js` fails on one and proves zero calls with the

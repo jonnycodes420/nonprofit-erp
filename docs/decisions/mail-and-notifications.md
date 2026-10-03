@@ -3,6 +3,10 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **A video thank-you is a draft, never a send.** Saving one writes a `milestone_drafts` row with a link
+  to `/v/:token`; staff send it. The page's GET writes nothing; the view is a POST beacon that records it
+  once on the timeline (`video_thanks`). Files are per org through assetStore, 60 MB, WebM or MP4 by magic
+  bytes. There is no virus scan on the host. (PARITY-1)
 - **No workflow recipe sends to a donor (FIX-12).** It writes a draft to Drafts to review. The automatic
   donor-facing sends that remain are listed in the FIX-12 entry of `docs/HISTORY.md`; a new one needs Jonathan.
 - **The automatic sends Jonathan has confirmed.** The FIX-12 list in `docs/HISTORY.md`, plus: **volunteer
