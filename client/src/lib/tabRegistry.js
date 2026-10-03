@@ -29,6 +29,8 @@ const TABS=[
   // builder component did not move; this is a second door to it, and the
   // Settings section keeps working so every deep link survives.
   {id:"journeys",label:"Journeys",icon:"⇢"},
+  // PARITY-1 Part D — Groups: saved lists of people, by hand or by rule.
+  {id:"groups",label:"Groups",icon:"◌"},
   // EVENTS-1 — EVENTS IS ITS OWN ROOM, under Fundraising, for the same reason
   // Journeys is: an organisation runs a gala or a 5K once or twice a year and
   // spends six weeks inside it each time. The screen existed and was
@@ -66,6 +68,7 @@ const BOTTOM_TABS=[
 const MORE_TABS=[
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"journeys",label:"Journeys",icon:"⇢"},
+  {id:"groups",label:"Groups",icon:"◌"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},

@@ -199,6 +199,8 @@ const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 const money = require("./money");
 // FIX-2 A — the one definition of every figure that opens (the rows behind it).
 const figureSources = require("./figureSources");
+// PARITY-1 Part D: Groups (saved lists, static or by rule).
+const GR = require("./groups");
 // BUILD-87 Part 4 — the one rule that gates the bookkeeper's file, stated as
 // a pure function so it can be proven able to fire without a database.
 const { bookkeeperRefusals, bookkeeperRefusalMessage } = require("./bookkeeper");
@@ -1180,17 +1182,46 @@ async function recordGift(o) {
       // starts the first-gift journey and is then correctly replaced by the
       // major-donor one, with the reason written down — which is the
       // behaviour the brief asks for, arrived at without a special case.
-      if (Number(d.gift_count) === 1) {
-        await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", { amountCents: cents });
-      }
-      await maybeStartJourneyFromServer(orgId, o.donorId, "gift_over", { amountCents: cents });
-      // A LAPSED DONOR WHO GIVES AGAIN. `status`/`stage` still said lapsed at
-      // the moment this gift landed, which is exactly the fact that makes it
-      // a return rather than an ordinary gift.
-      if (Number(d.gift_count) > 1 && (d.status === "lapsed" || d.stage === "lapsed")) {
-        await maybeStartJourneyFromServer(orgId, o.donorId, "lapsed_return", { amountCents: cents });
+      // PARITY-1 Part D — every gift trigger carries the gift: its id (the
+      // event it is held to, once and only once), its fund and its campaign
+      // (what a journey may be narrowed to).
+      const gopts = { amountCents: cents, giftId, fundId: fundId || null, campaignId: o.campaignId || null };
+      if (amount > 0) {
+        if (Number(d.gift_count) === 1) {
+          await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", gopts);
+        }
+        await maybeStartJourneyFromServer(orgId, o.donorId, "gift_over", gopts);
+        // A LAPSED DONOR WHO GIVES AGAIN. `status`/`stage` still said lapsed at
+        // the moment this gift landed, which is exactly the fact that makes it
+        // a return rather than an ordinary gift.
+        if (Number(d.gift_count) > 1 && (d.status === "lapsed" || d.stage === "lapsed")) {
+          await maybeStartJourneyFromServer(orgId, o.donorId, "lapsed_return", gopts);
+        }
+        // PARITY-1 Part D — the next gift: any gift after the first.
+        if (Number(d.gift_count) > 1) {
+          await maybeStartJourneyFromServer(orgId, o.donorId, "next_gift", gopts);
+        }
+        // The first successful payment of their first recurring gift.
+        if (o.recurring === true || o.recurringSubscriptionId) {
+          const [prior] = await query(
+            `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0
+               AND (recurring_subscription_id IS NOT NULL OR type = 'recurring')`, [orgId, o.donorId, giftId]);
+          if (!prior || prior.n === 0) {
+            await maybeStartJourneyFromServer(orgId, o.donorId, "first_recurring", gopts);
+          }
+        }
+        // A gift that paid for a membership (a renewal applied just above).
+        if (appliedMembership) {
+          await maybeStartJourneyFromServer(orgId, o.donorId, "membership_payment", gopts);
+        }
       }
     }
+    // PARITY-1 Part D — a gift can move somebody into a group by rule (Mid
+    // and Major donors, say). A "joins a group" journey watching one hears
+    // about it here, the moment the gift lands, rather than next morning.
+    const [ot] = await query(`SELECT timezone FROM orgs WHERE id=?`, [orgId]);
+    await GR.dynamicJoins(orgId, { donorId: o.donorId, today: orgToday({ timezone: ot && ot.timezone }),   // ORG_TZ_SEAM_OK
+      fire: (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
   } catch (e) { console.error("[journey] gift trigger:", e.message); }
 
 
@@ -2910,6 +2941,9 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
   // fires exactly once. A move that did not change the stage is not a change.
   if (toStage && String(toStage) !== String(fromStage || "")) {
     maybeStartJourneyFromServer(orgId, donorId, "stage_change", { fromStage, toStage })
+      .then(() => (String(toStage) === "prospect"
+        // PARITY-1 Part D — becoming a prospect is its own trigger.
+        ? maybeStartJourneyFromServer(orgId, donorId, "became_prospect", { fromStage, toStage }) : null))
       .catch(e => console.error("[journey] stage trigger:", e.message));
   }
   return id;
@@ -3762,6 +3796,7 @@ app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
+app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -4529,9 +4564,15 @@ async function agentGate(orgId) {
 // indirection between "the screen said Sponsors" and who actually got mail.
 async function resolveSegmentSpec(segment, orgId) {
   if (segment && segment.mode === "audience") {
-    const [row] = await query("SELECT segment FROM audiences WHERE id=? AND org_id=?",
+    const [row] = await query("SELECT segment, kind FROM audiences WHERE id=? AND org_id=?",
       [segment.audienceId, orgId]).catch(() => [null]);
     if (!row) return { mode: "manual", donorIds: [] };   // a deleted audience is NOBODY, never everybody
+    // PARITY-1 Part D — a Group resolves to its members at this moment: the
+    // live rule, or the hand-kept list. Then the one filter below as always.
+    if (row.kind) {
+      const g = await GR.groupById(orgId, segment.audienceId);
+      return { mode: "manual", donorIds: g ? await GR.memberIds(orgId, g) : [] };
+    }
     const inner = typeof row.segment === "string" ? JSON.parse(row.segment || "{}") : (row.segment || {});
     return inner && inner.mode === "audience" ? { mode: "manual", donorIds: [] } : inner;
   }
@@ -4560,6 +4601,10 @@ function filterBySegment(allDonors, segment) {
     donors = (segment.tiers || []).length ? donors.filter(d => segment.tiers.includes(d.capacity_tier)) : [];
   } else if (mode === "manual") {
     donors = (segment.donorIds || []).length ? donors.filter(d => segment.donorIds.includes(d.id)) : [];
+  } else if (mode === "group") {
+    // A Group's stored placeholder: it is resolved by resolveSegmentSpec, and
+    // reaching here unresolved selects NOBODY, never everybody.
+    donors = [];
   // ── BUILD-94 Part 2 — the four segments that let Mailchimp go ────────────
   // Allie's volunteers, staff and board are on this table now, so the
   // audience picker has to be able to name them. "Everyone with an email" is
@@ -9151,7 +9196,9 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
   // ten-year member with a welcome sequence is worse than saying nothing.
   // The unique index above has already refused a second current membership,
   // so this cannot fire twice for the same person.
-  await maybeStartJourneyFromServer(orgId, donorId, "became_member", {});
+  await maybeStartJourneyFromServer(orgId, donorId, "became_member", { membershipId: id });
+  // PARITY-1 Part D — and the payment for it is a membership payment.
+  if (giftId) await maybeStartJourneyFromServer(orgId, donorId, "membership_payment", { giftId, membershipId: id });
   return { membership: m, giftId };
 }
 
@@ -10362,6 +10409,9 @@ require("./routes/templates").mount({
 });
 require("./routes/why").mount({
   AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
+});
+require("./routes/groups").mount({
+  actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });
 require("./routes/profileStatus").mount({
   actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,

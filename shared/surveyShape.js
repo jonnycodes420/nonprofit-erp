@@ -15,6 +15,10 @@ const TYPE_KEYS = QUESTION_TYPES.map(t => t.key);
 export const CHOICE_TYPES = ["one", "many"];
 export const MODES = ["named", "anonymous"];
 export const AUDIENCES = ["donors", "volunteers", "anyone"];
+// PARITY-1 Part D — or a Group: "group:<id>", who the drafts go to is the
+// group's members at the moment the drafts are made.
+export const GROUP_AUDIENCE_RE = /^group:[A-Za-z0-9_\-]{1,60}$/;
+export const groupOfAudience = a => (GROUP_AUDIENCE_RE.test(String(a || "")) ? String(a).slice(6) : null);
 export const LIMITS = { title: 140, intro: 2000, thankYou: 1000, label: 300, option: 120, options: 20, questions: 60, sections: 12, answer: 4000 };
 
 // What the page tells respondents, at the top, before the first question.
@@ -35,7 +39,7 @@ export function normalizeSurvey(input) {
   const title = clip(s.title, LIMITS.title);
   if (!title) return { error: "A survey needs a title." };
   const mode = MODES.includes(s.mode) ? s.mode : "named";
-  const audience = AUDIENCES.includes(s.audience) ? s.audience : "anyone";
+  const audience = AUDIENCES.includes(s.audience) || GROUP_AUDIENCE_RE.test(String(s.audience || "")) ? s.audience : "anyone";
   const sectionsIn = Array.isArray(s.sections) && s.sections.length ? s.sections : [{ title: "", questions: s.questions || [] }];
   const sections = [];
   let qCount = 0;

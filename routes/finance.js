@@ -1698,7 +1698,9 @@ async function audienceMembership(orgId, audienceIds) {
     } else {
       const [saved] = await query(`SELECT segment FROM audiences WHERE id=? AND org_id=?`, [audienceId, orgId]);
       if (!saved) continue;
-      segment = typeof saved.segment === "string" ? JSON.parse(saved.segment || "{}") : (saved.segment || {});
+      // PARITY-1 Part D — through the audience door, so a Group (static or by
+      // rule) resolves to its members exactly as a campaign's would.
+      segment = { mode: "audience", audienceId };
     }
     const resolved = await resolveSegmentSpec(segment, orgId);
     for (const d of filterBySegment(donors, resolved)) {
@@ -1821,7 +1823,7 @@ app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(
     `SELECT * FROM email_marketing_connections WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
-  const saved = await query(`SELECT id, name, description FROM audiences WHERE org_id=? ORDER BY name`, [orgId]);
+  const saved = await query(`SELECT id, name, description, kind FROM audiences WHERE org_id=? ORDER BY name`, [orgId]);
   const byProvider = Object.fromEntries(rows.map(r => [r.provider, r]));
   const providers = EM.PROVIDER_KEYS.map(k => {
     const p = EM.PROVIDERS[k];
@@ -1856,7 +1858,9 @@ app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
     // The groups an org may map, built-ins plus its own saved audiences. One
     // list, from the module that already defines them.
     groups: [...A.BUILT_IN_AUDIENCES.map(a => ({ id: a.id, name: a.name, description: a.description })),
-             ...saved.map(a => ({ id: a.id, name: a.name, description: a.description || null }))],
+             // PARITY-1 Part D — Groups are here too; `kind` lets the card mark
+             // a group by rule with its lightning.
+             ...saved.map(a => ({ id: a.id, name: a.name, description: a.description || null, kind: a.kind || null }))],
     fieldsPushed: EM.FIELDS_PUSHED, fieldsSentence: EM.FIELDS_PUSHED_SENTENCE,
     restrictiveSentence: EM.RESTRICTIVE_SENTENCE,
     definition: "The email tool your organisation sends from. Steward reads what it reports and writes the people you map. It never sends the email.",

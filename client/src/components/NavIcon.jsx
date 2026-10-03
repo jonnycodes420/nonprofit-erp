@@ -17,7 +17,7 @@
 // read without React; this file is the drawing of it.
 import {
   House, ListChecks, Users, Route, Mail, HandCoins, CalendarDays, FileText,
-  HandHelping, Wallet, BarChart3, Sparkles, Settings as SettingsGear, PanelsTopLeft,
+  HandHelping, Wallet, BarChart3, Sparkles, Settings as SettingsGear, PanelsTopLeft, Group,
 } from "lucide-react";
 
 const ICONS = {
@@ -35,6 +35,7 @@ const ICONS = {
   agent: Sparkles,
   settings: SettingsGear,
   portal: PanelsTopLeft,
+  groups: Group,
 };
 
 // 20px and stroke 1.75 everywhere. `aria-hidden` because the button beside it

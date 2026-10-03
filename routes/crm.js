@@ -1245,6 +1245,8 @@ const figureSources = require("../figureSources");
 const OU = require("../orgUsers");
 // PARITY-1: giving level, lifecycle, retained and closeness, defined once.
 const DS = require("../donorStatus");
+// PARITY-1 Part D: Groups (saved lists, static or by rule).
+const GR = require("../groups");
 
 // The money in a sentence: whole dollars when there are no cents.
 function sentenceMoney(v) {
@@ -1969,7 +1971,7 @@ async function composeBoardPack(orgId, opts = {}) {
   const w = await boardPackWindow(org, opts);
   const sp = orgTime.samePointLastYear(w.from, w.to, today);
   const filters = {};
-  for (const k of ["fund", "campaign", "owner"]) if (opts[k]) filters[k] = String(opts[k]);
+  for (const k of ["fund", "campaign", "owner", "group"]) if (opts[k]) filters[k] = String(opts[k]);
   if (opts.from && opts.to) { filters.from = opts.from; filters.to = opts.to; }
   const window = { from: w.from, to: w.to, prev: sp ? { from: sp.from, to: sp.to } : null, filters };
   const deps = { computeRetentionRate, computeDriftForDonors };
@@ -2283,7 +2285,7 @@ app.get("/saved-dashboards/:id/run", requireAuth, wrap(async (req, res) => {
 const boardPackOpts = (req) => ({
   dashboardId: req.query.dashboard || null, userId: req.user.userId,
   frequency: req.query.frequency, from: req.query.from, to: req.query.to,
-  fund: req.query.fund, campaign: req.query.campaign, owner: req.query.owner,
+  fund: req.query.fund, campaign: req.query.campaign, owner: req.query.owner, group: req.query.group,
 });
 
 app.get("/board-pack", requireAuth, wrap(async (req, res) => {
@@ -3408,21 +3410,9 @@ app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 // GET /donors and GET /donors/export/csv so the export always matches the
 // same query the Directory ran. Sort is a whitelist — never interpolate
 // user input into ORDER BY.
-const DONOR_SORTS = {
-  total_giving:   "total_giving DESC",
-  name:           "lower(name) ASC",
-  last_gift_date: "last_gift_date DESC NULLS LAST",
-  created_at:     "created_at DESC",
-  // ENGAGE-1 — closest first, by the stored score (donor_scores).
-  engagement:     "engagement_score DESC NULLS LAST, lower(name) ASC",
-  generosity:     "generosity_score DESC NULLS LAST, lower(name) ASC",
-};
-// ENGAGE-1 — the two scores ride along on every list row, read from the one
-// stored compute, so the column and the sort are the same numbers the profile shows.
-const DONOR_SCORE_COLS = `,
-  (SELECT s.engagement FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_score,
-  (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
-  (SELECT s.band FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_band`;
+// PARITY-1 Part D · the sorts and score columns moved to groups.js with the
+// filter itself, so a Group rule and the list are one function.
+const { DONOR_SORTS, DONOR_SCORE_COLS } = require("../groups");
 // FIX-1 D — the roles a person can carry that a chip or a list may name.
 // "other" is not a role, it is the absence of one: normalizeTypes floors an
 // empty list at it, and turning any role on replaces it.
@@ -3433,60 +3423,9 @@ const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, M
 // retained, closeness, and "has never given". Each is donorStatus.js's one
 // definition, so a list, a Group and a profile tag cannot disagree.
 async function buildDonorListFilter(req) {
-  const where = ["org_id = ?", "deleted_at IS NULL"];
-  const params = [req.user.orgId];
-  const today = await DS.todayFor(req.user.orgId);
-  const cl = DS.closenessSql(today);
-  const { search, stage, status, assignedTo, designation, household, role } = req.query;
-  // FIX-1 D — DONORS SHOWS DONORS. The Directory asks for role=donor; search
-  // and every older caller leave it off and still see everyone. An unknown
-  // role is refused (400 at the route) rather than quietly ignored, because an
-  // ignored filter is a list that says "donors" and holds everybody.
-  if (role !== undefined && role !== "") {
-    if (!PEOPLE_ROLES.includes(String(role))) return { badRole: true };
-    where.push(PT.typeSql(String(role)));
-  }
-  if (search && String(search).trim()) {
-    const s = "%" + String(search).trim().toLowerCase() + "%";
-    where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
-    params.push(s, s);
-  }
-  if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
-  if (status)     { where.push("status = ?");      params.push(String(status)); }
-  if (assignedTo) { where.push("assigned_to = ?"); params.push(String(assignedTo)); }
-  // Designation filter (BUILD-14) — planned-giving / estate segments are
-  // first-class and filterable everywhere the donor list is. EXISTS keeps it
-  // a single query; donors.id is safe (both callers use unaliased FROM donors).
-  if (designation) {
-    where.push("EXISTS (SELECT 1 FROM donor_designations dd WHERE dd.donor_id = donors.id AND dd.kind = ?)");
-    params.push(String(designation));
-  }
-  // Household filter: `household=<id>` scopes to one household's members;
-  // `household=any` / `household=none` filter by membership presence.
-  if (household === "none")      { where.push("household_id IS NULL"); }
-  else if (household === "any")  { where.push("household_id IS NOT NULL"); }
-  else if (household)            { where.push("household_id = ?"); params.push(String(household)); }
-  const statusTags = [req.query.level, req.query.lifecycle, req.query.retained === "1" ? "retained" : null].filter(Boolean).map(String);
-  if (statusTags.length) {
-    const cuts = await DS.cutsFor(req.user.orgId);
-    for (const t of statusTags) {
-      const c = DS.tagCondition(t, req.user.orgId, today, cuts);
-      if (!c) return { badStatus: true };
-      where.push(c.sql); params.push(...c.args);
-    }
-  }
-  if (req.query.closeness) {
-    const c = DS.closenessCondition(String(req.query.closeness), today);
-    if (!c) return { badStatus: true };
-    where.push(c.sql); params.push(...c.args);
-  }
-  if (req.query.given === "never") where.push("NOT EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
-  else if (req.query.given === "ever") where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
-  // ", id" tiebreak keeps page boundaries stable when many donors share a value
-  const orderBy = (DONOR_SORTS[req.query.sort] || DONOR_SORTS.total_giving) + ", id";
-  // The closeness word rides on every row as a column (selectCols), its
-  // arguments ahead of the WHERE's.
-  return { whereSql: where.join(" AND "), params, orderBy, selectCols: `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`, selectArgs: cl.args };
+  // PARITY-1 Part D · the filter takes a plain params object now (groups.js),
+  // so a dynamic Group's rule runs through exactly this code.
+  return GR.buildDonorFilter(req.user.orgId, req.query || {});
 }
 
 // GET /donors — unpaginated legacy shape (plain array) when `limit` is
@@ -10730,17 +10669,51 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
         [orgId, triggerKey]);
   if (!rows.length) return { started: false, reason: opts.forceJourneyId ? "journey_not_found" : "no_journey_for_trigger" };
 
-  // `gift_over` is the one trigger that carries a number, and the number is
-  // the ORG's. A journey whose threshold this gift does not clear is simply
-  // not a candidate.
+  // `gift_over` is the one trigger that NEEDS a number, and the number is the
+  // ORG's. PARITY-1 Part D: every gift trigger may carry one as a floor, and a
+  // fund or a campaign; "joins a group" names its group. A journey whose
+  // narrowing this event does not meet is simply not a candidate.
   const amountCents = Number(opts.amountCents);
-  const eligible = rows.filter(t => {
+  const filtered = rows.filter(t => {
     if (opts.forceJourneyId) return true;      // named by a person, not matched by a rule
-    if (triggerKey !== "gift_over") return true;
+    const tf = t.trigger_filters || {};
     const need = Number(t.trigger_amount_cents);
-    return Number.isFinite(need) && need > 0 && Number.isFinite(amountCents) && amountCents >= need;
+    if (triggerKey === "gift_over" && !(Number.isFinite(need) && need > 0)) return false;
+    if (J.isGiftTrigger(triggerKey) && Number.isFinite(need) && need > 0
+        && !(Number.isFinite(amountCents) && amountCents >= need)) return false;
+    if (tf.fundId && String(tf.fundId) !== String(opts.fundId || "")) return false;
+    if (tf.campaignId && String(tf.campaignId) !== String(opts.campaignId || "")) return false;
+    if (triggerKey === "joined_group" && String(tf.groupId || "") !== String(opts.groupId || "")) return false;
+    return true;
   });
-  if (!eligible.length) return { started: false, reason: "below_threshold" };
+  if (!filtered.length) return { started: false, reason: "below_threshold" };
+
+  // PARITY-1 Part D · WHO IT IS FOR, AT THE MOMENT IT FIRES. The audience was
+  // only ever read by the "who already qualifies" offer; a live trigger
+  // started the journey on anybody it touched. A journey narrowed to members
+  // now starts only on a member, by either door.
+  const audienceOk = [];
+  for (const t of filtered) {
+    if (opts.forceJourneyId || await donorInAudience(orgId, donor.id, t.audience || {})) audienceOk.push(t);
+  }
+  if (!audienceOk.length) return { started: false, reason: "outside_audience" };
+
+  // ONCE AND ONLY ONCE PER EVENT. The event a trigger is about (this gift,
+  // their first gift ever, joining this group today) is written on the plan,
+  // and a unique index holds it: replaying the same event, a retried webhook,
+  // or a first gift deleted and entered again cannot enrol them a second time.
+  const org0 = await orgTz(orgId);
+  const eventKey = opts.forceJourneyId ? null
+    : (opts.eventKey || journeyEventKey(triggerKey, opts, opts.today || orgToday(org0)));   // ORG_TZ_SEAM_OK
+  let eligible = audienceOk;
+  if (eventKey) {
+    const done = await query(
+      `SELECT template_id FROM cultivation_plans WHERE org_id=? AND donor_id=? AND trigger_event=?`,
+      [orgId, donor.id, eventKey]);
+    const seen = new Set(done.map(r => r.template_id));
+    eligible = audienceOk.filter(t => !seen.has(t.id));
+    if (!eligible.length) return { started: false, reason: "already_enrolled_for_event", eventKey };
+  }
 
   const winner = J.winningJourney(eligible);
   if (!winner) return { started: false, reason: "no_winner" };
@@ -10748,6 +10721,7 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
   const v = J.validateJourney({
     name: winner.name, trigger: winner.trigger_key, priority: winner.priority,
     amountCents: winner.trigger_amount_cents, steps: winner.steps,
+    triggerFilters: winner.trigger_filters || {},
   });
   if (!v.ok) {
     console.error(`[journey] ${winner.id} is armed but invalid: ${v.errors[0].message}`);
@@ -10788,12 +10762,14 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
   }
 
   const planId = "cp_" + uuid().slice(0, 10);
-  const ins = await query(
+  let ins;
+  try {
+    ins = await query(
     `INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,
                                     owner_id,owner_name,created_by,created_by_name,
-                                    trigger_key,priority,replaced_plan_id,replaced_reason)
+                                    trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text,
-            ?::text,?::int,?::text,?::text
+            ?::text,?::int,?::text,?::text,?::text
       WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text AND x.status='active')
      RETURNING id`,
     [planId, orgId, donor.id, winner.id, v.name, today,
@@ -10803,7 +10779,12 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
      // first-gift journey still says what kind of journey it is; `by_hand` is
      // recorded only for a journey that genuinely has that trigger.
      opts.forceJourneyId ? (winner.trigger_key || triggerKey) : triggerKey,
-     v.priority, replacedId, reason, orgId, donor.id]);
+     v.priority, replacedId, reason, eventKey, orgId, donor.id]);
+  } catch (e) {
+    // The unique index on the event: a concurrent fire of the same event won.
+    if (e.code === "23505") return { started: false, reason: "already_enrolled_for_event", eventKey };
+    throw e;
+  }
   if (!ins.length) return { started: false, reason: "race_lost" };
 
   for (const s of steps) {
@@ -10837,6 +10818,62 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
     + (replacedId ? ` (replaced ${replacedId})` : ""));
   return { started: true, planId, journeyId: winner.id, name: v.name, trigger: triggerKey,
            steps: steps.length, replacedPlanId: replacedId, reason };
+}
+
+// PARITY-1 Part D · the event a trigger is about, as a key written on the
+// plan. null means the trigger has no single event to hold it to.
+function journeyEventKey(triggerKey, opts = {}, today = "") {
+  switch (triggerKey) {
+    case "first_gift": return "first_gift";
+    case "first_recurring": return "first_recurring";
+    case "new_volunteer": return "new_volunteer";
+    case "gift_over": case "next_gift": case "lapsed_return": case "membership_payment":
+      return opts.giftId ? `gift:${opts.giftId}` : null;
+    case "became_member": return opts.membershipId ? `membership:${opts.membershipId}` : `became_member:${today}`;
+    case "stage_change": case "became_prospect": return `stage:${opts.toStage || ""}:${today}`;
+    case "joined_group": return `group:${opts.groupId || ""}:${today}`;
+    case "giving_anniversary": return `anniversary:${String(today).slice(0, 4)}`;
+    case "attended_event": return opts.eventId ? `event:${opts.eventId}` : null;
+    default: return null;
+  }
+}
+
+// A journey may name a group, a fund or a campaign. Each must be this org's,
+// or the save is refused as not found (the tenant rule: never confirm another
+// org's id exists).
+async function journeyRefsRefused(orgId, v) {
+  const tf = v.triggerFilters || {};
+  for (const gid of [tf.groupId, (v.audience || {}).groupId].filter(Boolean)) {
+    if (!(await GR.groupById(orgId, gid))) return { error: "group_not_found", message: "That group is not one of yours." };
+  }
+  if (tf.fundId && !(await orgOwns("fin_funds", tf.fundId, orgId))) return { error: "fund_not_found", message: "That fund is not one of yours." };
+  if (tf.campaignId && !(await orgOwns("campaigns", tf.campaignId, orgId)))
+    return { error: "campaign_not_found", message: "That campaign is not one of yours." };
+  return null;
+}
+// Switching on a "joins a group" journey on a group by rule: today's members
+// are the starting line, so it fires on people who join from now on and not
+// on everybody already in it.
+async function baselineJourneyGroup(orgId, v) {
+  if (v.trigger !== "joined_group" || !(v.triggerFilters || {}).groupId) return;
+  const g = await GR.groupById(orgId, v.triggerFilters.groupId);
+  if (g && g.kind === "dynamic") await GR.baselineGroup(orgId, g).catch(e => console.error("[journey] group baseline:", e.message));
+}
+
+// Is this person inside a journey's audience right now? The same clauses the
+// "who already qualifies" offer reads (audienceClauses), plus the group.
+async function donorInAudience(orgId, donorId, audience = {}) {
+  const a = audienceClauses(audience, "d");
+  if (a.sql) {
+    const rows = await query(`SELECT 1 FROM donors d WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL${a.sql}`,
+      [donorId, orgId, ...a.params]);
+    if (!rows.length) return false;
+  }
+  if (audience.groupId) {
+    const g = await GR.groupById(orgId, audience.groupId);
+    if (!g || !(await GR.isMember(orgId, g, donorId))) return false;
+  }
+  return true;
 }
 
 async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, today } = {}) {
@@ -10938,6 +10975,51 @@ app.delete("/cultivation-templates/:id", requireAuth, wrap(async (req, res) => {
 // file being importable from there (it is required after server.js's body).
 registerJourneyEngine(maybeStartJourney);
 
+// ── PARITY-1 Part D · THE MORNING LOOK ─────────────────────────────────────
+// Two triggers have no moment of their own to fire from: somebody drifting
+// into a group by rule for a reason that is not a gift (their closeness
+// warming, a role added), and the anniversary of a first gift. Both are
+// noticed by this sweep, hourly so each org gets its own morning, and each is
+// idempotent: the group look remembers who it has seen, and every plan holds
+// its event key. Latency: a group join that is not a gift is seen within the
+// hour; an anniversary fires on the day, within the hour after midnight in
+// the org's own timezone. Birthdays are not a trigger: there is no birth date
+// on a person record.
+async function runJourneySweep() {
+  const orgs = await query(
+    `SELECT DISTINCT org_id FROM cultivation_templates
+      WHERE journey_enabled=true AND archived_at IS NULL AND trigger_key IN ('joined_group','giving_anniversary')`);
+  let fired = 0;
+  for (const { org_id: orgId } of orgs) {
+    try {
+      const org = await orgTz(orgId);
+      const today = orgToday(org);   // ORG_TZ_SEAM_OK
+      fired += await GR.dynamicJoins(orgId, { today,
+        fire: (did, gid) => maybeStartJourney(orgId, did, "joined_group", { groupId: gid, today }) });
+      const [armed] = await query(
+        `SELECT 1 FROM cultivation_templates WHERE org_id=? AND trigger_key='giving_anniversary'
+            AND journey_enabled=true AND archived_at IS NULL LIMIT 1`, [orgId]);
+      if (armed) {
+        const due = await query(
+          `SELECT g.donor_id FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+            WHERE g.org_id=? AND g.amount > 0
+            GROUP BY g.donor_id
+           HAVING SUBSTRING(MIN(LEFT(g.date,10)), 6, 5) = ? AND LEFT(MIN(LEFT(g.date,10)), 4) < ?`,
+          [orgId, today.slice(5, 10), today.slice(0, 4)]);
+        for (const r of due) {
+          const out = await maybeStartJourney(orgId, r.donor_id, "giving_anniversary", { today });
+          if (out && out.started) fired++;
+        }
+      }
+    } catch (e) { console.error(`[journey] sweep ${orgId}:`, e.message); }
+  }
+  return fired;
+}
+if (process.env.DISABLE_BACKGROUND_TICKS !== "1") {
+  setTimeout(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 90000);
+  setInterval(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 60 * 60 * 1000);
+}
+
 // ── THREAD-2a · THE JOURNEY ROUTES ────────────────────────────────────────
 // Journeys live at Settings → Journeys and are reachable from Fundraising.
 // They read and write `cultivation_templates`, because a journey IS one.
@@ -10952,6 +11034,8 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
   const counts = await query(
     `SELECT p.template_id,
             COUNT(*) FILTER (WHERE p.status='active')                       AS active,
+            COUNT(*) FILTER (WHERE p.status='done')                         AS completed,
+            COUNT(*) FILTER (WHERE p.status='abandoned')                    AS exited,
             COUNT(*)                                                        AS ever
        FROM cultivation_plans p WHERE p.org_id=? AND p.template_id IS NOT NULL
       GROUP BY p.template_id`, [req.user.orgId]);
@@ -10973,8 +11057,17 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
   const teamRows = await query(
     `SELECT id, name FROM users WHERE org_id=? AND deactivated_at IS NULL ORDER BY name`,
     [req.user.orgId]).catch(() => []);
+  // PARITY-1 Part D — what a trigger or an audience may be narrowed to: this
+  // org's groups, funds and campaigns, offered rather than typed.
+  const groupOpts = (await GR.listGroups(req.user.orgId).catch(() => [])).map(g => ({ id: g.id, name: g.name, kind: g.kind }));
+  const fundOpts = await query(`SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name`, [req.user.orgId]).catch(() => []);
+  const campaignOpts = await query(`SELECT id, name FROM campaigns WHERE org_id=? ORDER BY created_at DESC LIMIT 200`, [req.user.orgId]).catch(() => []);
   res.json({
     triggers: J.TRIGGERS,
+    states: J.STATES,
+    groups: groupOpts,
+    funds: fundOpts.map(f => ({ id: f.id, name: f.name })),
+    campaigns: campaignOpts.map(c => ({ id: c.id, name: c.name })),
     audienceFilters: J.AUDIENCE_FILTERS,
     timingUnits: J.TIMING_UNITS,
     timingFrom: J.TIMING_FROM,
@@ -10999,6 +11092,12 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       updatedAt: t.updated_at,
       inIt: Number((byTpl.get(t.id) || {}).active) || 0,
       everIn: Number((byTpl.get(t.id) || {}).ever) || 0,
+      // PARITY-1 Part D — entered, in it, exited and completed, and the state.
+      completed: Number((byTpl.get(t.id) || {}).completed) || 0,
+      exited: Number((byTpl.get(t.id) || {}).exited) || 0,
+      triggerFilters: t.trigger_filters || {},
+      state: J.journeyState({ enabled: !!t.journey_enabled, everEnabled: !!t.ever_enabled,
+        archived: !!t.archived_at, everIn: Number((byTpl.get(t.id) || {}).ever) || 0 }),
     })),
   });
 }));
@@ -11100,6 +11199,7 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     priority: b.priority !== undefined ? b.priority : (preset && preset.priority),
     amountCents: b.amountCents,
     audience: b.audience,
+    triggerFilters: b.triggerFilters,
     steps: Array.isArray(b.steps) && b.steps.length ? b.steps : (preset && preset.steps),
   };
   const v = J.validateJourney(input);
@@ -11108,16 +11208,20 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const stepOwners = await OU.orgUsers(req.user.orgId, v.steps.map(st => st.ownerId));
   if (!stepOwners.ok) return OU.refuse(res, "steps.ownerId");
 
+  const refused = await journeyRefsRefused(req.user.orgId, v);
+  if (refused) return res.status(404).json(refused);
+
   const id = "ct_" + uuid().slice(0, 10);
   await run(
-    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name)
-     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?)`,
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,ever_enabled)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?,?::jsonb,?)`,
     [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
      JSON.stringify(v.audience),
      preset ? preset.key : null,
      // ARMED ONLY IF ASKED. Creating a journey and having it start firing at
      // people in the same breath is not a thing anybody wants by surprise.
-     b.enabled === true, actor(req).id, actor(req).name]);
+     b.enabled === true, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {}), b.enabled === true]);
+  if (b.enabled === true) await baselineJourneyGroup(req.user.orgId, v);
   const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [id, req.user.orgId]);
   res.status(201).json({ id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
     steps: v.steps, audience: v.audience, enabled: !!row.journey_enabled, touches: J.touchesSentence(v.steps) });
@@ -11142,14 +11246,15 @@ app.post("/journeys/:id/duplicate", requireAuth, requireAdmin, checkWriteAccess,
   for (let n = 2; existing.includes(name.toLowerCase()); n++) name = `${cur.name} (copy ${n})`;
 
   const v = J.validateJourney({ name, description: cur.description, trigger: cur.trigger_key,
-    priority: cur.priority, amountCents: cur.trigger_amount_cents, audience: cur.audience, steps: cur.steps });
+    priority: cur.priority, amountCents: cur.trigger_amount_cents, audience: cur.audience, steps: cur.steps,
+    triggerFilters: cur.trigger_filters || {} });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
   const id = "ct_" + uuid().slice(0, 10);
   await run(
-    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name)
-     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?)`,
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?,?::jsonb)`,
     [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
-     JSON.stringify(v.audience), cur.preset_key, actor(req).id, actor(req).name]);
+     JSON.stringify(v.audience), cur.preset_key, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {})]);
   res.status(201).json({ id, name: v.name, copiedFrom: cur.id, enabled: false,
     sentence: `"${v.name}" is a copy of "${cur.name}" and it is off. Nothing starts until you turn it on.` });
 }));
@@ -11233,19 +11338,25 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
     priority: b.priority !== undefined ? b.priority : cur.priority,
     amountCents: b.amountCents !== undefined ? b.amountCents : cur.trigger_amount_cents,
     audience: b.audience !== undefined ? b.audience : cur.audience,
+    triggerFilters: b.triggerFilters !== undefined ? b.triggerFilters : cur.trigger_filters,
     steps: b.steps !== undefined ? b.steps : cur.steps,
   });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
   // FIX-19: a step owned by a named person names an active user of this org.
   const stepOwners = await OU.orgUsers(req.user.orgId, v.steps.map(st => st.ownerId));
   if (!stepOwners.ok) return OU.refuse(res, "steps.ownerId");
+  const refused = await journeyRefsRefused(req.user.orgId, v);
+  if (refused) return res.status(404).json(refused);
+  const enabledNow = b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled;
   await run(
     `UPDATE cultivation_templates SET name=?, description=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
-       priority=?, audience=?::jsonb, journey_enabled=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+       priority=?, audience=?::jsonb, journey_enabled=?, trigger_filters=?::jsonb,
+       ever_enabled = (ever_enabled OR ?), updated_at=NOW() WHERE id=? AND org_id=?`,
     [v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
      JSON.stringify(v.audience),
-     b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled,
+     enabledNow, JSON.stringify(v.triggerFilters || {}), enabledNow,
      req.params.id, req.user.orgId]);
+  if (enabledNow) await baselineJourneyGroup(req.user.orgId, v);
 
   // CHANGING A JOURNEY DOES NOT REWRITE THE PEOPLE ALREADY IN IT. Their steps
   // were copied when they entered, exactly as a plan's are — somebody who has
@@ -11399,7 +11510,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
   }
 
   const v = J.validateJourney({ name: t.name, trigger: t.trigger_key, priority: t.priority,
-                                amountCents: t.trigger_amount_cents, steps: t.steps });
+                                amountCents: t.trigger_amount_cents, steps: t.steps, triggerFilters: t.trigger_filters || {} });
   const steps = PL.planFromTemplate({ steps: v.steps, today: from }, orgTime.addDays);
   res.json({
     donor: { id: donor.id, name: donor.name, basis },
@@ -11496,6 +11607,18 @@ app.get("/journeys/:id/rows", requireAuth, wrap(async (req, res) => {
 // ONE definition per number, written once, used by the figure AND by the
 // drill-through. A second copy is how a count stops matching its own rows.
 const JOURNEY_ROW_SQL = {
+  entered: `SELECT d.id, d.name, p.applied_on AS entered
+              FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+             WHERE p.org_id=? AND p.template_id=? AND d.deleted_at IS NULL
+             ORDER BY p.applied_on DESC`,
+  exited: `SELECT d.id, d.name, p.applied_on AS entered, p.replaced_reason AS reason
+             FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+            WHERE p.org_id=? AND p.template_id=? AND p.status='abandoned' AND d.deleted_at IS NULL
+            ORDER BY p.closed_at DESC NULLS LAST`,
+  completed: `SELECT d.id, d.name, p.applied_on AS entered
+                FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+               WHERE p.org_id=? AND p.template_id=? AND p.status='done' AND d.deleted_at IS NULL
+               ORDER BY p.closed_at DESC NULLS LAST`,
   inIt: `SELECT d.id, d.name, p.applied_on AS entered
            FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
           WHERE p.org_id=? AND p.template_id=? AND p.status='active' AND d.deleted_at IS NULL
@@ -11542,9 +11665,17 @@ async function journeyStats(orgId, t) {
     ["inIt", "onTime", "late", "skipped", "secondGift"].map(one));
   const [everRow] = await query(
     `SELECT COUNT(*)::int AS c FROM cultivation_plans WHERE org_id=? AND template_id=?`, [orgId, t.id]);
+  const [entered, exited, completed] = await Promise.all(["entered", "exited", "completed"].map(one));
   return {
     journeyId: t.id, name: t.name,
     figures: [
+      // PARITY-1 Part D — the four counts every journey shows.
+      { key: "entered", label: "Entered", value: entered, rows: "entered",
+        sentence: "Everyone who has ever gone into this journey, however it ended." },
+      { key: "exited", label: "Exited", value: exited, rows: "exited",
+        sentence: "People who left before the end: stopped by a person, or moved to a journey that outranks it." },
+      { key: "completed", label: "Completed", value: completed, rows: "completed",
+        sentence: "People who reached the end, every step done or skipped." },
       { key: "inIt", label: "In it now", value: inIt, rows: "inIt",
         sentence: "People whose journey is still running. Someone who finished, or was moved to another journey, is not counted here." },
       { key: "onTime", label: "Steps on time", value: onTime, rows: "onTime",
@@ -11622,7 +11753,16 @@ function audienceClauses(audience = {}, alias = "d") {
 // Who qualifies for a journey's trigger inside a window, narrowed by the
 // audience. One place, so the COUNT the offer shows and the rows the apply
 // writes cannot disagree.
+// PARITY-1 Part D · a Group in the audience narrows the same set: only the
+// people in it now.
 async function qualifyingDonors(orgId, t, days, audience = {}) {
+  const rows = await qualifyingDonorsByTrigger(orgId, t, days, audience);
+  if (!audience.groupId || !rows.length) return rows;
+  const g = await GR.groupById(orgId, audience.groupId);
+  const inGroup = new Set(g ? await GR.memberIds(orgId, g) : []);
+  return rows.filter(r => inGroup.has(r.id));
+}
+async function qualifyingDonorsByTrigger(orgId, t, days, audience = {}) {
   const trigger = t.trigger_key;
   if (trigger === "by_hand") return [];
   const cut = `(CURRENT_DATE - ${Number(days)})`;
@@ -17970,8 +18110,15 @@ async function audienceRoster(orgId) {
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
     [orgId]);
   const saved = await query(
-    "SELECT id, name, description, segment, created_at FROM audiences WHERE org_id=? ORDER BY LOWER(name)",
+    "SELECT id, name, description, segment, created_at, kind, rules FROM audiences WHERE org_id=? ORDER BY LOWER(name)",
     [orgId]).catch(() => []);
+  // PARITY-1 Part D — a Group is offered wherever an audience is, counted by
+  // its own members (the live rule or the hand-kept list).
+  const groupCounts = new Map();
+  for (const r of saved.filter(x => x.kind)) {
+    const ids = new Set(await GR.memberIds(orgId, GR.shapeGroup(r)));
+    groupCounts.set(r.id, donors.filter(d => ids.has(d.id)).length);
+  }
 
   const builtins = A.BUILT_IN_AUDIENCES.map(a => ({
     id: a.id, name: a.name, description: a.description, kind: "builtin", tone: a.tone,
@@ -17992,9 +18139,10 @@ async function audienceRoster(orgId) {
   const custom = saved.map(r => {
     const seg = typeof r.segment === "string" ? JSON.parse(r.segment || "{}") : (r.segment || {});
     return {
-      id: r.id, name: r.name, description: r.description || "", kind: "saved", tone: "greenMid",
-      mode: seg.mode, segment: seg, created_at: r.created_at,
-      count: filterBySegment(donors, seg).length,
+      id: r.id, name: r.name, description: r.description || "", kind: r.kind ? "group" : "saved", tone: "greenMid",
+      groupKind: r.kind || null,
+      mode: r.kind ? "audience" : seg.mode, segment: r.kind ? { mode: "audience", audienceId: r.id } : seg, created_at: r.created_at,
+      count: r.kind ? groupCounts.get(r.id) : filterBySegment(donors, seg).length,
       livesOn: { tab: "donors", filter: seg.mode, label: "Donors" },
     };
   });

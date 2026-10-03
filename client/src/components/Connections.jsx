@@ -376,7 +376,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
                   return next;
                 })}
                 style={{ marginRight: 8 }} />
-              {g.name}
+              {g.name}{g.kind === "dynamic" ? <span title="A group by rule: its people are worked out fresh each time" aria-label="Group by rule" style={{ marginLeft: 6, verticalAlign: "-2px" }}><Zap size={13} color={T.gold} aria-hidden="true" /></span> : null}
             </label>
             {!!groups[g.id] && (
               <input data-testid="email-tag" data-group={g.id} value={groups[g.id]}

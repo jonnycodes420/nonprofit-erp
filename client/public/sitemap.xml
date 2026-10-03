@@ -64,6 +64,7 @@
   <url><loc>https://www.stewardapp.dev/help/home</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/help/tasks</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/help/donors</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/help/groups</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/help/journeys</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/help/communications</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/help/donor-portal</loc><priority>0.6</priority></url>

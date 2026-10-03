@@ -146,11 +146,17 @@ const SOURCES = {
     // sentence below does not mention it. It is mapped through a FIXED
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
-    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word" },
-    sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}.`,
-    sql: (orgId, p) => {
+    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id" },
+    sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
-      const where = giftsWhere(p, args);
+      let where = giftsWhere(p, args);
+      // PARITY-1 Part D — the board pack's group filter: members only.
+      if (p.group) {
+        const GR = require("./groups");
+        const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
+        where += ` AND g.donor_id IN (${m.sql})`; args.push(...m.args);
+      }
       return {
         sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
                      COALESCE(f.name, 'Unrestricted') AS detail
@@ -810,6 +816,58 @@ const SOURCES = {
       args: [orgId, p.from0, p.to0, p.from1, p.to1],
       order: "amount DESC, id",
     }),
+  },
+  // PARITY-1 Part D · A GROUP'S NUMBERS. The members are groups.js memberSql
+  // (the live rule, or the hand-kept list), the same set the group's page
+  // lists, so every number on it opens rows that foot to it.
+  "group-members": {
+    label: "People in this group",
+    measure: () => "count",
+    params: { group: "id:required" },
+    sentence: () => "Everyone in this group right now. For a group by rule, that is everyone the rule finds today. The amount on each row is what they have given in total.",
+    sql: async (orgId, p) => {
+      const GR = require("./groups");
+      const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                     ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Given in total' AS detail
+                FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})`,
+        args: [orgId, ...m.args],
+        order: "name ASC, id",
+      };
+    },
+  },
+  // `kind` is total (every gift, a refund taken off), count (how many gifts,
+  // refunds are not gifts) or average (those gifts, added up and divided by
+  // how many there are, to the cent). With no dates it is all time.
+  "group-gifts": {
+    label: "Gifts from this group",
+    measure: p => (p.kind === "count" ? "count" : p.kind === "average" ? "mean" : "sum"),
+    params: { group: "id:required", from: "date", to: "date", kind: "word" },
+    sentence: (p, dd) => {
+      const when = p.from && p.to ? ` dated ${dd(p.from)} to ${dd(p.to)}` : p.from ? ` dated ${dd(p.from)} or later` : p.to ? ` dated up to ${dd(p.to)}` : ", ever";
+      if (p.kind === "count") return `How many gifts the people in this group have given${when}. A refund is not a gift and is not counted.`;
+      if (p.kind === "average") return `Every gift the people in this group have given${when}, added up and divided by how many there are, to the cent. A refund is left out.`;
+      return `Every gift the people in this group have given${when}, added up to the cent, with refunds taken off.`;
+    },
+    sql: async (orgId, p) => {
+      if (p.kind && !["total", "count", "average"].includes(p.kind)) throw new FigureParamError("kind is total, count or average.");
+      const GR = require("./groups");
+      const m = await GR.memberSql(orgId, await GR.groupById(orgId, p.group));
+      const args = [orgId, ...m.args];
+      let w = "";
+      if (p.from) { w += " AND LEFT(g.date,10) >= ?"; args.push(p.from); }
+      if (p.to) { w += " AND LEFT(g.date,10) <= ?"; args.push(p.to); }
+      if (p.kind === "count" || p.kind === "average") w += " AND g.amount > 0";
+      return {
+        sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                     COALESCE(f.name, 'Unrestricted') AS detail
+                FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+               WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id IN (${m.sql})${w}`,
+        args,
+      };
+    },
   },
   // PARITY-1 Part 1e · two of the closeness facts that had no source.
   "donor-membership": {

@@ -28,7 +28,7 @@
 // render it.
 export const NAV_GROUPS = [
   { id: "start",         label: null,              items: ["dashboard", "tasks"] },
-  { id: "relationships", label: "Relationships",   items: ["donors", "journeys", "communications", "portal"] },
+  { id: "relationships", label: "Relationships",   items: ["donors", "groups", "journeys", "communications", "portal"] },
   { id: "raise",         label: "Raise",           items: ["fundraising", "events", "grants"] },
   // Volunteers is its own product. It gets its own group rather than a slot
   // inside somebody else's, because a volunteer coordinator signs in to this
@@ -46,7 +46,7 @@ export const NAV_ICON_NAMES = {
   communications: "mail", fundraising: "hand-coins", events: "calendar-days",
   grants: "file-text", volunteers: "hand-helping", finance: "wallet",
   reports: "bar-chart-3", agent: "sparkles", settings: "settings",
-  portal: "panels-top-left",
+  portal: "panels-top-left", groups: "group",
 };
 
 // Home is where every deep link lands and Settings is where you fix a mistake:
