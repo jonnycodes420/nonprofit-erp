@@ -17,25 +17,33 @@ export function ProfileTimeline(props) {
   // PARITY-3 Part 1 — every logged shift is on the timeline as Volunteer service.
   const [service, setService] = useState([]);
   const ints = props.interactions;
+  // FIX-22 · the files follow the interactions (an email that arrives carries
+  // its attachments), so they reload when the list changes. Tasks and volunteer
+  // hours do not, and used to reload with it: every profile asked twice.
   useEffect(() => {
     if (!donorId) return undefined;
     let alive = true;
     const loadFiles = () => apiFetch(`/donors/${donorId}/attachments`)
       .then(r => { if (alive) setAttachments(Array.isArray(r && r.attachments) ? r.attachments : []); })
       .catch(() => { if (alive) setAttachments([]); });
+    loadFiles();
+    const on = () => loadFiles();
+    window.addEventListener(ATTACHMENTS_CHANGED, on);
+    return () => { alive = false; window.removeEventListener(ATTACHMENTS_CHANGED, on); };
+  }, [donorId, ints]);
+  useEffect(() => {
+    if (!donorId) return undefined;
+    let alive = true;
     apiFetch(`/donors/${donorId}/tasks`)
       .then(r => { if (alive) setTasks(Array.isArray(r) ? r : []); })
       .catch(() => { if (alive) setTasks([]); });
     const loadService = () => apiFetch(`/donors/${donorId}/volunteer-hours`)
       .then(r => { if (alive) setService(Array.isArray(r && r.shifts) ? r.shifts : []); })
       .catch(() => { if (alive) setService([]); });
-    loadFiles();
     loadService();
-    const on = () => loadFiles();
-    window.addEventListener(ATTACHMENTS_CHANGED, on);
     window.addEventListener(VOLUNTEER_HOURS_CHANGED, loadService);
-    return () => { alive = false; window.removeEventListener(ATTACHMENTS_CHANGED, on); window.removeEventListener(VOLUNTEER_HOURS_CHANGED, loadService); };
-  }, [donorId, ints]);
+    return () => { alive = false; window.removeEventListener(VOLUNTEER_HOURS_CHANGED, loadService); };
+  }, [donorId]);
   return <RelationshipTimeline {...props} tasks={tasks} attachments={attachments} service={service}/>;
 }
 

@@ -1,9 +1,10 @@
 // scripts/seed/prospect1-prospects.js · PROSPECT-1 Part 7. Believable prospects.
 //
 // Ten people whose own files give Room to give something to say (three Strong,
-// four Some, three Not yet known), and two foundations with EINs whose public
-// filings are saved answers in tests/fixtures/propublica (a TEST_MODE server
-// reads those; production asks ProPublica when a person presses Look up).
+// four Some, three Not yet known), and two foundations with made-up EINs. Their
+// public filing rows are in tests/fixtures/irs-bmf/eo_fixture.csv, made-up
+// rows in the IRS EO BMF's own columns; production reads the real IRS file
+// that scripts/load-irs-bmf.js loads, where these two EINs are not.
 // The sample screening file a provider might return is
 // tests/fixtures/prospect1/harborlight-screening-return.csv: it matches six of
 // the ten (by the Steward ID sent out, or by email) and has one row that
@@ -104,4 +105,21 @@ async function checkProspect1(q, ORG) {
   console.log(`[seed] PROSPECT-1: Room to give checked (3 Strong, 4 Some, 3 Not yet known)`);
 }
 
-module.exports = { seedProspect1, checkProspect1, PEOPLE, FOUNDATIONS, P };
+// FIX-22 · "Who could give more?" names who knows each person best (why.js
+// knowsBest: who logged most of their conversations, else their owner). The
+// demo stops if fewer than nine in ten of the people it lists have a name.
+async function checkKnowsBest(q, ORG) {
+  const PR = require("../../prospect"), WHY = require("../../why");
+  const qq = (sql, args = []) => { let n = 0; return q(sql.replace(/\?/g, () => `$${++n}`), args); };
+  const room = await PR.roomToGive(ORG, null, qq);
+  const listed = [...room].filter(([, a]) => a.word !== "unknown").map(([id]) => id);
+  const people = listed.length ? await q(`SELECT id, assigned_to FROM donors WHERE org_id = $1 AND id = ANY($2) AND deleted_at IS NULL`, [ORG, listed]) : [];
+  const knows = await WHY.knowsBest(ORG, people, qq);
+  const named = people.filter(p => knows.has(p.id)).length;
+  if (!people.length || named * 10 < people.length * 9)
+    throw new Error(`[seed] FIX-22: who knows them best names somebody for only ${named} of the ${people.length} people Who could give more lists`);
+  console.log(`[seed] FIX-22: who knows them best has a name for ${named} of the ${people.length} people with room to give`);
+  return { named, listed: people.length };
+}
+
+module.exports = { seedProspect1, checkProspect1, checkKnowsBest, PEOPLE, FOUNDATIONS, P };

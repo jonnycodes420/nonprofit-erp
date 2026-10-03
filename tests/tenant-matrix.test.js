@@ -1090,6 +1090,36 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   ok("§11 a conversation attachment's signed link opened signed out is a 404", sOut.status === 404, sOut.status);
   ok("§11 …and from another org is a 404", sCross.status === 404, sCross.status);
   ok("§11 …and from its own org downloads", sOwn.status === 200 && /ZZMARKB/.test(sOwn.text), sOwn.status);
+  // FIX-22 · EVERY ATTACHMENT THE APP LISTS OPENS. The timeline counted an
+  // email's attachment that nothing could open. Each file the profile lists
+  // must download for its own org and 404 signed out and from another org; an
+  // email's attachment (counted, never kept) must carry a link to the message
+  // in the mailbox it is in, and another org must not see the list at all.
+  // Fails if a listed url does not open, or an email's count has no link.
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES ($1,$2,$3,'note','Matrix note','2026-01-05','system:matrix')
+           ON CONFLICT (id) DO NOTHING`, [`i_${B}`, B, `d_${B}`]);
+  await q(`INSERT INTO mailbox_connections (id,org_id,user_id,provider,address,status) VALUES ($1,$2,$3,'google','admin-b@mx.local','active')
+           ON CONFLICT (id) DO NOTHING`, [`mbx_${B}`, B, `u_${B}_admin`]);
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,metadata) VALUES ($1,$2,$3,'email',
+             'Admin wrote: Report (1 attachment, in the mailbox)','2026-01-06',$4,$5::jsonb) ON CONFLICT (id) DO NOTHING`,
+    [`i_${B}_mail`, B, `d_${B}`, `system:mailbox/google/u_${B}_admin`,
+     JSON.stringify({ message_id: "mxmsg1", provider: "google", direction: "outbound", subject: "Report", attachments: 1, logged_by: `u_${B}_admin` })]);
+  const listed = await mfetch("GET", `/donors/d_${B}/attachments`, bAdmin);
+  const files = (JSON.parse(listed.text || "{}").attachments || []);
+  ok("§11 the profile lists the conversation attachment", files.length >= 1, { status: listed.status, n: files.length });
+  for (const f of files) {
+    const u = String(f.url || "").replace(/^https?:\/\/[^/]+/, "");
+    const [fo, fc, fw] = [await get(u, bAdmin), await get(u), await get(u, aAdmin)];
+    ok(`§11 listed file ${f.fileName} opens for its own org`, fo.status === 200 && /ZZMARKB/.test(fo.text), fo.status);
+    ok(`§11 listed file ${f.fileName} is a 404 signed out and from another org`, fc.status === 404 && fw.status === 404, [fc.status, fw.status]);
+  }
+  const relB = await mfetch("GET", `/donors/d_${B}/relationship`, bAdmin);
+  const mf = ((JSON.parse(relB.text || "{}").emailThreads || []).flatMap(t => t.mailFiles || []))[0] || {};
+  ok("§11 an email's counted attachment links to the message in its mailbox",
+     /^https:\/\/mail\.google\.com\/mail\/u\/\?authuser=admin-b%40mx\.local#all\/mxmsg1$/.test(mf.url || ""), { status: relB.status, mf });
+  const relCross = await mfetch("GET", `/donors/d_${B}/relationship`, aAdmin);
+  ok("§11 …and another org cannot read that list", relCross.status === 404 && !/mxmsg1/.test(relCross.text), relCross.status);
+
   const pub = await get(`/portal-assets/${pagePhoto}`);
   ok("§11 a public page image still loads signed out", pub.status === 200, pub.status);
   const missing = await get(`/portal-assets/pa_${"0".repeat(24)}`);

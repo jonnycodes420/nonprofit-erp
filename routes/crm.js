@@ -2274,10 +2274,12 @@ app.put("/saved-dashboards/:id", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 app.delete("/saved-dashboards/:id", requireAuth, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM saved_dashboards WHERE id=? AND org_id=? AND owner_id=?",
+  const [mine] = await query("SELECT id FROM saved_dashboards WHERE id=? AND org_id=? AND owner_id=?",
     [req.params.id, req.user.orgId, req.user.userId]);
-  if (!changes) return res.status(404).json({ error: "Not found" });
-  res.json({ ok: true });
+  if (!mine) return res.status(404).json({ error: "Not found" });
+  const undoId = await trashRow("saved_dashboards", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // Run one: the tiles with their values, each carrying the figure source it was
@@ -3440,7 +3442,21 @@ const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, M
 async function buildDonorListFilter(req) {
   // PARITY-1 Part D · the filter takes a plain params object now (groups.js),
   // so a dynamic Group's rule runs through exactly this code.
-  return GR.buildDonorFilter(req.user.orgId, req.query || {});
+  // FIX-22 · the Room to give sort reads the word for the whole org (a
+  // handful of set-wise queries side by side, never one per row), and only
+  // for someone who may see it; anyone else gets the list's own order.
+  const q = req.query || {};
+  let opts = {};
+  if (q.sort === "room_to_give") {
+    const PR = require("../prospect");
+    if (await PR.canSee(req.user.userId)) {
+      const all = await PR.roomToGive(req.user.orgId);
+      const roomRanks = [];
+      for (const [id, a] of all) if (a.rank > 0) roomRanks.push([id, a.rank]);
+      opts = { roomRanks };
+    }
+  }
+  return GR.buildDonorFilter(req.user.orgId, q, opts);
 }
 
 // GET /donors — unpaginated legacy shape (plain array) when `limit` is
@@ -3514,7 +3530,8 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
                   tags, wealth_score, capacity_tier, planned_giving,
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
-                  imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift
+                  imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift,
+                  birth_month, birth_day, birth_year
            FROM donors WHERE org_id = ? AND deleted_at IS NULL ORDER BY total_giving DESC, id`, [req.user.orgId]),
     query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
     computeDriftForDonors(req.user.orgId),   // BUILD-76 — the shared-state views badge from the same computation
@@ -5464,7 +5481,14 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     [req.params.id, req.user.orgId]
   );
   if (!result.changes) return res.status(404).json({ error: "Donor not found" });
-  res.json({ success: true });
+  // FIX-22: a donor delete is already soft (deleted_at), so Undo only has to
+  // clear the stamp. The trash row records that, and nothing else.
+  const who = actor(req);
+  const undoId = "del_" + uuid().slice(0, 12);
+  await run(`INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+             VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
+    [undoId, req.user.orgId, req.params.id, who.id, who.name]);
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
@@ -5792,7 +5816,10 @@ app.put("/interactions/:id", requireAuth, checkWriteAccess, wrap(async (req, res
 // Move a row into deleted_records and out of its table, in one transaction.
 // Returns the trash id Undo needs, or null when there was no such row.
 const RESTORABLE = new Set(["interactions", "threads", "tasks", "donor_relationships",
-  "pledges", "opportunities", "households"]);
+  "pledges", "opportunities", "households",
+  // FIX-22: the deletes that used to sit behind a browser confirm and had no
+  // way back. Each is now moved aside and offered for Undo instead.
+  "planned_gifts", "donor_materials", "impact_metrics", "event_attendees", "saved_dashboards", "campaigns"]);
 // FIX-14 Part 2b — WHAT GOES WITH A ROW. Some rows take other rows with them
 // when they are deleted (a pledge's instalments cascade, a household's members
 // are unlinked, a calendar meeting points at its logged conversation). The
@@ -5811,6 +5838,14 @@ const TRASH_WITH = {
   households: async (client, id, orgId) => ({
     member_ids: (await queryTx(client, "SELECT id FROM donors WHERE household_id = ? AND org_id = ?", [id, orgId])).map(d => d.id),
   }),
+  // A campaign's recipient rows cascade with it; a board-pack schedule loses
+  // its dashboard (SET NULL). Both come back with Undo.
+  campaigns: async (client, id, orgId) => ({
+    recipients: await queryTx(client, "SELECT * FROM campaign_recipients WHERE campaign_id = ? AND org_id = ?", [id, orgId]),
+  }),
+  saved_dashboards: async (client, id, orgId) => ({
+    schedule_ids: (await queryTx(client, "SELECT id FROM board_pack_schedules WHERE dashboard_id = ? AND org_id = ?", [id, orgId])).map(r => r.id),
+  }),
 };
 const RESTORE_WITH = {
   interactions: async (client, x, recordId, orgId) => {
@@ -5825,6 +5860,18 @@ const RESTORE_WITH = {
         [JSON.stringify(x.installments)]);
     }
   },
+  campaigns: async (client, x) => {
+    if (x && Array.isArray(x.recipients) && x.recipients.length) {
+      await runTx(client, "INSERT INTO campaign_recipients SELECT * FROM jsonb_populate_recordset(NULL::campaign_recipients, ?::jsonb) ON CONFLICT DO NOTHING",
+        [JSON.stringify(x.recipients)]);
+    }
+  },
+  saved_dashboards: async (client, x, recordId, orgId) => {
+    if (x && Array.isArray(x.schedule_ids) && x.schedule_ids.length) {
+      await runTx(client, "UPDATE board_pack_schedules SET dashboard_id = ? WHERE id = ANY(?) AND org_id = ? AND dashboard_id IS NULL",
+        [recordId, x.schedule_ids, orgId]);
+    }
+  },
   // A member who joined another household since is left where they are.
   households: async (client, x, recordId, orgId) => {
     if (x && Array.isArray(x.member_ids) && x.member_ids.length) {
@@ -5834,7 +5881,9 @@ const RESTORE_WITH = {
   },
 };
 const TRASH_ENTITY = { interactions: "interaction", threads: "next step", tasks: "task", donor_relationships: "relationship",
-  pledges: "pledge", opportunities: "proposal", households: "household" };
+  pledges: "pledge", opportunities: "proposal", households: "household",
+  planned_gifts: "planned_gift", donor_materials: "material", impact_metrics: "impact_metric",
+  event_attendees: "event_attendee", saved_dashboards: "saved_dashboard", campaigns: "campaign" };
 // The audit row's picture of a record: a relationship carries its first
 // person as donor_id (so that person's History finds it) and a household
 // carries its members' ids, so "Removed X from the household" can be said.
@@ -5905,6 +5954,16 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: "Not found" });
   if (t.restored_at) return res.status(409).json({ error: "already_restored", sentence: "That is already back." });
   if (t.created_by !== req.user.userId && !(await mayEditLogged(req, {}))) return res.status(403).json(NOT_YOURS);
+  // A soft-deleted donor comes back by clearing deleted_at (FIX-22).
+  if (t.table_name === "donors") {
+    await withTransaction(async client => {
+      await runTx(client, "UPDATE donors SET deleted_at = NULL WHERE id = ? AND org_id = ?", [t.record_id, req.user.orgId]);
+      await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ?", [t.id]);
+    });
+    const [d] = await query("SELECT * FROM donors WHERE id = ? AND org_id = ?", [t.record_id, req.user.orgId]);
+    if (req.audit) { req.audit.entity("donor", t.record_id); req.audit.after(d || null); }
+    return res.json({ restored: true, table: "donors", record: d || null });
+  }
   if (!RESTORABLE.has(t.table_name)) return res.status(400).json({ error: "Cannot restore this" });
   try {
     await withTransaction(async client => {
@@ -8743,8 +8802,9 @@ app.put("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
 app.delete("/planned-gifts/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM planned_gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Not found" });
-  await run("DELETE FROM planned_gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  res.json({ ok: true });
+  const undoId = await trashRow("planned_gifts", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 app.get("/donors/:id/materials", requireAuth, wrap(async (req, res) => {
@@ -8818,8 +8878,9 @@ app.delete("/materials/:id", requireAuth, wrap(async (req, res) => {
   const existing = await query("SELECT * FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Not found" });
   if (existing[0].major_gifts_only && !(await require("../prospect").canSee(req.user.userId))) return res.status(404).json({ error: "Not found" });
-  await run("DELETE FROM donor_materials WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  res.json({ ok: true });
+  const undoId = await trashRow("donor_materials", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // ── Households / soft credit (BUILD-14) ────────────────────────────────────
@@ -17660,12 +17721,13 @@ app.delete("/campaigns/:id", requireAuth, requireAdmin, wrap(async (req, res) =>
   // record the pointer removal.
   const [ex] = await query("SELECT hero_image_url FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!ex) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  await run("DELETE FROM campaigns WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const undoId = await trashRow("campaigns", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" });
   if (ex?.hero_image_url) {
     await pruneCampaignAssets(req.user.orgId);
     await recordAssetPointerHistory(req.user.orgId, "campaign.hero", req.params.id, ex.hero_image_url, null, req.user);
   }
-  res.json({ success: true });
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 app.put("/campaigns/:id/briefing", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -21505,9 +21567,9 @@ app.put("/impact-metrics/:id", requireAuth, requireAdmin, checkWriteAccess, wrap
 }));
 
 app.delete("/impact-metrics/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { changes } = await run("DELETE FROM impact_metrics WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-  res.json({ success: true });
+  const undoId = await trashRow("impact_metrics", req.params.id, req);
+  if (!undoId) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+  res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
 // ── Milestone drafts (AI-drafted, staff-reviewed before sending — see
@@ -24276,9 +24338,11 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
 
 app.delete("/events/:id/attendees/:attendeeId", requireAuth, async (req, res) => {
   try {
-    const { changes } = await run("DELETE FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, req.user.orgId]);
-    if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
-    res.json({ ok: true });
+    const [att] = await query("SELECT id FROM event_attendees WHERE id=$1 AND event_id=$2 AND org_id=$3", [req.params.attendeeId, req.params.id, req.user.orgId]);
+    if (!att) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
+    const undoId = await trashRow("event_attendees", att.id, req);
+    if (!undoId) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

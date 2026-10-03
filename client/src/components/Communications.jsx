@@ -6,6 +6,8 @@ import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
+import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
 // BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
 // live preview and the send all read ONE copy of the words. The server route
@@ -741,7 +743,7 @@ function SequencesPanel({ data }) {
   };
 
   const deleteSeq = async (id) => {
-    if (!window.confirm("Delete this sequence and all enrollments?")) return;
+    if (!(await askConfirm({ title: "Delete this sequence?", body: "The sequence and every enrollment in it go for good. Nobody in it gets another step. This cannot be undone.", yes: "Delete sequence", danger: true }))) return;
     try { await apiFetch(`/sequences/${id}`, { method: "DELETE" }); await loadSeqs(); }
     catch (e) { alert(errorMessage(e)); }
   };
@@ -965,7 +967,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
   };
 
   const send = async (id) => {
-    if (!window.confirm("Send this email now?")) return;
+    if (!(await askConfirm({ title: "Send this email now?", body: "It goes to the donor as soon as you say so.", yes: "Send" }))) return;
     setBusyId(id);
     try {
       await apiFetch(`/milestone-drafts/${id}/send`, { method: "POST" });
@@ -986,7 +988,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
   };
   const reviewedCount = drafts.filter(d => d.reviewed_at).length;
   const sendAllReviewed = async () => {
-    if (!window.confirm(`Send ${reviewedCount} reviewed draft${reviewedCount === 1 ? "" : "s"} now?`)) return;
+    if (!(await askConfirm({ title: `Send ${reviewedCount} reviewed draft${reviewedCount === 1 ? "" : "s"} now?`, body: "Each one goes to its donor as soon as you say so.", yes: "Send" }))) return;
     setBusyId("all");
     try {
       const r = await apiFetch("/milestone-drafts/send-reviewed", { method: "POST" });
@@ -997,7 +999,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
   };
 
   const dismiss = async (id) => {
-    if (!window.confirm("Dismiss this draft without sending?")) return;
+    if (!(await askConfirm({ title: "Dismiss this draft?", body: "It is set aside without sending.", yes: "Dismiss" }))) return;
     setBusyId(id);
     try {
       await apiFetch(`/milestone-drafts/${id}/dismiss`, { method: "POST" });
@@ -1451,7 +1453,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         else { const s = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = s.id; }
       } catch (e) { alert(errorMessage(e)); return; }
     }
-    if (!window.confirm("Send this campaign now? This will send real emails.")) return;
+    if (!(await askConfirm({ title: "Send this campaign now?", body: "This sends real emails to everyone on the list.", yes: "Send campaign" }))) return;
     setSending(true); setSendResult(null);
     try {
       const r = await apiFetch(`/campaigns/${id}/send`, { method: "POST" });
@@ -1487,7 +1489,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   };
 
   const deleteCampaign = async (id) => {
-    try { await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); }
+    try { const r = await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); offerUndo(r, "campaign", loadCampaigns); }
     catch (e) { alert(errorMessage(e)); }
   };
 
@@ -2194,7 +2196,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           <button title="Duplicate" onClick={() => duplicateCampaign(c)}
                             style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>⊕</button>
                           {isAdmin && c.status !== "sending" && (
-                            <button title="Delete" onClick={() => { if (window.confirm(`Delete "${c.name}"?`)) deleteCampaign(c.id); }}
+                            <button title="Delete" onClick={() => deleteCampaign(c.id)}
                               style={{ background: "transparent", border: "none", color: T.terracotta, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>✕</button>
                           )}
                         </div>

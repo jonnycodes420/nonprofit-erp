@@ -14,7 +14,7 @@ import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
-import { useCanMajorGifts, ROOM_LABEL, ROOM_RANK } from "../lib/majorGifts";
+import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
@@ -245,7 +245,9 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   // routes refuse anyone else.
   const canMajorGifts=useCanMajorGifts();
   const [room,setRoom]=useState(null);           // {[donorId]:{word,label,rank}}
-  const [roomSort,setRoomSort]=useState(false);
+  // FIX-22: the server sorts by Room to give (?sort=room_to_give), across
+  // the whole list, so page two continues page one.
+  const roomSort=sortBy==="room_to_give";
   const [screenFor,setScreenFor]=useState(null); // {donorIds} for the file preview
   const [screenImport,setScreenImport]=useState(false);
   const [includeScreening,setIncludeScreening]=useState(false);
@@ -297,10 +299,8 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   }
 
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
-  // Strong, then Some, then Not yet known, within the rows loaded; the
-  // server's own order breaks ties.
   const roomOf=id=>(room&&room[id])||null;
-  const shownRows=roomSort&&room?filtered.map((d,i)=>[d,i]).sort((a,b)=>((roomOf(b[0].id)||{}).rank??ROOM_RANK.unknown)-((roomOf(a[0].id)||{}).rank??ROOM_RANK.unknown)||a[1]-b[1]).map(x=>x[0]):filtered;
+  const shownRows=filtered;
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
   const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
 
@@ -428,6 +428,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <option value="name">Sort: name</option>
           <option value="engagement">Sort: engagement</option>
           <option value="generosity">Sort: generosity</option>
+          {canMajorGifts&&<option value="room_to_give">Sort: room to give</option>}
         </select>}
         {household&&<span data-testid="dir-household" style={{fontSize:12,color:T.ink,fontWeight:700,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",display:"inline-flex",gap:8,alignItems:"center"}}>
           One household
@@ -623,7 +624,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             </div>
             {["Donor","Stage","Owner","Lifetime","Last gift",ENGAGEMENT_LABEL,GIVING_STRENGTH_LABEL,...(canMajorGifts?[ROOM_HEAD]:[]),...(isAdmin?[""]:[])]
               .map((h,i)=>h===ROOM_HEAD?(
-                <button key={i} type="button" data-testid="dir-room-sort" aria-pressed={roomSort} onClick={()=>setRoomSort(v=>!v)}
+                <button key={i} type="button" data-testid="dir-room-sort" aria-pressed={roomSort} onClick={()=>setSortBy&&setSortBy(roomSort?"":"room_to_give")}
                   title={roomSort?"Back to the list's own order":"Strong first, then Some, then Not yet known"}
                   style={{...HEAD,color:roomSort?T.greenDk:T.ink3,textAlign:"right",background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:"inherit",textDecoration:roomSort?"underline":"none"}}>
                   Room to give{roomSort?" ↓":""}

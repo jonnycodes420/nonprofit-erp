@@ -164,7 +164,7 @@ const resend = new Proxy(_rawResend, {
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
-const { signToken, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
+const { signToken, tokenUserId, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
 const { sessionCache } = require("./sessionCache");
 const { normalizeAccent, normalizeTint } = require("./branding");
 const { lookupMatchingGift } = require("./matchingGifts");
@@ -367,10 +367,20 @@ app.use(cors({ origin: corsOrigins, credentials: true }));
 // ── Rate limiting ────────────────────────────────────────────────────────
 // Shared 429 handler: explicit Retry-After header + a body shape that can't be
 // mistaken for a generic error (client code can key off error === "rate_limited").
+// FIX-22 · the message says WHEN, in one sentence, because a screen that hits
+// a limit quotes it (apiFetch carries `message`; App's load screen and every
+// domain catch show it). "Please try again later" left a demo guessing.
+function retryWords(sec) {
+  if (sec <= 60) return "in a minute";
+  const min = Math.ceil(sec / 60);
+  return min >= 60 ? `in about ${Math.ceil(min / 60) === 1 ? "an hour" : Math.ceil(min / 60) + " hours"}` : `in ${min} minutes`;
+}
 function rateLimitHandler(req, res) {
   const resetMs = req.rateLimit?.resetTime ? req.rateLimit.resetTime.getTime() - Date.now() : 60000;
-  res.set("Retry-After", String(Math.max(1, Math.ceil(resetMs / 1000))));
-  res.status(429).json({ error: "rate_limited", message: "Too many requests. Please try again later." });
+  const sec = Math.max(1, Math.ceil(resetMs / 1000));
+  res.set("Retry-After", String(sec));
+  res.status(429).json({ error: "rate_limited", retryAfter: sec,
+    message: `Steward has had a lot of requests from you in a short time. Please try again ${retryWords(sec)}.` });
 }
 
 // BUILD-75 — TEST_MODE=1 is the test-boot switch this flag actually became:
@@ -393,18 +403,51 @@ const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "
 // Loose baseline across the whole API — catches scraping/volumetric abuse
 // without interfering with normal SPA usage (a dashboard load fires many
 // parallel fetches from one IP).
+//
+// FIX-22 · TWO buckets. A signed-in request is limited PER USER, high enough
+// that a fast human never meets it: an office on one wifi shares an IP, and a
+// per-IP limit made the whole office one person (Muse's demo walks hit it
+// twice). Everything without a valid token (forms, login, Lost & Found, the
+// portal) keeps the per-IP limit, and the stricter per-route limiters below
+// still apply on top.
+const generalSkip = (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook";
+const SIGNED_IN_LIMIT = 6000; // per user per 15 minutes: ~400 a minute, sustained
+const PUBLIC_IP_LIMIT = 1000; // per IP per 15 minutes, for requests with no valid token
+const signedInLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: SIGNED_IN_LIMIT,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => "user:" + req._limitUser,
+  skip: (req) => generalSkip(req) || !(req._limitUser = tokenUserId(req)),
+});
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 1000,
+  limit: PUBLIC_IP_LIMIT,
   standardHeaders: true,
   legacyHeaders: false,
   handler: rateLimitHandler,
   // Webhooks are server-to-server (Stripe) and health checks are polled
   // frequently by design — neither should share budget with browser traffic.
   // FIX-2 F: Resend's webhook has its own ceiling on its route (routes/webhooks.js).
-  skip: (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook",
+  skip: (req) => generalSkip(req) || !!tokenUserId(req),
 });
+app.use(signedInLimiter);
 app.use(generalLimiter);
+
+// FIX-22 · Ask why writes a sentence with the model on every question. Its own
+// ceiling, per user, is the one a person can meet only by trying: 60 an hour.
+const whyAskLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  keyGenerator: (req) => "why:" + (tokenUserId(req) || ipKeyGenerator(req.ip)),
+  skip: (req) => rateLimitDisabled() && !req.headers["x-test-enforce-limits"],
+});
+// Mounted on the route itself (routes/why.js), so the route inventory has one /why/ask.
 
 // Per-IP: stops one attacker from spraying attempts across many different
 // accounts (each account-scoped limiter below would look "clean" individually).
@@ -8645,6 +8688,7 @@ async function syncMailbox(userId, orgId, providerKey) {
          m.receivedAt || new Date().toISOString(), actorId, staffName,
          JSON.stringify({ message_id: String(m.id), provider: providerKey, direction: decision.direction,
                           subject: decision.subject, attachments: decision.attachmentCount,
+                          ...(decision.attachmentCount && m.webLink ? { web_link: m.webLink } : {}),
                           logged_by: userId })]);
       logged++;
       // A CONVERSATION IS A TOUCH, AND NOTHING MORE. It can close a Thread
@@ -8824,7 +8868,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
         const filter = chunk.map(e =>
           `from/emailAddress/address eq '${e.replace(/'/g, "''")}'`).join(" or ");
         const list = await fetch(
-          `https://graph.microsoft.com/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments&$filter=${encodeURIComponent(filter)}`,
+          `https://graph.microsoft.com/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,webLink&$filter=${encodeURIComponent(filter)}`,
           { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
         for (const m of (list?.value || [])) {
           if (out.length >= CAP) break;
@@ -8875,6 +8919,7 @@ function graphToMessage(m) {
     subject: m.subject || "",
     bodyText: html ? text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : text,
     attachmentCount: m.hasAttachments ? 1 : 0,
+    webLink: m.webLink || null,   // FIX-22: where the attachment can be opened
     date: String(m.receivedDateTime || "").slice(0, 10),
     receivedAt: m.receivedDateTime || new Date().toISOString(),
   };
@@ -10447,7 +10492,7 @@ require("./routes/templates").mount({
   actor, checkWriteAccess, money, orgTime, query, requireAdmin, requireAuth, run, uuid, volunteerSummary, wrap,
 });
 require("./routes/why").mount({
-  AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
+  whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
 });
 require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
 require("./routes/groups").mount({

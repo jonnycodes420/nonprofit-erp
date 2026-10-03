@@ -16,6 +16,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
@@ -114,10 +115,10 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
     catch (e) { setMsg(e?.sentence || errorMessage(e, "That did not change.")); }
     setBusy("");
   };
-  const disconnect = (p, purge) => {
-    if (!window.confirm(purge
-      ? `Disconnect ${p.label} and remove every conversation it logged? This cannot be undone.`
-      : `Disconnect ${p.label}? Steward stops reading it. What is already logged stays on the records.`)) return;
+  const disconnect = async (p, purge) => {
+    if (!(await askConfirm(purge
+      ? { title: `Disconnect ${p.label} and remove what it logged?`, body: "Every conversation it logged comes off the records. This cannot be undone.", yes: "Disconnect and remove", danger: true }
+      : { title: `Disconnect ${p.label}?`, body: "Steward stops reading it. What is already logged stays on the records.", yes: "Disconnect" }))) return;
     act(p.key, `/oauth/${p.key}/disconnect`, purge ? { purge: true } : {}, "disconnect");
   };
   const teamLink = name => {

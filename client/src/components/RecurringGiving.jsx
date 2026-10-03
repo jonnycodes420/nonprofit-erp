@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -646,10 +647,12 @@ export function RecurringView({ onNavigate, isReadOnly }) {
       return;
     }
     if (key === "cancel") {
-      if (!window.confirm(`Cancel ${sub.donorName}'s ${money(sub.amount)}${per(sub.interval)} recurring gift? They won't be charged again, and they'll be notified.`)) return;
-      apiFetch(`/recurring/subs/${sub.id}/cancel`, { method: "POST", body: JSON.stringify({}) })
-        .then(r => { say(`Canceled. ${notified(r, sub.donorName)}`); load(); })
-        .catch(e => say(errorMessage(e, "Couldn't cancel.")));
+      askConfirm({ title: `Cancel ${sub.donorName}'s recurring gift?`, body: `${money(sub.amount)}${per(sub.interval)}. They won't be charged again, and they'll be notified.`, yes: "Cancel the gift", no: "Keep it", danger: true })
+        .then(ok => { if (!ok) return;
+          apiFetch(`/recurring/subs/${sub.id}/cancel`, { method: "POST", body: JSON.stringify({}) })
+            .then(r => { say(`Canceled. ${notified(r, sub.donorName)}`); load(); })
+            .catch(e => say(errorMessage(e, "Couldn't cancel.")));
+        });
       return;
     }
     if (key === "cardlink") {

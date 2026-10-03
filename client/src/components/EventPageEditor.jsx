@@ -9,6 +9,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { suggestEventSlug, parseEventVideo, galleryShows, civil, VIDEO_HOSTS_SENTENCE } from "../../../shared/eventPage";
@@ -94,7 +95,7 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
             published || form.publicSlug ? "Saved. The page shows it now." : "Saved.")}>
           {published ? "Save the page" : "Publish the page"}</button>
         {published && <button disabled={busy} style={btn(false)} data-testid="event-page-unpublish"
-          onClick={() => { if (confirm("Take the page down? Its address stops working, including any link already shared.")) save({ publicSlug: "" }, "The page is down. Nothing about the event changed."); }}>
+          onClick={async () => { if (await askConfirm({ title: "Take the page down?", body: "Its address stops working, including any link already shared.", yes: "Take it down", danger: true })) save({ publicSlug: "" }, "The page is down. Nothing about the event changed."); }}>
           Take the page down</button>}
       </div>}
 

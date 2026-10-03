@@ -14,9 +14,10 @@
 //
 //   · a visitor gets Start 30 days free, linking to /signup?plan=<id> so the
 //     signup page opens on the band they picked;
-//   · a signed-in org gets the same "Choose <tier>" button, posting to the
-//     same /billing/create-checkout with the same body, and the same "Your
-//     current plan" label on the band it is already on.
+//   · a signed-in org gets the same "Choose <tier>" button, which opens
+//     Settings, Billing (FIX-22: a checkout started from here failed for an
+//     org that already has a subscription), and the same "Your current plan"
+//     label on the band it is already on.
 //
 // Dropping the second one would have made the brief's own words ("keep any
 // query parameters the app reads") impossible to honour and broken billing
@@ -29,7 +30,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../main";
-import { apiFetch } from "../../api";
 import PRICING from "../../../../pricing.json";
 import { Crumbs, FaqS, FinalCta, Pill, Tick, A, rich } from "../lib";
 import { SRC_ALL } from "../data/research";
@@ -76,22 +76,12 @@ export function Pricing() {
   const authed = !!auth?.token;
   const orgPlan = String(auth?.org?.plan || "");
   const [yearly, setYearly] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [err, setErr] = useState(null);
 
-  // The same call the app's pricing page made, with the same body.
-  async function choose(t) {
-    setBusy(t.id); setErr(null);
-    try {
-      const r = await apiFetch("/billing/create-checkout", {
-        method: "POST",
-        body: JSON.stringify({ tier: t.id, interval: yearly ? "yearly" : "monthly" }),
-      });
-      if (r?.url) { window.location.href = r.url; return; }
-      throw new Error("no url");
-    } catch (e) {
-      setErr({ id: t.id, msg: "Could not start checkout. Please try again, or reach out if it keeps happening." });
-    } finally { setBusy(""); }
+  // FIX-22: a signed-in visitor already has an account and a subscription
+  // (trial or paid), so a fresh checkout from here failed ("Could not start
+  // checkout"). Changing plan is Settings, Billing; this page sends them there.
+  function choose() {
+    navigate("/app/settings?section=billing");
   }
 
   return <>
@@ -107,7 +97,7 @@ export function Pricing() {
         <div className="tiers">
           {TIERS.map(t => (
             <Tier key={t.id} t={t} yearly={yearly} authed={authed} orgPlan={orgPlan}
-              busy={busy === t.id} onChoose={choose} err={err && err.id === t.id ? err.msg : null} />
+              busy={false} onChoose={choose} err={null} />
           ))}
           <div className="tier talk" data-tier={TALK.id}>
             <span className="tag">&nbsp;</span>

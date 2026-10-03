@@ -29,6 +29,7 @@ import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { ItemMenu, EditedMarker, useUndo, HistoryList } from "./EditHistory";
+import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
@@ -1585,7 +1586,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     const rcpt=receiptForGift(giftId);
     const was=giftsFull.find(g=>g.id===giftId);
     if(rcpt&&was&&giftEditForm.amount!==undefined&&Number(giftEditForm.amount)!==Number(was.amount)
-      &&!window.confirm(`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`))return;
+      &&!(await askConfirm({title:"A receipt already went out",body:`A receipt already went out for this gift${rcpt.receipt_number?` (${rcpt.receipt_number})`:""}, for ${fmtFull(Number(rcpt.amount||was.amount))}. Changing the amount here does not change that receipt; void it and issue a new one from Tax receipts if it needs correcting. Save the new amount?`,yes:"Change the amount"})))return;
     setGiftSaving(true);
     try{
       const {customFields,...core}=giftEditForm;
@@ -1601,7 +1602,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const deleteGift=async(giftId)=>{
-    if(!confirm("Delete this gift?"))return;
+    if(!(await askConfirm({title:"Delete this gift?",body:"It comes off this person's giving and your totals now. A receipt already sent is not taken back.",yes:"Delete gift",danger:true})))return;
     try{
       await apiFetch(`/gifts/${giftId}`,{method:"DELETE"});
       loadGiftsFull();
@@ -1674,8 +1675,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const deletePledge=async(id)=>{
-    if(!confirm("Delete this pledge? You can undo it for ten seconds."))return;
-    try{
+        try{
       const r=await apiFetch(`/pledges/${id}`,{method:"DELETE"});
       loadPledges();
       offerUndo(r,"pledge",loadPledges);
@@ -1713,10 +1713,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const deletePlannedGift=async(id)=>{
-    if(!confirm("Delete this planned gift entry?"))return;
     try{
-      await apiFetch(`/planned-gifts/${id}`,{method:"DELETE"});
+      const r=await apiFetch(`/planned-gifts/${id}`,{method:"DELETE"});
       loadPlannedGifts();
+      offerUndo(r,"planned gift",loadPlannedGifts);
     }catch(e){console.error(e);}
   };
 
@@ -1752,10 +1752,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
 
   const deleteMaterial=async(id)=>{
-    if(!confirm("Delete this file?"))return;
     try{
-      await apiFetch(`/materials/${id}`,{method:"DELETE"});
+      const r=await apiFetch(`/materials/${id}`,{method:"DELETE"});
       loadMaterials();
+      offerUndo(r,"file",loadMaterials);
     }catch(e){console.error(e);}
   };
 
@@ -2187,7 +2187,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               first, largest and average gift, the highlights and the next
               action with its suggested ask. Lifetime and Last gift are the
               tiles above, never repeated here. */}
-          <ProfileGlance status={status}/>
+          <ProfileGlance status={status} birthday={donor.birthday}/>
           <div style={{padding:"10px 20px 4px 24px",flexShrink:0}}>
           {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
               other empty sections (FIX-14 Part 3), instead of an empty chart. */}
@@ -3351,7 +3351,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                           {it.kind==="thread"&&!isReadOnly&&<span style={{display:"inline-flex",gap:10,alignItems:"center",width:"100%"}}>
                             <EditedMarker item={it}/>
                             <button type="button" data-testid="dp-step-edit-btn" onClick={()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Edit</button>
-                            <button type="button" data-testid="dp-step-delete" onClick={()=>{if(window.confirm("Delete this next step? You can undo it for ten seconds."))deleteStep(it);}} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+                            <button type="button" data-testid="dp-step-delete" onClick={()=>deleteStep(it)} style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12.5,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
                           </span>}
                         </div>
                       )}

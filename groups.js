@@ -35,7 +35,10 @@ const DONOR_SCORE_COLS = `,
   (SELECT s.generosity FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS generosity_score,
   (SELECT s.band FROM donor_scores s WHERE s.org_id = donors.org_id AND s.donor_id = donors.id) AS engagement_band`;
 
-async function buildDonorFilter(orgId, q = {}) {
+// FIX-22 · `opts.roomRanks` is [[donorId, rank], ...] from prospect.roomToGive,
+// handed in by a route that has already checked the major gifts permission.
+// It never comes from the query string: the order would show the word.
+async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const PT = await personTypeMod();
   const where = ["org_id = ?", "deleted_at IS NULL"];
   const params = [orgId];
@@ -156,10 +159,22 @@ async function buildDonorFilter(orgId, q = {}) {
     params.push(String(q.volAvail));
   }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
-  const orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
+  let orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
   // arguments ahead of the WHERE's.
-  return { whereSql: where.join(" AND "), params, orderBy, selectCols: `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`, selectArgs: cl.args };
+  let selectCols = `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`;
+  const selectArgs = [...cl.args];
+  // FIX-22 · Room to give, sorted on the server across the whole list: the
+  // word is decided once (shared/roomToGive.js, via prospect.roomToGive), and
+  // its rank rides along as a column joined from two arrays, so the page is
+  // still one statement and page two continues page one. Strong, then Some,
+  // then Not yet known (anyone not in the arrays), then total given.
+  if (q.sort === "room_to_give" && Array.isArray(opts.roomRanks)) {
+    selectCols += `, COALESCE((SELECT rr.rank FROM unnest(?::text[], ?::int[]) AS rr(id, rank) WHERE rr.id = donors.id), 0) AS room_rank`;
+    selectArgs.push(opts.roomRanks.map(r => r[0]), opts.roomRanks.map(r => r[1]));
+    orderBy = "room_rank DESC, total_giving DESC, id";
+  }
+  return { whereSql: where.join(" AND "), params, orderBy, selectCols, selectArgs };
 }
 
 // ── THE RULE ───────────────────────────────────────────────────────────────
@@ -296,10 +311,20 @@ async function isMember(orgId, group, donorId) {
   return rows.length > 0;
 }
 // Every group this person is in right now, static and by rule.
-async function groupsFor(orgId, donorId) {
-  const out = [];
-  for (const g of await listGroups(orgId)) if (await isMember(orgId, g, donorId)) out.push(g);
-  return out;
+// FIX-22 · in ONE statement, one EXISTS column per group (it was one query per
+// group: on prod each costs a ~65ms round trip, so 12 groups were most of a
+// second). The same memberSql rows isMember reads, so the answers agree.
+async function membershipFlags(orgId, groups, donorId) {
+  if (!groups.length) return [];
+  const ms = await Promise.all(groups.map(g => memberSql(orgId, g)));
+  const cols = ms.map((m, i) => `EXISTS (SELECT 1 FROM (${m.sql}) g${i} WHERE g${i}.id = ?) AS in${i}`);
+  const [row] = await query(`SELECT ${cols.join(", ")}`, ms.flatMap(m => [...m.args, donorId]));
+  return ms.map((_, i) => !!(row && row[`in${i}`]));
+}
+async function groupsFor(orgId, donorId, groups) {
+  const all = groups || await listGroups(orgId);
+  const flags = await membershipFlags(orgId, all, donorId);
+  return all.filter((_, i) => flags[i]);
 }
 
 // ── "JOINS A GROUP" FOR A GROUP BY RULE ─────────────────────────────────────

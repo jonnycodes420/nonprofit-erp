@@ -49,6 +49,8 @@ const GUARDED_WRITERS = [
   "dedupe-finance-gift-stamps",
   "finance-entity-routing-capture", "fix-build54-demo-photos",
   "fix-demo-finance-ledger", "invitation-capture", "load-irs-ein-registry",
+  // FIX-22: fills irs_bmf (the IRS EO BMF) straight into the database.
+  "load-irs-bmf",
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",
   "migrate-plans-core-team", "restore-asset", "seed-build45-asks",
   "seed-build45-portal-demo",

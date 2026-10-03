@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
+import { offerUndo } from "./EditHistory";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
@@ -446,9 +447,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const deleteDonor=async(id)=>{
     // FIX-12 (HELP-1 list): delete is a soft delete, so "cannot be undone" was untrue.
-    if(!window.confirm("Delete this donor? They come off your lists and totals now. Steward keeps the record, so support can bring it back if this was a mistake. To remove someone for good, use Erase on their profile."))return;
+    // FIX-22: no confirm. It goes at once and Undo brings it back for ten
+    // seconds; to remove someone for good, Erase on their profile still asks.
     try{
-      await apiFetch(`/donors/${id}`,{method:"DELETE"});
+      const r=await apiFetch(`/donors/${id}`,{method:"DELETE"});
+      offerUndo(r,"donor",back=>{setDirReloadKey(k=>k+1);const rec=back&&back.record;if(rec)setData(prev=>prev&&!(prev.donors||[]).some(d=>d.id===rec.id)?{...prev,donors:[...(prev.donors||[]),adaptDonor(rec)]}:prev);});
       setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
       setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
       setDirTotal(t=>Math.max(0,t-1));

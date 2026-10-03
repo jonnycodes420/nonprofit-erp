@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card, Spin, EmptyState } from "./shared";
+import { offerUndo } from "./EditHistory";
 import { Tile, GivingLine, Def, Eyebrow } from "./Dashboards";
 import { ReportTable } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
@@ -156,8 +157,11 @@ export function SavedDashboardView({ id, onNavigate, onEdit, onDeleted }) {
     setSaving(false);
   }
   async function remove() {
-    if (!window.confirm("Delete this dashboard? The reports and numbers on it are not affected.")) return;
-    try { await apiFetch(`/saved-dashboards/${encodeURIComponent(id)}`, { method: "DELETE" }); onDeleted && onDeleted(); }
+    try {
+      const r = await apiFetch(`/saved-dashboards/${encodeURIComponent(id)}`, { method: "DELETE" });
+      onDeleted && onDeleted();
+      offerUndo(r, "dashboard", () => onDeleted && onDeleted());
+    }
     catch (e) { alert(errorMessage(e, "That dashboard would not delete.")); }
   }
   async function pdf() {

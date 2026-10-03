@@ -6843,6 +6843,30 @@ async function runSchemaInit(pool) {
   // A file only major gifts staff may open (a prospect brief).
   await pool.query(`ALTER TABLE donor_materials ADD COLUMN IF NOT EXISTS major_gifts_only BOOLEAN NOT NULL DEFAULT false`);
 
+  // FIX-22: the public filing comes from the IRS's own public-domain file, the
+  // Exempt Organizations Business Master File, loaded by
+  // scripts/load-irs-bmf.js into irs_bmf (one row per EIN, every org reads it,
+  // nobody's private data). A lookup reads this table only; nothing calls out
+  // on a page render or on a button press. Money is whole dollars in the file,
+  // stored as cents. tax_period is the file's YYYYMM.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS irs_bmf (
+      ein TEXT PRIMARY KEY,
+      name TEXT,
+      city TEXT, state TEXT,
+      subsection TEXT, foundation TEXT, ntee_cd TEXT,
+      assets_cents BIGINT, income_cents BIGINT, revenue_cents BIGINT,
+      tax_period TEXT,
+      source_file TEXT NOT NULL,
+      source_date DATE NOT NULL,
+      loaded_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS revenue_cents BIGINT`);
+  await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS income_cents BIGINT`);
+  await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS tax_period TEXT`);
+  await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS source_file TEXT`);
+  await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS source_date DATE`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

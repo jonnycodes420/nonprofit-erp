@@ -801,6 +801,35 @@ export const HELP_ARTICLES = [
     ],
   },
   {
+    slug: `video-thank-you`,
+    title: `Send a video thank-you`,
+    screens: [],
+    summary: `Record a short video for one donor on their record. Steward saves it and drafts the email with the link; you read the draft and send it.`,
+    sections: [
+      { h: `How it works`, p: [
+        `A video thank-you is up to two minutes, recorded with your computer's or phone's camera. Saving it stores the video and puts one draft email to the donor, with the link in it, in Communications under "Drafts to review". Nothing is sent until you send it.`,
+        `The donor opens the link to a small page in your organisation's colours with the video on it. The link is the only way in, and nothing else about the donor is on the page.`,
+      ]},
+      { h: `Record one`, steps: [
+        `Open the donor's record and click "More".`,
+        `Click "Record a video thank-you". Your browser asks to use the camera and microphone the first time; allow it.`,
+        `Click "Start recording". The time left shows while you record, and it stops by itself at two minutes. Click "Stop" when you are done.`,
+        `Watch it back. Click "Record again" if you want another take.`,
+        `Click "Save and draft the email". Click "Open the page the donor will see" to check it, then "Done".`,
+      ]},
+      { h: `Send it`, steps: [
+        `Open Communications, then "Drafts to review".`,
+        `Read the draft. Change any words you like.`,
+        `Send it.`,
+      ]},
+      { h: `Good to know`, p: [
+        `"Record a video thank-you" is greyed out when the donor has no email address, is marked deceased or do not contact, or when you have read-only access.`,
+        `On a phone without in-browser recording, the button opens your phone's own camera instead. A video must be WebM or MP4 and two minutes or less.`,
+        `Videos you recorded before are listed under "Recorded before" in the same window, each with "Watched" and the date once the donor has played it, or "Not watched yet". Playing the video is what counts as watched; a mail scanner opening the link does not.`,
+      ]},
+    ],
+  },
+  {
     slug: `year-end-receipts`,
     title: `Run year-end receipts`,
     screens: [],
