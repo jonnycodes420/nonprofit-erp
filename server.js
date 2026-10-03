@@ -465,6 +465,17 @@ const videoLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 
+// FIX-20 Part 0: the private file doors (conversation attachments, grant
+// documents). Signed-in staff open a handful at a time; this is per IP.
+const fileLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitHandler,
+  skip: rateLimitDisabled,
+});
+
 // Public "Request an invitation" form (invitation pivot, 2026-08-06). A human
 // fills this once; anything past this budget from one IP is a bot.
 const invitationLimiter = rateLimit({
@@ -10549,7 +10560,7 @@ require("./routes/crm").mount({
   checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
-  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
+  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter, fileLimiter,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, footingMod, formConfigMod, employerMatchMod,

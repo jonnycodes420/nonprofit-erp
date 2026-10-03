@@ -52,7 +52,7 @@ const {
   checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
-  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
+  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter, fileLimiter,
   demoMailNote,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
@@ -13816,7 +13816,7 @@ app.get("/funders/:donorId/documents", requireAuth, wrap(async (req, res) => {
 // needs a signed-in user of the org on the stored row (the client fetches it
 // with the session and saves the bytes), so a copied link opened anywhere
 // else is a 404.
-app.get("/grant-documents/:id", requireAuth404, wrap(async (req, res) => {
+app.get("/grant-documents/:id", fileLimiter, requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
@@ -13949,7 +13949,7 @@ app.delete("/interactions/:id/attachments", requireAuth, wrap(async (req, res) =
 // minted only for signed-in staff of the org, and the org comes from the
 // STORED ROW. A removed attachment stops serving even inside its thirty minutes.
 // FIX-20 Part 0: and a signed-in user of that org, as /grant-documents.
-app.get("/interaction-files/:id", requireAuth404, wrap(async (req, res) => {
+app.get("/interaction-files/:id", fileLimiter, requireAuth404, wrap(async (req, res) => {
   const id = String(req.params.id || "");
   if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
   const [row] = await query(
