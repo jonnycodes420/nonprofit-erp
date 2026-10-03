@@ -20,6 +20,14 @@
 //   · let approve create a person instead of matching by email
 //     → §2's "no second person" goes red.
 //
+//   §3 FIX-24 · "Make a volunteer" from the profile and Add a volunteer
+//      picking somebody on file both go through makeVolunteer: the SAME
+//      person (no second record), an active volunteer record with hours a
+//      week, days and roles, in the Volunteers group; a second press updates
+//      it. Planted before trusted: let makeVolunteer INSERT a donor → "still
+//      one record" goes red; skip the approved application → "in the
+//      Volunteers group" goes red.
+//
 //   BASE=http://localhost:5601 node tests/parity3-volunteers.test.js
 const bcrypt = require("bcryptjs");
 const { ok, summary, q, closeDb, login, api, civilToday, civilPlusDays } = require("./helpers");
@@ -151,6 +159,36 @@ const T = civilToday();
   const roster = await api("GET", "/volunteer-hub/roster", tok);
   const me = (roster.body.people || []).find(x => x.id === GIVER);
   ok("§2 the Volunteers screen says 4.5 hours", me && me.hundredths === 450, me);
+
+  // ── §3 FIX-24 · MAKE A DONOR A VOLUNTEER ────────────────────────────────
+  const ADA = "d_par3v_ada";
+  await q(`INSERT INTO donors (id,org_id,name,email,phone,stage,created_by,created_by_name) VALUES ($1,$2,'Ada Petrossian','ada@par3v.local','555-0142','steward','system:test','test')`, [ADA, ORG]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ('g_par3v_ada',$1,$2,100000,$3,'system:test','test')`, [ORG, ADA, civilPlusDays(-3)]);
+  const onRoll = async () => Number((await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG]))[0].n);
+  const before = await onRoll();
+  const bad = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 500 });
+  ok("§3 hours a week past 80 is refused and nothing changes", bad.status === 400 && !(await q(`SELECT 1 FROM volunteer_applications WHERE person_id=$1`, [ADA])).length, bad.body);
+  const mv = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 15, availability: ["Saturdays", "Not a day"], roles: "Food drive, Driver" });
+  ok("§3 Make a volunteer makes the volunteer record on the same person", mv.status === 201 && mv.body.personId === ADA && mv.body.created === true, mv.body);
+  ok("§3 …with 15 hours a week, Saturdays and both roles (an unknown day dropped)",
+    mv.body.hoursPerWeek === 15 && JSON.stringify(mv.body.availability) === '["Saturdays"]' && JSON.stringify(mv.body.roles) === '["Food drive","Driver"]', mv.body);
+  ok("§3 …and still one record: nobody new was made", await onRoll() === before);
+  const vp = await api("GET", `/donors/${ADA}/volunteer-profile`, tok);
+  ok("§3 the profile's volunteer record says so", vp.body.record && vp.body.record.hoursPerWeek === 15, vp.body.record);
+  const vg = await api("POST", "/volunteer-hub/volunteers-group", tok, {});
+  const grp = await api("GET", `/figures/group-members/rows?group=${vg.body.id}&pageSize=200`, tok);
+  ok("§3 she is in the Volunteers group (the rule's own rows)", vg.body.id && (grp.body.rows || []).some(r => r.donor_id === ADA || r.id === ADA), (grp.body.rows || []).map(r => r.name));
+  const again3 = await api("POST", `/donors/${ADA}/make-volunteer`, tok, { hoursPerWeek: 10 });
+  const recs = await q(`SELECT hours_per_week, roles FROM volunteer_applications WHERE org_id=$1 AND person_id=$2 AND status='approved'`, [ORG, ADA]);
+  ok("§3 a second press updates the one record and keeps the roles it was not given", again3.status === 200 && recs.length === 1 && Number(recs[0].hours_per_week) === 10 && JSON.stringify(recs[0].roles).includes("Driver"), recs);
+  const BOB = "d_par3v_bob";
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,created_by,created_by_name) VALUES ($1,$2,'Bob Banerjee','bob@par3v.local','cultivate','system:test','test')`, [BOB, ORG]);
+  const found = await api("GET", `/volunteer-hub/people/search?q=baner`, tok);
+  ok("§3 Add a volunteer finds somebody on file, with no giving in the answer",
+    (found.body.people || []).some(p => p.id === BOB) && !JSON.stringify(found.body).includes("giving"), found.body);
+  const n0 = await onRoll();
+  const link = await api("POST", `/volunteer-hub/people`, tok, { personId: BOB, availability: ["Sundays"] });
+  ok("§3 picking them links that person instead of making a new one", link.body.personId === BOB && await onRoll() === n0, link.body);
 
   await closeDb();
   summary();

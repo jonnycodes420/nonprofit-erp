@@ -20,7 +20,7 @@ import { useState, useEffect, useCallback } from "react";
 import Papa from "papaparse";
 import { apiFetch, API } from "../api";
 import { T, PageTitle, SectionTabs, EmptyState, Modal, activeMark } from "./shared";
-import { HoursImportModal } from "./VolunteerPanel";
+import { HoursImportModal, AddVolunteerModal } from "./VolunteerPanel";
 import { VolunteerImport } from "./VolunteerImport";
 import { parseFileToSheets } from "./DonorImport";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -269,71 +269,9 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
 }
 
 // ── VOL-2 item 1 · ADD ONE VOLUNTEER ────────────────────────────────────
-// Three fields, because that is what a coordinator has when somebody signs up
-// at a table: a name, maybe an email, maybe a phone. Everything else about
-// them is learned later.
-//
-// WHAT IT SAYS AFTERWARDS IS THE POINT. If the email was already on file the
-// answer says so, by name: one person, one record, and she finds out at the
-// moment it happens rather than from a duplicate she meets next week.
-function AddVolunteerModal({ onClose, onDone }) {
-  const [form, setForm] = useState({ name: "", email: "", phone: "" });
-  const [out, setOut] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
-  const save = async () => {
-    setMsg(""); setBusy(true);
-    try {
-      const r = await apiFetch("/volunteer-hub/people", { method: "POST", body: JSON.stringify(form) });
-      setOut(r); onDone && onDone();
-    } catch (e) { setMsg(errorMessage(e, "That volunteer was not added.")); }
-    finally { setBusy(false); }
-  };
-  return (
-    <Modal onClose={onClose} width={480} ariaLabel="Add a volunteer" padding={24}>
-      <div data-testid="vol-add" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>Add a volunteer</div>
-        {!out ? (
-          <>
-            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
-              They join the roster as a volunteer. Nothing on their record says donor, because they have not given.
-            </div>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
-              Name
-              <input data-testid="vol-add-name" value={form.name} autoFocus style={inp}
-                onChange={e => setForm({ ...form, name: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
-              Email
-              <input data-testid="vol-add-email" type="email" value={form.email} style={inp}
-                onChange={e => setForm({ ...form, email: e.target.value })} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
-              Phone
-              <input data-testid="vol-add-phone" value={form.phone} style={inp}
-                onChange={e => setForm({ ...form, phone: e.target.value })} />
-            </label>
-            {msg && <div role="alert" style={{ fontSize: 13, color: T.terra700 }}>{msg}</div>}
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={save} disabled={busy || (!form.name.trim() && !form.email.trim())}
-                style={{ ...btnPrimary, opacity: busy || (!form.name.trim() && !form.email.trim()) ? 0.5 : 1 }}
-                data-testid="vol-add-save">{busy ? "Adding…" : "Add them"}</button>
-              <button onClick={onClose} style={btnQuiet}>Cancel</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div role="status" data-testid="vol-add-result" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.65 }}>{out.sentence}</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setOut(null); setForm({ name: "", email: "", phone: "" }); }} style={btnQuiet}>Add another</button>
-              <button onClick={onClose} style={btnPrimary} data-testid="vol-add-done">Done</button>
-            </div>
-          </>
-        )}
-      </div>
-    </Modal>
-  );
-}
+// The form lives in VolunteerPanel.jsx now (FIX-24), shared with the profile's
+// "Make a volunteer": the same fields, and somebody already on file is linked,
+// never made twice.
 
 // ── Roster ──────────────────────────────────────────────────────────────────
 function RosterView({ roster, narrow, onOpen, onAdd, onImport, onSignupLink, isReadOnly }) {

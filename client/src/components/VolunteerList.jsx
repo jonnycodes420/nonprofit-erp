@@ -55,7 +55,7 @@ export function VolunteerCounts({ onOpen, refreshKey }) {
 
 export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initialFilter }) {
   const [f, setF] = useState(() => ({ search: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursOp: "min", hoursN: "", volHoursFrom: "", volHoursTo: "",
-    giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "", hoursFrom: "", hoursTo: "", ...(initialFilter || {}) }));
+    giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "", ...(initialFilter || {}) }));
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [cols, setCols] = useState(loadCols);
@@ -80,7 +80,9 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
     }
     return r;
   }, [f, coordinator]);
-  const qs = new URLSearchParams({ ...rules, ...(f.hoursFrom ? { hoursFrom: f.hoursFrom } : {}), ...(f.hoursTo ? { hoursTo: f.hoursTo } : {}) }).toString();
+  // FIX-24 2e: ONE hours filter. Its dates are also the dates the "Hours in
+  // range" column counts, so there is no second pair of dates for the column.
+  const qs = new URLSearchParams({ ...rules, ...(f.volHoursFrom ? { hoursFrom: f.volHoursFrom } : {}), ...(f.volHoursTo ? { hoursTo: f.volHoursTo } : {}) }).toString();
   const load = useCallback(() => {
     apiFetch(`/volunteer-hub/list${qs ? "?" + qs : ""}`).then(d => { setData(d); setErr(""); setSel(new Set()); }).catch(e => setErr(errorMessage(e, "The list did not load.")));
   }, [qs]);
@@ -135,8 +137,9 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
           <span style={{ marginLeft: 8 }}>Hours</span>
           <select aria-label="More or less" value={f.hoursOp} onChange={set("hoursOp")} style={inp}><option value="min">at least</option><option value="max">fewer than</option></select>
           <input aria-label="Hours" inputMode="numeric" value={f.hoursN} onChange={set("hoursN")} style={{ ...inp, width: 60 }} />
-          <span>from</span><input aria-label="Hours from" type="date" value={f.volHoursFrom} onChange={set("volHoursFrom")} style={inp} />
-          <span>to</span><input aria-label="Hours to" type="date" value={f.volHoursTo} onChange={set("volHoursTo")} style={inp} />
+          <span>between</span><input aria-label="Hours from" type="date" value={f.volHoursFrom} onChange={set("volHoursFrom")} style={inp} />
+          <span>and</span><input aria-label="Hours to" type="date" value={f.volHoursTo} onChange={set("volHoursTo")} style={inp} />
+          <span style={{ fontSize: 11.5 }}>(the Hours in range column counts the same dates; this year when blank)</span>
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12.5, color: T.ink3 }}>
           {!coordinator && <>
@@ -149,8 +152,6 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
             <option value="">Any application answer</option>
             {fileQs.flatMap(q => (q.type === "yesno" ? ["Yes", "No"] : q.type === "choice" ? q.options : []).map(o => <option key={q.id + o} value={`${q.id}=${o}`}>{q.label}: {o}</option>))}
           </select>}
-          <span style={{ marginLeft: 8 }}>Hours column from</span><input aria-label="Hours column from" type="date" value={f.hoursFrom} onChange={set("hoursFrom")} style={inp} />
-          <span>to</span><input aria-label="Hours column to" type="date" value={f.hoursTo} onChange={set("hoursTo")} style={inp} />
         </div>
         </>}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>

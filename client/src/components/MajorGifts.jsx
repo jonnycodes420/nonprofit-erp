@@ -389,8 +389,10 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   // next" can name one instead of saying nothing is open. One fetch, one
   // owner; the profile does not fetch this route a second time.
   useEffect(() => {
-    if (!onOpenProposals) return;
-    onOpenProposals(d ? d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage)) : []);
+    // FIX-24 2c: only once the proposals are read: "none open" is a fact the
+    // profile acts on, so it is never said before the read comes back.
+    if (!onOpenProposals || !d) return;
+    onOpenProposals(d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage)));
   }, [d, onOpenProposals]);
   if (!d) return null;
 

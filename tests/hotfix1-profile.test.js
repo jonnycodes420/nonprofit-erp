@@ -28,6 +28,16 @@
 //       on her, and both halves are pinned here — grounded where the record
 //       carries her, refused where it does not.
 //   §6  proof each guard can fail.
+//   §7  FIX-24 · ADA'S RECORD SAYS ONE THING. On Creo the header said "last
+//       conversation today" (an Agent note), the figures "Last met 23 days",
+//       Engagement "the latest 16 days ago" (stale, baked in on the day the
+//       scores ran), a stage change read "Meeting: Moved null → steward", and
+//       the next step said "Send the proposal" with no proposal open. One rule
+//       for last conversation (meetings.js conversationsWith) and one helper
+//       for the step (shared/nextStepAgree.js). WHAT WOULD MAKE IT FAIL
+//       (planted before it was trusted): put 'note' back in meetings.js
+//       CONVERSATION_TYPES → "the Agent note does not count" goes red; write
+//       `${fromStage}` again in PATCH /donors/:id/stage → "never null" goes red.
 //
 // §1 is a browser leg and SKIPs cleanly without Playwright or a localhost-API
 // dist (BUILD-44 Part 6). Everything else is pure and runs in CI.
@@ -36,7 +46,7 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, api, q, closeDb, civilToday, browserLegOrSkip } = require("./helpers");
+const { ok, summary, api, q, closeDb, civilToday, civilPlusDays, login, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -245,6 +255,33 @@ async function seed() {
      N.composeNextMove("", withOpen).text !== "" && N.composeNextMove("", { ...record, today: WALK_DAY }).text === "");
   ok("§6 the silence rule would show a count if dropLog reached the screen",
      G.dropLog(3, ["x is not on the record"]) !== "" && allBad.text === "");
+
+  // ── §7 · FIX-24 · one person, described once ────────────────────────────
+  console.log("\n§7 · last conversation, last met, the stage and the next step agree");
+  await seed();
+  const tok7 = await login("hf1prof@t.local");
+  const T7 = civilToday();
+  await q(`UPDATE donors SET stage=NULL WHERE id='d_hf1' AND org_id=$1`, [ORG]);
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES
+           ('i_hf1_met',$1,'d_hf1','meeting','Coffee about the spring.',$2,$3,'Admin User'),
+           ('i_hf1_agent',$1,'d_hf1','note','Steward noted she wants to volunteer.',$4,'system:agent','Steward (agent)')`,
+    [ORG, civilPlusDays(-23), `u_${ORG}`, T7]);
+  const fig7 = async key => (await api("GET", `/figures/${key}/rows?donor=d_hf1&today=${T7}&pageSize=5`, tok7)).body;
+  const gap = await fig7("donor-contact-gap"), met = await fig7("donor-last-met");
+  ok("§7 the Agent note does not count as a conversation: last conversation is the meeting, 23 days", Number(gap.value) === 23, { value: gap.value, rows: (gap.rows || []).map(r => r.id) });
+  ok("§7 …and Last met says the same 23 days", Number(met.value) === 23, met.value);
+  const st7 = (await api("GET", "/donors/d_hf1/status", tok7)).body;
+  const fact = ((st7.closeness || {}).facts || []).find(f => /last conversation/.test(f.text));
+  ok("§7 the header's closeness line reads the same conversation, not today", fact && /3 weeks ago/.test(fact.text) && fact.source.key === "donor-contact-gap", fact);
+  const mv = await api("PATCH", "/donors/d_hf1/stage", tok7, { stage: "steward" });
+  const [sc] = await q(`SELECT type, note FROM interactions WHERE org_id=$1 AND donor_id='d_hf1' AND type='stage_change' ORDER BY created_at DESC LIMIT 1`, [ORG]);
+  ok("§7 a stage change from no stage is its own type and never says null", mv.status === 200 && sc && sc.type === "stage_change" && !/null/i.test(sc.note) && /Not set/.test(sc.note), sc);
+  await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
+           VALUES ('th_hf1',$1,'d_hf1','task','Send the proposal',$2,$2,$3,'Admin User')`, [ORG, civilPlusDays(-16), `u_${ORG}`]);
+  const st7b = (await api("GET", "/donors/d_hf1/status", tok7)).body;
+  ok("§7 with no proposal open, the next step is not \"Send the proposal\"", st7b.next && st7b.next.step === "Write the proposal, then send it" && /no proposal is open/.test(st7b.next.why), st7b.next);
+  const NA = await import("../shared/nextStepAgree.js");
+  ok("§7 …and with one open, the step is left as she wrote it", NA.stepAgainstProposals("Send the proposal", 1).label === "Send the proposal");
 
   // ── §1 · the rail ───────────────────────────────────────────────────────
   console.log("\n— §1 · the donor profile always has its right rail at 1440 —");

@@ -7,7 +7,8 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
 import { Figure } from "./Figure";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
+import { AVAILABILITY } from "../../../shared/volunteerApply.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 
@@ -46,10 +47,17 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
   const loadProf = () => apiFetch(`/donors/${donor.id}/volunteer-profile`).then(setProf).catch(() => setProf(null));
   useEffect(() => { load(); }, [donor.id, qs]);                 // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { loadProf(); }, [donor.id]);                 // eslint-disable-line react-hooks/exhaustive-deps
+  // FIX-24 Part 1: "Make a volunteer" (More) says so with this event, and the
+  // panel comes in without a reload.
+  useEffect(() => {
+    const again = () => { load(); loadProf(); };
+    window.addEventListener(VOLUNTEER_HOURS_CHANGED, again);
+    return () => window.removeEventListener(VOLUNTEER_HOURS_CHANGED, again);
+  }, [donor.id, qs]);                                          // eslint-disable-line react-hooks/exhaustive-deps
   if (!data) return null;
-  // In the main column for anyone with hours; a volunteer with none yet has
-  // it under More, opened with `always`.
-  if (!always && !data.shiftCount) return null;
+  // In the main column for anyone with hours or a volunteer record (FIX-24);
+  // somebody with neither has it under More, opened with `always`.
+  if (!always && !data.shiftCount && !(prof && prof.record)) return null;
   const act = async (fn, fallback) => {
     setMsg("");
     try { const r = await fn(); load(); loadProf(); changed(); return r; }
@@ -208,12 +216,16 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
       {/* WHAT THEY TOLD YOU WHEN THEY APPLIED */}
       {prof && prof.applications.length > 0 && (
         <div data-testid="volunteer-answers" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span style={eyebrow}>Their application</span>
+          <span style={eyebrow}>{prof.applications[0].via === "page" ? "Their application" : "Volunteer record"}</span>
           {prof.applications.slice(0, 1).map(a => (
             <div key={a.id} style={{ fontSize: 12.5, color: T.ink, display: "flex", flexDirection: "column", gap: 3 }}>
-              <div style={{ color: T.ink3 }}>{a.status === "approved" ? `Approved${a.decidedBy ? " by " + a.decidedBy : ""}` : a.status === "declined" ? "Declined" : "Waiting for a decision"}, sent {displayDate(String(a.submittedAt).slice(0, 10))}.</div>
+              <div style={{ color: T.ink3 }}>{a.via !== "page"
+                ? `Made a volunteer${a.decidedBy ? " by " + a.decidedBy : ""} on ${displayDate(String(a.decidedAt || a.submittedAt).slice(0, 10))}.`
+                : `${a.status === "approved" ? `Approved${a.decidedBy ? " by " + a.decidedBy : ""}` : a.status === "declined" ? "Declined" : "Waiting for a decision"}, sent ${displayDate(String(a.submittedAt).slice(0, 10))}.`}</div>
               {a.answers.map((x, i) => <div key={i}><strong>{x.question}</strong> {x.answerText || String(x.answer ?? "")}</div>)}
+              {a.hoursPerWeek != null && <div data-testid="volunteer-hours-week"><strong>Hours a week:</strong> {a.hoursPerWeek}</div>}
               {a.availability.length > 0 && <div><strong>Available:</strong> {a.availability.join(", ")}</div>}
+              {(a.roles || []).length > 0 && <div><strong>Roles:</strong> {a.roles.join(", ")}</div>}
             </div>))}
         </div>)}
 
@@ -279,6 +291,138 @@ export function HoursImportModal({ onClose, onDone, Modal, Papa, presets }) {
           <button onClick={go} disabled={!plan || !plan.shifts.length || !!out} style={{ background: T.gold, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Import hours</button>
           <button onClick={onClose} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "9px 14px", fontSize: 13, color: T.ink3, cursor: "pointer" }}>{out ? "Done" : "Cancel"}</button>
         </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── VOL-2 item 1, FIX-24 Part 1 · ADD A VOLUNTEER, OR MAKE ONE OF A PERSON ──
+// A name, maybe an email, maybe a phone, because that is what a coordinator
+// has when somebody signs up at a table; and, since FIX-24, how many hours a
+// week they can give, the days they can come and the roles they will do.
+//
+// `person` is the profile's "Make a volunteer": name, email and phone come from
+// their record and the save is that person (POST /donors/:id/make-volunteer).
+// Without it this is Volunteers > Add a volunteer, and typing a name searches
+// the people already on file: picking one links THAT person, never a new one.
+// Both end in makeVolunteer on the server, the function the Agent calls too.
+const addInp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, fontFamily: "inherit" };
+const addPrimary = { background: T.green, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer" };
+const addQuiet = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, color: T.ink, cursor: "pointer" };
+const addLabel = { display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 };
+const blankAdd = { name: "", email: "", phone: "", hoursPerWeek: "", availability: [], roles: "" };
+export function AddVolunteerModal({ person = null, onClose, onDone }) {
+  const [form, setForm] = useState(person ? { ...blankAdd, name: person.name || "", email: person.email || "", phone: person.phone || "" } : blankAdd);
+  const [linked, setLinked] = useState(person);          // somebody already on file
+  const [found, setFound] = useState([]);
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const term = (form.name.trim().length >= 2 ? form.name : form.email).trim();
+  useEffect(() => {
+    if (linked || term.length < 2) { setFound([]); return undefined; }
+    let gone = false;
+    const t = setTimeout(() => {
+      apiFetch(`/volunteer-hub/people/search?q=${encodeURIComponent(term)}`)
+        .then(r => { if (!gone) setFound(r.people || []); }).catch(() => { if (!gone) setFound([]); });
+    }, 250);
+    return () => { gone = true; clearTimeout(t); };
+  }, [term, linked]);
+  const record = { hoursPerWeek: form.hoursPerWeek, availability: form.availability, roles: form.roles };
+  const save = async () => {
+    setMsg(""); setBusy(true);
+    try {
+      const r = linked
+        ? await apiFetch(`/donors/${linked.id}/make-volunteer`, { method: "POST", body: JSON.stringify(record) })
+        : await apiFetch("/volunteer-hub/people", { method: "POST", body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone, ...record }) });
+      setOut(r); changed(); onDone && onDone(r);
+    } catch (e) { setMsg(errorMessage(e, "That volunteer was not added.")); }
+    finally { setBusy(false); }
+  };
+  const pick = p => { setLinked(p); setForm({ ...form, name: p.name, email: p.email || "", phone: p.phone || "" }); setFound([]); };
+  const toggleDay = d => setForm({ ...form, availability: form.availability.includes(d) ? form.availability.filter(x => x !== d) : [...form.availability, d] });
+  const can = !!linked || !!form.name.trim() || !!form.email.trim();
+  const title = person ? `Make ${person.name} a volunteer` : "Add a volunteer";
+  return (
+    <Modal onClose={onClose} width={500} ariaLabel={title} padding={24}>
+      <div data-testid="vol-add" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{title}</div>
+        {!out ? (
+          <>
+            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+              {linked
+                ? `They stay the one record they have${person ? "" : ` (${linked.name})`}, and become a volunteer on it.`
+                : "They join the roster as a volunteer. Nothing on their record says donor, because they have not given."}
+            </div>
+            {linked ? (
+              <div data-testid="vol-add-person" style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
+                <strong>{form.name}</strong>{form.email ? ` · ${form.email}` : ""}{form.phone ? ` · ${form.phone}` : ""}
+                <div style={{ fontSize: 12, color: T.ink3 }}>From their record. Change these with Edit record.</div>
+                {!person && <button style={{ ...btnLink, marginTop: 4 }} data-testid="vol-add-unlink" onClick={() => { setLinked(null); setForm(blankAdd); }}>Not them: add somebody new</button>}
+              </div>
+            ) : (
+              <>
+                <label style={addLabel}>
+                  Name
+                  <input data-testid="vol-add-name" value={form.name} autoFocus style={addInp}
+                    onChange={e => setForm({ ...form, name: e.target.value })} />
+                </label>
+                {found.length > 0 && (
+                  <div data-testid="vol-add-found" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div style={{ fontSize: 12, color: T.ink3 }}>Already on file? Pick them and they keep their one record:</div>
+                    {found.map(p => (
+                      <button key={p.id} data-testid="vol-add-pick" onClick={() => pick(p)}
+                        style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, cursor: "pointer", fontFamily: "inherit", color: T.ink }}>
+                        <strong>{p.name}</strong>{p.email ? ` · ${p.email}` : ""}{p.volunteer ? " · already a volunteer" : ""}
+                      </button>))}
+                  </div>)}
+                <label style={addLabel}>
+                  Email
+                  <input data-testid="vol-add-email" type="email" value={form.email} style={addInp}
+                    onChange={e => setForm({ ...form, email: e.target.value })} />
+                </label>
+                <label style={addLabel}>
+                  Phone
+                  <input data-testid="vol-add-phone" value={form.phone} style={addInp}
+                    onChange={e => setForm({ ...form, phone: e.target.value })} />
+                </label>
+              </>
+            )}
+            <label style={addLabel}>
+              Hours a week they can give (optional)
+              <input data-testid="vol-add-hours" inputMode="decimal" value={form.hoursPerWeek} style={{ ...addInp, width: 120 }}
+                onChange={e => setForm({ ...form, hoursPerWeek: e.target.value })} />
+            </label>
+            <div style={addLabel} role="group" aria-label="When they can come">
+              When they can come (optional)
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {AVAILABILITY.map(d => (
+                  <label key={d} style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 12.5, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 99, padding: "4px 10px", cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.availability.includes(d)} onChange={() => toggleDay(d)} data-testid="vol-add-day" />{d}
+                  </label>))}
+              </div>
+            </div>
+            <label style={addLabel}>
+              Roles (optional, separated by commas)
+              <input data-testid="vol-add-roles" value={form.roles} placeholder="Food drive, Driver" style={addInp}
+                onChange={e => setForm({ ...form, roles: e.target.value })} />
+            </label>
+            {msg && <div role="alert" style={{ fontSize: 13, color: T.terra700 }}>{msg}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={save} disabled={busy || !can} style={{ ...addPrimary, opacity: busy || !can ? 0.5 : 1 }}
+                data-testid="vol-add-save">{busy ? "Saving…" : person ? "Make them a volunteer" : "Add them"}</button>
+              <button onClick={onClose} style={addQuiet}>Cancel</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div role="status" data-testid="vol-add-result" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.65 }}>{out.sentence}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {!person && <button onClick={() => { setOut(null); setLinked(null); setForm(blankAdd); }} style={addQuiet}>Add another</button>}
+              <button onClick={onClose} style={addPrimary} data-testid="vol-add-done">Done</button>
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );

@@ -6683,6 +6683,14 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_org ON volunteer_applications (org_id, status, submitted_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_person ON volunteer_applications (org_id, person_id) WHERE person_id IS NOT NULL`);
+  // FIX-24 Part 1: the volunteer record made by staff (or the Agent) from a
+  // person already on file: an APPROVED application with how many hours a week
+  // they can give and the roles they will do. `via` says who made it: 'page'
+  // (they applied), 'staff' or 'agent'. One per person is kept current by
+  // makeVolunteer (server.js); a second press updates it, never adds one.
+  await pool.query(`ALTER TABLE volunteer_applications ADD COLUMN IF NOT EXISTS hours_per_week NUMERIC(5,2)`);
+  await pool.query(`ALTER TABLE volunteer_applications ADD COLUMN IF NOT EXISTS roles JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE volunteer_applications ADD COLUMN IF NOT EXISTS via TEXT NOT NULL DEFAULT 'page'`);
 
   // ── CLEAN-1 · DATA HEALTH ─────────────────────────────────────────────────
   // A MERGE IS UNDOABLE FOR 30 DAYS. Both people as they were, every row that

@@ -27,7 +27,7 @@ import { errorMessage } from "../lib/domainError";
 import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
 import { noteFields } from "../../../shared/meetingNote.js";
 import { TIMELINE_FILTERS, loadTimelinePrefs, saveTimelinePrefs, isMassEmail, interactionBucket,
-  TimelineListView, AttachmentChips, AttachButton } from "./ProfileTimelineParts";
+  TimelineListView, AttachmentChips, AttachButton, stageMoveOf } from "./ProfileTimelineParts";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
 const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
@@ -287,6 +287,14 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       body = m.note ? `${ownerFirst(m)}'s note: "${m.note}"` : "No note yet.";
       meta = m.nextStep ? `Next step set: ${m.nextStep}` : null;
       by = ownerFirst(m);
+    } else if (it.kind === "talk" && it.logged.type === "stage_change") {
+      // FIX-24 2a: a stage change, said as one: never a Meeting, never "null".
+      const i = it.logged, mv = stageMoveOf(i.note);
+      title = mv ? `Stage: ${mv.from} → ${mv.to}` : "Stage changed";
+      body = mv ? (mv.why || null) : <NoteBody note={i.note}/>;
+      by = i.logged_by_name || i.created_by_name || "";
+      meta = by ? `Moved by ${by}` : null;
+      type = "Stage change";
     } else if (it.kind === "talk" || it.kind === "meeting") {
       const i = it.logged;
       title = conversationTitle(i);
@@ -336,7 +344,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
-        {TIMELINE_FILTERS.filter(([k]) => k !== "service" || (service || []).length > 0).map(([k, l]) => chip(k, l))}
+        {TIMELINE_FILTERS.filter(([k]) => (k !== "service" || (service || []).length > 0) && (k !== "stage" || items.some(i => i.bucket === "stage"))).map(([k, l]) => chip(k, l))}
       </div>
       {(filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
         <input type="checkbox" checked={hideMass} onChange={e => setPref({ hideMass: e.target.checked })} style={{ accentColor: T.greenDk }}/>
@@ -432,7 +440,7 @@ function MailFileLinks({ files }) {
 // first line of the note is not a title. The note keeps its own line breaks,
 // and a run of "Label: value" lines (the touchpoint form writes them) shows as
 // labelled rows.
-const KIND_WORD = { meeting: "Meeting", call: "Call", email: "Email", note: "Note", ask: "Ask", stewardship: "Stewardship" };
+const KIND_WORD = { meeting: "Meeting", call: "Call", email: "Email", note: "Note", ask: "Ask", stewardship: "Stewardship", stage_change: "Stage change" };
 function metaOf(i) {
   try { return typeof i?.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i?.metadata || {}); } catch { return {}; }
 }
