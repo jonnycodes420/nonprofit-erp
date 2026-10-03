@@ -78,7 +78,43 @@ export function handleAuthFailure(code) {
   }
 }
 
+// ── FIX-22: THE SAME READ, ASKED TWICE, IS ASKED ONCE ──────────────────────
+// A walk of Home, one profile and Reports made ~30 requests a screen, and most
+// of the repeats were the same reference reads fired by several components
+// (sample-data status 10 times, the officer list 6, custom fields 6). A demo
+// at a brisk pace reached the 1,000-request limit in 15 minutes with no
+// polling at all. Two rules, both safe:
+//   1. Identical GETs IN FLIGHT share one request.
+//   2. A short list of reference reads (below) is kept for 60 seconds.
+// Any write (a non-GET) empties the cache, so nothing stale survives a change
+// made on this screen. Each caller gets its own copy of the answer.
+const SHARED_READS = [
+  /^\/org\/sample-data-status$/, /^\/portfolio\/officers$/, /^\/custom-fields(\?|$)/, /^\/org\/team$/,
+  /^\/me\/nav-layout$/, /^\/billing\/donor-band$/, /^\/status\/summary$/, /^\/changelog\/hidden$/,
+  /^\/org\/welcome$/, /^\/billing\/status$/,
+];
+const SHARED_TTL_MS = 60000;
+const inFlight = new Map();
+const kept = new Map();
+const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
+export function forgetReads() { kept.clear(); }
+
 export async function apiFetch(path, options = {}) {
+  const method = String(options.method || "GET").toUpperCase();
+  if (method !== "GET") { kept.clear(); return apiFetchNow(path, options); }
+  if (options.body || options.signal) return apiFetchNow(path, options);
+  const key = getToken() + " " + path;
+  const hit = kept.get(key);
+  if (hit && Date.now() - hit.at < SHARED_TTL_MS) return copy(hit.value);
+  if (!inFlight.has(key)) {
+    inFlight.set(key, apiFetchNow(path, options)
+      .then(v => { if (SHARED_READS.some(r => r.test(path))) kept.set(key, { at: Date.now(), value: v }); return v; })
+      .finally(() => inFlight.delete(key)));
+  }
+  return copy(await inFlight.get(key));
+}
+
+async function apiFetchNow(path, options = {}) {
   const token = getToken();
   const res = await fetch(`${API}${path}`, {
     ...options,

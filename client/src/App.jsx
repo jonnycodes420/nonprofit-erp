@@ -140,6 +140,8 @@ function AppShell() {
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
+  // FIX-22 — a rate limit is not an outage: the screen says so, and when.
+  const [loadLimited,setLoadLimited]=useState(false);
   const [stripeToast,setStripeToast]=useState(false);
   const [subscribedToast,setSubscribedToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
@@ -437,7 +439,7 @@ function AppShell() {
         apiFetch("/network/application").then(setNetworkApp).catch(()=>{});
       }
       if(org?.id) localStorage.setItem("steward_onboarded_"+org.id,"1");
-    } catch(e) { setLoadErr(e.message); }
+    } catch(e) { setLoadErr(e.message); setLoadLimited(e?.status===429); }
     setLoading(false);
   }
 
@@ -476,7 +478,7 @@ function AppShell() {
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
-    <div style={{fontSize:15,fontWeight:700,color:T.terracotta}}>Failed to connect</div>
+    <div style={{fontSize:15,fontWeight:700,color:T.terracotta}}>{loadLimited?"One moment":"Failed to connect"}</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
     <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
   </div>;

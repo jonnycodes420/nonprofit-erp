@@ -12,6 +12,19 @@ function signToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "7d" });
 }
 
+// FIX-22 — the user a request is signed in as, from its bearer token, or null.
+// Used only to KEY a rate limiter (an office on one wifi must never share a
+// limit): a valid signature is enough here, because requireAuth still decides
+// whether the session is alive. A forged or expired token keys by IP.
+function tokenUserId(req) {
+  const auth = req.headers && req.headers.authorization;
+  if (!auth || !auth.startsWith("Bearer ")) return null;
+  try {
+    const p = jwt.verify(auth.slice(7), SIGNING_SECRET);
+    return p && p.userId ? String(p.userId) : null;
+  } catch { return null; }
+}
+
 // Loader for the session cache: the live revocation state for one user, or null
 // if the row is gone (deleted/removed → no pass-through, ever).
 async function loadUserSession(userId) {
@@ -152,4 +165,4 @@ function requireAuth404(req, res, next) {
   return requireAuth(req, res, (err) => { res.status = status; next(err); });
 }
 
-module.exports = { signToken, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+module.exports = { signToken, tokenUserId, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

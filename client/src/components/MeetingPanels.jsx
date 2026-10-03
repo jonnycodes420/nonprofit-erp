@@ -247,8 +247,14 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
     items.push({ kind: "service", bucket: "service", id: "v:" + v.id, date: String(v.date || "").slice(0, 10), v });
   }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  // FIX-22 — and the attachments an email arrived with, which stay in the
+  // mailbox they came to: listed here too, each opening that message there.
+  const mailFiles = (rel.emailThreads || []).flatMap(t => t.mailFiles || []);
   const fileItems = (attachments || []).map(f => ({ kind: "file", bucket: "file", id: "f:" + f.id,
-    date: String(f.createdAt || "").slice(0, 10), f }));
+    date: String(f.createdAt || "").slice(0, 10), f }))
+    .concat(mailFiles.map(mf => ({ kind: "file", bucket: "file", id: "mf:" + mf.interactionId,
+      date: String(mf.date || "").slice(0, 10), mf })))
+    .sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0), meeting: items.filter(i => i.kind === "meeting").length };
   // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
   const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
@@ -301,6 +307,10 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       by = v.enteredBy || "";
       meta = by ? `Logged by ${by}` : null;
       type = "Volunteer service";
+    } else if (it.kind === "file" && it.mf) {
+      const mf = it.mf;
+      title = `${mf.count} ${mf.count === 1 ? "attachment" : "attachments"}${mf.subject ? ` on "${mf.subject}"` : ""}`;
+      body = `On an email${mf.date ? ` from ${relDay(String(mf.date).slice(0, 10))}` : ""}. Steward does not keep email attachments, so it stays in ${mf.owner ? `${mf.owner}'s` : "the"} ${mf.app} mailbox.`;
     } else if (it.kind === "file") {
       const f = it.f;
       title = f.fileName;
@@ -344,9 +354,10 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         const isOpen = openId === it.id;
         const { title, body, meta } = describe(it);
         let extra = null;
+        if (it.kind === "email" || (it.kind === "file" && it.mf)) extra = <MailFileLinks files={it.mf ? [it.mf] : (it.t.mailFiles || [])}/>;
         if (it.kind === "email") {
           const t = it.t;
-          if (isOpen) extra = (t.ids || []).map(id => byId[id]).filter(Boolean).map(x => {
+          if (isOpen) extra = <>{extra}{(t.ids || []).map(id => byId[id]).filter(Boolean).map(x => {
             let mm = {}; try { mm = typeof x.metadata === "string" ? JSON.parse(x.metadata || "{}") : (x.metadata || {}); } catch {}
             return <div key={x.id} style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, marginTop: 10, fontSize: 14, lineHeight: 1.55 }}>
               <div style={{ fontSize: 12, color: T.ink3 }}>{relDay(x.date)} · {mm.direction === "inbound" ? `From ${first}` : mm.direction === "outbound" ? `To ${first}` : "Email"}</div>
@@ -356,7 +367,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
                 apiFetch("/mailbox/forget", { method: "POST", body: JSON.stringify({ interactionId: x.id }) }).then(() => onChanged && onChanged()).catch(() => {}); }}
                 style={{ background: "none", border: "none", padding: 0, marginTop: 6, color: T.ink3, fontSize: 13, cursor: "pointer", textDecoration: "underline", font: "inherit" }}>Remove from the record</button>}
             </div>;
-          });
+          })}</>;
         } else if (it.kind === "meeting" && it.m) {
           const m = it.m;
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8, lineHeight: 1.6 }}>
@@ -367,7 +378,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         } else if (it.kind === "gift") {
           const g = it.g;
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
-        } else if (it.kind === "file") {
+        } else if (it.kind === "file" && it.f) {
           extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }
         // PARITY-1 Part B — the files on this entry, and "Attach a file".
@@ -402,6 +413,17 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       {shown.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shown.length - limit)} more</button>}
     </section>
   );
+}
+
+// FIX-22 — "1 attachment" on an email opens the message where the file is.
+function MailFileLinks({ files }) {
+  const list = (files || []).filter(f => f.url);
+  if (!list.length) return null;
+  return <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+    {list.map(f => <a key={f.interactionId} href={f.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+      data-testid="mail-file-link" style={{ fontSize: 14, color: T.greenDk, fontWeight: 600 }}>
+      Open {f.count === 1 ? "the attachment" : `the ${f.count} attachments`} in {f.owner ? `${f.owner}'s ` : ""}{f.app}</a>)}
+  </div>;
 }
 
 // ── FIX-14 Part 1 — A LOGGED CONVERSATION, READABLE ────────────────────────

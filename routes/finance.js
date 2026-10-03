@@ -1353,12 +1353,32 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     `SELECT id, note, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
       ORDER BY date DESC, created_at DESC LIMIT 400`, [orgId, donorId]);
   const threads = new Map();
+  // FIX-22 — AN ATTACHMENT THE TIMELINE COUNTS MUST OPEN SOMEWHERE. Mailbox
+  // sync counts attachments and never keeps them (shared/mailboxLog.js, and the
+  // sentence she agreed to when she connected). The file stays in the mailbox
+  // it arrived in, so the count carries a link back to that message there.
+  const boxRows = await query(
+    `SELECT mc.user_id, mc.provider, mc.address, u.name FROM mailbox_connections mc LEFT JOIN users u ON u.id = mc.user_id
+      WHERE mc.org_id=?`, [orgId]);
+  const boxOf = new Map(boxRows.map(b => [b.user_id + "|" + b.provider, b]));
+  const mailFileOf = (m, meta) => {
+    const n = Number(meta.attachments) || 0;
+    if (!n || !meta.provider || !meta.message_id) return null;
+    const box = boxOf.get(meta.logged_by + "|" + meta.provider) || {};
+    const app = meta.provider === "google" ? "Gmail" : "Outlook";
+    const url = meta.provider === "google"
+      ? `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(box.address || "")}#all/${encodeURIComponent(meta.message_id)}`
+      : (/^https:\/\/outlook\.(office|live)\.com\//.test(String(meta.web_link || "")) ? meta.web_link : null);
+    const owner = String(box.name || "").split(" ")[0] || null;
+    return { interactionId: m.id, count: n, app, url, owner, date: m.date, subject: meta.subject || null };
+  };
   for (const m of mails) {
     const meta = typeof m.metadata === "string" ? JSON.parse(m.metadata || "{}") : (m.metadata || {});
     const subject = String(meta.subject || String(m.note || "").split("\n")[0] || "Email").replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, "").trim() || "Email";
     const k = subject.toLowerCase();
     const t = threads.get(k) || { key: k, subject, count: 0, attachments: 0, lastDate: m.date, lastId: m.id, lastQuote: null, lastDirection: meta.direction || null, ids: [] };
     t.count++; t.attachments += Number(meta.attachments) || 0; t.ids.push(m.id);
+    const mf = mailFileOf(m, meta); if (mf) (t.mailFiles = t.mailFiles || []).push(mf);
     if (!t.lastQuote) t.lastQuote = String(m.note || "").split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim().slice(0, 240) || null;
     threads.set(k, t);
   }
