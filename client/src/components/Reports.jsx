@@ -672,7 +672,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         actionLabel="Open LYBUNT" onAction={() => pick("lybunt")} />
     </div>
 
-    {/* PARITY-4 — Show me: a plain question becomes a list. */}
+    {/* PARITY-4: Show me: a plain question becomes a list. */}
     <div style={{ marginBottom: 14 }}><ShowMeLine /></div>
 
     {/* INT-BUILD-1 Part 6 — meetings per staff member per month. */}

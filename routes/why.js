@@ -211,7 +211,7 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const body = req.body || {};
   const typed = String(body.text || "").trim().slice(0, 500);
-  // PARITY-4 — a list question: "show me…", "donors who…", or a "who"
+  // PARITY-4: a list question: "show me…", "donors who…", or a "who"
   // question none of the eight takes.
   if (typed && !body.key) {
     const SM = await showMod();

@@ -67,7 +67,7 @@ const T = {
     throw new FigureParamError(`${k} must be true or false.`);
   },
   measure: (v, k) => { if (!["sum", "count"].includes(String(v))) throw new FigureParamError(`${k} must be sum or count.`); return String(v); },
-  // PARITY-4 — a donor list rule as JSON, checked by groups.js normalizeRules:
+  // PARITY-4: a donor list rule as JSON, checked by groups.js normalizeRules:
   // a key or value it does not know is refused, never dropped.
   rules: (v, k) => {
     let o = null;

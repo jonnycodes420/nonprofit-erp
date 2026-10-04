@@ -215,7 +215,7 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // PARITY-3 — the Volunteers screen's filters.
   "volunteer", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
   "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail",
-  // PARITY-4 — Show me.
+  // PARITY-4: Show me.
   "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };

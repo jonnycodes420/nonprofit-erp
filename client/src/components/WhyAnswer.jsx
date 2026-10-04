@@ -104,7 +104,7 @@ function MoreSteps({ w, isReadOnly, onStepTaken }) {
   );
 }
 
-// PARITY-4 Part 3 — SHOW ME. A list question's answer: the filters in words,
+// PARITY-4 Part 3: SHOW ME. A list question's answer: the filters in words,
 // the count (a Figure that opens every row), the first fifty people, each
 // opening their record, and two doors: save it as a Group by rule (the same
 // rule, worked out fresh every time) or export it (the Donors list export,
@@ -311,7 +311,7 @@ export function AskWhy({ isReadOnly, onStepTaken }) {
   );
 }
 
-// PARITY-4 — the "Show me" examples: each opens its list in the same panel.
+// PARITY-4: the "Show me" examples: each opens its list in the same panel.
 function ShowMeChips({ onAsk }) {
   return (
     <div data-testid="show-me-examples" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", flexBasis: "100%" }}>
