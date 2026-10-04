@@ -67,6 +67,16 @@ const T = {
     throw new FigureParamError(`${k} must be true or false.`);
   },
   measure: (v, k) => { if (!["sum", "count"].includes(String(v))) throw new FigureParamError(`${k} must be sum or count.`); return String(v); },
+  // PARITY-4: a donor list rule as JSON, checked by groups.js normalizeRules:
+  // a key or value it does not know is refused, never dropped.
+  rules: (v, k) => {
+    let o = null;
+    try { o = JSON.parse(String(v)); } catch { o = null; }
+    if (!o || typeof o !== "object" || Array.isArray(o)) throw new FigureParamError(`${k} is not a rule Steward knows.`);
+    const n = require("./groups").normalizeRules(o);
+    if (!n.ok || Object.keys(o).some(x => n.rules[x] === undefined)) throw new FigureParamError(`${k} is not a rule Steward knows.`);
+    return n.rules;
+  },
 };
 function readParams(def, raw) {
   const out = {};
@@ -85,6 +95,20 @@ function readParams(def, raw) {
 // ── THE COLUMNS EVERY SQL SOURCE SELECTS ───────────────────────────────────
 // id, type, donor_id, name, date (TEXT, ISO), amount (NUMERIC or NULL), detail
 const MONTHLY = "ROUND(CASE WHEN s.interval='year' THEN s.amount/12.0 ELSE s.amount END, 2)";
+// PARITY-4 Part 2 · the one definition of a started gift that is NOT FINISHED.
+// The gift that would close it is any gift from a person with the same email,
+// recorded after the start and dated no earlier than the day before it (an
+// import of old gifts does not close it); read here every time, never stored.
+function giftStartFinishedSql(a) {
+  return `(SELECT g.id FROM gifts g JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+            WHERE g.org_id = ${a}.org_id AND LOWER(gd.email) = LOWER(${a}.email) AND g.created_at >= ${a}.started_at
+              AND g.date >= TO_CHAR(${a}.started_at - INTERVAL '1 day', 'YYYY-MM-DD')
+            ORDER BY g.created_at LIMIT 1)`;
+}
+function giftStartOpenSql(a) {
+  return `${a}.dismissed_at IS NULL AND (${a}.expired_at IS NOT NULL OR ${a}.started_at < NOW() - INTERVAL '60 minutes')
+          AND ${giftStartFinishedSql(a)} IS NULL`;
+}
 const STATUS_WORD = `CASE s.status WHEN 'active' THEN 'Giving' WHEN 'recovered' THEN 'Giving again after a failed card'
   WHEN 'past_due' THEN 'Card failing' WHEN 'recovering' THEN 'Card being retried' WHEN 'paused' THEN 'Paused'
   WHEN 'canceled' THEN 'Ended' WHEN 'cancelled' THEN 'Ended' ELSE INITCAP(REPLACE(s.status,'_',' ')) END`;
@@ -868,6 +892,27 @@ const SOURCES = {
       };
     },
   },
+  // PARITY-4 Part 3 · SHOW ME. The people a plain question's filters find:
+  // groups.js buildDonorFilter on the rule, the same code the answer counted
+  // with and the Donors list, its export and a Group by rule run.
+  "show-me": {
+    label: "People who match",
+    measure: () => "count",
+    params: { rules: "rules:required" },
+    sentence: () => "Everyone on file these filters find today, the same rows the Donors list shows for them. The amount on each row is what they have given in total.",
+    sql: async (orgId, p) => {
+      const GR = require("./groups");
+      const f = await GR.buildDonorFilter(orgId, p.rules);
+      if (f.badRole || f.badStatus) throw new FigureParamError("rules is not a rule Steward knows.");
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                     ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Given in total' AS detail
+                FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (SELECT donors.id FROM donors WHERE ${f.whereSql})`,
+        args: [orgId, ...f.params],
+        order: "amount DESC, id",
+      };
+    },
+  },
   // PARITY-3 Part 5 — the people in a group who have never given a gift: on
   // the Volunteers group, the volunteers to think about asking. Each row is a
   // person, with the volunteer hours they have given as its amount.
@@ -1036,6 +1081,54 @@ const SOURCES = {
              WHERE s.org_id = ? AND s.status IN ('active','recovered')`,
       args: [orgId],
       order: "amount DESC, id",
+    }),
+  },
+  // PARITY-4 Part 1 · CARDS THE BANK UPDATED. Stripe's card updater replaces a
+  // reissued or expired card at the network and says so with
+  // payment_method.automatically_updated (routes/webhooks.js logs each one as a
+  // card_auto_updated recovery event). One row per monthly gift still giving
+  // whose card was updated on or after `since`, at what it brings in a month:
+  // the count is the rows, the money is their sum, from this one filter.
+  "cards-auto-updated": {
+    label: "Cards updated automatically",
+    measure: p => p.measure || "sum",
+    params: { since: "date:required", measure: "measure" },
+    sentence: (p, dd) => `Monthly gifts still giving whose card the bank updated by itself on or after ${dd(p.since)}, at what each brings in a month. A yearly gift counts as a twelfth of its amount.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT s.id, 'subscription' AS type, s.donor_id, d.name, TO_CHAR(u.at, 'YYYY-MM-DD') AS date,
+                   ${MONTHLY} AS amount,
+                   'Card updated by the bank' || COALESCE(', ends ' || u.last4, '') || COALESCE(', exp ' || u.exp, '') AS detail
+              FROM recurring_subscriptions s
+              JOIN (SELECT pre.subscription_id, MAX(pre.created_at) AS at,
+                           (ARRAY_AGG(pre.detail->>'last4' ORDER BY pre.created_at DESC))[1] AS last4,
+                           (ARRAY_AGG(pre.detail->>'exp' ORDER BY pre.created_at DESC))[1] AS exp
+                      FROM payment_recovery_events pre
+                     WHERE pre.org_id = ? AND pre.type = 'card_auto_updated' AND pre.created_at >= ?::date
+                     GROUP BY pre.subscription_id) u ON u.subscription_id = s.stripe_subscription_id
+              LEFT JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
+             WHERE s.org_id = ? AND s.status IN ('active','recovered')`,
+      args: [orgId, p.since, orgId],
+      order: "amount DESC, id",
+    }),
+  },
+  // PARITY-4 Part 2 · GIFTS STARTED AND NOT FINISHED on Steward's own forms,
+  // started between `from` and `to`. The one definition of "not finished"
+  // (giftStartOpenSql below) is shared with the list on Fundraising.
+  "gifts-not-finished": {
+    label: "Started and not finished",
+    measure: p => p.measure || "sum",
+    params: { from: "date:required", to: "date:required", measure: "measure" },
+    sentence: (p, dd) => `Gifts somebody started on one of your own giving forms between ${dd(p.from)} and ${dd(p.to)}, gave an email for, and did not finish: no gift from that email since, and an hour gone or the payment page closed. At the amount they chose.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT s.id, 'gift_start' AS type, dd.id AS donor_id,
+                   COALESCE(NULLIF(TRIM(CONCAT_WS(' ', s.first_name, s.last_name)), ''), s.email) AS name,
+                   TO_CHAR(s.started_at, 'YYYY-MM-DD') AS date, COALESCE(s.amount, 0) AS amount,
+                   COALESCE(s.form_name, 'Giving page') || ' · ' || s.email AS detail
+              FROM gift_starts s
+              LEFT JOIN LATERAL (SELECT d.id FROM donors d WHERE d.org_id = s.org_id AND LOWER(d.email) = LOWER(s.email) AND d.deleted_at IS NULL ORDER BY d.created_at LIMIT 1) dd ON TRUE
+             WHERE s.org_id = ? AND s.started_at >= ?::date AND s.started_at < (?::date + 1) AND ${giftStartOpenSql("s")}`,
+      args: [orgId, p.from, p.to],
+      order: "date DESC, id",
     }),
   },
   "recurring-change": {
@@ -1679,4 +1772,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { SOURCES, figure, figureValue, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES };
+module.exports = { SOURCES, figure, figureValue, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };

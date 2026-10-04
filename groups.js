@@ -132,6 +132,37 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0 AND LEFT(gv.date,10) >= ? AND LEFT(gv.date,10) <= ?)");
     params.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31"));
   }
+  // PARITY-4 Part 3 · SHOW ME. Five rules so a plain question ("donors who
+  // gave last year but not this year", "monthly donors in Lexington",
+  // "everyone who gave over $1,000 to the gala") is a list here and not a
+  // guess: the Donors list, its export, a Group and Show me all run them.
+  if (q.notGaveFrom || q.notGaveTo) {
+    where.push("NOT EXISTS (SELECT 1 FROM gifts gn WHERE gn.org_id = donors.org_id AND gn.donor_id = donors.id AND gn.amount > 0 AND LEFT(gn.date,10) >= ? AND LEFT(gn.date,10) <= ?)");
+    params.push(dateOr(q.notGaveFrom, "1900-01-01"), dateOr(q.notGaveTo, "2999-12-31"));
+  }
+  if (q.notDeceased === "1") where.push("deceased IS NOT TRUE");
+  if (q.monthly === "1") {
+    // A monthly recurring gift that is still running (the same live states
+    // the journey suggestion reads as "they give every month").
+    where.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rx WHERE rx.org_id = donors.org_id AND rx.donor_id = donors.id
+                         AND rx.interval = 'month' AND rx.status IN ('active','past_due','recovering','recovered'))`);
+  }
+  if (q.city) { where.push("lower(trim(COALESCE(city,''))) = lower(trim(?))"); params.push(String(q.city)); }
+  if (q.gaveEvent) {
+    where.push("EXISTS (SELECT 1 FROM gifts ge WHERE ge.org_id = donors.org_id AND ge.donor_id = donors.id AND ge.amount > 0 AND ge.event_id = ?)");
+    params.push(String(q.gaveEvent));
+  }
+  if (q.gaveOver !== undefined) {
+    // More than this many dollars in all, counting only the gifts the other
+    // giving rules point at: to the event named, inside the dates named.
+    const n = Number(q.gaveOver);
+    if (!Number.isFinite(n) || n < 0) return { badStatus: true };
+    const scope = [], sargs = [];
+    if (q.gaveEvent) { scope.push("go.event_id = ?"); sargs.push(String(q.gaveEvent)); }
+    if (q.gaveFrom || q.gaveTo) { scope.push("LEFT(go.date,10) >= ? AND LEFT(go.date,10) <= ?"); sargs.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31")); }
+    where.push(`(SELECT COALESCE(SUM(go.amount), 0) FROM gifts go WHERE go.org_id = donors.org_id AND go.donor_id = donors.id AND go.amount > 0${scope.length ? " AND " + scope.join(" AND ") : ""}) > ?`);
+    params.push(...sargs, n);
+  }
   if (q.volQual) {
     // A skill, certification or tag by name; or a background check or waiver
     // that is CURRENT (signed, and not past its expiry) on the org's today.
@@ -183,7 +214,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   "level", "lifecycle", "retained", "closeness", "given",
   // PARITY-3 — the Volunteers screen's filters.
   "volunteer", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
-  "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail"];
+  "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail",
+  // PARITY-4: Show me.
+  "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -209,7 +242,13 @@ function normalizeRules(raw) {
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
-  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo"])
+  for (const k of ["notDeceased", "monthly"]) {
+    if (rules[k] === undefined) continue;
+    if (rules[k] === "true") rules[k] = "1";
+    if (rules[k] !== "1") delete rules[k];
+  }
+  if (rules.gaveOver !== undefined && !(Number(rules.gaveOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
+  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo"])
     if (rules[k] && !/^\d{4}-\d{2}-\d{2}$/.test(rules[k])) errors.push("A date is written 2026-01-31.");
   for (const k of ["volHoursMin", "volHoursMax"])
     if (rules[k] !== undefined && !(Number(rules[k]) >= 0)) errors.push("Hours is a number, 0 or more.");
@@ -241,6 +280,12 @@ function rulesSentence(rules = {}) {
   if (rules.volHoursMin) parts.push(`with at least ${rules.volHoursMin} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
   if (rules.volHoursMax) parts.push(`with fewer than ${rules.volHoursMax} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
   if (rules.gaveFrom || rules.gaveTo) parts.push(`who gave ${rules.gaveFrom || "any time"} to ${rules.gaveTo || "today"}`);
+  if (rules.notGaveFrom || rules.notGaveTo) parts.push(`with nothing given ${rules.notGaveFrom || "any time"} to ${rules.notGaveTo || "today"}`);
+  if (rules.monthly) parts.push("giving monthly");
+  if (rules.city) parts.push(`in ${rules.city}`);
+  if (rules.gaveEvent) parts.push("who gave to one event");
+  if (rules.gaveOver !== undefined) parts.push(`who gave more than $${Number(rules.gaveOver).toLocaleString("en-US")}`);
+  if (rules.notDeceased) parts.push("not deceased");
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
   if (rules.volAnswer) parts.push("who gave one answer on their application");
   if (rules.volAvail) parts.push(`free on ${rules.volAvail}`);

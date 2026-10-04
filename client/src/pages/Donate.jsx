@@ -902,6 +902,12 @@ export default function Donate() {
   // donor chose; the existing form hands over its own state. Neither computes a
   // total the server will trust: the server re-derives the charge, re-checks the
   // amount against the form's own list, and decides the designation itself.
+  // PARITY-4 Part 2: one token per visit to this form, so the email step's
+  // "started" row and the payment are the same row on the server.
+  const startToken = useMemo(() => {
+    try { const a = new Uint8Array(12); crypto.getRandomValues(a); return Array.from(a, x => x.toString(16).padStart(2, "0")).join(""); }
+    catch { return String(Date.now()) + String(Math.random()).slice(2, 10); }
+  }, []);
   const postDonation = async (payload) => {
     setSubmitting(true); setSubmitErr("");
     try {
@@ -910,6 +916,7 @@ export default function Donate() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...payload,
+          startToken,
           reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
           showNameToFundraiser: !!(peerFundraiser && showNameToFundraiser),
@@ -936,7 +943,7 @@ export default function Donate() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: effectiveAmount, fundId, frequency, firstName, lastName, email,
+          amount: effectiveAmount, fundId, frequency, firstName, lastName, email, startToken,
           reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
           showNameToFundraiser: !!(peerFundraiser && showNameToFundraiser),
@@ -1524,6 +1531,8 @@ export default function Donate() {
             submitErr={submitErr}
             onSubmit={postDonation}
             apiBase={API}
+            orgSlug={orgSlug}
+            startToken={startToken}
             signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />}
             styles={{
               card,
@@ -1655,6 +1664,9 @@ export default function Donate() {
             <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} required />
           </div>
           <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inp} required />
+          <div className="give-email-kept" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
+            Your email is saved when you press Give, so {th.displayName || org?.name || "this organisation"} can let you know if your gift does not go through.
+          </div>
         </div>
 
         {submitErr && (

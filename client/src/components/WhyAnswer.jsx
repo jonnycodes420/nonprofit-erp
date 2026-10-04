@@ -12,7 +12,8 @@
 // `AskWhy` is the line at the top of Home's Thread: two one-tap questions and
 // a box to type. `WhyLink` is the small "Why?" a report number carries.
 import { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
+import { EXAMPLES as SHOW_EXAMPLES } from "../../../shared/showMe";
 import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
@@ -103,6 +104,80 @@ function MoreSteps({ w, isReadOnly, onStepTaken }) {
   );
 }
 
+// PARITY-4 Part 3: SHOW ME. A list question's answer: the filters in words,
+// the count (a Figure that opens every row), the first fifty people, each
+// opening their record, and two doors: save it as a Group by rule (the same
+// rule, worked out fresh every time) or export it (the Donors list export,
+// on the same filters). Nothing here writes anything else.
+function ShowMeAnswer({ answer, isReadOnly }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState("");
+  const [done, setDone] = useState("");
+  const [err, setErr] = useState("");
+  const save = async e => {
+    e && e.preventDefault();
+    if (!name.trim()) return;
+    setBusy("group"); setErr("");
+    try {
+      const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: name.trim(), kind: "dynamic", rules: answer.rules }) });
+      setDone(`Saved as the group "${g.name}". It is worked out fresh every time it is read.`); setNaming(false);
+    } catch (x) { setErr(errorMessage(x, "The group could not be saved.")); }
+    finally { setBusy(""); }
+  };
+  const exportCsv = async () => {
+    setBusy("export"); setErr("");
+    try {
+      const qs = new URLSearchParams(answer.rules || {});
+      const r = await fetch(`${API}/donors/export/csv?${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.message || b.error || "the file could not be built"); }
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a"); a.href = url; a.download = `show-me-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    } catch (x) { setErr("The export did not finish: " + errorMessage(x, "the file could not be built") + "."); }
+    finally { setBusy(""); }
+  };
+  const rows = answer.rows || [];
+  return (
+    <div data-testid="show-me-answer" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        <div style={LABEL}>Filters</div>
+        <div data-testid="show-me-words" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, marginTop: 2 }}>{(answer.words || []).join(" · ")}</div>
+      </div>
+      <div data-testid="show-me-count" style={{ fontSize: 17, lineHeight: 1.5, color: T.ink, fontFamily: "'Fraunces', Georgia, serif" }}>
+        <Figure value={answer.count} kind="count" label="People who match" definition={answer.countDefinition} source={answer.countSource} variant="inline" /> {answer.count === 1 ? "person matches" : "people match"}.
+      </div>
+      {rows.length > 0 && <div>
+        {rows.map(r => (
+          <div key={r.donorId} data-show-me-row={r.donorId} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2 }}>
+            <div style={{ minWidth: 0 }}>
+              <DonorLink id={r.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{r.name}</DonorLink>
+              {r.city && <div style={{ fontSize: 12, color: T.ink3 }}>{r.city}</div>}
+            </div>
+            <span style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }} title="Given in total">{fmtFull(r.cents / 100)}</span>
+          </div>
+        ))}
+        {answer.count > rows.length && <div style={{ fontSize: 12, color: T.ink3, paddingTop: 6 }}>And {answer.count - rows.length} more; the count above opens all of them.</div>}
+      </div>}
+      {!isReadOnly && <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {!done && !naming && <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <button type="button" data-testid="show-me-save" style={BTN} disabled={!!busy} onClick={() => { setNaming(true); setName(answer.question && answer.question.text ? answer.question.text.slice(0, 60) : ""); }}>Save as a group</button>
+          <button type="button" data-testid="show-me-export" style={CHIP} disabled={!!busy} onClick={exportCsv}>{busy === "export" ? "Exporting…" : "Export"}</button>
+        </div>}
+        {naming && <form onSubmit={save} style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <input aria-label="Group name" data-testid="show-me-group-name" value={name} maxLength={60} onChange={e => setName(e.target.value)}
+            style={{ flex: "1 1 200px", minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, fontFamily: "inherit" }} />
+          <button type="submit" data-testid="show-me-save-confirm" style={BTN} disabled={!!busy || !name.trim()}>{busy === "group" ? "Saving…" : "Save"}</button>
+          <button type="button" style={CHIP} onClick={() => setNaming(false)}>Cancel</button>
+        </form>}
+        {naming && answer.groupSentence && <div style={{ fontSize: 12, color: T.ink3 }}>{answer.groupSentence}</div>}
+        {done && <div data-testid="show-me-done" style={{ fontSize: 13, color: T.greenDk, fontWeight: 600 }}>{done}</div>}
+        {err && <div style={{ fontSize: 13, color: T.ink2 }}>{err}</div>}
+      </div>}
+    </div>
+  );
+}
+
 export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState("");
@@ -110,7 +185,8 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
   const [logFor, setLogFor] = useState(null);
   useEffect(() => { setDone(""); setErr(""); }, [answer]);
   if (!answer) return null;
-  if (!answer.answered) return <div data-testid="why-cant" style={{ fontSize: 15, color: T.ink2, lineHeight: 1.55 }}>{answer.sentence}</div>;
+  if (!answer.answered) return <div data-testid="why-cant" data-refused={answer.refused ? "1" : undefined} style={{ fontSize: 15, color: T.ink2, lineHeight: 1.55 }}>{answer.sentence}</div>;
+  if (answer.kind === "list") return <ShowMeAnswer answer={answer} isReadOnly={isReadOnly} />;
   const step = answer.step;
   const take = async (st = step) => {
     if (st.kind === "log") { setLogFor({ id: st.donorId, name: st.name }); return; }
@@ -195,7 +271,7 @@ export function WhyPanel({ payload, onClose, isReadOnly, onStepTaken }) {
     const k = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
   }, [onClose]);
-  const title = (a && a.question && a.question.text) || payload.text || "Ask why";
+  const title = (a && a.question && a.question.text) || payload.text || (payload.mode === "show" ? "Show me" : "Ask why");
   return (
     <div role="dialog" aria-modal="true" aria-label={title} data-testid="why-panel"
       style={{ position: "fixed", inset: 0, zIndex: 1200, display: "flex", justifyContent: "flex-end", background: "rgba(15,26,18,0.35)" }}
@@ -229,7 +305,35 @@ export function AskWhy({ isReadOnly, onStepTaken }) {
         <input aria-label="Ask Steward why" data-testid="ask-why-input" value={text} onChange={e => setText(e.target.value)} placeholder="Or ask your own question"
           style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontFamily: "inherit", background: T.white, color: T.ink }} />
       </form>
+      <ShowMeChips onAsk={t => setOpen({ text: t, mode: "show" })} />
       {open && <WhyPanel payload={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onStepTaken={onStepTaken} />}
+    </div>
+  );
+}
+
+// PARITY-4: the "Show me" examples: each opens its list in the same panel.
+function ShowMeChips({ onAsk }) {
+  return (
+    <div data-testid="show-me-examples" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", flexBasis: "100%" }}>
+      <span style={{ ...LABEL, marginRight: 2 }}>Show me</span>
+      {SHOW_EXAMPLES.map(t => <button key={t} type="button" data-show-me-tap={t} style={CHIP} onClick={() => onAsk(t)}>{t}</button>)}
+    </div>
+  );
+}
+
+// The Show me line on Reports: the examples and a box to type a list question.
+export function ShowMeLine({ isReadOnly }) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(null);
+  const submit = e => { e.preventDefault(); const t = text.trim(); if (t) { setOpen({ text: t, mode: "show" }); setText(""); } };
+  return (
+    <div data-testid="show-me-line" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+      <ShowMeChips onAsk={t => setOpen({ text: t, mode: "show" })} />
+      <form onSubmit={submit} style={{ flex: "1 1 260px", display: "flex", minWidth: 0 }}>
+        <input aria-label="Show me a list" data-testid="show-me-input" value={text} onChange={e => setText(e.target.value)} placeholder="Or describe who you want to see"
+          style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontFamily: "inherit", background: T.white, color: T.ink }} />
+      </form>
+      {open && <WhyPanel payload={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} />}
     </div>
   );
 }

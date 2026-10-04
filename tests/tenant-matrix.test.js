@@ -343,6 +343,12 @@ async function seedOrg(o, tag) {
     [`grp_${o}`, o, `Group ${o}`]).catch(() => {});
   await q(`INSERT INTO group_members (org_id,group_id,donor_id,added_by,added_by_name) VALUES ($1,$2,$3,'system:test','test')`,
     [o, `grp_${o}`, `d_${o}`]).catch(() => {});
+  // PARITY-4 Part 2: a gift started and not finished, per org. Org A aimed at
+  // org B's row (its draft, a send, setting it aside) is refused because it is
+  // org B's, and the draft would show org B's donor's email.
+  await q(`INSERT INTO gift_starts (id,org_id,email,first_name,amount,started_at,expired_at,created_by,created_by_name)
+           VALUES ($1,$2,$3,'Matrix',40,NOW() - INTERVAL '2 hours',NOW(),'system:test','test') ON CONFLICT DO NOTHING`,
+    [`gs_${o}`, o, `started-${o}@matrix.test`]).catch(e => console.error("gift start seed:", e.message));
   // PARITY-2 Part 4: an auction with one item, per org, so org A aimed at
   // org B's auction or item is refused because it is org B's.
   await q(`INSERT INTO auctions (id,org_id,title,public_slug,opens_at,closes_at,created_by,created_by_name)
@@ -460,6 +466,7 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
+    "gift-starts": `gs_${B}`,       // PARITY-4 Part 2: a started gift, its draft and its note
     "matching-employers": `me_${B}`,  // GIVE-2 §8 — an employer on another org's own list
     // INT-3 — /email-marketing/campaigns/:id/people opens the people behind one
     // campaign's opens or clicks, which is donor data. Org A asking for org B's

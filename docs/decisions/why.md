@@ -39,6 +39,14 @@ template sentences. Every future build is checked against this.
 - **A reworded question finds the one it means.** `matchQuestion` widens the words of the eight
   ("why are donors leaving", "who stopped giving" and "why is giving down" are retention); it never adds
   a question. "Who stopped giving", naming nobody, is retention and not (d). `why1-sentence-check` §4. (FIX-25)
+- **Show me answers a list question with a list, from the donor list's own filters only.** "Show me…",
+  "donors who…" or a "who" question none of the eight takes goes to `showMe` (routes/why.js). The model
+  fills a strict form whose fields are `shared/showMe.js SHOW_KEYS` (each a `groups.js RULE_KEYS` rule); with
+  AI off the templates read it. `checkSpec` refuses an unknown key, a dropped value, an event not the org's,
+  a leftover word no template used, or the model's `unsupported`: "Steward can't filter by that yet", never a
+  guess. The rows are `buildDonorFilter`'s, so the answer, the `show-me` figure, the export and a Group saved
+  from it are the same people. Every list carries "not deceased". Logged as topic `show me`. The model never
+  writes SQL and never sees a row. `tests/parity4-show-me.test.js`. (PARITY-4)
 - **No statistic without a source.** Every number in an answer is the org's own. Never quote another
   company's research as Steward's, and never name a competitor in the product or site. (WHY-1)
 

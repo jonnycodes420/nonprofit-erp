@@ -6,6 +6,7 @@ import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
+import { Figure, FigureContext } from "./Figure";
 
 // FIX-15 Part 3 — "notified" only when the email provider took the message.
 const notified = (r, name) => (r && r.donorNotified === false
@@ -528,9 +529,10 @@ function RecoveryPanel({ onNavigate }) {
   if (data === false) return null;
   if (!data) return null;
   const { failed, recovered, dollars } = data;
+  const au = data.autoUpdated || { count: 0, monthly: 0 };
   // Nothing to say is said with nothing. An org whose cards have never failed
   // does not need a panel of zeroes explaining what did not happen.
-  if (!failed.count && !recovered.count && !dollars.cents) return null;
+  if (!failed.count && !recovered.count && !dollars.cents && !au.count) return null;
 
   const figure = (key, label, value, def) => (
     <button onClick={() => setOpen(o => (o === key ? null : key))}
@@ -560,6 +562,21 @@ function RecoveryPanel({ onNavigate }) {
 
   return (
     <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "14px 18px" }}>
+      {/* PARITY-4 Part 1 · the cards that never failed, because the bank
+          updated them. Both numbers open the same rows. */}
+      {au.count > 0 && (
+        <FigureContext.Provider value={{ openPerson: id => onNavigate && onNavigate("donors", { selectDonorId: id }) }}>
+          <div data-testid="cards-auto-updated" style={{ fontSize: 14, color: T.ink, lineHeight: 1.6, marginBottom: 12 }}>
+            Cards updated automatically this year:{" "}
+            <Figure variant="inline" kind="count" value={au.count} label="Cards updated automatically" definition={au.definition}
+              source={{ key: "cards-auto-updated", params: { since: au.since, measure: "count" } }} />
+            , keeping{" "}
+            <Figure variant="inline" kind="money" value={au.monthly} label="Monthly giving kept by card updates" definition={au.definition}
+              source={{ key: "cards-auto-updated", params: { since: au.since } }} />
+            {" "}a month of giving.
+          </div>
+        </FigureContext.Provider>
+      )}
       <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
         Cards that failed in {data.year}
       </div>

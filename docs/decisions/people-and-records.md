@@ -214,6 +214,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   (an allowlist: headings, lists, links to the web or mail, `/portal-assets/` or https images, YouTube
   and Vimeo players). A waiver upload is stored as kind `volapply`, never written into a public page, and
   served to signed-in staff only. (PARITY-3)
+- **Show me's rules are donor list rules too.** `notGaveFrom`/`notGaveTo` (no gift above zero in the
+  range; a refund is not a gift), `notDeceased`, `monthly` (a running monthly recurring gift), `city`
+  (case-insensitive, whole name), `gaveEvent` (a gift stamped with that event) and `gaveOver` (more than N
+  dollars in all, counting only gifts to `gaveEvent` and inside `gaveFrom`/`gaveTo` when those are set)
+  are `buildDonorFilter` rule keys, so the list, its export and a Group run them. (PARITY-4)
 - **The Volunteers list is the donor list's filter.** The volunteer rules (opportunity, on a shift in a
   range, hours over or under N in a range, gave in a range, qualification, application answer,
   availability, active) are `buildDonorFilter` rule keys, so a Group saved from the list is the same rows.
@@ -328,6 +333,8 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 ### Events tables
 - `events` — id, org_id, name, event_type (gala/cultivation/site_visit/board_meeting/volunteer/webinar/other), date DATE, end_date DATE, location, description, capacity INTEGER, status (upcoming/completed/cancelled), revenue NUMERIC, cost NUMERIC, notes, created_at. PARITY-2 adds start_time/end_time (civil HH:MM, org zone), hero_image_url, hero_video_url, gallery JSONB [{path, caption}]; `event_levels.benefits` JSONB (one line each, sponsor cards).
 - **Check-in at the door is the one kiosk (`EventKiosk`), reachable from both guest lists.** Fundraising > Events opens it from "Check in at the door"; it is not rebuilt per screen. (PARITY-2)
+- **The drawn room extends the FIX-11 rows, never a second seating model.** `event_tables.shape` (round/long), `event_attendees.seat_no` (the chair) and `vip`. `seatPlaces` (shared/eventShape.js) decides who is on which chair for the screen, the print sheets and `applySeating` alike; a guest with no `seat_no` takes the lowest free chair. A chair someone else is on is refused by name, never swapped. (PARITY-4)
+- **The camera reads the ticket; the server decides.** The kiosk uses the browser's BarcodeDetector where it exists and the code box otherwise, both into one handler that posts the whole string to `POST /events/:id/scan`. A second scan of a checked-in ticket (and a second check-in by name) answers `already_in` and writes nothing. (PARITY-4)
 - `event_attendees` — id, event_id (FK→events CASCADE), org_id, donor_id (FK→donors SET NULL), name, email, status (invited/confirmed/attended/no_show/cancelled), gift_amount NUMERIC, notes, UNIQUE(event_id, donor_id). PATCH to 'attended' + gift_amount > 0 auto-logs gift to donors/gifts/fin_transactions.
 - Event type colors: gala=#8b5cf6, cultivation=#10b981, site_visit=#3b82f6, board_meeting=#0d5c3a, volunteer=#f59e0b, webinar=#ec4899, other=#6b7280
 - Routes: GET/POST /events, PUT/DELETE/GET /events/:id, POST /events/:id/attendees, PATCH/DELETE /events/:id/attendees/:attendeeId, POST /events/:id/follow-up, GET /donors/:id/events

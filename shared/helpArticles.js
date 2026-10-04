@@ -221,6 +221,7 @@ export const HELP_ARTICLES = [
       { h: `Good to know`, p: [
         `Giving pages are created in Settings, under Giving Pages. This screen lists them with "Open ↗" and "Copy link".`,
         `"Propose a recurring gift" under Recurring emails the donor a proposal. Nothing changes until they accept, and the link lasts 14 days.`,
+        `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organisation's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
         `The Pipeline is on the Team plan. On Core you see a locked preview. Moving a card asks what happened.`,
         `Proposals are started from a person's record with "+ New proposal". Plans never send anything.`,
         `"Mark as sent" under Acknowledgments records the gifts as thanked by letter. It does not send anything.`,

@@ -199,6 +199,11 @@ export function seatingChart(guests = [], { perTable = 10, tables: tableRows = n
       id: row ? row.id : null,
       sponsorName: row ? (row.sponsor_name || null) : null,
       declared: !!row,
+      // PARITY-4: the drawn room. A table is round unless it was set long,
+      // and `places` is the chair-by-chair view of the same guests, so the
+      // chart and the list can never disagree about who is at the table.
+      shape: row && row.shape === "long" ? "long" : "round",
+      places: seatPlaces(list, seats),
       seats_list: list, count,
       open: Math.max(0, seats - count),
       full: count >= seats,
@@ -226,6 +231,35 @@ export function seatingChart(guests = [], { perTable = 10, tables: tableRows = n
         + (unseated.length ? `, ${unseated.length} still without a seat.` : "."),
     over: tables.filter(t => t.over > 0).map(t => ({ label: t.label, over: t.over })),
   };
+}
+
+// ── PARITY-4 · THE CHAIRS AT A TABLE ──────────────────────────────────────
+// `seat_no` is the chair (1-based) a guest was put on. A guest seated before
+// chairs existed has none, and a chair number can be stale (a table shrunk, two
+// people given the same chair by an older writer). So: a guest keeps their
+// chair when it is real and theirs alone, and everybody else takes the lowest
+// free chair, in name order. The server runs this SAME function before it
+// decides whether a chair is free, so the chart a person drops onto and the
+// chair the server allows are one computation.
+//
+// Returns an array of `capacity` entries (guest or null), plus any guests who
+// do not fit appended past the end, so an over-full table still shows everyone.
+export function seatPlaces(tableGuests = [], capacity = 0) {
+  const n = Math.max(0, Number(capacity) || 0);
+  const places = new Array(n).fill(null);
+  const rest = [];
+  const sorted = tableGuests.slice().sort((x, y) => String(x.name).localeCompare(String(y.name)));
+  for (const g of sorted) {
+    const k = Number(g.seat_no);
+    if (Number.isInteger(k) && k >= 1 && k <= n && !places[k - 1]) places[k - 1] = g;
+    else rest.push(g);
+  }
+  const over = [];
+  for (const g of rest) {
+    const free = places.indexOf(null);
+    if (free === -1) over.push(g); else places[free] = g;
+  }
+  return places.concat(over);
 }
 
 // ── A PARTY ───────────────────────────────────────────────────────────────

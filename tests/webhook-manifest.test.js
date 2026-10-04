@@ -74,6 +74,8 @@ function assertAgree(label, handledSet, manifest) {
   // appeal → restore the reversed gift), so it's part of that set now, and
   // (2026-09-11) payment_method.automatically_updated joined it — the card
   // recovery work handles it and the live endpoint does not yet subscribe it.
+  // PARITY-4: checkout.session.expired joined it (a gift started and not
+  // finished), for the same reason.
   // This list growing IS the signal: each entry is a handler that will not fire
   // in production until someone subscribes it. See NEEDS-JONATHAN.md §4.
   const liveSubscribedNow = [
@@ -85,7 +87,7 @@ function assertAgree(label, handledSet, manifest) {
   ok("diff vs a no-dispute-events endpoint = the refund + dispute family",
     JSON.stringify(live.missing) === JSON.stringify(
       ["charge.dispute.closed", "charge.dispute.created", "charge.dispute.funds_reinstated", "charge.dispute.updated",
-       "charge.refunded", "payment_method.automatically_updated"]),
+       "charge.refunded", "checkout.session.expired", "payment_method.automatically_updated"]),
     live);
 
   summary();

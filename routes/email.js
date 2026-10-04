@@ -208,6 +208,9 @@ const DONOR_MAIL_POLICY = {
   // a person pressing Send; a bidder's sign-in link is one they asked for.
   auction_winner:     "transactional",  // the pay link for an item they won
   auction_signin:     "transactional",  // the sign-in link a bidder asked for, seconds ago
+  // PARITY-4 Part 2, the note that a gift did not go through, with its link.
+  // A person edits and sends it; it asks for a gift, so the opt-out stops it.
+  gift_unfinished:    "marketing",
 };
 // ── INCIDENT 2026-09-22 — ONE ORG-LEVEL GATE, READ BY EVERY SEAM ──────────
 // Three different kinds of mail escaped that night — a donor reminder, a

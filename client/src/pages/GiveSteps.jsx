@@ -109,6 +109,8 @@ export default function GiveSteps({
   // name on a page that lists nobody is a question with no consequence.
   showsRecentGifts,
   onSubmit, submitting, submitErr, grossUpCents, styles, apiBase,
+  // PARITY-4 Part 2: the email step says the gift was started, once per token.
+  orgSlug, startToken,
   // PARITY-1 E — the "Sign in" line for a returning donor, drawn by the page
   // (it knows whether this org's portal is on). Null on an embedded form.
   signIn,
@@ -251,6 +253,13 @@ export default function GiveSteps({
     for (const q of spec.details.questions) {
       if (q.required && !String(answers[q.key] ?? "").trim()) { setStepErr(q.label); return; }
     }
+    // PARITY-4 Part 2: the fine print below says this email is kept from here.
+    // Fire and forget: the payment step never waits on it.
+    if (apiBase && orgSlug && startToken) {
+      fetch(`${apiBase}/give/${orgSlug}/started`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startToken, email: email.trim(), firstName, lastName, amount: chosenCents / 100,
+          frequency: frequency === "monthly" ? "monthly" : "once", givingPageId: formId || undefined }) }).catch(() => {});
+    }
     setStep(2);
   }
 
@@ -267,7 +276,7 @@ export default function GiveSteps({
       amount: chosenCents / 100,
       frequency: frequency === "monthly" ? "monthly" : "once",
       fundId: fundId || "",
-      firstName, lastName, email,
+      firstName, lastName, email, startToken,
       coverFees: showCoverFees && coverFees,
       // GIVE-2 §4 — the server ignores it for a monthly gift, a ticket and a
       // membership, so this is a request rather than a decision.
@@ -470,7 +479,7 @@ export default function GiveSteps({
           <label style={{ display: "block", marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Email</span>
             <input className="give-email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-            <span style={{ fontSize: 12, color: MUTED }}>Your receipt goes here.</span>
+            <span className="give-email-kept" style={{ fontSize: 12, color: MUTED }}>Your receipt goes here. It is saved when you continue, so {spec.orgName || "this organisation"} can let you know if your gift does not go through.</span>
           </label>
 
           {spec.details.employerMatch ? (
