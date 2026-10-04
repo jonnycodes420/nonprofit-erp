@@ -22940,7 +22940,7 @@ app.post("/events/:id/register", requireAuth, checkWriteAccess, wrap(async (req,
 // twelve tables, and that is what made the old card unusable: it could only
 // show a table once somebody was already sitting at it.
 const eventGuestCols = `a.id, a.donor_id, a.name, a.email, a.status, a.quantity, a.table_label,
-            a.table_id, a.recognition, a.dietary, a.guest_of, a.checked_in_at,
+            a.table_id, a.seat_no, a.vip, a.recognition, a.dietary, a.guest_of, a.checked_in_at,
             a.registration_gift_id, a.sponsor_pledge_id, l.name AS level_name, l.kind AS level_kind`;
 
 async function eventGuestsPayload(eventId, orgId) {
@@ -22949,7 +22949,7 @@ async function eventGuestsPayload(eventId, orgId) {
        FROM event_attendees a LEFT JOIN event_levels l ON l.id = a.level_id
       WHERE a.event_id=? AND a.org_id=? ORDER BY a.table_label NULLS LAST, a.name`, [eventId, orgId]);
   const tables = await query(
-    `SELECT id, label, seats, sponsor_name, sort FROM event_tables
+    `SELECT id, label, seats, sponsor_name, sort, shape FROM event_tables
       WHERE event_id=? AND org_id=? ORDER BY sort NULLS LAST, label`, [eventId, orgId]);
   return { guests, tables };
 }
@@ -22990,6 +22990,7 @@ app.post("/events/:id/tables", requireAuth, checkWriteAccess, wrap(async (req, r
   const howMany = Math.max(1, Math.min(60, parseInt(req.body?.count, 10) || 1));
   const label = String(req.body?.label || "").trim().slice(0, 80);
   const sponsorName = String(req.body?.sponsorName || "").trim().slice(0, 120) || null;
+  const shape = req.body?.shape === "long" ? "long" : "round";   // PARITY-4
   if (label && howMany > 1) {
     return res.status(400).json({ error: "Name one table, or ask for a number of them, not both." });
   }
@@ -23002,9 +23003,9 @@ app.post("/events/:id/tables", requireAuth, checkWriteAccess, wrap(async (req, r
     const thisLabel = label || `Table ${n++}`;
     const id = "etb_" + uuid().slice(0, 10);
     const r = await query(
-      `INSERT INTO event_tables (id, org_id, event_id, label, seats, sponsor_name, sort, created_by, created_by_name)
-       VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (event_id, label) DO NOTHING RETURNING id, label, seats`,
-      [id, orgId, event.id, thisLabel, seats, sponsorName, ++sort, who.id, who.name]);
+      `INSERT INTO event_tables (id, org_id, event_id, label, seats, sponsor_name, sort, shape, created_by, created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (event_id, label) DO NOTHING RETURNING id, label, seats`,
+      [id, orgId, event.id, thisLabel, seats, sponsorName, ++sort, shape, who.id, who.name]);
     if (r.length) made.push(r[0]);
     else if (label) return res.status(409).json({ error: `This event already has a table called ${thisLabel}.` });
   }
@@ -23025,6 +23026,7 @@ app.put("/events/:id/tables/:tableId", requireAuth, checkWriteAccess, wrap(async
     ? Math.max(1, Math.min(60, parseInt(req.body.seats, 10) || t.seats)) : t.seats;
   const sponsorName = req.body?.sponsorName !== undefined
     ? (String(req.body.sponsorName || "").trim().slice(0, 120) || null) : t.sponsor_name;
+  const shape = req.body?.shape !== undefined ? (req.body.shape === "long" ? "long" : "round") : (t.shape || "round");
 
   // SHRINKING A TABLE BELOW THE PEOPLE AT IT is refused rather than silently
   // leaving it over-full: the seats number is what every other refusal in this
@@ -23041,8 +23043,11 @@ app.put("/events/:id/tables/:tableId", requireAuth, checkWriteAccess, wrap(async
       [req.params.id, orgId, label, t.id]);
     if (clash) return res.status(409).json({ error: `This event already has a table called ${label}.` });
   }
-  await run("UPDATE event_tables SET label=?, seats=?, sponsor_name=?, updated_at=NOW() WHERE id=? AND org_id=?",
-    [label, seats, sponsorName, t.id, orgId]);
+  await run("UPDATE event_tables SET label=?, seats=?, sponsor_name=?, shape=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [label, seats, sponsorName, shape, t.id, orgId]);
+  // A smaller table drops the chair numbers past its end; those guests take
+  // the lowest free chairs (seatPlaces) the next time anybody looks.
+  await run("UPDATE event_attendees SET seat_no=NULL WHERE table_id=? AND org_id=? AND seat_no > ?", [t.id, orgId, seats]);
   // The label the guests carry moves WITH the table. Every reader that was
   // written before tables were rows (the print chart, the name tags, the
   // kiosk, the guest export) reads `table_label`, and none of them has to
@@ -23063,7 +23068,7 @@ app.delete("/events/:id/tables/:tableId", requireAuth, checkWriteAccess, wrap(as
   // The guests do not go with it. They go back to Not seated, and the response
   // says who moved so the screen can offer to put them back.
   const moved = await query(
-    `UPDATE event_attendees SET table_id=NULL, table_label=NULL
+    `UPDATE event_attendees SET table_id=NULL, table_label=NULL, seat_no=NULL
       WHERE table_id=? AND event_id=? AND org_id=? RETURNING id, name`, [t.id, req.params.id, orgId]);
   await run("DELETE FROM event_tables WHERE id=? AND org_id=?", [t.id, orgId]);
   const { guests, tables } = await eventGuestsPayload(req.params.id, orgId);
@@ -23106,19 +23111,60 @@ async function applySeating(req, res, { moves, orgId, eventId }) {
     const row = byLabel.get(want);
     if (!row) return res.status(404).json({ error: `This event has no table called ${want}. Add it first.` });
     const from = EV.tableLabel(g.table_label);
-    if (from === want) { planned.push({ g, label: want, tableId: row.id }); continue; }
+    if (from === want) { planned.push({ g, label: want, tableId: row.id, seat: m.seat, near: m.near }); continue; }
     const open = openBy.get(want) ?? 0;
     if (open < 1) {
       return res.status(409).json({ error: `${want} is full.`, table: want });
     }
     openBy.set(want, open - 1);
     if (from) openBy.set(from, (openBy.get(from) ?? 0) + 1);
-    planned.push({ g, label: want, tableId: row.id });
+    planned.push({ g, label: want, tableId: row.id, seat: m.seat, near: m.near });
+  }
+
+  // PARITY-4: THE CHAIR. Who is on which chair now, by the same seatPlaces
+  // the drawn room uses; everybody in this batch gets up first, then each
+  // sits on the chair they were dropped on, or the lowest free one. A chair
+  // somebody NOT in this batch is sitting on is refused by name, never
+  // silently swapped, because the other person did not ask to move.
+  const moving = new Set(planned.map(p => p.g.id));
+  const chairs = new Map();   // label -> array of guest id | null
+  const sittingOn = new Map(); // guest id -> the chair they are on now
+  for (const t of chart.tables) {
+    const capacity = Number(t.capacity) || 0;
+    t.places.slice(0, capacity).forEach((x, i) => { if (x) sittingOn.set(x.id, i + 1); });
+    chairs.set(t.label, t.places.slice(0, capacity).map(x => (x && !moving.has(x.id) ? x.id : null)));
+  }
+  for (const p of planned) {
+    if (!p.label) { p.seatNo = null; continue; }
+    const list = chairs.get(p.label) || [];
+    const askedRaw = p.seat;
+    const asked = askedRaw === undefined || askedRaw === null || askedRaw === "" ? null : parseInt(askedRaw, 10);
+    if (asked !== null) {
+      if (!Number.isInteger(asked) || asked < 1 || asked > list.length) {
+        return res.status(400).json({ error: `${p.label} has chairs 1 to ${list.length}.` });
+      }
+      const holder = list[asked - 1];
+      if (holder && holder !== p.g.id) {
+        const who = byId.get(holder);
+        return res.status(409).json({ error: `Chair ${asked} at ${p.label} is ${who ? who.name + "'s" : "taken"}. Move them first.`, table: p.label });
+      }
+      if (!holder) { list[asked - 1] = p.g.id; p.seatNo = asked; continue; }
+    }
+    // No chair named, or a party member after the first: the next free chair,
+    // starting from the one asked for so a party sits side by side.
+    // Staying at the same table with no chair named keeps the chair they had.
+    const stay = EV.tableLabel(p.g.table_label) === p.label ? sittingOn.get(p.g.id) : null;
+    const near = parseInt(p.near != null ? p.near : stay, 10);
+    const start = asked ? asked - 1 : (Number.isInteger(near) && near >= 1 && near <= list.length ? near - 1 : 0);
+    let at = -1;
+    for (let i = 0; i < list.length; i++) { const k = (start + i) % list.length; if (!list[k]) { at = k; break; } }
+    if (at === -1) return res.status(409).json({ error: `${p.label} is full.`, table: p.label });
+    list[at] = p.g.id; p.seatNo = at + 1;
   }
 
   for (const p of planned) {
-    await run("UPDATE event_attendees SET table_id=?, table_label=? WHERE id=? AND event_id=? AND org_id=?",
-      [p.tableId, p.label, p.g.id, event.id, orgId]);
+    await run("UPDATE event_attendees SET table_id=?, table_label=?, seat_no=? WHERE id=? AND event_id=? AND org_id=?",
+      [p.tableId, p.label, p.seatNo, p.g.id, event.id, orgId]);
   }
   const after = await eventGuestsPayload(event.id, orgId);
   const seatedCount = planned.filter(p => p.label).length;
@@ -23127,7 +23173,7 @@ async function applySeating(req, res, { moves, orgId, eventId }) {
     moved: planned.length,
     // What it was before, so the screen can offer a real undo rather than a
     // guess at one.
-    undo: planned.map(p => ({ attendeeId: p.g.id, table: p.g.table_label || "" })),
+    undo: planned.map(p => ({ attendeeId: p.g.id, table: p.g.table_label || "", seat: p.g.seat_no || null })),
     sentence: planned.length === 0 ? "Nothing to move."
       : seatedCount === 0
         ? `${planned.length} ${planned.length === 1 ? "guest" : "guests"} went back to Not seated.`
@@ -23162,8 +23208,12 @@ app.post("/events/:id/seat", requireAuth, checkWriteAccess, wrap(async (req, res
       if (chosen.has(g.id) && g.guest_of) chosen.add(g.guest_of);
     }
   }
+  // PARITY-4: a chair: the first guest named sits on it, the rest of the
+  // party take the next free chairs round from there.
+  const seat = req.body?.seat;
+  const order = [...ids, ...[...chosen].filter(id => !ids.includes(id))];
   return applySeating(req, res, {
-    moves: [...chosen].map(id => ({ attendeeId: id, table })),
+    moves: order.map((id, i) => (i === 0 ? { attendeeId: id, table, seat } : { attendeeId: id, table, near: seat })),
     orgId: req.user.orgId, eventId: req.params.id });
 }));
 
@@ -23872,12 +23922,21 @@ app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async
 // tap to check in, and a walk-in who pays at the door becomes a registration
 // through the SAME writer as every other one, so their money is a gift with
 // the same deductible split and their name is on the same list.
+// The time somebody came through the door, in the org's own zone, said the
+// way a person at the door would say it ("7:02 PM").
+async function doorTime(orgId, at) {
+  try {
+    const tz = await orgTzName(orgId);
+    return new Date(at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz });
+  } catch { return "earlier"; }
+}
+
 app.get("/events/:id/kiosk", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [event] = await query("SELECT id, name, date, location FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const guests = await query(
-    `SELECT a.id, a.name, a.email, a.status, a.quantity, a.table_label, a.checked_in_at, a.dietary,
+    `SELECT a.id, a.name, a.email, a.status, a.quantity, a.table_label, a.checked_in_at, a.dietary, a.vip, a.donor_id,
             l.name AS level_name, l.kind AS level_kind
        FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
       WHERE a.org_id=? AND a.event_id=? AND a.status <> 'cancelled'
@@ -23894,6 +23953,18 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
   const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!event) return res.status(404).json({ error: "Event not found" });
   const undo = req.body?.undo === true;
+  // PARITY-4: A SECOND CHECK-IN IS A WARNING, not a quiet success: two
+  // people through the door on one name is the thing the door is there for.
+  if (!undo) {
+    const [was] = await query(
+      `SELECT id, name, table_label, checked_in_at FROM event_attendees WHERE id=? AND event_id=? AND org_id=?`,
+      [String(req.body?.attendeeId || ""), event.id, orgId]);
+    if (was && was.checked_in_at) {
+      req.audit && req.audit.skip && req.audit.skip("already checked in; nothing changed");
+      return res.json({ ok: false, already: true, reason: "already_in", attendee: was,
+        sentence: `${was.name} is already checked in, since ${await doorTime(orgId, was.checked_in_at)}.` });
+    }
+  }
   const rows = await query(
     undo
       ? `UPDATE event_attendees SET checked_in_at=NULL WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
@@ -23924,6 +23995,16 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
     return res.json({ ok: false, reason: read.reason, sentence: PASS.PASS_REASON_WORDS[read.reason] || "That code did not read." });
   }
   if (read.kind === "ticket") {
+    // PARITY-4: THE SECOND SCAN. The same ticket shown twice is warned on by
+    // name and time, and nothing is written: the first scan stands.
+    const [was] = await query(
+      `SELECT id, name, table_label, quantity, checked_in_at FROM event_attendees
+        WHERE id=? AND event_id=? AND org_id=? AND status <> 'cancelled'`, [read.id, event.id, orgId]);
+    if (was && was.checked_in_at) {
+      req.audit && req.audit.skip && req.audit.skip("already checked in; nothing changed");
+      return res.json({ ok: false, kind: "ticket", reason: "already_in", already: true, attendee: was,
+        sentence: `Already scanned. ${was.name} came in at ${await doorTime(orgId, was.checked_in_at)}${was.table_label ? `, ${was.table_label}` : ""}.` });
+    }
     const rows = await query(
       `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
         WHERE id=? AND event_id=? AND org_id=? AND status <> 'cancelled'
@@ -23941,7 +24022,7 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
     }
     const a = rows[0];
     return res.json({ ok: true, kind: "ticket", attendee: a,
-      sentence: `${a.name} is in${a.table_label ? `, table ${a.table_label}` : ""}${Number(a.quantity) > 1 ? ` · ${a.quantity} places` : ""}.` });
+      sentence: `${a.name} is in${a.table_label ? `, ${a.table_label}` : ""}${Number(a.quantity) > 1 ? ` · ${a.quantity} places` : ""}.` });
   }
   if (read.kind === "membership") {
     const [m] = await query(
@@ -24273,6 +24354,7 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
     if (!evts.length) return res.status(404).json({ error: "Event not found" });
     const { donorIds, name, email, notes } = req.body;
     const added = [];
+    const ids = [];   // PARITY-4: the door checks a walk-in in by id the moment they are added
     if (donorIds && Array.isArray(donorIds)) {
       for (const donorId of donorIds) {
         const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
@@ -24280,11 +24362,12 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
         const d = dr[0];
         const attId = "att_" + uuid().slice(0, 8);
         try {
-          await run(
+          const ins = await query(
             `INSERT INTO event_attendees (id, event_id, org_id, donor_id, name, email)
-             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING`,
+             VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING RETURNING id`,
             [attId, eventId, orgId, donorId, d.name, d.email || ""]
           );
+          if (ins.length) ids.push(ins[0].id);
           added.push(d.name);
         } catch { /* skip */ }
       }
@@ -24296,9 +24379,10 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
          VALUES ($1,$2,$3,NULL,$4,$5,$6)`,
         [attId, eventId, orgId, name, email || "", notes || ""]
       );
+      ids.push(attId);
       added.push(name);
     }
-    res.json({ added: added.length, names: added });
+    res.json({ added: added.length, names: added, ids });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -24309,6 +24393,16 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
     const rows = await query("SELECT * FROM event_attendees WHERE id=$1 AND org_id=$2", [req.params.attendeeId, orgId]);
     if (!rows.length) return res.status(404).json({ error: "Not found" });
     const att = rows[0];
+    // PARITY-4: A VIP MARK ALONE touches nothing else. Running the rest of
+    // this handler on an attended row would re-run its attendance side effects
+    // (wealth score, stage) for a change that is only a mark for the room.
+    const onlyVip = req.body.vip !== undefined && status === undefined && giftAmount === undefined
+      && notes === undefined && req.body.guestOf === undefined;
+    if (onlyVip) {
+      await run("UPDATE event_attendees SET vip=$1 WHERE id=$2 AND org_id=$3", [req.body.vip === true, att.id, orgId]);
+      const [row] = await query("SELECT * FROM event_attendees WHERE id=$1 AND org_id=$2", [att.id, orgId]);
+      return res.json(row);
+    }
     const newStatus = status !== undefined ? status : att.status;
     const newGift = giftAmount !== undefined ? (parseFloat(giftAmount) || 0) : (parseFloat(att.gift_amount) || 0);
     const newNotes = notes !== undefined ? notes : att.notes;
@@ -24333,6 +24427,11 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       "UPDATE event_attendees SET status=$1, gift_amount=$2, notes=$3, guest_of=$4 WHERE id=$5 AND org_id=$6",
       [newStatus, newGift, newNotes, newGuestOf, req.params.attendeeId, orgId]
     );
+    // PARITY-4: a VIP mark is a mark for the room (who to greet, who sits
+    // near the stage), never a giving level printed on a badge.
+    if (req.body.vip !== undefined) {
+      await run("UPDATE event_attendees SET vip=$1 WHERE id=$2 AND org_id=$3", [req.body.vip === true, req.params.attendeeId, orgId]);
+    }
     // If attended + gift > 0 + has a donor, log the gift
     if (newStatus === 'attended' && newGift > 0 && att.donor_id) {
       const evtRows = await query("SELECT * FROM events WHERE id=$1", [att.event_id]);

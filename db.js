@@ -6031,6 +6031,15 @@ async function runSchemaInit(pool) {
       UNIQUE (event_id, label)
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_tables_event ON event_tables (org_id, event_id, sort)`);
+  // PARITY-4: THE DRAWN ROOM. A table is round or long (a head table, a
+  // trestle along a wall), a guest sits on a numbered chair at it, and a guest
+  // can be marked VIP so the room knows who to greet. All three extend the
+  // FIX-11 rows: still one table row and one attendee row, never a second
+  // seating model. `seat_no` is NULL for anyone seated before chairs existed;
+  // `seatPlaces` (shared/eventShape.js) gives them the lowest free chair.
+  await pool.query(`ALTER TABLE event_tables ADD COLUMN IF NOT EXISTS shape TEXT NOT NULL DEFAULT 'round'`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS seat_no INTEGER`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS vip BOOLEAN NOT NULL DEFAULT FALSE`);
 
   // THE SEAT POINTS AT THE TABLE ROW. `table_label` stays, written from the
   // table's label on every move, because the print chart, the name tags, the
