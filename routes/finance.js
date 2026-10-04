@@ -1369,9 +1369,15 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     `SELECT mc.user_id, mc.provider, mc.address, u.name FROM mailbox_connections mc LEFT JOIN users u ON u.id = mc.user_id
       WHERE mc.org_id=?`, [orgId]);
   const boxOf = new Map(boxRows.map(b => [b.user_id + "|" + b.provider, b]));
+  // FIX-25: a demo org's emails were seeded, never sent, so there is no
+  // message in any mailbox to open. It says so instead of linking to an inbox.
+  const [orgRow] = await query(`SELECT is_demo_org FROM orgs WHERE id=?`, [orgId]);
+  const demoOrg = orgRow?.is_demo_org === true;
   const mailFileOf = (m, meta) => {
     const n = Number(meta.attachments) || 0;
     if (!n || !meta.provider || !meta.message_id) return null;
+    if (demoOrg) return { interactionId: m.id, count: n, app: meta.provider === "google" ? "Gmail" : "Outlook", url: null, demo: true,
+      owner: null, date: m.date, subject: meta.subject || null };
     const box = boxOf.get(meta.logged_by + "|" + meta.provider) || {};
     const app = meta.provider === "google" ? "Gmail" : "Outlook";
     const url = meta.provider === "google"
