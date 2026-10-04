@@ -44,18 +44,26 @@ export const CANT_ANSWER = "Steward can't answer that one yet. We've noted it.";
 // Typed questions are matched to the seven by their words. Order matters: the
 // narrower questions are tried first, so "which volunteers haven't given" is
 // the volunteer question and not the lapse one.
+// FIX-25: plain rewordings of the same eight questions find them too ("why
+// are donors leaving", "who stopped giving", "why is giving down"). This only
+// widens the words for a question that exists; it never adds a question.
+const DONORS = "(donors?|givers?|supporters?|people|members)";
 const MATCHERS = [
-  ["more", /\b(could|can|might|able to)\b.*\bgive more\b|\broom to give\b|\b(capacity|upgrade|major (gift|donor) prospects?)\b/i],
+  ["more", /\b(could|can|might|able to)\b.*\bgive more\b|\broom to give\b|\b(capacity|upgrade|major (gift|donor) prospects?)\b|\b(ask|asked) for more\b|\bbiggest prospects?\b|\bgive (a )?(bigger|larger) gifts?\b/i],
   ["volunteers", /\bvolunteer/i],
-  ["second", /\b(first[- ]time|first gift|new donors?|second (ask|gift))\b/i],
-  ["call", /\b(who|whom)\b.*\b(call|ring|phone|reach out|contact)\b|\b(call|ring)\b.*\b(tomorrow|today|this morning|next)\b/i],
-  ["retention", /\bretention\b|\bretain/i],
-  ["lapse", /\b(about to|going to|at risk of|likely to)\b.*\blapse|\bdrift|\bslipping\b|\bwho\b.*\blaps/i],
-  ["stopped", /\b(stop(ped)?|quit|stopped) giving\b|\bwhy did .+ (stop|leave|lapse)\b/i],
-  ["appeal", /\b(appeal|campaign|drive|mailing)\b|\bcome in (under|over|short|below|above)\b|\b(under|over|short of) last year\b/i],
+  ["second", /\b(first[- ]time|first gift|new donors?|second (ask|gift))\b|\bgave (just |only )?once\b|\bone[- ]time (donors?|givers?)\b.*\b(again|second|back)\b/i],
+  ["call", /\b(who|whom)\b.*\b(call|ring|phone|reach out|contact|follow up with|get in touch)\b|\b(call|ring)\b.*\b(tomorrow|today|this morning|next|this week|first)\b/i],
+  ["retention", new RegExp("\\bretention\\b|\\bretain|\\b(keep|kept|keeping) (our |my )?" + DONORS + "\\b|\\b" + DONORS + "\\b.*\\b(did we|do we) keep\\b"
+    + "|\\b(losing|lose|lost|leaving|churn(ing)?)\\b.*\\b" + DONORS + "\\b|\\b" + DONORS + "\\b.*\\b(leaving|leave|left|churn(ing)?|lost|dropp(ed|ing) off)\\b"
+    + "|^(?!.*\\b(appeal|campaign|drive|mailing)\\b).*\\b(giving|donations?|revenue|income)\\b.*\\b(down|drop(ped|ping|s)?|fall(en|ing)?|fell|declin(ed|ing)|lower)\\b"
+    + "|^\\s*(who|which " + DONORS + "|how many " + DONORS + ")\\b.*\\b((stopped|quit|stop) (giving|donating)|(haven't|have not|havent) (given|donated))\\b", "i")],
+  ["lapse", /\b(about to|going to|at risk of|likely to|might|could|close to|will)\b.*\blapse|\bdrift|\bslipping\b|\bwho\b.*\blaps|\bat risk\b|\bgoing quiet\b|\boverdue (for|to) give\b/i],
+  ["stopped", /\b(stop(ped)?|quit) (giving|donating|supporting)\b|\bwhy did .+ (stop|leave|lapse)\b|\b(hasn't|has not|hasnt)\b.*\b(given|donated)\b|\bno longer (gives?|giving|donat)/i],
+  ["appeal", /\b(appeal|campaign|drive|mailing)\b|\bcome in (under|over|short|below|above)\b|\b(under|over|short of) last year\b|\b(underperform|fell short|fall short|miss(ed)? (its|the|our) goal)/i],
 ];
 export function matchQuestion(text) {
-  const s = String(text || "").trim();
+  // A phone types a curly apostrophe; the words are the same.
+  const s = String(text || "").replace(/[\u2018\u2019]/g, "'").trim();
   if (!s) return null;
   for (const [key, re] of MATCHERS) if (re.test(s)) return key;
   return null;

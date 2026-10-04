@@ -29,7 +29,7 @@ import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
-import { ItemMenu, EditedMarker, useUndo, HistoryList } from "./EditHistory";
+import { ItemMenu, EditedMarker, offerUndo, HistoryList } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
@@ -997,7 +997,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // FIX-14 Part 2 — the entry being edited (opens the form it was made with),
   // and the ten-second Undo after a delete.
   const [editingInt,setEditingInt]=useState(null);
-  const [undoToast,offerUndo]=useUndo();
   const [planOpen,setPlanOpen]=useState(false);   // BUILD-85 — plan forward on this donor
   // BUILD-88a A.2 — EVERY OPEN ITEM FOR THIS DONOR, ranked by the one ranking.
   // The profile showed the thread and nothing else, so a task created by
@@ -2065,7 +2064,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             return m.via==="thread_log"
               ?<LogConversationModal donor={{id:donor.id,name:donor.name}} org={org} editing={editingInt} onSaved={onIntEdited} onClose={()=>setEditingInt(null)}/>
               :<LogTouchpointModal donor={donor} editing={editingInt} onSave={onIntEdited} onClose={()=>setEditingInt(null)}/>;})()}
-          {undoToast}
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
               // FIX-14 Part 1 — every count on the record re-reads the one

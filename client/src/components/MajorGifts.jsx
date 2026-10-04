@@ -4,7 +4,7 @@ import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { DonorLink } from "./RecordLink";
-import { ItemMenu, EditedMarker, useUndo } from "./EditHistory";
+import { ItemMenu, EditedMarker, offerUndo } from "./EditHistory";
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -288,7 +288,6 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
   const [editing, setEditing] = useState(null);
   // FIX-15 Part 4 — the same Edit, Delete-with-Undo and "Edited" history the
   // profile's "The ask" has (FIX-14 Part 3), on the screen that lists them all.
-  const [undoToast, offerUndo] = useUndo();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -364,7 +363,6 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
         </div>
       )}
 
-      {undoToast}
       <MoveModal open={!!moving} onClose={() => setMoving(null)} onSaved={load} meta={meta} proposal={moving} />
       <ProposalForm open={!!editing} onClose={() => setEditing(null)} onSaved={load} meta={meta}
         donorId={editing?.donorId} existing={editing} donorName={editing?.donorName} />
@@ -380,7 +378,6 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [undoToast, offerUndo] = useUndo();
   const load = useCallback(() => {
     apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
   }, [donorId]);
@@ -431,7 +428,6 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
         </>
       )}
       {after}
-      {undoToast}
       <ProposalForm open={adding} onClose={() => setAdding(false)} onSaved={load} meta={meta} donorId={donorId} donorName={donorName} />
       <ProposalForm open={!!editing} onClose={() => setEditing(null)} onSaved={load} meta={meta} donorId={donorId} existing={editing} donorName={donorName} />
       <MoveModal open={!!moving} onClose={() => setMoving(null)} onSaved={load} meta={meta} proposal={moving} />

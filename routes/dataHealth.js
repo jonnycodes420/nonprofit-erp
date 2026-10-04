@@ -230,7 +230,8 @@ if (!backgroundTicksDisabled()) {
 app.get("/data-health", requireAuth, wrap(async (req, res) => {
   const c = await healthCounts(req.user.orgId);
   const [last] = await query("SELECT trigger, created_at FROM data_health_runs WHERE org_id=? ORDER BY created_at DESC LIMIT 1", [req.user.orgId]);
-  res.json({ counts: publicCounts(c), lastRun: last || null,
+  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ counts: publicCounts(c), lastRun: last || null, demo: require("../twoFactor").isDemoOrg(org),
     ncoaNote: "Steward does not run the change-of-address check itself yet. The file it prepares works with any USPS-licensed NCOA provider." });
 }));
 app.post("/data-health/run", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -708,6 +709,9 @@ app.get("/data-health/ncoa/file", requireAuth, wrap(async (req, res) => {
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="address-update-file-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.setHeader("X-Row-Count", String(rows.length));
+  // FIX-25: the app reads this from another origin, and a browser hides every
+  // header it is not told it may show. Unexposed, the count read as 0 on prod.
+  res.setHeader("Access-Control-Expose-Headers", "X-Row-Count");
   res.send(DH.ncoaExportCsv(rows));
 }));
 app.post("/data-health/ncoa/results", requireAuth, checkWriteAccess, wrap(async (req, res) => {

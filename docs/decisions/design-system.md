@@ -3,6 +3,9 @@
 Read this when you touch anything that reaches a screen: colours, tokens, modals, mobile layout, vocabulary, empty states, org branding or emoji.
 
 ## Rules
+- **A full-screen layer starts below the top bar: `top: 52` with `.fullscreen-takeover`, never
+  `inset: 0`.** The top bar is z 250 so it stays over the z-200 layers, and at inset 0 it covered the
+  campaign builder's Save draft (FIX-25). On a phone the class resets it to top 0.
 - **A full-screen takeover starts where the content starts, not at x=0.** `.fullscreen-takeover`
   is `position: fixed; z-index: 200` and the sidebar is `z-index: 120`, so `left: 0` painted the
   donor profile and the grant profile over the ENTIRE nav: every item visible through the

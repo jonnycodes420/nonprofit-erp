@@ -28,6 +28,17 @@ const QUICK_NAV = [
   { id:"nav_settings_receipts", label:"Settings → Tax Receipts", hint:"Receipt settings & year-end statements",
     keywords:"settings tax receipts receipt year end statement ein legal",
     go:nav=>nav("settings",{section:"receipts"}) },
+  // FIX-25: a careful tester searched for these three and decided Steward did
+  // not have them. Each is a part of Fundraising with a rail entry of its own.
+  { id:"nav_auctions", label:"Auctions", hint:"Items, bids, winners and pay links",
+    keywords:"auctions auction silent auction live auction bids bidding bidder paddle gala items lots winners",
+    go:nav=>nav("auctions") },
+  { id:"nav_p2p", label:"Peer-to-peer", hint:"Teams, fundraisers and their pages",
+    keywords:"peer-to-peer peer to peer p2p teams team captain fundraisers personal fundraising page walk run ride a-thon",
+    go:nav=>nav("p2p") },
+  { id:"nav_memberships", label:"Memberships", hint:"Members, levels, renewals and the membership page",
+    keywords:"memberships membership members member levels tiers renewals renew lapsed dues join card",
+    go:nav=>nav("memberships") },
 ];
 
 const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();

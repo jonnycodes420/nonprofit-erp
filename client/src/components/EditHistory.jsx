@@ -102,14 +102,18 @@ export function EditedMarker({ item }) {
 
 // Delete, then Undo for ten seconds. Returns [toast, offer]. `offer` takes
 // the server's delete response and what to do once it is back.
+// FIX-25: the ten seconds count only while someone could be reading it. The
+// clock stops while the pointer or focus is on the toast, and while the tab is
+// in the background, so Undo is never gone before the person looks for it.
 export function useUndo() {
-  const [state, setState] = useState(null);   // { undoId, label, onRestored, left }
+  const [state, setState] = useState(null);   // { undoId, label, onRestored, left, held }
   useEffect(() => {
     if (!state) return undefined;
     if (state.left <= 0) { setState(null); return undefined; }
-    const t = setTimeout(() => setState(s => (s ? { ...s, left: s.left - 1 } : s)), 1000);
+    const t = setTimeout(() => setState(s => (!s ? s : s.held || (typeof document !== "undefined" && document.hidden) ? { ...s } : { ...s, left: s.left - 1 })), 1000);
     return () => clearTimeout(t);
   }, [state]);
+  const hold = held => setState(s => (s ? { ...s, held } : s));
   const offer = (resp, label, onRestored) => {
     if (!resp || !resp.undoId) return;
     setState({ undoId: resp.undoId, label, onRestored, left: resp.undoSeconds || 10, err: "" });
@@ -122,13 +126,14 @@ export function useUndo() {
       s.onRestored && s.onRestored(r);
     } catch (e) { setState({ ...s, err: errorMessage(e, "It could not be put back.") }); }
   };
-  return [<UndoToastView key="undo" state={state} onUndo={undo} />, offer];
+  return [<UndoToastView key="undo" state={state} onUndo={undo} onHold={hold} />, offer];
 }
 
-function UndoToastView({ state, onUndo }) {
+function UndoToastView({ state, onUndo, onHold }) {
   if (!state) return null;
   return (
     <div role="status" data-testid="undo-toast"
+      onMouseEnter={() => onHold(true)} onMouseLeave={() => onHold(false)} onFocus={() => onHold(true)} onBlur={() => onHold(false)}
       style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.white, borderRadius: 12, padding: "12px 18px", display: "flex", gap: 14, alignItems: "center", fontSize: 13, boxShadow: "0 8px 24px rgba(15,26,18,0.25)", maxWidth: "calc(100vw - 32px)" }}>
       <span>{state.err || `Deleted the ${state.label}.`}</span>
       <button type="button" onClick={onUndo} style={{ ...linkBtn, color: T.gold, fontWeight: 800 }}>Undo ({state.left})</button>
@@ -136,9 +141,12 @@ function UndoToastView({ state, onUndo }) {
   );
 }
 
-// FIX-22: THE SAME TOAST, FROM ANYWHERE. A screen that has no useUndo of its
-// own calls offerUndo(resp, label, onRestored) after its DELETE; the host
-// mounts itself on first use, so the screen renders nothing for it.
+// FIX-22: THE SAME TOAST, FROM ANYWHERE. A screen calls offerUndo(resp, label,
+// onRestored) after its DELETE; the host mounts itself on first use, so the
+// screen renders nothing for it. FIX-25: every delete uses this one host. A
+// toast drawn inside the screen that deleted went with that screen whenever it
+// re-rendered away, and a transformed ancestor can trap a fixed toast; one
+// host on document.body has neither problem.
 let undoHostOffer = null;
 let undoHostMounted = false;
 const undoWaiting = [];

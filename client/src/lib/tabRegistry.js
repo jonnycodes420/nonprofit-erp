@@ -38,6 +38,14 @@ const TABS=[
   // receipts were all already built. This is the door.
   {id:"events",label:"Events",icon:"◎"},
   {id:"grants",label:"Grants",icon:"◉"},
+  // FIX-25: FINDABILITY. Auctions, Peer-to-peer and Memberships shipped in
+  // PARITY-2 as parts of Fundraising, under Campaigns & pages: two clicks deep
+  // and named nowhere on the rail, so a careful tester reported all three as
+  // missing. Each now has its own rail entry. None is a screen of its own:
+  // FR_PART_TABS below sends each to the Fundraising part it already was.
+  {id:"auctions",label:"Auctions",icon:"◇"},
+  {id:"p2p",label:"Peer-to-peer",icon:"⇆"},
+  {id:"memberships",label:"Memberships",icon:"◑"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
@@ -128,4 +136,10 @@ const PORTAL_TIER_TABS=new Set(["donors","portal","settings"]);
 // keep working. `tabAllowed` below is where the two rules meet.
 const CRM_HIDDEN_TABS=new Set(["portal"]);
 
-export { TABS, BOTTOM_TABS, MORE_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };
+// FIX-25: a rail id that is a PART of Fundraising, not a tab. navigateTo turns
+// each into ("fundraising", {frSection}), tabHref gives it that URL, and the
+// rail marks it current while that part is open. The values are part ids from
+// lib/fundraisingSections.js.
+const FR_PART_TABS={auctions:"auctions",p2p:"p2p",memberships:"members"};
+
+export { FR_PART_TABS, TABS, BOTTOM_TABS, MORE_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };

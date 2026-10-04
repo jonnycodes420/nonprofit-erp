@@ -425,11 +425,14 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
 }
 
 // FIX-22 · "1 attachment" on an email opens the message where the file is.
+// FIX-25: on a demo org the emails were seeded, so there is no message to
+// open; the server marks them `demo` and this says so in place of a link.
 function MailFileLinks({ files }) {
-  const list = (files || []).filter(f => f.url);
+  const list = (files || []).filter(f => f.url || f.demo);
   if (!list.length) return null;
   return <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-    {list.map(f => <a key={f.interactionId} href={f.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
+    {list.map(f => f.demo ? <span key={f.interactionId} data-testid="mail-file-demo" style={{ fontSize: 14, color: T.ink3 }}>
+      Demo email: on a real account this opens the message in Gmail or Outlook</span> : <a key={f.interactionId} href={f.url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()}
       data-testid="mail-file-link" style={{ fontSize: 14, color: T.greenDk, fontWeight: 600 }}>
       Open {f.count === 1 ? "the attachment" : `the ${f.count} attachments`} in {f.owner ? `${f.owner}'s ` : ""}{f.app}</a>)}
   </div>;

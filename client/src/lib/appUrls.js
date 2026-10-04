@@ -9,6 +9,8 @@
 // This module is the one place a path is built AND read, so the two cannot
 // drift. JSX-free, so the sidebar, App and any list can import it.
 
+import { FR_PART_TABS } from "./tabRegistry.js";
+
 // opts key  <->  query key, for the tabs whose intent is a single value.
 const QUERY_KEYS = [
   ["frSection", "fr"], ["report", "report"], ["savedReport", "saved"],
@@ -91,6 +93,9 @@ export function urlParam(tab, key) {
 export function tabHref(tab, opts) {
   const o = opts || {};
   if (tab === "dashboard") return "/dashboard";
+  // FIX-25: Auctions, Peer-to-peer and Memberships are rail entries for a
+  // part of Fundraising, so their link is that part's own URL.
+  if (FR_PART_TABS[tab]) return tabHref("fundraising", { ...o, frSection: FR_PART_TABS[tab] });
   if (tab === "donors") {
     if (o.selectDonorId) return donorHref(o.selectDonorId) + (o.openConversation ? "?conversation=1" : "");
     return donorsListHref({ view: o.view, stage: o.stageFilter });

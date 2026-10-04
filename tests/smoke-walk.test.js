@@ -77,7 +77,12 @@ function routes() {
 const PROFILE_TABS = ["overview", "gifts", "funds", "related", "materials", "activity"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
-const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent" };
+const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent", p2p: "Peer-to-peer" };
+// FIX-25: rail ids that open a PART of Fundraising (tabRegistry FR_PART_TABS).
+// Each is walked like a tab and must land on its own part, not the Overview.
+const FR_PART_TABS = Object.fromEntries([...((/const FR_PART_TABS\s*=\s*\{([^}]*)\}/.exec(
+  fs.readFileSync(path.join(ROOT, "client", "src", "lib", "tabRegistry.js"), "utf8")) || [0, ""])[1]
+  .matchAll(/(\w+)\s*:\s*"([^"]+)"/g))].map(m => [m[1], m[2]]));
 // Read from the registry, so a tab that becomes visible is walked from that
 // day and a tab that becomes hidden stops being a failure.
 const HIDDEN_FOR_CRM = new Set(
@@ -298,6 +303,8 @@ async function groupsAreQuick() {
        current.split("\n").some(l => l.trim().toLowerCase() === label.toLowerCase()), { asked: label, got: current });
     seen.push(current.trim().toLowerCase());
     await look(`tab ${id}`);
+    if (FR_PART_TABS[id]) ok(`tab ${id}: opens the Fundraising part "${FR_PART_TABS[id]}"`,
+      await page.locator(`[data-fr-view="${FR_PART_TABS[id]}"]`).count() === 1, page.url());
     if (id === "donors") await namesAreLinks("Donors", () => [...document.querySelectorAll(".dir-donor-row")].map(row => {
       const a = row.querySelector("a[href]"); return { href: a && a.getAttribute("href"), id: a && a.getAttribute("data-donor-link") };
     }));
@@ -386,6 +393,40 @@ async function groupsAreQuick() {
         else { ok(`donor ${d.id} — the ${tab} tab is on the profile`, false, "tab not found"); continue; }
       }
       await look(`donor ${d.id} · ${tab}`);
+    }
+  }
+
+  // FIX-25 · DELETE A MEETING, THEN UNDO. A tester deleted a meeting and saw no
+  // Undo. The walk deletes one of the demo's meetings from its profile, needs
+  // the toast on screen, presses Undo, and needs the same row back by its id,
+  // so the demo ends the walk exactly as it began.
+  {
+    trouble = [];
+    const { q } = require("./helpers");
+    const [m] = await q(`SELECT id, donor_id FROM interactions WHERE org_id = $1 AND type = 'meeting' ORDER BY date DESC, id LIMIT 1`, [(auth.org && auth.org.id) || auth.user.orgId]);
+    ok("§undo the demo has a meeting to delete", !!m, m);
+    if (m) {
+      await page.goto(`${APP}/donors/${m.donor_id}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      const menu = page.locator('[aria-label="Edit or delete this meeting"]').first();
+      await menu.waitFor({ timeout: 15000 }).catch(() => {});
+      let shown = false, back = [];
+      if (await menu.count()) {
+        await menu.scrollIntoViewIfNeeded();
+        await menu.click();
+        await page.getByRole("menuitem", { name: "Delete" }).click();
+        const toast = page.locator('[data-testid="undo-toast"]');
+        shown = await toast.waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+        const gone = (await q("SELECT id FROM interactions WHERE id = $1", [m.id])).length === 0;
+        ok("§undo deleting a meeting takes it off the record at once", gone);
+        if (shown) {
+          await toast.getByRole("button", { name: /Undo/ }).click();
+          await toast.waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+        }
+        back = await q("SELECT id FROM interactions WHERE id = $1", [m.id]);
+      }
+      ok("§undo deleting a meeting shows the Undo toast", shown);
+      ok("§undo pressing Undo puts the same meeting back", back.length === 1, back);
+      await look("donor profile after a meeting delete and Undo");
     }
   }
 

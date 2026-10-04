@@ -4,7 +4,7 @@
 // says what the count is, and the one action that fixes it. Steward suggests;
 // a person approves. Every write goes through a POST the person pressed, and
 // a merge can be undone for 30 days.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card, Modal } from "./shared";
 
@@ -101,7 +101,7 @@ export function DataHealth({ onOpenDonor, isReadOnly = false }) {
       </Card>
       {open === "duplicates" && <DuplicatesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "addresses" && <AddressesPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
-      {open === "moved" && <MovedPanel onDone={done} isReadOnly={isReadOnly} note={health.ncoaNote} />}
+      {open === "moved" && <MovedPanel onDone={done} isReadOnly={isReadOnly} note={health.ncoaNote} demo={!!health.demo} />}
       {open === "emails" && <EmailsPanel onDone={done} onOpenDonor={onOpenDonor} isReadOnly={isReadOnly} />}
       {open === "unreachable" && <UnreachablePanel onOpenDonor={onOpenDonor} />}
       <MergesPanel key={tick} onDone={done} isReadOnly={isReadOnly} />
@@ -296,6 +296,9 @@ function AddressesPanel({ onDone, onOpenDonor, isReadOnly }) {
     setBusy(true);
     try {
       const r = await apiFetch("/data-health/addresses/apply", { method: "POST", body: JSON.stringify({ donorIds: ids }) });
+      // FIX-25: the approved rows leave the list now; the re-read confirms it.
+      const gone = new Set(ids);
+      setData(d => (d && Array.isArray(d.tidy) ? { ...d, tidy: d.tidy.filter(x => !gone.has(x.donorId)) } : d));
       load(); onDone(`${plural(r.applied, "address", "addresses")} tidied. The old ones are kept in each person's address history.`);
     } catch (e) { setErr(e.sentence || e.message); }
     finally { setBusy(false); }
@@ -345,7 +348,43 @@ function AddressesPanel({ onDone, onOpenDonor, isReadOnly }) {
 }
 
 // ── People who moved (NCOA) ────────────────────────────────────────────────
-function MovedPanel({ onDone, isReadOnly, note }) {
+// FIX-25 · THE SAMPLE RESULTS FILE, for a demo org only. It is the file
+// Steward prepares, answered the way a provider answers it: most people not
+// moved, a few moved with a new address, two moved and left none. It goes in
+// through the same import as a real provider's file, so the demo shows the
+// whole flow without a vendor. The picks are by row position, never random,
+// so every run of the demo reads the same.
+function readCsvRows(text) {
+  const rows = []; let row = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; continue; }
+    if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && text[i + 1] === "\n") i++; row.push(cell); rows.push(row); row = []; cell = ""; }
+    else cell += c;
+  }
+  if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ""));
+}
+const csvOut = v => (/[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+const SAMPLE_NEW = [["41 Harbor View Rd", "Portland", "ME", "04101"], ["9 Common St", "Newburyport", "MA", "01950"], ["220 Pleasant St", "Concord", "NH", "03301"],
+  ["17 Orchard Ln", "Ipswich", "MA", "01938"], ["5 Elm Ct", "Providence", "RI", "02906"], ["88 Lake Ave", "Burlington", "VT", "05401"]];
+function sampleNcoaReturn(prepared) {
+  const rows = readCsvRows(prepared).slice(1);
+  const out = [["Record ID", "Full Name", "NCOA Return Code", "Move Type", "Move Effective Date", "New Address Line 1", "New Address Line 2", "New City", "New State", "New ZIP Code"]];
+  const step = Math.max(1, Math.floor(rows.length / 8));
+  rows.forEach((r, i) => {
+    const slot = i % step === 0 ? i / step : -1;
+    const n = slot >= 0 && slot < SAMPLE_NEW.length ? SAMPLE_NEW[slot] : null;
+    if (n) out.push([r[0], r[1], "A", slot % 3 === 1 ? "F" : "I", `2026${String(4 + slot).padStart(2, "0")}`, n[0], "", n[1], n[2], n[3]]);
+    else if (slot === SAMPLE_NEW.length || slot === SAMPLE_NEW.length + 1) out.push([r[0], r[1], "02", "I", "202607", "", "", "", "", ""]);
+    else out.push([r[0], r[1], "", "", "", "", "", "", "", ""]);
+  });
+  return out.map(r => r.map(csvOut).join(",")).join("\r\n") + "\r\n";
+}
+
+function MovedPanel({ onDone, isReadOnly, note, demo = false }) {
   const [moves, setMoves] = useState(null);
   const [sel, setSel] = useState(new Set());
   const [msg, setMsg] = useState(null);
@@ -362,21 +401,32 @@ function MovedPanel({ onDone, isReadOnly, note }) {
     document.body.appendChild(a); a.click(); a.remove();
     setMsg(`File prepared with ${plural(Number(r.headers.get("X-Row-Count") || 0), "mailable address", "mailable addresses")}. Send it to your provider, then bring their results back here.`);
   };
+  const fileInput = useRef(null);
+  const importText = async (filename, text) => {
+    const r = await apiFetch("/data-health/ncoa/results", { method: "POST", body: JSON.stringify({ filename, text }) });
+    setMsg(r.sentence); load(); onDone(r.sentence);
+  };
   const bringIn = async e => {
     const f = e.target.files && e.target.files[0];
     e.target.value = "";
     if (!f) return;
     setBusy(true);
+    try { await importText(f.name, await f.text()); }
+    catch (err) { setMsg(err.sentence || err.message); }
+    finally { setBusy(false); }
+  };
+  const useSample = async () => {
+    setBusy(true);
     try {
-      const text = await f.text();
-      const r = await apiFetch("/data-health/ncoa/results", { method: "POST", body: JSON.stringify({ filename: f.name, text }) });
-      setMsg(r.sentence); load(); onDone(r.sentence);
+      const r = await fetch(`${API}/data-health/ncoa/file`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) throw new Error("The sample file couldn't be made.");
+      await importText("sample-change-of-address-results.csv", sampleNcoaReturn(await r.text()));
     } catch (err) { setMsg(err.sentence || err.message); }
     finally { setBusy(false); }
   };
   const apply = async ids => {
     setBusy(true);
-    try { const r = await apiFetch("/data-health/ncoa/apply", { method: "POST", body: JSON.stringify({ ids }) }); load(); onDone(`${plural(r.applied, "change of address", "changes of address")} approved. Each old address is kept in the person's history and their timeline says so.`); }
+    try { const r = await apiFetch("/data-health/ncoa/apply", { method: "POST", body: JSON.stringify({ ids }) }); setMoves(ms => (ms || []).filter(m => !ids.includes(m.id))); setSel(new Set()); load(); onDone(`${plural(r.applied, "change of address", "changes of address")} approved. Each old address is kept in the person's history and their timeline says so.`); }
     catch (err) { setMsg(err.sentence || err.message); }
     finally { setBusy(false); }
   };
@@ -388,11 +438,15 @@ function MovedPanel({ onDone, isReadOnly, note }) {
       <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{note}</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
         <button style={btn(false)} onClick={download}>Prepare an address update file</button>
-        <label style={{ ...btn(true, busy || isReadOnly), display: "inline-block" }}>
-          {busy ? "Reading…" : "Bring in the results"}
-          <input type="file" accept=".csv,text/csv,.txt" onChange={bringIn} disabled={busy || isReadOnly} style={{ display: "none" }} data-testid="dh-ncoa-input" />
-        </label>
+        {/* FIX-25: a real button. It was a label wrapping a hidden input, which
+            read as plain text, could not be reached by keyboard and was not a
+            control to anything reading the page. */}
+        <button type="button" style={btn(true, busy || isReadOnly)} disabled={busy || isReadOnly} data-testid="dh-ncoa-bring"
+          onClick={() => fileInput.current && fileInput.current.click()}>{busy ? "Reading…" : "Bring in the results"}</button>
+        <input ref={fileInput} type="file" accept=".csv,text/csv,.txt" onChange={bringIn} disabled={busy || isReadOnly} style={{ display: "none" }} data-testid="dh-ncoa-input" />
+        {demo && <button type="button" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} data-testid="dh-ncoa-sample" onClick={useSample}>Use the sample results file</button>}
       </div>
+      {demo && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>This is a demo organisation, so no provider is involved. The sample file answers the way a provider would, using the people on file here.</div>}
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginTop: 8 }}>{msg}</div>}
       {moves && moves.length > 0 && <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 12 }}>

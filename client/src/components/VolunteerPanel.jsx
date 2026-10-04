@@ -119,6 +119,15 @@ export function VolunteerPanel({ donor, isReadOnly, always = false }) {
           </div>))}
         <div style={{ fontSize: 12.5, color: T.ink3, alignSelf: "flex-end" }}>across {data.shiftCount} {data.shiftCount === 1 ? "shift" : "shifts"}</div>
       </div>
+      {/* FIX-25: what they said they can give (Make a volunteer saves it), up
+          here beside the hours they have given, not only at the foot. */}
+      {prof && prof.record && (prof.record.hoursPerWeek != null || prof.record.availability.length > 0 || (prof.record.roles || []).length > 0) && (
+        <div data-testid="volunteer-record-line" style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700 }}>Can give: </span>
+          {[prof.record.hoursPerWeek != null ? `${prof.record.hoursPerWeek} ${prof.record.hoursPerWeek === 1 ? "hour" : "hours"} a week` : null,
+            prof.record.availability.length ? prof.record.availability.join(", ") : null,
+            (prof.record.roles || []).length ? `as ${prof.record.roles.join(", ")}` : null].filter(Boolean).join(" · ")}
+        </div>)}
       <div data-testid="volunteer-crossover" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
         {Number(donor.total || donor.total_giving || donor.totalGiving || 0) > 0
           ? "Gives and volunteers. Their hours and their giving are on this one record."
