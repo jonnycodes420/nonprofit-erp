@@ -101,6 +101,19 @@ const freePort = () => new Promise(r => { const s = http.createServer(); s.liste
     ok("§3 with AI off the template sentence is shown", a3.sentenceSource === "template" && a3.sentence === a3.template && a3.aiOff === true, JSON.stringify(a3).slice(0, 300));
     ok("§3 with AI off the model is not asked", captured.length === before, `${captured.length} vs ${before}`);
     ok("§3 the same reasons with AI on and off", JSON.stringify(a3.reasons) === JSON.stringify(a1.reasons), "");
+
+    // §4 FIX-25: plain rewordings find the question that exists, and a
+    // question Steward has no answer for still gets none. Fails if a
+    // matcher is narrowed back (planted: the retention words removed turned
+    // the first four red) or widened into everything (the last two).
+    const { matchQuestion } = await import(path.join(__dirname, "..", "shared", "whyShape.js"));
+    for (const [text, key] of [
+      ["why are donors leaving", "retention"], ["who stopped giving", "retention"], ["why is giving down", "retention"],
+      ["why did donations drop this year", "retention"], ["which donors are at risk", "lapse"],
+      ["who should I follow up with", "call"], ["why hasn\u2019t Jane given this year", "stopped"],
+      ["why did the spring appeal underperform", "appeal"], ["who can we ask for more", "more"],
+      ["how much did we raise", null], ["show me the board report", null],
+    ]) ok(`§4 "${text}" is ${key || "not covered"}`, matchQuestion(text) === key, String(matchQuestion(text)));
   } finally {
     child.kill();
     mock.close();

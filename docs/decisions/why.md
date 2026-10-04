@@ -36,6 +36,9 @@ template sentences. Every future build is checked against this.
 - **Every question goes in the question log, text only.** `question_log.surface = 'why'`, `topic` = the
   question's key or `not covered`, `answered` true or false. A tapped question logs its generic words,
   never the donor's name. Super-admin's "What Steward could not answer" is the roadmap. (WHY-1)
+- **A reworded question finds the one it means.** `matchQuestion` widens the words of the eight
+  ("why are donors leaving", "who stopped giving" and "why is giving down" are retention); it never adds
+  a question. "Who stopped giving", naming nobody, is retention and not (d). `why1-sentence-check` §4. (FIX-25)
 - **No statistic without a source.** Every number in an answer is the org's own. Never quote another
   company's research as Steward's, and never name a competitor in the product or site. (WHY-1)
 
