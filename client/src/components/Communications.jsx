@@ -1556,7 +1556,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   if (view === "gallery") {
     const stripTags = h => String(h || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     return (
-      <div data-testid="campaign-gallery" style={{ position: "fixed", inset: 0, zIndex: 200, background: T.bg, color: T.ink, overflowY: "auto" }}>
+      <div data-testid="campaign-gallery" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, background: T.bg, color: T.ink, overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", background: T.white, borderBottom: "1px solid " + T.bg3 }}>
           <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
           <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>New Campaign</span>
@@ -1607,7 +1607,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const segSentence = segPreview?.sentence || "";
     const previewName = previewFirst?.firstName || "Margaret";
     return (
-      <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
+      // FIX-25: under the app's top bar (z 250), never behind it. At inset 0
+      // the bar covered this header, Save draft with it, so no draft could be
+      // saved. The takeover class starts it beside the sidebar on desktop and
+      // full screen on a phone, like the donor profile.
+      <div data-testid="campaign-builder" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

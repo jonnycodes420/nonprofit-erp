@@ -98,7 +98,7 @@ function NewEventPanel({ onSave, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", justifyContent: "flex-end" }}>
+    <div className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, display: "flex", justifyContent: "flex-end" }}>
       <div onClick={onClose} style={{ position: "absolute", inset: 0, background: T.ink+"aa" }} />
       <div style={{ position: "relative", width: 420, background: T.white, height: "100%", overflowY: "auto", padding: "28px 28px 40px", boxShadow: "-8px 0 40px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
