@@ -128,6 +128,9 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   only the note, next step and people). (FIX-14)
 - **A delete that offers Undo moves the row to `deleted_records`** (`trashRow`) and Undo puts it back
   whole (`POST /deleted-records/:id/restore`). No reader learns a deleted_at column. (FIX-14)
+- **Every Undo toast comes from the one host** (`offerUndo` in `EditHistory.jsx`, mounted on
+  document.body). A screen never renders its own toast: one drawn inside the screen dies when that screen
+  re-renders away. The ten seconds stop while the pointer or focus is on it or the tab is hidden. (FIX-25)
 - **Pledges, asks, relationships and households follow the same rules** (owner or admin, `edited_*`,
   delete via `trashRow` with an `undoId`). Rows that go with a row (a pledge's instalments, a
   household's members, a calendar meeting's `interaction_id`) ride in `row_data.__with` and Undo puts
