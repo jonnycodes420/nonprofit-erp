@@ -77,7 +77,12 @@ function routes() {
 const PROFILE_TABS = ["overview", "gifts", "funds", "related", "materials", "activity"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
-const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent" };
+const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent", p2p: "Peer-to-peer" };
+// FIX-25: rail ids that open a PART of Fundraising (tabRegistry FR_PART_TABS).
+// Each is walked like a tab and must land on its own part, not the Overview.
+const FR_PART_TABS = Object.fromEntries([...((/const FR_PART_TABS\s*=\s*\{([^}]*)\}/.exec(
+  fs.readFileSync(path.join(ROOT, "client", "src", "lib", "tabRegistry.js"), "utf8")) || [0, ""])[1]
+  .matchAll(/(\w+)\s*:\s*"([^"]+)"/g))].map(m => [m[1], m[2]]));
 // Read from the registry, so a tab that becomes visible is walked from that
 // day and a tab that becomes hidden stops being a failure.
 const HIDDEN_FOR_CRM = new Set(
@@ -298,6 +303,8 @@ async function groupsAreQuick() {
        current.split("\n").some(l => l.trim().toLowerCase() === label.toLowerCase()), { asked: label, got: current });
     seen.push(current.trim().toLowerCase());
     await look(`tab ${id}`);
+    if (FR_PART_TABS[id]) ok(`tab ${id}: opens the Fundraising part "${FR_PART_TABS[id]}"`,
+      await page.locator(`[data-fr-view="${FR_PART_TABS[id]}"]`).count() === 1, page.url());
     if (id === "donors") await namesAreLinks("Donors", () => [...document.querySelectorAll(".dir-donor-row")].map(row => {
       const a = row.querySelector("a[href]"); return { href: a && a.getAttribute("href"), id: a && a.getAttribute("data-donor-link") };
     }));
