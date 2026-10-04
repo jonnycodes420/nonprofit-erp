@@ -101,7 +101,10 @@ export function forgetReads() { kept.clear(); }
 
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
-  if (method !== "GET") { kept.clear(); return apiFetchNow(path, options); }
+  // FIX-25: a write also forgets the reads in flight. A read asked for after a
+  // write must not be handed the answer to a read that left before it, or a
+  // list re-read after "Approve all" comes back as it was before the approval.
+  if (method !== "GET") { kept.clear(); inFlight.clear(); return apiFetchNow(path, options); }
   if (options.body || options.signal) return apiFetchNow(path, options);
   const key = getToken() + " " + path;
   const hit = kept.get(key);

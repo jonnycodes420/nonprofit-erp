@@ -3205,6 +3205,26 @@ async function main() {
   await client.end();
 }
 
+// FIX-25 · EVERYONE HAS A MAILING ADDRESS. The bulk insert wrote a city for
+// one person in twelve and a street for nobody, so "Prepare an address update
+// file" found 34 mailable people out of 1,217 and the change-of-address demo
+// had nothing to send. Each person on the North Shore gets a street and a ZIP,
+// written the standard US way (so Addresses to tidy is unchanged), and each
+// one is a different street number, so no two people share an address and the
+// duplicate finder sees no new pairs. No rnd() here: drawing from the stream
+// would move every later random choice in the seed.
+const NORTH_SHORE = [["Salem", "01970"], ["Beverly", "01915"], ["Marblehead", "01945"], ["Danvers", "01923"],
+  ["Peabody", "01960"], ["Swampscott", "01907"], ["Gloucester", "01930"], ["Manchester", "01944"]];
+const NORTH_SHORE_ZIP = Object.fromEntries(NORTH_SHORE);
+const STREETS = ["Essex St", "Lafayette St", "Derby St", "Federal St", "Bridge St", "Chestnut St", "Broad St", "Highland Ave",
+  "Summer St", "Pleasant St", "Elm St", "Maple Ave", "Cabot St", "Hale St", "Atlantic Ave", "Ocean Ave", "Pickering St",
+  "Boston St", "North St", "Winter St", "Front St", "Water St", "Union St"];
+function mailingAddress(d, i) {
+  if (d.city && (d.state !== "MA" || !NORTH_SHORE_ZIP[d.city])) return { address: null, zip: null, city: d.city, state: d.state };
+  const [city, zip] = d.city ? [d.city, NORTH_SHORE_ZIP[d.city]] : NORTH_SHORE[i % NORTH_SHORE.length];
+  return { address: `${3 + 2 * Math.floor(i / STREETS.length)} ${STREETS[i % STREETS.length]}`, zip, city, state: "MA" };
+}
+
 async function writeAll(client, donors, gifts) {
   console.log(`[seed] writing ${donors.length} donors, ${gifts.length} gifts…`);
   const B = 500;
@@ -3212,14 +3232,16 @@ async function writeAll(client, donors, gifts) {
     const batch = donors.slice(i, i + B);
     const vals = [], params = [];
     batch.forEach((d, k) => {
-      const o = k * 10;
-      vals.push(`($${o+1},$${o+2},$${o+3},$${o+4},$${o+5},$${o+6},$${o+7},$${o+8},$${o+9},$${o+10})`);
+      const o = k * 12;
+      const m = mailingAddress(d, i + k);
+      vals.push(`($${o+1},$${o+2},$${o+3},$${o+4},$${o+5},$${o+6},$${o+7},$${o+8},$${o+9},$${o+10},$${o+11},$${o+12})`);
       params.push(d.id, ORG, d.name, d.email, d.status || "new", d.stage || "prospect",
-                  d.city || null, d.state || null, d.officer || null,
-                  d.officer ? (d.officer === "u_b72demo_off" ? "Priya Raman" : "Dana Reyes") : null);
+                  m.city || null, m.state || null, d.officer || null,
+                  d.officer ? (d.officer === "u_b72demo_off" ? "Priya Raman" : "Dana Reyes") : null,
+                  m.address, m.zip);
     });
     await client.query(
-      `INSERT INTO donors (id,org_id,name,email,status,stage,city,state,assigned_to,assigned_to_name)
+      `INSERT INTO donors (id,org_id,name,email,status,stage,city,state,assigned_to,assigned_to_name,address,zip)
        VALUES ${vals.join(",")}`, params);
   }
   // FIX-3 C — each gift says how it came, in the fields the real writers
