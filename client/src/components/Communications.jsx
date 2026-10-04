@@ -1641,7 +1641,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       // full screen on a phone, like the donor profile.
       <div data-testid="campaign-builder" className="fullscreen-takeover" style={{ position: "fixed", top: 52, left: 0, right: 0, bottom: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
+        <div className="cb-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
             <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{editingId ? "Edit Campaign" : "New Campaign"}</span>
@@ -1660,10 +1660,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           </div>
         </div>
 
-        {/* Two-panel body */}
-        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* Two-panel body. FIX-26: on a phone the three columns stack and the
+            body scrolls as one page (.cb-body in GlobalStyles). */}
+        <div className="cb-body" style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {/* Left: settings */}
-          <div style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
+          <div className="cb-col cb-settings" style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
 
             {form.starterKey && !form.starterReviewed && !starterEdited({ body: form.starterBody }, liveHtml || form.bodyHtml) ? (
               <div data-testid="builder-not-reviewed" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1740,7 +1741,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           </div>
 
           {/* Middle: the editor */}
-          <div style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto", background: T.white, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="cb-col cb-editor" style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto", background: T.white, display: "flex", flexDirection: "column", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <label style={{ ...S.label, marginBottom: 0 }}>Email Body</label>
               <div style={{ display: "flex", gap: 8 }}>
@@ -1760,7 +1761,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           {/* Right: THE EMAIL, at the width it will be read at. Not a preview
               of the markup — the same renderer the send uses, with the first
               recipient's own first name in it. */}
-          <div className="comm-preview" style={{ width: 390, flexShrink: 0, borderLeft: "1px solid " + T.bg3, background: T.bg, padding: "20px 20px 32px", overflowY: "auto" }}>
+          <div className="comm-preview cb-col" style={{ width: 390, flexShrink: 0, borderLeft: "1px solid " + T.bg3, background: T.bg, padding: "20px 20px 32px", overflowY: "auto" }}>
             <div style={{ ...S.label, marginBottom: 12 }}>What {previewName} will see</div>
             <div data-testid="campaign-preview" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, overflow: "hidden" }}>
               <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10, minHeight: 22 }}>

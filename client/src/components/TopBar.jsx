@@ -43,52 +43,20 @@ const QUICK_NAV = [
 
 const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();
 
-export function TopBar({ auth, logout, onNavigate, screen }) {
+// FIX-26: THE ONE SEARCH, for the desktop bar and the phone header alike. It
+// was written inside TopBar, which a phone never shows, so on a phone nothing
+// could be searched for and Auctions, Peer-to-peer and Memberships could not
+// be found. Same server search, same quick-nav list, same rows.
+function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search donors, grants… ⌘K" }) {
   const [q,setQ] = useState("");
   const [results,setResults] = useState(null);   // {donors:[], grants:[]} | null
   const [open,setOpen] = useState(false);
   const [sel,setSel] = useState(0);
-  const [helpOpen,setHelpOpen] = useState(false);
-  const [meOpen,setMeOpen] = useState(false);
-  // TRUST-2 — What's new. A dot on the chip until the newest entry is opened.
-  const [wnOpen,setWnOpen] = useState(false);
-  const [wnHidden,setWnHidden] = useState(null);
-  const [wnSeen,setWnSeen] = useState(()=>{ try { return localStorage.getItem(LAST_SEEN_KEY)||""; } catch { return ""; } });
-  useEffect(()=>{ apiFetch("/changelog/hidden").then(d=>setWnHidden(new Set(d.hidden||[]))).catch(()=>setWnHidden(new Set())); },[]);
-  const wnEntries = CHANGELOG.filter(e=>!wnHidden||!wnHidden.has(e.id));
-  const wnUnseen = !!wnEntries[0] && wnEntries[0].id !== wnSeen && wnHidden!==null;
-  const openWn = () => { setWnOpen(true); const id=wnEntries[0]?.id||""; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
-  const meRef = useRef(null);
-  const inputRef = useRef(null);
   const rootRef = useRef(null);
   const seqRef = useRef(0);
 
-  // ⌘K / Ctrl+K from anywhere in the authenticated app (desktop — the bar
-  // is display:none ≤768px, where focusing a hidden input is a no-op).
-  // BUILD-10: the bar is now full-width at zIndex 250, above the z-200
-  // full-screen takeovers (DonorProfile/GrantProfile), so it's always
-  // visible and clickable — the old elementFromPoint occlusion guard is gone.
   useEffect(()=>{
-    const onKey = e => {
-      if ((e.metaKey||e.ctrlKey) && (e.key==="k"||e.key==="K")) {
-        const el = inputRef.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        if (!r.width || !r.height) return; // hidden (mobile shell)
-        e.preventDefault();
-        el.focus(); el.select();
-      }
-    };
-    window.addEventListener("keydown",onKey);
-    return ()=>window.removeEventListener("keydown",onKey);
-  },[]);
-
-  // Close dropdowns on outside click
-  useEffect(()=>{
-    const onDown = e => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-      if (meRef.current && !meRef.current.contains(e.target)) setMeOpen(false);
-    };
+    const onDown = e => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown",onDown);
     return ()=>document.removeEventListener("mousedown",onDown);
   },[]);
@@ -122,6 +90,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     setOpen(false); setQ(""); setResults(null);
     inputRef.current?.blur();
     item.onSelect();
+    if (onPicked) onPicked();
   };
 
   // Flat, ordered list backing keyboard navigation; groups are a render
@@ -167,22 +136,8 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
     else last.items.push(item);
   });
 
-  // BUILD-88a A.4 — FIRST NAME EVERYWHERE. The bar showed the whole stored
-  // name, so a seeded "Admin User" sat at the top of every screen in the
-  // product. It is how a colleague is addressed, not how a row is keyed.
-  const userName = firstNameOf(auth?.user?.name) || "You";
-
-  return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
-
-    {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
-        old sidebar wordmark), links to Home */}
-    <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward: Home"
-      style={{width:240,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
-      <span style={{fontSize:21,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
-    </button>
-
-    {/* Global search */}
-    <div ref={rootRef} style={{position:"relative",flex:"0 1 560px",minWidth:0}}>
+  return (
+    <div ref={rootRef} style={style}>
       <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"rgba(240,237,230,0.55)",fontSize:13,pointerEvents:"none"}}>⌕</span>
       <input
         ref={inputRef}
@@ -192,7 +147,8 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
         onChange={e=>{setQ(e.target.value);setOpen(true);}}
         onFocus={()=>setOpen(true)}
         onKeyDown={onKeyDown}
-        placeholder="Search donors, grants… ⌘K"
+        autoFocus={autoFocus}
+        placeholder={placeholder}
         style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"7px 12px 7px 30px",color:T.inkInverse,fontSize:13,outline:"none",fontFamily:"inherit"}}
       />
       {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
@@ -228,6 +184,90 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
         </div>)}
       </div>}
     </div>
+  );
+}
+
+// FIX-26: on a phone, an icon in the header opens the same search across the
+// top of the screen; picking a row, Cancel or Escape closes it.
+export function MobileSearch({ onNavigate }) {
+  const [on,setOn] = useState(false);
+  const inputRef = useRef(null);
+  return <>
+    <button type="button" data-testid="mobile-search-open" aria-label="Search" title="Search" onClick={()=>setOn(true)}
+      style={{width:36,height:36,borderRadius:10,background:"transparent",border:"1px solid "+T.green650,color:T.inkInverse,fontSize:17,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>⌕</button>
+    {on && <div data-testid="mobile-search" role="search"
+      onKeyDown={e=>{ if (e.key==="Escape") setOn(false); }}
+      style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:T.ink,borderBottom:"1px solid "+T.bgElevated,padding:"calc(8px + env(safe-area-inset-top,0px)) 12px 8px",display:"flex",gap:8,alignItems:"flex-start",boxSizing:"border-box"}}>
+      <GlobalSearch onNavigate={onNavigate} inputRef={inputRef} autoFocus onPicked={()=>setOn(false)}
+        placeholder="Search people, grants, pages"
+        style={{position:"relative",flex:1,minWidth:0}}/>
+      <button type="button" onClick={()=>setOn(false)}
+        style={{background:"transparent",border:"none",color:T.inkInverse,fontSize:13,fontWeight:600,padding:"8px 4px",cursor:"pointer",flexShrink:0}}>Cancel</button>
+    </div>}
+  </>;
+}
+
+export function TopBar({ auth, logout, onNavigate, screen }) {
+  const [helpOpen,setHelpOpen] = useState(false);
+  const [meOpen,setMeOpen] = useState(false);
+  // TRUST-2 — What's new. A dot on the chip until the newest entry is opened.
+  const [wnOpen,setWnOpen] = useState(false);
+  const [wnHidden,setWnHidden] = useState(null);
+  const [wnSeen,setWnSeen] = useState(()=>{ try { return localStorage.getItem(LAST_SEEN_KEY)||""; } catch { return ""; } });
+  useEffect(()=>{ apiFetch("/changelog/hidden").then(d=>setWnHidden(new Set(d.hidden||[]))).catch(()=>setWnHidden(new Set())); },[]);
+  const wnEntries = CHANGELOG.filter(e=>!wnHidden||!wnHidden.has(e.id));
+  const wnUnseen = !!wnEntries[0] && wnEntries[0].id !== wnSeen && wnHidden!==null;
+  const openWn = () => { setWnOpen(true); const id=wnEntries[0]?.id||""; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
+  const meRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // ⌘K / Ctrl+K from anywhere in the authenticated app (desktop — the bar
+  // is display:none ≤768px, where focusing a hidden input is a no-op).
+  // BUILD-10: the bar is now full-width at zIndex 250, above the z-200
+  // full-screen takeovers (DonorProfile/GrantProfile), so it's always
+  // visible and clickable — the old elementFromPoint occlusion guard is gone.
+  useEffect(()=>{
+    const onKey = e => {
+      if ((e.metaKey||e.ctrlKey) && (e.key==="k"||e.key==="K")) {
+        const el = inputRef.current;
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height) return; // hidden (mobile shell)
+        e.preventDefault();
+        el.focus(); el.select();
+      }
+    };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  },[]);
+
+  // Close dropdowns on outside click
+  useEffect(()=>{
+    const onDown = e => {
+      if (meRef.current && !meRef.current.contains(e.target)) setMeOpen(false);
+    };
+    document.addEventListener("mousedown",onDown);
+    return ()=>document.removeEventListener("mousedown",onDown);
+  },[]);
+
+
+  // BUILD-88a A.4 — FIRST NAME EVERYWHERE. The bar showed the whole stored
+  // name, so a seeded "Admin User" sat at the top of every screen in the
+  // product. It is how a colleague is addressed, not how a row is keyed.
+  const userName = firstNameOf(auth?.user?.name) || "You";
+
+  return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
+
+    {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
+        old sidebar wordmark), links to Home */}
+    <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward: Home"
+      style={{width:240,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
+      <span style={{fontSize:21,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
+    </button>
+
+    {/* Global search */}
+    <GlobalSearch onNavigate={onNavigate} inputRef={inputRef}
+      style={{position:"relative",flex:"0 1 560px",minWidth:0}}/>
 
     <div style={{flex:1}}/>
 

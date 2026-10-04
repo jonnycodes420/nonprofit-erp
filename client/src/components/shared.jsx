@@ -605,6 +605,12 @@ export function GlobalStyles() {
       /* Full-screen takeovers cover the whole screen on mobile (no fixed bar
          to sit under) — reset the desktop top:52 offset. */
       .fullscreen-takeover{top:0!important;left:0!important;}
+      /* FIX-26: the campaign builder's three columns (settings, editor, the
+         email) were squeezed side by side at 390. They stack, full width, and
+         the body scrolls as one page; the header wraps its buttons. */
+      .cb-body{flex-direction:column!important;overflow-y:auto!important;-webkit-overflow-scrolling:touch;}
+      .cb-body>.cb-col{width:100%!important;flex:none!important;overflow:visible!important;border-left:none!important;border-right:none!important;border-bottom:1px solid ${T.bg3};box-sizing:border-box;}
+      .cb-head{flex-wrap:wrap!important;gap:8px!important;padding:10px 16px!important;}
       .app-signout{display:none!important;}
       .mobile-bottom-bar{display:flex!important;}
       .mobile-more-overlay{display:flex!important;}
