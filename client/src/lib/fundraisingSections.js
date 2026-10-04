@@ -40,7 +40,8 @@ export const FR_SECTIONS = [
       // person running a walk is in this room for six weeks.
       { id: "p2p", label: "Peer-to-peer" },
       { id: "recurring", label: "Recurring" },
-      { id: "members", label: "Members" },
+      // FIX-25: named as the rail names it. The id stays `members`.
+      { id: "members", label: "Memberships" },
     ],
   },
   {

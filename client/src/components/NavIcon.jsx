@@ -18,6 +18,7 @@
 import {
   House, ListChecks, Users, Route, Mail, HandCoins, CalendarDays, FileText,
   HandHelping, Wallet, BarChart3, Sparkles, Settings as SettingsGear, PanelsTopLeft, Group,
+  Gavel, Flag, IdCard,
 } from "lucide-react";
 
 const ICONS = {
@@ -36,6 +37,9 @@ const ICONS = {
   settings: SettingsGear,
   portal: PanelsTopLeft,
   groups: Group,
+  auctions: Gavel,
+  p2p: Flag,
+  memberships: IdCard,
 };
 
 // 20px and stroke 1.75 everywhere. `aria-hidden` because the button beside it

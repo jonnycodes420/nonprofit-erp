@@ -31,7 +31,7 @@ import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
 import { PLAN_UNKNOWN } from "./lib/entitlement";
-import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS } from "./lib/tabRegistry";
+import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
@@ -286,6 +286,9 @@ function AppShell() {
     // a synonym rather than chased through the product.
     if(t==="board"){t="reports";opts={...(opts||{}),report:"dash:"+((opts&&opts.dashKey)||"board")};}
     if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
+    // FIX-25: Auctions, Peer-to-peer and Memberships have rail entries of
+    // their own and are parts of Fundraising, so each opens that part.
+    if(FR_PART_TABS[t]){opts={...(opts||{}),frSection:FR_PART_TABS[t]};t="fundraising";}
     // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
     // one lands on the portal hub instead of a locked/broken view.
     if(data?.org?.plan==="portal"&&!PORTAL_TIER_TABS.has(t))t="portal";
@@ -614,8 +617,13 @@ function AppShell() {
   // with its own hard-coded glyph, which is how it kept a 14px ⚙ while every
   // other item moved to a 20px icon in GTM-1b.
   const navById=Object.fromEntries(TABS.map(t=>[t.id,t]));
+  // FIX-25: the rail item that is current. Inside Fundraising it is the part
+  // in the address bar when that part has a rail entry of its own (Auctions,
+  // Peer-to-peer, Memberships), so exactly one item is marked either way.
+  const frPartNow=tab==="fundraising"?new URLSearchParams(location.search).get("fr"):null;
+  const navCurrent=(frPartNow&&Object.keys(FR_PART_TABS).find(k=>FR_PART_TABS[k]===frPartNow))||tab;
   const navItem=(t)=>{
-    const active=tab===t.id;
+    const active=navCurrent===t.id;
     const locked=TEAM_GATED.has(t.id)&&isCoreTier;
     // GTM-1b 5 — collapsed, the item is its icon and its title attribute.
     // `aria-label` carries the name so a screen reader still hears "Donors".
@@ -1005,7 +1013,7 @@ function AppShell() {
           style={g.bottom?{borderTop:"1px solid "+T.bg3,marginTop:6,paddingTop:4}:undefined}>
           {g.label&&<div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:T.ink3,padding:"10px 16px 4px"}}>{g.label}</div>}
           {g.items.map(i=>navById[i.id]).filter(Boolean).map(t=>{
-            const active=tab===t.id;
+            const active=navCurrent===t.id;
             return(
               <RecordLink key={t.id} to={tabHref(t.id)} data-nav-id={t.id} onOpen={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
                 <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
@@ -1045,12 +1053,12 @@ function AppShell() {
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
       {bottomTabs.map(t=>(
-        <RecordLink key={t.id} to={tabHref(t.id)} data-nav-id={t.id} onOpen={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+        <RecordLink key={t.id} to={tabHref(t.id)} data-nav-id={t.id} onOpen={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${navCurrent===t.id?" active":""}`}>
           <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={19}/></span>
           {t.label}
         </RecordLink>
       ))}
-      <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===tab)||moreOpen?" active":""}`}>
+      <button onClick={()=>setMoreOpen(v=>!v)} className={`mobile-bottom-tab${moreTabs.some(t=>t.id===navCurrent)||moreOpen?" active":""}`}>
         <span className="mob-icon">⋯</span>
         More
       </button>
