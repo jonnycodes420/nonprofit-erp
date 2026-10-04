@@ -18,14 +18,16 @@ const express = require("express");
 const WHY = require("../why");
 const AW = require("../appealWhy");
 const P = require("../prospect");
+const GR = require("../groups");
 
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
 const { whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
 const app = routers.r0;
-let S = null;
+let S = null, SMm = null;
 const shape = async () => (S = S || await import("../shared/whyShape.js"));
+const showMod = async () => (SMm = SMm || await import("../shared/showMe.js"));
 
 async function logQuestion(text, topic, answered) {
   await run(`INSERT INTO question_log (surface, question, topic, answered) VALUES ('why', ?, ?, ?)`,
@@ -151,6 +153,57 @@ app.get("/donors/:id/journey-suggestion", requireAuth, wrap(async (req, res) => 
   res.json({ suggestion: null });
 }));
 
+// ── PARITY-4 Part 3 · SHOW ME ───────────────────────────────────────────────
+// A "show me" or "who" question answered with a LIST. The question becomes a
+// filter spec (shared/showMe.js): the model fills a form whose fields are the
+// donor list's own filters, or with AI off the templates read it. Either way
+// checkSpec refuses anything outside groups.js RULE_KEYS ("Steward can't
+// filter by that yet"); the list is buildDonorFilter's, so it is the same rows
+// the Donors list, its export and a Group saved from it show. Nothing is
+// written but the question log.
+async function showMe(req, res, typed) {
+  const SM = await showMod();
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));
+  const events = await query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]);
+  const ctx = { today, events };
+  let spec = null, specSource = "template", aiOff = false;
+  const gate = await aiGate(orgId);
+  if (gate.ok) {
+    try {
+      const out = await anthropicFor(orgId).messages.create({
+        model: AGENT_MODEL, max_tokens: 600, tools: [SM.specTool()], tool_choice: { type: "tool", name: "filter_spec" },
+        messages: [{ role: "user", content: SM.specPrompt(typed, ctx) }],
+      });
+      spec = SM.readToolSpec(out.content);
+      if (spec) specSource = "ai";
+    } catch (e) { spec = null; aiOff = !!(e && e.code === "ai_off"); }
+  } else aiOff = gate.reason === "ai_disabled";
+  if (!spec) spec = SM.templateSpec(typed, ctx);
+  const refuse = async what => {
+    await logQuestion(typed, "show me", false);
+    return res.json({ answered: false, kind: "list", refused: true, sentence: SM.refusalSentence(what), specSource, aiOff, question: { key: "show", text: typed } });
+  };
+  const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events });
+  if (!chk.ok) return refuse(chk.refused);
+  const f = await GR.buildDonorFilter(orgId, chk.rules);
+  if (f.badRole || f.badStatus) return refuse("a value Steward does not know");
+  const [rows, [cnt]] = await Promise.all([
+    query(`SELECT id, name, city, total_giving, last_gift_date FROM donors WHERE ${f.whereSql} ORDER BY ${f.orderBy} LIMIT 50`, f.params),
+    query(`SELECT COUNT(*)::int AS c FROM donors WHERE ${f.whereSql}`, f.params),
+  ]);
+  await logQuestion(typed, "show me", true);
+  const count = Number(cnt.c) || 0;
+  res.json({
+    answered: true, kind: "list", question: { key: "show", text: typed }, specSource, aiOff,
+    rules: chk.rules, words: SM.filterWords(chk.rules, ctx), sentence: SM.listSentence(count),
+    count, countSource: { key: "show-me", params: { rules: JSON.stringify(chk.rules) } },
+    countDefinition: "Everyone on file these filters find today, the same rows the Donors list shows for them.",
+    groupSentence: GR.rulesSentence(chk.rules),
+    rows: rows.map(r => ({ donorId: r.id, name: r.name, city: r.city || "", cents: Math.round(Number(r.total_giving || 0) * 100), lastGift: r.last_gift_date || null })),
+  });
+}
+
 // POST /why/ask — { text } typed, or { key, campaign?, donor? } tapped.
 // Writes the question to the log and nothing else.
 app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
@@ -158,6 +211,12 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const body = req.body || {};
   const typed = String(body.text || "").trim().slice(0, 500);
+  // PARITY-4 — a list question: "show me…", "donors who…", or a "who"
+  // question none of the eight takes.
+  if (typed && !body.key) {
+    const SM = await showMod();
+    if (body.mode === "show" || SM.listFirst(typed) || (!Sx.matchQuestion(typed) && SM.isShowMe(typed))) return showMe(req, res, typed);
+  }
   let key = Sx.QUESTION_KEYS.includes(body.key) ? body.key : (typed ? Sx.matchQuestion(typed) : null);
   let campaign = body.campaign ? String(body.campaign) : null, donor = body.donor ? String(body.donor) : null;
   if (key === "appeal" && !campaign) campaign = (typed && (await campaignNamedIn(orgId, typed)) || await WHY.defaultCampaign(orgId) || {}).id || null;

@@ -67,6 +67,16 @@ const T = {
     throw new FigureParamError(`${k} must be true or false.`);
   },
   measure: (v, k) => { if (!["sum", "count"].includes(String(v))) throw new FigureParamError(`${k} must be sum or count.`); return String(v); },
+  // PARITY-4 — a donor list rule as JSON, checked by groups.js normalizeRules:
+  // a key or value it does not know is refused, never dropped.
+  rules: (v, k) => {
+    let o = null;
+    try { o = JSON.parse(String(v)); } catch { o = null; }
+    if (!o || typeof o !== "object" || Array.isArray(o)) throw new FigureParamError(`${k} is not a rule Steward knows.`);
+    const n = require("./groups").normalizeRules(o);
+    if (!n.ok || Object.keys(o).some(x => n.rules[x] === undefined)) throw new FigureParamError(`${k} is not a rule Steward knows.`);
+    return n.rules;
+  },
 };
 function readParams(def, raw) {
   const out = {};
@@ -879,6 +889,27 @@ const SOURCES = {
                 FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (${m.sql})`,
         args: [orgId, ...m.args],
         order: "name ASC, id",
+      };
+    },
+  },
+  // PARITY-4 Part 3 · SHOW ME. The people a plain question's filters find:
+  // groups.js buildDonorFilter on the rule, the same code the answer counted
+  // with and the Donors list, its export and a Group by rule run.
+  "show-me": {
+    label: "People who match",
+    measure: () => "count",
+    params: { rules: "rules:required" },
+    sentence: () => "Everyone on file these filters find today, the same rows the Donors list shows for them. The amount on each row is what they have given in total.",
+    sql: async (orgId, p) => {
+      const GR = require("./groups");
+      const f = await GR.buildDonorFilter(orgId, p.rules);
+      if (f.badRole || f.badStatus) throw new FigureParamError("rules is not a rule Steward knows.");
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                     ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Given in total' AS detail
+                FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.id IN (SELECT donors.id FROM donors WHERE ${f.whereSql})`,
+        args: [orgId, ...f.params],
+        order: "amount DESC, id",
       };
     },
   },

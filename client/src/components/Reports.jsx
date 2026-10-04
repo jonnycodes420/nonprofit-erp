@@ -14,7 +14,7 @@ import { SavedDashboardView, DashboardBuilder, BoardPackPanel } from "./SavedDas
 import { useNavigate } from "react-router-dom";
 import { tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
-import { WhyLink } from "./WhyAnswer";
+import { WhyLink, ShowMeLine } from "./WhyAnswer";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -671,6 +671,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         line="If you only ever open one report, make it LYBUNT: the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
         actionLabel="Open LYBUNT" onAction={() => pick("lybunt")} />
     </div>
+
+    {/* PARITY-4 — Show me: a plain question becomes a list. */}
+    <div style={{ marginBottom: 14 }}><ShowMeLine /></div>
 
     {/* INT-BUILD-1 Part 6 — meetings per staff member per month. */}
     <div style={{ marginBottom: 14 }}><MeetingsByStaffCard /></div>

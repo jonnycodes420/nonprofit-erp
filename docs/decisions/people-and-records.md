@@ -214,6 +214,11 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   (an allowlist: headings, lists, links to the web or mail, `/portal-assets/` or https images, YouTube
   and Vimeo players). A waiver upload is stored as kind `volapply`, never written into a public page, and
   served to signed-in staff only. (PARITY-3)
+- **Show me's rules are donor list rules too.** `notGaveFrom`/`notGaveTo` (no gift above zero in the
+  range; a refund is not a gift), `notDeceased`, `monthly` (a running monthly recurring gift), `city`
+  (case-insensitive, whole name), `gaveEvent` (a gift stamped with that event) and `gaveOver` (more than N
+  dollars in all, counting only gifts to `gaveEvent` and inside `gaveFrom`/`gaveTo` when those are set)
+  are `buildDonorFilter` rule keys, so the list, its export and a Group run them. (PARITY-4)
 - **The Volunteers list is the donor list's filter.** The volunteer rules (opportunity, on a shift in a
   range, hours over or under N in a range, gave in a range, qualification, application answer,
   availability, active) are `buildDonorFilter` rule keys, so a Group saved from the list is the same rows.
