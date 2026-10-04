@@ -172,13 +172,24 @@ function unsubscribeHeaders(email, orgId, source, identity = null) {
 // from a bounce/complaint) or an org-scoped row (that org's own unsubscribe).
 async function getSuppressionReason(email, orgId) {
   if (!email) return null;
+  return (await suppressionReasonsFor([email], orgId)).get(String(email).toLowerCase()) || null;
+}
+
+// FIX-26 — the same read for many addresses in one query: lower(email) -> the
+// most recent reason. The single-address probe above is this with one address,
+// so there is still one reading of the suppression list.
+async function suppressionReasonsFor(emails, orgId) {
+  const list = [...new Set((emails || []).filter(Boolean).map(e => String(e).toLowerCase()))];
+  const out = new Map();
+  if (!list.length) return out;
   const rows = await query(
-    `SELECT reason FROM email_suppressions
-     WHERE LOWER(email) = LOWER(?) AND (org_id IS NULL OR org_id = ?)
-     ORDER BY created_at DESC LIMIT 1`,
-    [email, orgId || null]
+    `SELECT DISTINCT ON (LOWER(email)) LOWER(email) AS e, reason FROM email_suppressions
+     WHERE LOWER(email) = ANY(?::text[]) AND (org_id IS NULL OR org_id = ?)
+     ORDER BY LOWER(email), created_at DESC`,
+    [list, orgId || null]
   );
-  return rows[0]?.reason || null;
+  for (const r of rows) out.set(r.e, r.reason);
+  return out;
 }
 
 const DONOR_MAIL_POLICY = {
@@ -276,7 +287,13 @@ async function demoMailNote(orgId, { what, to }) {
   return `Nothing was sent: this is the demonstration organisation. In a real organisation, ${what} would have gone to ${to}.`;
 }
 
-async function donorMailDecision(kind, email, orgId) {
+// `pre` is only ever passed by donorMailDecisions below: the person's flags and
+// suppression reason, already read for a whole list in two queries, so a
+// campaign's count and its send are decided by these same lines. `personOnly`
+// answers "would this PERSON get it" when the organisation itself is not
+// sending (the demonstration org); the org gate is still read, and its refusal
+// is reported separately by the caller, never hidden.
+async function donorMailDecision(kind, email, orgId, pre = null) {
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
   if (!email) return { send: false, reason: "no_email" };
@@ -290,14 +307,14 @@ async function donorMailDecision(kind, email, orgId) {
   // if this organisation is not sending mail, who the person is does not
   // arise. Checked FIRST so a disabled org costs one query, not five.
   const orgGate = await orgMaySendEmail(orgId);
-  if (!orgGate.send) return { send: false, reason: orgGate.reason };
+  if (!orgGate.send && !(pre && pre.personOnly)) return { send: false, reason: orgGate.reason };
   // BUILD-94 Part 4 — UNSUBSCRIBED IS ONE FLAG ON THE PERSON, and it is read
   // HERE, in the one place that decides whether anything may be sent.
   // `do_not_email` existed as a column since BUILD-77 and nothing consulted
   // it: an import that carried a DNE column wrote a flag that changed nothing,
   // which is worse than not having it. `email_unreachable` is the other half
   // — a hard bounce is a fact about the address, not a preference.
-  const [flags] = await query(
+  const [flags] = pre ? [pre.flags] : await query(
     `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
             bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
             bool_or(is_sample) AS sample
@@ -328,7 +345,7 @@ async function donorMailDecision(kind, email, orgId) {
   // An address that hard-bounced cannot receive anything, transactional
   // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
   if (flags?.unreachable) return { send: false, reason: "bounced" };
-  const suppressReason = await getSuppressionReason(email, orgId);
+  const suppressReason = pre ? pre.suppressReason : await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
     if (flags?.dne) return { send: false, reason: "unsubscribed" };
@@ -341,6 +358,32 @@ async function donorMailDecision(kind, email, orgId) {
     if (suppressReason === "bounced" || suppressReason === "complained") return { send: false, reason: suppressReason };
   }
   return { send: true, reason: null };
+}
+
+// FIX-26 — THE DECISION FOR A WHOLE LIST. A campaign's builder shows how many
+// people it will reach, and the send then decides person by person. Those two
+// must be one answer, so this does not restate a single rule: it reads the
+// flags and the suppression list for every address in two queries and hands
+// each person to donorMailDecision above. Returns Map(person id -> decision).
+async function donorMailDecisions(kind, people, orgId, { personOnly = false } = {}) {
+  const emails = [...new Set(people.map(p => p.email).filter(Boolean).map(e => String(e).toLowerCase()))];
+  const flagRows = emails.length ? await query(
+    `SELECT LOWER(email) AS e, bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
+            bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
+            bool_or(is_sample) AS sample
+       FROM donors WHERE org_id = ? AND LOWER(email) = ANY(?::text[]) AND deleted_at IS NULL
+      GROUP BY LOWER(email)`,
+    [orgId, emails]
+  ) : [];
+  const flagsBy = new Map(flagRows.map(r => [r.e, r]));
+  const supBy = await suppressionReasonsFor(emails, orgId);
+  const out = new Map();
+  for (const p of people) {
+    const e = p.email ? String(p.email).toLowerCase() : "";
+    out.set(p.id, await donorMailDecision(kind, p.email, orgId,
+      { flags: flagsBy.get(e) || null, suppressReason: supBy.get(e) || null, personOnly }));
+  }
+  return out;
 }
 
 const DEFAULT_DUNNING_SUBJECT = "A quick fix to keep your support going";
@@ -711,7 +754,7 @@ async function linkEmailToAccounts(orgId, email) {
 module.exports = {
   mount,
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
-  demoMailNote,
+  demoMailNote, donorMailDecisions,
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,

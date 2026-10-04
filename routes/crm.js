@@ -81,7 +81,7 @@ const {
   emitWebhook,
   recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
-  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients,
+  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
@@ -203,7 +203,11 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const T = await templatesMod();
   const seg = req.body?.segment && typeof req.body.segment === "object" ? req.body.segment : {};
-  const donors = await resolveCampaignRecipients({ segment: JSON.stringify(seg) }, orgId).catch(() => []);
+  // FIX-26 — the count is the send's own decision for each person, so the
+  // number on the button is the number of messages the send creates.
+  const aud = await campaignAudience({ segment: JSON.stringify(seg) }, orgId)
+    .catch(() => ({ recipients: [], leftOut: [], leftOutCount: 0, orgGate: { send: false, reason: "unreadable" } }));
+  const donors = aud.recipients;
   const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
   const V = await import("../shared/vocabulary.js");
   const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
@@ -225,6 +229,17 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
     // The first recipient is whose name the preview shows, so what she reads on
     // the right of the screen is the email the first person will get.
     first: donors[0] ? { name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+    // Who the segment holds and this send will not reach, by reason, with the
+    // first names of each so "3 left out" opens onto people, not a number.
+    leftOutCount: aud.leftOutCount,
+    leftOut: aud.leftOut.map(g => ({
+      reason: g.reason, count: g.count,
+      people: g.people.slice(0, 25).map(d => ({ id: d.id, name: displayNameCase(d.name || "") })),
+    })),
+    // The organisation itself sends no mail (the demonstration org, or mail
+    // switched off): nobody gets it, said once rather than per person.
+    orgSends: !!(aud.orgGate && aud.orgGate.send),
+    orgReason: aud.orgGate && !aud.orgGate.send ? aud.orgGate.reason : null,
   });
 }));
 
@@ -18507,11 +18522,16 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
+  // The send's list is the server's, always: the segment resolved here, never
+  // a list from the browser. Each person is then decided by donorMailDecision
+  // in the loop (suppressed ones keep a row with their reason), and the count
+  // returned is that same decision taken for the whole list (FIX-26).
   const donors = await resolveCampaignRecipients(campaign, req.user.orgId);
+  const aud = await campaignAudience(campaign, req.user.orgId);
 
   // Mark as sending and respond immediately (non-blocking)
   await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=?", [campaign.id]);
-  res.json({ queued: true, recipientCount: donors.length });
+  res.json({ queued: true, recipientCount: aud.orgGate.send ? aud.recipients.length : 0 });
 
   setImmediate(() => runCampaignSend(campaign, org, donors));
 }));

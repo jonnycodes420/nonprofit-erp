@@ -210,27 +210,62 @@ function segLabel(raw) {
   }[mode] || "All donors with email";
 }
 
-function countSegment(donors, seg) {
-  const mode = seg?.mode || "all";
-  const withEmail = donors.filter(d => d.email);
-  // BUILD-94 Part 2 — a NULL/absent person_types is a legacy row, and every
-  // legacy row is a donor. Same rule as the server's predicate; the two must
-  // agree or the count on the screen argues with the send.
-  const typesOf = d => (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"];
-  const isA = (d, t) => typesOf(d).includes(t);
-  if (mode === "everyone") return withEmail.length;
-  if (mode === "volunteers") return withEmail.filter(d => isA(d, "volunteer")).length;
-  if (mode === "staff_board") return withEmail.filter(d => isA(d, "staff_board")).length;
-  if (mode === "donors" || mode === "all") return withEmail.filter(d => isA(d, "donor")).length;
-  if (mode === "major") return withEmail.filter(d => (d.total_giving || 0) >= 10000).length;
-  if (mode === "lapsed") return withEmail.filter(d => d.status === "lapsed").length;
-  // d.stage is the DB column (pipeline stage) — this previously read a
-  // nonexistent "pipeline_stage" field, so every byStage count showed 0 while the
-  // server-side send (which filters on d.stage) worked. BUILD-06 Phase C fix.
-  if (mode === "byStage") return withEmail.filter(d => (seg.stages || []).includes(d.stage)).length;
-  if (mode === "byTier") return withEmail.filter(d => (seg.tiers || []).map(t => t.toLowerCase()).includes((d.capacity_tier || "").toLowerCase())).length;
-  if (mode === "manual") return (seg.donorIds || []).length;
-  return 0;
+// FIX-26 — WHO THE SEGMENT HOLDS AND THIS SEND WILL NOT REACH. The builder
+// used to count the segment here, from /donors/summaries, which carries no
+// person types, so every volunteer and guest with an email counted as a donor.
+// There is one count now and it is the server's: the send's own decision for
+// each person. This is the other half of that answer, opened by its reasons.
+const LEFT_OUT_REASONS = {
+  no_email:        "No email address",
+  deceased:        "Deceased",
+  do_not_contact:  "Do not contact",
+  unsubscribed:    "Unsubscribed",
+  unsubscribe:     "Unsubscribed",
+  bounced:         "Email bounced",
+  complained:      "Marked a past email as spam",
+  blocked_address: "Address Steward never mails",
+  sample_donor:    "Sample record, not a real person",
+};
+const ORG_NO_MAIL = {
+  demo_org: "This is the demonstration organisation, so nothing is sent from it. In a real organisation, these people would get it.",
+  org_emails_disabled: "Email is switched off for this organisation, so nothing will be sent until it is switched back on.",
+};
+function LeftOut({ preview }) {
+  const [open, setOpen] = useState(false);
+  if (!preview) return null;
+  const n = preview.leftOutCount || 0;
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+      {n > 0 && (
+        <button type="button" data-testid="segment-left-out" aria-expanded={open} onClick={() => setOpen(o => !o)}
+          style={{ alignSelf: "flex-start", background: "none", border: "none", padding: 0, fontSize: 12.5, color: T.green, fontWeight: 600, cursor: "pointer" }}>
+          {n.toLocaleString()} left out {open ? "\u25B4" : "\u25BE"}
+        </button>
+      )}
+      {open && n > 0 && (
+        <div data-testid="segment-left-out-reasons" style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", background: T.white }}>
+          {(preview.leftOut || []).map(g => (
+            <div key={g.reason} style={{ padding: "6px 0", borderBottom: "1px solid " + T.bg2 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12.5, color: T.ink }}>
+                <span>{LEFT_OUT_REASONS[g.reason] || g.reason}</span>
+                <span style={{ fontWeight: 700 }}>{g.count.toLocaleString()}</span>
+              </div>
+              {g.people && g.people.length > 0 && (
+                <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2, lineHeight: 1.5 }}>
+                  {g.people.slice(0, 6).map(x => x.name).join(", ")}{g.count > 6 ? ` and ${(g.count - 6).toLocaleString()} more` : ""}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {preview.orgSends === false && (
+        <div data-testid="segment-org-no-mail" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
+          {ORG_NO_MAIL[preview.orgReason] || "This organisation is not sending email right now, so nothing will be sent."}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── SegmentPicker (module-level) ──────────────────────────────────────────────
@@ -241,8 +276,6 @@ function SegmentPicker({ seg, onChange, allDonors }) {
     const arr = seg[key] || [];
     upd({ [key]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] });
   };
-  const count = countSegment(allDonors, seg);
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -294,11 +327,6 @@ function SegmentPicker({ seg, onChange, allDonors }) {
               </label>
             ))
           }
-        </div>
-      )}
-      {allDonors.length > 0 && (
-        <div style={{ fontSize: 12, color: T.ink3 }}>
-          <span style={{ color: T.green, fontWeight: 700 }}>{count}</span> recipient{count !== 1 ? "s" : ""} in this segment
         </div>
       )}
     </div>
@@ -1364,9 +1392,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       .slice(0, 5);
   }, [campaigns]);
 
-  // The segment, as PEOPLE, answered by the side that does the sending. The
-  // client's countSegment can only count what /donors/summaries returned; the
-  // send resolves its own list. Two answers to "who gets this" is one too many.
+  // The segment, as PEOPLE, answered by the side that does the sending. It is
+  // the only count on the screen (FIX-26): the browser used to count its own,
+  // and two answers to "who gets this" is one too many.
   const segKey = JSON.stringify(form.seg);
   useEffect(() => {
     if (view !== "builder") return;
@@ -1600,9 +1628,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // ── Builder full-screen ─────────────────────────────────────────────────────
   if (view === "builder") {
-    // The count comes from the side that does the sending when it has answered;
-    // the local count is the stand-in for the 250ms before it does.
-    const recipCount = segPreview ? segPreview.count : countSegment(allDonors, form.seg);
+    // The count comes from the side that does the sending, and only from it.
+    // Until it has answered, the button waits rather than guessing (FIX-26).
+    const recipCount = segPreview ? segPreview.count : null;
     const subjLen = form.subject.length;
     const segSentence = segPreview?.sentence || "";
     const previewName = previewFirst?.firstName || "Margaret";
@@ -1625,9 +1653,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <button onClick={saveDraft} style={S.btn("ghost")}>Save draft</button>
             {isAdmin && ((showSchedule || form.scheduledAt)
               ? <button onClick={scheduleIt} style={S.btn("send")}>Schedule</button>
-              : <button onClick={() => sendNow(null)} disabled={sending} data-testid="campaign-send"
-                  style={{ ...S.btn("send"), opacity: sending ? 0.6 : 1, cursor: sending ? "not-allowed" : "pointer" }}>
-                  {sending ? <><Spin /> Sending…</> : `↑ Send to ${recipCount}`}
+              : <button onClick={() => sendNow(null)} disabled={sending || recipCount == null} data-testid="campaign-send"
+                  style={{ ...S.btn("send"), opacity: (sending || recipCount == null) ? 0.6 : 1, cursor: (sending || recipCount == null) ? "not-allowed" : "pointer" }}>
+                  {sending ? <><Spin /> Sending…</> : recipCount == null ? "Counting…" : `↑ Send to ${recipCount.toLocaleString()}`}
                 </button>)}
           </div>
         </div>
@@ -1672,6 +1700,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {segSentence}
                 </div>
               )}
+              <LeftOut preview={segPreview} />
               {/* BUILD-94 Part 1 — and now the first few of them have faces.
                   The sentence already named two; a row of marks is the fastest
                   read there is of "who is actually on this list". */}

@@ -3468,7 +3468,7 @@ async function givingAccountEntry(org) {
 }
 const {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
-  demoMailNote,
+  demoMailNote, donorMailDecisions,
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
@@ -4794,6 +4794,49 @@ async function resolveCampaignRecipients(campaign, orgId) {
     [orgId]
   );
   return filterBySegment(donors, segment);
+}
+
+// FIX-26 — WHO A CAMPAIGN REACHES, AND WHO IT LEAVES OUT, ANSWERED ONCE.
+// The builder used to count the segment in the browser from /donors/summaries,
+// which carries no person_types, so every volunteer and event guest with an
+// email counted as a donor (1,198 against the server's 1,158 on the demo). And
+// the server's own count stopped at "has an email", while the send then
+// skipped the unsubscribed, the bounced, the deceased and do-not-contact one
+// by one. Now the count is the send's own decision for every person in the
+// segment (donorMailDecisions -> donorMailDecision), so the number on the
+// button is the number of messages the send creates.
+//
+// `orgGate` is reported apart from the people: when the organisation itself
+// sends no mail (the demonstration org, or mail switched off) nobody gets it,
+// and the screen says that once instead of listing every person as left out.
+const AUDIENCE_REASON_ORDER = ["no_email", "deceased", "do_not_contact", "unsubscribed", "bounced", "complained", "blocked_address", "sample_donor"];
+async function campaignAudience(campaign, orgId) {
+  const raw = typeof campaign.segment === "string"
+    ? JSON.parse(campaign.segment || "{}")
+    : (campaign.segment || {});
+  const segment = await resolveSegmentSpec(raw, orgId);
+  const everyone = await query("SELECT * FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
+  const inSegment = filterBySegment(everyone, segment);
+  const decisions = await donorMailDecisions("campaign", inSegment.filter(d => d.email && String(d.email).trim()), orgId, { personOnly: true });
+  const recipients = [];
+  const byReason = new Map();
+  for (const d of inSegment) {
+    const dec = (d.email && String(d.email).trim()) ? decisions.get(d.id) : { send: false, reason: "no_email" };
+    if (dec && dec.send) { recipients.push(d); continue; }
+    const reason = (dec && dec.reason) || "no_email";
+    if (!byReason.has(reason)) byReason.set(reason, []);
+    byReason.get(reason).push(d);
+  }
+  const rank = r => { const i = AUDIENCE_REASON_ORDER.indexOf(r); return i < 0 ? 99 : i; };
+  const leftOut = [...byReason.entries()]
+    .sort((a, b) => rank(a[0]) - rank(b[0]))
+    .map(([reason, people]) => ({ reason, count: people.length, people }));
+  return {
+    recipients,
+    leftOut,
+    leftOutCount: leftOut.reduce((n, g) => n + g.count, 0),
+    orgGate: await orgMaySendEmail(orgId),
+  };
 }
 
 // The background send loop — one recipient at a time: suppression check,
@@ -10699,7 +10742,7 @@ require("./routes/crm").mount({
   raiseGrantMilestone, rateLimitDisabled, rbCents, rbCentsEv, rbCustomDefs, rbFormatCell,
   recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
-  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients,
+  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
