@@ -611,6 +611,31 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       }
     }
 
+    // PARITY-4 Part 2 · A CHECKOUT THAT EXPIRED UNPAID. The row was written
+    // when the session was made; this marks it. A session Steward made before
+    // rows existed is written now, from the metadata the form put on it. Only
+    // a gift: an auction payment, a ticket or a membership is not one.
+    if (event.type === "checkout.session.expired") {
+      const session = event.data.object;
+      const md = session.metadata || {};
+      const email = String(md.donor_email || session.customer_email || session.customer_details?.email || "").trim();
+      const orgRow = event.account ? await query("SELECT id FROM orgs WHERE stripe_account_id=?", [event.account]) : [];
+      const orgId = orgRow.length ? orgRow[0].id : null;
+      if (orgId && session.id && md.org_id === orgId) {
+        const marked = await run("UPDATE gift_starts SET expired_at=COALESCE(expired_at, NOW()) WHERE checkout_session_id=? AND org_id=?", [session.id, orgId]);
+        const isGift = !md.event_level_id && !md.membership_level_id && !md.auction_item_id && !md.auction_bid_id;
+        if (!marked.changes && isGift && email) {
+          const [first, ...rest] = String(md.donor_name || "").trim().split(/\s+/);
+          await run(`INSERT INTO gift_starts (id, org_id, checkout_session_id, giving_page_id, form_name, amount, frequency, email, first_name, last_name,
+                                              started_at, expired_at, created_by, created_by_name)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,to_timestamp(?),NOW(),?,?)`,
+            ["gs_" + uuid().slice(0, 12), orgId, session.id, md.giving_page_id || null, null,
+             session.amount_total != null ? session.amount_total / 100 : null, md.frequency || null, email,
+             first || null, rest.join(" ") || null, session.created || Math.floor(Date.now() / 1000), SYS_STRIPE.id, SYS_STRIPE.name]);
+        }
+      }
+    }
+
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       if (session.mode === "subscription") {
@@ -1388,9 +1413,20 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             WHERE card_payment_method_id=? RETURNING id, org_id, donor_id, stripe_subscription_id`,
           [card ? card.brand : null, card ? card.last4 : null,
            card ? card.exp_month : null, card ? card.exp_year : null, pm.id]);
+        // PARITY-4 Part 1: the exp is written the way a card shows it (09/29),
+        // and the donor's timeline says what happened, so the update is seen
+        // where staff look and not only counted.
+        const exp = card && card.exp_month && card.exp_year
+          ? `${String(card.exp_month).padStart(2, "0")}/${String(card.exp_year).slice(-2)}` : null;
         for (const rs of affected) {
           await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "card_auto_updated", event.id,
-            { last4: card ? card.last4 : null, exp: card ? `${card.exp_month}/${card.exp_year}` : null });
+            { last4: card ? card.last4 : null, exp });
+          if (rs.donor_id) {
+            await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+              ["int_" + uuid().slice(0, 8), rs.org_id, rs.donor_id, "note",
+               `Card updated by the bank${card && card.last4 ? `, ends ${card.last4}` : ""}${exp ? `, exp ${exp}` : ""}. Their monthly gift carries on with no action needed.`,
+               orgToday(await orgTz(rs.org_id)), SYS_STRIPE.id, SYS_STRIPE.name]);   // ORG_TZ_SEAM_OK
+          }
         }
         if (affected.length) console.log(`[card-expiry] network updated ${pm.id} → ${affected.length} subscription(s); expiry notice cleared`);
       }

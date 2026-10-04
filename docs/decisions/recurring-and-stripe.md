@@ -55,6 +55,10 @@ Read this when you touch Stripe Connect, the donation webhook, recurring gifts, 
   blanks the stored card. (card recovery, 2026-09-11)
 - **Send one expiry notice per card per expiry, stamped with the expiry period (`YYYY-MM`) after
   delivery.** Never stamp a send date. (card recovery, 2026-09-11)
+- **A card the bank updated is shown, not only stored** (PARITY-4). Each update writes a
+  `card_auto_updated` recovery event and a timeline note ("Card updated by the bank, ends 4242, exp
+  09/29"), and Recurring counts them through the one `cards-auto-updated` figure source (monthly gifts
+  still giving, at their monthly amount). It depends on the card network and the org's own Stripe account.
 - **Handle `payment_method.automatically_updated` by storing the new card and clearing
   `card_expiry_notified_for`.** Without it, the sweep emails donors whose card the network already fixed.
   (card recovery, 2026-09-11)

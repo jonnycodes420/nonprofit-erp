@@ -16,6 +16,7 @@ import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { PeerToPeerView } from "./PeerToPeer";
 import { AuctionsView } from "./Auctions";
+import { StartedNotFinished } from "./StartedNotFinished";
 import { HowDidItDo } from "./HowDidItDo";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
@@ -289,6 +290,10 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       {/* BUILD-103 Part 6 — the screen an org runs a walk from. */}
       {!loading && subtab === "p2p" && (
         <PeerToPeerView isReadOnly={isReadOnly} orgSlug={orgSlug} onNavigate={onNavigate} openPageId={p2pOpenPageId} />
+      )}
+
+      {!loading && subtab === "unfinished" && (
+        <StartedNotFinished isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "recurring" && (

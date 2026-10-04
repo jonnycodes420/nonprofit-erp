@@ -3212,9 +3212,220 @@ const donateHandler = async (req, res) => {
     });
   }
   if (eventHoldId) await run(`UPDATE event_seat_holds SET stripe_session_id=? WHERE id=?`, [session.id, eventHoldId]).catch(() => {});
+  // PARITY-4 Part 2 · the gift is started. A gift only: an auction payment, a
+  // ticket or a membership is a purchase. The three-step form's token ties
+  // this to the row its email step wrote; otherwise the session is the key.
+  if (!auctionWin && !eventLevel && !memLevel) {
+    await recordGiftStart(org.id, {
+      token: req.body.startToken, sessionId: session.id, givingPageId: givingPageId || null,
+      formName: pageTitle || (eventGift ? eventGift.name || "Event page" : "Giving page"), formPath: returnPath,
+      amount: amountCents / 100, frequency, email, firstName, lastName,
+    }).catch(e => console.error("[gift-starts] could not record:", e.message));
+  }
   res.json({ url: session.url });
 };
 app.post("/donate/:orgSlug", donateLimiter, wrap(donateHandler));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PARITY-4 Part 2 · GIFTS STARTED BUT NOT FINISHED
+// ═══════════════════════════════════════════════════════════════════════════
+// Steward's own forms only (a connected platform's checkout is not ours to
+// see). A row is written when the three-step form passes its email step and
+// when a Checkout session is made; the session expiring marks it. It is NOT
+// FINISHED while no gift by the same email has landed since it started, it is
+// past an hour or its session expired, and nobody set it aside. Finished is
+// read from the gifts every time, so any path that records the gift closes it.
+// A note to the donor is a DRAFT a person edits and sends: once per person per
+// form, and never to someone who gave since.
+const START_TOKEN_RE = /^[A-Za-z0-9_-]{8,64}$/;
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+async function recordGiftStart(orgId, f) {
+  const email = String(f.email || "").trim().slice(0, 254);
+  if (!EMAIL_RE.test(email)) return null;
+  const amount = Number(f.amount);
+  const vals = [f.sessionId || null, f.givingPageId || null, String(f.formName || "").slice(0, 160) || null, String(f.formPath || "").slice(0, 300) || null,
+    Number.isFinite(amount) && amount > 0 && amount < 10000000 ? Math.round(amount * 100) / 100 : null,
+    ["monthly", "annual", "once", "one-time"].includes(f.frequency) ? f.frequency : null,
+    email, String(f.firstName || "").trim().slice(0, 80) || null, String(f.lastName || "").trim().slice(0, 80) || null];
+  const token = START_TOKEN_RE.test(String(f.token || "")) ? String(f.token) : null;
+  if (token) {
+    const [row] = await query(
+      `INSERT INTO gift_starts (id, org_id, start_token, checkout_session_id, giving_page_id, form_name, form_path, amount, frequency, email, first_name, last_name, created_by, created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'system:give-form','Giving form')
+       ON CONFLICT (org_id, start_token) WHERE start_token IS NOT NULL DO UPDATE SET
+         checkout_session_id=COALESCE(EXCLUDED.checkout_session_id, gift_starts.checkout_session_id),
+         form_name=COALESCE(EXCLUDED.form_name, gift_starts.form_name), form_path=COALESCE(EXCLUDED.form_path, gift_starts.form_path),
+         amount=COALESCE(EXCLUDED.amount, gift_starts.amount), frequency=COALESCE(EXCLUDED.frequency, gift_starts.frequency),
+         email=EXCLUDED.email, first_name=COALESCE(EXCLUDED.first_name, gift_starts.first_name), last_name=COALESCE(EXCLUDED.last_name, gift_starts.last_name)
+       RETURNING id`, ["gs_" + uuid().slice(0, 12), orgId, token, ...vals]);
+    return row ? row.id : null;
+  }
+  const id = "gs_" + uuid().slice(0, 12);
+  await run(`INSERT INTO gift_starts (id, org_id, checkout_session_id, giving_page_id, form_name, form_path, amount, frequency, email, first_name, last_name, created_by, created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,'system:give-form','Giving form')`, [id, orgId, ...vals]);
+  return id;
+}
+
+// The three-step form's email step. Public, rate-limited, and it writes one
+// row keyed by the page's own token, so pressing Continue twice is one row.
+app.post("/give/:orgSlug/started", donateLimiter, wrap(async (req, res) => {
+  const [org] = await query("SELECT id FROM orgs WHERE org_slug=? LIMIT 1", [String(req.params.orgSlug || "")]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const b = req.body || {};
+  if (!START_TOKEN_RE.test(String(b.startToken || "")) || !EMAIL_RE.test(String(b.email || "").trim())) return res.status(400).json({ error: "bad_request" });
+  let formName = "Giving page", formPath = `/give/${req.params.orgSlug}`, pageId = null;
+  if (b.givingPageId) {
+    const [pg] = await query("SELECT id, slug, title FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [String(b.givingPageId), org.id]);
+    if (!pg) return res.status(400).json({ error: "bad_request" });
+    pageId = pg.id; formName = pg.title || formName; formPath = `/give/${req.params.orgSlug}/${pg.slug}`;
+  }
+  await recordGiftStart(org.id, { token: b.startToken, givingPageId: pageId, formName, formPath,
+    amount: b.amount, frequency: b.frequency, email: b.email, firstName: b.firstName, lastName: b.lastName });
+  res.status(201).json({ ok: true });
+}));
+
+// ── The staff side ─────────────────────────────────────────────────────────
+const GS = () => require("../figureSources");
+const monthOf = today => {
+  const [y, m] = today.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${today.slice(0, 7)}-01`, to: `${today.slice(0, 7)}-${String(last).padStart(2, "0")}` };
+};
+const formKey = r => r.giving_page_id || r.form_path || "";
+async function giftStartRow(orgId, id) {
+  const [r] = await query(
+    `SELECT s.*, ${GS().giftStartFinishedSql("s")} AS finished_gift_id, (${GS().giftStartOpenSql("s")}) AS is_open
+       FROM gift_starts s WHERE s.id=? AND s.org_id=?`, [id, orgId]);
+  return r || null;
+}
+async function alreadyNoted(orgId, r) {
+  const [n] = await query(
+    `SELECT id FROM gift_starts WHERE org_id=? AND LOWER(email)=LOWER(?) AND COALESCE(giving_page_id, form_path, '')=? AND note_sent_at IS NOT NULL LIMIT 1`,
+    [orgId, r.email, formKey(r)]);
+  return !!n;
+}
+async function giftStartDraft(req, r) {
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, org ? org.name : "");
+  const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const signer = String((me && me.name) || "").trim();
+  const first = String(r.first_name || "").trim();
+  const link = `${publicAppUrl()}${r.form_path || ""}`;
+  const amount = r.amount ? ` of $${Number(r.amount).toLocaleString("en-US", { minimumFractionDigits: Number(r.amount) % 1 ? 2 : 0, maximumFractionDigits: 2 })}` : "";
+  return {
+    to: r.email,
+    subject: `Your gift to ${orgName}`,
+    body: `${first ? `Hi ${first},` : "Hello,"}\n\nIt looks like your gift${amount} to ${orgName} didn't go through. Here's the link if you'd like to finish:\n${link}\n\nIf you meant to stop, that's completely fine, and you won't hear about it again.\n\nThank you,\n${signer && !signer.includes("@") ? signer.split(" ")[0] : orgName}\n${orgName}`,
+    link,
+  };
+}
+
+app.get("/gift-starts", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = String(orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  const month = monthOf(today);
+  const [count, total] = await Promise.all([
+    GS().figureValue(orgId, { key: "gifts-not-finished", params: { ...month, measure: "count" } }),
+    GS().figureValue(orgId, { key: "gifts-not-finished", params: month }),
+  ]);
+  const rows = await query(
+    `SELECT s.id, s.form_name, s.form_path, s.giving_page_id, s.amount, s.frequency, s.email, s.first_name, s.last_name,
+            s.started_at, s.expired_at, s.dismissed_at, s.note_sent_at, s.note_sent_by_name,
+            ${GS().giftStartFinishedSql("s")} AS finished_gift_id, (${GS().giftStartOpenSql("s")}) AS is_open,
+            (SELECT d.id FROM donors d WHERE d.org_id=s.org_id AND LOWER(d.email)=LOWER(s.email) AND d.deleted_at IS NULL ORDER BY d.created_at LIMIT 1) AS donor_id,
+            EXISTS (SELECT 1 FROM gift_starts o WHERE o.org_id=s.org_id AND LOWER(o.email)=LOWER(s.email)
+                      AND COALESCE(o.giving_page_id, o.form_path, '')=COALESCE(s.giving_page_id, s.form_path, '') AND o.note_sent_at IS NOT NULL) AS noted
+       FROM gift_starts s
+      WHERE s.org_id=? AND s.started_at >= NOW() - INTERVAL '60 days'
+      ORDER BY s.started_at DESC LIMIT 300`, [orgId]);
+  const out = rows.filter(r => r.is_open || r.finished_gift_id).map(r => ({
+    id: r.id, form: r.form_name || "Giving page", amount: r.amount == null ? null : Number(r.amount), frequency: r.frequency,
+    email: r.email, name: [r.first_name, r.last_name].filter(Boolean).join(" ") || null, donorId: r.donor_id,
+    startedAt: r.started_at, expired: !!r.expired_at,
+    status: r.finished_gift_id ? "finished" : "open", giftId: r.finished_gift_id || null,
+    noteSentAt: r.note_sent_at, noteSentBy: r.note_sent_by_name, noted: !!r.noted,
+  }));
+  res.json({
+    month: { ...month, count: count.value || 0, total: total.value || 0 },
+    rows: out,
+    connectedNote: "Only Steward's own giving forms are counted. A gift started on a connected platform (PayPal, Givebutter and the others) is not seen here.",
+  });
+}));
+
+app.get("/gift-starts/:id/draft", requireAuth, wrap(async (req, res) => {
+  const r = await giftStartRow(req.user.orgId, req.params.id);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  const draft = await giftStartDraft(req, r);
+  const why = r.finished_gift_id ? "They have given since, so there is nothing to send."
+    : await alreadyNoted(req.user.orgId, r) ? "A note about this form already went to this person, and Steward sends one at most."
+    : !r.is_open ? "This one is not waiting on anybody." : null;
+  res.json({ ...draft, refused: why });
+}));
+
+app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const r = await giftStartRow(orgId, req.params.id);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  if (r.finished_gift_id) return res.status(409).json({ error: "gave_since", sentence: "They have given since, so nothing was sent." });
+  if (!r.is_open) return res.status(409).json({ error: "not_open", sentence: "This one is not waiting on anybody, so nothing was sent." });
+  if (await alreadyNoted(orgId, r)) return res.status(409).json({ error: "already_noted", sentence: "A note about this form already went to this person. Steward sends one at most." });
+  const subject = String(req.body?.subject || "").trim().slice(0, 200);
+  const body = String(req.body?.body || "").trim().slice(0, 5000);
+  if (!subject || !body) return res.status(400).json({ error: "Write a subject and a message first." });
+  const decision = await donorMailDecision("gift_unfinished", r.email, orgId);
+  if (!decision.send) return res.status(409).json({ error: "mail_refused", reason: decision.reason,
+    sentence: decision.reason === "demo_org" || (decision.reason === "org_emails_disabled" && (await query("SELECT is_demo_org FROM orgs WHERE id=?", [orgId]))[0]?.is_demo_org)
+      ? "This is a demonstration organisation, so Steward emails nobody. On a real account this note would go to them now."
+      : decision.reason === "org_emails_disabled" ? "Email is turned off for your organisation, so nothing was sent. An admin can turn it on in Settings."
+      : `Nothing was sent: Steward will not email this address (${String(decision.reason).replace(/_/g, " ")}).` });
+  // Claim it before sending, so two presses cannot send two notes.
+  const me = actor(req);
+  const claimed = await run(`UPDATE gift_starts SET note_sent_at=NOW(), note_sent_by=?, note_sent_by_name=? WHERE id=? AND org_id=? AND note_sent_at IS NULL`, [me.id, me.name, r.id, orgId]);
+  if (!claimed.changes) return res.status(409).json({ error: "already_noted", sentence: "A note about this form already went to this person." });
+  if (process.env.RESEND_API_KEY) {
+    const html = `<p>${escapeHtml(body).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}">${u}</a>`).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
+      + await require("./email").unsubscribeEmailFooterHtml(r.email, orgId, "campaign");
+    try {
+      const { error } = await resend.emails.send({ ...(await donorSendOpts(orgId, r.email, "campaign")), to: r.email, subject, html });
+      if (error) throw new Error(error.message);
+    } catch (e) {
+      await run("UPDATE gift_starts SET note_sent_at=NULL, note_sent_by=NULL, note_sent_by_name=NULL WHERE id=? AND org_id=?", [r.id, orgId]);
+      return res.status(502).json({ error: "send_failed", sentence: "The note could not be sent. Nothing went out; try again in a minute." });
+    }
+  }
+  const [donor] = await query("SELECT id FROM donors WHERE org_id=? AND LOWER(email)=LOWER(?) AND deleted_at IS NULL ORDER BY created_at LIMIT 1", [orgId, r.email]);
+  if (donor) {
+    await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
+      ["int_" + uuid().slice(0, 8), orgId, donor.id, "email", `Email: ${subject} (their gift on ${r.form_name || "a giving form"} did not go through)`,
+       String(orgToday(await orgTz(orgId))), me.id, me.name]);   // ORG_TZ_SEAM_OK
+  }
+  res.status(201).json({ sent: true });
+}));
+
+app.post("/gift-starts/:id/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run("UPDATE gift_starts SET dismissed_at=NOW() WHERE id=? AND org_id=? AND dismissed_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!r.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// One quiet item on Home when there are new ones: the rows nobody has seen.
+app.get("/gift-starts/notice", requireAuth, wrap(async (req, res) => {
+  const [n] = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(s.amount), 0) AS total FROM gift_starts s
+      WHERE s.org_id=? AND s.noticed_at IS NULL AND s.started_at >= NOW() - INTERVAL '30 days' AND ${GS().giftStartOpenSql("s")}`, [req.user.orgId]);
+  if (!n || !n.n) return res.json({ notice: null });
+  const total = Number(n.total) || 0;
+  res.json({ notice: {
+    count: n.n,
+    sentence: `${n.n === 1 ? "A gift was" : `${n.n} gifts were`} started on your giving forms and not finished${total ? `, $${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} in all` : ""}.`,
+    step: "See who",
+  } });
+}));
+app.post("/gift-starts/notice/seen", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run(`UPDATE gift_starts s SET noticed_at=NOW() WHERE s.org_id=? AND s.noticed_at IS NULL AND ${GS().giftStartOpenSql("s")}`, [req.user.orgId]);
+  res.json({ seen: r.changes || 0 });
+}));
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  EVENTS-2 · PAYING ON THE PUBLIC EVENT PAGE
@@ -4489,8 +4700,21 @@ app.get("/recurring/recovery", requireAuth, wrap(async (req, res) => {
   });
   const dollarsCents = gifts.reduce((a, g) => a + g.grossCents, 0);
 
+  // PARITY-4 Part 1 · cards the bank updated by itself this year: one source
+  // (figureSources cards-auto-updated) for the count and the money a month.
+  const FSrc = require("../figureSources");
+  const auSince = { since: yearStart };
+  const [auCount, auMonthly] = await Promise.all([
+    FSrc.figureValue(orgId, { key: "cards-auto-updated", params: { ...auSince, measure: "count" } }),
+    FSrc.figureValue(orgId, { key: "cards-auto-updated", params: auSince }),
+  ]);
+
   res.json({
     year: yearStart.slice(0, 4),
+    autoUpdated: {
+      count: auCount.value || 0, monthly: auMonthly.value || 0, since: yearStart,
+      definition: "Monthly gifts still giving whose card the bank replaced by itself this year, so it never failed. The money is what those gifts bring in each month.",
+    },
     failed: {
       count: failedRows.length,
       definition: "Monthly gifts whose card failed at least once this year. One row per gift, however many times it retried.",

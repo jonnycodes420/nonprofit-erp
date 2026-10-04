@@ -3,6 +3,13 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **A gift started and not finished is a `gift_starts` row, and "finished" is never stored** (PARITY-4).
+  Steward's own forms write it (the three-step form's email step, by a page token, and every Checkout
+  session for a gift); `checkout.session.expired` marks it. It is open while no gift from that email,
+  dated from the day before it started, has landed, an hour has passed or the session closed, and nobody
+  set it aside (`giftStartOpenSql` in figureSources.js, the one definition). A note is a draft a person
+  edits and an admin sends, kind `gift_unfinished` (marketing): once per person per form, never after
+  they gave. Connected platforms are not seen and the list says so.
 - **The give form's returning-donor sign-in uses the portal's magic link and shows only when the org's
   portal is on.** The tribute question is on step one. The exit nudge (`form_config.exitNudge`) is off by
   default, desktop only, once per visit. PayPal and Venmo buttons stay hidden until the partner program

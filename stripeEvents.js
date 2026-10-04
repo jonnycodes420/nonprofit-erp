@@ -37,6 +37,10 @@ const DONATION_WEBHOOK_EVENTS = [
   // reports it missing and the handler never fires in production. That is the
   // BUILD-62 class made visible instead of silent — see NEEDS-JONATHAN.md §4.
   "payment_method.automatically_updated",
+  // PARITY-4 Part 2: a Checkout session that expired unpaid marks the
+  // "started, not finished" row. Missing on the live endpoint until it is
+  // subscribed there (NEEDS-JONATHAN.md).
+  "checkout.session.expired",
 ];
 
 // The PLATFORM BILLING endpoint (/billing/webhook — Steward's own subscription

@@ -63,6 +63,8 @@ export const FR_SECTIONS = [
       { id: "deposits", label: "Deposits" },
       { id: "acknowledgments", label: "Acknowledgments" },
       { id: "funds", label: "Funds" },
+      // PARITY-4 Part 2: gifts started on our own forms that did not come in.
+      { id: "unfinished", label: "Started, not finished" },
     ],
   },
 ];
@@ -92,6 +94,8 @@ export const FR_LEGACY = {
   p2p:             { section: "campaigns",  part: "p2p",             label: "Peer-to-peer" },
   // PARITY-2 Part 4: a new part id, registered for the same reason as p2p.
   auctions:        { section: "campaigns",  part: "auctions",        label: "Auctions" },
+  // PARITY-4 Part 2: a new part id, registered for the same reason.
+  unfinished:      { section: "moneyin",    part: "unfinished",      label: "Started, not finished" },
 };
 
 // Any id — an old tab id, a section id, or nothing — to {section, part}.

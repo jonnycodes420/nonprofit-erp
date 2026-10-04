@@ -909,6 +909,8 @@ async function main() {
             [m.subId, ORG, m.donorId, m.amount, `sub_demo_b72_${pad(k + 1)}`, `cus_demo_b72_${pad(k + 1)}`, m.start, next,
              BRANDS[k % BRANDS.length], String(1000 + ((k * 7919) % 9000)).slice(-4), 1 + (k * 5) % 12, YEAR + 1 + (k % 4)]);
   }
+  await seedCardUpdates(q, monthly);
+  await seedGiftStarts(q);
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
            VALUES ($1,$2,$3,'event','completed',$4,$5,$6)`,
           [gala.campaignId, ORG, gala.name, 100000, orgTime.addDays(gala.date, -75), gala.date]);
@@ -3223,6 +3225,65 @@ function mailingAddress(d, i) {
   if (d.city && (d.state !== "MA" || !NORTH_SHORE_ZIP[d.city])) return { address: null, zip: null, city: d.city, state: d.state };
   const [city, zip] = d.city ? [d.city, NORTH_SHORE_ZIP[d.city]] : NORTH_SHORE[i % NORTH_SHORE.length];
   return { address: `${3 + 2 * Math.floor(i / STREETS.length)} ${STREETS[i % STREETS.length]}`, zip, city, state: "MA" };
+}
+
+// PARITY-4 Part 1 · CARDS THE BANK UPDATED. Five of the monthly givers had a
+// card replaced at the network this year, written as the webhook writes it: a
+// card_auto_updated recovery event and the line on their timeline. Every fifth
+// subscription, spaced through the year, no rnd() so the stream is unchanged.
+async function seedCardUpdates(q, monthly) {
+  const yearStart = `${TODAY.slice(0, 4)}-01-01`;
+  let n = 0;
+  for (const [k, m] of monthly.entries()) {
+    if (k % 5 !== 2 || n >= 5) continue;
+    let on = orgTime.addDays(TODAY, -(12 + n * 37));
+    if (on < yearStart) on = yearStart;
+    const last4 = String(2000 + ((k * 6007) % 8000)).slice(-4);
+    const exp = `${String(1 + (k * 7) % 12).padStart(2, "0")}/${String(Number(TODAY.slice(2, 4)) + 3 + (k % 2))}`;
+    await q(`INSERT INTO payment_recovery_events (id, org_id, donor_id, subscription_id, type, stripe_event_id, detail, created_at)
+             VALUES ($1,$2,$3,$4,'card_auto_updated',$5,$6::jsonb,$7::date + time '10:00')`,
+            [`pre_b72_au${n + 1}`, ORG, m.donorId, `sub_demo_b72_${pad(k + 1)}`, `evt_demo_b72_au${n + 1}`, JSON.stringify({ last4, exp }), on]);
+    await q(`UPDATE recurring_subscriptions SET card_last4=$1, card_exp_month=$2, card_exp_year=$3 WHERE id=$4 AND org_id=$5`,
+            [last4, Number(exp.slice(0, 2)), 2000 + Number(exp.slice(3)), m.subId, ORG]);
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ($1,$2,$3,'note',$4,$5,'system:stripe-webhook','Stripe (online)')`,
+            [`int_b72_au${n + 1}`, ORG, m.donorId, `Card updated by the bank, ends ${last4}, exp ${exp}. Their monthly gift carries on with no action needed.`, on]);
+    n++;
+  }
+  console.log(`[seed] ${n} cards updated by the bank this year`);
+}
+
+// PARITY-4 Part 2 · GIFTS STARTED AND NOT FINISHED. Four people who chose an
+// amount on Harborlight's own form, gave an email and stopped (three this
+// month, so the month's total has something to open), and one donor who
+// started and then gave, so "Finished later" shows a row linked to the gift.
+async function seedGiftStarts(q) {
+  const [org] = await q(`SELECT org_slug FROM orgs WHERE id=$1`, [ORG]);
+  const [page] = await q(`SELECT id, slug, title FROM giving_pages WHERE org_id=$1 AND status='active' ORDER BY created_at LIMIT 1`, [ORG]);
+  const form = page ? { id: page.id, name: page.title, path: `/give/${org.org_slug}/${page.slug}` } : { id: null, name: "Giving page", path: `/give/${org.org_slug}` };
+  const day = TODAY.slice(8, 10) === "01" ? 0 : 1;
+  const STARTS = [
+    ["gs_b72_1", "Imani", "Okafor", "imani.okafor@example.demo", 100, "once", 0, "4 hours", true],
+    ["gs_b72_2", "Theo", "Lindqvist", "theo.lindqvist@example.demo", 25, "monthly", day, "1 day", false],
+    ["gs_b72_3", "Rosalind", "Achebe", "rosalind.achebe@example.demo", 250, "once", day, "2 hours", true],
+    ["gs_b72_4", "Marcus", "Bellweather", "marcus.bellweather@example.demo", 50, "once", 12, "3 hours", true],
+  ];
+  for (const [id, first, last, email, amount, freq, daysAgo, hrs, expired] of STARTS) {
+    await q(`INSERT INTO gift_starts (id, org_id, giving_page_id, form_name, form_path, amount, frequency, email, first_name, last_name, started_at, expired_at, created_by, created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW() - ($11 || ' days')::interval - ($12)::interval, CASE WHEN $13 THEN NOW() - ($11 || ' days')::interval ELSE NULL END,
+                     'system:give-form','Giving form')`,
+            [id, ORG, form.id, form.name, form.path, amount, freq, email, first, last, String(daysAgo), hrs, expired]);
+  }
+  const [gave] = await q(`SELECT d.id, d.name, d.email, MAX(g.date) AS last FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+                           WHERE d.org_id=$1 AND d.email IS NOT NULL AND d.email <> '' AND d.deleted_at IS NULL
+                           GROUP BY d.id, d.name, d.email HAVING MAX(g.date) BETWEEN $2 AND $3 ORDER BY MAX(g.date) DESC, d.id LIMIT 1`,
+                         [ORG, orgTime.addDays(TODAY, -20), TODAY]);
+  if (gave) {
+    const [first, ...rest] = gave.name.split(" ");
+    await q(`INSERT INTO gift_starts (id, org_id, giving_page_id, form_name, form_path, amount, frequency, email, first_name, last_name, started_at, created_by, created_by_name)
+             VALUES ('gs_b72_5',$1,$2,$3,$4,100,'once',$5,$6,$7, ($8::date - 1) + time '19:00', 'system:give-form','Giving form')`,
+            [ORG, form.id, form.name, form.path, gave.email, first, rest.join(" "), gave.last]);
+  }
+  console.log(`[seed] ${STARTS.length} gifts started and not finished, ${gave ? 1 : 0} finished later`);
 }
 
 async function writeAll(client, donors, gifts) {

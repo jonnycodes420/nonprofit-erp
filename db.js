@@ -1648,6 +1648,40 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_stripe_id ON payment_recovery_events (stripe_event_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recovery_events_org ON payment_recovery_events (org_id, created_at)`);
 
+  // PARITY-4 Part 2 · A GIFT STARTED AND NOT FINISHED. Written by Steward's own
+  // giving forms only: when the three-step form passes its email step (a token
+  // the page made), and when a Checkout session is created. Expired by
+  // checkout.session.expired. Whether it FINISHED is never stored: it is read
+  // from the gifts (a gift by the same email after it started), so a gift
+  // that lands by any path closes it. Nothing here is a person record.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gift_starts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      start_token TEXT,
+      checkout_session_id TEXT,
+      giving_page_id TEXT,
+      form_name TEXT,
+      form_path TEXT,
+      amount NUMERIC(12,2),
+      frequency TEXT,
+      email TEXT NOT NULL,
+      first_name TEXT,
+      last_name TEXT,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      expired_at TIMESTAMPTZ,
+      noticed_at TIMESTAMPTZ,
+      dismissed_at TIMESTAMPTZ,
+      note_sent_at TIMESTAMPTZ,
+      note_sent_by TEXT,
+      note_sent_by_name TEXT,
+      created_by TEXT,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_starts_token ON gift_starts (org_id, start_token) WHERE start_token IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gift_starts_session ON gift_starts (checkout_session_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS gift_starts_org ON gift_starts (org_id, started_at)`);
+
   // ── Case-insensitive email lookups (2026-07-13) ──────────────────────────
   // users.email was only ever compared exactly (WHERE email = lower($1)) —
   // lowercasing the *input* but not the *stored* value. A row saved with any

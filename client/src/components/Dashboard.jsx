@@ -319,9 +319,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // CLEAN-1: one quiet Thread item when the last import left more than ten
   // possible duplicates. It opens Donors, Data health; it changes nothing.
   const [dhNotice,setDhNotice]=useState(null);
+  const [gsNotice,setGsNotice]=useState(null);   // PARITY-4 Part 2
   useEffect(()=>{
     if(surface!=="home")return;
     apiFetch("/data-health/notice").then(r=>setDhNotice(r.notice||null)).catch(()=>setDhNotice(null));
+    apiFetch("/gift-starts/notice").then(r=>setGsNotice(r.notice||null)).catch(()=>setGsNotice(null));
   },[surface]);
   // IT ASKS, IT DOES NOT WALL. The brief puts the five questions in the import
   // moment; this build does not touch the receipt, so Home offers them instead.
@@ -2242,6 +2244,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{dhNotice.step}</button>
                 <button aria-label="Hide this" disabled={isReadOnly}
                   onClick={()=>apiFetch(`/data-health/notice/${dhNotice.id}/dismiss`,{method:"POST",body:"{}"}).then(()=>setDhNotice(null)).catch(()=>{})}
+                  style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
+              </div>)}
+            {/* PARITY-4 Part 2: one quiet line when gifts were started on the
+                org's own forms and not finished, and nobody has looked yet. */}
+            {surface==="home"&&gsNotice&&(
+              <div data-testid="home-unfinished-notice" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg2,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{flex:"1 1 220px",fontSize:13,color:T.ink2}}>{gsNotice.sentence}</span>
+                <button onClick={()=>onNavigate&&onNavigate("fundraising",{frSection:"unfinished"})}
+                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>{gsNotice.step}</button>
+                <button aria-label="Hide this" disabled={isReadOnly}
+                  onClick={()=>apiFetch("/gift-starts/notice/seen",{method:"POST",body:"{}"}).then(()=>setGsNotice(null)).catch(()=>{})}
                   style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
               </div>)}
             {homeCalm&&homeRows.length>0&&(
