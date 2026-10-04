@@ -157,6 +157,7 @@ CORE=(
   agent2-volunteer
   agent2-gift
   why1-sentence-check
+  parity4-show-me
   fix12-ai-switch
   fix12-recipe-drafts
   fix11-inbound-resend
