@@ -28,7 +28,7 @@ import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
-import { TopBar } from "./components/TopBar";
+import { TopBar, MobileSearch } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
 import { PLAN_UNKNOWN } from "./lib/entitlement";
 import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
@@ -762,6 +762,8 @@ function AppShell() {
         <span style={{fontSize:20,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        {/* FIX-26: the same search as the desktop bar, behind an icon. */}
+        <MobileSearch onNavigate={navigateTo}/>
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
             Code intact, re-enable by uncommenting.
         <button onClick={()=>setShowVoiceMemo(true)} title="Record a voice memo" style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>

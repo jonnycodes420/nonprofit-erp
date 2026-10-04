@@ -64,14 +64,22 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const ticketLevels = levels.filter(l => l.kind === "ticket");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }} data-testid="event-detail">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-        <div>
+      {/* FIX-26: at 390 the address ran under the title broken mid-word
+          ("…/give/harb / orlight?event="). It is one line now, cut with an
+          ellipsis, with a button that copies the whole of it. */}
+      <div data-testid="event-detail-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 240px" }}>
           <button onClick={onBack} style={{ ...btn(false), padding: "4px 10px", marginBottom: 8 }}>← All events</button>
-          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{event.name}</div>
-          <div style={{ fontSize: 13, color: T.ink3 }}>{displayDate(event.date)}{event.location ? ` · ${event.location}` : ""}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, lineHeight: 1.25 }}>{event.name}</div>
+          <div style={{ fontSize: 13, color: T.ink3, marginTop: 2 }}>{displayDate(event.date)}{event.location ? ` · ${event.location}` : ""}</div>
         </div>
-        {ticketLevels.length > 0 && <div style={{ fontSize: 12, color: T.ink3, maxWidth: 420 }}>
-          Tickets sell on your giving page at <span style={{ color: T.ink, wordBreak: "break-all" }} data-testid="event-public-url">{publicUrl}</span>
+        {ticketLevels.length > 0 && <div style={{ fontSize: 12, color: T.ink3, minWidth: 0, flex: "1 1 260px", maxWidth: 420 }}>
+          <div style={{ marginBottom: 4 }}>Tickets sell on your giving page at</div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+            <span title={publicUrl} style={{ color: T.ink, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} data-testid="event-public-url">{publicUrl}</span>
+            <button type="button" onClick={() => { try { navigator.clipboard.writeText(publicUrl); setMsg("The ticket link is copied."); } catch { setMsg(publicUrl); } }}
+              style={{ ...btn(false), padding: "4px 10px", fontSize: 12, flexShrink: 0 }} data-testid="event-public-url-copy">Copy link</button>
+          </div>
         </div>}
       </div>
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}

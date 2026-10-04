@@ -956,6 +956,33 @@ function SeatingPrintSheet({ kind, event, chart }) {
 // code box below still takes a typed or Bluetooth-scanned code, and the name
 // search still checks anybody in. The answer is a colour as well as words:
 // emerald for in, brass for "already in", plain for anything else.
+//
+// FIX-26: Safari and Firefox have no BarcodeDetector, and most door
+// volunteers hold an iPhone. Where it is missing, jsQR (pure JavaScript, no
+// network fetch) reads the same frames. It is imported only when the camera
+// is started on this screen, so no other screen downloads it. The detector it
+// stands in for keeps the same shape: detect(video) -> [{ rawValue }].
+async function jsqrDetector() {
+  const mod = await import("jsqr");
+  const jsQR = mod.default || mod;
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  return {
+    async detect(video) {
+      const w = video && video.videoWidth, h = video && video.videoHeight;
+      if (!w || !h || !ctx) return [];
+      // A ticket fills the middle of the frame; 640 wide reads it and keeps
+      // each look well under the 250ms between looks on an older phone.
+      const scale = Math.min(1, 640 / w);
+      canvas.width = Math.round(w * scale); canvas.height = Math.round(h * scale);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const hit = jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+      return hit && hit.data ? [{ rawValue: hit.data }] : [];
+    },
+  };
+}
+
 export function EventKiosk({ eventId }) {
   const [data, setData] = useState(null);
   const [term, setTerm] = useState("");
@@ -1015,13 +1042,24 @@ export function EventKiosk({ eventId }) {
   const startCamera = async () => {
     setCamErr("");
     const Detector = typeof window !== "undefined" ? window.BarcodeDetector : null;
-    if (!Detector || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
-      setCamErr("This browser cannot read a code with the camera. Type or paste the code below, or find the guest by name.");
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      setCamErr("This browser cannot open the camera. Type or paste the code below, or find the guest by name.");
       if (codeBoxRef.current) codeBoxRef.current.focus();
       return;
     }
     try {
-      detectorRef.current = new Detector({ formats: ["qr_code"] });
+      // The built-in reader where there is one (Chrome, Android); jsQR where
+      // there is not (Safari on every iPhone, Firefox).
+      let supported = [];
+      try { supported = Detector && Detector.getSupportedFormats ? await Detector.getSupportedFormats() : []; } catch { supported = []; }
+      detectorRef.current = Detector && supported.includes("qr_code")
+        ? new Detector({ formats: ["qr_code"] })
+        : await jsqrDetector();
+    } catch {
+      setCamErr("The code reader did not load. Check the connection and try again, or type the code below, or find the guest by name.");
+      return;
+    }
+    try {
       streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
       setCamOn(true);
     } catch {

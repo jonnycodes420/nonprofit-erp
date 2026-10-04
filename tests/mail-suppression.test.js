@@ -180,10 +180,29 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const camp = await api("POST", "/campaigns", tok, { name: "W4 Blast " + uniq(), subject: "Hello", body: "Hi {{donor_name}}", audience: "all" });
     const campId = camp.body?.id || camp.body?.campaign?.id;
     ok("campaign created", !!campId, camp.body);
+    // FIX-26: THE SHOWN COUNT IS THE SEND. The builder shows the server's
+    // segment-preview count and nothing else; it must equal the messages this
+    // send creates, and everyone it leaves out must carry a reason.
+    const [campRow] = await q("SELECT segment FROM campaigns WHERE id=$1", [campId]);
+    const pv = await api("POST", "/campaigns/segment-preview", tok, { segment: JSON.parse(campRow.segment || "{}") });
+    ok("FIX-26 segment-preview answers", pv.status === 200 && typeof pv.body?.count === "number", pv.body);
+    const reasons = new Map((pv.body?.leftOut || []).map(g => [g.reason, g]));
+    const leftOutIds = new Set((pv.body?.leftOut || []).flatMap(g => g.people.map(p => p.id)));
+    ok("FIX-26 the deceased and do-not-contact donors are left out, by name of reason",
+      reasons.has("deceased") && reasons.has("do_not_contact") && leftOutIds.has(dead.body.id) && leftOutIds.has(dnc.body.id),
+      pv.body?.leftOut);
+    ok("FIX-26 the suppression-list donor is left out", leftOutIds.has(donorId), pv.body?.leftOut);
+    ok("FIX-26 left out adds up", pv.body?.leftOutCount === (pv.body?.leftOut || []).reduce((n, g) => n + g.count, 0), pv.body);
     state.captured.length = 0;
     const send = await api("POST", `/campaigns/${campId}/send`, tok, {});
     ok("campaign send queued", send.status === 200, send.body);
     await settle(1500);
+    {
+      const made = await q("SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE campaign_id=$1 AND (failure_reason IS NULL OR failure_reason NOT LIKE 'suppressed:%')", [campId]);
+      ok("FIX-26 the shown count equals the messages the send created", pv.body?.count === made[0].n && made[0].n === state.captured.length,
+        { shown: pv.body?.count, created: made[0].n, sink: state.captured.length });
+      ok("FIX-26 the send answers with the same count", send.body?.recipientCount === pv.body?.count, { send: send.body, shown: pv.body?.count });
+    }
     ok("clean donor received the campaign", to(cleanEmail).length === 1, { delivered: to(cleanEmail).length });
     ok("suppressed donor did NOT receive the campaign", to(donorEmail).length === 0, { delivered: to(donorEmail).length });
     ok("do-not-contact donor did NOT receive the campaign", to(dncEmail).length === 0, { delivered: to(dncEmail).length });
