@@ -4796,7 +4796,7 @@ async function resolveCampaignRecipients(campaign, orgId) {
   return filterBySegment(donors, segment);
 }
 
-// FIX-26 — WHO A CAMPAIGN REACHES, AND WHO IT LEAVES OUT, ANSWERED ONCE.
+// FIX-26: WHO A CAMPAIGN REACHES, AND WHO IT LEAVES OUT, ANSWERED ONCE.
 // The builder used to count the segment in the browser from /donors/summaries,
 // which carries no person_types, so every volunteer and event guest with an
 // email counted as a donor (1,198 against the server's 1,158 on the demo). And

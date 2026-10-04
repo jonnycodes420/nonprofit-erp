@@ -203,7 +203,7 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const T = await templatesMod();
   const seg = req.body?.segment && typeof req.body.segment === "object" ? req.body.segment : {};
-  // FIX-26 — the count is the send's own decision for each person, so the
+  // FIX-26: the count is the send's own decision for each person, so the
   // number on the button is the number of messages the send creates.
   const aud = await campaignAudience({ segment: JSON.stringify(seg) }, orgId)
     .catch(() => ({ recipients: [], leftOut: [], leftOutCount: 0, orgGate: { send: false, reason: "unreadable" } }));

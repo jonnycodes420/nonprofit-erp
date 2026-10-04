@@ -175,7 +175,7 @@ async function getSuppressionReason(email, orgId) {
   return (await suppressionReasonsFor([email], orgId)).get(String(email).toLowerCase()) || null;
 }
 
-// FIX-26 — the same read for many addresses in one query: lower(email) -> the
+// FIX-26: the same read for many addresses in one query: lower(email) -> the
 // most recent reason. The single-address probe above is this with one address,
 // so there is still one reading of the suppression list.
 async function suppressionReasonsFor(emails, orgId) {
@@ -360,7 +360,7 @@ async function donorMailDecision(kind, email, orgId, pre = null) {
   return { send: true, reason: null };
 }
 
-// FIX-26 — THE DECISION FOR A WHOLE LIST. A campaign's builder shows how many
+// FIX-26: THE DECISION FOR A WHOLE LIST. A campaign's builder shows how many
 // people it will reach, and the send then decides person by person. Those two
 // must be one answer, so this does not restate a single rule: it reads the
 // flags and the suppression list for every address in two queries and hands

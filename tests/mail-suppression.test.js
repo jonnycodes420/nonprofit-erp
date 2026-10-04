@@ -180,7 +180,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const camp = await api("POST", "/campaigns", tok, { name: "W4 Blast " + uniq(), subject: "Hello", body: "Hi {{donor_name}}", audience: "all" });
     const campId = camp.body?.id || camp.body?.campaign?.id;
     ok("campaign created", !!campId, camp.body);
-    // FIX-26 — THE SHOWN COUNT IS THE SEND. The builder shows the server's
+    // FIX-26: THE SHOWN COUNT IS THE SEND. The builder shows the server's
     // segment-preview count and nothing else; it must equal the messages this
     // send creates, and everyone it leaves out must carry a reason.
     const [campRow] = await q("SELECT segment FROM campaigns WHERE id=$1", [campId]);

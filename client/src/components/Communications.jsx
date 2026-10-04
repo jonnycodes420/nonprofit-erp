@@ -210,7 +210,7 @@ function segLabel(raw) {
   }[mode] || "All donors with email";
 }
 
-// FIX-26 — WHO THE SEGMENT HOLDS AND THIS SEND WILL NOT REACH. The builder
+// FIX-26: WHO THE SEGMENT HOLDS AND THIS SEND WILL NOT REACH. The builder
 // used to count the segment here, from /donors/summaries, which carries no
 // person types, so every volunteer and guest with an email counted as a donor.
 // There is one count now and it is the server's: the send's own decision for
