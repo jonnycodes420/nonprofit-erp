@@ -389,6 +389,40 @@ async function groupsAreQuick() {
     }
   }
 
+  // FIX-25 · DELETE A MEETING, THEN UNDO. A tester deleted a meeting and saw no
+  // Undo. The walk deletes one of the demo's meetings from its profile, needs
+  // the toast on screen, presses Undo, and needs the same row back by its id,
+  // so the demo ends the walk exactly as it began.
+  {
+    trouble = [];
+    const { q } = require("./helpers");
+    const [m] = await q(`SELECT id, donor_id FROM interactions WHERE org_id = $1 AND type = 'meeting' ORDER BY date DESC, id LIMIT 1`, [(auth.org && auth.org.id) || auth.user.orgId]);
+    ok("§undo the demo has a meeting to delete", !!m, m);
+    if (m) {
+      await page.goto(`${APP}/donors/${m.donor_id}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      const menu = page.locator('[aria-label="Edit or delete this meeting"]').first();
+      await menu.waitFor({ timeout: 15000 }).catch(() => {});
+      let shown = false, back = [];
+      if (await menu.count()) {
+        await menu.scrollIntoViewIfNeeded();
+        await menu.click();
+        await page.getByRole("menuitem", { name: "Delete" }).click();
+        const toast = page.locator('[data-testid="undo-toast"]');
+        shown = await toast.waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+        const gone = (await q("SELECT id FROM interactions WHERE id = $1", [m.id])).length === 0;
+        ok("§undo deleting a meeting takes it off the record at once", gone);
+        if (shown) {
+          await toast.getByRole("button", { name: /Undo/ }).click();
+          await toast.waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
+        }
+        back = await q("SELECT id FROM interactions WHERE id = $1", [m.id]);
+      }
+      ok("§undo deleting a meeting shows the Undo toast", shown);
+      ok("§undo pressing Undo puts the same meeting back", back.length === 1, back);
+      await look("donor profile after a meeting delete and Undo");
+    }
+  }
+
   await browser.close();
   await closeDb();
   summary("smoke-walk");
