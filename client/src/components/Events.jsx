@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { offerUndo } from "./EditHistory";
@@ -8,6 +9,9 @@ import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
+
+// PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
+const CHAIR = 44;
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: T.ink },
@@ -374,6 +378,7 @@ function EventSeating({ eventId }) {
   const [plan, setPlan] = useState(null);          // the Seat everyone preview
   const [undo, setUndo] = useState(null);          // { label, moves }
   const [busy, setBusy] = useState(false);
+  const [printing, setPrinting] = useState(null);  // PARITY-4: "chart" | "list", the sheet print media shows
 
   const load = () => apiFetch(`/events/${eventId}/guests`).then(setData).catch(() => setData(null));
   useEffect(() => { load(); }, [eventId]);
@@ -394,16 +399,39 @@ function EventSeating({ eventId }) {
     } catch (e) { setErr(errorMessage(e, "That did not go through.")); setBusy(false); return null; }
   };
 
-  const move = (attendeeId, table) =>
-    write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: [attendeeId], table }) },
+  // PARITY-4: `chair` is the numbered chair at that table; left out, the
+  // server gives the lowest free one. A party moves with its host either way.
+  const move = (attendeeId, table, chair) =>
+    write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: [attendeeId], table, seat: chair || undefined }) },
       { undoLabel: table ? "Put them back" : "Seat them again" });
 
-  const seatPicked = table => {
+  const seatPicked = (table, chair) => {
     setSeatMenu(false);
     const ids = picked.slice();
     setPicked([]);
-    return write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: ids, table }) },
+    return write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: ids, table, seat: chair || undefined }) },
       { undoLabel: "Undo" });
+  };
+
+  // THE TAP PATH, which is also the keyboard path: a chair is a button. With
+  // somebody picked, an empty chair seats them there. With nobody picked, a
+  // filled chair picks the person on it, so they can be moved.
+  const tapChair = (t, chair, g) => {
+    if (picked.length) {
+      if (g && !picked.includes(g.id)) { setErr(`Chair ${chair} at ${t.label} is ${g.name}'s. Pick an empty chair.`); return; }
+      if (g && picked.includes(g.id)) { setPicked(p => p.filter(x => x !== g.id)); return; }
+      return seatPicked(t.label, chair);
+    }
+    if (g) setPicked([g.id]);
+  };
+
+  const toggleVip = async g => {
+    setErr("");
+    try {
+      await apiFetch(`/events/${eventId}/attendees/${g.id}`, { method: "PATCH", body: JSON.stringify({ vip: !g.vip }) });
+      setMsg(g.vip ? `${g.name} is no longer marked VIP.` : `${g.name} is marked VIP.`);
+      await load();
+    } catch (e) { setErr(errorMessage(e, "That did not go through.")); }
   };
 
   const addTables = () =>
@@ -485,10 +513,13 @@ function EventSeating({ eventId }) {
     </style>${rows}`);
     w.document.close(); w.focus(); w.print();
   };
-  const printChart = () => print(`${data.event.name} seating`,
-    `<h1>${data.event.name}</h1><div class="sub">${chart.sentence}</div>`
-    + chart.tables.map(t => `<div class="t"><h2>${t.sentence}</h2>${t.seats.map(g => `<div>${g.name}${g.dietary ? ` <span style="color:#8a6d1f">(${g.dietary})</span>` : ""}</div>`).join("") || "<div style='color:#5a554f'>Empty</div>"}</div>`).join("")
-    + (chart.unseated.length ? `<div class="t"><h2>Not yet seated · ${chart.unseated.length}</h2>${chart.unseated.map(g => `<div>${g.name}</div>`).join("")}</div>` : ""));
+  // PARITY-4: THE CHART AND THE LIST PRINT FROM THIS PAGE, not a popup: the
+  // sheet below is mounted into <body>, hidden on screen, and is the only thing
+  // print media shows. One page for the room, then a guest-by-table list.
+  const printSheet = kind => {
+    setPrinting(kind);
+    setTimeout(() => { try { window.print(); } catch { /* the sheet is still there for the browser's own Print */ } }, 80);
+  };
   // A name tag carries a name and the table to find, and nothing else: a badge
   // that prints somebody's giving level is a badge that tells the room what
   // they gave.
@@ -589,9 +620,12 @@ function EventSeating({ eventId }) {
             style={{ ...btn, opacity: chart.unseated.length ? 1 : 0.45, cursor: chart.unseated.length ? "pointer" : "not-allowed" }}>
             Seat everyone
           </button>
-          <button onClick={chartWhy ? undefined : printChart} data-testid="ev-print-chart"
+          <button onClick={chartWhy ? undefined : () => printSheet("chart")} data-testid="ev-print-chart"
             disabled={!!chartWhy} title={chartWhy || undefined}
             style={{ ...btn, opacity: chartWhy ? 0.45 : 1, cursor: chartWhy ? "not-allowed" : "pointer" }}>Print the chart</button>
+          <button onClick={chartWhy ? undefined : () => printSheet("list")} data-testid="ev-print-list"
+            disabled={!!chartWhy} title={chartWhy || undefined}
+            style={{ ...btn, opacity: chartWhy ? 0.45 : 1, cursor: chartWhy ? "not-allowed" : "pointer" }}>Print guests by table</button>
           <button onClick={tagsWhy ? undefined : printTags} data-testid="ev-print-tags"
             disabled={!!tagsWhy} title={tagsWhy || undefined}
             style={{ ...btn, opacity: tagsWhy ? 0.45 : 1, cursor: tagsWhy ? "not-allowed" : "pointer" }}>Print name tags</button>
@@ -602,8 +636,19 @@ function EventSeating({ eventId }) {
         <div data-testid="ev-print-why" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{chartWhy || tagsWhy}</div>
       )}
       <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12 }}>
-        Tap a guest, then Seat at. On a computer you can also drag a name onto a table.
+        Tap a guest, then tap an empty chair (or Seat at). On a computer you can also drag a name onto a chair or a table.
+        A brass ring is a VIP; a green chair is somebody already through the door.
       </div>
+      <style>{`
+        .ev-table-long { grid-column: span 2; }
+        @media (max-width: 760px) { .ev-seating-grid { grid-template-columns: minmax(0,1fr) !important; } .ev-room { grid-template-columns: minmax(0,1fr) !important; } .ev-table-long { grid-column: auto !important; } }
+        .ev-print-sheet { display: none; }
+        @media print {
+          body > *:not(.ev-print-sheet) { display: none !important; }
+          .ev-print-sheet { display: block !important; }
+        }
+      `}</style>
+      {printing && createPortal(<SeatingPrintSheet kind={printing} event={data.event} chart={chart} />, document.body)}
 
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 8 }}>{err}</div>}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -639,6 +684,11 @@ function EventSeating({ eventId }) {
             </span>
             <button data-testid="ev-seat-at" onClick={() => setSeatMenu(v => !v)} aria-expanded={seatMenu} style={go}>Seat at…</button>
             <button onClick={() => seatPicked("")} style={btn}>Not seated</button>
+            {pickedGuests.length === 1 && (
+              <button data-testid="ev-vip-toggle" onClick={() => toggleVip(pickedGuests[0])} aria-pressed={!!pickedGuests[0].vip}
+                style={{ ...btn, borderColor: T.gold500 }}>{pickedGuests[0].vip ? "Not VIP" : "Mark VIP"}</button>
+            )}
+            <span style={{ fontSize: 12, color: T.ink3 }}>or tap an empty chair</span>
             <button onClick={() => { setPicked([]); setSeatMenu(false); }} style={{ ...btn, border: "none", background: "transparent", color: T.ink3 }}>Clear</button>
           </div>
           {seatMenu && (
@@ -657,11 +707,11 @@ function EventSeating({ eventId }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 12 }} className="ev-seating-grid">
-        {/* NOT SEATED, on the left, because the people without a seat are the
+      <div className="ev-seating-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,3fr)", gap: 12 }}>
+        {/* NOT SEATED, at the side, because the people without a seat are the
             ones this screen exists to find. */}
         <div data-testid="ev-unseated" onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, "")}
-          style={{ background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
+          style={{ background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96, alignSelf: "start", minWidth: 0 }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Not seated · {chart.unseated.length}</div>
           {chart.unseated.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>Everybody has a seat.</div>}
           {chart.unseated.map(g => (
@@ -671,18 +721,27 @@ function EventSeating({ eventId }) {
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 10, alignContent: "start" }}>
+        {/* PARITY-4 · THE ROOM. Each table drawn as it stands, round or long,
+            with its chairs round it. A chair is a button: drop a name on it,
+            or pick a name and tap it. The table itself takes a drop too, for
+            "anywhere at this table". */}
+        <div data-testid="ev-room" className="ev-room" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 10, alignContent: "start", minWidth: 0 }}>
           {chart.tables.map(t => (
-            <div key={t.label} data-testid="ev-table" data-table-full={t.full ? "1" : "0"}
+            <div key={t.label} data-testid="ev-table" data-table-full={t.full ? "1" : "0"} data-shape={t.shape}
+              className={t.shape === "long" && t.capacity > 8 ? "ev-table-long" : undefined}
               onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, t.label)}
-              style={{ background: T.bg, border: "1px solid " + (t.full ? T.gold500 : T.bg3), borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
+              style={{ background: T.bg, border: "1px solid " + (t.full ? T.gold500 : T.bg3), borderRadius: 11, padding: "10px 12px", minHeight: 96, minWidth: 0 }}>
               {editing && editing.id === t.id ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   <input value={editing.label} onChange={e => setEditing(v => ({ ...v, label: e.target.value }))} style={inp} aria-label="Table name" />
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11.5, color: T.ink3 }}>Seats</span>
                     <input type="number" min="1" max="60" value={editing.seats}
                       onChange={e => setEditing(v => ({ ...v, seats: e.target.value }))} style={{ ...inp, width: 64 }} aria-label="Seats" />
+                    <select value={editing.shape || "round"} onChange={e => setEditing(v => ({ ...v, shape: e.target.value }))} style={inp} aria-label="Shape">
+                      <option value="round">Round</option>
+                      <option value="long">Long</option>
+                    </select>
                   </div>
                   <input value={editing.sponsorName || ""} onChange={e => setEditing(v => ({ ...v, sponsorName: e.target.value }))}
                     placeholder="Held for (optional)" style={inp} aria-label="Held for" />
@@ -697,16 +756,21 @@ function EventSeating({ eventId }) {
                 <>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
                     <div data-testid="ev-table-head" style={{ fontSize: 11.5, fontWeight: 800, color: t.full ? T.gold700 : T.ink }}>
-                      {t.sentence}
+                      {t.sentence}{t.shape === "long" ? " · long" : ""}
                     </div>
-                    {t.id && <button onClick={() => setEditing({ id: t.id, label: t.label, seats: t.capacity, sponsorName: t.sponsorName || "" })}
+                    {t.id && <button onClick={() => setEditing({ id: t.id, label: t.label, seats: t.capacity, sponsorName: t.sponsorName || "", shape: t.shape })}
                       aria-label={`Edit ${t.label}`}
                       style={{ background: "none", border: "none", color: T.ink3, fontSize: 11, cursor: "pointer", padding: 0 }}>Edit</button>}
                   </div>
                   {t.sponsorName && <div style={{ fontSize: 11, color: T.gold700, marginBottom: 4 }}>Held for {t.sponsorName}</div>}
+                  <TableDrawing t={t} picked={picked} busy={busy}
+                    onChair={(chair, g) => tapChair(t, chair, g)}
+                    onCentre={() => { if (picked.length) seatPicked(t.label); }}
+                    onDropChair={chair => { if (drag) move(drag, t.label, chair); }}
+                    onDragGuest={id => setDrag(id)} onDragEnd={() => setDrag(null)} />
                   {t.seats.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>Empty</div>}
-                  {t.seats.map(g => (
-                    <GuestChip key={g.id} g={g} picked={picked.includes(g.id)}
+                  {t.places.map((g, i) => g && (
+                    <GuestChip key={g.id} g={g} chair={i < t.capacity ? i + 1 : null} picked={picked.includes(g.id)}
                       onToggle={() => setPicked(p => p.includes(g.id) ? p.filter(x => x !== g.id) : [...p, g.id])}
                       onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)} />
                   ))}
@@ -728,7 +792,7 @@ function EventSeating({ eventId }) {
 // A guest, tappable and draggable and reachable by keyboard. It is a BUTTON so
 // the phone, the mouse and the Tab key all reach it the same way; drag is an
 // extra on top rather than the only means.
-function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd }) {
+function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd, chair = null }) {
   return (
     <button type="button" data-testid="ev-guest" aria-pressed={picked}
       draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onToggle}
@@ -736,89 +800,420 @@ function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd }) {
         display: "block", width: "100%", textAlign: "left", font: "inherit",
         background: picked ? T.greenDk + "16" : "transparent",
         border: picked ? "1px solid " + T.greenDk : "1px solid transparent",
-        borderRadius: 7, padding: "3px 6px", margin: "1px 0",
-        fontSize: 12.5, color: T.ink, cursor: "pointer",
+        borderRadius: 7, padding: "3px 6px", margin: "1px 0", minHeight: 30,
+        fontSize: 12.5, color: T.ink, cursor: "pointer", overflowWrap: "anywhere",
       }}>
+      {chair ? <span style={{ color: T.ink3, fontVariantNumeric: "tabular-nums" }}>{chair} · </span> : null}
       {g.name}
+      {g.vip ? <span data-testid="ev-vip-mark" style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
       {g.guest_of ? <span style={{ color: T.ink3 }}> · guest</span> : null}
       {g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
     </button>
   );
 }
 
+// ── PARITY-4 · ONE TABLE, DRAWN ───────────────────────────────────────────
+// A round table is a circle with its chairs round it; a long table is a
+// rectangle with chairs down both sides, numbered along the top and then the
+// bottom. Every chair is a 44px button (the phone tap target), labelled for a
+// screen reader with the table, the chair and who is on it.
+function chairInitials(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return ((parts[0][0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+function TableDrawing({ t, picked, busy, onChair, onCentre, onDropChair, onDragGuest, onDragEnd }) {
+  const n = Math.max(1, t.capacity);
+  let w, h, spots, centre;
+  if (t.shape === "long") {
+    const top = Math.ceil(n / 2), bottom = n - top;
+    const step = CHAIR + 6;
+    w = Math.max(top, bottom, 1) * step + 12;
+    const tableTop = CHAIR + 6, tableH = 52;
+    h = tableTop + tableH + 6 + CHAIR;
+    spots = [];
+    for (let i = 0; i < top; i++) spots.push({ x: 6 + i * step, y: 0 });
+    for (let i = 0; i < bottom; i++) spots.push({ x: 6 + i * step, y: tableTop + tableH + 6 });
+    centre = { left: 4, top: tableTop, width: w - 8, height: tableH, radius: 8 };
+  } else {
+    const r = Math.max(70, Math.ceil((n * (CHAIR + 4)) / (2 * Math.PI)));
+    w = h = 2 * r + CHAIR;
+    spots = [];
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+      spots.push({ x: r + r * Math.cos(a), y: r + r * Math.sin(a) });
+    }
+    const d = Math.max(64, 2 * r - CHAIR - 14);
+    centre = { left: (w - d) / 2, top: (h - d) / 2, width: d, height: d, radius: "50%" };
+  }
+  return (
+    <div style={{ display: "flex", justifyContent: "safe center", margin: "4px 0 8px", overflowX: "auto" }}>
+      <div data-testid="ev-table-drawing" style={{ position: "relative", width: w, height: h, flexShrink: 0 }}>
+        <button type="button" data-testid="ev-table-centre" onClick={onCentre} disabled={busy}
+          aria-label={`${t.label}, ${t.count} of ${t.capacity} seats${picked.length ? ". Seat the picked guests here" : ""}`}
+          style={{ position: "absolute", left: centre.left, top: centre.top, width: centre.width, height: centre.height,
+                   borderRadius: centre.radius, background: T.white, border: "1.5px solid " + (t.full ? T.gold500 : T.bg3),
+                   display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                   font: "inherit", color: T.ink, cursor: picked.length ? "pointer" : "default", padding: 4 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, lineHeight: 1.2, textAlign: "center" }}>{t.label}</span>
+          <span style={{ fontSize: 11, color: t.full ? T.gold700 : T.ink3 }}>{t.count} of {t.capacity}</span>
+        </button>
+        {spots.map((p, i) => {
+          const g = t.places[i] || null;
+          const isPicked = g && picked.includes(g.id);
+          const inside = g && g.checked_in_at;
+          return (
+            <button key={i} type="button" data-testid="ev-chair" data-chair={i + 1} data-filled={g ? "1" : "0"}
+              draggable={!!g} onDragStart={() => g && onDragGuest(g.id)} onDragEnd={onDragEnd}
+              onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); onDropChair(i + 1); }}
+              onClick={() => onChair(i + 1, g)} disabled={busy}
+              title={g ? `${g.name}${g.vip ? " (VIP)" : ""}` : `Chair ${i + 1}, empty`}
+              aria-label={`${t.label}, chair ${i + 1}: ${g ? g.name + (g.vip ? ", VIP" : "") + (inside ? ", checked in" : "") : "empty"}`}
+              aria-pressed={!!isPicked}
+              style={{ position: "absolute", left: p.x, top: p.y, width: CHAIR, height: CHAIR, borderRadius: "50%",
+                       boxSizing: "border-box", padding: 0, font: "inherit", cursor: "pointer",
+                       fontSize: g ? 12 : 10.5, fontWeight: g ? 800 : 600,
+                       background: g ? (inside ? T.greenDk : T.bg2) : T.white,
+                       color: g ? (inside ? T.white : T.ink) : T.ink3,
+                       border: g ? (g.vip ? "3px solid " + T.gold500 : "1.5px solid " + T.bg3) : "1.5px dashed " + T.bg3,
+                       boxShadow: isPicked ? "0 0 0 3px " + T.greenDk : "none" }}>
+              {g ? chairInitials(g.name) : i + 1}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── PARITY-4 · THE PRINTED SHEETS ─────────────────────────────────────────
+// "chart": the whole room on one landscape page, every table with its chairs
+// numbered and named. "list": every guest A to Z with the table and chair to
+// find, which is what the person at the door actually reads from. Only what
+// the screen shows is printed: names, tables, chairs, VIP and dietary notes,
+// never a giving level.
+function SeatingPrintSheet({ kind, event, chart }) {
+  const day = event && event.date ? displayDate(event.date) : "";
+  const many = chart.tables.length > 12;
+  const rows = [];
+  for (const t of chart.tables) t.places.forEach((g, i) => { if (g) rows.push({ g, table: t.label, chair: i < t.capacity ? i + 1 : null }); });
+  for (const g of chart.unseated) rows.push({ g, table: "Not seated", chair: null });
+  rows.sort((a, b) => String(a.g.name).localeCompare(String(b.g.name)));
+  const ink = "#0F1A12", grey = "#5a554f";
+  return (
+    <div className="ev-print-sheet" data-testid="ev-print-sheet" data-kind={kind}
+      style={{ fontFamily: "'DM Sans',system-ui,sans-serif", color: ink, background: "#FFFFFF", padding: 0 }}>
+      <style>{kind === "chart" ? "@page { size: landscape; margin: 10mm; }" : "@page { size: portrait; margin: 12mm; }"}</style>
+      <div style={{ fontFamily: "Georgia,serif", fontSize: 22, marginBottom: 2 }}>{event && event.name}</div>
+      <div style={{ fontSize: 11, color: grey, marginBottom: 10 }}>
+        {day}{day ? " · " : ""}{kind === "chart" ? chart.sentence : `${rows.length} guests, A to Z, with the table and chair to find.`}
+      </div>
+      {kind === "chart" ? (
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${many ? 6 : 4}, minmax(0,1fr))`, gap: 8 }}>
+          {chart.tables.map(t => (
+            <div key={t.label} style={{ border: "1px solid #d4cfc6", borderRadius: t.shape === "long" ? 4 : 14, padding: "6px 8px", breakInside: "avoid" }}>
+              <div style={{ fontSize: many ? 9.5 : 11, fontWeight: 800, marginBottom: 3 }}>
+                {t.label} <span style={{ fontWeight: 400, color: grey }}>· {t.count} of {t.capacity}{t.shape === "long" ? " · long" : ""}</span>
+              </div>
+              {t.places.slice(0, Math.max(t.capacity, t.places.length)).map((g, i) => (
+                <div key={i} style={{ fontSize: many ? 8 : 9.5, lineHeight: 1.35, color: g ? ink : "#b9b2a6" }}>
+                  {i + 1}. {g ? g.name : "open"}{g && g.vip ? " (VIP)" : ""}{g && g.dietary ? ` · ${g.dietary}` : ""}
+                </div>
+              ))}
+            </div>
+          ))}
+          {chart.unseated.length > 0 && (
+            <div style={{ border: "1px dashed #d4cfc6", borderRadius: 4, padding: "6px 8px" }}>
+              <div style={{ fontSize: many ? 9.5 : 11, fontWeight: 800, marginBottom: 3 }}>Not yet seated · {chart.unseated.length}</div>
+              {chart.unseated.map(g => <div key={g.id} style={{ fontSize: many ? 8 : 9.5, lineHeight: 1.35 }}>{g.name}</div>)}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ columnCount: 2, columnGap: 24 }}>
+          {rows.map(r => (
+            <div key={r.g.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 10.5, lineHeight: 1.6, borderBottom: "1px solid #ece8e1", breakInside: "avoid" }}>
+              <span>{r.g.name}{r.g.vip ? " (VIP)" : ""}</span>
+              <span style={{ color: grey, whiteSpace: "nowrap" }}>{r.table}{r.chair ? `, chair ${r.chair}` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── item 5 · CHECK-IN, AT THE DOOR ────────────────────────────────────────
 // The kiosk shape VOL-1 built, for a guest list: type a few letters, tap the
 // name, and they are in. It is deliberately one big list and one big box,
-// because it is used standing up, on a tablet, by somebody holding a pen.
+// because it is used standing up, on a phone, by somebody holding a pen.
+//
+// PARITY-4: SCAN WITH THE PHONE'S OWN CAMERA. The browser's BarcodeDetector
+// reads the EVENTS-2 ticket QR (shared/passCode.js) straight off the camera,
+// and the string goes to the server whole: the signature, the org and the
+// ticket are checked there, never here. Where a browser has no detector, the
+// code box below still takes a typed or Bluetooth-scanned code, and the name
+// search still checks anybody in. The answer is a colour as well as words:
+// emerald for in, brass for "already in", plain for anything else.
 export function EventKiosk({ eventId }) {
   const [data, setData] = useState(null);
   const [term, setTerm] = useState("");
   const [msg, setMsg] = useState("");
   const [code, setCode] = useState("");
-  const [scanMsg, setScanMsg] = useState("");
-  const [scanOk, setScanOk] = useState(false);
+  const [result, setResult] = useState(null);      // { tone: "in"|"again"|"no", title, sentence }
+  const [view, setView] = useState("all");          // "all" | "in": the count opens the rows behind it
+  const [camOn, setCamOn] = useState(false);
+  const [camErr, setCamErr] = useState("");
+  const [walkins, setWalkins] = useState([]);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const detectorRef = useRef(null);
+  const lastRef = useRef({ code: "", at: 0 });
+  const handleRef = useRef(null);
+  const codeBoxRef = useRef(null);
+
   const load = () => apiFetch(`/events/${eventId}/kiosk`).then(setData).catch(() => setData(null));
   useEffect(() => { load(); }, [eventId]);
-  // The code is handed to the server whole. Nothing here reads or trusts what
-  // is inside it: the signature is checked on the server, against this org.
-  const scan = async () => {
-    const c = code.trim();
+
+  const show = (r, fallback) => {
+    if (r && r.ok) {
+      setResult({ tone: "in", title: "Checked in", sentence: r.sentence || fallback });
+      try { navigator.vibrate && navigator.vibrate(60); } catch { /* not every phone */ }
+    } else if (r && (r.already || r.reason === "already_in")) {
+      setResult({ tone: "again", title: "Already checked in", sentence: r.sentence });
+      try { navigator.vibrate && navigator.vibrate([60, 80, 60]); } catch { /* not every phone */ }
+    } else {
+      setResult({ tone: "no", title: "Not checked in", sentence: (r && r.sentence) || fallback || "That code did not read." });
+    }
+  };
+
+  // THE ONE HANDLER a code arrives at, from the camera or from the code box.
+  // The same code seen twice inside three seconds is the camera still looking
+  // at the same ticket, not a second scan, so it is ignored.
+  const handleCode = async (raw, { fromCamera = false } = {}) => {
+    const c = String(raw || "").trim();
     if (!c) return;
-    setScanMsg(""); setCode("");
+    const now = Date.now();
+    if (fromCamera && lastRef.current.code === c && now - lastRef.current.at < 3000) return;
+    lastRef.current = { code: c, at: now };
     try {
       const r = await apiFetch(`/events/${eventId}/scan`, { method: "POST", body: JSON.stringify({ code: c }) });
-      setScanOk(!!r.ok); setScanMsg(r.sentence || (r.ok ? "In." : "That code did not read."));
-      if (r.ok) load();
-    } catch (e) { setScanOk(false); setScanMsg(errorMessage(e, "That code did not read.")); }
+      show(r, "In.");
+      if (r && r.ok) load();
+    } catch (e) { setResult({ tone: "no", title: "Not checked in", sentence: errorMessage(e, "That code did not read.") }); }
   };
+  handleRef.current = handleCode;
+
+  const stopCamera = () => {
+    const s = streamRef.current;
+    if (s && s.getTracks) s.getTracks().forEach(tr => { try { tr.stop(); } catch { /* already stopped */ } });
+    streamRef.current = null;
+    setCamOn(false);
+  };
+
+  const startCamera = async () => {
+    setCamErr("");
+    const Detector = typeof window !== "undefined" ? window.BarcodeDetector : null;
+    if (!Detector || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      setCamErr("This browser cannot read a code with the camera. Type or paste the code below, or find the guest by name.");
+      if (codeBoxRef.current) codeBoxRef.current.focus();
+      return;
+    }
+    try {
+      detectorRef.current = new Detector({ formats: ["qr_code"] });
+      streamRef.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      setCamOn(true);
+    } catch {
+      setCamErr("The camera did not open. Allow the camera for this site, or type the code below, or find the guest by name.");
+    }
+  };
+
+  // While the camera is on: show it, and look for a code four times a second.
+  useEffect(() => {
+    if (!camOn) return undefined;
+    const v = videoRef.current;
+    if (v && streamRef.current) {
+      try { v.srcObject = streamRef.current; } catch { /* an older browser */ }
+      const p = v.play && v.play();
+      if (p && p.catch) p.catch(() => {});
+    }
+    let stopped = false;
+    let timer = null;
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const found = await detectorRef.current.detect(v);
+        const hit = found && found.find(f => f && f.rawValue);
+        if (hit && handleRef.current) await handleRef.current(hit.rawValue, { fromCamera: true });
+      } catch { /* no frame yet */ }
+      if (!stopped) timer = setTimeout(tick, 250);
+    };
+    timer = setTimeout(tick, 250);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [camOn]);
+  useEffect(() => () => stopCamera(), []);
+
+  const scanTyped = () => { const c = code; setCode(""); return handleCode(c); };
+
   const tap = async (g) => {
     setMsg("");
     try {
-      const r = await apiFetch(`/events/${eventId}/check-in`, {
-        method: "POST", body: JSON.stringify({ attendeeId: g.id, undo: !!g.checked_in_at }) });
-      setMsg(r.sentence); load();
+      const r = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: g.id }) });
+      show(r, `${g.name} is in.`);
+      if (r && r.ok) load();
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
-  if (!data) return null;
+  const undoIn = async (g) => {
+    try {
+      const r = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: g.id, undo: true }) });
+      setResult(null); setMsg(r.sentence); load();
+    } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
+  };
+
+  // WALK-INS. Somebody at the door who is not on the list: find them in the
+  // people already on file (one person record), or add the name as typed, and
+  // check them in in the same tap.
   const q = term.trim().toLowerCase();
-  const shown = q ? data.guests.filter(g => (g.name || "").toLowerCase().includes(q)) : data.guests;
+  useEffect(() => {
+    if (q.length < 2) { setWalkins([]); return undefined; }
+    let live = true;
+    const t = setTimeout(() => {
+      apiFetch(`/donors?search=${encodeURIComponent(q)}&limit=5`)
+        .then(r => { if (live) setWalkins((r && r.donors) || []); })
+        .catch(() => { if (live) setWalkins([]); });
+    }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [q]);
+
+  const addWalkIn = async ({ donorId, name }) => {
+    setMsg("");
+    try {
+      const r = await apiFetch(`/events/${eventId}/attendees`, { method: "POST",
+        body: JSON.stringify(donorId ? { donorIds: [donorId] } : { name }) });
+      const id = r && r.ids && r.ids[0];
+      if (!id) { setMsg("They are already on the list. Find them by name above."); return; }
+      const c = await apiFetch(`/events/${eventId}/check-in`, { method: "POST", body: JSON.stringify({ attendeeId: id }) });
+      show(c, "In.");
+      setTerm("");
+      load();
+    } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
+  };
+
+  if (!data) return null;
+  const guests = data.guests || [];
+  const inCount = guests.filter(g => g.checked_in_at).length;
+  const base = view === "in" ? guests.filter(g => g.checked_in_at) : guests;
+  const shown = q ? base.filter(g => (g.name || "").toLowerCase().includes(q)) : base;
+  const onList = new Set(guests.map(g => g.donor_id).filter(Boolean));
+  const offList = walkins.filter(d => !onList.has(d.id));
+  const tones = {
+    in: { background: T.greenDk, color: T.white, border: T.greenDk },
+    again: { background: T.gold500, color: T.ink, border: T.gold500 },
+    no: { background: T.bg, color: T.ink, border: T.bg3 },
+  };
+  const big = { border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 15, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", minHeight: 48 };
+
   return (
-    <div data-testid="ev-kiosk" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
-      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>Check-in</div>
-      <div style={{ fontSize: 13, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-count">{data.sentence}</div>
-      {/* EVENTS-2 — the scanner. A phone camera reads the QR into a text box
-          (any scanner app or a Bluetooth reader types into the focused field),
-          and the server decides what it means. Two kinds of code arrive here:
-          a ticket for this event, and a member card. A member card is NOT a
-          ticket, so it never invents a registration — it says who this is and
-          whether they are on the list, and the person at the door decides. */}
-      <form onSubmit={e => { e.preventDefault(); scan(); }} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-        <input data-testid="ev-kiosk-scan" value={code} onChange={e => setCode(e.target.value)}
-          placeholder="Scan a ticket or a member card" autoComplete="off"
+    <div data-testid="ev-kiosk" id={`ev-kiosk-${eventId}`} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Check-in</div>
+        {/* THE LIVE COUNT, and it opens: tap it for the people behind it. */}
+        <button type="button" data-testid="ev-kiosk-count" onClick={() => setView(v => (v === "in" ? "all" : "in"))}
+          aria-pressed={view === "in"} title="Checked in of everybody expected. Tap for the list."
+          style={{ background: view === "in" ? T.green100 : T.white, border: "1.5px solid " + T.greenDk, borderRadius: 999,
+                   padding: "8px 14px", fontFamily: "inherit", cursor: "pointer", color: T.ink, minHeight: 44 }}>
+          <span style={{ fontSize: 18, fontWeight: 800, color: T.greenDk, fontVariantNumeric: "tabular-nums" }}>{inCount}</span>
+          <span style={{ fontSize: 13 }}> of {guests.length} checked in</span>
+        </button>
+      </div>
+      <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-sentence">
+        {data.sentence} Checked in counts everybody marked in; expected is everybody on the list who has not cancelled.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        {!camOn
+          ? <button type="button" data-testid="ev-kiosk-camera" onClick={startCamera} style={{ ...big, flex: "1 1 160px", background: T.greenDk, color: T.white }}>Scan</button>
+          : <button type="button" data-testid="ev-kiosk-camera-stop" onClick={stopCamera} style={{ ...big, flex: "1 1 160px", background: T.white, color: T.ink, border: "1.5px solid " + T.bg3 }}>Stop the camera</button>}
+      </div>
+      {camOn && (
+        <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: T.ink, marginBottom: 10, aspectRatio: "4 / 3", maxHeight: 360 }}>
+          <video ref={videoRef} data-testid="ev-kiosk-video" playsInline muted autoPlay
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          <div aria-hidden="true" style={{ position: "absolute", inset: "18%", border: "3px solid " + T.white, borderRadius: 14, opacity: 0.85 }} />
+          <div style={{ position: "absolute", left: 0, right: 0, bottom: 8, textAlign: "center", color: T.white, fontSize: 13, fontWeight: 700 }}>
+            Hold the ticket's code in the square
+          </div>
+        </div>
+      )}
+      {camErr && <div role="status" data-testid="ev-kiosk-camera-why" style={{ fontSize: 13, color: T.ink, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>{camErr}</div>}
+
+      {result && (
+        <div role="status" aria-live="polite" data-testid="ev-kiosk-result" data-tone={result.tone}
+          style={{ ...tones[result.tone], border: "1px solid " + tones[result.tone].border, borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 2 }}>{result.title}</div>
+          <div data-testid="ev-kiosk-scan-msg" style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.45 }}>{result.sentence}</div>
+        </div>
+      )}
+
+      {/* The code box: a Bluetooth scanner or a scanner app types into it, and
+          a code can be pasted or typed. Same handler as the camera. */}
+      <form onSubmit={e => { e.preventDefault(); scanTyped(); }} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input ref={codeBoxRef} data-testid="ev-kiosk-scan" value={code} onChange={e => setCode(e.target.value)}
+          placeholder="Or type the code on the ticket" autoComplete="off" aria-label="Ticket or member card code"
           style={{ flex: 1, minWidth: 0, boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink }} />
         <button type="submit" disabled={!code.trim()} data-testid="ev-kiosk-scan-go"
-          style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 14, fontWeight: 800, cursor: code.trim() ? "pointer" : "not-allowed", opacity: code.trim() ? 1 : 0.5, fontFamily: "inherit" }}>Scan</button>
+          style={{ ...big, background: T.white, color: T.ink, border: "1.5px solid " + T.bg3, cursor: code.trim() ? "pointer" : "not-allowed", opacity: code.trim() ? 1 : 0.5 }}>Check</button>
       </form>
-      {scanMsg && <div role="status" data-testid="ev-kiosk-scan-msg"
-        style={{ fontSize: 14, fontWeight: 700, color: scanOk ? T.greenDk : T.ink, background: scanOk ? T.green100 : T.bg,
-                 border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 10 }}>{scanMsg}</div>}
-      <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Type a name"
+
+      <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Find a guest or a walk-in by name"
+        aria-label="Find a guest or a walk-in by name"
         style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginBottom: 8 }}>{msg}</div>}
-      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+      {view === "in" && (
+        <div data-testid="ev-kiosk-in-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink }}>Checked in · {inCount}</span>
+          <button type="button" onClick={() => setView("all")} style={{ background: "none", border: "none", color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", minHeight: 44 }}>Show everyone</button>
+        </div>
+      )}
+      <div style={{ maxHeight: 360, overflowY: "auto" }}>
         {shown.slice(0, 200).map(g => (
-          <button key={g.id} data-testid="ev-kiosk-row" onClick={() => tap(g)}
-            style={{ width: "100%", textAlign: "left", background: g.checked_in_at ? T.green100 : T.white,
-                     border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 6,
-                     cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600 }}>{g.name}</span>
-            <span style={{ fontSize: 12, color: g.checked_in_at ? T.greenDk : T.ink3, whiteSpace: "nowrap" }}>
-              {g.checked_in_at ? "In" : g.table_label || "No seat"}{g.dietary ? ` · ${g.dietary}` : ""}
-            </span>
-          </button>
+          <div key={g.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <button data-testid="ev-kiosk-row" onClick={() => tap(g)}
+              style={{ flex: 1, minWidth: 0, textAlign: "left", background: g.checked_in_at ? T.green100 : T.white,
+                       border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", minHeight: 48,
+                       cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600, overflowWrap: "anywhere" }}>
+                {g.name}{g.vip ? <span style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
+              </span>
+              <span style={{ fontSize: 12, color: g.checked_in_at ? T.greenDk : T.ink3 }}>
+                {g.checked_in_at ? "In" : g.table_label || "No seat"}{g.checked_in_at && g.table_label ? ` · ${g.table_label}` : ""}{g.dietary ? ` · ${g.dietary}` : ""}
+              </span>
+            </button>
+            {g.checked_in_at && (
+              <button type="button" onClick={() => undoIn(g)} aria-label={`Undo check-in for ${g.name}`}
+                style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "0 12px", fontSize: 12, color: T.ink3, cursor: "pointer", fontFamily: "inherit", minHeight: 48 }}>Undo</button>
+            )}
+          </div>
         ))}
-        {!shown.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody by that name on the list.</div>}
+        {!shown.length && <div style={{ fontSize: 13, color: T.ink3, marginBottom: 6 }}>{view === "in" && !q ? "Nobody is checked in yet." : "Nobody by that name on the list."}</div>}
       </div>
+      {q.length >= 2 && (
+        <div data-testid="ev-kiosk-walkin" style={{ borderTop: "1px solid " + T.bg3, marginTop: 8, paddingTop: 10 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Walk-in, not on the list</div>
+          {offList.map(d => (
+            <button key={d.id} type="button" data-testid="ev-kiosk-walkin-person" onClick={() => addWalkIn({ donorId: d.id })}
+              style={{ width: "100%", textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 6, minHeight: 48, cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600 }}>{d.name}</span>
+              <span style={{ fontSize: 12, color: T.greenDk, fontWeight: 700 }}>Add and check in</span>
+            </button>
+          ))}
+          <button type="button" data-testid="ev-kiosk-walkin-new" onClick={() => addWalkIn({ name: term.trim() })}
+            style={{ width: "100%", textAlign: "left", background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 10, padding: "11px 13px", minHeight: 48, cursor: "pointer", fontFamily: "inherit", fontSize: 14, color: T.ink }}>
+            Add "{term.trim()}" as a new guest and check them in
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -962,7 +1357,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
       {/* Header */}
-      <div style={{ background: T.ink, borderBottom: "1px solid "+T.bgElevated, padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+      <div style={{ background: T.ink, borderBottom: "1px solid "+T.bgElevated, padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap" }}>
         <button onClick={onClose} style={{ background: "transparent", border: "1px solid "+T.green650, borderRadius: 8, padding: "6px 12px", color: "rgba(240,237,230,0.7)", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
           ← Back
         </button>
@@ -977,7 +1372,14 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             {fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+          {/* PARITY-4: the door, one tap from the top on a phone. */}
+          <button data-testid="ev-open-checkin" onClick={() => {
+            const k = document.getElementById(`ev-kiosk-${eventId}`);
+            if (k) k.scrollIntoView({ behavior: "smooth", block: "start" });
+          }} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "7px 14px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer", minHeight: 36 }}>
+            Check-in
+          </button>
           <button onClick={() => { setEditing(true); setEditForm({ name: event.name, eventType: event.event_type, date: event.date, endDate: event.end_date || "", location: event.location || "", description: event.description || "", capacity: event.capacity || "", status: event.status, revenue: event.revenue || 0, cost: event.cost || 0, notes: event.notes || "" }); }}
             style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             Edit Event
