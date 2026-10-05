@@ -21,13 +21,14 @@ import { HowDidItDo } from "./HowDidItDo";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
+import { useLocation } from "react-router-dom";
+import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
 import { tabHref, urlParam, giftHref } from "../lib/appUrls";
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
 // A fund's page is its card in Finance → Funds, opened on its rows.
 const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id });
-const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", campaignId: id });
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -37,16 +38,6 @@ const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", camp
 
 // The Team plan's padlock, the one the sidebar used for the Pipeline.
 const lockIcon = color => LockGlyph({ size: 10, color });
-
-// FIX-7 Part 5 — three states, and each one shows the two shares it compared.
-// "Ahead" exists now because a campaign ten points past its schedule was being
-// told it was on pace, which is the sentence that makes a badge furniture.
-const PACE_META = {
-  met:      { label: "Goal reached",  color: T.gold,       bg: T.gold50 },
-  ahead:    { label: "Ahead",         color: T.greenDk,    bg: T.bg2 },
-  on_track: { label: "On pace",       color: T.ink,        bg: T.bg2 },
-  behind:   { label: "Behind",        color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
-};
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
@@ -94,12 +85,6 @@ const SOURCE_BADGE = {
   offline: { label: "Offline", bg: T.bg2, color: T.ink3 },
 };
 
-function daysLeftText(dl) {
-  if (dl == null) return null;
-  if (dl <= 0) return "ended";
-  if (dl === 1) return "1 day left";
-  return `${dl} days left`;
-}
 
 export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, isCoreTier }) {
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
@@ -122,7 +107,10 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   // Peer-to-peer tab, on its own page, with Add a team and the public link
   // already there. Nobody has to go looking for the switch they just set.
   const [p2pOpenPageId, setP2pOpenPageId] = useState("");
-  const [focusCampaign, setFocusCampaign] = useState(() => urlParam("fundraising", "campaign"));
+  // FIX-27 Part 1: the campaign on screen is the one the address names, so a
+  // campaign link renders its page and Back returns to the list.
+  const loc = useLocation();
+  const openCampaignId = /^\/app\/fundraising\/?$/.test(loc.pathname) ? new URLSearchParams(loc.search).get("campaign") : null;
   const goUrl = useUrlWriter();
   const orgSlug = data?.org?.org_slug || "";
 
@@ -143,7 +131,8 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
   const sec = FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0];
   const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
   const setSubtab = goto;
-  const openCampaign = id => { setFocusCampaign(id); goUrl(campaignHref(id)); goto("campaigns"); };
+  const openCampaign = id => { goUrl(campaignHref(id)); goto("campaigns"); };
+  const closeCampaign = () => goUrl(tabHref("fundraising", { frSection: "campaigns" }));
 
   // FIX-14 Part 5: the part on screen is in the address bar. A switch
   // replaces the entry (it is not a step Back should undo); a record opened
@@ -272,9 +261,11 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       )}
 
       {!loading && subtab === "campaigns" && (
-        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} focusId={focusCampaign} onOpenCampaign={openCampaign}
+        <CampaignsView goals={overview?.goals || []} isReadOnly={isReadOnly} roTip={roTip} openId={openCampaignId}
+          onOpenCampaign={openCampaign} onBack={closeCampaign} onNavigate={onNavigate}
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
-          onTemplateCreated={out => { if (out && out.campaignId) setFocusCampaign(out.campaignId); load(); }}
+          templates={(tpl, reload) => <CampaignTemplates data={tpl} reload={reload} isReadOnly={isReadOnly} onCreated={out => { load(); if (out && out.campaignId) openCampaign(out.campaignId); }} onOpenCampaign={openCampaign} />}
+          planPanel={id => <CampaignPlanPanel campaignId={id} isReadOnly={isReadOnly} />}
           onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
       )}
 
@@ -351,24 +342,6 @@ function fundraisingIndex(onGoto, isCoreTier) {
 // ── Overview ────────────────────────────────────────────────────────────────
 // Category metadata for typed goals (BUILD-16 Part 2) — Annual / Project /
 // Capital. Colors stay inside the five-color palette.
-const CATEGORY_META = {
-  annual: { label: "Annual", color: T.greenMid },
-  project: { label: "Project", color: T.gold600 },
-  capital: { label: "Capital", color: T.greenDk },
-};
-
-// An overarching (umbrella) goal is a STRUCTURE, not a category — it rolls up
-// its typed children. It gets its own neutral designation everywhere so it
-// never reads as a duplicate of one of its children's categories (e.g. an
-// umbrella typed "annual" sitting next to a child "Annual Fund").
-function CategoryBadge({ g, style }) {
-  if (g.isOverarching) {
-    return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink2, background: T.bg2, borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>Overarching</span>;
-  }
-  const cat = CATEGORY_META[g.goalCategory] || CATEGORY_META.project;
-  return <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: cat.color, background: cat.color + "14", borderRadius: 99, padding: "3px 9px", whiteSpace: "nowrap", flexShrink: 0, ...style }}>{cat.label}</span>;
-}
-
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto, onOpenCampaign }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
   const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory } = overview;
@@ -816,127 +789,6 @@ function CampaignPlanPanel({ campaignId, isReadOnly }) {
         {matchMsg ? <div className="camp-match-msg" style={{ fontSize: 12.5, color: T.ink2, marginTop: 10, lineHeight: 1.55 }}>{matchMsg}</div> : null}
         {err ? <div style={{ fontSize: 12, color: T.gold, marginTop: 8 }}>{err}</div> : null}
       </div>
-    </div>
-  );
-}
-
-function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, focusId, onOpenCampaign, onTemplateCreated }) {
-  // FIX-22: the templates are read here so the list can show a campaign that
-  // was started from one. The goal is optional on a template, and the list
-  // below is the goal portfolio (goal > 0), so a goal-less template campaign
-  // was nowhere to be found. It now sits at the top of the list.
-  const [tpl, setTpl] = useState(null);
-  const loadTpl = () => apiFetch("/campaign-templates").then(setTpl).catch(() => setTpl({ templates: [] }));
-  useEffect(() => { loadTpl(); }, []);
-  const inList = new Set(goals.map(g => g.id));
-  const started = ((tpl && tpl.templates) || []).filter(t => t.existingCampaignId && !inList.has(t.existingCampaignId));
-  const editBtn = c => !isReadOnly ? (
-    <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
-  ) : null;
-  const topGoals = goals.filter(g => g.isTopLevel);
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <button onClick={onNew} disabled={isReadOnly} title={roTip}
-          style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.5 : 1, whiteSpace: "nowrap" }}>+ New campaign</button>
-      </div>
-
-      {/* CAMPAIGN-2 — the two starting points a small shop asks for by name,
-          above the list rather than hidden behind the New button: the point is
-          that somebody who has not thought about GivingTuesday sees it. */}
-      <CampaignTemplates data={tpl} reload={loadTpl} isReadOnly={isReadOnly} onCreated={onTemplateCreated} onOpenCampaign={onOpenCampaign} />
-
-      {started.map(t => {
-        const focused = focusId === t.existingCampaignId;
-        return (
-          <div key={t.existingCampaignId} data-campaign-id={t.existingCampaignId} data-testid="campaign-started-from-plan"
-            ref={el => { if (el && focused && !el.dataset.scrolled) { el.dataset.scrolled = "1"; el.scrollIntoView({ block: "center" }); } }}
-            style={{ background: T.white, border: "1px solid " + (focused ? T.greenDk : T.bg3), borderRadius: 16, padding: "18px 22px", marginBottom: 16,
-                     display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink }}>{t.campaign.name}</div>
-              <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
-                Started from a plan &middot; {t.campaign.startDate} to {t.campaign.endDate} &middot; no goal set yet
-              </div>
-            </div>
-            {editBtn({ id: t.existingCampaignId, name: t.campaign.name, startDate: t.campaign.startDate, endDate: t.campaign.endDate, goalAmount: null })}
-          </div>
-        );
-      })}
-
-      {goals.length === 0 && started.length === 0 ? (
-        <>
-          <StartHere line="A campaign is a specific ask — Spring Appeal, a capital push, a year-end drive. Give it a goal and a deadline, and Steward tracks every attributed gift toward it automatically." actionLabel="+ Start your first campaign" onAction={onNew} dismissKey="fundraising_campaigns_intro" />
-          <div style={{ marginTop: 20 }}>
-            <EmptyState icon="◎" title="No campaigns yet" message="Your campaigns and their thermometers will live here. Start one to see progress and pace at a glance." />
-          </div>
-        </>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 16 }}>
-          {topGoals.map(g => (
-            <CampaignCard key={g.id} g={g} allGoals={goals} editBtn={editBtn} focusId={focusId} onOpenCampaign={onOpenCampaign} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// One top-level campaign card. An umbrella shows its ROLL-UP thermometer (raised
-// = Σ children, pace off that total) + its children nested beneath, each still
-// editable. A standalone goal shows its own SUM(gifts).
-function CampaignCard({ g, allGoals, editBtn, focusId, onOpenCampaign }) {
-  const over = g.isOverarching;
-  const children = over ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
-  // The campaign a link named is scrolled to and marked in emerald.
-  const focused = !!focusId && (focusId === g.id || children.some(c => c.id === focusId));
-  const name = (c, body) => <RecordLink to={campaignHref(c.id)} onOpen={onOpenCampaign ? () => onOpenCampaign(c.id) : undefined} data-record-link="campaign">{body}</RecordLink>;
-  return (
-    <div data-campaign-id={g.id} ref={el => { if (el && focused && !el.dataset.scrolled) { el.dataset.scrolled = "1"; el.scrollIntoView({ block: "center" }); } }}
-      style={{ background: T.white, border: "1px solid " + (focused ? T.greenDk : T.bg3), outline: focused ? "2px solid " + T.greenDk : "none", borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{name(g, g.name)}</div>
-            <CategoryBadge g={g} />
-          </div>
-          <div style={{ fontSize: 11, color: T.ink3, marginTop: 3 }}>
-            {over ? `Rolls up ${g.childCount} goal${g.childCount === 1 ? "" : "s"}` : (g.lifecycle === "upcoming" ? "Upcoming" : g.lifecycle === "ended" ? "Ended" : "Active")}
-            {!over && daysLeftText(g.daysLeft) && g.lifecycle === "active" ? ` · ${daysLeftText(g.daysLeft)}` : ""}
-          </div>
-        </div>
-        {editBtn(g)}
-      </div>
-      {over ? (
-        <Thermometer raised={g.rolledRaised} goal={g.goalAmount} percent={g.rolledPercent} rawPercent={g.rolledRawPercent} over={g.rolledOver} paceState={g.rolledPaceState} paceSentence={g.rolledPaceSentence} />
-      ) : (
-        <Thermometer raised={g.raised} goal={g.goalAmount} percent={g.percent} rawPercent={g.rawPercent} over={g.over} paceState={g.paceState} paceSentence={g.paceSentence} />
-      )}
-      {over ? (
-        <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-          {children.map(c => {
-            const cat = CATEGORY_META[c.goalCategory] || CATEGORY_META.project;
-            return (
-              <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: 99, background: cat.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name(c, c.name)}</span>
-                  </div>
-                  <span style={{ fontSize: 11.5, color: T.ink3 }}>{fmtFull(c.raised)} of {fmtFull(c.goalAmount)} · {c.rawPercent ?? c.percent ?? 0}%</span>
-                </div>
-                {editBtn(c)}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
-          {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
-          {g.endDate ? ` · closes ${displayDate(g.endDate)}` : ""}
-          {committedText(g) ? ` · ${committedText(g)}` : ""}
-        </div>
-      )}
     </div>
   );
 }

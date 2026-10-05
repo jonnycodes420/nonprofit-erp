@@ -314,3 +314,58 @@ export function dropLog(dropped, reasons = []) {
   if (!dropped) return "";
   return `[suggestion] ${dropped} ${dropped === 1 ? "line" : "lines"} left out: ${reasons.filter(Boolean).join(" · ")}`;
 }
+
+// ── FIX-27 Part 7 · A DRAFT MAY ONLY CLAIM WHAT THE RECORD HOLDS ───────────
+// The walk (3 Oct): an AI-drafted thank-you in Communications said "I
+// recorded a short video" with a watch link, for a video nobody recorded. Sent,
+// the donor gets a bad link. A drafted message is checked as a whole before
+// anyone sees it, and a claim the record does not carry fails it:
+//   · A VIDEO is mentioned only when one exists for that person and is ready,
+//     and then only with its own link.
+//   · A LINK is one Steward handed over (the video's, the org's own pages).
+//   · A GIFT AMOUNT is one of their own amounts. A merge tag is not a claim.
+//   · A DATE (a day of a month) is one on their record.
+//   · A MEETING or a conversation ("when we met", "our call") is one that is
+//     logged for them.
+//   · An EVENT the draft names is one of the organisation's events.
+// The caller swaps a failed draft for its template sentence: guardDraft never
+// edits the model's words into something else.
+//
+// record: { donor, rows, video: { ready, url } | null, links: [url],
+//           meetings: [{ date, type }], events: [name], orgName, today }
+const VIDEO_WORDS = /\b(video|videos|recorded|recording|filmed|film|clip|vlog)\b/i;
+const URL_RE = /\bhttps?:\/\/[^\s<>"')]+/gi;
+const MEETING_WORDS = /\b(when we met|we met|our meeting|our conversation|our call|our chat|when we spoke|we spoke|spoke with you|talking with you|talked with you|our visit|your visit|visiting you|over coffee|over lunch|at lunch)\b/i;
+const EVENT_WORDS = /\b(gala|dinner|reception|luncheon|breakfast|auction|tournament|5k|fun run|open house|tour|concert|festival|ceremony|celebration|fundraiser|event)\b/i;
+const MERGE_TAG = /\{\{\s*[a-z_]+\s*\}\}/gi;
+// A sum is a claim about THEIR money when the sentence is about giving.
+const GIFT_WORDS = /\b(gift|gifts|gave|give|given|giving|donat\w*|contribut\w*|pledg\w*|support(ed)? us with)\b/i;
+
+export function guardDraft(text, record = {}) {
+  const raw = String(text == null ? "" : text);
+  const bare = plainText(raw.replace(/<[^>]+>/g, " ")).replace(MERGE_TAG, " ");
+  const reasons = [];
+  const video = record.video && record.video.ready && record.video.url ? record.video : null;
+  const links = new Set([...(record.links || []), ...(video ? [video.url] : [])].map(u => String(u).replace(/[.,;:!?]+$/, "")));
+  const urls = (raw.match(URL_RE) || []).map(u => u.replace(/[.,;:!?]+$/, ""));
+  if (VIDEO_WORDS.test(bare) && !video) reasons.push("mentions a video, and no video thank-you is ready for them");
+  if (VIDEO_WORDS.test(bare) && video && !urls.includes(video.url)) reasons.push("mentions their video without its own link");
+  for (const u of urls) if (!links.has(u)) { reasons.push(`a link Steward did not give it (${u.slice(0, 60)})`); break; }
+  if (/\b(watch|view|see) (it|the video|this|here|below)\b|\bclick here\b/i.test(bare) && !urls.length && !video) reasons.push("points at a link that is not there");
+  const ground = groundOf(record);
+  for (const s of sentencesOf(bare)) {
+    for (const n of factsIn(s).numbers) {
+      if (n.kind === "money" && GIFT_WORDS.test(s) && !(ground.values.has(n.value) || ground.values.has(Math.round(n.value * 100) / 100))) reasons.push(`${n.raw} is not one of their amounts`);
+      if (n.kind === "day" && !ground.days.has(n.value)) reasons.push(`${n.raw} is not a date on their record`);
+    }
+  }
+  if (MEETING_WORDS.test(bare) && !((record.meetings || []).length)) reasons.push("speaks of a meeting or a conversation nobody logged");
+  const ev = bare.match(EVENT_WORDS);
+  if (ev) {
+    const known = (record.events || []).map(e => tokens(e));
+    const word = ev[0].toLowerCase();
+    const named = known.some(ts => ts.includes(word) || ts.some(t => variants(word).includes(t)));
+    if (!named && !(record.orgName && tokens(record.orgName).includes(word))) reasons.push(`speaks of a ${word} that is not one of the organisation's events`);
+  }
+  return { ok: reasons.length === 0, reasons: [...new Set(reasons)] };
+}

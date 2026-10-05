@@ -54,6 +54,7 @@ const SURFACES = [
   "components/Donors.jsx",         // directory, profile, re-engage, import
   "components/Pipeline.jsx",
   "components/Fundraising.jsx",
+  "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and a campaign's page
   "components/RecurringGiving.jsx",
   "components/Grants.jsx",
   "components/Communications.jsx",
@@ -169,6 +170,7 @@ const OUT_OF_SCOPE = {
 // again draw a number that does not open.
 const FIGURE_SOURCE_SCOPE = [
   "components/Dashboards.jsx",      // Board, Fundraising, People, Recurring (FIX-2 A)
+  "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and every campaign page
 ];
 // The component and the panel themselves: they are where a figure's number
 // and its rows' total are drawn, so the patterns below find numbers in them by

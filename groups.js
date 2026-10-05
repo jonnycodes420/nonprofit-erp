@@ -16,6 +16,8 @@ const DS = require("./donorStatus");
 
 let _pt = null;
 async function personTypeMod() { return _pt || (_pt = await import("./shared/personType.js")); }
+let _ps = null;
+async function proposalShapeMod() { return _ps || (_ps = await import("./shared/proposalShape.js")); }
 
 const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
 
@@ -189,6 +191,39 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.availability ? ?)`);
     params.push(String(q.volAvail));
   }
+  // ── FIX-27 Part 2 · A CAMPAIGN AND AN ASK ────────────────────────────────
+  // "Gave to the spring appeal" and "no ask this year" are rules here, so the
+  // Donors list, its export, a Group, Show me and the Agent's find_people are
+  // the same rows. A gift counts toward a campaign the way the campaign's own
+  // raised figure counts it (figureSources goal-raised): attributed by id, or
+  // by the campaign's name on an imported gift. The year, when named, is the
+  // gift's calendar year.
+  const YR = /^\d{4}$/;
+  const campaignGift = (alias, yearKey) => {
+    const y = q[yearKey];
+    return `EXISTS (SELECT 1 FROM gifts ${alias} JOIN campaigns c${alias} ON c${alias}.org_id = ${alias}.org_id AND c${alias}.id = ?
+                     WHERE ${alias}.org_id = donors.org_id AND ${alias}.donor_id = donors.id AND ${alias}.amount > 0
+                       AND (${alias}.campaign_id = c${alias}.id OR ${alias}.campaign = c${alias}.name)${y ? ` AND LEFT(${alias}.date,4) = ?` : ""})`;
+  };
+  for (const [key, yearKey, neg] of [["gaveCampaign", "gaveCampaignYear", false], ["notGaveCampaign", "notGaveCampaignYear", true]]) {
+    if (q[yearKey] !== undefined && q[yearKey] !== "" && !YR.test(String(q[yearKey]))) return { badStatus: true };
+    if (!q[key]) { if (q[yearKey]) return { badStatus: true }; continue; }
+    where.push((neg ? "NOT " : "") + campaignGift(neg ? "gnc" : "gc", yearKey));
+    params.push(String(q[key]));
+    if (q[yearKey]) params.push(String(q[yearKey]));
+  }
+  if (q.noAsk === "1") {
+    // NO ASK THIS YEAR: no proposal still open, and nothing asked of them in
+    // the last twelve months (an ask logged on the timeline, or a proposal
+    // made, whatever became of it).
+    const PS = await proposalShapeMod();
+    const yearAgo = new Date(Date.UTC(+today.slice(0, 4) - 1, +today.slice(5, 7) - 1, +today.slice(8, 10))).toISOString().slice(0, 10);
+    where.push(`NOT EXISTS (SELECT 1 FROM opportunities ox WHERE ox.org_id = donors.org_id AND ox.donor_id = donors.id
+                              AND (ox.proposal_stage = ANY(?::text[]) OR LEFT(ox.created_at::text,10) > ?))
+            AND NOT EXISTS (SELECT 1 FROM interactions ix WHERE ix.org_id = donors.org_id AND ix.donor_id = donors.id
+                              AND ix.type = 'ask' AND LEFT(ix.date,10) > ?)`);
+    params.push(PS.OPEN_STAGE_KEYS, yearAgo, yearAgo);
+  }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   let orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
@@ -216,7 +251,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   "volunteer", "volActive", "volOpp", "volShiftFrom", "volShiftTo", "volHoursMin", "volHoursMax", "volHoursFrom", "volHoursTo",
   "gaveFrom", "gaveTo", "volQual", "volAnswer", "volAvail",
   // PARITY-4: Show me.
-  "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver"];
+  "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
+  // FIX-27: a campaign (and the year of the gift), and no ask this year.
+  "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -242,7 +279,7 @@ function normalizeRules(raw) {
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
-  for (const k of ["notDeceased", "monthly"]) {
+  for (const k of ["notDeceased", "monthly", "noAsk"]) {
     if (rules[k] === undefined) continue;
     if (rules[k] === "true") rules[k] = "1";
     if (rules[k] !== "1") delete rules[k];
@@ -253,6 +290,10 @@ function normalizeRules(raw) {
   for (const k of ["volHoursMin", "volHoursMax"])
     if (rules[k] !== undefined && !(Number(rules[k]) >= 0)) errors.push("Hours is a number, 0 or more.");
   if (rules.volAnswer && !/^[A-Za-z0-9_]{1,24}=.+$/.test(rules.volAnswer)) errors.push("An answer filter names a question and an answer.");
+  for (const [k, y] of [["gaveCampaign", "gaveCampaignYear"], ["notGaveCampaign", "notGaveCampaignYear"]]) {
+    if (rules[y] && !/^\d{4}$/.test(rules[y])) errors.push("A year is written 2026.");
+    if (rules[y] && !rules[k]) errors.push("A year goes with a campaign.");
+  }
   if (!Object.keys(rules).length) errors.push("A group by rule needs at least one rule, or it is everybody.");
   return { ok: errors.length === 0, rules, errors };
 }
@@ -285,6 +326,9 @@ function rulesSentence(rules = {}) {
   if (rules.city) parts.push(`in ${rules.city}`);
   if (rules.gaveEvent) parts.push("who gave to one event");
   if (rules.gaveOver !== undefined) parts.push(`who gave more than $${Number(rules.gaveOver).toLocaleString("en-US")}`);
+  if (rules.gaveCampaign) parts.push(`who gave to one campaign${rules.gaveCampaignYear ? ` in ${rules.gaveCampaignYear}` : ""}`);
+  if (rules.notGaveCampaign) parts.push(`who have not given to one campaign${rules.notGaveCampaignYear ? ` in ${rules.notGaveCampaignYear}` : ""}`);
+  if (rules.noAsk) parts.push("with no ask this year (no proposal open, nothing asked in twelve months)");
   if (rules.notDeceased) parts.push("not deceased");
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
   if (rules.volAnswer) parts.push("who gave one answer on their application");

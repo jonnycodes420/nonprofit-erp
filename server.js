@@ -197,6 +197,7 @@ const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 // The same seam, as a namespace — BUILD-87 Part 1's stored-import invariant
 // reads several of its helpers at once and naming them one by one buys nothing.
 const money = require("./money");
+const DRAFT_CHECK = require("./draftCheck");   // FIX-27 Part 7: a draft claims only what the record holds
 // FIX-2 A — the one definition of every figure that opens (the rows behind it).
 const figureSources = require("./figureSources");
 // PARITY-1 Part D: Groups (saved lists, static or by rule).
@@ -6703,6 +6704,15 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   return points.slice(0, 3);
 }
 
+// FIX-27 Part 7: the template sentence a milestone draft falls back to. It
+// says only what Steward computed: the threshold crossed, or the anniversary.
+function milestoneTemplate(firstName, orgName, meta) {
+  const line = meta.milestone_type === "anniversary"
+    ? `It has been ${meta.label || "another year"} since your first gift to ${orgName || "us"}, and we are grateful for every year of it.`
+    : `Your giving to ${orgName || "us"} has now passed $${(meta.threshold || 0).toLocaleString("en-US")}, and we wanted to thank you for every gift that got it there.`;
+  return { subject: `Thank you, ${firstName}`, body: `Dear ${firstName},\n\n${line}\n\nWith gratitude,` };
+}
+
 // Generates a warm, specific, non-gamified thank-you draft for one milestone.
 // The dollar math ({n} = floor(total / dollar_threshold)) is computed here in
 // JS, not left to the model — only the prose is AI-written. Returns null on
@@ -6757,6 +6767,14 @@ Write the email now.`,
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.subject || !parsed.body) return null;
+    // FIX-27 Part 7: a claim the record does not hold (a video nobody
+    // recorded, an amount that is not theirs, a meeting nobody logged) and
+    // the draft is the template sentence instead.
+    const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
+    if (!chk.ok) {
+      console.warn(`[milestone] draft for ${donor.id} fell back to the template: ${chk.reasons.join(" · ")}`);
+      return milestoneTemplate(firstName, orgName, meta);
+    }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
     console.error("[milestone] generateMilestoneDraft failed:", e.message);
@@ -6803,6 +6821,12 @@ Write the email now.`,
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
     if (!parsed.subject || !parsed.body) return null;
+    const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
+    if (!chk.ok) {
+      console.warn(`[at-risk] draft for ${donor.id} fell back to the template: ${chk.reasons.join(" · ")}`);
+      return { subject: `Thinking of you, ${firstName}`,
+        body: `Dear ${firstName},\n\nWe were thinking of you and wanted to say hello from ${orgName || "all of us"}. Thank you for everything you have given; it has mattered.\n\nWarmly,` };
+    }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
     console.error("[at-risk] generateAtRiskDraft failed:", e.message);

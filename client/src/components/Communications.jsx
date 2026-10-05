@@ -5,7 +5,7 @@ import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, activeMark, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
+import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
@@ -808,12 +808,11 @@ function SequencesPanel({ data }) {
     const step = form.steps[i];
     const trig = SEQ_TRIGGERS.find(t => t.id === form.trigger) || SEQ_TRIGGERS[3];
     setStepAiLoading(prev => ({ ...prev, [i]: true }));
-    let acc = "";
-    await askClaude(
-      "You are an expert nonprofit fundraiser. Write warm, personal, conversational donor emails. No fluff, no corporate jargon. Max 150 words.",
-      `Write a fundraising email for ${data.org.name} (mission: ${data.org.mission || "serving our community"}).\nContext: ${trig.ctx}.\nThis is step ${i + 1} of a ${form.steps.length}-step sequence.\n${step.subject ? `Subject: ${step.subject}` : "Also generate a compelling subject line — put it on the first line as 'Subject: ...' then the body."}\nUse {{donor_name}} to address them personally. Use {{org_name}} for the org name. Keep it under 150 words. Plain text only, no HTML.`,
-      chunk => { acc = chunk; updateStep(i, { body: chunk }); }
-    );
+    try {
+      const r = await apiFetch("/ai/draft-email", { method: "POST",
+        body: JSON.stringify({ purpose: "sequence", context: trig.ctx, step: i + 1, steps: form.steps.length, subjectHint: step.subject || "" }) });
+      updateStep(i, step.subject ? { body: r.body } : { subject: r.subject, body: r.body });
+    } catch (e) { alert(errorMessage(e, "The draft could not be written just now.")); }
     setStepAiLoading(prev => ({ ...prev, [i]: false }));
   };
 
@@ -1291,6 +1290,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [sending, setSending]         = useState(false);
   const [aiLoading, setAiLoading]     = useState(false);
   const [aiDraft, setAiDraft]         = useState("");
+  const [aiNote, setAiNote]           = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const editorRef                     = useRef(null);
   const [editorKey, setEditorKey]     = useState(0);
@@ -1521,13 +1521,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     catch (e) { alert(errorMessage(e)); }
   };
 
+  // FIX-27 Part 7: the server writes the draft and checks every claim in it
+  // against the record (no invented video, link, amount, date, meeting or
+  // event); a draft that fails comes back as the plain template instead.
   const draftAI = async () => {
     setAiLoading(true); setAiDraft("");
-    await askClaude(
-      "You are an expert nonprofit development writer. Write warm, authentic, mission-driven donor emails. Max 250 words.",
-      `Write a donor email for ${data.org.name}.\nMission: ${data.org.mission}\nSegment: ${JSON.stringify(form.seg)}\nSubject hint: ${form.subject || "(generate a compelling one)"}\n\nUse these merge tags: {{first_name}}, {{org_name}}, {{gift_amount}}, {{total_giving}}\n\nFormat — first line: "Subject: [subject line]", blank line, then email body as HTML <p> tags.`,
-      chunk => setAiDraft(chunk)
-    );
+    try {
+      const r = await apiFetch("/ai/draft-email", { method: "POST",
+        body: JSON.stringify({ purpose: "campaign", segment: form.seg, subjectHint: form.subject || "" }) });
+      setAiDraft(`Subject: ${r.subject}\n\n${r.body}`);
+      if (r.aiOff && r.reasons && r.reasons[0]) setAiNote(r.reasons[0]); else setAiNote("");
+    } catch (e) { setAiNote(errorMessage(e, "The draft could not be written just now.")); }
     setAiLoading(false);
   };
 
@@ -1735,6 +1739,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.gold700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
                 <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiDraft}</div>
+                {aiNote && <div data-testid="ai-draft-note" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{aiNote}</div>}
                 <button onClick={applyAIDraft} style={{ ...S.btn("primary"), padding: "7px 12px", fontSize: 12 }}>Apply to editor</button>
               </div>
             )}

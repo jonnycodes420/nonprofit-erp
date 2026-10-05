@@ -1271,17 +1271,17 @@ const SOURCES = {
   "pledges-open": {
     label: "Pledged, not yet paid",
     measure: () => "sum",
-    params: {},
-    sentence: () => "Every open pledge, at what is still to come on it. A pledge part-paid counts only the remainder.",
-    sql: orgId => ({
+    params: { campaign: "id" },
+    sentence: p => `Every open pledge${p.campaign ? " to this campaign" : ""}, at what is still to come on it. A pledge part-paid counts only the remainder.`,
+    sql: (orgId, p) => ({
       sql: `SELECT p.id, 'pledge' AS type, p.donor_id, d.name, p.due_date AS date,
                    ROUND(GREATEST(p.amount - COALESCE(pp.paid, 0), 0)::numeric, 2) AS amount, 'Due' AS detail
               FROM pledges p
               LEFT JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
               LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp
                      ON pp.pledge_id = p.id
-             WHERE p.org_id = ? AND p.status = 'open'`,
-      args: [orgId, orgId],
+             WHERE p.org_id = ? AND p.status = 'open'${p && p.campaign ? " AND p.campaign_id = ?" : ""}`,
+      args: p && p.campaign ? [orgId, orgId, p.campaign] : [orgId, orgId],
       order: "date ASC NULLS LAST, id",
     }),
   },
@@ -1355,6 +1355,69 @@ const SOURCES = {
       args: [orgId, p.from, p.to],
       order: "date ASC, id",
     }),
+  },
+  // FIX-27 Part 1: the Campaigns list and the campaign page open every
+  // figure. The donor count is the people behind the gifts (grants are not
+  // donors here), one row each with what they gave to it.
+  "campaign-donors": {
+    label: "Donors to this campaign",
+    measure: () => "count",
+    params: { campaign: "id:required" },
+    sentence: () => "Each person who gave to this campaign, once, with what they gave to it in all.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date,
+                   ROUND(SUM(g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, 'Gave to this campaign' AS detail
+              FROM campaigns c
+              JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+              JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE c.org_id = ? AND c.id = ?
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.campaign],
+      order: "amount DESC NULLS LAST, id",
+    }),
+  },
+  "campaign-grants": {
+    label: "Grants awarded toward this campaign",
+    measure: () => "sum",
+    params: { campaign: "id:required" },
+    sentence: () => "Every grant awarded toward this campaign.",
+    sql: (orgId, p) => ({
+      sql: `SELECT gr.id, 'grant' AS type, gr.funder_donor_id AS donor_id, gr.funder AS name, TO_CHAR(gr.awarded_at, 'YYYY-MM-DD') AS date,
+                   ROUND(COALESCE(gr.amount, 0)::numeric, 2) AS amount, 'Grant awarded' AS detail
+              FROM grants gr WHERE gr.org_id = ? AND gr.campaign_id = ? AND gr.awarded_at IS NOT NULL`,
+      args: [orgId, p.campaign],
+    }),
+  },
+  // An umbrella goal's raised is the sum of its children's (the roll-up).
+  "goal-rollup-raised": {
+    label: "Raised across its goals",
+    measure: () => "sum",
+    params: { campaign: "id:required" },
+    sentence: () => "Every gift and awarded grant given to the goals this one rolls up, less any processing fee the donor covered.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id || ':' || c.id AS id, 'gift' AS type, g.donor_id, d.name, g.date,
+                   ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount, c.name AS detail
+              FROM campaigns c
+              JOIN gifts g ON g.org_id = c.org_id AND (g.campaign_id = c.id OR g.campaign = c.name)
+              LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE c.org_id = ? AND c.parent_goal_id = ? AND c.goal_amount > 0
+            UNION ALL
+            SELECT gr.id, 'grant', gr.funder_donor_id, gr.funder, TO_CHAR(gr.awarded_at, 'YYYY-MM-DD'),
+                   ROUND(COALESCE(gr.amount, 0)::numeric, 2), 'Grant awarded'
+              FROM grants gr JOIN campaigns c ON c.id = gr.campaign_id AND c.org_id = gr.org_id
+             WHERE gr.org_id = ? AND c.parent_goal_id = ? AND c.goal_amount > 0 AND gr.awarded_at IS NOT NULL`,
+      args: [orgId, p.campaign, orgId, p.campaign],
+    }),
+  },
+  "goal-rollup-progress": {
+    label: "Progress across its goals",
+    ratio: "share",
+    params: { campaign: "id:required" },
+    sentence: () => "What has been raised across the goals this one rolls up, as a share of its own target.",
+    parts: p => [
+      { role: "numerator", label: "Raised", key: "goal-rollup-raised", params: { campaign: p.campaign } },
+      { role: "denominator", label: "The goal", key: "campaign-goal", params: { campaign: p.campaign } },
+    ],
   },
   "goal-progress": {
     label: "Progress toward the goal",

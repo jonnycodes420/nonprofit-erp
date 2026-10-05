@@ -80,6 +80,56 @@ app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
   res.end();
 }));
 
+// ── FIX-27 Part 7 · A DRAFTED EMAIL, CHECKED BEFORE SHE SEES IT ────────────
+// Communications' "Draft with AI" (a campaign) and "Write with AI" (a
+// sequence step) streamed the model's words straight into the editor. One
+// draft said "I recorded a short video" with a watch link, for a video nobody
+// recorded. Now the server writes the draft, checks every claim in it against
+// the record (shared/suggestionGuard.js guardDraft: a video, a link, a gift
+// amount, a date, a meeting, an event), and a draft that fails is the
+// template sentence instead. A segment email has no one person behind it, so
+// it may claim nothing personal; the merge tags carry their own facts.
+const DRAFT_TEMPLATES = {
+  campaign: { subject: "Thank you from {{org_name}}",
+    body: "<p>Dear {{first_name}},</p><p>Thank you for your support of {{org_name}}. Your gifts keep this work going, and we are grateful for every one of them.</p><p>With thanks,</p>" },
+  sequence: { subject: "Thank you from {{org_name}}",
+    body: "Dear {{donor_name}},\n\nThank you for your support of {{org_name}}. We are glad to have you with us.\n\nWarmly," },
+};
+app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const b = req.body || {};
+  const purpose = b.purpose === "sequence" ? "sequence" : "campaign";
+  const tpl = { ...DRAFT_TEMPLATES[purpose], ...(b.subjectHint ? { subject: String(b.subjectHint).slice(0, 200) } : {}) };
+  const g = await aiGate(req.user.orgId);
+  if (!g.ok) return res.json({ ...tpl, source: "template", aiOff: true, reasons: [g.reason === "ai_disabled" ? "AI is turned off for your organization." : "Drafting is not available right now."] });
+  const [org] = await query("SELECT name, mission FROM orgs WHERE id=?", [req.user.orgId]);
+  const DC = require("../draftCheck");
+  const prompt = purpose === "campaign"
+    ? `Write a donor email for ${org.name}.\nMission: ${org.mission || "serving our community"}\nSegment: ${JSON.stringify(b.segment || {}).slice(0, 600)}\nSubject hint: ${b.subjectHint || "(generate a compelling one)"}\n\nUse these merge tags: {{first_name}}, {{org_name}}, {{gift_amount}}, {{total_giving}}\n\nFormat: first line "Subject: [subject line]", blank line, then the email body as HTML <p> tags.`
+    : `Write a fundraising email for ${org.name} (mission: ${org.mission || "serving our community"}).\nContext: ${String(b.context || "").slice(0, 300)}.\nThis is step ${Number(b.step) || 1} of a ${Number(b.steps) || 1}-step sequence.\n${b.subjectHint ? `Subject: ${String(b.subjectHint).slice(0, 200)}` : "Also generate a subject line: put it on the first line as 'Subject: ...' then the body."}\nUse {{donor_name}} to address them personally. Use {{org_name}} for the org name. Keep it under 150 words. Plain text only, no HTML.`;
+  let text = "";
+  try {
+    const msg = await anthropicFor(req.user.orgId).messages.create({
+      model: "claude-haiku-4-5-20251001", max_tokens: 1024,
+      system: "You are an expert nonprofit development writer. Write warm, authentic, mission-driven donor emails. Max 250 words. "
+        + "Never mention a video, a recording, a link, a meeting, an event, a date or a gift amount: you do not know any. Use the merge tags for the facts.",
+      messages: [{ role: "user", content: prompt }],
+    });
+    text = ((msg.content || []).find(x => x.type === "text") || {}).text || "";
+  } catch (e) {
+    if (e && e.code === "ai_off") return res.json({ ...tpl, source: "template", aiOff: true, reasons: ["AI is turned off for your organization."] });
+    return res.json({ ...tpl, source: "template", reasons: ["The draft could not be written just now."] });
+  }
+  const lines = text.split("\n");
+  const subj = (lines.find(l => /^Subject:/i.test(l)) || "").replace(/^Subject:\s*/i, "").trim();
+  const body = lines.filter(l => !/^Subject:/i.test(l)).join("\n").trim();
+  const chk = await DC.checkDraft(`${subj}\n${body}`, await DC.draftRecord(req.user.orgId, null));
+  if (!chk.ok || !body) {
+    console.warn(`[draft-email] fell back to the template: ${chk.reasons.join(" · ") || "empty"}`);
+    return res.json({ ...tpl, source: "template", reasons: chk.reasons });
+  }
+  res.json({ subject: subj || tpl.subject, body, source: "ai", reasons: [] });
+}));
+
 // ── AI — CSV column mapping ────────────────────────────────────────────────
 app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
   const { headers, sample } = req.body;
@@ -159,6 +209,44 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
         AND (?::text[] IS NULL OR d.id = ANY(?::text[]))
       ORDER BY d.total_giving DESC NULLS LAST, d.id
       LIMIT ?`, [orgId, only, only, Math.min(Number(limit) || 400, 1000)]);
+}
+
+// FIX-27 Part 2a · FIND_PEOPLE READS THE ONE FILTER. "Plan calls to everyone
+// who gave to last year's spring appeal but not this year's": the model was
+// shown the top 200 people by giving with no campaign on any row, and said so.
+// Now the WHO in her words is read the way Show me reads a question
+// (shared/showMe.js: the templates, then the model's filter form when the
+// templates leave something over), checked against the shared rules
+// (groups.js), and the people are the Donors list's own rows for that filter.
+// The model never writes the filter's SQL and never sees anyone else.
+const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan)\b\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
+async function agentFindPeople(orgId, text, today, { client = null } = {}) {
+  const SM = await import("../shared/showMe.js");
+  const GR = require("../groups");
+  const who = String(text || "").replace(AGENT_ACTION_LEAD, "").replace(/[,;]?\s*(due|by|within|in the next)\b.*$/i, "").trim();
+  if (!who || who === String(text || "").trim()) return null;
+  const [events, campaigns] = await Promise.all([
+    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
+    query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
+  ]);
+  const ctx = { today, events, campaigns };
+  let spec = SM.templateSpec(who, ctx);
+  // The model's form is asked only when her words name something the people
+  // rows cannot show (a campaign, an event, an ask); every other instruction
+  // is planned exactly as before.
+  if ((spec.unsupported || !Object.keys(spec.rules).length) && client && /\b(appeal|campaign|drive|gala|event|asked|ask this year|no ask)\b/i.test(who)) {
+    try {
+      const out = await client.messages.create({ model: AGENT_MODEL, max_tokens: 600, tools: [SM.specTool()],
+        tool_choice: { type: "tool", name: "filter_spec" }, messages: [{ role: "user", content: SM.specPrompt(who, ctx) }] });
+      spec = SM.readToolSpec(out.content) || spec;
+    } catch { /* the template's reading stands, and is refused below if it is incomplete */ }
+  }
+  const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
+  if (!chk.ok) return null;
+  const f = await GR.buildDonorFilter(orgId, chk.rules);
+  if (f.badRole || f.badStatus) return null;
+  const rows = await query(`SELECT id FROM donors WHERE ${f.whereSql} ORDER BY ${f.orderBy} LIMIT 1001`, f.params);
+  return { rules: chk.rules, words: SM.filterWords(chk.rules, ctx), ids: rows.map(r => r.id) };
 }
 
 // PARITY-1 Part F: THE GIFTS IN A WINDOW. Org-scoped, Steward's own query,
@@ -815,7 +903,18 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // steps carry a DRAFTED BODY. A plan that drafts two hundred notes before
   // she has said yes is the cost, and this is the line that proves it.
   const _t0 = Date.now();
-  const people = await agentReadPeople(orgId, { ids: scope });
+  const client = anthropicFor(orgId);
+  const today = orgToday(await orgTz(orgId));
+  const found = scope ? null : await agentFindPeople(orgId, instructionText, today, { client });
+  if (found && found.ids.length > A.MAX_PLAN_STEPS) {
+    throw Object.assign(new Error("too many found"), { refuse: { error: "too_many",
+      sentence: `${found.ids.length > 1000 ? "More than 1,000" : found.ids.length} people match (${found.words.join(" · ")}). That is more than one plan can show you before you say yes (${A.MAX_PLAN_STEPS}). Narrow it and try again.` } });
+  }
+  if (found && !found.ids.length) {
+    throw Object.assign(new Error("nobody found"), { refuse: { error: "nothing_to_do",
+      sentence: `Nobody on file matches (${found.words.join(" · ")}), so there is nothing to plan.` } });
+  }
+  const people = await agentReadPeople(orgId, { ids: found ? found.ids : scope, limit: found ? 1000 : 400 });
   const _tRows = Date.now();
   const V = await import("../shared/vocabulary.js");
   const [orgRow] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
@@ -830,17 +929,15 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // gifts, the gift rows in that window are read (org-scoped, Steward's query)
   // and shown, with their givers among the people even when they are not in
   // the top 200 by giving.
-  const today = orgToday(await orgTz(orgId));
-  const win = /\b(gifts?|donations?|gave|given|donated)\b/i.test(String(instructionText)) ? A.giftWindowFromInstruction(instructionText, today) : null;
+  const win = !found && /\b(gifts?|donations?|gave|given|donated)\b/i.test(String(instructionText)) ? A.giftWindowFromInstruction(instructionText, today) : null;
   const windowGifts = win ? await agentReadGifts(orgId, win, scope) : [];
   const shownIds = new Set(reachable0.slice(0, 200).map(p => p.id));
   const giverIds = [...new Set(windowGifts.map(g => g.donor_id))].filter(id => !shownIds.has(id));
   const extraGivers = giverIds.length && !scope
     ? (await agentReadPeople(orgId, { ids: giverIds, limit: 1000 })).filter(p => !p.deceased && !p.do_not_contact && !p.is_sample) : [];
-  const reachable = [...reachable0.slice(0, 200), ...extraGivers];
+  const reachable = found ? reachable0 : [...reachable0.slice(0, 200), ...extraGivers];
   const reachableIds = new Set(reachable.map(p => p.id));
   const giftRows = windowGifts.filter(g => reachableIds.has(g.donor_id));
-  const client = anthropicFor(orgId);
   // The model is shown the persona's OWN tools, not the whole table. An
   // Analyst that is never offered set_stage rarely asks for it; the filter
   // below is what guarantees it, and this is what makes the plan sensible.
@@ -892,7 +989,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     "",
     `Today: ${today}`,
     "",
-    scope ? "The records she named:" : `The people on file (${reachable.length}):`,
+    scope ? "The records she named:" : found
+      ? `The people find_people found for her words (${found.words.join(" · ")}), ${reachable.length}. These are exactly the people she meant: one step for each of them, and nobody else.`
+      : `The people on file (${reachable.length}):`,
     ...reachable.map(p =>
       `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | first ${p.first_gift_date ? String(p.first_gift_date).slice(0, 10) : "never"} | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}${scope ? ` | email ${p.email || "none"} | phone ${p.phone || "none"} | household ${p.household_id || "none"} | owner ${p.assigned_to_name || "none"}` : ""}`),
     ...agentContextLines(actx),
@@ -939,6 +1038,24 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   let outOfScope = 0;
   const idIn = (list, id) => (list || []).find(x => x.id === id) || null;
   const giftIds = new Set((actx.gifts || []).map(g => g.id));
+  // FIX-27 Part 7: a drafted body claims only what the person's record holds
+  // (shared/suggestionGuard.js guardDraft). Their ready video and their
+  // logged conversations are read once for everyone a step drafts for.
+  const draftFor = [...new Set((Array.isArray(raw.steps) ? raw.steps : []).filter(x => x && x.body && x.donorId).map(x => String(x.donorId)))];
+  const SG = await import("../shared/suggestionGuard.js");
+  const { publicAppUrl } = require("../publicUrl");
+  const [dVideos, dMeets, dEvents] = draftFor.length ? await Promise.all([
+    query(`SELECT DISTINCT ON (donor_id) donor_id, token FROM video_thanks WHERE org_id = ? AND donor_id = ANY(?::text[]) AND asset_id IS NOT NULL ORDER BY donor_id, created_at DESC`, [orgId, draftFor]),
+    query(`SELECT donor_id, date, type FROM interactions WHERE org_id = ? AND donor_id = ANY(?::text[]) AND type IN ('meeting','call','visit','event')`, [orgId, draftFor]),
+    query(`SELECT name FROM events WHERE org_id = ? LIMIT 200`, [orgId]),
+  ]) : [[], [], []];
+  const draftProblems = st => {
+    if (!st.body || !st.donorId) return [];
+    const v = dVideos.find(x => x.donor_id === st.donorId);
+    return SG.guardDraft(`${st.subject || ""}\n${st.body}`, { donor: byId.get(st.donorId) || {}, orgName: "",
+      video: v ? { ready: true, url: `${publicAppUrl()}/v/${v.token}` } : null,
+      meetings: dMeets.filter(x => x.donor_id === st.donorId), events: dEvents.map(e => e.name) }).reasons;
+  };
   for (const s0 of Array.isArray(raw.steps) ? raw.steps : []) {
     let s = s0;
     // AGENT-2: "which Ada did you mean" is asked BEFORE a plan, never left as work.
@@ -981,6 +1098,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     if (A.citationProblems(s, { knownRowIds }).length) { withheld++; continue; }
     const text = [s.body, s.note, s.title, s.label, s.subject].filter(Boolean).join(" \n ");
     if (TH.ungroundedClaims(text, { groundedValues }).length) { withheld++; continue; }
+    if (draftProblems(s).length) { console.warn(`[agent] a draft for ${s.donorId} was withheld: ${draftProblems(s).join(" · ")}`); withheld++; continue; }
     // A task's due date: whole days from today, resolved HERE to the civil date
     // she reads on the plan. A `due` that is not a date is dropped.
     if (s.tool === "create_task") {
@@ -994,7 +1112,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   console.log(`[agent-timing] org=${orgId} people=${reachable.length} steps=${steps.length} drafted=${drafted}`
     + ` | rows ${_tRows - _t0}ms · model ${_tModel - _tRows}ms · filter ${_tEnd - _tModel}ms · total ${_tEnd - _t0}ms`
     + (_truncated ? " | TRUNCATED at max_tokens" : ""));
-  return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable,
+  return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable, found,
            headline: raw.headline || null, cannot: raw.cannot || null,
            timing: { rowsMs: _tRows - _t0, modelMs: _tModel - _tRows, filterMs: _tEnd - _tModel,
                      totalMs: _tEnd - _t0, people: reachable.length, steps: steps.length, drafted,
@@ -1535,10 +1653,12 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId, persona }); }
     catch (e) {
       if (e && e.truncated) return res.status(422).json({ error: "plan_truncated", sentence: A.TRUNCATED_SENTENCE });
+      if (e && e.refuse) return res.status(400).json(e.refuse);
       console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" });
     }
     const readNames = named.scope
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
+      : built.found ? `the ${built.people.length === 1 ? "one person" : built.people.length + " people"} who match: ${built.found.words.join(" · ")}`
       : `your ${built.people.length} people`;
     // AGENT-2: find and count are reads with no executor: as a step they ran
     // as "Done · 0". They are left out, and an instruction that is only a
