@@ -112,14 +112,17 @@ export function Crumbs({ list }) {
 // choose its second button, so the twelve noCta pages (articles, guides, the
 // calculators, the legal drafts) still show none, and every other hero shows
 // the same two. No hero offers a tour or says "See pricing".
-export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float, children }) {
+// LANDING-4 · `pillar` (from data/messaging.js) opens the page with the pillar
+// it serves, in MESSAGING.md's words: its heading is the first line, above
+// the page's own h1. The crumbs still name the page.
+export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float, pillar, children }) {
   return (
     <>
       <Crumbs list={crumbs || [[eyebrow]]} />
       <section className="hero phero">
         <div className={"wrap hero-g" + (photo ? "" : " solo")}>
           <div>
-            <div className="eyebrow">{eyebrow}</div>
+            <div className="eyebrow" data-pillar-line={pillar ? pillar.n : undefined}>{pillar ? pillar.t : eyebrow}</div>
             <h1 className="mix h-xl">{rich(h)}</h1>
             <p className="lede">{rich(lede)}</p>
             {!noCta && (
@@ -172,6 +175,34 @@ export function Block({ flip, tint = "cream", h, p, sh, sp, ui, photo }) {
         {ui || <Photo k={photo} cls="wide" />}
       </div>
     </div>
+  );
+}
+
+// LANDING-4 · a real product screen: a screenshot taken from the Harborlight
+// demo organisation (client/public/marketing/product), never a mock. `cap`
+// says in one line what the screen shows.
+export function Shot({ k, alt, cap, cls = "" }) {
+  return (
+    <div className={"shot " + cls} data-shot={k}>
+      <img src={"/marketing/product/" + k + ".webp"} alt={alt} loading="lazy" decoding="async" />
+      {cap && <p className="shot-cap">{cap}</p>}
+    </div>
+  );
+}
+
+// LANDING-4 · one pillar, as its own band: the heading and paragraph from
+// data/messaging.js on the left, the screen that shows it on the right.
+export function PillarBand({ p, tint = "cream", flip, link, children }) {
+  return (
+    <section className={"pillar" + (flip ? " flip" : "")} data-pillar={p.n} style={{ paddingTop: 0 }}><div className="wrap pillar-g">
+      <div className="pillar-txt">
+        <span className="pillar-n">{"0" + p.n}</span>
+        <h2 className="mix h-l">{rich(p.h)}</h2>
+        <p>{p.p}</p>
+        {link && <p className="pillar-go"><A href={link[0]}>{link[1]} →</A></p>}
+      </div>
+      <div className="pillar-art" style={{ background: "var(--" + tint + ")" }}>{children}</div>
+    </div></section>
   );
 }
 

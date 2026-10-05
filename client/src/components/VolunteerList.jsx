@@ -206,7 +206,9 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
               </tr>))}
           </tbody>
         </table>
-        {data && !rows.length && <div style={{ padding: 16, fontSize: 13, color: T.ink3 }}>Nobody matches these filters.</div>}
+        {data && !rows.length && <div style={{ padding: 16, fontSize: 13, color: T.ink3 }}>{JSON.stringify(f) === JSON.stringify(BLANK_FILTER)
+          ? "No volunteers yet. Add one above, and every hour they give sits on the same record as their gifts."
+          : "Nobody matches these filters."}</div>}
       </div>
       {bulk && <BulkModal kind={bulk.kind} people={chosen} rules={rules} opps={opps} onClose={() => setBulk(null)} onDone={m => { setBulk(null); setMsg(m); load(); }} />}
       {why && <WhyPanel payload={{ key: "volunteers" }} isReadOnly={isReadOnly} onClose={() => setWhy(false)} />}

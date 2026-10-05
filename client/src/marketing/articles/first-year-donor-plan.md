@@ -32,7 +32,7 @@ A short email or card that tells a new donor who you are beyond the ask. Two or 
 One story about one person, family or place their gift helped. A photo if you have permission. Keep it under 200 words. The point is proof: the money went somewhere real, and someone noticed it was theirs.
 
 ### 4. An invitation, around month three to five
-Ask them to see the work. A tour, a volunteer shift, an open house, a 20-minute video call with a program lead. Many will not come. The invitation still lands, because it says you want them close, not just their card number.
+Ask them to see the work. A tour, a volunteer shift, an open house, a 20-minute video call with someone who runs the program. Many will not come. The invitation still lands, because it says you want them close, not just their card number.
 
 ### 5. A check-in with no ask, around month six to nine
 A note, a call or a quick email: an update on the program they gave to, or a question about why they gave. Write down what they tell you. This is the touch most plans skip, and it is the one that makes the next ask feel earned.

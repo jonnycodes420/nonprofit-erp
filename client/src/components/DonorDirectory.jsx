@@ -382,7 +382,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           </svg>
         </div>
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
-        <div style={{fontSize:14,color:T.ink3,maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
+        <div style={{fontSize:14,color:T.ink3,maxWidth:300,lineHeight:1.65,marginBottom:24}}>Everyone who believes in your work belongs here, with one story each. Bring in a spreadsheet from Import above, or add one name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {onAddDonor&&<button onClick={onAddDonor} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
           {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:T.ink,border:"1.5px solid "+T.ink,borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}

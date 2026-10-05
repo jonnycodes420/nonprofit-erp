@@ -421,7 +421,7 @@ export default function WelcomePage() {
                 Welcome to Steward.
               </h1>
               <p style={{ fontSize: 14.5, color: ink3, margin: 0, lineHeight: 1.6 }}>
-                Two ways in. You can change your mind at any point, and neither one locks anything.
+                Steward is where every donor, every conversation and every promise is kept, so nobody who believed in you is forgotten. Two ways in. You can change your mind at any point, and neither one locks anything.
               </p>
             </div>
 
@@ -464,7 +464,7 @@ export default function WelcomePage() {
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
               Tell us about your organization
             </h1>
-            <p style={{ fontSize: 14, color: ink3, margin: "0 0 24px" }}>Quick — just the basics.</p>
+            <p style={{ fontSize: 14, color: ink3, margin: "0 0 24px" }}>Just the basics. It takes a minute.</p>
 
             <div style={{ marginBottom: 16 }}>
               <div style={label}>Organization name</div>
@@ -500,7 +500,7 @@ export default function WelcomePage() {
               Invite your team
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 20px", lineHeight: 1.6 }}>
-              Add the gift officers who'll each work their own portfolio. They get an invite by email, and when they accept they become a user in {orgName.trim() || "your organization"} with their own portfolio. {USERS_SENTENCE} You can always do this later from Settings › Team.
+              Add the gift officers who'll each work their own portfolio. They get an invite by email, and when they accept they join {orgName.trim() || "your organization"} with their own portfolio. {USERS_SENTENCE} You can always do this later from Settings › Team.
             </p>
 
             {invited ? (
@@ -558,8 +558,8 @@ export default function WelcomePage() {
               Import your donors
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 22px", lineHeight: 1.6 }}>
-              This is the single biggest thing you can do right now. Home, Drift and the dashboards only have
-              something to say once there are real donors behind them. Bring a spreadsheet from your current
+              Your donors are the people who already believe in you, so this is where Steward starts. Home, Drift
+              and the dashboards only have something to say once they are here. Bring a spreadsheet from your current
               system, a bank or CRM export, or even a rough list. Steward maps the columns it recognises (name,
               email, fund, payment method, gift date and amount) and asks you about the ones it does not.
             </p>

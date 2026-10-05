@@ -194,7 +194,7 @@ function ImpactLine({ impact }) {
 // never a tab root). The `team` key only arrives on Team tier (plan-graceful:
 // hidden on Core, not shown-and-locked).
 const SETUP_ITEM_META = {
-  donors:     { label: "Import your donors",             why: "Steward can only watch donors it knows about",                                cta: "Import",  nav: ["donors", { openImport: true }] },
+  donors:     { label: "Import your donors",             why: "bring in the people who already believe in you, and Steward starts noticing who has gone quiet",                                cta: "Import",  nav: ["donors", { openImport: true }] },
   // BUILD-95 §4 — the label names the JOB, not our vendor. The why-line names
   // BOTH halves, because genericising the label while Stripe is the only
   // thing that works would be worse than the vendor's name: somebody picks
@@ -2188,7 +2188,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 ?<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="Nothing waiting."
                     detail={`Every conversation has its next step scheduled${threadStat?.snoozed>0?`, and ${threadStat.snoozed} are set aside to revisit later`:""}.`}/>
                 :<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="No conversations logged yet."
-                    detail="Log your first call from a donor's record and the next step will come back to you."/>
+                    detail="Log your first call from a donor's record, and its next step comes back to you here on the day it's due."/>
             )}
             {/* ── FIX-8 Part E · HOME SAYS ONE THING AT A TIME ──────────────
                 From the approved mockup. Ten Thread rows, each three lines and

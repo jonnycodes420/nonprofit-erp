@@ -657,7 +657,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
                   {read ? readFor() : which ? whichFor() : open ? sheetFor(open) : (
                     <section style={{ ...PANEL, padding: "22px 24px" }}>
                       <div style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 6 }}>Nothing planned yet.</div>
-                      <div style={{ color: T.ink3, fontSize: 14, lineHeight: 1.55 }}>Tell Steward what to do above, or open Ask for three examples. Ask for a report, a person or a count and it answers at once.</div>
+                      <div style={{ color: T.ink3, fontSize: 14, lineHeight: 1.55 }}>Tell Steward what happened, in your own words, and it shows you the plan before anything changes. Ask for a report, a person or a count and it answers at once.</div>
                     </section>
                   )}
                 </div>
@@ -940,7 +940,7 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, foc
           </div>
           <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.55 }}>
             {pausedAll ? "No instruction will run and nothing will be drafted until you turn it back on."
-              : "Instructions you have turned on will run. Nothing reaches a donor without you."}
+              : "Steward remembers everything and assumes nothing. Only the instructions you have turned on will run, and nothing reaches a donor without your yes."}
           </div>
         </div>
         <button data-testid="agent-pause-all" disabled={isReadOnly || !!busy}

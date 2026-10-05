@@ -249,7 +249,7 @@ export function Help() {
   const [q, setQ] = useState("");
   const list = q.trim() ? searchArticles(HELP_ARTICLES, q, 20) : [...HELP_ARTICLES].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
   return <>
-    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="An article for every screen and for the jobs people come for. If it is not here, a person answers." noCta />
+    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="Short answers for people doing a lot with a little. There is an article for every screen and for the jobs people come for, and if yours is not here, a person answers." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help centre" aria-label="Search the help centre"
         style={{ width: "100%", maxWidth: 560, padding: "12px 14px", fontSize: 16, borderRadius: 10, border: "1px solid #D4CFC6", marginBottom: 20, fontFamily: "inherit" }} />
@@ -307,7 +307,7 @@ export function LegalPrivacy() {
   return <Legal t="Privacy policy">
     <h2>Who we are</h2><p>{LEGAL_ENTITY_NAME} ("Steward") provides donor management software to nonprofit organizations. Contact: jonathan@stewardapp.dev.</p>
     <h2>Two kinds of data</h2><p>Organizations that use Steward put information about their donors, volunteers and contacts into the service. That information belongs to the organization, and we process it only to provide Steward to them. Separately, we collect a small amount of information about the people who sign in to Steward, such as name, email and usage, to run the service.</p>
-    <h2>Connected accounts</h2><p>When a user connects Google or Microsoft, Steward reads only email and calendar items involving people already in that organization's Steward account, and stores only what is needed to show them on the record. Steward does not use this data for advertising, does not sell it and does not use it to train general artificial intelligence models. Users can disconnect at any time.</p>
+    <h2>Connected accounts</h2><p>When someone on the team connects Google or Microsoft, Steward reads only email and calendar items involving people already in that organization's Steward account, and stores only what is needed to show them on the record. Steward does not use this data for advertising, does not sell it and does not use it to train general artificial intelligence models. Users can disconnect at any time.</p>
     <h2>Sharing</h2><p>We never sell personal information. We share it only with service providers that run Steward on our behalf, such as hosting and email delivery, under contract.</p>
     <h2>Your choices</h2><p>Organizations can export or delete their data at any time. Individuals can contact the organization that holds their information, or us.</p>
     <h2>Changes</h2><p>We will post changes here and tell customers by email.</p>

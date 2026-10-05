@@ -1,26 +1,13 @@
-// LANDING-2 · the lean homepage, section for section as the reference's #home:
-// hero, research strip, Why tabs, AI band, products, searchable features,
-// Leadership band, guide band, FAQ, commitment, ready.
-// LANDING-3 removed the people reel and gave its place to the Leadership band.
-import { useState } from "react";
-import { A, Pill, Photo, Icon, Ui, LeadBand, FaqList } from "../lib";
+// LANDING-4 · the homepage, rebuilt around the approved language
+// (docs/MESSAGING.md, read through data/messaging.js): the headline, the
+// vision, the six pillars each with a real Harborlight screen, how it works,
+// the opening gift, and a word for the careful ones. The PROOF-2 retention
+// band and the research strip stay, with their sources.
+import { A, Pill, Photo, Portrait, Shot, PillarBand, FaqList, rich } from "../lib";
 import { STATS, srcShort, SRC, SRC_ALL } from "../data/research";
-import { FEAT, FEATURE_CATS, FEATURE_EXTRAS } from "../data/features";
 import { HOME_FAQ } from "../data/faqs";
-
-const TABS = [
-  { label: "Keep more", h: <>See drift <b>while a call still fixes it.</b></>, p: "Each donor measured against their own rhythm, ranked by what is at stake, with the reason in plain words and a person named on the next step.", href: "/features/drift", bg: "brass-tint",
-    ui: <Ui t="Going quiet" k="drift" rows={[["MC", "Margaret Chen", "Gives $15,000 each August · <em>no gift yet</em>", "Call"], ["WF", "Walter Fairbanks", "Monthly $250 · <em>card failed twice</em>", "Fix card"], ["RT", "Rosalind Thackeray", "Gave $21,529 · <em>14 months since a visit</em>", "Book visit"]]} /> },
-  { label: "Raise more", h: <>Give in <b>under a minute.</b></>, p: "Giving pages on your brand, events with tickets and seating, and peer-to-peer teams, all landing on the same donor record. Gifts go to your own Stripe account with no platform fee.", href: "/features/forms", bg: "emerald-tint",
-    ui: <Ui t="Spring appeal" k="forms" tots={[["Gifts", "one-time and monthly", "186"], ["Raised", "to your Stripe", "$24,610", 1], ["New monthly donors", "this month", "19"], ["Platform fee", "on every gift", "$0"]]} /> },
-  { label: "Run lighter", h: <>Month end <b>without the scramble.</b></>, p: "Receipts and year-end statements in a batch, payouts matched to the cent and a gift file your bookkeeper trusts. Every change in the audit log.", href: "/features/finance", bg: "cream",
-    ui: <Ui t="Month end · September" k="check" tots={[["Gifts recorded", "all sources", "412"], ["Stripe payouts", "matched", "$31,204.55", 1], ["Letters ready", "this week", "64"], ["Bookkeeper file", "ready", "Download"]]} /> },
-  { label: "Focus more", h: <>Every number <b>opens.</b></>, p: "Retention, LYBUNT and SYBUNT, campaigns and board summaries. Click any figure and see the people behind it, so you always know where to spend the next hour.", href: "/features/reports", bg: "brass-tint",
-    ui: <Ui t="Retention · this year" k="reports" tots={[["Donors last year", "2025", "1,184"], ["Gave again", "so far", "702"], ["Retention", "to date", "59.3%", 1], ["LYBUNT", "worth a call", "482"]]} /> },
-];
-
-const FINDER = Object.keys(FEAT).map(k => ({ n: FEAT[k].name, s: FEAT[k].short, i: FEAT[k].icon, h: "/features/" + k, c: FEATURE_CATS[k] || "keep" })).concat(FEATURE_EXTRAS);
-const CHIPS = [["all", "All"], ["keep", "Keep"], ["raise", "Raise"], ["run", "Run"], ["focus", "Focus"]];
+import { TEAM } from "../data/team";
+import { HEADLINE, UNDER, FEELING, VISION, PILLAR, HOW_INTRO, HOW, HOW_CLOSE, CAREFUL, GIFT, GIFT_TERMS } from "../data/messaging";
 
 // FIX-13 · a static row: the six research cards, each rendered ONCE. The
 // marquee this replaced drew three copies and scrolled them, so a visitor
@@ -60,131 +47,104 @@ function RetentionBand() {
   );
 }
 
-function WhyTabs() {
-  const [tab, setTab] = useState(0);
+// "How does it work?" The three steps, then the why-demo as it runs in
+// Steward: the question, the reasons, the rows, and planning the calls.
+const SEQUENCE = [
+  ["why-question", "You ask", "Ask why sits at the top of Home, with the questions people ask most.", "Home's Ask why row, with the question Why did Spring Appeal 2026 come in where it did?"],
+  ["why-reasons", "It shows the reasons", "In dollars, largest first: 11 of last year's donors haven't given yet.", "The answer: Spring Appeal 2026 came in $11,650 under last year, with the reasons ranked in dollars"],
+  ["why-rows", "Every number opens", "The people behind each reason, with what they gave last time.", "The people behind the answer, each with last year's gift and this year's"],
+  ["why-plan", "You plan the calls", "One click puts the calls on your list. Nothing is sent.", "The Plan calls to the top five button, which adds steps for a person and sends nothing"],
+];
+
+function HowItWorks() {
   return (
-    <section id="why-tabs">
-      <div className="wrap">
-        <div className="eyebrow">Why Steward</div>
-        <h2 className="mix h-l" style={{ marginTop: 22, maxWidth: 1100 }}>Donor software that keeps <b>more within reach.</b></h2>
-        <p className="lede" style={{ marginTop: 22 }}>Steward brings your donors, gifts, events, volunteers and inbox together, then tells you each morning who needs you and why.</p>
-        <div className="tabs" role="tablist">
-          {TABS.map((t, i) => <button key={t.label} role="tab" type="button" aria-selected={tab === i ? "true" : "false"} onClick={() => setTab(i)}>{t.label}</button>)}
-        </div>
-        <div className="panes">
-          {TABS.map((t, i) => (
-            <div className="pane" key={t.label} role="tabpanel" hidden={tab !== i}>
-              <div><h3 className="mix h-m">{t.h}</h3><p>{t.p}</p><Pill href={t.href}>Learn more<span className="vh"> about {t.label.toLowerCase()}</span></Pill></div>
-              <div className="stage"><div className="bg" style={{ background: "var(--" + t.bg + ")" }}></div>{t.ui}</div>
-            </div>
-          ))}
-        </div>
+    <section id="how" className="how-s"><div className="wrap">
+      <div className="eyebrow">How does it work?</div>
+      <h2 className="mix h-l" style={{ marginTop: 22 }}>{HOW_INTRO.replace(/\.$/, "")}<b>.</b></h2>
+      <div className="steps">
+        {HOW.map((s, i) => <div className="step" key={s[0]}><span className="sn">{"0" + (i + 1)}</span><h4>{s[0]}</h4><p>{s[1]}</p></div>)}
       </div>
-    </section>
+      <div className="seq" aria-label="Ask why, step by step">
+        {SEQUENCE.map(([k, h, p, alt], i) => (
+          <div className="seq-i" key={k}><Shot k={k} alt={alt} /><b><span>{i + 1}</span>{h}</b><p>{p}</p></div>
+        ))}
+      </div>
+      <p className="lede how-close">{HOW_CLOSE}</p>
+    </div></section>
   );
 }
 
-function FeatureFinder() {
-  const [cat, setCat] = useState("all");
-  const [q, setQ] = useState("");
-  const [all, setAll] = useState(false);
-  const term = q.toLowerCase().trim();
-  const m = FINDER.filter(f => (cat === "all" || f.c.indexOf(cat) > -1) && (!term || (f.n + " " + f.s).toLowerCase().indexOf(term) > -1));
-  const show = all || term ? m : m.slice(0, 12);
-  return (
-    <section className="pricing" id="feat-home">
-      <div className="wrap">
-        <div className="eyebrow">Features</div>
-        <h2 className="mix h-l" style={{ marginTop: 22 }}>Everything included, <b>nothing to unlock.</b></h2>
-        <div className="fbar">
-          <input type="search" placeholder="Search features" aria-label="Search features" value={q} onChange={e => setQ(e.target.value)} />
-          <div className="fchips" role="group" aria-label="Filter features">
-            {CHIPS.map(([c, l]) => <button key={c} type="button" aria-pressed={cat === c ? "true" : "false"} onClick={() => setCat(c)}>{l}</button>)}
-          </div>
-        </div>
-        <p className="fcount">Showing {show.length} of {m.length}</p>
-        <div className="fgrid">
-          {show.length ? show.map(f => (
-            <A className="fc" href={f.h} key={f.n}><span className="ci"><Icon k={f.i} /></span><div><b>{f.n}</b><span>{f.s}</span></div></A>
-          )) : <p>No features match. Try another word.</p>}
-        </div>
-        <div style={{ marginTop: 34 }} hidden={show.length >= m.length}>
-          <button className="pill pill-soft" type="button" onClick={() => setAll(true)}><i></i>See more features</button>
-        </div>
-      </div>
-    </section>
-  );
-}
+// MESSAGING.md's line for the careful ones, split into a heading and its close.
+const [C1, C2, C3] = CAREFUL.split(/(?<=\.) /);
+const CAREFUL_H = C1 + " <b>" + C2 + "</b>";
+const CAREFUL_P = C3;
 
 export default function Home() {
+  const founder = TEAM[0];
   return (
     <div id="home">
       <section className="hero">
         <div className="wrap hero-g">
           <div>
-            <div className="eyebrow">Steward donor CRM</div>
-            <h1 className="mix h-xl">Keep the donors <b>you already have.</b></h1>
-            <p className="lede">Steward shows you who is drifting while a phone call still fixes it, then runs the rest of your development office: gifts, events, volunteers, email and month end, in one calm place.</p>
+            <div className="eyebrow">Steward</div>
+            <h1 className="mix h-xl">{rich(HEADLINE)}</h1>
+            <p className="lede">{UNDER}</p>
             <div className="ctas">
-              <Pill href="/demo">Book a call</Pill>
-              <Pill kind="soft" href="/signup">Start free</Pill>
+              <Pill href="/signup">Start now</Pill>
+              <Pill kind="soft" href="/demo">Book a call</Pill>
             </div>
-            <div className="proof"><span>Move in about a day</span><span>Month to month</span><span>No platform fee</span></div>
           </div>
           <div className="collage">
             <Photo k="desk-phone" cls="p1" eager />
             <Photo k="volunteers-boxes" cls="p2" eager />
-            <div className="float" aria-label="Example: donors going quiet this week"><small>GOING QUIET THIS WEEK</small><b>11 donors, $38,400 a year</b>
-              <div><span>Margaret Chen</span><em>No August gift</em></div>
-              <div><span>Walter Fairbanks</span><em>Card failed twice</em></div>
-            </div>
+            <div className="float feel"><b>{FEELING}</b></div>
           </div>
         </div>
       </section>
+
+      <section className="vision"><div className="wrap">
+        <div className="eyebrow">Why we built Steward</div>
+        <p className="vision-p">{VISION}</p>
+      </div></section>
 
       <RetentionBand />
+
+      <PillarBand p={PILLAR[1]} tint="brass-tint" link={["/crm", "Steward CRM"]}>
+        <Shot k="drift" alt="Home's Drift list in Steward: donors past their own giving pattern, each with what they usually give and a Log the call button" cap="Drift on Home: each donor against their own rhythm." />
+        <Shot k="why-reasons" cls="inset" alt="Ask why's answer: Spring Appeal 2026 came in $11,650 under last year, mostly because 11 of last year's donors haven't given yet" cap="Ask why: the reasons, in dollars." />
+      </PillarBand>
+      <PillarBand p={PILLAR[2]} tint="emerald-tint" flip link={["/agent", "Steward Agent"]}>
+        <Shot k="agent-plan" alt="A Steward Agent plan waiting for approval: make Rafael a volunteer and draft a welcome for you to read and send, with Run the plan and Not this one" cap="An Agent plan, waiting for your yes." />
+      </PillarBand>
+      <PillarBand p={PILLAR[3]} tint="cream" link={["/volunteer", "Steward Volunteer"]}>
+        <Shot k="profile" alt="Rafael Quintero-Byrne's profile in Steward: his gifts, 20 hours volunteered, and that he came to an event, on one record" cap="One person: gifts, volunteer hours and an event." />
+      </PillarBand>
+      <PillarBand p={PILLAR[4]} tint="brass-tint" flip link={["/features/reports", "Reports"]}>
+        <Shot k="figure-rows" alt="A figure opened in Steward: Raised for Annual Fund 2026, $1,379,364.56, with the definition and the gifts behind it" cap="Click a figure and the gifts behind it open." />
+      </PillarBand>
+      <PillarBand p={PILLAR[5]} tint="emerald-tint" link={["/connections", "Connections"]}>
+        <Shot k="connections" alt="Steward's Connections settings: Stripe and PayPal connected, and Givebutter flagged because nothing has arrived through it in 64 days" cap="A connection that goes quiet is flagged." />
+      </PillarBand>
+      <PillarBand p={PILLAR[6]} tint="cream" flip link={["/leadership", "Who builds Steward"]}>
+        <div className="partner">
+          <Portrait src={founder[2]} name={founder[0]} />
+          <div className="partner-c"><b>{founder[0]}</b><span>{founder[1]}</span>
+            <ul><li>Month to month</li><li>No platform fee on your gifts</li><li>Email that reaches the founder</li></ul>
+          </div>
+        </div>
+      </PillarBand>
+
+      <HowItWorks />
       <StatStrip />
-      <WhyTabs />
 
-      <section style={{ paddingTop: 0 }}>
-        <div className="ink"><div className="wrap ai-g" style={{ paddingBlock: 104 }}>
-          <div>
-            <div className="eyebrow">Human-centered AI</div>
-            <h2 className="mix h-l" style={{ marginTop: 22, color: "var(--white)" }}>AI that drafts. <b>People who decide.</b></h2>
-            <p style={{ fontSize: 21, marginTop: 22, color: "rgba(255,255,255,.88)" }}>Steward Agent prepares, drafts and organizes, then shows you the plan and waits. Nothing reaches a donor until a person sends it.</p>
-            <div style={{ marginTop: 34 }}><Pill kind="white" href="/agent">Meet Steward Agent</Pill></div>
-          </div>
-          <div className="ai-list">
-            <div><h4>Mission is the measure.</h4><p>Every assistant exists to help you keep a donor, raise a gift or save an hour.</p></div>
-            <div><h4>Relationships stay human.</h4><p>The Agent drafts and recommends. Your staff approve and send.</p></div>
-            <div><h4>Every action can be undone.</h4><p>Whatever it does is in the audit log with who approved it.</p></div>
-          </div>
-        </div></div>
-      </section>
-
-      <section style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="eyebrow">Products</div>
-          <h2 className="mix h-l" style={{ marginTop: 22 }}>Three products, <b>one record.</b></h2>
-          <div className="prods">
-            <div className="prod p1"><span className="tag">Steward CRM</span><h3>Keep more.</h3><p>See drift early, keep new donors close through their first year and give the board numbers that open.</p><Pill href="/crm">Learn about CRM</Pill></div>
-            <div className="prod p2"><span className="tag">Steward Volunteer</span><h3>Count every hour.</h3><p>Shifts, kiosk check-in, waivers and hours, with volunteers and donors on one record.</p><Pill href="/volunteer">Learn about Volunteer</Pill></div>
-            <div className="prod p3"><span className="tag">Steward Agent</span><h3>Say it. Approve it.</h3><p>Tell it what happened and it does the work in Steward, after showing you the plan and waiting for your yes.</p><Pill href="/agent">Learn about Agent</Pill></div>
-          </div>
+      <section className="gift-s" style={{ paddingTop: 0 }}><div className="wrap">
+        <div className="guide-band">
+          <div className="gb-art"><div className="t">Lost &amp;<br /><b>Found</b></div><small>{GIFT_TERMS}</small><span className="leaf"></span></div>
+          <div className="gb-txt"><div className="eyebrow">An opening gift</div><h2 className="mix h-m">{rich(GIFT.replace(/^(.*?\.) (.*)$/, "$1 <b>$2</b>"))}</h2>
+            <p>{GIFT_TERMS} Drop in a giving export and Lost &amp; Found shows who gave before and hasn't lately. It runs in your browser. Nothing is uploaded and nothing is stored.</p>
+            <Pill href="/tools/lost-and-found">Open Lost &amp; Found</Pill></div>
         </div>
-      </section>
-
-      <FeatureFinder />
-      <LeadBand />
-
-      <section style={{ paddingTop: 0 }}>
-        <div className="wrap">
-          <div className="guide-band">
-            <div className="gb-art"><div className="t">The first-year<br /><b>retention plan</b></div><small>Twelve touches in twelve months</small><span className="leaf"></span></div>
-            <div className="gb-txt"><div className="eyebrow">Keep the second gift</div><h2 className="mix h-m">Only 19.4% of first-time donors <b>give again.</b></h2><p>A free, practical plan for a team of one or two: what to send, when to call and who owns each step, so new donors become repeat donors.</p><Pill href="/guides/first-year-retention">Get the free guide</Pill><p className="srcnote" style={{ marginTop: 18 }}>Source: <A href={SRC.fep24[1]}>{SRC.fep24[0]}</A></p></div>
-          </div>
-        </div>
-      </section>
+      </div></section>
 
       <section id="faq-home">
         <div className="wrap faq">
@@ -195,18 +155,11 @@ export default function Home() {
 
       <section style={{ paddingTop: 0 }}>
         <div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
-          <div className="eyebrow">Our commitment</div>
-          <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b>Keep them.</b></h2>
-          <p>Keep, raise and run more, with Steward.</p>
+          <div className="eyebrow">For the careful ones</div>
+          <h2 className="mix h-l" style={{ marginTop: 22, maxWidth: 980, marginInline: "auto" }}>{rich(CAREFUL_H)}</h2>
+          <p>{CAREFUL_P}</p>
           <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a call</Pill></div>
         </div></div>
-      </section>
-
-      <section className="ready">
-        <div className="wrap ready-g">
-          <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a call</Pill></div>
-          <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
-        </div>
       </section>
     </div>
   );

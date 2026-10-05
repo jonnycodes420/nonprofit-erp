@@ -10,7 +10,7 @@ export const HELP_ARTICLES = [
     slug: `home`,
     title: `Home`,
     screens: [`dashboard`],
-    summary: `Home is your morning screen: the people who need you today, each with one next step.`,
+    summary: `Home is your tap on the shoulder each morning: the people who need you today, each with one next step.`,
     sections: [
       { h: `What you see`, p: [
         `Home opens with today's date and a greeting. Below it are sections, in this order unless you change it: "Set up Steward" (a checklist while you are getting started), The Thread, Drift, monthly gifts that need you, thank-yous ready, Sequences, and "Tell Steward what to do".`,
@@ -94,7 +94,7 @@ export const HELP_ARTICLES = [
     slug: `donors`,
     title: `Donors`,
     screens: [`donors`],
-    summary: `Donors is the list of everyone on file, where you search, filter and open a person's record.`,
+    summary: `Donors is everyone who ever believed in your work, one record each, where you search, filter and open a person's whole story.`,
     sections: [
       { h: `What you see`, p: [
         `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage and Map), "✦ Call List", "Log a conversation", "+ Add" and "↑ Import & tools ▾".`,
@@ -139,7 +139,7 @@ export const HELP_ARTICLES = [
     slug: `journeys`,
     title: `Journeys`,
     screens: [`journeys`, `settings:journeys`],
-    summary: `A journey is how you look after somebody, written down once: it starts on its own and reminds your team one step at a time.`,
+    summary: `A journey is how you look after somebody, written down once, so no new donor slips away unnoticed: it starts on its own and reminds your team one step at a time.`,
     sections: [
       { h: `What a journey is`, p: [
         `A journey starts when something happens to a person, such as a first gift, and then puts a step in front of whoever owns the relationship at the right time. It never sends anything. Every step waits for you. If a step has a draft, Steward writes it for you to read, and it is still yours to send.`,
@@ -319,7 +319,7 @@ export const HELP_ARTICLES = [
     slug: `volunteers`,
     title: `Volunteers`,
     screens: [`volunteers`],
-    summary: `Volunteers keeps your roster, schedules shifts, checks people in and records their hours and waivers.`,
+    summary: `Volunteers keeps your roster, schedules shifts, checks people in and records their hours and waivers, on the same record as their gifts.`,
     sections: [
       { h: `What you see`, p: [
         `The screen is titled "Your volunteers." in four sections. People holds the Roster. Schedule holds Opportunities and shifts, Groups and Check-in. Records holds Shifts and hours, Waivers and checks, and the Hours report. Reach holds your Sign-up link. Volunteers are people on file like everyone else, so they share one record and one timeline with their giving.`,
@@ -407,7 +407,7 @@ export const HELP_ARTICLES = [
     slug: `agent`,
     title: `Agent`,
     screens: [`agent`],
-    summary: `Agent is where you tell Steward what to do in plain words, see the plan, and say yes or no.`,
+    summary: `Agent is where you tell Steward what to do in plain words. It shows you the plan, and nothing happens until you say yes.`,
     sections: [
       { h: `What you see`, p: [
         `Five tabs: Plans, Ask, Workflows, Waiting for you and Guardrails. Steward reads, counts, finds people and drafts. It never records money on its own, refunds, changes a pledge or a monthly gift, or issues a tax receipt.`,
@@ -471,7 +471,7 @@ export const HELP_ARTICLES = [
     slug: `donor-profile`,
     title: `The donor profile`,
     screens: [`profile`],
-    summary: `The profile is one person's whole record: their figures, their history, their next step and your tools.`,
+    summary: `The profile is one person's whole story: every gift, every hour, every conversation, their next step and your tools.`,
     sections: [
       { h: `What you see`, p: [
         `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a conversation", "Plan a follow-up" and "More ▾". Four figures sit below: Lifetime, Last gift, Last met and Last email. Click any of them to see the rows behind it.`,
@@ -729,7 +729,7 @@ export const HELP_ARTICLES = [
     slug: `import-donors`,
     title: `Import donors`,
     screens: [],
-    summary: `Bring your donors, and their gift history if you have it, into Steward from a spreadsheet or another system.`,
+    summary: `Your donors are the people who already believe in you, so this is where Steward starts: bring them, and their gift history if you have it, from a spreadsheet or another system.`,
     sections: [
       { h: `Before you start`, p: [
         `Steward reads .csv, .tsv, .xlsx and .xls files. You can also paste CSV text and click "Parse →". Steward has a short how-to for exporting from your old donor system.`,
@@ -754,7 +754,7 @@ export const HELP_ARTICLES = [
     slug: `connect-stripe`,
     title: `Connect Stripe`,
     screens: [],
-    summary: `Connect Stripe so your giving pages can take card gifts, paid straight to your organisation.`,
+    summary: `Connect Stripe so your giving pages can take card gifts, paid straight to your organisation's own Stripe account. Steward never holds the money.`,
     sections: [
       { h: `What it does`, p: [
         `Steward creates a Stripe Express account for your organisation and Stripe pays you directly. Steward never touches your money. Only an admin can do this. Have your bank details to hand.`,
@@ -783,7 +783,7 @@ export const HELP_ARTICLES = [
     slug: `connect-inbox-calendar`,
     title: `Connect your inbox and calendar`,
     screens: [],
-    summary: `Let your inbox and calendar keep the record, so emails and meetings with donors land on their timeline.`,
+    summary: `Let your inbox and calendar keep the record, so every email and meeting with a donor lands on their timeline and nothing slips through the cracks.`,
     sections: [
       { h: `What Steward reads`, p: [
         `Emails with people already in Steward, and meetings where one of them is invited: who, when, the subject and the body. It never reads mail with people who are not in Steward, does not open attachments (it only notes them), and never sends, deletes or moves an email. It adds to your calendar only when you book a visit from a donor's record.`,
@@ -811,7 +811,7 @@ export const HELP_ARTICLES = [
     slug: `thank-a-gift`,
     title: `Thank a gift`,
     screens: [],
-    summary: `Every gift gets a thank-you written and sent by a person: Steward drafts it, you send it from your own mail.`,
+    summary: `Every gift deserves a thank-you from a person. Steward drafts it, and you send it from your own mail.`,
     sections: [
       { h: `How it works`, p: [
         `When a gift is recorded, Steward drafts a thank-you and puts it on Home under "Thank-yous ready". Steward does not send it. It goes from your own mail. Donors marked deceased or do not contact are skipped.`,

@@ -560,6 +560,46 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("every prerendered page carries its h1 text in the HTML, no JavaScript needed", bad.body.length === 0, bad.body);
     ok("no two routes share a title", bad.title.length === 0, bad.title);
     ok("no two routes share a description", bad.desc.length === 0, bad.desc);
+    // LANDING-4 · the language everywhere (docs/MESSAGING.md). Read from what
+    // a visitor gets, the prerendered page text, so a class name like
+    // "lead-band" or a code comment can never trip it and a word in the copy
+    // can never hide from it. Fails on, for every marketing route and every
+    // help article (each is a route):
+    //   an em dash; a word MESSAGING.md says to avoid; "users" outside the
+    //   technical pages; a plan price outside /pricing.
+    // Proven able to fail: planting "churn" in a glossary aka, "users" in the
+    // CRM FAQ, "$299" in the Agent FAQ, an em dash in the Demo lede and "not a
+    // supplier" in pillar 6 each
+    // turned the matching check red (LANDING-4, before this commit).
+    {
+      const AVOID = [/money left on the table/i, /\bleads?\b(?!\s+(?:gifts?|donors?|times?)\b)/i, /\bconversions?\b/i, /\bchurn/i,
+        /\brecovered\b/i, /\bwon back\b/i, /revenue leakage/i, /\bAI-powered\b/i];
+      const TECHNICAL = /^\/(security|subprocessors|dpa|your-data|status|legal\/)/;
+      const PRICING_TIERS = JSON.parse(fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8")).tiers;
+      const prices = [...PRICING_TIERS.flatMap(t => [t.monthlyUsd, t.yearlyUsd])].map(n => "$" + n.toLocaleString("en-US"));
+      const priceRe = new RegExp("(" + prices.map(p => p.replace(/[$,]/g, m => "\\" + m)).join("|") + ")(?![\\d,])");
+      const hit = { dash: [], avoid: [], users: [], price: [] };
+      for (const r of ROUTES) {
+        const page = seo.assemblePage(base, r, render(r.path), extraFor(r));
+        const words = text(page.slice(page.indexOf('<div id="root">'))) + " " + r.title + " " + r.description;
+        if (/—/.test(words)) hit.dash.push(r.path);
+        for (const re of AVOID) { const m = words.match(re); if (m) hit.avoid.push(r.path + " " + m[0]); }
+        if (!TECHNICAL.test(r.path)) { const m = words.match(/\busers?\b/i); if (m) hit.users.push(r.path); }
+        if (r.path !== "/pricing") { const m = words.match(priceRe); if (m) hit.price.push(r.path + " " + m[0]); }
+      }
+      ok("LANDING-4 · no em dash on any rendered marketing page or help article", hit.dash.length === 0, hit.dash);
+      ok("LANDING-4 · no word MESSAGING.md says to avoid, on any marketing page or help article", hit.avoid.length === 0, hit.avoid);
+      ok("LANDING-4 · \"users\" only on the technical pages (security, legal, data)", hit.users.length === 0, hit.users);
+      ok("LANDING-4 · no plan price outside the pricing page (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
+
+      // The homepage carries the six pillar headings exactly as MESSAGING.md has them.
+      const md = fs.readFileSync(path.join(ROOT, "docs", "MESSAGING.md"), "utf8");
+      const heads = [...md.matchAll(/^\*\*(\d)\. ([^*]+)\*\*/gm)].map(m => m[2]);
+      const home = text(seo.assemblePage(base, ROUTES[0], render("/"), {}));
+      const missing = heads.filter(h => !home.includes(h));
+      ok("LANDING-4 · the homepage shows the six pillar headings, word for word from docs/MESSAGING.md", heads.length === 6 && missing.length === 0, { heads, missing });
+      ok("…and the headline and the line under it", home.includes("Raise more from the people who already believe in you.") && home.includes("Your reports tell you what happened. Steward tells you why, and who to call tomorrow."));
+    }
     const ld = (p, extra) => { const r = ROUTES.find(x => x.path === p); const pg = seo.assemblePage(base, r, render(p), extra || extraFor(r)); const m = pg.match(/application\/ld\+json">(.*?)<\/script>/); return m ? JSON.parse(m[1])["@graph"].map(x => x["@type"]) : []; };
     ok("Home carries Organization structured data", ld("/").includes("Organization"));
     ok("inner pages carry BreadcrumbList, a glossary page DefinedTerm, an article Article, a page with an FAQ FAQPage",
