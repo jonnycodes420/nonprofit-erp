@@ -12,18 +12,31 @@ import { HEADLINE, UNDER, FEELING, VISION_LINE, PILLARS, HOW_SHORT, HOW_CLOSE, C
 // The three small chips under the hero buttons.
 const HERO_CHIPS = ["Month to month", "No platform fee", "Your whole team"];
 
-// Each pillar's photograph and the screen crop inset in its corner. Pillar 6
-// carries a call tile instead of a screen: the person in the photograph is
-// on a call with the founder, whose own portrait is in the tile, so the stock
-// photo never stands in for him.
+// Each pillar's photograph, the screen crop inset in its corner, and the
+// whole screen a click on the picture opens. Pillar 6 has no screen: its
+// corner is a call tile (the person in the photograph is on a call with the
+// founder, whose own portrait is in the tile, so the stock photo never stands
+// in for him) and the picture links to Leadership.
 const PILLAR_ART = {
-  1: ["phone-laughing", "inset-drift"],
-  2: ["laptop-delighted", "inset-agent", "center top"],
-  3: ["table-papers", "inset-profile"],
-  4: ["reading-letter", "inset-figure", "center bottom"],
-  5: ["trainer-laptop", "inset-connections"],
-  6: ["video-call", null],
+  1: { photo: "phone-laughing", inset: "inset-drift",
+    see: { shot: "drift", href: "/features/drift", label: "How Drift works", cap: "Drift on Home: each donor measured against their own rhythm, with the call to make.",
+      alt: "Home's Drift list in Steward: donors past their own giving pattern, each with what they usually give and a Log the call button" } },
+  2: { photo: "laptop-delighted", inset: "inset-agent", pos: "center top",
+    see: { shot: "agent-plan", href: "/agent", label: "Steward Agent", cap: "An Agent plan, waiting for your yes. Nothing runs until you say so.",
+      alt: "A Steward Agent plan waiting for approval: make Rafael a volunteer and draft a welcome for you to read and send, with Run the plan and Not this one" } },
+  3: { photo: "table-papers", inset: "inset-profile",
+    see: { shot: "profile", href: "/crm", label: "Steward CRM", cap: "One person: gifts, volunteer hours and an event, on one record.",
+      alt: "Rafael Quintero-Byrne's profile in Steward: his gifts, 20 hours volunteered, and that he came to an event, on one record" } },
+  4: { photo: "reading-letter", inset: "inset-figure", pos: "center bottom",
+    see: { shot: "figure-rows", href: "/features/reports", label: "Reports", cap: "Click a figure and the gifts behind it open, to the cent.",
+      alt: "A figure opened in Steward: Raised for Annual Fund 2026, $1,379,364.56, with the definition and the gifts behind it" } },
+  5: { photo: "trainer-laptop", inset: "inset-connections",
+    see: { shot: "connections", href: "/connections", label: "Connections", cap: "Your payment tools stay. A connection that goes quiet is flagged.",
+      alt: "Steward's Connections settings: Stripe and PayPal connected, and Givebutter flagged because nothing has arrived through it in 64 days" } },
+  6: { photo: "video-call", href: "/leadership", cue: "Meet the founder" },
 };
+const HOW_SEE = { shot: "why-reasons", href: "/features/ask", label: "Ask why", cap: "Ask why: the reasons in dollars, largest first. Every row opens the people behind it.",
+  alt: "Ask why's answer: Spring Appeal 2026 came in $11,650 under last year, mostly because 11 of last year's donors haven't given yet" };
 // Which pillars Home shows. Jonathan picks four (1, 2, 3, 6) or all six.
 export const HOME_PILLARS = [1, 2, 3, 4, 5, 6];
 
@@ -66,15 +79,12 @@ function Pillars() {
   return (
     <section className="pillars-s"><div className="wrap">
       <div className={"pcards n" + list.length}>
-        {list.map(p => p.n === 6
-          ? <div className="pcard" data-pillar={6} key={6}>
-              <PersonShot k={PILLAR_ART[6][0]}>
-                <div className="ps-founder"><Portrait src={founder[2]} name={founder[0]} cls="" /><span>On the call<b>{founder[0]}</b>{founder[1]}</span></div>
-              </PersonShot>
-              <h3 className="mix">{rich(p.h)}</h3>
-              <p>{p.line}</p>
-            </div>
-          : <PillarCard key={p.n} p={p} photo={PILLAR_ART[p.n][0]} inset={PILLAR_ART[p.n][1]} pos={PILLAR_ART[p.n][2]} />)}
+        {list.map(p => {
+          const a = PILLAR_ART[p.n];
+          return <PillarCard key={p.n} p={p} photo={a.photo} inset={a.inset} pos={a.pos} see={a.see} href={a.href} cue={a.cue}>
+            {p.n === 6 && <div className="ps-founder"><Portrait src={founder[2]} name={founder[0]} cls="" /><span>On the call<b>{founder[0]}</b>{founder[1]}</span></div>}
+          </PillarCard>;
+        })}
       </div>
     </div></section>
   );
@@ -87,7 +97,7 @@ function HowItWorks() {
       <div className="steps">
         {HOW_SHORT.map((s, i) => <div className="step" key={s[0]}><span className="sn">{"0" + (i + 1)}</span><h4>{s[0]}</h4><p>{s[1]}</p></div>)}
       </div>
-      <PersonShot k="call-notepad" inset="inset-why" cls="wide" />
+      <PersonShot k="call-notepad" inset="inset-why" cls="wide" see={HOW_SEE} />
       <p className="lede how-close">{HOW_CLOSE}</p>
     </div></section>
   );

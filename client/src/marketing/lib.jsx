@@ -3,7 +3,7 @@
 // hero, block, ui, steps, incl, faqS, cards, related, finalCta, statBand,
 // quoteBand, teamReel), producing the same markup and classes, so site.css
 // styles it exactly as the reference does.
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ICON } from "./data/icons";
 import { PHOTOS, photoSrc, rowFor } from "./data/photos";
@@ -191,25 +191,54 @@ export function Shot({ k, alt, cap, cls = "" }) {
   );
 }
 
-// LANDING-5 · a person first, the product small. The photograph carries the
-// alt text (it describes the person); the inset is a crop of a Harborlight
-// screen, about a quarter of the photo's width, and is decorative, because
-// the line beside it already says what it shows.
-export function PersonShot({ k, inset, pos, cls = "", eager, children }) {
+// LANDING-5 · a person first, the product in the corner. The photograph
+// carries the alt text (it describes the person); the inset is a tight crop
+// of a Harborlight screen and is decorative.
+//
+// The picture is a BUTTON when it has a screen to show (`see`): a visible
+// "See it in Steward" cue sits on it, and a click opens the whole screen at
+// a readable size (on a phone, the tight crop, which is what stays legible
+// at 390), with one line and a link to its page. With `href` instead,
+// the picture is a link (pillar 6 goes to Leadership).
+const Expand = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>;
+
+export function PersonShot({ k, inset, pos, cls = "", eager, see, href, cue, children }) {
+  const box = useRef(null);
+  const art = <>
+    <Photo k={k} eager={eager} />
+    {inset && <img className="ps-inset" src={"/marketing/product/" + inset + ".webp"} alt="" loading="lazy" decoding="async" />}
+    {children}
+    {(see || href) && <span className="ps-cue" aria-hidden="true">{see ? <Expand /> : null}{cue || "See it in Steward"}</span>}
+  </>;
+  const style = pos ? { "--pos": pos } : undefined;
+  if (href) return <A className={"person-shot ps-btn " + cls} style={style} href={href}>{art}</A>;
+  if (!see) return <div className={"person-shot " + cls} style={style}>{art}</div>;
+  const close = () => box.current?.close();
   return (
-    <div className={"person-shot " + cls} style={pos ? { "--pos": pos } : undefined}>
-      <Photo k={k} eager={eager} />
-      {inset && <img className="ps-inset" src={"/marketing/product/" + inset + ".webp"} alt="" loading="lazy" decoding="async" />}
-      {children}
-    </div>
+    <>
+      <button type="button" className={"person-shot ps-btn " + cls} style={style}
+        aria-haspopup="dialog" aria-label={"See it in Steward: " + see.cap}
+        onClick={() => box.current?.showModal?.()}>{art}</button>
+      <dialog ref={box} className="ps-box" aria-label={see.cap} onClick={e => { if (e.target === box.current) close(); }}>
+        <div className="ps-box-in">
+          <button type="button" className="ps-x" aria-label="Close" onClick={close}>×</button>
+          <picture>
+            {inset && <source media="(max-width: 620px)" srcSet={"/marketing/product/" + inset + ".webp"} />}
+            <img src={"/marketing/product/" + see.shot + ".webp"} alt={see.alt} loading="lazy" decoding="async" />
+          </picture>
+          <p>{see.cap} <span className="ps-demo">Demo data from Harborlight Youth Collective.</span></p>
+          {see.href && <A className="ps-go" href={see.href}>{see.label} →</A>}
+        </div>
+      </dialog>
+    </>
   );
 }
 
-// LANDING-5 · one pillar: a heading, one short line and a picture.
-export function PillarCard({ p, photo, inset, pos }) {
+// LANDING-5 · one pillar: a picture, a heading and one short line.
+export function PillarCard({ p, photo, inset, pos, see, href, cue, children }) {
   return (
     <div className="pcard" data-pillar={p.n}>
-      <PersonShot k={photo} inset={inset} pos={pos} />
+      <PersonShot k={photo} inset={inset} pos={pos} see={see} href={href} cue={cue}>{children}</PersonShot>
       <h3 className="mix">{rich(p.h)}</h3>
       <p>{p.line}</p>
     </div>

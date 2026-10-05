@@ -610,7 +610,9 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
 
         // Every pillar picture's alt describes the person, never the software;
         // the product inset is decorative (alt="").
-        const cards = [...body.matchAll(/<div class="pcard"[\s\S]*?<\/h3>/g)].map(m => m[0]);
+        // The lightbox (<dialog>) holds the full screen, whose alt rightly
+        // describes the screen; the guard reads the picture itself.
+        const cards = [...body.matchAll(/<div class="pcard"[\s\S]*?<\/h3>/g)].map(m => m[0].replace(/<dialog[\s\S]*?<\/dialog>/g, ""));
         const alts = cards.map(c => [...c.matchAll(/<img\b[^>]*?alt="([^"]*)"/g)].map(m => m[1]));
         const SOFTWARE = /\b(Steward|screen|screenshot|dashboard|software|app|interface|chart|report|CRM)\b/i;
         const PERSON = /\b(woman|women|man|men|people|person|colleagues|volunteers|team|couple|friends|staff|director)\b/i;
