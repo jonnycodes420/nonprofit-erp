@@ -277,6 +277,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
       const { error } = await resend.emails.send({
         from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
         to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        _stewardOrgId: orgId, _stewardKind: "campaign_test",   // MAIL-1: waits for onboarding like the campaign
         html: T.renderMergeFields(html, { first_name: first }),
       });
       if (error) throw new Error(error.message);
@@ -7484,6 +7485,9 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
      act.id, actorName, JSON.stringify(summary), migrationSource]);
   const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
+  // MAIL-1: her first real donor file is what turns Steward's mail on for the org.
+  await require("../onboarded").stampOnboardedFromImport(query, orgId, id)
+    .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
   require("./dataHealth").afterImport(orgId, id);   // CLEAN-1: Data health runs after every import
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
@@ -19086,7 +19090,7 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl,
     // PARITY-2 Part 2: a page that waits for approval says so, rather than
     // telling somebody their page is live when it is not yet.
     const { error } = await resend.emails.send({
-      from,
+      from, _stewardOrgId: org.id, _stewardKind: "fundraiser_manage",   // MAIL-1: the org's mail policy applies
       to: fundraiser.email,
       subject: pending ? `Your fundraiser for ${displayNameCase(org.name)} is waiting for approval`
                        : `Your fundraiser for ${displayNameCase(org.name)} is live!`,
@@ -24118,7 +24122,7 @@ app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(
   // FIX-15 Part 3: the provider's answer decides the sentence (a refused
   // offer is queued for retry by the lifecycle helper).
   const offerSent = await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
-    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => { console.error("[event] waitlist offer:", e.message); return false; });
+    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR()), orgId).catch(e => { console.error("[event] waitlist offer:", e.message); return false; });
   // FIX-7 Part 6.2 — the demonstration org sends no ticket email; the screen
   // says what would have gone out and to whom rather than implying it did.
   const demoNote = await demoMailNote(orgId, { what: "the offer of a place, with the event's link", to: w.email });

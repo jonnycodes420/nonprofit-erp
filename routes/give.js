@@ -4077,7 +4077,7 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
          <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
          <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed — and thank you for everything you've already given.</p>`;
     const from = await donorFromAddress(orgId).catch(() => undefined);
-    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from);
+    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId);
     if (ok) {
       await run(
         `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_amount, historical_interval, sent_by)
@@ -5113,6 +5113,7 @@ async function sendPortalMutationEmail(org, email, subject, bodyText) {
       from: ident.from,
       ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
       to: email, subject: `${subject} — ${theme.displayName}`, html,
+      _stewardOrgId: org.id, _stewardKind: "portal_change",   // MAIL-1: the org's mail policy applies
     });
     if (sendErr) console.error("[portal] mutation email error:", sendErr.message);
   } catch (e) { console.error("[portal] mutation email failed:", e.message); }

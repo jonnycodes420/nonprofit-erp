@@ -462,7 +462,7 @@ async function issueAndSend(org, person, { who }) {
   // by the lifecycle helper, and the record is not stamped as sent.
   const sent = await sendDonorLifecycleEmail("your_page_link", person.email,
     `Your page at ${brand.displayName || org.name}`,
-    html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()));
+    html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()), org.id);
   if (sent) await run(`UPDATE donors SET your_page_sent_at=NOW() WHERE id=? AND org_id=?`, [person.id, org.id]).catch(() => {});
   return { link, sent };
 }
@@ -605,7 +605,7 @@ app.post("/you/:orgSlug/fundraiser-link", donateLimiter, express.urlencoded({ ex
       </div>`;
     await sendDonorLifecycleEmail("fundraiser_manage_link", f.email,
       `Your fundraiser dashboard at ${brand.displayName || org.name}`,
-      html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()));
+      html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()), org.id);
   }
   res.redirect(303, `/you/${encodeURIComponent(org.org_slug)}?saved=1`);
 }));

@@ -38,6 +38,8 @@ async function clean() {
 (async () => {
   await clean();
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Fix Twelve Workflow Org','fix-twelve-wf',1,'active','team')`, [ORG]);
+  // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix12wf',$1,'staff@fix12wf.local',$2,'Recipe Staff','admin')`, [ORG, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name) VALUES ('d_fix12wf',$1,'Jonathan Fixture',$2,'active',50,'system:test','test')`, [ORG, DONOR_EMAIL]);
 

@@ -10,6 +10,8 @@
 // what they read by calling mount() at the end of boot.
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 
+const mailPolicy = require("../mailPolicy");   // MAIL-1: the one mail policy
+
 // Bound by mount(), which server.js calls at the end of boot. Nothing below runs
 // before then: server.js calls these functions only from request handlers and jobs.
 let
@@ -198,7 +200,6 @@ const DONOR_MAIL_POLICY = {
   workflow:           "marketing",      // org-authored thank-you / re-engage recipes
   milestone:          "marketing",      // staff-reviewed milestone drafts
   pledge_reminder:    "marketing",      // a reminder to give is solicitation
-  onboarding_drip:    "marketing",      // founder drip to org staff
   dunning:            "transactional",  // failed-card recovery (W-4's instance)
   recovered_thankyou: "transactional",  // "your card worked" confirmation
   receipt:            "transactional",  // legal acknowledgment of a gift
@@ -250,27 +251,32 @@ const DONOR_MAIL_POLICY = {
 // eventually-consistent.
 const ORG_MAIL_GATE_TTL_MS = 5000;
 
-async function orgMaySendEmail(orgId) {
-  if (!orgId) return { send: false, reason: "no_org" };
-  const hit = orgMailGateCache.get(orgId);
-  if (hit && Date.now() - hit.at < ORG_MAIL_GATE_TTL_MS) return hit.result;
-  try {
-    const [org] = await query(
-      "SELECT emails_enabled, is_demo_org FROM orgs WHERE id = ?", [orgId]);
-    let result;
-    if (!org) result = { send: false, reason: "org_not_found" };
-    else if (org.emails_enabled === false) result = { send: false, reason: "org_emails_disabled" };
-    else if (org.is_demo_org === true) result = { send: false, reason: "demo_org" };
-    else result = { send: true, reason: null };
-    orgMailGateCache.set(orgId, { at: Date.now(), result });
-    return result;
-  } catch (err) {
-    // NOT cached. A refusal caused by a database blip must not be remembered
-    // for five seconds, and — more importantly — must not be remembered as an
-    // ALLOW either. Every retry re-asks.
-    console.error("[mail-gate] could not read org", orgId, err.message, "— refusing to send");
-    return { send: false, reason: "org_gate_unreadable" };
+// MAIL-1: the answer is now mailPolicy.js's, per family of mail. Every caller
+// that passes no category is asking about staff or donor mail, which is what
+// each of them sends; the client proxy passes the family of the kind it holds.
+async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
+  if (category === mailPolicy.CATEGORY.ONBOARDING || category === mailPolicy.CATEGORY.JONATHAN) {
+    return mailPolicy.orgMailDecision(null, category);
   }
+  if (!orgId) return { send: false, reason: "no_org" };
+  let org;
+  const hit = orgMailGateCache.get(orgId);
+  if (hit && Date.now() - hit.at < ORG_MAIL_GATE_TTL_MS) org = hit.org;
+  else {
+    try {
+      [org] = await query(
+        "SELECT id, emails_enabled, is_demo_org, onboarded_at FROM orgs WHERE id = ?", [orgId]);
+      org = org || null;
+      orgMailGateCache.set(orgId, { at: Date.now(), org });
+    } catch (err) {
+      // NOT cached. A refusal caused by a database blip must not be remembered
+      // for five seconds, and — more importantly — must not be remembered as an
+      // ALLOW either. Every retry re-asks.
+      console.error("[mail-gate] could not read org", orgId, err.message, "— refusing to send");
+      return { send: false, reason: "org_gate_unreadable" };
+    }
+  }
+  return mailPolicy.orgMailDecision(org, category);
 }
 
 // ── FIX-7 Part 6.2 · WHAT WOULD HAVE BEEN SENT, AND TO WHOM ───────────────
@@ -294,6 +300,11 @@ async function demoMailNote(orgId, { what, to }) {
 // sending (the demonstration org); the org gate is still read, and its refusal
 // is reported separately by the caller, never hidden.
 async function donorMailDecision(kind, email, orgId, pre = null) {
+  // MAIL-1: the onboarding sequence is off for good, for every org.
+  if (mailPolicy.categoryOf(kind) === mailPolicy.CATEGORY.ONBOARDING) {
+    console.log(`[mail-policy] refused ${kind}: the onboarding sequence is off for good (MAIL-1)`);
+    return { send: false, reason: "onboarding_sequence_off" };
+  }
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
   if (!email) return { send: false, reason: "no_email" };
@@ -467,7 +478,7 @@ async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
   // was provisioned. The gate is checked HERE as well as in runDigestsForOrg
   // because this function is reachable on its own and a digest is the one
   // piece of mail whose whole content is a claim about the org's real week.
-  const digestGate = await orgMaySendEmail(org && org.id);
+  const digestGate = await orgMaySendEmail(org && org.id, mailPolicy.CATEGORY.STAFF);
   if (!digestGate.send) {
     console.log(`[digest] not sending to ${toEmail} (${digestGate.reason})`);
     return false;
@@ -479,7 +490,8 @@ async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
   // provider had turned away. It now returns what the provider said.
   if (!process.env.RESEND_API_KEY) return false;
   try {
-    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html,
+      _stewardOrgId: org.id, _stewardKind: "digest" });
     if (error) { console.error("[digest] email error:", error.message); return false; }
   } catch (e) { console.error("[digest] email threw:", e.message); return false; }
   return true;
@@ -558,7 +570,9 @@ async function sendGiftAlertEmail(org, toEmail, subject, bodyHtml) {
   const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (!process.env.RESEND_API_KEY) return true; // email not configured — no failure to record
   try {
-    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    // MAIL-1: tagged, so the client applies the staff-mail policy (onboarded, switch, demo).
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html,
+      _stewardOrgId: org.id, _stewardKind: "staff_notice" });
     if (error) { console.error("[notify] gift-alert email error:", error.message); return false; }
     return true;
   } catch (e) { console.error("[notify] gift-alert email threw:", e.message); return false; }
@@ -587,7 +601,7 @@ async function sendBoardPackEmail(org, toEmail, subject, bodyHtml, pdf, filename
   if (!process.env.RESEND_API_KEY) return true; // email not configured — nothing to deliver
   try {
     const { error } = await resend.emails.send({
-      from, to: toEmail, subject, html, _stewardOrgId: org.id,
+      from, to: toEmail, subject, html, _stewardOrgId: org.id, _stewardKind: "board_pack",
       attachments: pdf && pdf.length
         ? [{ filename: filename || "board-pack.pdf", content: pdf.toString("base64") }]
         : undefined,
@@ -614,12 +628,16 @@ async function userWantsEmail(userId, prefKind) {
   const rows = await query(`SELECT ${col} AS p FROM users WHERE id=?`, [userId]);
   return rows.length ? rows[0].p !== false : true; // NULL → ON
 }
-async function sendRawEmail(toEmail, subject, html, fromOverride) {
+// MAIL-1: `tag` ({ orgId, kind }) is passed by every org-to-supporter caller
+// (event ticket, waitlist offer, reconnect, page links) so the client applies
+// the org's mail policy. Sign-in and account mail passes none and always goes.
+async function sendRawEmail(toEmail, subject, html, fromOverride, tag = null) {
   if (!toEmail) return false;
   if (!process.env.RESEND_API_KEY) return true; // no email configured — nothing to deliver
   const from = fromOverride || DONOR_MAIL_ADDR(); // BUILD-64: org-named From when caller supplies one
   try {
-    const { error } = await resend.emails.send({ from, to: toEmail, subject, html });
+    const { error } = await resend.emails.send({ from, to: toEmail, subject, html,
+      ...(tag && tag.orgId ? { _stewardOrgId: tag.orgId, _stewardKind: tag.kind || "supporter" } : {}) });
     if (error) { console.error("[donor-email] send error:", error.message); return false; }
     return true;
   } catch (e) { console.error("[donor-email] send threw:", e.message); return false; }

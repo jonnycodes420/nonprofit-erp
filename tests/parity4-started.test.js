@@ -49,6 +49,8 @@ async function wipe() {
   await wipe();
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,stripe_account_id,stripe_connected)
            VALUES ($1,'Started Org','p4gs',1,'active','team','America/New_York',$2,true)`, [ORG, ACCT]);
+  // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_p4gs',$1,$2,$3,'Dana Director','admin')`, [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('ff_p4gs',$1,'General',false)`, [ORG]);
   const tok = await login(ADMIN);

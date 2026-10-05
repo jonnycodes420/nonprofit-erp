@@ -212,6 +212,9 @@ async function runDataHealth(orgId, { trigger, importId = null, actorId = "syste
 // Called by every import path once its run is recorded. Never blocks the
 // import and never fails it: a health count is a read.
 function afterImport(orgId, importId) {
+  // MAIL-1: any import path, present or future, can be the first donor file.
+  require("../onboarded").stampOnboardedFromImport(query, orgId, importId)
+    .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
   setImmediate(() => runDataHealth(orgId, { trigger: "import", importId }).catch(e => console.error("[data-health] after import:", e.message)));
 }
 async function runDataHealthNightly() {

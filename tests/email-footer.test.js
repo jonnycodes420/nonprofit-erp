@@ -32,7 +32,7 @@ async function makeOrg(name, email) {
   // OFF. This suite needs a mail-ON org, so it opts in (standing in for the
   // super-admin switch) and waits out the 5s mail-gate cache the signup's own
   // gate check just filled — the real switch route clears that cache; SQL can't.
-  await q("UPDATE orgs SET emails_enabled=true WHERE id=$1", [r.body.org.id]);
+  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW() WHERE id=$1", [r.body.org.id]);
   await new Promise(res => setTimeout(res, 5100));
   await api("POST", "/onboarding/complete", r.body.token);
   return r.body;

@@ -72,7 +72,25 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
   // Mail is opt-in per org, by a super-admin (2026-09-24): a new org starts
   // OFF. This suite is about what a mail-ON org does, so it opts in first,
   // standing in for POST /admin/orgs/:id/email-switch.
-  await q("UPDATE orgs SET emails_enabled=true WHERE id=$1", [orgId]);
+  // MAIL-1: and it has onboarded (its donor file is in), or nothing sends.
+  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW(), onboarded_via='test' WHERE id=$1", [orgId]);
+  // MAIL-1 §9's org: mail switched ON by a super-admin, but NO donor file yet.
+  const m1Admin = `mail1-admin-${uniq()}@test.local`;
+  const m1 = await fetch(BASE + "/auth/register-org", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orgName: "MAIL-1 Not Yet " + uniq(), userName: "M1 Admin", email: m1Admin, password: "loadtest1234" }),
+  }).then(r => r.json());
+  const m1Tok = m1.token, m1Org = m1.org.id;
+  await q(`UPDATE orgs SET emails_enabled=true, receipts_enabled=true, legal_name='MAIL-1 Org, Inc.', ein='12-3456789',
+           receipt_address='1 Test Way, Testville, TS 00000' WHERE id=$1`, [m1Org]);
+  // §9's demo org: every switch on and even stamped onboarded. It still sends only sign-in mail.
+  const demoAdmin = `mail1-demo-${uniq()}@test.local`;
+  const dm = await fetch(BASE + "/auth/register-org", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orgName: "MAIL-1 Demo " + uniq(), userName: "Demo Admin", email: demoAdmin, password: "loadtest1234", provisioned: true }),
+  }).then(r => r.json());
+  const dmTok = dm.token, dmOrg = dm.org.id;
+  await q("UPDATE orgs SET emails_enabled=true, onboarded_at=NOW() WHERE id=$1", [dmOrg]);
   // …and waits out the 5s mail-gate cache the signup's own gate check filled
   // (the real switch route clears it; SQL can't).
   await new Promise(r => setTimeout(r, 5100));
@@ -328,8 +346,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const [c] = await q("SELECT status, recipient_count FROM campaigns WHERE id=$1", [campId]);
     ok("§8a a campaign where every recipient failed is Failed, with nobody counted", c.status === "failed" && c.recipient_count === 0, c);
 
-    // (b) an onboarding email the provider refuses: the step stays, the
-    // reason is kept, and it is tried again a day later, not next tick.
+    // (b) MAIL-1: an onboarding enrolment left over from before is STOPPED by
+    // the engine and sends nothing, provider up or down (this replaces WHY-1's
+    // "retried a day later": the onboarding sequence is off for good).
     const seqId = "seq_w4_" + uniq(), enrId = "se_w4_" + uniq();
     await q(`INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES ($1,$2,'Onboarding','onboarding','active','system:test','Test')`, [seqId, orgId]);
     await q(`INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES ($1,$2,0,0,'Welcome','Hi {{first_name}}'), ($3,$2,1,2,'Next','Hi')`,
@@ -337,13 +356,88 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const [u] = await q("SELECT id FROM users WHERE org_id=$1 LIMIT 1", [orgId]);
     await q(`INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at) VALUES ($1,$2,$3,$4,0,'active',NOW() - INTERVAL '1 minute')`,
       [enrId, seqId, orgId, u.id]);
-    state.mode = "fail";
+    state.captured.length = 0;
+    const att0 = state.attempts;
     await api("POST", "/sequences/process", tok, {});
-    const [e1] = await q("SELECT current_step, last_error, next_send_at > NOW() + INTERVAL '23 hours' AS waits_a_day FROM sequence_enrollments WHERE id=$1", [enrId]);
-    ok("§8b a refused onboarding email is not sent: same step, reason kept", e1.current_step === 0 && !!e1.last_error, e1);
-    ok("§8b it is retried a day later, not on the next tick", e1.waits_a_day === true, e1);
-    state.mode = "ok";
+    const [e1] = await q("SELECT current_step, status, last_error FROM sequence_enrollments WHERE id=$1", [enrId]);
+    ok("§8b a leftover onboarding enrolment is stopped, with its reason", e1.status === "stopped" && /off for good/.test(e1.last_error || ""), e1);
+    ok("§8b …and nothing reached the provider", state.attempts === att0, { attempts: state.attempts - att0 });
     await q("UPDATE sequence_enrollments SET status='completed' WHERE id=$1", [enrId]);
+  }
+
+  // ── §9 MAIL-1 · NOTHING UNTIL THE DONOR FILE IS IN ───────────────────────
+  // An org whose mail a super-admin switched ON but which has imported no
+  // donor file: no digest, no Week in Review, no onboarding mail, no donor
+  // mail, and still a password reset. One real donor imported, and the digest,
+  // a receipt and a campaign go (the unsubscribed donor still does not).
+  // A demo org sends nothing but sign-in mail, whatever its switches say.
+  // Proven able to fail: with the `not_onboarded` arm removed from
+  // mailPolicy.orgMailDecision, §9a's digest and campaign assertions go red.
+  console.log("\n§9 MAIL-1: nothing until the donor file is in");
+  {
+    const sentTo = addr => to(addr).length;
+    const monday = (() => { const d = new Date(); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
+    const keep = `m1-keep-${uniq()}@test.local`, gone = `m1-gone-${uniq()}@test.local`;
+    const dKeep = (await api("POST", "/donors", m1Tok, { name: "Kit Keeps", email: keep })).body.id;
+    await api("POST", "/donors", m1Tok, { name: "Gil Gone", email: gone });
+    await q("INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES ($1,$2,$3,'unsubscribe','campaign')", ["sup_" + uniq(), m1Org, gone]);
+    const gift = await api("POST", `/donors/${dKeep}/gifts`, m1Tok, { amount: 50, date: today(), idempotencyKey: crypto.randomUUID() });
+    const giftId = gift.body?.gift?.id;
+    await settle(1500);
+    state.captured.length = 0;
+
+    // §9a before onboarding
+    const [pre] = await q("SELECT onboarded_at FROM orgs WHERE id=$1", [m1Org]);
+    ok("§9a an org with no import is not onboarded", pre.onboarded_at === null, pre);
+    const dg = await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: monday });
+    ok("§9a the digest is refused, by name", dg.body?.weekly?.gated === "not_onboarded" || dg.body?.gated === "not_onboarded", dg.body);
+    const camp0 = await api("POST", "/campaigns", m1Tok, { name: "M1 Early " + uniq(), subject: "Early", body: "Hi", audience: "all" });
+    await api("POST", `/campaigns/${camp0.body?.id || camp0.body?.campaign?.id}/send`, m1Tok, {});
+    await settle(2000);
+    const seq = await q("SELECT COUNT(*)::int c FROM sequences WHERE org_id=$1 AND trigger='onboarding'", [m1Org]);
+    ok("§9a no onboarding sequence exists for the new org", seq[0].c === 0, seq[0]);
+    ok("§9a zero digests and zero Week in Review reached its admin", sentTo(m1Admin) === 0, { n: sentTo(m1Admin) });
+    ok("§9a zero campaign mail reached its donors", sentTo(keep) === 0 && sentTo(gone) === 0, { keep: sentTo(keep), gone: sentTo(gone) });
+    const fp = await fetch(BASE + "/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: m1Admin }) });
+    await settle();
+    ok("§9a …and a password reset still goes", fp.status < 300 && sentTo(m1Admin) === 1, { s: fp.status, n: sentTo(m1Admin) });
+
+    // §9b one real donor imported -> onboarded
+    const runId = "imp_m1" + Date.now().toString(36);
+    const real = `m1-real-${uniq()}@test.local`;
+    const im = await api("POST", "/donors/import-combined", m1Tok, { donors: [{ name: "Ivy Imported", email: real }], gifts: [], importId: runId });
+    const rec = await api("POST", "/imports", m1Tok, { id: runId, name: "donors.csv", sourceFilename: "donors.csv", shape: "donors", donorsCreated: 1, rowsIn: 1 });
+    const [post] = await q("SELECT onboarded_at, onboarded_via FROM orgs WHERE id=$1", [m1Org]);
+    ok("§9b an import of one real donor onboards the org, dated", im.status < 300 && rec.status < 300 && !!post.onboarded_at && post.onboarded_via === "import:" + runId,
+      { im: im.status, rec: rec.status, post });
+    await settle(5200);   // the 5s org-gate cache
+    state.captured.length = 0;
+    const dg2 = await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: monday });
+    await settle();
+    ok("§9b the digest now reaches the admin", !dg2.body?.weekly?.gated && sentTo(m1Admin) >= 1, { b: dg2.body, n: sentTo(m1Admin) });
+    const rc = await api("POST", `/gifts/${giftId}/receipt`, m1Tok, {});
+    await settle();
+    ok("§9b a receipt is sent", rc.status < 300 && sentTo(keep) === 1, { s: rc.status, b: rc.body, n: sentTo(keep) });
+    state.captured.length = 0;
+    const camp = await api("POST", "/campaigns", m1Tok, { name: "M1 After " + uniq(), subject: "After", body: "Hi", audience: "all" });
+    await api("POST", `/campaigns/${camp.body?.id || camp.body?.campaign?.id}/send`, m1Tok, {});
+    await settle(2500);
+    ok("§9b a campaign to 3 donors (1 unsubscribed) sends 2", sentTo(keep) === 1 && sentTo(real) === 1 && sentTo(gone) === 0,
+      { keep: sentTo(keep), real: sentTo(real), gone: sentTo(gone) });
+    ok("§9 the onboarding sequence sent nothing, in any case", !state.captured.some(m => /great decision for your mission/i.test(m.subject || "")), null);
+
+    // §9c a demo org: switches on, stamped onboarded, still only sign-in mail
+    state.captured.length = 0;
+    const dd = `m1-demo-donor-${uniq()}@test.local`;
+    await api("POST", "/donors", dmTok, { name: "Dee Demo", email: dd });
+    const dcamp = await api("POST", "/campaigns", dmTok, { name: "Demo " + uniq(), subject: "Demo", body: "Hi", audience: "all" });
+    await api("POST", `/campaigns/${dcamp.body?.id || dcamp.body?.campaign?.id}/send`, dmTok, {});
+    await api("POST", "/digests/run", dmTok, { type: "weekly", weekStart: monday });
+    await settle(2000);
+    ok("§9c a demo org sends no donor mail and no digest", sentTo(dd) === 0 && sentTo(demoAdmin) === 0, { donor: sentTo(dd), admin: sentTo(demoAdmin) });
+    await fetch(BASE + "/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: demoAdmin }) });
+    await settle();
+    ok("§9c …but its login still gets a password reset", sentTo(demoAdmin) === 1, { n: sentTo(demoAdmin) });
   }
 
   sink.srv.close();
