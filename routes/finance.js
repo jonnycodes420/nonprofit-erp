@@ -1645,6 +1645,45 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   res.json({ ok: true, sentence: "Moved on your calendar. Anyone already invited was told by your calendar." });
 }));
 
+// ── CAL-1 · ONE CALENDAR FOR EVERYTHING ─────────────────────────────────────
+// GET /calendar/items?from&to&scope=mine|everyone&staff=<user>&types=a,b
+// Meetings, next steps and tasks, shifts, events, journey steps, sends,
+// pledge instalments and (when asked) birthdays, in the org's own time.
+// Read only; a move goes through the item's own route (shared/calendarMoves.js).
+const CAL = require("../calendar");
+app.get("/calendar/items", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const D = /^\d{4}-\d{2}-\d{2}$/;
+  const from = String(req.query.from || ""), to = String(req.query.to || "");
+  if (!D.test(from) || !D.test(to) || to < from) return res.status(400).json({ error: "bad_range", sentence: "Choose a start and an end date." });
+  if (orgTime.daysBetween(from, to) > 62) return res.status(400).json({ error: "too_long", sentence: "The calendar shows at most two months at a time." });
+  const tzRow = await orgTz(orgId);
+  const tz = tzRow.timezone || orgTime.DEFAULT_TZ;
+  const isAdmin = req.user.role === "admin";
+  const staff = isAdmin && req.query.staff ? String(req.query.staff) : null;
+  const types = req.query.types ? String(req.query.types).split(",") : CAL.DEFAULT_ON;
+  const items = await CAL.calendarItems(orgId, { from, to, tz, userId: req.user.userId, scope: req.query.scope === "mine" ? "mine" : "everyone", staff, types });
+  const staffList = isAdmin ? await query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY name`, [orgId]).catch(() => []) : [];
+  res.json({ items, today: orgToday(tzRow), timezone: tz, timezoneConfirmed: !!tzRow.timezone_confirmed_at, types: CAL.TYPES, defaultOn: CAL.DEFAULT_ON, staff: staffList });
+}));
+
+// An event's day and times, on their own: what a drag on the calendar
+// changes. The full edit (PUT /events/:id) replaces every column, which a
+// drag must never do; this one changes these three and nothing else.
+app.patch("/events/:id/schedule", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [e] = await query(`SELECT id, date::text AS date, start_time, end_time FROM events WHERE id = ? AND org_id = ?`, [req.params.id, orgId]);
+  if (!e) return res.status(404).json({ error: "Not found" });
+  const b = req.body || {};
+  const T = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ""))) return res.status(400).json({ error: "bad_date", sentence: "An event needs a date." });
+  const st = b.startTime === undefined ? e.start_time : (b.startTime || null), en = b.endTime === undefined ? e.end_time : (b.endTime || null);
+  if ((st && !T.test(st)) || (en && !T.test(en)) || (st && en && en <= st)) return res.status(400).json({ error: "bad_time", sentence: "An event ends after it starts, on the same day." });
+  req.audit = { ...(req.audit || {}), before: { date: String(e.date).slice(0, 10), startTime: e.start_time, endTime: e.end_time }, after: { date: b.date, startTime: st, endTime: en } };
+  await run(`UPDATE events SET date = ?, start_time = ?, end_time = ? WHERE id = ? AND org_id = ?`, [b.date, st, en, e.id, orgId]);
+  res.json({ ok: true, date: b.date, startTime: st, endTime: en });
+}));
+
 // THE FIRST SYNC, AND WHAT IS WORTH A LOOK. Three numbers from the sources
 // the drawer opens, and three kinds of prompt, each from rows that exist.
 app.get("/calendar/first-sync", requireAuth, wrap(async (req, res) => {
