@@ -3,12 +3,13 @@
 import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, featureCard , AgentCrew } from "../lib";
 import { FEAT, FEATURE_SLUGS, OPEN_API_HREF } from "../data/features";
 import { CONNECTIONS } from "../data/connections";
+import { PILLAR, FEATURE_PILLAR } from "../data/messaging";
 
 export function Platform() {
   return <>
-    <Hero eyebrow="The Steward Platform" crumbs={[["Platform"]]} h="One calm place for <b>the whole office.</b>"
+    <Hero eyebrow="The Steward Platform" pillar={PILLAR[3]} crumbs={[["Platform"]]} h="One calm place for <b>the whole office.</b>"
       lede="Donors, gifts, events, volunteers, email and month end, on one record that watches itself. Steward tells you who needs you each morning, and every number opens to the people behind it."
-      photo="team-pointing" proof={["Every feature on every plan", "Unlimited users", "Month to month"]} />
+      photo="team-pointing" proof={["Every feature on every plan", "Your whole team included", "Month to month"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">How it fits together</div>
       <h2 className="mix h-l" style={{ marginTop: 22 }}>Keep. Raise. <b>Run.</b></h2>
@@ -29,9 +30,9 @@ export function Platform() {
 
 export function Crm() {
   return <>
-    <Hero eyebrow="Steward CRM" crumbs={[["Platform", "/platform"], ["Steward CRM"]]} h="Keep more donors, <b>without more staff.</b>"
-      lede="A donor CRM built for a development team of one to five. It shows you who is drifting while a call still fixes it, keeps new donors close through their first year, and gives the board numbers that open to the people behind them."
-      photo="phone-laughing" proof={["Move in about a day", "No platform fee", "Unlimited users"]} />
+    <Hero eyebrow="Steward CRM" crumbs={[["Platform", "/platform"], ["Steward CRM"]]} h={PILLAR[1].h}
+      lede={PILLAR[1].p}
+      photo="phone-laughing" proof={["Move in about a day", "No platform fee", "Your whole team included"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="brass-tint" h="The donor record, finally complete." p="Gifts, pledges, recurring plans, soft credits, households, emails, events, volunteer hours and notes on one page. The right rail shows lifetime giving, the last gift and the next step at a glance."
         sh="Households and soft credits." sp="Couples give together and get thanked together. Donor-advised funds and peer-to-peer credit the person who made it happen."
@@ -44,15 +45,15 @@ export function Crm() {
         ui={<Ui t="Retention · this year" k="reports" tots={[["Donors last year", "2025", "1,184"], ["Gave again", "so far", "702"], ["Retention", "to date", "59.3%", 1], ["LYBUNT", "worth a call", "482"]]} />} />
     </div></section>
     <Cards eb="Everything in Steward CRM" h="Every feature, <b>every plan.</b>" list={["drift", "journeys", "major-gifts", "forms", "events", "p2p", "grants", "memberships", "reports", "receipts", "import", "audit"].map(featureCard)} />
-    <FaqS items={[["Is Steward CRM priced per user?", "No. Every plan includes unlimited users. Pricing is based on active donors, anyone with a gift or activity in the last 24 months."], ["Can we keep our current giving tools?", "Yes. Steward connects to the giving tools you already use. Our own giving pages are included if you want them."], ["How long does it take to move in?", "About a day of your time for most organizations. We do the move with you and every total is checked to the cent."]]} />
+    <FaqS items={[["Do we pay for each person on our team?", "No. Everyone on your team can sign in, at no extra cost."], ["Can we keep our current giving tools?", "Yes. Steward connects to the giving tools you already use. Our own giving pages are included if you want them."], ["How long does it take to move in?", "About a day of your time for most organizations. We do the move with you and every total is checked to the cent."]]} />
     <FinalCta />
   </>;
 }
 
 export function Volunteer() {
   return <>
-    <Hero eyebrow="Steward Volunteer" crumbs={[["Platform", "/platform"], ["Steward Volunteer"]]} h="Count every hour, <b>thank every helper.</b>"
-      lede="Recruit, schedule and thank volunteers on the same record as giving. See which volunteers also give and which donors also serve, and hand your grant reports real hours instead of guesses."
+    <Hero eyebrow="Steward Volunteer" crumbs={[["Platform", "/platform"], ["Steward Volunteer"]]} h={PILLAR[3].h}
+      lede="Right now your people are scattered: donors in a spreadsheet, volunteers in another app, gala guests on a clipboard. But they're not separate people. Steward keeps one story per person, every gift, every hour, every conversation, so a volunteer who gives and a donor who serves are thanked for both."
       photo="aprons-produce" proof={["Kiosk and phone check-in", "Waivers on file", "Included on every plan"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="emerald-tint" h="Shifts that fill themselves." p="Post shifts with roles and capacity, open a waitlist when a shift fills, and let groups sign up together. Volunteers pick their own shifts from a simple page."
@@ -71,8 +72,8 @@ export function Volunteer() {
 
 export function Agent() {
   return <>
-    <Hero eyebrow="Steward Agent" crumbs={[["Platform", "/platform"], ["Steward Agent"]]} h="Say what you need. <b>Approve the plan.</b>"
-      lede="Tell it what happened and it does the work: updates the record, logs the call, signs up the volunteer, starts the journey. It shows you the plan first and checks every step after. It never sends to a donor and never records money on its own."
+    <Hero eyebrow="Steward Agent" crumbs={[["Platform", "/platform"], ["Steward Agent"]]} h={PILLAR[2].h}
+      lede="Every nonprofit leader has the same nightmare: software that says the wrong thing to the right donor. So we built the opposite. Steward remembers everything and assumes nothing. Tell it what happened and it shows you the plan, and it never sends, publishes or acts without your yes."
       photo="laptop-coffee" proof={["Plan first, then approve", "Every action can be undone", "Never sends on its own"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="brass-tint" h="A plan you can read before anything happens." p={"Type \"Ada just became a volunteer and wants to do 15 hours a week\" and the Agent shows one short plan. Say yes and Ada is on the Volunteers page with 15 hours a week, on the record she already had. Each step says Done only once Steward has looked and found it there."}
@@ -89,8 +90,8 @@ export function Agent() {
 
 export function Connections() {
   return <>
-    <Hero eyebrow="Connections" crumbs={[["Platform", "/platform"], ["Connections"]]} h="Keep your tools. <b>Steward watches them.</b>"
-      lede="Gifts flow in from the giving tools you already use. Steward checks every payout against its gifts and tells you the day a connection goes quiet, before a month of gifts goes missing."
+    <Hero eyebrow="Connections" crumbs={[["Platform", "/platform"], ["Connections"]]} h={PILLAR[5].h}
+      lede={PILLAR[5].p}
       photo="desk-notes" />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="cream" h="A quiet connection is a warning." p="If a tool that usually sends four gifts a week sends none for twelve days, Steward flags it on Home. Most lost gifts are a broken connection nobody noticed."
@@ -114,7 +115,7 @@ export function Connections() {
 
 export function Onboarding() {
   return <>
-    <Hero eyebrow="Onboarding and support" crumbs={[["Platform", "/platform"], ["Onboarding and support"]]} h="Your move, <b>done with you.</b>"
+    <Hero eyebrow="Onboarding and support" pillar={PILLAR[6]} crumbs={[["Platform", "/platform"], ["Onboarding and support"]]} h="Your move, <b>done with you.</b>"
       lede="Every new organization gets a real person for the move, the setup and the first month. You will know their name and their email address."
       photo="trainer-laptop" />
     <Steps eb="Your first 30 days" h="Four steps <b>to settled.</b>" list={[["Kickoff call", "Twenty minutes. We look at where your donors live today and what you need first."], ["The move", "You export, we map it with you, and the Move Report checks every total to the cent."], ["Connect your tools", "Stripe, Mailchimp, your inbox and the rest, connected together on a call."], ["First month check-in", "We review drift, journeys and your first month-end file together."]]} />
@@ -125,7 +126,7 @@ export function Onboarding() {
 
 export function Features() {
   return <>
-    <Hero eyebrow="Features" crumbs={[["Features"]]} h="Everything included, <b>nothing to unlock.</b>" lede="Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." />
+    <Hero eyebrow="Features" pillar={PILLAR[3]} crumbs={[["Features"]]} h="Everything included, <b>nothing to unlock.</b>" lede="Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." />
     <Cards list={FEATURE_SLUGS.map(featureCard).concat([["/volunteer", "Steward Volunteer", "Shifts, hours, waivers and kiosk.", "hand"], ["/agent", "Steward Agent", "Tell it what happened. It does the work, after your yes.", "spark"], [OPEN_API_HREF, "Open API", "Scoped keys and webhooks.", "code"]])} />
     <FinalCta />
   </>;
@@ -135,7 +136,7 @@ export function Features() {
 export function Feature({ slug }) {
   const f = FEAT[slug];
   return <>
-    <Hero eyebrow={f.name} crumbs={[["Features", "/features"], [f.name]]} h={f.h} lede={f.lede} photo={f.photo} />
+    <Hero eyebrow={f.name} pillar={PILLAR[FEATURE_PILLAR[slug] || 1]} crumbs={[["Features", "/features"], [f.name]]} h={f.h} lede={f.lede} photo={f.photo} />
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="problem"><span className="eyebrow">The problem</span><p>{f.problem}</p></div></div></section>
     <Steps eb="How it works" h="Three steps, <b>no manual.</b>" list={f.steps} />
     <section style={{ paddingTop: 0 }}><div className="wrap">

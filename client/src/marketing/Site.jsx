@@ -106,7 +106,7 @@ function MegaResources() {
       <div className="col rule">
         <h5>Free tools</h5>
         <div className="feat2">
-          <Mi href="/tools/lost-and-found" icon="search" b="Lost & Found donor audit" span="See who you're about to lose. Runs in your browser." style={tool} />
+          <Mi href="/tools/lost-and-found" icon="search" b="Lost & Found donor audit" span="The people who stood with you last year. Runs in your browser." style={tool} />
           <Mi href="/tools/retention" icon="calc" b="Keep Rate calculator" span="Your retention rate, and what a few points are worth." style={tool} />
           <Mi href="/tools/lapsed-cost" icon="trend" b="Lapse Ledger" span="What last year's lapsed donors used to give." style={tool} />
           <Mi href="/tools/thermometer" icon="therm" b="Goal Gauge" span="A campaign goal bar for your website." style={tool} />

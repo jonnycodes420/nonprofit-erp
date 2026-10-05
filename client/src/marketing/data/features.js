@@ -104,5 +104,5 @@ export const FEATURE_EXTRAS = [
   { n: "Connections", s: "Keep your giving tools. Steward watches every one.", i: "link", h: "/connections", c: "run raise" },
   { n: "Open API", s: "Scoped keys and webhooks for your own tools.", i: "code", h: OPEN_API_HREF, c: "run" },
   { n: "Moving to Steward", s: "About a day of your time, matched to the cent.", i: "import", h: "/move", c: "run" },
-  { n: "Lost & Found audit", s: "A free look at who you are about to lose.", i: "drift", h: "/tools/lost-and-found", c: "focus keep" },
+  { n: "Lost & Found audit", s: "A free look at the people who stood with you last year.", i: "drift", h: "/tools/lost-and-found", c: "focus keep" },
 ];

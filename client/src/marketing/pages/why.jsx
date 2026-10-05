@@ -2,11 +2,12 @@
 // retention, moving, who it's for, security, about, leadership, partners,
 // contact, and Book a call.
 import { useState } from "react";
-import { Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Photo, Tick, Icon, A, Prose } from "../lib";
+import { rich, Hero, Crumbs, Block, Ui, Cards, FaqS, Incl, Steps, FinalCta, Related, StatBand, QuoteBand, People, Portrait, Pill, Photo, Tick, Icon, A, Prose } from "../lib";
 import { AUD, AUDIENCE_SLUGS } from "../data/audiences";
 import { SRC, SRC_ALL } from "../data/research";
 // Contact keeps the founder's real portrait: never a stock photograph of a person.
 import { TEAM } from "../data/team";
+import { PILLAR, FEELING, VISION } from "../data/messaging";
 import { API } from "../../api";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_ADDRESS, LEGAL_ENTITY_STATE } from "../../../../shared/legalEntity.js";
 
@@ -14,8 +15,8 @@ const PLACE = LEGAL_ENTITY_ADDRESS.city + ", " + LEGAL_ENTITY_STATE;
 
 export function Why() {
   return <>
-    <Hero eyebrow="Why Steward" crumbs={[["Why Steward"]]} h="The money is in <b>the donors you keep.</b>"
-      lede="Fewer people give each year, and most first-time donors never give twice. Steward exists to close that gap for organizations that cannot hire a data team to do it."
+    <Hero eyebrow="Why Steward" crumbs={[["Why Steward"]]} h="Imagine never losing track of <b>a single person who believes in what you do.</b>"
+      lede={VISION}
       photo="open-house-hug" />
     <StatBand />
     <QuoteBand />
@@ -53,7 +54,7 @@ function PeopleLeave() {
 
 export function Move() {
   return <>
-    <Hero eyebrow="Moving to Steward" crumbs={[["Why Steward"], ["Moving to Steward"]]} h="Move in <b>about a day.</b>"
+    <Hero eyebrow="Moving to Steward" pillar={PILLAR[5]} crumbs={[["Why Steward"], ["Moving to Steward"]]} h="Move in <b>about a day.</b>"
       lede="Tell us where your donors live today, drop in the export, and check the Move Report. Every count and every dollar is checked against what came out, to the cent, and your old system keeps running until you say you have moved."
       photo="desk-notes" proof={["Checked to the cent", "Run both side by side", "Nothing is sent to a donor"]} />
     <Steps eb="How the move works" h="Three steps, <b>one afternoon.</b>" list={[["Tell us where you are", "Choose your current system or a spreadsheet. Steward knows the export format for common donor systems and maps the fields for you."], ["Drop in the export", "Donors, households, gifts, recurring plans and notes come across together. Possible duplicates are flagged for you to review."], ["Check the Move Report", "Every count and every dollar from your file, side by side with what landed in Steward. If anything is off you see it before you rely on it."]]} />
@@ -70,7 +71,7 @@ export function Move() {
 
 export function MoveSpreadsheet() {
   return <>
-    <Hero eyebrow="Moving from a spreadsheet" crumbs={[["Moving to Steward", "/move"], ["From a spreadsheet"]]} h="Moving from a spreadsheet, <b>column by column.</b>"
+    <Hero eyebrow="Moving from a spreadsheet" pillar={PILLAR[5]} crumbs={[["Moving to Steward", "/move"], ["From a spreadsheet"]]} h="Moving from a spreadsheet, <b>column by column.</b>"
       lede="Most small shops start in Excel or Google Sheets. Save your sheet as a CSV or Excel file, and Steward reads your columns, asks about the ones it is not sure of, and checks the totals against your sheet before you rely on them." photo="high-five-laptop" />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="callout">
@@ -107,7 +108,7 @@ export function MoveSpreadsheet() {
 
 export function MoveCrm() {
   return <>
-    <Hero eyebrow="Moving from your old donor system" crumbs={[["Moving to Steward", "/move"], ["From your old donor system"]]} h="Moving from your old <b>donor system.</b>"
+    <Hero eyebrow="Moving from your old donor system" pillar={PILLAR[5]} crumbs={[["Moving to Steward", "/move"], ["From your old donor system"]]} h="Moving from your old <b>donor system.</b>"
       lede="Almost every donor system can export two files: your contacts and your gifts. Bring both, and the Move Report checks every count and every dollar against them before you rely on anything." photo="leaning-back" />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">The two exports</div>
@@ -147,7 +148,7 @@ export function MoveCrm() {
 // organization's own credentials, entered in Settings, under Connections.
 export function MoveGivingPlatform() {
   return <>
-    <Hero eyebrow="Starting from your giving platform" crumbs={[["Moving to Steward", "/move"], ["From your giving platform"]]} h="Starting from your <b>giving platform.</b>"
+    <Hero eyebrow="Starting from your giving platform" pillar={PILLAR[5]} crumbs={[["Moving to Steward", "/move"], ["From your giving platform"]]} h="Starting from your <b>giving platform.</b>"
       lede="If your donor list lives in the tool that takes your gifts, start there. Connect it in Settings with your organization's own key, and Steward reads your past gifts in and keeps reading new ones. It never moves a dollar." photo="desk-notes" />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">What Steward reads today</div>
@@ -182,7 +183,7 @@ export function MoveGivingPlatform() {
 
 export function For() {
   return <>
-    <Hero eyebrow="Who it's for" crumbs={[["Who it's for"]]} h="Built for the organizations <b>doing the work.</b>"
+    <Hero eyebrow="Who it's for" pillar={PILLAR[3]} crumbs={[["Who it's for"]]} h="Built for the organizations <b>doing the work.</b>"
       lede="Steward is made for nonprofits with a development team of one to five, a few hundred to ten thousand active donors and no time to babysit software." photo="steps-group" />
     <Cards list={AUDIENCE_SLUGS.map(k => ["/for/" + k, AUD[k].n, AUD[k].l.split(".")[0] + ".", "people"])} />
     <FinalCta />
@@ -192,7 +193,7 @@ export function For() {
 export function Audience({ slug }) {
   const a = AUD[slug];
   return <>
-    <Hero eyebrow={a.eb} crumbs={[["Who it's for", "/for"], [a.n]]} h={a.h} lede={a.l} photo={a.p} />
+    <Hero eyebrow={a.eb} pillar={PILLAR[1]} crumbs={[["Who it's for", "/for"], [a.n]]} h={a.h} lede={a.l} photo={a.p} />
     <StatBand n={3} />
     <Incl h="Built for <b>how you work.</b>" list={a.pts} eb={"For " + a.n.toLowerCase()} />
     <Related slugs={["drift", "events", "journeys"]} />
@@ -204,7 +205,7 @@ const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS
 
 export function Security() {
   return <>
-    <Hero eyebrow="Security and trust" crumbs={[["Why Steward"], ["Security and trust"]]} h="Built like it's holding <b>someone else's money.</b>"
+    <Hero eyebrow="Security and trust" pillar={PILLAR[2]} crumbs={[["Why Steward"], ["Security and trust"]]} h="Built like it's holding <b>someone else's money.</b>"
       lede="Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so." />
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
       {SECURE.map(c => <div className="card" key={c[0]}><span className="ci"><Icon k="audit" size={26} /></span><h4>{c[0]}</h4><p>{c[1]}</p></div>)}
@@ -221,15 +222,15 @@ export function About() {
     <section className="hero phero"><div className="wrap hero-g solo">
       <div>
         <div className="eyebrow">About Steward</div>
-        <h1 className="mix h-xl">Small shops deserve <b>great software.</b></h1>
-        <p className="lede">Most nonprofits are run by a handful of people doing the work of twenty. Steward exists so the few people raising the money can spend their time on donors, not on software.</p>
+        <h1 className="mix h-xl">{rich(PILLAR[6].h)}</h1>
+        <p className="lede">{PILLAR[6].p}</p>
         <div className="ctas"><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
       </div>
     </div></section>
 
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="mission">
       <span className="eyebrow">Our mission</span>
-      <p>Help every nonprofit keep the donors it already has, and raise more from the people who already believe in it.</p>
+      <p>{VISION}</p>
     </div></div></section>
 
     <section><div className="wrap about-g">
@@ -281,7 +282,7 @@ export function About() {
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What you can <b>hold us to.</b></h2>
       <div className="incl">
         {["A real person answers your email", "Your move done with you, checked to the cent", "Thirty days free, then month to month",
-          "Unlimited users on every plan", "Every feature on every plan", "No platform fee on any gift",
+          "Your whole team on every plan", "Every feature on every plan", "No platform fee on any gift",
           "Export everything, any time", "Plain warning before any price change", "We never sell or share donor data"]
           .map(x => <span key={x}><Tick />{x}</span>)}
       </div>
@@ -306,7 +307,7 @@ export function Leadership() {
   return <>
     <Crumbs list={[["Company", "/about"], ["Leadership"]]} />
     <section className="hero phero" style={{ paddingBottom: 30 }}><div className="wrap">
-      <div className="eyebrow">Leadership</div>
+      <div className="eyebrow" data-pillar-line="6">{PILLAR[6].t}</div>
       <h1 className="mix h-xl">The people <b>behind Steward.</b></h1>
       <p className="lede" style={{ marginTop: 22 }}>A founder who answers his own email, and advisors who have spent their careers in nonprofit development, the arts and philanthropy.</p>
     </div></section>
@@ -323,7 +324,7 @@ export function Leadership() {
 
 export function Partners() {
   return <>
-    <Hero eyebrow="Partners and consultants" crumbs={[["Company"], ["Partners"]]} h="Bring Steward to <b>the nonprofits you advise.</b>"
+    <Hero eyebrow="Partners and consultants" pillar={PILLAR[6]} crumbs={[["Company"], ["Partners"]]} h="Bring Steward to <b>the nonprofits you advise.</b>"
       lede="Fundraising consultants, coaches and agencies refer and set up Steward for their clients. Partners earn a share of revenue and get a direct line to the founder."
       photo="handshake" />
     <Steps eb="How partnership works" h="Simple and <b>fair.</b>" list={[["Introduce", "Send us a nonprofit that would be better off with Steward."], ["Close together", "We demo with you on the call, or you run it yourself."], ["Earn", "A share of revenue on every organization you bring, paid monthly."]]} />
@@ -336,7 +337,7 @@ export function Contact() {
     <Crumbs list={[["Company"], ["Contact"]]} />
     <section className="hero phero"><div className="wrap hero-g">
       <div>
-        <div className="eyebrow">Contact</div>
+        <div className="eyebrow" data-pillar-line="6">{PILLAR[6].t}</div>
         <h1 className="mix h-xl">Talk to <b>a person.</b></h1>
         <p className="lede">Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder.</p>
         <div className="ctas"><Pill href="mailto:jonathan@stewardapp.dev">Email jonathan@stewardapp.dev</Pill><Pill kind="soft" href="/demo">Book a call</Pill></div>
@@ -385,8 +386,8 @@ export function Demo() {
     <section className="hero phero"><div className="wrap hero-g">
       <div>
         <div className="eyebrow">Book a call</div>
-        <h1 className="mix h-xl">Twenty minutes, <b>your own file.</b></h1>
-        <p className="lede">Bring a giving export. We will show you your own drifting donors in Steward, answer every question and tell you exactly what a move looks like.</p>
+        <h1 className="mix h-xl">Bring one question you can't answer about your donors. <b>We'll answer it with your own file.</b></h1>
+        <p className="lede">Twenty minutes with the person who built Steward. Bring a giving export and the question, and we'll answer it in Steward with your own donors. We'll keep it to twenty minutes.</p>
         {state === "sent" ? (
           <div className="form" data-demo-sent><p className="lede">Thank you. Jonathan will email you within one business day to pick a time.</p></div>
         ) : (

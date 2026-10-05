@@ -7,6 +7,7 @@ import { useLocation } from "react-router-dom";
 import Papa from "papaparse";
 import { Hero, Cards, Steps, FaqS, FinalCta, StatBand, Pill, A } from "../lib";
 import { SRC, SRC_ALL } from "../data/research";
+import { PILLAR, GIFT_TERMS } from "../data/messaging";
 import PRICING from "../../../../pricing.json";
 import { RETENTION_GAP } from "../../../../shared/sources.js";
 import { SkeletonCards } from "../../components/Skeleton";
@@ -35,9 +36,9 @@ function GlossLine({ list }) {
 // browser; nothing on these pages sends anything anywhere.
 export function Tools() {
   return <>
-    <Hero eyebrow="Free tools" crumbs={[["Resources", "/resources"], ["Free tools"]]} h="Free tools, <b>no signup.</b>" lede="Run them on your own numbers. Nothing you type leaves your browser." noCta />
+    <Hero eyebrow="Free tools" pillar={PILLAR[1]} crumbs={[["Resources", "/resources"], ["Free tools"]]} h="Free tools, <b>no signup.</b>" lede="Run them on your own numbers. Nothing you type leaves your browser." noCta />
     <Cards list={[
-      ["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"],
+      ["/tools/lost-and-found", "Lost & Found donor audit", "The people who stood with you last year, from your own giving export.", "drift"],
       ["/tools/lybunt-sybunt", "LYBUNT and SYBUNT finder", "Drop in a CSV of gifts and get both lists, ready to download.", "search"],
       ["/tools/thank-you-letter", "Thank-you letter builder", "A warm, short letter for the gift in front of you, ready to copy.", "heart"],
       ["/tools/retention", "Keep Rate calculator", "Your retention rate, and what a few points are worth.", "reports"],
@@ -50,8 +51,8 @@ export function Tools() {
 
 export function ToolLostAndFound() {
   return <>
-    <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
-      lede="Drop in a giving export and see your lapsing donors and what they used to give, free and with no signup."
+    <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} pillar={PILLAR[1]} h="The people who <b>stood with you last year.</b>"
+      lede={"Let's make sure none of them slip away unnoticed. " + GIFT_TERMS + " Drop in a giving export and see who gave before and hasn't lately, free and with no signup."}
       noCta>
       <React.Suspense fallback={<div className="lf-loading" style={{ minHeight: 220 }}><SkeletonCards count={3} label="Loading the audit" /></div>}>
         <div data-lf-audit><LostAndFoundAudit compact /></div>
@@ -135,7 +136,7 @@ export function ToolRetention() {
   const pct = k => { const n = Number(q.get(k)); return Number.isFinite(n) && n > 0 && n <= 100 ? n : null; };
   const hi = pct("with"), lo = pct("without");
   return <>
-    <Hero eyebrow="Keep Rate calculator" crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again, and see your rate beside the national figure and what a five-point lift would be worth." noCta>
+    <Hero eyebrow="Keep Rate calculator" pillar={PILLAR[4]} crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again, and see your rate beside the national figure and what a five-point lift would be worth." noCta>
       <div className="tool tool-hero">
         <div className="form">
           <label>Donors last year<input type="number" min="1" value={v.a} onChange={on("a")} /></label>
@@ -172,7 +173,7 @@ export function ToolLapsed() {
   const [v, on] = useFields({ a: "580", b: "180", c: "15" });
   const m = lapsedMath(num(v.a), num(v.b), num(v.c));
   return <>
-    <Hero eyebrow="Lapse Ledger" crumbs={[["Free tools", "/tools"], ["Lapse Ledger"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta>
+    <Hero eyebrow="Lapse Ledger" pillar={PILLAR[1]} crumbs={[["Free tools", "/tools"], ["Lapse Ledger"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta>
       <div className="tool tool-hero">
         <div className="form">
           <label>Donors who did not give again<input type="number" min="0" value={v.a} onChange={on("a")} /></label>
@@ -204,7 +205,7 @@ export function ToolThermometer() {
   const [v, on] = useFields({ n: "Spring appeal", g: "50000", r: "31250" });
   const m = thermometerMath(num(v.g), num(v.r));
   return <>
-    <Hero eyebrow="Goal Gauge" crumbs={[["Free tools", "/tools"], ["Goal Gauge"]]} h="A goal bar <b>people want to fill.</b>" lede="Type your goal and what you have raised so far, and see how full the bar is." noCta>
+    <Hero eyebrow="Goal Gauge" pillar={PILLAR[4]} crumbs={[["Free tools", "/tools"], ["Goal Gauge"]]} h="A goal bar <b>people want to fill.</b>" lede="Type your goal and what you have raised so far, and see how full the bar is." noCta>
       <div className="tool tool-hero">
         <div className="form">
           <label>Campaign name<input value={v.n} onChange={on("n")} /></label>
@@ -485,7 +486,7 @@ function LybuntFinder() {
 
 export function ToolLybuntFinder() {
   return <>
-    <Hero eyebrow="LYBUNT and SYBUNT finder · free tool" crumbs={[["Free tools", "/tools"], ["LYBUNT and SYBUNT finder"]]} h="Find your <b>LYBUNT and SYBUNT donors.</b>"
+    <Hero eyebrow="LYBUNT and SYBUNT finder · free tool" pillar={PILLAR[1]} crumbs={[["Free tools", "/tools"], ["LYBUNT and SYBUNT finder"]]} h="Find your <b>LYBUNT and SYBUNT donors.</b>"
       lede="Drop in a CSV of gifts and see who gave last year but not this year, and who gave before that but not since, without the file leaving your browser." noCta>
       <LybuntFinder />
     </Hero>
@@ -599,7 +600,7 @@ function LetterBuilder() {
 
 export function ToolThankYouLetter() {
   return <>
-    <Hero eyebrow="Thank-you letter builder · free tool" crumbs={[["Free tools", "/tools"], ["Thank-you letter builder"]]} h="A thank-you letter <b>in a minute.</b>"
+    <Hero eyebrow="Thank-you letter builder · free tool" pillar={PILLAR[2]} crumbs={[["Free tools", "/tools"], ["Thank-you letter builder"]]} h="A thank-you letter <b>in a minute.</b>"
       lede="Pick the kind of gift, fill in a few details, and copy a short, warm thank-you letter you can sign as your own." noCta>
       <LetterBuilder />
     </Hero>

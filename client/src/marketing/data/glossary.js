@@ -761,7 +761,7 @@ export const GLOSSARY = [
   {
     slug: "attrition",
     term: "Attrition",
-    aka: "Donor attrition, donor churn",
+    aka: "Donor attrition",
     def: "Attrition is the loss of donors from one year to the next. The attrition rate is the share of last year's donors who did not give again this year, the opposite of the retention rate.",
     why: [
       "Attrition is the quiet leak in every fundraising program. Each donor who drops away has to be replaced just to stand still, and new donors usually cost more to find than existing ones cost to keep.",

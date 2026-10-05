@@ -22,7 +22,7 @@
     "Online giving on your own Stripe. No platform fee, no donor tip prompt",
     "Receipts, year-end statements and board-ready reports",
     "Grants, major gifts, memberships, campaigns and goals",
-    "Unlimited users",
+    "Your whole team, no seat fees",
     "Import from a spreadsheet, and export everything whenever you want it"
   ],
   "includedHeading": "Everything is included, on every plan",
@@ -32,7 +32,7 @@
     { "name": "Volunteers", "copy": "People, shifts and hours, on the same record as their giving." },
     { "name": "The Agent", "copy": "Drafts thank-yous and briefs in your voice. You approve every one." }
   ],
-  "extras": ["Unlimited users", "No platform fee on gifts", "Month to month", "Export everything, any time"],
-  "termsStrip": ["Everything included", "Unlimited users", "No platform fee", "Month to month"],
+  "extras": ["Your whole team, no seat fees", "No platform fee on gifts", "Month to month", "Export everything, any time"],
+  "termsStrip": ["Everything included", "Your whole team, no seat fees", "No platform fee", "Month to month"],
   "billingIntervals": ["monthly", "yearly"]
 }

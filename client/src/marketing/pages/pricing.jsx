@@ -141,7 +141,7 @@ export function Pricing() {
           <tr><th>Active donors</th>{TIERS.map(t => <td key={t.id}>{t.maxDonors.toLocaleString("en-US")}</td>)}<td>Over {TALK.band.match(/[\d,]+/)[0]}</td></tr>
           <tr><th>Monthly</th>{TIERS.map(t => <td key={t.id}>{money(t.monthlyUsd)}</td>)}<td>Let's talk</td></tr>
           <tr><th>Yearly (2 months free)</th>{TIERS.map(t => <td key={t.id}>{money(t.yearlyUsd)}</td>)}<td>Let's talk</td></tr>
-          {[["Users", "Unlimited"], ["Steward Volunteer", "Included"], ["Steward Agent", "Included"],
+          {[["People on your team", "No limit"], ["Steward Volunteer", "Included"], ["Steward Agent", "Included"],
             ["Platform fee on gifts", "None"], ["Move done with you", "Yes"]].map(r => (
             <tr key={r[0]}><th>{r[0]}</th>{TIERS.map(t => <td key={t.id}>{r[1]}</td>)}<td>{r[1]}</td></tr>
           ))}
