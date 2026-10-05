@@ -51,6 +51,8 @@ async function wipe(org) {
 async function seedOrg(org, slug, acct) {
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,receipts_enabled)
            VALUES ($1,$2,$3,1,'active','growth',$4,false)`, [org, "CE2E " + slug, slug, acct]);
+  // MAIL-1: an org that has onboarded (its donor file is in), so its digest may send.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [org]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Admin','admin')`,
     [`u_${org}`, org, `${slug}@ce2e.local`, bcrypt.hashSync("loadtest1234", 10)]);
   await q(`INSERT INTO accounts (id,org_id,code,name,type,active) VALUES ($1,$2,'4010','Contributions','revenue',true)`, [`acc_${org}`, org]);
