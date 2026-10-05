@@ -122,13 +122,13 @@ function MegaResources() {
 }
 
 // LANDING-3 · our own words, not the ones every other donor CRM uses.
-// Product, Why switch, Pricing,
+// Solutions, Why switch, Pricing,
 // Leadership, Learn. Only the top-level words changed: every menu holds
 // exactly what it held before.
-const MEGAS = [["plat", "Product", MegaPlatform], ["why", "Why switch", MegaWhy], ["res", "Learn", MegaResources]];
+const MEGAS = [["plat", "Solutions", MegaPlatform], ["why", "Why switch", MegaWhy], ["res", "Learn", MegaResources]];
 
 const DRAWER = [
-  ["Product", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/onboarding", "Onboarding and support"], ["/features", "All features"]]],
+  ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/onboarding", "Onboarding and support"], ["/features", "All features"]]],
   ["Why switch", [["/why", "The case for retention"], ["/move", "Moving to Steward"], ["/for", "Who it's for"], ["/security", "Security and trust"], ["/about", "About"], ["/leadership", "Leadership"], ["/partners", "Partners"]]],
   ["Learn", [["/guides", "Guides"], ["/templates", "Templates"], ["/articles", "Articles"], ["/glossary", "Glossary"], ["/research", "Research"], ["/tools", "Free tools"], ["/faq", "FAQ"], ["/help", "Help centre"]]],
 ];
@@ -191,7 +191,7 @@ function Header() {
 }
 
 const FOOTER = [
-  ["Product", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
+  ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
   ["Learn", [["/why", "The case for retention"], ["/articles", "Articles"], ["/guides", "Guides"], ["/templates", "Templates"], ["/research", "Research"], ["/tools", "Free tools"], ["/partners", "Partners"], ["/faq", "FAQ"]]],
   ["Customer resources", [["/login", "Log in"], ["/help", "Help centre"], [OPEN_API_HREF, "API documentation"], ["/whats-new", "What's new"], ["/move", "Moving to Steward"]]],
   ["Company", [["/about", "About us"], ["/leadership", "Leadership"], ["/security", "Security and trust"], ["/for", "Who it's for"], ["/partners", "Partner with us"], ["/contact", "Contact"]]],

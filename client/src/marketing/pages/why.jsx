@@ -7,7 +7,7 @@ import { AUD, AUDIENCE_SLUGS } from "../data/audiences";
 import { SRC, SRC_ALL } from "../data/research";
 // Contact keeps the founder's real portrait: never a stock photograph of a person.
 import { TEAM } from "../data/team";
-import { PILLAR, FEELING, VISION } from "../data/messaging";
+import { PILLAR, FEELING, VISION, VISION_ABOUT } from "../data/messaging";
 import { API } from "../../api";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_ADDRESS, LEGAL_ENTITY_STATE } from "../../../../shared/legalEntity.js";
 
@@ -223,14 +223,14 @@ export function About() {
       <div>
         <div className="eyebrow">About Steward</div>
         <h1 className="mix h-xl">{rich(PILLAR[6].h)}</h1>
-        <p className="lede">{PILLAR[6].p}</p>
+        <p className="lede">{VISION_ABOUT}</p>
         <div className="ctas"><Pill href="/demo">Book a call</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
       </div>
     </div></section>
 
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="mission">
-      <span className="eyebrow">Our mission</span>
-      <p>{VISION}</p>
+      <span className="eyebrow">How we work with you</span>
+      <p>{PILLAR[6].p}</p>
     </div></div></section>
 
     <section><div className="wrap about-g">

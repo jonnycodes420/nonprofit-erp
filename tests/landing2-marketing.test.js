@@ -430,16 +430,14 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     ok("the signup page's link to a call says Book a 20-minute call", /data-testid="signup-book"[^>]*>Book a 20-minute call</.test(reach["client/src/pages/SignupPage.jsx"]));
     const PRICING = JSON.parse(reach["pricing.json"]);
     const pricing = SRC_TEXT["client/src/marketing/pages/pricing.jsx"];
-    ok("the Forest card's button says Book a call and opens /demo",
-      PRICING.talkToUs.name === "Forest" && PRICING.talkToUs.cta === "Book a call" && /<Pill kind="soft" href="\/demo">\{TALK\.cta\}<\/Pill>/.test(pricing));
-
-    // Every plan's Start link carries plan= (and the interval) into /signup,
-    // and /signup preselects both.
-    const fn = (pricing.match(/export const signupHref = (\([^)]*\) => [^;]+);/) || [])[1];
-    const signupHref = fn ? vm.runInNewContext(fn) : null;
-    const hrefs = signupHref ? PRICING.tiers.flatMap(t => [[t.id, false, signupHref(t.id, false)], [t.id, true, signupHref(t.id, true)]]) : [];
-    ok("each tier's Start link carries its own plan=, monthly and yearly (" + hrefs.length + ")",
-      hrefs.length === 6 && hrefs.every(([id, y, h]) => h === "/signup?plan=" + id + (y ? "&interval=yearly" : "")) && /href=\{signupHref\(t\.id, yearly\)\}/.test(pricing), hrefs);
+    // LANDING-5 · no tiers on the marketing site: one price block, whose one
+    // button says Book a call and opens /demo.
+    const lib = SRC_TEXT["client/src/marketing/lib.jsx"];
+    const block = lib.slice(lib.indexOf("export function PriceBlock"), lib.indexOf("export function Steps"));
+    ok("LANDING-5 · the price block's one button says Book a call and opens /demo",
+      (block.match(/<Pill\b/g) || []).length === 1 && /<Pill href="\/demo">Book a call<\/Pill>/.test(block));
+    ok("LANDING-5 · /pricing renders the price block and no tier card or compare table",
+      /<PriceBlock h1 \/>/.test(pricing) && !/PRICING\.tiers|PRICING\.talkToUs|<table/.test(pricing));
     const sp = reach["client/src/pages/SignupPage.jsx"];
     const bandFor = n => PRICING.tiers.find(t => n <= t.maxDonors) || null;
     ok("/signup preselects the tier from plan= and the interval from interval=",
@@ -578,19 +576,53 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
       const PRICING_TIERS = JSON.parse(fs.readFileSync(path.join(ROOT, "pricing.json"), "utf8")).tiers;
       const prices = [...PRICING_TIERS.flatMap(t => [t.monthlyUsd, t.yearlyUsd])].map(n => "$" + n.toLocaleString("en-US"));
       const priceRe = new RegExp("(" + prices.map(p => p.replace(/[$,]/g, m => "\\" + m)).join("|") + ")(?![\\d,])");
-      const hit = { dash: [], avoid: [], users: [], price: [] };
+      const hit = { dash: [], avoid: [], users: [], price: [], blocks: [], tier: [] };
+      const TIER_NAMES = /\b(Seed|Sapling|Orchard|Forest)\b/;
       for (const r of ROUTES) {
         const page = seo.assemblePage(base, r, render(r.path), extraFor(r));
         const words = text(page.slice(page.indexOf('<div id="root">'))) + " " + r.title + " " + r.description;
         if (/—/.test(words)) hit.dash.push(r.path);
         for (const re of AVOID) { const m = words.match(re); if (m) hit.avoid.push(r.path + " " + m[0]); }
         if (!TECHNICAL.test(r.path)) { const m = words.match(/\busers?\b/i); if (m) hit.users.push(r.path); }
-        if (r.path !== "/pricing") { const m = words.match(priceRe); if (m) hit.price.push(r.path + " " + m[0]); }
+        // LANDING-5 · the starting price may appear only inside the one price
+        // block (Home and /pricing); everywhere else, no plan price at all.
+        const html = page.slice(page.indexOf('<div id="root">'));
+        const outside = text(html.replace(/<section class="price-block"[\s\S]*?<\/section>/g, " ")) + " " + r.title + " " + r.description;
+        { const m = outside.match(priceRe); if (m) hit.price.push(r.path + " " + m[0]); }
+        if (/class="price-block"/.test(html)) hit.blocks.push(r.path);
+        { const m = words.match(TIER_NAMES); if (m) hit.tier.push(r.path + " " + m[0]); }
       }
       ok("LANDING-4 · no em dash on any rendered marketing page or help article", hit.dash.length === 0, hit.dash);
       ok("LANDING-4 · no word MESSAGING.md says to avoid, on any marketing page or help article", hit.avoid.length === 0, hit.avoid);
       ok("LANDING-4 · \"users\" only on the technical pages (security, legal, data)", hit.users.length === 0, hit.users);
-      ok("LANDING-4 · no plan price outside the pricing page (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
+      ok("LANDING-5 · no plan price outside the one price block (" + prices.join(" ") + ")", prices.length >= 6 && hit.price.length === 0, hit.price);
+      ok("LANDING-5 · the price block is on Home and /pricing, and nowhere else", hit.blocks.join(" ") === "/ /pricing", hit.blocks);
+      ok("LANDING-5 · the tier names Seed, Sapling, Orchard and Forest appear on no marketing page", hit.tier.length === 0, hit.tier);
+
+      // LANDING-5 · fewer words. No block of body text on Home runs over 30
+      // words. Headings are not body text; the FAQ answers sit closed.
+      {
+        const homeHtml = seo.assemblePage(base, ROUTES[0], render("/"), {});
+        const body = homeHtml.slice(homeHtml.indexOf('<div id="root">')).replace(/<details[\s\S]*?<\/details>/g, " ");
+        const long = [...body.matchAll(/<(p|li)\b[^>]*>([\s\S]*?)<\/\1>/g)]
+          .map(m => text(m[2])).filter(t => t.split(/\s+/).filter(Boolean).length > 30);
+        ok("LANDING-5 · no body text block on Home over 30 words", long.length === 0, long);
+
+        // Every pillar picture's alt describes the person, never the software;
+        // the product inset is decorative (alt="").
+        const cards = [...body.matchAll(/<div class="pcard"[\s\S]*?<\/h3>/g)].map(m => m[0]);
+        const alts = cards.map(c => [...c.matchAll(/<img\b[^>]*?alt="([^"]*)"/g)].map(m => m[1]));
+        const SOFTWARE = /\b(Steward|screen|screenshot|dashboard|software|app|interface|chart|report|CRM)\b/i;
+        const PERSON = /\b(woman|women|man|men|people|person|colleagues|volunteers|team|couple|friends|staff|director)\b/i;
+        const badAlt = alts.flatMap((a, i) => {
+          const [photo, ...rest] = a;
+          const out = [];
+          if (!photo || SOFTWARE.test(photo) || !PERSON.test(photo)) out.push(i + 1 + ": " + photo);
+          for (const x of rest) if (x !== "" && !/^Portrait of /.test(x)) out.push(i + 1 + " inset: " + x);
+          return out;
+        });
+        ok("LANDING-5 · every pillar image's alt describes the person, not the software (" + cards.length + ")", cards.length >= 4 && badAlt.length === 0, badAlt);
+      }
 
       // The homepage carries the six pillar headings exactly as MESSAGING.md has them.
       const md = fs.readFileSync(path.join(ROOT, "docs", "MESSAGING.md"), "utf8");

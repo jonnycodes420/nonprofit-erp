@@ -149,7 +149,7 @@ export default function SignupPage() {
           </h1>
           <p style={{ fontSize: 19, color: SAGE_GREY, lineHeight: 1.6, margin: "22px 0 0", maxWidth: 520 }}>
             Your card goes in now and <strong style={{ color: INK }}>nothing is charged for thirty days</strong>.
-            We email you a week before the first charge, and cancelling takes two clicks.
+            We email you a week before the first charge, with a link to cancel.
           </p>
           <ul style={{ listStyle: "none", padding: 0, margin: "30px 0 0", display: "grid", gap: 12, fontSize: 18 }}>
             {TICKS.map(t => <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><Tick />{t}</li>)}
