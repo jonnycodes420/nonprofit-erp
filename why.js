@@ -28,6 +28,7 @@ const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "e
 const spell = n => (n >= 0 && n < 10 ? WORDS[n] : String(n));
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const firstName = n => String(n || "").trim().split(/\s+/)[0] || "them";
 const monthOf = d => MONTHS[Number(String(d).slice(5, 7)) - 1];
 
 // A reason is built from its rows. Never the other way round.
@@ -664,7 +665,146 @@ async function more(orgId) {
   };
 }
 
-const ANSWERS = { appeal, call, retention, stopped, lapse, volunteers, second, more };
+// ── (i) ONE PERSON (ASK-3) ─────────────────────────────────────────────────
+// "What should I ask Flavia for?", "How do I get her to give more?", "What's
+// the next step with her?", "Why did her giving change?". Everything is from
+// her own rows: her gifts, drift, the thank-you on her last gift, logged
+// contact, her open step and owner, events, volunteer hours, the suggested ask
+// from her own gifts, and (for staff allowed to see it) Room to give.
+// `campaign` is the appeal the thread was about: then where she stands is
+// said against it ("gave $1,000 to Spring Appeal 2025 and nothing yet to
+// Spring Appeal 2026"). `intent` is ask, next or changed.
+const PERSON_INTENTS = ["ask", "next", "changed"];
+async function person(orgId, { donor, intent = "ask", campaign, user } = {}, deps = {}) {
+  if (!PERSON_INTENTS.includes(intent)) intent = "ask";
+  const [d] = await query(`SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, d.email FROM donors d WHERE d.org_id = ? AND d.id = ? AND d.deleted_at IS NULL`, [orgId, donor || ""]);
+  if (!d) return null;
+  const t = await today(orgId);
+  const H = await homeNote();
+  const subject = { donor: { id: d.id, name: d.name } };
+  const [gifts, contact, steps, events, hours, subs] = await Promise.all([
+    query(`SELECT g.id, LEFT(g.date,10) AS date, g.amount, g.acknowledgement_sent, g.campaign_id, COALESCE(c.name, g.campaign, '') AS campaign
+             FROM gifts g LEFT JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
+            WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0 ORDER BY g.date DESC, g.id`, [orgId, d.id]),
+    query(`SELECT id, type, LEFT(date,10) AS date, logged_by_name FROM interactions WHERE org_id = ? AND donor_id = ?
+             AND type IN ('call','meeting','email','stewardship','note') ORDER BY date DESC LIMIT 5`, [orgId, d.id]),
+    query(`SELECT id, next_step_label, LEFT(due_date::text,10) AS due, owner_name FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
+            ORDER BY due_date NULLS LAST LIMIT 1`, [orgId, d.id]),
+    query(`SELECT a.id, e.name, LEFT(e.date::text,10) AS date FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+            WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC`, [orgId, d.id]).catch(() => []),
+    query(`SELECT id, LEFT(date,10) AS date, hours, role FROM volunteer_shifts WHERE org_id = ? AND person_id = ? ORDER BY date DESC`, [orgId, d.id]).catch(() => []),
+    query(`SELECT id, amount, status, COALESCE(last_failed_at, first_failed_at)::date::text AS failed FROM recurring_subscriptions
+            WHERE org_id = ? AND donor_id = ? AND first_failed_at IS NOT NULL AND status IN ('past_due','recovering','canceled','lost')`, [orgId, d.id]),
+  ]);
+  const name = d.name;
+  if (!gifts.length) {
+    return { ...subject, intent, facts: { name, lastGift: null, intent }, reasons: [], who: [], step: { kind: "plan", label: "Plan a call", items: [{ donorId: d.id, name, label: "Call" }], dueIn: 1 },
+      cantSee: "There are no gifts on their record, so there is no giving to read." };
+  }
+  const reasons = [];
+  const gRow = (g, detail) => row(g.id, "gift", d.id, name, g.date, toC(g.amount), detail || g.campaign || "Gift");
+  const last = gifts[0];
+  const lifetime = gifts.reduce((s, g) => s + toC(g.amount), 0);
+  const first = gifts[gifts.length - 1];
+
+  // Where they stand against the thread's appeal.
+  let stand = null;
+  if (campaign) {
+    const c = await AW.campaignRow(orgId, campaign);
+    const { compare } = c ? await AW.comparableFor(orgId, c) : { compare: null };
+    const inC = x => gifts.filter(g => g.campaign_id === x.id || (!g.campaign_id && g.campaign === x.name));
+    if (c && compare) {
+      const now = inC(c), then = inC(compare);
+      const nowC = now.reduce((s, g) => s + toC(g.amount), 0), thenC = then.reduce((s, g) => s + toC(g.amount), 0);
+      stand = { campaignName: c.name, compareName: compare.name, nowCents: nowC, thenCents: thenC };
+      if (then.length && !now.length) reasons.push(reason("campaign", `Gave to ${compare.name}, nothing yet to ${c.name}`, then.map(g => gRow(g)), {
+        phrase: `gave ${fmt(thenC)} to ${compare.name} and nothing yet to ${c.name}`, definition: `Their gifts to ${compare.name}; they have none to ${c.name} yet.` }));
+      else if (then.length && nowC < thenC) reasons.push(reason("campaign", `Gave less to ${c.name} than to ${compare.name}`, [...now, ...then].map(g => gRow(g)), {
+        phrase: `gave ${fmt(nowC)} to ${c.name} against ${fmt(thenC)} to ${compare.name}`, definition: `Their gifts to both campaigns.` }));
+    }
+  }
+  // Drift: past their own usual gap.
+  let drift = null;
+  if (deps.computeDriftForDonors) {
+    try { const { map } = await deps.computeDriftForDonors(orgId, { donorIds: [d.id] }); drift = map.get(d.id) || null; } catch { drift = null; }
+  }
+  const drifting = !!(drift && (drift.state === "drifting" || drift.state === "lapsed"));
+  if (drifting) reasons.push(reason("drift", "Past their usual gap between gifts", [gRow(last, plain(drift.reason) || "Last gift")], {
+    phrase: plain(drift.reason) || "they are past their usual gap between gifts", definition: "Their last gift; they are past their own usual gap between gifts (the same engine as Drifting on Home)." }));
+  // This year against last year, calendar years to today.
+  const y = Number(t.slice(0, 4)), md = t.slice(5);
+  const thisYear = gifts.filter(g => g.date.slice(0, 4) === String(y));
+  const lastYearAll = gifts.filter(g => g.date.slice(0, 4) === String(y - 1));
+  const lastYearToDate = lastYearAll.filter(g => g.date.slice(5) <= md);
+  const thisC = thisYear.reduce((s, g) => s + toC(g.amount), 0), lastAllC = lastYearAll.reduce((s, g) => s + toC(g.amount), 0);
+  const lastToDateC = lastYearToDate.reduce((s, g) => s + toC(g.amount), 0);
+  if (intent === "changed" || (thisC < lastToDateC && !reasons.some(r => r.key === "campaign"))) {
+    if (lastToDateC > thisC) reasons.push(reason("down", `Less so far this year than by this date last year`, lastYearToDate.map(g => gRow(g)), {
+      phrase: `gave ${fmt(thisC)} so far this year against ${fmt(lastToDateC)} by this date last year`, definition: `Their gifts last year up to today's date; this year so far they gave ${fmt(thisC)}.` }));
+    else if (thisC > lastToDateC) reasons.push(reason("up", `More so far this year than by this date last year`, thisYear.map(g => gRow(g)), {
+      phrase: `gave ${fmt(thisC)} so far this year against ${fmt(lastToDateC)} by this date last year`, definition: `Their gifts this year so far.` }));
+  }
+  // The last gift never marked thanked.
+  if (!last.acknowledgement_sent) reasons.push(reason("thanks", "No thank-you on the last gift", [gRow(last, "Not marked thanked")], {
+    measure: "count", phrase: `their last gift of ${fmt(toC(last.amount))} was never marked thanked`, definition: "Their most recent gift, which has no thank-you marked." }));
+  if (subs.length) reasons.push(reason("card", "A card payment failed", subs.map(x => row(x.id, "subscription", d.id, name, x.failed, toC(x.amount), `Recurring ${fmt(toC(x.amount))}, ${x.status.replace("_", " ")}`)), {
+    measure: "count", phrase: "their recurring card failed", definition: "Each recurring gift of theirs whose card payment failed." }));
+  if (events.length) reasons.push(reason("events", `Came to ${events.length === 1 ? "an event" : `${spell(events.length)} events`}`, events.map(e => row(e.id, "event", d.id, name, e.date, null, e.name)), {
+    measure: "count", phrase: `came to ${events[0].name}`, definition: "Each event they are on the guest list for." }));
+  const hoursAll = hours.reduce((s, h) => s + Number(h.hours || 0), 0);
+  if (hours.length) reasons.push(reason("hours", `Volunteered ${Math.round(hoursAll * 10) / 10} hours`, hours.map(h => row(h.id, "shift", d.id, name, h.date, null, `${Number(h.hours)} hours${h.role ? `, ${h.role}` : ""}`)), {
+    measure: "count", phrase: `volunteered ${Math.round(hoursAll * 10) / 10} hours`, definition: "Each volunteer shift on their record." }));
+  // Room to give, for staff allowed to see it.
+  const P = require("./prospect");
+  const maySee = user ? await P.canSee(user) : false;
+  let room = null;
+  if (maySee) {
+    try { const m = await P.roomToGive(orgId, [d.id]); room = m.get(d.id) || null; } catch { room = null; }
+    if (room && (room.word === "strong" || room.word === "some")) reasons.push(reason("room", room.word === "strong" ? "Strong room to give" : "Some room to give",
+      [row(d.id, "donor", d.id, name, last.date, null, (room.reasons || []).join(" ") || "Room to give")], {
+        measure: "count", phrase: `${room.word} room to give`, definition: "What their own file (and a screening file, for those who may see it) shows about room to give more." }));
+  }
+  // The suggested ask from their own gifts (the profile's own figure).
+  const E = require("./engagement");
+  let ask = null;
+  try {
+    const screens = maySee ? await P.latestScreening(orgId, [d.id]) : new Map();
+    ask = await E.suggestedAsk(query, orgId, d.id, maySee ? { screening: screens.get(d.id) || null } : {});
+  } catch { ask = null; }
+  // Rank: dollars first, then the count reasons in the order found.
+  reasons.sort((a, b) => (b.measure !== "count") - (a.measure !== "count") || Math.abs(b.cents) - Math.abs(a.cents));
+
+  const lastContact = contact[0] || null;
+  const open = steps[0] || null;
+  const owner = d.assigned_to_name || null;
+  const f = firstName(name);
+  const askC = ask && ask.askCents ? ask.askCents : null;
+  const items = label => [{ donorId: d.id, name, label, ...(d.assigned_to ? { ownerId: d.assigned_to } : {}) }];
+  const step = { kind: "plan", label: "Plan a call", items: items(askC ? `Call about an ask of ${fmt(askC)}` : "Call"), dueIn: 1 };
+  const alsoSteps = [];
+  if (askC) alsoSteps.push({ kind: "plan", label: `Set the ask at ${fmt(askC)}`, items: items(`Ask for ${fmt(askC)}`), dueIn: 14 });
+  alsoSteps.push({ kind: "journey", preset: drifting ? "welcome_back" : "major_donor", label: drifting ? "Start Welcome back" : "Start the Major donor journey",
+    donorIds: [d.id], fallback: { kind: "plan", items: items("Call"), dueIn: 7 } });
+  const cantSee = [
+    !lastContact ? `No conversation with ${f} is logged, so this is from their gifts alone.` : null,
+    !maySee ? null : !room ? "No screening results are on file for them." : null,
+  ].filter(Boolean)[0] || null;
+  return {
+    ...subject, intent,
+    facts: {
+      name, intent, lifetimeCents: lifetime, giftCount: gifts.length, firstYear: first.date.slice(0, 4),
+      lastGift: { cents: toC(last.amount), date: last.date, campaign: last.campaign || null }, lastGiftPhrase: `${fmt(toC(last.amount))} ${whenPhrase(H, last.date, t)}`,
+      stand, askCents: askC, thisYearCents: thisC, lastYearCents: lastAllC, lastYearToDateCents: lastToDateC, year: y,
+      openStep: open ? { label: plain(open.next_step_label || "a follow-up"), due: open.due, owner: open.owner_name || null } : null,
+      lastContact: lastContact ? { type: lastContact.type, phrase: whenPhrase(H, lastContact.date, t) } : null,
+      owner, room: room && room.word !== "none" ? room.word : null,
+      reasons: reasons.map(r => ({ label: r.label, phrase: r.phrase })),
+    },
+    reasons, who: [{ donorId: d.id, name, cents: toC(last.amount), reason: `Last gave ${fmt(toC(last.amount))} ${whenPhrase(H, last.date, t)}.` }],
+    step, alsoSteps, cantSee,
+  };
+}
+const ANSWERS = { appeal, call, retention, stopped, lapse, volunteers, second, more, person };
 
 // The answer for one question, with the drift engine handed in (it lives in
 // server.js and is the only integration point for drift).

@@ -61,6 +61,34 @@ template sentences. Every future build is checked against this.
 - **A question on a page is scoped to it.** A campaign page passes `{campaign}`, a profile `{donor}`, the
   calendar `{from, to}`; with no period named it means all of it. (ASK-2)
 
+- **Why and What replace the Ask row (ASK-3).** Home and a donor's profile carry two buttons; each opens a
+  rail (`AskRail.jsx`) of questions from `shared/askGuide.js guidedLists`, written from the org's own names. Only
+  a question with a computation behind it is put on a button: an appeal with a campaign a year earlier to
+  compare (`why.js comparableCampaigns`), drifting, retention, first-time donors, and the What list. Behind
+  goal, an event's result and monthly giving have no why yet; typed, they are refused by name and logged
+  (`NOT_YET` in routes/why.js), never answered with a neighbouring question. (ASK-3)
+- **Every answer offers its own next questions.** `followUpsFor(answer)` gives two to four, built from what
+  that answer found ("Who are the 11 who haven't given?", "What should I ask Nerissa for?"). The free box
+  appears only inside the rail, after an answer, and only with AI on; off, the rail says "Follow-up questions
+  return when AI is on." A refusal offers the three closest guided questions (`closestQuestions`). (ASK-3)
+- **A name is read against the thread first.** The rail sends `context`: everyone the thread named, newest
+  first (`people`), the last answer's list (`list`, for "them" and "the top five"), the person it was on, and
+  its appeal. `resolvePerson` takes a full name in the thread, a full name on file, then a first or last name
+  in the thread, then on file: one match answers, several ask which (name, last gift, city) and answer
+  nothing, none says "Steward has no one named X on file." A typed full name that matches nobody is never
+  answered with other people of that first name. (ASK-3)
+- **One person is a ninth answer, `person` in why.js.** Intents ask, next and changed (stopped is question d).
+  Every reason is built from that person's own rows (the appeal against the thread's campaign, drift, this
+  year against last to date, the unthanked last gift, a failed card, events, volunteer hours, Room to give for
+  those who may see it), so the figure source `why` (`q=person`, `intent`) opens them. The suggested ask is
+  engagement.suggestedAsk. The step is Plan a call, with Set the ask and a journey beside it; nothing sends.
+  `tests/ask3-person-thread.test.js`. (ASK-3)
+- **A model sentence must be complete and plain.** Besides the number check, `sentenceIsPlain`: ends in a full
+  stop, a question or exclamation mark, at most 320 characters, no colon, em dash or new line, and none of
+  the internal words (facts, rows, plan, dataset, the data, context, according to…). Anything else shows the
+  template. The model's "read as" line passes the same check and holds only numbers the question or plan
+  holds, or it is not shown. `tests/ask3-sentence-check.test.js`. (ASK-3)
+
 ## The eight questions (how each is computed)
 
 | key | question | facts | ranked by | step |
@@ -74,6 +102,8 @@ template sentences. Every future build is checked against this.
 | second | Which first-time donors need a second ask? | first gift ever in the last 90 days, one gift only, no call or meeting logged; split thanked / not thanked | first gift | plan the thank-you call for the top five |
 | more | Who could give more? (admins and major gifts staff only; PROSPECT-1) | Room to give for everyone who may be asked (not deceased, do not contact or do not solicit, not anonymous): the word and reasons from `prospect.js` + `shared/roomToGive.js`; who knows them best is the staff member who logged most of their conversations, else their owner; the suggested ask for the top five, moved by a screening file only for those who may see it | word (Strong, then Some), then engagement, then capacity low end minus this year's giving | plan a visit with the top five (owner on the step); also: start the Major donor journey, or set the ask per person |
 
+| person | What should I ask <name> for? / the next step / why their giving changed (ASK-3) | that person's own rows (see the rule above) | dollars, then the counted reasons | Plan a call; Set the ask; Welcome back or Major donor |
+
 ## Template sentences
 
 In `shared/whyShape.js templateSentence`. Spell numbers under ten, no colons, no em dashes.
@@ -85,6 +115,9 @@ In `shared/whyShape.js templateSentence`. Spell numbers under ten, no colons, no
 - volunteers: "<N> volunteers have served and never given; <name> leads with <h> hours this year."
 - more: "<N> people show room to give more, <s> of them strong; start with <name>."
 - second: "<N> first-time donors from the last 90 days have no second gift and no thank-you call, <$> in first gifts; <name> gave the most."
+- person (ask): "<name> gave <$> to <last year's appeal> and nothing yet to <this one>." or "<name> last gave <$> <when>, <$> across <n> gifts since <year>.", then "Steward suggests asking for <$>."
+- person (next): "<name> has a step planned for <day>, which reads "<label>"." or "Nothing is planned with <name>, and <the last conversation>."
+- person (changed): "<name> gave <$> by this date last year and <$> so far this year."
 - not matched: "Steward can't answer that one yet. We've noted it."
 
 ## The suggested journey (Part 7)

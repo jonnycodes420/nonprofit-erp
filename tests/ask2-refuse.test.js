@@ -13,7 +13,8 @@
 //
 // HOW IT WOULD GO RED (proven before it was trusted, see the build report):
 //   · let validatePlan pass an unknown filter key → §1 case 02 answers;
-//   · stop stripping digits from `restatement` → §2 shows 99,999;
+//   · stop stripping digits from `restatement` → §2 shows 99,999 (ASK-3: and a
+//     restatement left broken by the cut is not shown at all);
 //   · drop the fund-belongs-to-org check → §1 case 06 answers.
 
 const http = require("http");
@@ -104,7 +105,9 @@ const CASES = {
     const a4 = JSON.parse(r4.raw);
     ok("§2 case 04 answers from Steward's own numbers ($123.45)", a4.answered === true && a4.figures.value.value === 123.45 && /\$123\.45/.test(a4.sentence), a4.sentence);
     ok("§2 …the model's 99,999, 77% and 3,141 are nowhere in the answer", !/99,?999|77%|3,?141/.test(r4.raw), (a4.restatement || "") + " | " + r4.raw.slice(0, 120));
-    ok("§2 …and its restatement keeps its words without the numbers", typeof a4.restatement === "string" && /You raised/.test(a4.restatement) && !/\d/.test(a4.restatement), a4.restatement);
+    // ASK-3: a restatement with its numbers cut out is a broken sentence ("You
+    // raised , more than…"), so it is not shown at all; a shown one is plain.
+    ok("§2 …and its restatement is gone, or plain with no numbers", a4.restatement == null || (/[.!?]$/.test(a4.restatement) && !/\d/.test(a4.restatement)), a4.restatement);
     const r7 = await ask("07");
     ok("§2 case 07, a sentence and a value the model made up: ignored, Steward's figure stands", JSON.parse(r7.raw).figures.value.value === 123.45 && !/5,?000,?000|8,?888/.test(r7.raw), r7.raw.slice(0, 200));
 

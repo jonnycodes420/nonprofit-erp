@@ -160,6 +160,8 @@ CORE=(
   parity4-show-me
   ask2-plans
   ask2-refuse
+  ask3-person-thread
+  ask3-sentence-check
   cal1-moves
   fix12-ai-switch
   parity4-started

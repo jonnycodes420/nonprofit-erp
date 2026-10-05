@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-05T12:23:06.817Z",
- "count": 1067,
+ "generatedAt": "2026-10-05T21:06:33.804Z",
+ "count": 1068,
  "routes": [
   {
    "method": "POST",
@@ -22146,7 +22146,7 @@
    "identifiers": [],
    "frontend": {
     "probe": "/why/questions",
-    "referenced": true
+    "referenced": false
    }
   },
   {
@@ -22280,6 +22280,24 @@
    "identifiers": [],
    "frontend": {
     "probe": "/ask/save-to-dashboard",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/ask/guided",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask/guided",
     "referenced": true
    }
   },

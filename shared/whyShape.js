@@ -91,6 +91,10 @@ export function partSentence(part, f) {
   }
 }
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const dayWords = d => (d ? `${MONTH_NAMES[Number(String(d).slice(5, 7)) - 1]} ${Number(String(d).slice(8, 10))}` : "a day not yet set");
+const article = t => (/^[aeiou]/i.test(String(t || "")) ? `an ${t}` : `a ${t}`);
+
 export function templateSentence(key, f) {
   f = f || {};
   switch (key) {
@@ -119,6 +123,29 @@ export function templateSentence(key, f) {
       const top = f.topReason;
       if (!top || !top.count) return `${head}, and no group of donors stands out.`;
       return `${head}; the most donors were lost among ${top.phrase}.`;
+    }
+    case "person": {
+      // ASK-3: one person. Where they stand, then the one thing to do.
+      if (!f.name) return "That person isn't on file.";
+      if (!f.lastGift) return `${f.name} hasn't given yet, so there is no giving to read.`;
+      const st = f.stand;
+      const where = st && st.thenCents > 0 && !st.nowCents
+        ? `${f.name} gave ${dollars(st.thenCents)} to ${st.compareName} and nothing yet to ${st.campaignName}`
+        : st && st.thenCents > st.nowCents
+          ? `${f.name} gave ${dollars(st.nowCents)} to ${st.campaignName} against ${dollars(st.thenCents)} to ${st.compareName}`
+          : `${f.name} last gave ${f.lastGiftPhrase}, ${dollars(f.lifetimeCents)} across ${plural(f.giftCount, "gift", "gifts")} since ${f.firstYear}`;
+      const askLine = f.askCents ? ` Steward suggests asking for ${dollars(f.askCents)}.` : "";
+      if (f.intent === "changed") {
+        const a = f.lastYearToDateCents, b = f.thisYearCents;
+        if (a === b) return `${f.name} has given ${dollars(b)} so far this year, the same as by this date last year.`;
+        return `${f.name} gave ${a ? dollars(a) : "nothing"} by this date last year and ${b ? dollars(b) : "nothing"} so far this year.`;
+      }
+      if (f.intent === "next") {
+        if (f.openStep) return `${f.name} has a step planned for ${dayWords(f.openStep.due)}, which reads "${String(f.openStep.label).trim().replace(/[.!?\s]+$/, "")}".${askLine}`;
+        const talk = f.lastContact ? `the last conversation logged was ${article(f.lastContact.type)} ${f.lastContact.phrase}` : "no conversation with them is logged";
+        return `Nothing is planned with ${f.name}, and ${talk}.${askLine || " A call is the next step."}`;
+      }
+      return `${where}.${askLine}`;
     }
     case "stopped": {
       if (!f.name) return "That donor isn't on file.";

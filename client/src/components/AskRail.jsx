@@ -15,7 +15,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, fmtFull } from "./shared";
 import { AskAnswer } from "./AskPanel";
 import { WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
@@ -46,17 +46,48 @@ function writeKept(v) {
 }
 
 // One question to the server, by the way its `go` says it is asked.
-function runGo(go, { lastPlan, scope }) {
+function runGo(go, { lastPlan, scope, context }) {
   const post = (path, body) => apiFetch(path, { method: "POST", body: JSON.stringify(body) });
   if (go.via === "why") return post("/why/ask", { key: go.key, ...(go.campaign ? { campaign: go.campaign } : {}), ...(go.donor ? { donor: go.donor } : {}), ...(go.part ? { part: go.part } : {}) });
-  if (go.via === "person") return post("/ask", { person: { donor: go.donor, intent: go.intent } });
+  if (go.via === "person") return post("/ask", { person: { donor: go.donor, intent: go.intent, ...(go.campaign ? { campaign: go.campaign } : {}) } });
   if (go.plan) return post("/ask", { plan: go.plan });
-  return post("/ask", { text: go.text, previous: go.thread ? lastPlan || null : null, ...(scope ? { scope } : {}) });
+  return post("/ask", { text: go.text, previous: go.thread ? lastPlan || null : null, ...(scope ? { scope } : {}), ...(go.thread && context ? { context } : {}) });
+}
+
+// What the thread knows, for the next question: the people the last answer
+// named ("her", "them", "the top five", a first name), the person it was
+// about, and the appeal it was on.
+function threadContext(turns, scope) {
+  const people = [], seen = new Set();
+  let lastPerson = scope && scope.donor ? { id: scope.donor.id, name: scope.donor.name, intent: null } : null, campaign = null;
+  let list = null;
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const a = turns[i].a;
+    if (!a || a.answered === false) continue;
+    for (const p of [...(a.who || []), ...(a.people || []), ...(a.rows || [])]) {
+      const id = p.donorId || p.id;
+      if (id && p.name && !seen.has(id)) { seen.add(id); people.push({ id, name: p.name }); }
+    }
+    if (!list) list = people.slice();
+  }
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const a = turns[i].a;
+    if (!a || a.answered === false) continue;
+    if (!campaign) campaign = (a.campaign && a.compare && a.campaign.id) || (a.person && a.person.campaign) || null;
+    if (!lastPerson || lastPerson.intent === null) {
+      if (a.person) lastPerson = { id: a.person.id, name: a.person.name, intent: a.person.intent };
+      else if (a.donor && a.question && a.question.key === "stopped") lastPerson = { id: a.donor.id, name: a.donor.name, intent: "stopped" };
+    }
+    if (campaign && lastPerson && lastPerson.intent) break;
+  }
+  return { people: people.slice(0, 60), list: (list || []).slice(0, 60), lastPerson, campaign };
 }
 
 // What Steward read the question as, in words, above each answer.
 function readAs(a) {
   if (!a || a.answered === false) return "";
+  if (a.readAs) return a.readAs;
+  if (a.question && a.question.key === "stopped" && a.donor) return `${a.donor.name} · why they stopped`;
   if (a.planWords) return a.person ? `${a.person.name} · ${a.planWords.replace(/^[^·]*·\s*/, "")}` : a.planWords;
   if (a.part && a.campaign) return `${a.campaign.name} · against ${a.compare ? a.compare.name : "last year"} · one part of the change`;
   if (a.campaign) return a.compare ? `${a.campaign.name} · against ${a.compare.name}` : a.campaign.name;
@@ -119,7 +150,7 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
     const before = base || turns;
     setTurns([...before, { text: q.text, go: q.go }]);
     let a = null, err = "";
-    try { a = await runGo(q.go, { lastPlan: lastPlan(before), scope: donorId ? { donor: donorId } : null }); }
+    try { a = await runGo(q.go, { lastPlan: lastPlan(before), scope: donorId ? { donor: donorId } : null, context: threadContext(before, scope) }); }
     catch (e) { err = errorMessage(e, "Steward could not work that out just now."); }
     const next = [...before, { text: q.text, go: q.go, a, err }];
     setTurns(next); setBusy(false);
@@ -182,12 +213,23 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
                   {!a && !t.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
                   {a && (a.kind === "answer" || a.refused
                     ? <AskAnswer answer={a} isReadOnly={isReadOnly} onAsk={x => ask({ text: x, go: { via: "ask", text: x, thread: true } })} onStepTaken={onStepTaken} inRail />
+                    : a.kind === "choose"
+                      ? <div data-testid="ask-choose" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          <div style={{ fontSize: 15, color: T.ink, lineHeight: 1.55 }}>{a.sentence}</div>
+                          {(a.candidates || []).map(c => (
+                            <button key={c.donorId} type="button" data-testid="ask-candidate" disabled={busy || !isLast} onClick={() => ask({ text: c.name, go: c.go })}
+                              style={{ ...CHIP, borderRadius: 10, display: "flex", flexDirection: "column", gap: 2 }}>
+                              <span style={{ fontWeight: 700, color: T.ink }}>{c.name}</span>
+                              <span style={{ fontSize: 12.5, fontWeight: 500, color: T.ink3 }}>
+                                {[c.lastGift ? `Last gift ${fmtFull(c.lastGift.cents / 100)}, ${c.lastGift.date}` : "No gifts yet", c.city].filter(Boolean).join(" · ")}</span>
+                            </button>))}
+                        </div>
                     : a.answered === false
                       ? <div data-testid="ask-refused" style={{ fontSize: 15, color: T.ink2, lineHeight: 1.55 }}>{a.sentence}</div>
                       : <WhyAnswerBody answer={a} isReadOnly={isReadOnly} onStepTaken={onStepTaken} />)}
                   {isLast && a && (a.followUps || []).length > 0 && (
                     <div data-testid="ask-followups" style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: 4 }}>
-                      <div style={LABEL}>Ask next</div>
+                      <div style={LABEL}>{a.answered === false ? "Steward can answer these" : "Ask next"}</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                         {a.followUps.map(f => <button key={f.text} type="button" data-testid="ask-followup-q" disabled={busy} style={CHIP} onClick={() => ask(f)}>{f.text}</button>)}
                       </div>

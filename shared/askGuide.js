@@ -73,7 +73,8 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
   const out = [];
   const add = (text, go) => { if (out.length < 4 && !out.some(x => x.text === text)) out.push(q(text, go)); };
   const who = answer.who || [];
-  const person = (p, intent, text) => p && p.donorId && add(text, { via: "person", donor: p.donorId, intent });
+  const camp = answer.campaign && answer.compare ? answer.campaign.id : (answer.person && answer.person.campaign) || null;
+  const person = (p, intent, text) => p && p.donorId && add(text, { via: "person", donor: p.donorId, intent, ...(camp ? { campaign: camp } : {}) });
   const key = answer.question && answer.question.key;
   const reasons = answer.reasons || [];
   const part = k => reasons.find(r => r.key === k);
@@ -138,4 +139,74 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
     return out;
   }
   return out;
+}
+
+// ── ONE PERSON IN A TYPED QUESTION (ASK-3 Part 1) ──────────────────────────
+// What a question about one person is asking. null: not a question about a
+// person at all (the catalog and the eight questions take it).
+const INTENTS = [
+  ["stopped", /\bwhy (did|has|have|is)\b.*\b(stop(ped)?|quit|laps(e|ed)|leave|left|go(ne)? quiet)\b|\bwhy (hasn't|has not|hasnt|haven't|didn't|did not)\b.*\b(give|given|giving|donat)/i],
+  ["changed", /\b(giving|gifts?)\b.*\bchang|\bchang\w*\b.*\bgiving\b|\bwhy did\b.*\bgive (less|more)\b|\bgiv(e|ing) less\b/i],
+  ["next", /\bnext (step|move)\b|\bwhat (should|do|can|could) (i|we) do (with|about|for) (?!.*\bgive more\b)|\bwhen should (i|we)\b|\bfollow up with\b|\bwhat'?s planned\b/i],
+  ["given", /\bgiven to\b|\bwhat (has|did|have)\b.*\bgive to\b|\bgiving history\b|\bgift history\b|\bhow much has\b.*\bgiven\b/i],
+  ["ask", /\bask\b.*\bfor\b|\bget\b.*\bto give\b|\bgive (more|again|bigger)\b|\bupgrade\b|\bhow much should\b|\bwhat (should|do|can) (i|we) ask\b|\bask (her|him|them)\b|\btell me about\b|\bwho is\b/i],
+];
+export function personIntent(text) {
+  const s = String(text || "").replace(/[‘’]/g, "'");
+  for (const [k, re] of INTENTS) if (re.test(s)) return k;
+  return null;
+}
+// "and Margaret?", "what about Ondine", "Flavia?": the thread's question, about someone else.
+export function isNameFollowUp(text) {
+  return /^\s*(and|what about|how about|same for|now)\b/i.test(String(text || "")) || /^\s*[A-Z][a-z'-]+( [A-Z][a-z'-]+)?\s*\??\s*$/.test(String(text || ""));
+}
+export const PRONOUN_ONE = /\b(her|him|she|he|hers|his)\b/i;
+export const PRONOUN_MANY = /\b(them|they|their|these|those|everyone on (the|this) list)\b/i;
+export function topN(text) {
+  const m = String(text || "").match(/\btop (\d+|three|five|ten)\b/i);
+  if (!m) return null;
+  return { three: 3, five: 5, ten: 10 }[m[1].toLowerCase()] || Math.min(20, Number(m[1]) || 5);
+}
+const STOP = new Set(("a an and the of to for in on at by with about from what whats what's who whom whose why how when where which should could would can do does did "
+  + "i we me my our us you your he she her him his hers they them their it its is are was were be been being have has had get got give gave given giving gift gifts "
+  + "more less again ask asked asking next step steps call plan now same last this that these those year years month months week today tomorrow yet still "
+  + "stop stopped quit lapse lapsed leave left change changed changes much many any some all every donor donors person people tell know thing things "
+  + "good best way bigger larger money dollars please just only also very really there here make made help want need think say said much go going not "
+  + "no yes ok okay thanks thank top three five ten one two follow up history record come came where went fail failed lately ever").split(/\s+/));
+// The words in a question that could be someone's name: not a common word,
+// and not a word of a campaign, fund or event the org has (passed in).
+export function nameTokens(text, orgWords = new Set()) {
+  return String(text || "").replace(/[‘’]/g, "'").replace(/'s\b/g, "").split(/[^A-Za-z'-]+/)
+    .map(w => w.replace(/^'+|'+$/g, "")).filter(w => w.length >= 3 && !STOP.has(w.toLowerCase()) && !orgWords.has(w.toLowerCase()));
+}
+// Words the person typed with a capital, past the first word: a name Steward
+// should say it could not find, rather than answer something else.
+export function capitalisedNames(text, orgWords = new Set()) {
+  const toks = String(text || "").replace(/[?.!,]/g, " ").split(/\s+/).filter(Boolean);
+  return toks.slice(1).filter(w => /^[A-Z][a-z'-]{2,}$/.test(w) && !STOP.has(w.toLowerCase()) && !orgWords.has(w.toLowerCase()));
+}
+
+// The three questions closest to one Steward could not answer, from the
+// guided lists: most shared words first, then list order.
+export function closestQuestions(text, lists, n = 3) {
+  const words = new Set(String(text || "").toLowerCase().split(/[^a-z]+/).filter(w => w.length > 2 && !STOP.has(w)));
+  const all = [...((lists && lists.why) || []), ...((lists && lists.what) || [])];
+  const scored = all.map((q, i) => ({ q, i, s: q.text.toLowerCase().split(/[^a-z]+/).filter(w => words.has(w)).length }));
+  scored.sort((a, b) => b.s - a.s || a.i - b.i);
+  return scored.slice(0, n).map(x => x.q);
+}
+
+// ── THE SENTENCE CHECK (ASK-3 Part 3) ──────────────────────────────────────
+// A model's sentence is shown only if it is complete, plain and about the
+// donor's world: it ends with a full stop (or ? or !), stays under the cap,
+// and never talks about Steward's insides.
+export const SENTENCE_MAX = 320;
+export const INTERNAL_WORDS = /\b(facts?|rows?|plans?|dataset|data ?set|data provided|the data|provided data|json|fields?|parameters?|query|queries|schema|context|tool|model|records provided|according to)\b/i;
+export function sentenceIsPlain(text) {
+  const s = String(text || "").trim();
+  if (!s || s.length > SENTENCE_MAX) return false;
+  if (!/[.!?]["')]?$/.test(s)) return false;
+  if (/[—:]/.test(s) || /\n/.test(s)) return false;
+  if (INTERNAL_WORDS.test(s)) return false;
+  return true;
 }
