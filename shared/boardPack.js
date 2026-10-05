@@ -157,7 +157,11 @@ export function validateDashboard(raw) {
     if (kind === "figure") {
       const source = String(t.source || "");
       if (!source) { errors.push("A number tile names the figure it shows."); continue; }
-      tiles.push({ kind, source, params: plainParams(t.params) });
+      // ASK-2: an answer saved from the Ask box carries its own label (the
+      // question's plan in words), because "the rows behind this answer" is
+      // not a name a board can read.
+      const label = typeof t.label === "string" && t.label.trim() ? t.label.trim().slice(0, 120) : null;
+      tiles.push({ kind, source, params: plainParams(t.params), ...(label ? { label } : {}) });
     } else if (kind === "chart") {
       const chart = String(t.chart || "");
       if (!CHART_KEYS.includes(chart)) { errors.push(`"${chart || "that"}" is not a chart Steward draws.`); continue; }

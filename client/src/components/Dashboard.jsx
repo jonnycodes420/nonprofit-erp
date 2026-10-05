@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
+import { PinnedAnswers } from "./AskPanel";
 import { SkeletonBar } from "./Skeleton";
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
@@ -2179,6 +2180,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 answer opens in a panel; its step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
               <AskWhy isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
+              <PinnedAnswers isReadOnly={isReadOnly}/>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
             {threadsData&&!threadsData.failed&&threadList.length===0&&(

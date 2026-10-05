@@ -57,6 +57,9 @@ const MATCHERS = [
     + "|\\b(losing|lose|lost|leaving|churn(ing)?)\\b.*\\b" + DONORS + "\\b|\\b" + DONORS + "\\b.*\\b(leaving|leave|left|churn(ing)?|lost|dropp(ed|ing) off)\\b"
     + "|^(?!.*\\b(appeal|campaign|drive|mailing)\\b).*\\b(giving|donations?|revenue|income)\\b.*\\b(down|drop(ped|ping|s)?|fall(en|ing)?|fell|declin(ed|ing)|lower)\\b"
     + "|^\\s*(who|which " + DONORS + "|how many " + DONORS + ")\\b.*\\b((stopped|quit|stop) (giving|donating)|(haven't|have not|havent) (given|donated))\\b", "i")],
+  // ASK-2: "what should I do about the donors who stopped giving" asks the
+  // retention question for everyone, not the one-donor question.
+  ["retention", /\bwhat (should|do|can|could) (i|we) do about\b.*\b(stopped|stop|quit|lapsed|leaving|left)\b/i],
   ["lapse", /\b(about to|going to|at risk of|likely to|might|could|close to|will)\b.*\blapse|\bdrift|\bslipping\b|\bwho\b.*\blaps|\bat risk\b|\bgoing quiet\b|\boverdue (for|to) give\b/i],
   ["stopped", /\b(stop(ped)?|quit) (giving|donating|supporting)\b|\bwhy did .+ (stop|leave|lapse)\b|\b(hasn't|has not|hasnt)\b.*\b(given|donated)\b|\bno longer (gives?|giving|donat)/i],
   ["appeal", /\b(appeal|campaign|drive|mailing)\b|\bcome in (under|over|short|below|above)\b|\b(under|over|short of) last year\b|\b(underperform|fell short|fall short|miss(ed)? (its|the|our) goal)/i],

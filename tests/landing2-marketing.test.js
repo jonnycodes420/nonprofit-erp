@@ -182,7 +182,8 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     const brief = ["/", "/platform", "/crm", "/volunteer", "/agent", "/connections", "/onboarding", "/features", "/why", "/leadership", "/move", "/move/spreadsheet", "/move/crm", "/for", "/security", "/about", "/partners", "/contact", "/demo", "/resources", "/guides", "/templates", "/articles", "/articles/state-of-retention", "/glossary", "/faq", "/help", "/whats-new", "/tools", "/tools/retention", "/tools/lapsed-cost", "/tools/thermometer", "/tools/lost-and-found", "/legal/privacy", "/legal/terms", "/legal/accessibility"];
     ok("every page the brief names is routed", brief.every(p => known.has(p)), brief.filter(p => !known.has(p)));
     const count = pre => ROUTES.filter(r => r.path.startsWith(pre)).length;
-    ok("14 feature pages, 4 audience pages, 5 guides", count("/features/") === 14 && count("/for/") === 4 && count("/guides/") === 5);
+    // ASK-2 added the Ask feature page and the demo-questions guide.
+    ok("15 feature pages, 4 audience pages, 6 guides", count("/features/") === 15 && count("/for/") === 4 && count("/guides/") === 6);
   }
 
   console.log("\n— 7 · existing app routes win —");

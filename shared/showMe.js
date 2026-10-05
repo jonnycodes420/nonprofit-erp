@@ -25,6 +25,8 @@ export const SHOW_KEYS = [
   "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
   // FIX-27: a campaign (and the year of the gift), and no ask this year.
   "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk",
+  // ASK-2: a gift not yet thanked.
+  "unthankedOver",
 ];
 export const CANT_FILTER = "Steward can't filter by that yet";
 
@@ -42,7 +44,9 @@ export function isShowMe(text) {
   return listFirst(text) || /^\s*who\b.*\b(gave|give|gives|giving|given|donated|volunteer)/i.test(norm(text))
     // FIX-27: "which major donors haven't been asked" is a list, once none of
     // the why questions has taken it.
-    || /^\s*(which|what)( of (my|our))?( \w+){0,2} (donors?|people|givers?|supporters?|volunteers?)\b/i.test(norm(text));
+    || /^\s*(which|what)( of (my|our))?( \w+){0,2} (donors?|people|givers?|supporters?|volunteers?)\b/i.test(norm(text))
+    // ASK-2: "who are our donors in Marblehead", "who should I thank".
+    || /^\s*who are (our|my|the)\b/i.test(norm(text)) || /^\s*who (should|do|must) (i|we) thank\b/i.test(norm(text));
 }
 
 function norm(text) {
@@ -99,6 +103,12 @@ export function templateSpec(text, ctx = {}) {
       if (a) rules.gaveCampaign = a.id; else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `${name.trim()} givers`;
     });
 
+  // ASK-2 · a gift not yet thanked: "gave over $500 but hasn't been thanked",
+  // "who should I thank". It is any gift not yet marked thanked.
+  take(/\b(who )?(gave|given|give) (over|more than|above) \$?([\d,]+(?:\.\d{1,2})?)( dollars)?,? (but |and )?(hasn't|haven't|has not|have not|wasn't|weren't|not)( yet)? (been )?thanked\b/g,
+    (...m) => { rules.unthankedOver = String(Number(String(m[4]).replace(/,/g, ""))); });
+  take(/\b(not|never|hasn't|haven't|has not|have not)( yet)? (been )?thanked\b|\bwho (should|do|must) (i|we) thank( this week| today| now)?\b|\bunthanked\b/g, () => { if (rules.unthankedOver === undefined) rules.unthankedOver = "0"; });
+
   // "never given" first, so "given" in it is not read as a gift window.
   take(/\b(who'?ve|who have|have|has|who has)? ?(never|not ever) (given|gave|donated)( anything)?( a gift)?\b/g, () => { rules.given = "never"; });
   take(/\b(who'?ve|who have|have|has)? ?given before\b/g, () => { rules.given = "ever"; });
@@ -108,6 +118,8 @@ export function templateSpec(text, ctx = {}) {
   // Gave over an amount, to an event: "gave over $1,000 to the gala".
   take(/\b(gave|given|give|donated)? ?(over|more than|above) \$?([\d,]+(?:\.\d{1,2})?)( dollars)?\b/g,
     (m, g, o, n) => { rules.gaveOver = String(Number(String(n).replace(/,/g, ""))); });
+  // "gave more than $10,000 this year": the year the amount is counted in.
+  if (rules.gaveOver !== undefined) take(new RegExp(`^(.*?)\\b(in |during )?${YEAR}\\b`), (m, pre, i, y) => { const r = yearRange(yearOf(y)); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; s = pre; });
   // To or at an event the org has: "to the gala", "at the Harbor Lights Gala".
   take(/\b(?:(?:gave|given|donated)\s+)?(?:to|at) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
     const n = name.trim();
@@ -273,6 +285,7 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.gaveCampaign) w.push(`gave to ${cName(rules.gaveCampaign)}${rules.gaveCampaignYear ? ` in ${rules.gaveCampaignYear}` : ""}`);
   if (rules.notGaveCampaign) w.push(`nothing to ${cName(rules.notGaveCampaign)}${rules.notGaveCampaignYear ? ` in ${rules.notGaveCampaignYear}` : ""}`);
   if (rules.noAsk) w.push("no ask this year");
+  if (rules.unthankedOver !== undefined) w.push(Number(rules.unthankedOver) > 0 ? `a gift over $${Number(rules.unthankedOver).toLocaleString("en-US")} not yet thanked` : "a gift not yet thanked");
   if (rules.city) w.push(`in ${rules.city}`);
   if (rules.household) w.push(rules.household === "none" ? "not in a household" : "in a household");
   if (rules.notDeceased) w.push("not deceased");

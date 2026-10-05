@@ -67,6 +67,15 @@ const T = {
     throw new FigureParamError(`${k} must be true or false.`);
   },
   measure: (v, k) => { if (!["sum", "count"].includes(String(v))) throw new FigureParamError(`${k} must be sum or count.`); return String(v); },
+  // ASK-2: an Ask plan as JSON. Its shape is checked here; askEngine
+  // validates it against the catalog and the org's own funds, campaigns and
+  // events before a row is read, and refuses (no rows) what it does not know.
+  plan: (v, k) => {
+    let o = null;
+    try { o = JSON.parse(String(v)); } catch { o = null; }
+    if (!o || typeof o !== "object" || Array.isArray(o) || String(v).length > 4000 || typeof o.metric !== "string") throw new FigureParamError(`${k} is not a plan Steward knows.`);
+    return o;
+  },
   // PARITY-4: a donor list rule as JSON, checked by groups.js normalizeRules:
   // a key or value it does not know is refused, never dropped.
   rules: (v, k) => {
@@ -1417,6 +1426,57 @@ const SOURCES = {
     parts: p => [
       { role: "numerator", label: "Raised", key: "goal-rollup-raised", params: { campaign: p.campaign } },
       { role: "denominator", label: "The goal", key: "campaign-goal", params: { campaign: p.campaign } },
+    ],
+  },
+  // ── ASK-2 · EVERY NUMBER IN AN ANSWER OPENS ITS ROWS ──────────────────────
+  // An answer's figure is one cell of a plan (askEngine.js): "cur" the period,
+  // "cmp" the period compared with, "g<n>"/"gc<n>" one part of a breakdown,
+  // "who" the people behind it, "kept"/"prior" the two halves of first-year
+  // retention. The rows come from the same function that computed the number.
+  ask: {
+    label: "The rows behind this answer",
+    measure: p => (p.cell === "top" ? "sum" : ["who", "kept", "prior"].includes(p.cell) || ["lapsed_count", "recurring_donors", "volunteer_count"].includes(p.plan.metric) ? "count"
+      : ({ raised: "sum", event_revenue: "sum", largest_gift: "sum", gift_count: "count", donor_count: "count",
+           new_donor_count: "count", recaptured_count: "count", average_gift: "mean", median_gift: "mean" }[p.plan.metric] || "count")),
+    params: { plan: "plan:required", cell: "word:required" },
+    sentence: p => (p.cell === "who" ? "Each person behind this answer, once, with what they gave in the period."
+      : p.cell === "top" ? "The people at the top of this list, with what each gave in the period."
+      : p.cell === "kept" ? "Each person whose first gift was last calendar year and who has given again this one."
+      : p.cell === "prior" ? "Each person whose first gift ever was last calendar year."
+      : ({
+      raised: "Every gift in the period, with any refund subtracted.",
+      event_revenue: "Every gift recorded against the event, with any refund subtracted.",
+      gift_count: "Each gift in the period, refunds not counted as gifts.",
+      donor_count: "Each person with at least one gift in the period, counted once, with what they gave.",
+      average_gift: "Every gift in the period; the average is their total divided by how many there are, to the cent.",
+      median_gift: "The gift in the middle when every gift in the period is put in order (the two middle gifts when there is an even number).",
+      largest_gift: "The single largest gift in the period.",
+      new_donor_count: "Each person whose first gift ever is dated in the period.",
+      recaptured_count: "Each person whose first gift in the period came after twelve months or more with no gift.",
+      lapsed_count: "Each person tagged Lapsed today.",
+      recurring_donors: "Each person with a monthly gift running today.",
+      volunteer_count: "Each volunteer with an hour logged in the last twelve months or a shift still to come.",
+    }[p.plan.metric] || "The rows behind this answer.")),
+    js: async (orgId, p) => require("./askEngine").cellRows(orgId, p.plan, p.cell),
+  },
+  "ask-change": {
+    label: "The change",
+    ratio: "change",
+    params: { plan: "plan:required" },
+    sentence: () => "This period against the period it is compared with: the difference, as a share of the earlier one.",
+    parts: p => [
+      { role: "numerator", label: "This period", key: "ask", params: { plan: JSON.stringify(p.plan), cell: "cur" } },
+      { role: "denominator", label: "Compared with", key: "ask", params: { plan: JSON.stringify(p.plan), cell: "cmp" } },
+    ],
+  },
+  "ask-share": {
+    label: "First-year retention",
+    ratio: "share",
+    params: { plan: "plan:required" },
+    sentence: () => "Of the people whose first gift ever was last calendar year, the share who have given again this one.",
+    parts: p => [
+      { role: "numerator", label: "Gave again this year", key: "ask", params: { plan: JSON.stringify(p.plan), cell: "kept" } },
+      { role: "denominator", label: "First gave last year", key: "ask", params: { plan: JSON.stringify(p.plan), cell: "prior" } },
     ],
   },
   "goal-progress": {

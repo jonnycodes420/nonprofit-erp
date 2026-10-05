@@ -13,6 +13,7 @@ import { apiFetch } from "../api";
 import { T, StartHere, EmptyState } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { HowDidItDo } from "./HowDidItDo";
+import { AskBox } from "./AskPanel";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
 import { displayDate } from "../../../shared/displayDate";
@@ -283,6 +284,12 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink3 }}>
           Click the amount raised to see every gift behind it, or the donors to see who gave.
         </div>
+      </div>
+
+      {/* ASK-2: the box, scoped to this campaign. */}
+      <div style={card}>
+        <AskBox scope={{ campaign: g.id }} isReadOnly={isReadOnly} testid="campaign-ask" label="Ask about this campaign"
+          starters={["How much has it raised?", "Who gave?", "How many people gave this year?", "Why did it come in where it did?"]} />
       </div>
 
       {children.length > 0 && (
