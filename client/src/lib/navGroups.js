@@ -27,7 +27,8 @@
 // tabRegistry's CRM_HIDDEN_TABS, as before, and the group simply does not
 // render it.
 export const NAV_GROUPS = [
-  { id: "start",         label: null,              items: ["dashboard", "tasks"] },
+  // CAL-1: one calendar for everything with a date, under Home and Tasks.
+  { id: "start",         label: null,              items: ["dashboard", "tasks", "calendar"] },
   { id: "relationships", label: "Relationships",   items: ["donors", "groups", "journeys", "communications", "portal"] },
   // FIX-25: Auctions, Peer-to-peer and Memberships are parts of Fundraising
   // with a rail entry each, because nobody found them two clicks deep.
@@ -49,7 +50,7 @@ export const NAV_ICON_NAMES = {
   grants: "file-text", volunteers: "hand-helping", finance: "wallet",
   reports: "bar-chart-3", agent: "sparkles", settings: "settings",
   portal: "panels-top-left", groups: "group",
-  auctions: "gavel", p2p: "flag", memberships: "id-card",
+  auctions: "gavel", p2p: "flag", memberships: "id-card", calendar: "calendar-range",
 };
 
 // Home is where every deep link lands and Settings is where you fix a mistake:

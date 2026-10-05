@@ -74,5 +74,7 @@ export function movedWords(item, req) {
   const b = req.body || {};
   const when = b.startsAt ? null : b.date || b.due;
   const t = b.startTime || b.time || null;
-  return `Moved ${item.title}${when ? ` to ${when}${t ? `, ${t}` : ""}` : ""}.`;
+  const day = w => { const [y, m, d] = w.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }); };
+  const clock = hhmm => { const [h, m] = hhmm.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + pad(m) : ""}${h >= 12 ? "pm" : "am"}`; };
+  return `Moved ${item.title}${when ? ` to ${day(when)}${t ? `, ${clock(t)}` : ""}` : ""}.`;
 }

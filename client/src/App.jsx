@@ -24,6 +24,7 @@ import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import JourneyBuilder from "./components/JourneyBuilder";
 import GroupsPage from "./components/Groups";
+import CalendarPage from "./components/Calendar";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
@@ -972,6 +973,7 @@ function AppShell() {
           a flag, and a board packet is a PDF export, not a module. Board.jsx,
           its routes and its table are untouched, like Events and Volunteers. */}
       {tab==="finance"&&<Finance key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="calendar"&&<CalendarPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} isAdmin={auth?.user?.role==="admin"}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}

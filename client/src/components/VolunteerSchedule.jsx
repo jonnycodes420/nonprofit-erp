@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { offerUndo } from "./EditHistory";
 import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
 
@@ -372,71 +373,112 @@ function BulkBar({ ids, shifts, onDone, onClear }) {
 }
 
 // ── ONE SHIFT: ITS SETTINGS, ITS ROLES, ITS PEOPLE ─────────────────────────
-function ShiftEditor({ shift, opportunities, date, onClose, onSaved }) {
+// CAL-1 Part 3 · THE SHIFT FORM. One clean event form for a shift, the same
+// from the calendar and from Volunteers: the title, the date with start and
+// end on one row, all day, repeat (weekly on that day, until a date), venue
+// and room, roles with how many each, places, published, colour from the
+// palette, and notes. Saving is the shift's own route (PATCH or POST
+// /volunteer-hub/slots), so it is one audit write; a change offers Undo,
+// which puts the old values back through the same route.
+const SHIFT_COLOURS = [["#0d5c3a", "Emerald"], ["#c9a84c", "Brass"], ["#0f1a12", "Ink"]];
+const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+export function ShiftEditor({ shift, opportunities = [], date, startTime, endTime, onClose, onSaved }) {
   const editing = !!shift;
+  const [opps, setOpps] = useState(opportunities);
+  useEffect(() => { if (!editing && !opportunities.length) apiFetch("/volunteer-hub/opportunities").then(d => setOpps(d.opportunities || [])).catch(() => {}); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const wasAllDay = shift && shift.startTime === "00:00" && shift.endTime === "23:59";
   const [f, setF] = useState(() => ({
     opportunityId: shift ? shift.opportunityId : (opportunities[0] && opportunities[0].id) || "",
-    name: shift ? shift.ownName || "" : "", color: shift ? shift.color || "" : "",
-    date: shift ? shift.date : date, startTime: shift ? shift.startTime : "09:00", endTime: shift ? shift.endTime : "12:00",
-    venue: shift ? shift.ownVenue || "" : "", locationDetail: shift ? shift.locationDetail || "" : "",
-    published: shift ? shift.published : true, capacity: shift && shift.capacity != null ? String(shift.capacity) : "",
-    roles: shift ? shift.roles.map(r => ({ id: r.id, name: r.name, needed: String(r.needed) })) : [],
+    name: shift ? shift.ownName || shift.name || "" : "", color: shift ? shift.color || "" : "",
+    date: shift ? shift.date : date, startTime: shift ? shift.startTime : (startTime || "09:00"), endTime: shift ? shift.endTime : (endTime || "12:00"),
+    allDay: !!wasAllDay, repeat: false, until: "",
+    venue: shift ? shift.ownVenue || shift.venue || "" : "", locationDetail: shift ? shift.locationDetail || "" : "",
+    published: shift ? shift.published !== false : true, capacity: shift && shift.capacity != null ? String(shift.capacity) : "",
+    notes: shift ? shift.notes || "" : "",
+    roles: shift ? (shift.roles || []).map(r => ({ id: r.id, name: r.name, needed: String(r.needed) })) : [],
   }));
+  useEffect(() => { if (!editing && !f.opportunityId && opps[0]) setF(p => ({ ...p, opportunityId: opps[0].id })); }, [opps]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const set = k => e => setF(p => ({ ...p, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
   const setRole = (i, k, v) => setF(p => ({ ...p, roles: p.roles.map((r, j) => j === i ? { ...r, [k]: v } : r) }));
+  const weekday = f.date ? WEEKDAY_LONG[new Date(Date.UTC(+f.date.slice(0, 4), +f.date.slice(5, 7) - 1, +f.date.slice(8, 10))).getUTCDay()] : "";
   const save = async () => {
     setBusy(true); setErr("");
-    const body = { ...f, capacity: f.roles.length ? null : f.capacity, roles: f.roles.map(r => ({ ...(r.id ? { id: r.id } : {}), name: r.name, needed: Number(r.needed) })) };
+    const times = f.allDay ? { startTime: "00:00", endTime: "23:59" } : { startTime: f.startTime, endTime: f.endTime };
+    const body = { opportunityId: f.opportunityId, name: f.name, color: f.color, date: f.date, ...times, venue: f.venue, locationDetail: f.locationDetail,
+      published: f.published, notes: f.notes, capacity: f.roles.length ? null : f.capacity,
+      roles: f.roles.map(r => ({ ...(r.id ? { id: r.id } : {}), name: r.name, needed: Number(r.needed) })),
+      ...(!editing && f.repeat && f.until ? { repeat: { weeklyUntil: f.until } } : {}) };
     try {
-      const r = editing
-        ? await apiFetch(`/volunteer-hub/slots/${shift.id}`, { method: "PATCH", body: JSON.stringify(body) })
-        : await apiFetch("/volunteer-hub/slots", { method: "POST", body: JSON.stringify(body) });
-      onSaved(editing ? r.message : "Shift added.");
+      if (editing) {
+        const was = { name: shift.ownName || "", color: shift.color || "", date: shift.date, startTime: shift.startTime, endTime: shift.endTime,
+          venue: shift.ownVenue || "", locationDetail: shift.locationDetail || "", published: shift.published !== false, notes: shift.notes || "",
+          capacity: shift.capacity != null ? String(shift.capacity) : null };
+        const r = await apiFetch(`/volunteer-hub/slots/${shift.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        offerUndo({ message: "Shift changed.", undoAction: () => apiFetch(`/volunteer-hub/slots/${shift.id}`, { method: "PATCH", body: JSON.stringify(was) }) }, "shift", () => onSaved && onSaved("Put back."));
+        onSaved(r.message || "Shift saved.");
+      } else {
+        const r = await apiFetch("/volunteer-hub/slots", { method: "POST", body: JSON.stringify(body) });
+        onSaved(r.count > 1 ? `${r.count} shifts added, every ${weekday} until ${f.until}.` : "Shift added.");
+      }
     } catch (e) { setErr(errorMessage(e, "That shift did not save.")); }
     setBusy(false);
   };
+  const row = { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" };
   return (
-    <Modal onClose={onClose} width={520} ariaLabel={editing ? "Change this shift" : "New shift"}>
-      <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{editing ? "Change this shift" : "New shift"}</div>
-      {!editing && <><label style={lbl} htmlFor="se-opp">Opportunity</label>
-        <select id="se-opp" value={f.opportunityId} onChange={set("opportunityId")} style={{ ...inp, width: "100%" }}>
-          {opportunities.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select></>}
-      <label style={lbl} htmlFor="se-name">Name (optional; the opportunity's name otherwise)</label>
-      <input id="se-name" value={f.name} onChange={set("name")} style={{ ...inp, width: "100%" }} />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 140px" }}><label style={lbl} htmlFor="se-date">Date</label><input id="se-date" type="date" value={f.date} onChange={set("date")} style={{ ...inp, width: "100%" }} /></div>
-        <div style={{ flex: "1 1 90px" }}><label style={lbl} htmlFor="se-start">Starts</label><input id="se-start" type="time" value={f.startTime} onChange={set("startTime")} style={{ ...inp, width: "100%" }} /></div>
-        <div style={{ flex: "1 1 90px" }}><label style={lbl} htmlFor="se-end">Ends</label><input id="se-end" type="time" value={f.endTime} onChange={set("endTime")} style={{ ...inp, width: "100%" }} /></div>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 180px" }}><label style={lbl} htmlFor="se-venue">Venue</label><input id="se-venue" value={f.venue} onChange={set("venue")} style={{ ...inp, width: "100%" }} /></div>
-        <div style={{ flex: "1 1 180px" }}><label style={lbl} htmlFor="se-loc">Where in it</label><input id="se-loc" placeholder="Loading dock, Room 2" value={f.locationDetail} onChange={set("locationDetail")} style={{ ...inp, width: "100%" }} /></div>
-      </div>
-      <label style={lbl}>Colour</label>
-      <div style={{ display: "flex", gap: 8 }}>
-        {Object.entries(COLOUR_NAMES).map(([hex, name]) => (
-          <button key={hex} type="button" aria-pressed={f.color === hex} onClick={() => setF(p => ({ ...p, color: hex }))}
-            style={{ ...btnQuiet, borderLeft: `8px solid ${hex}`, fontWeight: f.color === hex ? 800 : 500, outline: f.color === hex ? `2px solid ${T.ink}` : "none" }}>{name}</button>))}
-      </div>
-      <label style={lbl}>Roles, and how many people each needs</label>
-      {f.roles.map((r, i) => (
-        <div key={r.id || i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-          <input aria-label={`Role ${i + 1} name`} placeholder="Sorting" value={r.name} onChange={e => setRole(i, "name", e.target.value)} style={{ ...inp, flex: 2 }} />
-          <input aria-label={`Role ${i + 1} people needed`} inputMode="numeric" value={r.needed} onChange={e => setRole(i, "needed", e.target.value)} style={{ ...inp, width: 70 }} />
-          <button style={btnQuiet} aria-label={`Remove role ${i + 1}`} onClick={() => setF(p => ({ ...p, roles: p.roles.filter((_, j) => j !== i) }))}>Remove</button>
-        </div>))}
-      <button style={btnLink} onClick={() => setF(p => ({ ...p, roles: [...p.roles, { name: "", needed: "1" }] }))}>Add a role</button>
-      {!f.roles.length && <><label style={lbl} htmlFor="se-cap">Places (empty for no limit)</label><input id="se-cap" inputMode="numeric" value={f.capacity} onChange={set("capacity")} style={{ ...inp, width: 100 }} /></>}
-      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginTop: 12 }}>
-        <input type="checkbox" checked={f.published} onChange={set("published")} /> Published: volunteers can see it and sign up. A draft is only yours.
-      </label>
-      {err && <div role="alert" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button style={btnPrimary} disabled={busy} onClick={save}>{editing ? "Save" : "Add the shift"}</button>
-        <button style={btnQuiet} onClick={onClose}>Cancel</button>
+    <Modal onClose={onClose} width={560} ariaLabel={editing ? "Change this shift" : "New shift"}>
+      <div data-testid="shift-form" style={{ display: "flex", flexDirection: "column" }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Change this shift" : "New shift"}</div>
+        <label style={lbl} htmlFor="se-name">Title</label>
+        <input id="se-name" data-testid="shift-title" placeholder={editing ? (shift.opportunityName || "The opportunity's name") : "The opportunity's name"} value={f.name} onChange={set("name")} style={{ ...inp, width: "100%", fontSize: 15 }} />
+        {!editing && <><label style={lbl} htmlFor="se-opp">Opportunity</label>
+          <select id="se-opp" value={f.opportunityId} onChange={set("opportunityId")} style={{ ...inp, width: "100%" }}>
+            {opps.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select></>}
+        <label style={lbl}>When</label>
+        <div style={row}>
+          <input aria-label="Date" id="se-date" type="date" value={f.date} onChange={set("date")} style={{ ...inp, flex: "1 1 150px" }} />
+          {!f.allDay && <>
+            <input aria-label="Starts" id="se-start" type="time" value={f.startTime} onChange={set("startTime")} style={{ ...inp, flex: "0 1 110px" }} />
+            <span style={{ color: T.ink3, fontSize: 13, paddingBottom: 9 }}>to</span>
+            <input aria-label="Ends" id="se-end" type="time" value={f.endTime} onChange={set("endTime")} style={{ ...inp, flex: "0 1 110px" }} />
+          </>}
+        </div>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 8 }}>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-all-day" checked={f.allDay} onChange={set("allDay")} /> All day</label>
+          {!editing && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" data-testid="shift-repeat" checked={f.repeat} onChange={set("repeat")} /> Repeat weekly on {weekday || "this day"}</label>}
+          {!editing && f.repeat && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13 }}>until <input aria-label="Repeat until" type="date" value={f.until} min={f.date} onChange={set("until")} style={inp} /></label>}
+        </div>
+        <div style={row}>
+          <div style={{ flex: "1 1 180px" }}><label style={lbl} htmlFor="se-venue">Venue</label><input id="se-venue" value={f.venue} onChange={set("venue")} style={{ ...inp, width: "100%" }} /></div>
+          <div style={{ flex: "1 1 180px" }}><label style={lbl} htmlFor="se-loc">Room</label><input id="se-loc" placeholder="Loading dock, Room 2" value={f.locationDetail} onChange={set("locationDetail")} style={{ ...inp, width: "100%" }} /></div>
+        </div>
+        <label style={lbl}>Roles, and how many people each needs</label>
+        {f.roles.map((r, i) => (
+          <div key={r.id || i} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+            <input aria-label={`Role ${i + 1} name`} placeholder="Sorting" value={r.name} onChange={e => setRole(i, "name", e.target.value)} style={{ ...inp, flex: 2, minWidth: 0 }} />
+            <input aria-label={`Role ${i + 1} people needed`} inputMode="numeric" value={r.needed} onChange={e => setRole(i, "needed", e.target.value)} style={{ ...inp, width: 64 }} />
+            <button type="button" style={btnQuiet} aria-label={`Remove role ${i + 1}`} onClick={() => setF(p => ({ ...p, roles: p.roles.filter((_, j) => j !== i) }))}>Remove</button>
+          </div>))}
+        <button type="button" style={btnLink} onClick={() => setF(p => ({ ...p, roles: [...p.roles, { name: "", needed: "1" }] }))}>Add a role</button>
+        {!f.roles.length && <><label style={lbl} htmlFor="se-cap">Places (empty for no limit)</label><input id="se-cap" inputMode="numeric" value={f.capacity} onChange={set("capacity")} style={{ ...inp, width: 100 }} /></>}
+        <label style={lbl}>Colour</label>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {SHIFT_COLOURS.map(([hex, name]) => (
+            <button key={hex} type="button" aria-pressed={f.color === hex} onClick={() => setF(p => ({ ...p, color: hex }))}
+              style={{ ...btnQuiet, borderLeft: `8px solid ${hex}`, fontWeight: f.color === hex ? 800 : 500, outline: f.color === hex ? `2px solid ${T.ink}` : "none" }}>{name}</button>))}
+        </div>
+        <label style={lbl} htmlFor="se-notes">Notes</label>
+        <textarea id="se-notes" rows={3} value={f.notes} onChange={set("notes")} placeholder="What to bring, where to park" style={{ ...inp, width: "100%", resize: "vertical" }} />
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginTop: 12 }}>
+          <input type="checkbox" checked={f.published} onChange={set("published")} /> Published: volunteers can see it and sign up. A draft is only yours.
+        </label>
+        {err && <div role="alert" style={{ fontSize: 13, marginTop: 8 }}>{err}</div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button type="button" data-testid="shift-save" style={btnPrimary} disabled={busy} onClick={save}>{busy ? "Saving…" : editing ? "Save" : "Add the shift"}</button>
+          <button type="button" style={btnQuiet} onClick={onClose}>Cancel</button>
+        </div>
       </div>
     </Modal>
   );

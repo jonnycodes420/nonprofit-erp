@@ -33,7 +33,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       `SELECT ce.id, ce.title, ce.provider, ce.booked_in_steward, ce.owner_user_id, u.name AS owner_name, ce.location, ce.person_ids,
               to_char(ce.starts_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS s, to_char(ce.ends_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS e,
               to_char(ce.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS si, to_char(ce.ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ei,
-              d.id AS donor_id, d.name AS donor_name
+              d.id AS donor_id, d.name AS donor_name, d.last_gift_date, d.last_gift_amount
          FROM calendar_events ce
          LEFT JOIN users u ON u.id = ce.owner_user_id AND u.org_id = ce.org_id
          LEFT JOIN donors d ON d.org_id = ce.org_id AND d.id = ce.person_ids[1] AND d.deleted_at IS NULL
@@ -43,7 +43,9 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       [tz, tz, orgId, tz, to, tz, from, owner, owner]).then(rows => rows.forEach(r => out.push({
         id: `meeting:${r.id}`, type: "meeting", title: r.title || (r.donor_name ? `Meeting with ${r.donor_name}` : "Meeting"),
         start: r.s, end: r.e, allDay: false, ownerId: r.owner_user_id, ownerName: r.owner_name || "",
-        donorId: r.donor_id || null, donorName: r.donor_name || null, detail: [r.location, r.provider && r.provider !== "steward" ? `on your ${r.provider === "microsoft" ? "Outlook" : "Google"} calendar` : null].filter(Boolean).join(" · "),
+        donorId: r.donor_id || null, donorName: r.donor_name || null,
+        lastGift: r.donor_id && r.last_gift_date ? { date: String(r.last_gift_date).slice(0, 10), amount: Number(r.last_gift_amount) || 0 } : null,
+        detail: [r.location, r.provider && r.provider !== "steward" ? `on your ${r.provider === "microsoft" ? "Outlook" : "Google"} calendar` : null].filter(Boolean).join(" · "),
         editable: { move: true, resize: true }, ref: { calendarEventId: r.id, startsAt: r.si, endsAt: r.ei, provider: r.provider || null, synced: !!(r.provider && r.provider !== "steward" && !r.booked_in_steward) },
       }))));
     // A meeting logged on the timeline (a conversation that happened) shows on its day.

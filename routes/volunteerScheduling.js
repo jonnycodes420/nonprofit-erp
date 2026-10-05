@@ -27,6 +27,7 @@
 //   · An hour milestone writes a DRAFT for the coordinator. It does not thank
 //     anybody. The line that is never crossed.
 const SL = require("../surveyLinks");   // SURVEY-1: the volunteer follow-up link
+const orgTime = require("../orgTime");   // CAL-1: weekly repeat of a shift (civil days)
 const express = require("express");
 const routers = { r0: express.Router() };
 
@@ -197,16 +198,25 @@ app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req,
   const v = VS.validateSlot(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
   const who = actor(req), id = "vsl_" + uuid().slice(0, 10);
+  // CAL-1: "repeat weekly until" makes one shift per week on the same day,
+  // each its own record (signing up for one is not signing up for all).
+  const until = req.body && req.body.repeat && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.repeat.weeklyUntil || "")) ? String(req.body.repeat.weeklyUntil) : null;
+  if (until && until < v.slot.date) return res.status(400).json({ error: "invalid", message: "The repeat ends after the first shift." });
+  const dates = [v.slot.date];
+  if (until) for (let d = orgTime.addDays(v.slot.date, 7); d <= until && dates.length < 53; d = orgTime.addDays(d, 7)) dates.push(d);
+  const ids = dates.map((_, i) => (i ? "vsl_" + uuid().slice(0, 10) : id));
   // PARITY-3 — its name, colour, venue, place, published flag and roles.
   await withTransaction(async tx => {
-    await runTx(tx,
-      `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [id, req.user.orgId, opp.id, v.slot.date, v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes,
-       v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name]);
-    if (v.slot.roles && v.slot.roles.length) await saveRolesTx(tx, req.user.orgId, id, v.slot.roles.map(r => ({ ...r, id: null })), who);
+    for (let i = 0; i < dates.length; i++) {
+      await runTx(tx,
+        `INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,name,color,venue,location_detail,published,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [ids[i], req.user.orgId, opp.id, dates[i], v.slot.startTime, v.slot.endTime, v.slot.capacity, v.slot.notes,
+         v.slot.name, v.slot.color, v.slot.venue, v.slot.locationDetail, v.slot.published, who.id, who.name]);
+      if (v.slot.roles && v.slot.roles.length) await saveRolesTx(tx, req.user.orgId, ids[i], v.slot.roles.map(r => ({ ...r, id: null })), who);
+    }
   });
-  res.status(201).json({ id, hours: v.slot.hundredths / 100 });
+  res.status(201).json({ id, ids, count: ids.length, hours: v.slot.hundredths / 100 });
 }));
 
 // Cancelling a slot cancels its sign-ups. It does NOT mail anybody: an org

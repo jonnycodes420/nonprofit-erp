@@ -49,6 +49,7 @@ const TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
+  {id:"calendar",label:"Calendar",icon:"▦"},
   // FIX-1 §A — Steward Agent is its own room. The Workflows recipes moved
   // into it (Agent → Workflows); the "workflows" id still deep-links there
   // (App.jsx navigateTo), it just has no nav entry of its own.
