@@ -160,6 +160,7 @@ CORE=(
   parity4-show-me
   ask2-plans
   ask2-refuse
+  cal1-moves
   fix12-ai-switch
   parity4-started
   fix12-recipe-drafts

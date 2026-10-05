@@ -114,14 +114,17 @@ export function useUndo() {
     return () => clearTimeout(t);
   }, [state]);
   const hold = held => setState(s => (s ? { ...s, held } : s));
+  // CAL-1: the same toast undoes a CHANGE, not only a delete. A screen that
+  // moved something passes { undoAction, message }: undoAction puts the old
+  // values back through the item's own route (an audited write like any).
   const offer = (resp, label, onRestored) => {
-    if (!resp || !resp.undoId) return;
-    setState({ undoId: resp.undoId, label, onRestored, left: resp.undoSeconds || 10, err: "" });
+    if (!resp || !(resp.undoId || typeof resp.undoAction === "function")) return;
+    setState({ undoId: resp.undoId || null, action: resp.undoAction || null, message: resp.message || null, label, onRestored, left: resp.undoSeconds || 10, err: "" });
   };
   const undo = async () => {
     const s = state; if (!s) return;
     try {
-      const r = await apiFetch(`/deleted-records/${s.undoId}/restore`, { method: "POST" });
+      const r = s.action ? await s.action() : await apiFetch(`/deleted-records/${s.undoId}/restore`, { method: "POST" });
       setState(null);
       s.onRestored && s.onRestored(r);
     } catch (e) { setState({ ...s, err: errorMessage(e, "It could not be put back.") }); }
@@ -135,7 +138,7 @@ function UndoToastView({ state, onUndo, onHold }) {
     <div role="status" data-testid="undo-toast"
       onMouseEnter={() => onHold(true)} onMouseLeave={() => onHold(false)} onFocus={() => onHold(true)} onBlur={() => onHold(false)}
       style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.white, borderRadius: 12, padding: "12px 18px", display: "flex", gap: 14, alignItems: "center", fontSize: 13, boxShadow: "0 8px 24px rgba(15,26,18,0.25)", maxWidth: "calc(100vw - 32px)" }}>
-      <span>{state.err || `Deleted the ${state.label}.`}</span>
+      <span>{state.err || state.message || `Deleted the ${state.label}.`}</span>
       <button type="button" onClick={onUndo} style={{ ...linkBtn, color: T.gold, fontWeight: 800 }}>Undo ({state.left})</button>
     </div>
   );
@@ -159,7 +162,7 @@ function UndoHost() {
   return toast;
 }
 export function offerUndo(resp, label, onRestored) {
-  if (!resp || !resp.undoId) return;
+  if (!resp || !(resp.undoId || typeof resp.undoAction === "function")) return;
   if (undoHostOffer) { undoHostOffer(resp, label, onRestored); return; }
   undoWaiting.push([resp, label, onRestored]);
   if (!undoHostMounted && typeof document !== "undefined") {

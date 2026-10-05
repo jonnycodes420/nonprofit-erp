@@ -139,6 +139,11 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **A campaign has a page, and its list and page are on the census.** `CampaignsList.jsx` is in
   FIGURE_SOURCE_SCOPE, and `fix2-a-footing` runs that census. (FIX-27)
 
+- **The calendar reads; each item's own route writes.** `GET /calendar/items` never changes anything, and a
+  drag is `shared/calendarMoves.js`'s request to the item's own route, so it is that route's one audit write;
+  Undo is the same route with the old values through `offerUndo({ undoAction, message })`. Add a type to the
+  calendar by adding its read to `calendar.js` and, if it can move, its route to `moveRequest`. (CAL-1)
+
 ## Gotchas
 - **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
   figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)

@@ -230,13 +230,19 @@ const orgTotal = async () => {
   await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
            VALUES ($1,$2,'Perpetua Quillon',$3,'steward','active','[]','system:test','p2p suite')`,
     [DRIFTER, ORG, `perpetua.quillon.${suffix}@p2p1.test`]);
-  for (let k = 6; k >= 2; k--) {
+  // Dated from today (CAL-1): the yearly gift used to be pinned to October 4,
+  // and on October 5 the last one passed two years and the donor stopped
+  // counting as drifting. The last gift is fourteen months ago, the rest a
+  // year apart before it, whatever day the suite runs.
+  const lastGift = new Date(Date.now() - 14 * 30.44 * 864e5).toISOString().slice(0, 10);
+  const yearBack = k => `${Number(lastGift.slice(0, 4)) - k}${lastGift.slice(4, 8)}${Math.min(28, Number(lastGift.slice(8, 10))).toString().padStart(2, "0")}`;
+  for (let k = 4; k >= 0; k--) {
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name)
              VALUES ($1,$2,$3,2000,$4,'cash','system:test','p2p suite')`,
-      [`g_drift_${k}_${suffix}`, ORG, DRIFTER, `${thisYear - k}-10-04`]);
+      [`g_drift_${k}_${suffix}`, ORG, DRIFTER, yearBack(k)]);
   }
   await q(`UPDATE donors SET total_giving=10000, gift_count=5, last_gift_date=$2 WHERE id=$1`,
-    [DRIFTER, `${thisYear - 2}-10-04`]);
+    [DRIFTER, yearBack(0)]);
 
   const driftOf = async () => {
     const r = await api("GET", "/drift?all=1&includeMedium=1", tok);

@@ -3204,6 +3204,65 @@ async function main() {
     }
     console.log(`[seed] birthdays on file for ${n} people, three of them this week`);
   }
+  // ── CAL-1 · A DIRECTOR'S WEEK ON THE CALENDAR ─────────────────────────
+  // The week holding today (Monday to Sunday), so the Calendar's first view
+  // looks like a real director's week: six meetings, four next steps (two
+  // with a time), two shifts with one short, tonight's Scholarship Supper
+  // (seeded above), a journey step and a birthday. Topped up, never doubled:
+  // what the earlier blocks already put in the week counts. No rnd().
+  {
+    const dow = (() => { const [y, m, d] = TODAY.split("-").map(Number); return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; })();
+    const W0 = orgTime.addDays(TODAY, -dow), W6 = orgTime.addDays(W0, 6);
+    const at = (day, hhmm) => orgTime.localToInstant(`${day}T${hhmm}`, TZ).toISOString();
+    const people = await q(`SELECT d.id, d.name FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND COALESCE(d.deceased,false)=false
+                              AND d.total_giving > 0 AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.org_id=d.org_id AND t.donor_id=d.id AND t.closed_at IS NULL)
+                            ORDER BY d.total_giving DESC, d.id LIMIT 20`, [ORG]);
+    const [{ n: haveMeet }] = await q(`SELECT COUNT(*)::int AS n FROM calendar_events WHERE org_id=$1 AND (starts_at AT TIME ZONE $2)::date BETWEEN $3::date AND $4::date`, [ORG, TZ, W0, W6]);
+    const MEET = [[0, "09:30", 45, "Coffee", "Magee's on Main"], [1, "12:00", 60, "Lunch", "Windy Corner"], [2, "10:00", 30, "Call", null],
+                  [2, "15:30", 60, "Studio visit", "Harborlight studio"], [3, "11:00", 45, "Coffee", "Magee's on Main"], [4, "14:00", 60, "Board prospect chat", "Harborlight studio"]];
+    let made = 0, pi = 0;
+    for (const [off, hhmm, mins, what, place] of MEET) {
+      if (haveMeet + made >= 6) break;
+      const p = people[pi++]; if (!p) break;
+      const day = orgTime.addDays(W0, off), s0 = at(day, hhmm);
+      await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,created_by,created_by_name)
+               VALUES ($1,$2,'u_b72demo','google',$1,$3,$4,$5,$6,$7,'system:calendar/google/u_b72demo','Calendar sync') ON CONFLICT DO NOTHING`,
+        [`cal_b72_wk${off}_${hhmm.replace(":", "")}`, ORG, `${what} with ${p.name}`, s0, new Date(Date.parse(s0) + mins * 60000).toISOString(), place, [p.id]]);
+      made++;
+    }
+    const [{ n: haveSteps }] = await q(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1 AND closed_at IS NULL AND due_date BETWEEN $2 AND $3`, [ORG, W0, W6]);
+    const STEPS = [[1, "Call", "10:30"], [2, "Send a handwritten note", null], [3, "Invite them to something", "16:00"], [4, "Send the impact report", null]];
+    let stepsMade = 0;
+    for (const [off, label, time] of STEPS) {
+      if (haveSteps + stepsMade >= 4 && stepsMade >= 2) break;
+      const p = people[pi++]; if (!p) break;
+      await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,due_time,opened_on,owner_id,owner_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'u_b72demo','Dana Reyes','system:seed-demo','The demonstration file') ON CONFLICT DO NOTHING`,
+        [`th_b72_wk${off}`, ORG, p.id, label === "Call" ? "call" : "other", label, orgTime.addDays(W0, off), time, orgTime.addDays(TODAY, -10)]);
+      stepsMade++;
+    }
+    // Two shifts in the week, one of them short of people.
+    const shifts = await q(`SELECT s.id, s.capacity, (SELECT COUNT(*) FROM volunteer_signups su WHERE su.slot_id=s.id AND su.status='confirmed')::int AS filled
+                             FROM volunteer_slots s WHERE s.org_id=$1 AND s.cancelled_at IS NULL AND s.date BETWEEN $2 AND $3 ORDER BY s.date, s.start_time`, [ORG, W0, W6]);
+    if (shifts.length < 2) {
+      const [opp] = await q(`SELECT id FROM volunteer_opportunities WHERE org_id=$1 AND archived_at IS NULL ORDER BY created_at LIMIT 1`, [ORG]);
+      for (const [i, [off, st, en, cap, name]] of [[1, "15:00", "18:00", 6, "After-school tutoring"], [5, "09:00", "12:00", 8, "Saturday harbor clean-up"]].entries()) {
+        if (shifts.length + i >= 2 || !opp) break;
+        await q(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,name,published,created_by,created_by_name)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,'u_b72demo','Dana Reyes') ON CONFLICT DO NOTHING`,
+          [`vsl_b72_wk${off}`, ORG, opp.id, orgTime.addDays(W0, off), st, en, cap, name]);
+      }
+    }
+    // A journey step due midweek: the earliest open step of a running plan.
+    const [stepRow] = await q(`SELECT st.id FROM cultivation_plan_steps st JOIN cultivation_plans p ON p.id=st.plan_id AND p.org_id=st.org_id
+                                 WHERE st.org_id=$1 AND st.closed_at IS NULL AND COALESCE(st.status,'pending') IN ('pending','open') ORDER BY st.due_date, st.id LIMIT 1`, [ORG]);
+    if (stepRow) await q(`UPDATE cultivation_plan_steps SET due_date=$1 WHERE id=$2 AND org_id=$3`, [orgTime.addDays(W0, 2), stepRow.id, ORG]);
+    // A birthday on Friday.
+    const bday = people[pi++];
+    const fri = orgTime.addDays(W0, 4);
+    if (bday) await q(`UPDATE donors SET birth_month=$1, birth_day=$2 WHERE id=$3 AND org_id=$4`, [Number(fri.slice(5, 7)), Number(fri.slice(8, 10)), bday.id, ORG]);
+    console.log(`[seed] CAL-1: the week of ${W0} has ${haveMeet + made} meetings, ${haveSteps + stepsMade} next steps, ${Math.max(2, shifts.length)} shifts, a journey step and a birthday`);
+  }
   await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
   await require("./seed/prospect1-prospects").checkKnowsBest(q, ORG);   // FIX-22: a name under who knows them best
 
