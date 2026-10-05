@@ -105,5 +105,5 @@ const REASON_SENTENCE = {
   org_gate_unreadable: "Steward could not check this organization's email setting, so nothing was sent.",
 };
 
-module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding,
+module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding, isDemoOrg,
   billingBeforeOnboarding, REASON_SENTENCE };

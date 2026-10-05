@@ -41,6 +41,12 @@ or gated. `sendOnboardingSequence` is deleted, the engine stops any leftover onb
 the super-admin org panel gained an Email section (onboarded, donor-mail switch, domain and From, a test
 send to your own address). The one setting for "nothing until the donor file is in" is
 `MAIL_WAIT_FOR_ONBOARDING` (anything but 0 keeps the wait).
+Part 3: the Communications hub says one sentence from the policy ("Email turns on once your donor
+file is in." before onboarding, the From address after), and two send screens stopped printing raw
+reasons. `scripts/mail-preflight.js` is a read-only check to run against prod before the real key goes
+back on: each org's switch, demo, onboarded and what each family of mail would do, plus what would fire
+when ticks resume. Leftover onboarding sequences are archived (paused, enrolments stopped) at boot, not
+deleted, so the record of what was sent stays.
 
 ## CAL-1 · One calendar for everything (2026-10-05)
 

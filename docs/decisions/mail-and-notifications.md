@@ -38,6 +38,8 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   real donor-file import, or a super-admin's mark) and the org switch. Account and Jonathan mail always go;
   billing goes before onboarding unless `MAIL_BILLING_BEFORE_ONBOARDING=0`. Tag every new org send with
   `_stewardOrgId` and a kind, or route it through `donorSendOpts`, `notifyUserOnce` or `sendDigestEmail`.
+- **Before the real Resend key goes back on, or an org's donor mail is switched on, run
+  `DATABASE_URL=<prod> node scripts/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
 - **No automated onboarding or welcome series to org staff, ever (Jonathan, 2026-10-04).** He writes and
   sends onboarding himself; nothing creates an onboarding sequence and the engine stops any left over.
 - **Refuse `is_sample` donors, demo orgs and mail-off orgs for every kind, above the transactional split.**
