@@ -3,7 +3,7 @@
 // hero, block, ui, steps, incl, faqS, cards, related, finalCta, statBand,
 // quoteBand, teamReel), producing the same markup and classes, so site.css
 // styles it exactly as the reference does.
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ICON } from "./data/icons";
 import { PHOTOS, photoSrc, rowFor } from "./data/photos";
@@ -191,57 +191,35 @@ export function Shot({ k, alt, cap, cls = "" }) {
   );
 }
 
-// LANDING-5 · a person first, the product in the corner. The photograph
-// carries the alt text (it describes the person); the inset is a tight crop
-// of a Harborlight screen and is decorative.
-//
-// The picture is a BUTTON when it has a screen to show (`see`): a visible
-// "See it in Steward" cue sits on it, and a click opens the whole screen at
-// a readable size (on a phone, the tight crop, which is what stays legible
-// at 390), with one line and a link to its page. With `href` instead,
-// the picture is a link (pillar 6 goes to Leadership).
-const Expand = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>;
-
-export function PersonShot({ k, inset, pos, cls = "", eager, see, href, cue, children }) {
-  const box = useRef(null);
-  const art = <>
-    <Photo k={k} eager={eager} />
-    {inset && <img className="ps-inset" src={"/marketing/product/" + inset + ".webp"} alt="" loading="lazy" decoding="async" />}
-    {children}
-    {(see || href) && <span className="ps-cue" aria-hidden="true">{see ? <Expand /> : null}{cue || "See it in Steward"}</span>}
-  </>;
-  const style = pos ? { "--pos": pos } : undefined;
-  if (href) return <A className={"person-shot ps-btn " + cls} style={style} href={href}>{art}</A>;
-  if (!see) return <div className={"person-shot " + cls} style={style}>{art}</div>;
-  const close = () => box.current?.close();
+// LANDING-5 · a person and the product, side by side: a photograph of
+// someone at work, with a tight crop of the Harborlight screen overlapping
+// its corner. Neither is ever drawn larger than its file (photos are 1000px
+// wide and sit under 400px; the crops are 700 to 1000px and sit under 480px),
+// so both stay sharp on a 2x screen. The photograph carries the alt text and
+// describes the person; the crop is decorative, because the words beside it
+// say what it shows.
+export function PersonPair({ k, shot, pos, eager }) {
   return (
-    <>
-      <button type="button" className={"person-shot ps-btn " + cls} style={style}
-        aria-haspopup="dialog" aria-label={"See it in Steward: " + see.cap}
-        onClick={() => box.current?.showModal?.()}>{art}</button>
-      <dialog ref={box} className="ps-box" aria-label={see.cap} onClick={e => { if (e.target === box.current) close(); }}>
-        <div className="ps-box-in">
-          <button type="button" className="ps-x" aria-label="Close" onClick={close}>×</button>
-          <picture>
-            {inset && <source media="(max-width: 620px)" srcSet={"/marketing/product/" + inset + ".webp"} />}
-            <img src={"/marketing/product/" + see.shot + ".webp"} alt={see.alt} loading="lazy" decoding="async" />
-          </picture>
-          <p>{see.cap} <span className="ps-demo">Demo data from Harborlight Youth Collective.</span></p>
-          {see.href && <A className="ps-go" href={see.href}>{see.label} →</A>}
-        </div>
-      </dialog>
-    </>
+    <div className="pair" style={pos ? { "--pos": pos } : undefined}>
+      <Photo k={k} cls="pair-photo" eager={eager} />
+      {shot && <img className="pair-shot" src={"/marketing/product/" + shot + ".webp"} alt="" loading="lazy" decoding="async" />}
+    </div>
   );
 }
 
-// LANDING-5 · one pillar: a picture, a heading and one short line.
-export function PillarCard({ p, photo, inset, pos, see, href, cue, children }) {
+// LANDING-4's pillar band, with LANDING-5's fewer words: the number, the
+// heading and one line on one side, the picture on a tinted panel on the other.
+export function PillarBand({ p, tint = "cream", flip, link, children }) {
   return (
-    <div className="pcard" data-pillar={p.n}>
-      <PersonShot k={photo} inset={inset} pos={pos} see={see} href={href} cue={cue}>{children}</PersonShot>
-      <h3 className="mix">{rich(p.h)}</h3>
-      <p>{p.line}</p>
-    </div>
+    <section className={"pillar" + (flip ? " flip" : "")} data-pillar={p.n} style={{ paddingTop: 0 }}><div className="wrap pillar-g">
+      <div className="pillar-txt">
+        <span className="pillar-n">{"0" + p.n}</span>
+        <h2 className="mix h-l">{rich(p.h)}</h2>
+        <p>{p.line}</p>
+        {link && <p className="pillar-go"><A href={link[0]}>{link[1]} →</A></p>}
+      </div>
+      <div className="pillar-art" style={{ background: "var(--" + tint + ")" }}>{children}</div>
+    </div></section>
   );
 }
 

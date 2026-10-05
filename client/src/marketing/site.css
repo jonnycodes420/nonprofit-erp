@@ -695,58 +695,61 @@
   .mk .float.feel{width:auto;right:12px}
 }
 
-/* LANDING-5 · fewer words, more people. A person's photograph with a small
-   product inset in its corner; the vision line on its own; one price block. */
+.mk .pillar{padding-block:56px}
+.mk .pillar-g{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:56px;align-items:center}
+.mk .pillar.flip .pillar-txt{order:2}
+.mk .pillar.flip .pillar-g{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}
+.mk .pillar-n{font:700 13px var(--sans);letter-spacing:.14em;color:var(--brass-text)}
+.mk .pillar-txt .h-l{margin-top:14px}
+.mk .pillar-txt p{font-size:21px;line-height:1.5;margin-top:22px;color:var(--ink);max-width:460px}
+.mk .pillar-txt .pillar-go a{font-weight:700;color:var(--emerald)}
+.mk .pillar-art{border-radius:28px;padding:44px;display:grid;gap:22px;min-width:0}
+.mk .partner{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:28px;align-items:center;background:var(--white);border-radius:20px;padding:24px}
+.mk .partner .tall{aspect-ratio:3/4;border-radius:14px;overflow:hidden}
+.mk .partner-c b{display:block;font:400 28px/1.2 var(--serif)}
+.mk .partner-c span{color:var(--grey)}
+.mk .partner-c ul{margin:18px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.mk .partner-c li{font-weight:600;padding-left:22px;position:relative}
+.mk .partner-c li::before{content:"";position:absolute;left:0;top:8px;width:10px;height:10px;border-radius:50%;background:var(--emerald)}
+
+/* LANDING-5 · fewer words, more people. The hero chips, the vision line on
+   its own, the Lost & Found photo, the person-and-screen pair, the How it
+   works columns and the one price block. */
 .mk .hero-chips{list-style:none;margin:26px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
 .mk .hero-chips li{font:600 13.5px var(--sans);padding:7px 13px;border-radius:999px;background:var(--cream);color:var(--ink)}
 .mk .vision-line{padding-block:96px;border-block:1px solid var(--line)}
 .mk .vision-line p{margin:0;font:400 clamp(34px,5.4vw,76px)/1.08 var(--serif);letter-spacing:-.02em;text-align:center;text-wrap:balance;color:var(--ink)}
-.mk .person-shot{position:relative}
-.mk .person-shot .photo{aspect-ratio:4/3;min-height:0}
-.mk .person-shot .photo img{width:100%;height:100%;object-fit:cover;object-position:var(--pos,center 22%)}
-.mk .ps-inset{position:absolute;right:18px;bottom:18px;width:46%;height:auto;border-radius:10px;background:var(--white);box-shadow:0 18px 40px rgba(15,26,18,.28);border:4px solid var(--white);transition:transform .25s ease}
-.mk .person-shot.wide .photo{aspect-ratio:21/9;margin-top:48px}
-.mk .person-shot.wide .ps-inset{width:34%;right:28px;bottom:28px}
-.mk .ps-btn{display:block;width:100%;padding:0;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:20px;text-decoration:none}
-.mk .ps-btn .photo img{transition:transform .4s ease}
-.mk .ps-btn:hover .photo img{transform:scale(1.03)}
-.mk .ps-btn:hover .ps-inset{transform:translateY(-4px)}
-.mk .ps-btn:focus-visible{outline:3px solid var(--emerald);outline-offset:4px}
-.mk .ps-cue{position:absolute;left:18px;top:18px;display:inline-flex;align-items:center;gap:8px;background:var(--ink);color:var(--white);font:600 14px var(--sans);padding:9px 14px;border-radius:999px;box-shadow:0 8px 24px rgba(15,26,18,.3);transition:background .2s}
-.mk .ps-btn:hover .ps-cue{background:var(--emerald)}
-.mk .ps-box{margin:auto;inset:0;border:0;padding:0;border-radius:20px;max-width:min(1100px,calc(100vw - 32px));max-height:calc(100vh - 32px);background:var(--white);box-shadow:0 40px 90px rgba(15,26,18,.4)}
-.mk .ps-box::backdrop{background:rgba(15,26,18,.62)}
-.mk .ps-box-in{position:relative;padding:28px;display:grid;gap:16px}
-.mk .ps-box img{display:block;width:100%;height:auto;max-height:calc(100vh - 220px);object-fit:contain;border-radius:12px;border:1px solid var(--line)}
-.mk .ps-box p{margin:0;font-size:18px;color:var(--ink)}
-.mk .ps-demo{display:block;font-size:14px;color:var(--grey);margin-top:4px}
-.mk .ps-go{font-weight:700;color:var(--emerald)}
-.mk .ps-x{position:absolute;right:10px;top:6px;width:40px;height:40px;border:0;background:none;font-size:30px;line-height:1;color:var(--ink);cursor:pointer;border-radius:50%}
-.mk .ps-x:hover{background:var(--cream)}
-.mk .ps-founder{position:absolute;right:14px;bottom:14px;display:flex;gap:10px;align-items:center;background:var(--white);border-radius:12px;padding:8px 14px 8px 8px;box-shadow:0 10px 30px rgba(15,26,18,.22);max-width:62%}
-.mk .ps-founder .portrait{width:44px;height:44px;min-height:0;border-radius:50%;flex:none}
-.mk .ps-founder .portrait img{width:100%;height:100%;object-fit:cover}
-.mk .ps-founder span{font-size:12px;color:var(--grey);line-height:1.3}
-.mk .ps-founder b{display:block;color:var(--ink);font-size:14px}
-.mk .pcards,.mk .pcards.n4{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:80px 56px}
-.mk .pcard h3{font-size:clamp(30px,3vw,44px);margin-top:30px}
-.mk .pcard p{font-size:19px;color:var(--grey);margin-top:12px;max-width:520px}
 .mk .gb-photo{position:relative;min-height:340px}
 .mk .gb-photo .photo{position:absolute;inset:0;border-radius:0;min-height:0}
 .mk .gb-photo .photo img{width:100%;height:100%;object-fit:cover}
+/* The pair: a person at work, the screen overlapping the photo's corner.
+   The photo is 1000px and is drawn at most 380px wide; the screen crops are
+   700 to 1000px and are drawn at most 470px, so both stay sharp at 2x. */
+.mk .pair{position:relative;max-width:620px;margin-inline:auto;width:100%;padding-bottom:64px}
+.mk .pair .pair-photo{width:62%;max-width:380px;aspect-ratio:4/5;min-height:0;border-radius:20px;box-shadow:0 24px 50px -24px rgba(15,26,18,.45)}
+.mk .pair .pair-photo img{width:100%;height:100%;object-fit:cover;object-position:var(--pos,center 22%)}
+.mk .pair-shot{position:absolute;right:0;bottom:0;width:76%;max-width:470px;height:auto;border-radius:14px;background:var(--white);border:1px solid var(--line);box-shadow:0 30px 60px -20px rgba(15,26,18,.5)}
+.mk .how-g{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:56px;align-items:center}
+.mk .how-steps{grid-template-columns:1fr;gap:28px;margin-top:32px}
+.mk .how-steps .step{padding-top:18px}
+.mk .how-steps .step .sn{font-size:30px}
+.mk .how-steps .step h4{margin:10px 0 6px}
 .mk .price-block{text-align:center}
 .mk .price-block .h-l{margin:22px auto 0;max-width:980px}
 .mk .price-block .ctas{justify-content:center;margin-top:36px}
 .mk .price-authed{text-align:center;margin-top:-40px}
+
 @media (max-width:1000px){
-  .mk .pcards,.mk .pcards.n4{gap:56px 28px}
+  .mk .pillar-g,.mk .pillar.flip .pillar-g,.mk .how-g{grid-template-columns:1fr;gap:28px}
+  .mk .pillar.flip .pillar-txt{order:0}
 }
 @media (max-width:620px){
-  .mk .pcards,.mk .pcards.n4{grid-template-columns:1fr}
+  .mk .pillar-art{padding:20px;border-radius:20px}
+  .mk .partner{grid-template-columns:1fr}
+  .mk .partner .tall{max-width:220px}
+  .mk .pair{padding-bottom:48px}
+  .mk .pair .pair-photo{width:72%}
+  .mk .pair-shot{width:84%}
   .mk .vision-line{padding-block:64px}
-  .mk .ps-inset{width:54%;right:12px;bottom:12px;border-width:3px}
-  .mk .ps-cue{left:12px;top:12px;font-size:12.5px;padding:7px 11px}
-  .mk .person-shot.wide .photo{aspect-ratio:4/3}
-  .mk .person-shot.wide .ps-inset{width:58%;right:12px;bottom:12px}
   .mk .gb-photo{min-height:280px}
 }

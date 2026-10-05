@@ -610,16 +610,15 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
 
         // Every pillar picture's alt describes the person, never the software;
         // the product inset is decorative (alt="").
-        // The lightbox (<dialog>) holds the full screen, whose alt rightly
-        // describes the screen; the guard reads the picture itself.
-        const cards = [...body.matchAll(/<div class="pcard"[\s\S]*?<\/h3>/g)].map(m => m[0].replace(/<dialog[\s\S]*?<\/dialog>/g, ""));
+        const cards = [...body.matchAll(/<section class="pillar[^"]*" data-pillar="\d"[\s\S]*?<\/section>/g)].map(m => m[0]);
         const alts = cards.map(c => [...c.matchAll(/<img\b[^>]*?alt="([^"]*)"/g)].map(m => m[1]));
         const SOFTWARE = /\b(Steward|screen|screenshot|dashboard|software|app|interface|chart|report|CRM)\b/i;
         const PERSON = /\b(woman|women|man|men|people|person|colleagues|volunteers|team|couple|friends|staff|director)\b/i;
         const badAlt = alts.flatMap((a, i) => {
           const [photo, ...rest] = a;
           const out = [];
-          if (!photo || SOFTWARE.test(photo) || !PERSON.test(photo)) out.push(i + 1 + ": " + photo);
+          // Pillar 6 shows the founder's own portrait: a real person, named.
+          if (!photo || SOFTWARE.test(photo) || !(PERSON.test(photo) || /^Portrait of /.test(photo))) out.push(i + 1 + ": " + photo);
           for (const x of rest) if (x !== "" && !/^Portrait of /.test(x)) out.push(i + 1 + " inset: " + x);
           return out;
         });

@@ -17,7 +17,7 @@ export const UNDER = "Your reports tell you what happened. Steward tells you why
 export const FEELING = "Imagine never losing track of a single person who believes in what you do.";
 // LANDING-5 · the vision line stands alone on Home; the rest of the paragraph
 // opens About.
-export const VISION_LINE = "Steward is the institutional memory of generosity.";
+export const VISION_LINE = "Steward is the institutional memory of <b>generosity.</b>";
 export const VISION_ABOUT = "Small nonprofits run on relationships and lose them to turnover, spreadsheets and sheer overload. Someone gives from the heart, and a year later nobody remembers to call. Steward holds every donor, every conversation, every promise, gently, so that no one who ever believed in the cause is forgotten by it.";
 export const VISION = "Small nonprofits run on relationships and lose them to turnover, spreadsheets and sheer overload. Someone gives from the heart, and a year later nobody remembers to call. Steward is the institutional memory of generosity: every donor, every conversation, every promise, held gently, so that no one who ever believed in the cause is forgotten by it.";
 

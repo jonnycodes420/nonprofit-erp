@@ -6,8 +6,7 @@ const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || ".", "node_
 const BASE = process.env.BASE || "http://localhost:4173";
 const OUT = path.join(__dirname, "..", "docs", "landing-5");
 const FOUR = () => {
-  document.querySelectorAll('.pcards [data-pillar="4"], .pcards [data-pillar="5"]').forEach(n => n.remove());
-  document.querySelector(".pcards").className = "pcards n4";
+  document.querySelectorAll('section.pillar[data-pillar="4"], section.pillar[data-pillar="5"]').forEach(n => n.remove());
 };
 (async () => {
   const b = await chromium.launch();

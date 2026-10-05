@@ -3,7 +3,7 @@
 // and one line wherever it can be. Every picture is a person first, with the
 // product shown small in a corner. The PROOF-2 retention band and the
 // research strip stay, with their sources.
-import { A, Pill, Photo, Portrait, PersonShot, PillarCard, FaqList, PriceBlock, rich } from "../lib";
+import { A, Pill, Photo, Portrait, PersonPair, PillarBand, FaqList, PriceBlock, rich } from "../lib";
 import { STATS, srcShort, SRC, SRC_ALL } from "../data/research";
 import { HOME_FAQ } from "../data/faqs";
 import { TEAM } from "../data/team";
@@ -12,31 +12,18 @@ import { HEADLINE, UNDER, FEELING, VISION_LINE, PILLARS, HOW_SHORT, HOW_CLOSE, C
 // The three small chips under the hero buttons.
 const HERO_CHIPS = ["Month to month", "No platform fee", "Your whole team"];
 
-// Each pillar's photograph, the screen crop inset in its corner, and the
-// whole screen a click on the picture opens. Pillar 6 has no screen: its
-// corner is a call tile (the person in the photograph is on a call with the
-// founder, whose own portrait is in the tile, so the stock photo never stands
-// in for him) and the picture links to Leadership.
-const PILLAR_ART = {
-  1: { photo: "phone-laughing", inset: "inset-drift",
-    see: { shot: "drift", href: "/features/drift", label: "How Drift works", cap: "Drift on Home: each donor measured against their own rhythm, with the call to make.",
-      alt: "Home's Drift list in Steward: donors past their own giving pattern, each with what they usually give and a Log the call button" } },
-  2: { photo: "laptop-delighted", inset: "inset-agent", pos: "center top",
-    see: { shot: "agent-plan", href: "/agent", label: "Steward Agent", cap: "An Agent plan, waiting for your yes. Nothing runs until you say so.",
-      alt: "A Steward Agent plan waiting for approval: make Rafael a volunteer and draft a welcome for you to read and send, with Run the plan and Not this one" } },
-  3: { photo: "table-papers", inset: "inset-profile",
-    see: { shot: "profile", href: "/crm", label: "Steward CRM", cap: "One person: gifts, volunteer hours and an event, on one record.",
-      alt: "Rafael Quintero-Byrne's profile in Steward: his gifts, 20 hours volunteered, and that he came to an event, on one record" } },
-  4: { photo: "reading-letter", inset: "inset-figure", pos: "center bottom",
-    see: { shot: "figure-rows", href: "/features/reports", label: "Reports", cap: "Click a figure and the gifts behind it open, to the cent.",
-      alt: "A figure opened in Steward: Raised for Annual Fund 2026, $1,379,364.56, with the definition and the gifts behind it" } },
-  5: { photo: "trainer-laptop", inset: "inset-connections",
-    see: { shot: "connections", href: "/connections", label: "Connections", cap: "Your payment tools stay. A connection that goes quiet is flagged.",
-      alt: "Steward's Connections settings: Stripe and PayPal connected, and Givebutter flagged because nothing has arrived through it in 64 days" } },
-  6: { photo: "video-call", href: "/leadership", cue: "Meet the founder" },
+// Each pillar's band: its tint, which side the text sits, the link under the
+// line, and the picture: a person at work with the Harborlight screen that
+// shows the pillar overlapping its corner. Pillar 6 shows the founder's own
+// portrait instead, so no stock photo ever stands in for a real person.
+const BANDS = {
+  1: { tint: "brass-tint", link: ["/crm", "Steward CRM"], photo: "phone-laughing", shot: "inset-drift" },
+  2: { tint: "emerald-tint", flip: true, link: ["/agent", "Steward Agent"], photo: "laptop-delighted", shot: "inset-agent", pos: "center top" },
+  3: { tint: "cream", link: ["/volunteer", "Steward Volunteer"], photo: "table-papers", shot: "inset-profile" },
+  4: { tint: "brass-tint", flip: true, link: ["/features/reports", "Reports"], photo: "reading-letter", shot: "inset-figure", pos: "center bottom" },
+  5: { tint: "emerald-tint", link: ["/connections", "Connections"], photo: "trainer-laptop", shot: "inset-connections" },
+  6: { tint: "cream", flip: true, link: ["/leadership", "Who builds Steward"] },
 };
-const HOW_SEE = { shot: "why-reasons", href: "/features/ask", label: "Ask why", cap: "Ask why: the reasons in dollars, largest first. Every row opens the people behind it.",
-  alt: "Ask why's answer: Spring Appeal 2026 came in $11,650 under last year, mostly because 11 of last year's donors haven't given yet" };
 // Which pillars Home shows. Jonathan picks four (1, 2, 3, 6) or all six.
 export const HOME_PILLARS = [1, 2, 3, 4, 5, 6];
 
@@ -75,30 +62,34 @@ function RetentionBand() {
 
 function Pillars() {
   const founder = TEAM[0];
-  const list = PILLARS.filter(p => HOME_PILLARS.includes(p.n));
-  return (
-    <section className="pillars-s"><div className="wrap">
-      <div className={"pcards n" + list.length}>
-        {list.map(p => {
-          const a = PILLAR_ART[p.n];
-          return <PillarCard key={p.n} p={p} photo={a.photo} inset={a.inset} pos={a.pos} see={a.see} href={a.href} cue={a.cue}>
-            {p.n === 6 && <div className="ps-founder"><Portrait src={founder[2]} name={founder[0]} cls="" /><span>On the call<b>{founder[0]}</b>{founder[1]}</span></div>}
-          </PillarCard>;
-        })}
-      </div>
-    </div></section>
-  );
+  return PILLARS.filter(p => HOME_PILLARS.includes(p.n)).map(p => {
+    const b = BANDS[p.n];
+    return (
+      <PillarBand key={p.n} p={p} tint={b.tint} flip={b.flip} link={b.link}>
+        {p.n === 6
+          ? <div className="partner">
+              <Portrait src={founder[2]} name={founder[0]} />
+              <div className="partner-c"><b>{founder[0]}</b><span>{founder[1]}</span>
+                <ul><li>Month to month</li><li>No platform fee on your gifts</li><li>Email that reaches the founder</li></ul>
+              </div>
+            </div>
+          : <PersonPair k={b.photo} shot={b.shot} pos={b.pos} />}
+      </PillarBand>
+    );
+  });
 }
 
 function HowItWorks() {
   return (
-    <section id="how" className="how-s"><div className="wrap">
-      <div className="eyebrow">How does it work?</div>
-      <div className="steps">
-        {HOW_SHORT.map((s, i) => <div className="step" key={s[0]}><span className="sn">{"0" + (i + 1)}</span><h4>{s[0]}</h4><p>{s[1]}</p></div>)}
+    <section id="how" className="how-s"><div className="wrap how-g">
+      <div>
+        <div className="eyebrow">How does it work?</div>
+        <div className="steps how-steps">
+          {HOW_SHORT.map((s, i) => <div className="step" key={s[0]}><span className="sn">{"0" + (i + 1)}</span><h4>{s[0]}</h4><p>{s[1]}</p></div>)}
+        </div>
+        <p className="lede how-close">{HOW_CLOSE}</p>
       </div>
-      <PersonShot k="call-notepad" inset="inset-why" cls="wide" see={HOW_SEE} />
-      <p className="lede how-close">{HOW_CLOSE}</p>
+      <div className="pillar-art" style={{ background: "var(--cream)" }}><PersonPair k="video-call" shot="inset-why" /></div>
     </div></section>
   );
 }
@@ -132,7 +123,7 @@ export default function Home() {
       </section>
 
       <section className="vision-line" aria-label="Why we built Steward"><div className="wrap">
-        <p>{VISION_LINE}</p>
+        <p className="mix">{rich(VISION_LINE)}</p>
       </div></section>
 
       <Pillars />
