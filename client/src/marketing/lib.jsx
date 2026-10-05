@@ -11,6 +11,7 @@ import { FEAT } from "./data/features";
 import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { LEADERSHIP_SHOWN } from "./data/team";
 import { CREW, CREW_NEVER } from "./data/crew";
+import PRICING from "../../../pricing.json";
 
 // ── Rich strings ───────────────────────────────────────────────────────────
 // Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
@@ -190,18 +191,49 @@ export function Shot({ k, alt, cap, cls = "" }) {
   );
 }
 
-// LANDING-4 · one pillar, as its own band: the heading and paragraph from
-// data/messaging.js on the left, the screen that shows it on the right.
+// LANDING-5 · a person and the product, side by side: a photograph of
+// someone at work, with a tight crop of the Harborlight screen overlapping
+// its corner. Neither is ever drawn larger than its file (photos are 1000px
+// wide and sit under 400px; the crops are 700 to 1000px and sit under 480px),
+// so both stay sharp on a 2x screen. The photograph carries the alt text and
+// describes the person; the crop is decorative, because the words beside it
+// say what it shows.
+export function PersonPair({ k, shot, pos, eager }) {
+  return (
+    <div className="pair" style={pos ? { "--pos": pos } : undefined}>
+      <Photo k={k} cls="pair-photo" eager={eager} />
+      {shot && <img className="pair-shot" src={"/marketing/product/" + shot + ".webp"} alt="" loading="lazy" decoding="async" />}
+    </div>
+  );
+}
+
+// LANDING-4's pillar band, with LANDING-5's fewer words: the number, the
+// heading and one line on one side, the picture on a tinted panel on the other.
 export function PillarBand({ p, tint = "cream", flip, link, children }) {
   return (
     <section className={"pillar" + (flip ? " flip" : "")} data-pillar={p.n} style={{ paddingTop: 0 }}><div className="wrap pillar-g">
       <div className="pillar-txt">
         <span className="pillar-n">{"0" + p.n}</span>
         <h2 className="mix h-l">{rich(p.h)}</h2>
-        <p>{p.p}</p>
+        <p>{p.line}</p>
         {link && <p className="pillar-go"><A href={link[0]}>{link[1]} →</A></p>}
       </div>
       <div className="pillar-art" style={{ background: "var(--" + tint + ")" }}>{children}</div>
+    </div></section>
+  );
+}
+
+// LANDING-5 · the one price block, on Home and /pricing. The tier table is
+// gone from the marketing site; the starting price is the lowest monthly
+// price in pricing.json, so the page and the signup route cannot disagree.
+export function PriceBlock({ h1 }) {
+  const from = Math.min(...PRICING.tiers.map(t => t.monthlyUsd));
+  const H = h1 ? "h1" : "h2";
+  return (
+    <section className="price-block" data-testid="price-block"><div className="wrap">
+      <div className="eyebrow">Pricing</div>
+      <H className="mix h-l">Starting at ${from} a month. <b>{PRICING.marketing.included}</b></H>
+      <div className="ctas"><Pill href="/demo">Book a call</Pill></div>
     </div></section>
   );
 }

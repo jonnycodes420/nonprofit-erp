@@ -682,25 +682,28 @@
 .mk .letter-ta{width:100%;font:16px/1.6 var(--sans);padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--white);color:var(--ink);resize:vertical}
 @media (max-width:600px){.mk .form input,.mk .form select{font-size:16px}}
 
-/* LANDING-4 · the homepage around the messaging: the vision, six pillar bands
-   with real Harborlight screens, the why-demo sequence, the founder. */
+/* LANDING-4 · the hero feeling card and the product shot (LANDING-5 replaced
+   the pillar bands and the why-demo sequence below). */
 .mk .float.feel{width:320px}
 .mk .float.feel b{font-size:21px;margin:0}
-.mk .vision{padding-block:40px 96px}
-.mk .vision-p{font:400 clamp(24px,2.6vw,34px)/1.4 var(--serif);max-width:1040px;margin-top:22px;color:var(--ink)}
+.mk .shot{margin:0;min-width:0}
+.mk .shot img{display:block;width:100%;height:auto;border-radius:14px;background:var(--white);box-shadow:0 24px 50px -24px rgba(15,26,18,.45)}
+.mk .shot-cap{font-size:14px;color:var(--grey);margin-top:10px}
+.mk .how-s .steps{margin-top:40px}
+.mk .how-close{margin-top:44px;max-width:860px}
+@media (max-width:620px){
+  .mk .float.feel{width:auto;right:12px}
+}
+
 .mk .pillar{padding-block:56px}
 .mk .pillar-g{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:56px;align-items:center}
 .mk .pillar.flip .pillar-txt{order:2}
 .mk .pillar.flip .pillar-g{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}
 .mk .pillar-n{font:700 13px var(--sans);letter-spacing:.14em;color:var(--brass-text)}
 .mk .pillar-txt .h-l{margin-top:14px}
-.mk .pillar-txt p{font-size:19px;line-height:1.6;margin-top:22px;color:var(--ink)}
+.mk .pillar-txt p{font-size:21px;line-height:1.5;margin-top:22px;color:var(--ink);max-width:460px}
 .mk .pillar-txt .pillar-go a{font-weight:700;color:var(--emerald)}
 .mk .pillar-art{border-radius:28px;padding:44px;display:grid;gap:22px;min-width:0}
-.mk .shot{margin:0;min-width:0}
-.mk .shot img{display:block;width:100%;height:auto;border-radius:14px;background:var(--white);box-shadow:0 24px 50px -24px rgba(15,26,18,.45)}
-.mk .shot-cap{font-size:14px;color:var(--grey);margin-top:10px}
-.mk .shot.inset{max-width:82%;justify-self:end}
 .mk .partner{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr);gap:28px;align-items:center;background:var(--white);border-radius:20px;padding:24px}
 .mk .partner .tall{aspect-ratio:3/4;border-radius:14px;overflow:hidden}
 .mk .partner-c b{display:block;font:400 28px/1.2 var(--serif)}
@@ -708,24 +711,45 @@
 .mk .partner-c ul{margin:18px 0 0;padding:0;list-style:none;display:grid;gap:10px}
 .mk .partner-c li{font-weight:600;padding-left:22px;position:relative}
 .mk .partner-c li::before{content:"";position:absolute;left:0;top:8px;width:10px;height:10px;border-radius:50%;background:var(--emerald)}
-.mk .how-s .steps{margin-top:40px}
-.mk .seq{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:24px;margin-top:56px;align-items:start}
-.mk .seq-i{background:var(--cream);border-radius:20px;padding:18px;min-width:0}
-.mk .seq-i > b{display:flex;gap:10px;align-items:center;margin-top:16px;font-size:17px}
-.mk .seq-i > b span{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--emerald);color:var(--white);font-size:13px}
-.mk .seq-i > p{font-size:15px;color:var(--grey);margin-top:6px}
-.mk .how-close{margin-top:44px;max-width:860px}
+
+/* LANDING-5 · fewer words, more people. The hero chips, the vision line on
+   its own, the Lost & Found photo, the person-and-screen pair, the How it
+   works columns and the one price block. */
+.mk .hero-chips{list-style:none;margin:26px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.mk .hero-chips li{font:600 13.5px var(--sans);padding:7px 13px;border-radius:999px;background:var(--cream);color:var(--ink)}
+.mk .vision-line{padding-block:96px;border-block:1px solid var(--line)}
+.mk .vision-line p{margin:0;font:400 clamp(34px,5.4vw,76px)/1.08 var(--serif);letter-spacing:-.02em;text-align:center;text-wrap:balance;color:var(--ink)}
+.mk .gb-photo{position:relative;min-height:340px}
+.mk .gb-photo .photo{position:absolute;inset:0;border-radius:0;min-height:0}
+.mk .gb-photo .photo img{width:100%;height:100%;object-fit:cover}
+/* The pair: a person at work, the screen overlapping the photo's corner.
+   The photo is 1000px and is drawn at most 380px wide; the screen crops are
+   700 to 1000px and are drawn at most 470px, so both stay sharp at 2x. */
+.mk .pair{position:relative;max-width:620px;margin-inline:auto;width:100%;padding-bottom:64px}
+.mk .pair .pair-photo{width:62%;max-width:380px;aspect-ratio:4/5;min-height:0;border-radius:20px;box-shadow:0 24px 50px -24px rgba(15,26,18,.45)}
+.mk .pair .pair-photo img{width:100%;height:100%;object-fit:cover;object-position:var(--pos,center 22%)}
+.mk .pair-shot{position:absolute;right:0;bottom:0;width:76%;max-width:470px;height:auto;border-radius:14px;background:var(--white);border:1px solid var(--line);box-shadow:0 30px 60px -20px rgba(15,26,18,.5)}
+.mk .how-g{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:56px;align-items:center}
+.mk .how-steps{grid-template-columns:1fr;gap:28px;margin-top:32px}
+.mk .how-steps .step{padding-top:18px}
+.mk .how-steps .step .sn{font-size:30px}
+.mk .how-steps .step h4{margin:10px 0 6px}
+.mk .price-block{text-align:center}
+.mk .price-block .h-l{margin:22px auto 0;max-width:980px}
+.mk .price-block .ctas{justify-content:center;margin-top:36px}
+.mk .price-authed{text-align:center;margin-top:-40px}
+
 @media (max-width:1000px){
-  .mk .pillar-g,.mk .pillar.flip .pillar-g{grid-template-columns:1fr;gap:28px}
+  .mk .pillar-g,.mk .pillar.flip .pillar-g,.mk .how-g{grid-template-columns:1fr;gap:28px}
   .mk .pillar.flip .pillar-txt{order:0}
-  .mk .seq{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:620px){
-  .mk .pillar-art{padding:16px;border-radius:20px}
-  .mk .shot.inset{max-width:100%;margin-top:0}
-  .mk .seq{grid-template-columns:1fr}
+  .mk .pillar-art{padding:20px;border-radius:20px}
   .mk .partner{grid-template-columns:1fr}
   .mk .partner .tall{max-width:220px}
-  .mk .float.feel{width:auto;right:12px}
+  .mk .pair{padding-bottom:48px}
+  .mk .pair .pair-photo{width:72%}
+  .mk .pair-shot{width:84%}
+  .mk .vision-line{padding-block:64px}
+  .mk .gb-photo{min-height:280px}
 }
-.mk .seq .shot img{aspect-ratio:4/3;object-fit:cover;object-position:top left}

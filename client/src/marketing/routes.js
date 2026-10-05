@@ -47,7 +47,7 @@ export const ROUTES = [
   // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
   // UpgradeModal, goToPricing() and Settings is unchanged.
-  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Every feature on every plan, priced by active donors. Seed $199, Sapling $299, Orchard $499 a month, and a conversation above ten thousand donors. Thirty days free, then month to month." },
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Everything is included and nothing is sold separately. No platform fee on gifts, your whole team, thirty days free, then month to month." },
 
   { path: "/why", page: "why", title: T("Imagine never losing track of a single person who believes in what you do."), description: VISION },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
@@ -63,7 +63,7 @@ export const ROUTES = [
   { path: "/subprocessors", page: "subprocessors", title: T("Who else touches your data."), description: "Every company that receives your organisation's or your donors' information when you use Steward, what it gets and why." },
   { path: "/your-data", page: "yourData", title: T("Your data, and your donors' data."), description: "How to take everything with you, answer a donor who asks what you hold, and erase a donor who asks to be forgotten." },
   { path: "/dpa", page: "dpa", title: T("Data processing agreement."), description: "The terms under which Steward processes your organisation's data." },
-  { path: "/about", page: "about", title: P("About Steward", 6), description: PILLAR[6].short + " If something isn't right, it gets fixed in days, not quarters." },
+  { path: "/about", page: "about", title: P("About Steward", 6), description: PILLAR[6].short + " Questions reach the founder, by email or on a call." },
   { path: "/partners", page: "partners", title: T("Bring Steward to the nonprofits you advise."), description: "Fundraising consultants, coaches and agencies refer and set up Steward for their clients. Partners earn a share of revenue and get a direct line to the founder." },
   { path: "/contact", page: "contact", title: T("Talk to a person."), description: "Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder." },
   { path: "/demo", page: "demo", title: "Steward · Book a call · Bring one question about your donors", description: "Bring one question you can't answer about your donors. We'll answer it with your own file, in a 20-minute call with the person who built Steward." },
