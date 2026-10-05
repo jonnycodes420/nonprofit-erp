@@ -823,7 +823,7 @@ export const PROMPT_RETENTION_DAYS = 30;
 // A sentence that asks Steward to DO something to people (draft, send, email,
 // call, tag, thank…) is never a read, even when it names the LYBUNT people:
 // "draft a note to everyone who gave last year but not this year" is a plan.
-const DO_WORDS = /\b(draft|drafts|write|send|sends|email|e-mail|mail|call|phone|text|thank|thanks|note|notes|letter|letters|tag|assign|remind|follow[- ]?up|record|log|enter|add|task|tasks|delete|remove|merge|update|change|pause|cancel|refund|enrol|enroll|invite|schedule)\b/;
+const DO_WORDS = /\b(draft|drafts|write|send|sends|email|e-mail|mail|call|calls|plan|visit|visits|phone|text|thank|thanks|note|notes|letter|letters|tag|assign|remind|follow[- ]?up|record|log|enter|add|task|tasks|delete|remove|merge|update|change|pause|cancel|refund|enrol|enroll|invite|schedule)\b/;
 const READ_START = /^\s*(please\s+)?(find|show|list|who|whom|which|what|how many|how much|open|build|create|make|give me|pull|run|get|see|report|count|explain|where)\b/;
 // Each report the room can open, by the id Reports already deep-links
 // (navigateTo("reports", { report })), with its name and the one sentence that

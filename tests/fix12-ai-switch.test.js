@@ -13,6 +13,11 @@
 //       which MUST reach the stand-in: proof the stand-in is wired, so the zero
 //       above is a real zero and not a stub nobody was ever going to call.
 //
+//   §3  FIX-27 Part 7. A STAND-IN THAT INVENTS A VIDEO. With AI on, the
+//       stand-in drafts "I recorded a short video for you" with a watch link.
+//       Communications' draft comes back as the template, mentioning no
+//       video and no link; the same check passes a draft that claims nothing.
+//
 // HOW IT WOULD GO RED: a `new Anthropic()` or a fetch to api.openai.com in a
 // route (§1); a call site that skips the gate (§2). Proven able to fail:
 // removing `await requireAi(orgId)` from anthropicFor's create turns §2 red on
@@ -66,15 +71,22 @@ function serverFiles() {
            VALUES ('ce_fix12ai',$1,'u_fix12ai','google','ce_fix12ai','Coffee',NOW() - INTERVAL '2 hours',NOW() - INTERVAL '1 hour',ARRAY['d_fix12ai'],'system:test','test')`, [ORG]);
 
   const heard = [];
+  let inventVideo = true;
   const mock = http.createServer((req, res) => {
     let b = ""; req.on("data", c => b += c);
     req.on("end", () => {
       heard.push(req.url);
       res.writeHead(200, { "Content-Type": "application/json" });
+      // FIX-27: a draft request is answered by a model that invents a video
+      // (or, when `inventVideo` is off, by one that claims nothing).
+      const draft = b.includes("Write a donor email");
+      const draftText = inventVideo
+        ? "Subject: A thank you from all of us\n\n<p>Dear {{first_name}},</p><p>I recorded a short video to say thank you. Watch it here: https://example.com/watch?v=thanks</p>"
+        : "Subject: Thank you\n\n<p>Dear {{first_name}},</p><p>Thank you for standing with {{org_name}} this year.</p>";
       res.end(req.url.includes("audio")
         ? JSON.stringify({ text: "Ottoline mentioned her garden." })
         : JSON.stringify({ id: "msg_t", type: "message", role: "assistant", model: "x", stop_reason: "end_turn",
-            content: [{ type: "text", text: "{\"mapping\":{}}" }], usage: { input_tokens: 1, output_tokens: 1 } }));
+            content: [{ type: "text", text: draft ? draftText : "{\"mapping\":{}}" }], usage: { input_tokens: 1, output_tokens: 1 } }));
     });
   });
   await new Promise(r => mock.listen(0, r));
@@ -104,6 +116,7 @@ function serverFiles() {
 
     const CALLS = [
       ["/ai/stream", { userMessage: "Draft a thank-you." }],
+      ["/ai/draft-email", { purpose: "campaign", segment: { stage: "active" } }],
       ["/ai/column-map", { headers: ["Name", "Email"], sample: { Name: "A", Email: "a@b.c" } }],
       ["/help/ask", { question: "How do I import my donors from a spreadsheet?", screen: "donors" }],
       ["/agent/instructions", { text: "Draft a thank-you to Ottoline Brackwater." }],
@@ -138,6 +151,17 @@ function serverFiles() {
     await post("/help/ask", { question: "How do I import my donors from a spreadsheet?", screen: "donors" });
     await post("/voice-memos/transcribe", { donorId: "d_fix12ai", audioBase64: "AAAA", mimeType: "audio/webm" });
     ok("AI on: the same calls DO reach the stand-in (Anthropic and OpenAI)", heard.some(u => u.includes("messages")) && heard.some(u => u.includes("audio")), heard.join(", "));
+
+    // §3 FIX-27: the stand-in invents a video. The draft must not mention one.
+    const before = heard.length;
+    const invented = JSON.parse((await post("/ai/draft-email", { purpose: "campaign", segment: { stage: "active" } })).body);
+    ok("§3 the draft was asked of the model", heard.length === before + 1, `${heard.length} vs ${before}`);
+    ok("§3 a draft that invents a video falls back to the template, with no video and no link",
+      invented.source === "template" && !/video|record|watch|https?:/i.test(`${invented.subject} ${invented.body}`) && /\{\{first_name\}\}/.test(invented.body),
+      JSON.stringify(invented).slice(0, 300));
+    inventVideo = false;
+    const honest = JSON.parse((await post("/ai/draft-email", { purpose: "campaign", segment: { stage: "active" } })).body);
+    ok("§3 …and a draft that claims nothing is kept as the model wrote it", honest.source === "ai" && /standing with/.test(honest.body), JSON.stringify(honest).slice(0, 200));
   } finally {
     child.kill();
     mock.close();

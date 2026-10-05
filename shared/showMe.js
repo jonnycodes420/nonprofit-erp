@@ -23,6 +23,8 @@
 export const SHOW_KEYS = [
   "role", "level", "lifecycle", "retained", "given", "volunteer", "volActive", "household",
   "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
+  // FIX-27: a campaign (and the year of the gift), and no ask this year.
+  "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk",
 ];
 export const CANT_FILTER = "Steward can't filter by that yet";
 
@@ -37,7 +39,10 @@ export function listFirst(text) {
   return SHOW_PREFIX.test(s) || LIST_START.test(s);
 }
 export function isShowMe(text) {
-  return listFirst(text) || /^\s*who\b.*\b(gave|give|gives|giving|given|donated|volunteer)/i.test(norm(text));
+  return listFirst(text) || /^\s*who\b.*\b(gave|give|gives|giving|given|donated|volunteer)/i.test(norm(text))
+    // FIX-27: "which major donors haven't been asked" is a list, once none of
+    // the why questions has taken it.
+    || /^\s*(which|what)( of (my|our))?( \w+){0,2} (donors?|people|givers?|supporters?|volunteers?)\b/i.test(norm(text));
 }
 
 function norm(text) {
@@ -50,7 +55,7 @@ function yearRange(y) { return [ymd(y, 1, 1), ymd(y, 12, 31)]; }
 const FILLER = new Set(("show me list find pull up give get all our the a an of who whom that which have has had " +
   "and but or with to at for in on from were was are is be been who've who'd they them their people donors donor " +
   "everyone everybody anyone givers giver supporters supporter members member someone ones any please also just " +
-  "did do does yet so far still").split(" "));
+  "did do does yet so far still which what my i we been").split(" "));
 
 // ── AI OFF: THE TEMPLATES ─────────────────────────────────────────────────
 // ctx: { today: "YYYY-MM-DD" (the org's), events: [{ id, name, date }] }
@@ -61,6 +66,38 @@ export function templateSpec(text, ctx = {}) {
   const yearOf = w => (w === "this year" ? thisYear : w === "last year" ? thisYear - 1 : Number(w));
   const take = (re, fn) => { s = s.replace(re, (...m) => { fn(...m); return " "; }); };
   const YEAR = "(this year|last year|(?:19|20)\\d{2})";
+
+  // FIX-27 · NO ASK THIS YEAR, and "what should I ask them" (the list then
+  // carries each person's suggested ask; it is not a filter).
+  take(/\b(who )?(have|has|haven't|hasn't|have not|has not)? ?(not )?(been asked|asked)( for (a|anything|money|a gift))?( (yet|this year|in the last (12|twelve) months))?\b(?! (them|for|about))/g, (m, w, h, n) => {
+    if (/haven't|hasn't|\bnot\b/.test(m)) rules.noAsk = "1"; else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + "asked";
+  });
+  take(/\b(with )?no ask( this year)?\b/g, () => { rules.noAsk = "1"; });
+  take(/\b(we|i) (haven't|have not|didn't|did not) asked?( this year| yet)?\b/g, () => { rules.noAsk = "1"; });
+  take(/\b(and )?(what|how much) (should|do|would|could|can) (i|we) ask( them| each of them| for)?( for)?\b/g, () => { rules.__withAsk = true; });
+  // FIX-27 · A CAMPAIGN, by name: "gave to last year's spring appeal but not
+  // this year's". Each side names its campaign through the year, so it is the
+  // campaign that is found, never a guess at gift dates.
+  const CY = "(last year's|this year's|(?:19|20)\\d{2}'?s?|the|our)";
+  const yearWord = w => (!w ? null : /last year/.test(w) ? thisYear - 1 : /this year/.test(w) ? thisYear : /^(19|20)\d{2}/.test(w) ? Number(w.slice(0, 4)) : null);
+  take(new RegExp(`\\b(?:(?:gave|given|donated|give)\\s+)?to ${CY} ([a-z0-9' -]{3,60}?),? but (?:not|haven't|hasn't|didn't)(?: (?:given|gave|give|donated))?(?: to)? ${CY}( one)?(?= |$)`, "g"),
+    (m, y1, name, y2) => {
+      const a = matchCampaign(name, yearWord(y1), ctx.campaigns || []), b = matchCampaign(name, yearWord(y2), ctx.campaigns || []);
+      if (a && b && a.id !== b.id) { rules.gaveCampaign = a.id; rules.notGaveCampaign = b.id; }
+      else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `to ${name.trim()}`;
+    });
+  take(new RegExp(`\\b(?:(?:gave|given|donated|give)\\s+)?to (last year's|this year's|(?:19|20)\\d{2}'?s?) ([a-z0-9' -]{3,60}?)(?= (?:in|and|but|who|with|over|more)\\b| $)`, "g"),
+    (m, y1, name) => {
+      const a = matchCampaign(name, yearWord(y1), ctx.campaigns || []);
+      if (a) rules.gaveCampaign = a.id; else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `to ${name.trim()}`;
+    });
+
+  // "last year's spring givers": the campaign by its givers.
+  take(new RegExp(`\\b(last year's|this year's|(?:19|20)\\d{2}'?s?) ([a-z0-9' -]{3,40}?) (givers|donors|supporters)\\b`, "g"),
+    (m, y1, name) => {
+      const a = matchCampaign(name, yearWord(y1), ctx.campaigns || []);
+      if (a) rules.gaveCampaign = a.id; else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `${name.trim()} givers`;
+    });
 
   // "never given" first, so "given" in it is not read as a gift window.
   take(/\b(who'?ve|who have|have|has|who has)? ?(never|not ever) (given|gave|donated)( anything)?( a gift)?\b/g, () => { rules.given = "never"; });
@@ -75,7 +112,9 @@ export function templateSpec(text, ctx = {}) {
   take(/\b(?:(?:gave|given|donated)\s+)?(?:to|at) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
     const n = name.trim();
     const ev = matchEvent(n, ctx.events || []);
+    const cp = ev ? null : matchCampaign(n, null, ctx.campaigns || []);
     if (ev) rules.gaveEvent = ev.id;
+    else if (cp) rules.gaveCampaign = cp.id;
     else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `to ${n}`;
   });
   // Gave in a year: "gave last year", "gave in 2025", "donated this year".
@@ -100,8 +139,9 @@ export function templateSpec(text, ctx = {}) {
 
   const left = s.split(/[\s,]+/).map(w => w.replace(/[^a-z0-9'$]/g, "")).filter(w => w && !FILLER.has(w));
   const unsupported = [rules.__unsupported, left.length ? left.join(" ") : null].filter(Boolean).join(", ") || null;
-  delete rules.__unsupported;
-  return { rules, unsupported };
+  const withAsk = !!rules.__withAsk;
+  delete rules.__unsupported; delete rules.__withAsk;
+  return { rules, unsupported, withAsk };
 }
 
 // An event named in the question: every word the person typed is in the
@@ -111,6 +151,18 @@ export function matchEvent(name, events) {
   if (!words.length) return null;
   const hits = (events || []).filter(e => { const n = String(e.name || "").toLowerCase(); return words.every(w => n.includes(w)); });
   hits.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  return hits[0] || null;
+}
+
+// A campaign named in the question, the same way: every word typed is in the
+// campaign's name. A year, when said ("last year's"), picks the campaign whose
+// name or start date carries it; otherwise the most recent wins.
+export function matchCampaign(name, year, campaigns) {
+  const words = String(name || "").toLowerCase().replace(/\b(the|our|campaign|one)\b/g, " ").split(/\s+/).filter(w => w.length > 1 && !/^(19|20)\d{2}$/.test(w));
+  if (!words.length) return null;
+  let hits = (campaigns || []).filter(c => { const n = String(c.name || "").toLowerCase(); return words.every(w => n.includes(w)); });
+  if (year) hits = hits.filter(c => String(c.name || "").includes(String(year)) || String(c.startDate || "").slice(0, 4) === String(year));
+  hits.sort((a, b) => String(b.startDate || "").localeCompare(String(a.startDate || "")));
   return hits[0] || null;
 }
 
@@ -133,40 +185,48 @@ const KEY_HELP = {
   city: "a city name, exactly as written in the question",
   gaveEvent: "the id of one of the org's events listed below: gave to that event",
   gaveOver: "a number of dollars: gave more than this in all (to the event and in the dates above, when given)",
+  gaveCampaign: "the id of one of the org's campaigns listed below: gave to that campaign",
+  gaveCampaignYear: "YYYY: only gifts to gaveCampaign dated in this calendar year (only with gaveCampaign)",
+  notGaveCampaign: "the id of one of the org's campaigns listed below: has NOT given to that campaign",
+  notGaveCampaignYear: "YYYY: only gifts to notGaveCampaign dated in this calendar year (only with notGaveCampaign)",
+  noAsk: "1: no ask this year (no proposal open, and nothing asked of them in the last twelve months)",
 };
 export function specTool() {
   const props = {};
   for (const k of SHOW_KEYS) props[k] = { type: ["string", "null"], description: KEY_HELP[k] };
+  props.suggestAsk = { type: ["string", "null"], description: "1 when the question asks what to ask them for (each person then shows their suggested ask). Not a filter." };
   props.unsupported = { type: ["string", "null"], description: "Anything the question asks for that none of these filters can express, in a few words. Null when every part is covered." };
   return {
     name: "filter_spec",
     description: "The donor list filters that answer the question. Use only these fields. Never guess a filter for something they cannot express; name it in unsupported.",
     strict: true,
-    input_schema: { type: "object", additionalProperties: false, properties: props, required: [...SHOW_KEYS, "unsupported"] },
+    input_schema: { type: "object", additionalProperties: false, properties: props, required: [...SHOW_KEYS, "suggestAsk", "unsupported"] },
   };
 }
 export function specPrompt(question, ctx = {}) {
   const ev = (ctx.events || []).slice(0, 40).map(e => `${e.id}: ${e.name}${e.date ? ` (${String(e.date).slice(0, 10)})` : ""}`).join("\n") || "(none)";
   return `Turn this question about a nonprofit's supporters into donor list filters, using the filter_spec tool.\n` +
     `Today is ${ctx.today}. "This year" and "last year" are calendar years.\n` +
-    `The org's events (id: name):\n${ev}\n\nQuestion: ${question}`;
+    `The org's events (id: name):\n${ev}\n` +
+    `The org's campaigns (id: name):\n${(ctx.campaigns || []).slice(0, 60).map(c => `${c.id}: ${c.name}`).join("\n") || "(none)"}\n\nQuestion: ${question}`;
 }
 // The model's form, as a plain object: the tool call's input, or null.
 export function readToolSpec(content) {
   const b = (content || []).find(x => x && x.type === "tool_use" && x.name === "filter_spec");
   if (!b || !b.input || typeof b.input !== "object") return null;
-  const rules = {}; let unsupported = null;
+  const rules = {}; let unsupported = null, withAsk = false;
   for (const [k, v] of Object.entries(b.input)) {
     if (k === "unsupported") { unsupported = v ? String(v) : null; continue; }
+    if (k === "suggestAsk") { withAsk = String(v || "") === "1" || v === true; continue; }
     if (v === null || v === undefined || v === "") continue;
     rules[k] = String(v);
   }
-  return { rules, unsupported };
+  return { rules, unsupported, withAsk };
 }
 
 // ── THE ONE CHECK ─────────────────────────────────────────────────────────
 // `normalizeRules` is groups.js's (passed in, so this module reads no table).
-export function checkSpec(spec, { normalizeRules, ruleKeys, events = [] }) {
+export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaigns = [] }) {
   if (!spec) return { ok: false, refused: "unread" };
   if (spec.unsupported) return { ok: false, refused: spec.unsupported };
   const raw = spec.rules || {};
@@ -174,7 +234,10 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [] }) {
     if (!SHOW_KEYS.includes(k) || !(ruleKeys || []).includes(k)) return { ok: false, refused: k };
   }
   if (raw.gaveEvent && !events.some(e => e.id === raw.gaveEvent)) return { ok: false, refused: "an event Steward does not have" };
+  for (const k of ["gaveCampaign", "notGaveCampaign"])
+    if (raw[k] && !campaigns.some(c => c.id === raw[k])) return { ok: false, refused: "a campaign Steward does not have" };
   const meaningful = Object.keys(raw).filter(k => k !== "notDeceased");
+  if (!meaningful.length && spec.withAsk) return { ok: false, refused: "who to ask" };
   if (!meaningful.length) return { ok: false, refused: "nothing Steward recognised" };
   const n = normalizeRules({ ...raw, notDeceased: "1" });
   if (!n.ok) return { ok: false, refused: n.errors[0] };
@@ -206,6 +269,10 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.gaveFrom || rules.gaveTo) w.push(`gave ${!rules.gaveEvent && amt ? amt + " " : ""}${span(rules.gaveFrom, rules.gaveTo)}`);
   if (amt && !rules.gaveEvent && !(rules.gaveFrom || rules.gaveTo)) w.push(`gave ${amt} in all`);
   if (rules.notGaveFrom || rules.notGaveTo) w.push(`nothing ${span(rules.notGaveFrom, rules.notGaveTo)}`);
+  const cName = id => ((ctx.campaigns || []).find(c => c.id === id) || {}).name || "one campaign";
+  if (rules.gaveCampaign) w.push(`gave to ${cName(rules.gaveCampaign)}${rules.gaveCampaignYear ? ` in ${rules.gaveCampaignYear}` : ""}`);
+  if (rules.notGaveCampaign) w.push(`nothing to ${cName(rules.notGaveCampaign)}${rules.notGaveCampaignYear ? ` in ${rules.notGaveCampaignYear}` : ""}`);
+  if (rules.noAsk) w.push("no ask this year");
   if (rules.city) w.push(`in ${rules.city}`);
   if (rules.household) w.push(rules.household === "none" ? "not in a household" : "in a household");
   if (rules.notDeceased) w.push("not deceased");

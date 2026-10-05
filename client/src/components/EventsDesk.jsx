@@ -11,7 +11,7 @@ import { T, fmtFull, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
-import { tabHref, urlParam } from "../lib/appUrls";
+import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventKiosk } from "./Events";
 import { EventPageEditor } from "./EventPageEditor";
 
@@ -165,7 +165,10 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           ? <div style={{ color: T.ink3, fontSize: 13 }}>Nobody has registered yet.</div>
           : guests.guests.map(g => (
             <div key={g.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
-              <strong style={{ minWidth: 170 }}>{g.name}</strong>
+              {/* FIX-27 Part 6: a guest's name opens their person. */}
+              <strong style={{ minWidth: 170 }}>{g.donor_id
+                ? <RecordLink to={donorHref(g.donor_id)} data-testid="event-guest-name" style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{g.name}</RecordLink>
+                : g.name}</strong>
               <span style={{ color: T.ink3, minWidth: 120 }}>{g.level_name || ""}{g.quantity > 1 ? ` ×${g.quantity}` : ""}</span>
               <input defaultValue={g.table_label || ""} placeholder="Table" onBlur={e => e.target.value !== (g.table_label || "") && setTable(g.id, e.target.value)} disabled={isReadOnly} style={{ ...inp, width: 110, padding: "4px 7px" }} />
               <span style={{ marginLeft: "auto", display: "flex", gap: 4 }}>

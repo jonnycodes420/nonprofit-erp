@@ -952,7 +952,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [filingLookupOpen,setFilingLookupOpen]=useState(false);
   const [prospectBriefOpen,setProspectBriefOpen]=useState(false);
   // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
-  const status=useDonorStatus(donor.id, figs);
+  const [stepNonce,setStepNonce]=useState(0);
+  const status=useDonorStatus(donor.id, figs, stepNonce);
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
@@ -1011,11 +1012,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // next step is shown as typed.
   const [proposalsKnown,setProposalsKnown]=useState(false);
   const setOpenProposals=useCallback(ps=>{setOpenProposalsRaw(ps);setProposalsKnown(true);},[]);
-  const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
+  const loadDpThread=(initial)=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
+    if(initial!==true)setStepNonce(n=>n+1);   // FIX-27 Part 5: after a save, the summary reads the same step
     setDpItems(Array.isArray(r.list)?r.list:[]);
     setDpThread((r.list||[]).find(x=>x.kind!=="task")||null);
   }).catch(()=>{}).finally(()=>setDpItemsLoaded(true));
-  useEffect(()=>{setDpItemsLoaded(false);setOpenProposalsRaw([]);setProposalsKnown(false);loadDpThread();
+  useEffect(()=>{setDpItemsLoaded(false);setOpenProposalsRaw([]);setProposalsKnown(false);loadDpThread(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id]);
 

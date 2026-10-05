@@ -53,9 +53,11 @@ export function VolunteerCounts({ onOpen, refreshKey }) {
   );
 }
 
+// FIX-27 Part 8: one blank filter, so Clear filters always returns to it.
+const BLANK_FILTER = { search: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursOp: "min", hoursN: "", volHoursFrom: "", volHoursTo: "",
+  giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "" };
 export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initialFilter }) {
-  const [f, setF] = useState(() => ({ search: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursOp: "min", hoursN: "", volHoursFrom: "", volHoursTo: "",
-    giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "", ...(initialFilter || {}) }));
+  const [f, setF] = useState(() => ({ ...BLANK_FILTER, ...(initialFilter || {}) }));
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [cols, setCols] = useState(loadCols);
@@ -83,8 +85,15 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
   // FIX-24 2e: ONE hours filter. Its dates are also the dates the "Hours in
   // range" column counts, so there is no second pair of dates for the column.
   const qs = new URLSearchParams({ ...rules, ...(f.volHoursFrom ? { hoursFrom: f.volHoursFrom } : {}), ...(f.volHoursTo ? { hoursTo: f.volHoursTo } : {}) }).toString();
+  // Only the newest answer is shown: a slow answer to an older filter can
+  // never land on top of the list Clear filters asked for. A failure is one
+  // plain sentence; raw server text never renders.
+  const seq = useRef(0);
   const load = useCallback(() => {
-    apiFetch(`/volunteer-hub/list${qs ? "?" + qs : ""}`).then(d => { setData(d); setErr(""); setSel(new Set()); }).catch(e => setErr(errorMessage(e, "The list did not load.")));
+    const mine = ++seq.current;
+    apiFetch(`/volunteer-hub/list${qs ? "?" + qs : ""}`)
+      .then(d => { if (mine !== seq.current) return; setData(d); setErr(""); setSel(new Set()); })
+      .catch(e => { if (mine !== seq.current) return; setData(null); setErr(e && e.status === 400 ? "One of those filters is not one Steward understands. Clear it and try again." : "The list did not load just now. Try again in a moment."); });
   }, [qs]);
   // The first read is immediate; typing in a filter waits a quarter second.
   const first = useRef(true);
@@ -158,7 +167,7 @@ export function VolunteerListView({ isReadOnly, coordinator, onOpenPerson, initi
           <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{data ? data.sentence : "…"}</span>
           <button style={btnLink} onClick={() => setPickCols(v => !v)}>Columns</button>
           {!coordinator && !isReadOnly && <button style={btnLink} onClick={() => setBulk({ kind: "group" })}>Save as a group</button>}
-          <button style={btnLink} onClick={() => setF(p => ({ ...p, search: "", volActive: "", volOpp: "", volShiftFrom: "", volShiftTo: "", hoursN: "", volHoursFrom: "", volHoursTo: "", giving: "", gaveFrom: "", gaveTo: "", volQual: "", volAnswer: "", volAvail: "" }))}>Clear filters</button>
+          <button style={btnLink} data-testid="vol-clear-filters" onClick={() => setF({ ...BLANK_FILTER })}>Clear filters</button>
         </div>
         {pickCols && <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           {ALL_COLS.filter(([, , giving]) => !(giving && coordinator)).map(([k, l]) => (

@@ -315,8 +315,11 @@ async function main() {
   await teardownOrg(q, ORG);
 
   // ── The organization ────────────────────────────────────────────────────
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,mission,emails_enabled,is_demo_org)
-           VALUES ($1,'Harborlight Youth Collective','harborlight',1,'active','team',$2,
+  // FIX-27 Part 9: the timezone is CHOSEN (timezone_confirmed_at), as a
+  // director would have chosen it, so the sequences on the demo really run
+  // and Communications has no reason to say they are paused.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,mission,emails_enabled,is_demo_org)
+           VALUES ($1,'Harborlight Youth Collective','harborlight',1,'active','team',$2,NOW(),
                    'After-school arts and mentoring for young people on the north shore.',
                    false,true)`, [ORG, TZ]);   // INCIDENT 2026-09-22: a seeded org sends nothing
   // FIX-5 — the two staff names are claimed FIRST, before a generated donor
@@ -1716,6 +1719,26 @@ async function main() {
              VALUES ('grp_b72_volunteers',$1,'Volunteers','Everyone with a logged volunteer hour or an approved application. Kept by Steward.','{"mode":"group"}'::jsonb,'dynamic','{"volunteer":"1"}'::jsonb,'u_b72demo','Dana Reyes')
              ON CONFLICT DO NOTHING`, [ORG]);
     console.log(`[seed] recruitment page with two photos and a video; ${na} pending applications (${giver ? giver.name + " already gives" : "none already on file"}); the Volunteers group`);
+  }
+
+  // ── FIX-27 Part 8 · THE ROSTER SAYS WHEN THEY CAN HELP ─────────────────
+  // The Availability filter reads the days on a volunteer's approved
+  // application, and none of the roster had one, so every day matched
+  // nobody. Twenty-four of them now have the application they came in on,
+  // approved, with their days. No rnd(): the stream after this is unchanged.
+  {
+    const DAYS = ["Weekday mornings", "Weekday afternoons", "Weekday evenings", "Saturdays", "Sundays"];
+    const people = await q(`SELECT id, name, email FROM donors WHERE org_id=$1 AND id = ANY($2::text[]) ORDER BY id`, [ORG, allVols.slice(0, 24)]);
+    let n = 0;
+    for (const p of people) {
+      const days = [DAYS[n % 5], ...(n % 3 === 0 ? [DAYS[(n + 2) % 5]] : [])];
+      n++;
+      await q(`INSERT INTO volunteer_applications (id,org_id,name,email,answers,availability,status,person_id,submitted_at,decided_at,decided_by,decided_by_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'[]'::jsonb,$5::jsonb,'approved',$6,NOW() - INTERVAL '200 days',NOW() - INTERVAL '195 days','u_b72demo','Dana Reyes','system:volunteer-apply','The volunteer, from the application form')
+               ON CONFLICT DO NOTHING`,
+        [`vap_b72_roster_${n}`, ORG, p.name, p.email, JSON.stringify(days), p.id]);
+    }
+    console.log(`[seed] FIX-27: ${n} roster volunteers have an approved application with their days`);
   }
 
   const [volCount] = await q(

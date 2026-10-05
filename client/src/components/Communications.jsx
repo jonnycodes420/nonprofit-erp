@@ -5,7 +5,7 @@ import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, activeMark, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
+import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
@@ -476,6 +476,54 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
 // She writes every word here. Steward offers her the merge fields her own data
 // already holds and refuses to save a sentence it cannot render — and that is
 // the whole of Steward's contribution to what a donor reads.
+// ── FIX-27 Part 9 · ONE TRUTH ABOUT SEQUENCES AND THE TIMEZONE ────────────
+// Sequences really do not send until somebody here has chosen the
+// organisation's timezone (sequenceShape.timezoneGate). The banner said so
+// while the list below it still called a sequence ACTIVE. Now every list says
+// "Paused until you set your timezone", and the banner offers the browser's
+// own zone in one click (a person choosing it, so it counts), with Settings
+// one link away for any other.
+let _seqGate = null;
+function useSequenceGate() {
+  const [gate, setGate] = useState(_seqGate);
+  const load = useCallback(() => apiFetch("/sequences/builder").then(b => { _seqGate = { canRun: !!b.canRun, reason: b.blockedReason || "" }; setGate(_seqGate); }).catch(() => {}), []);
+  useEffect(() => { if (!_seqGate) load(); }, [load]);
+  return [gate, load];
+}
+const PAUSED_FOR_TZ = "Paused until you set your timezone";
+function browserZone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; }
+}
+function zoneLabel(z) {
+  try {
+    const name = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "long" }).formatToParts(new Date()).find(p => p.type === "timeZoneName");
+    return name ? `${name.value} (${z})` : z;
+  } catch { return z; }
+}
+function TimezoneGateBanner({ onChosen }) {
+  const zone = browserZone();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const orgId = (() => { try { return JSON.parse(localStorage.getItem("npe_org") || "{}").id || ""; } catch { return ""; } })();
+  const choose = async () => {
+    setBusy(true); setErr("");
+    try { await apiFetch(`/orgs/${orgId}`, { method: "PATCH", body: JSON.stringify({ timezone: zone }) }); _seqGate = null; onChosen && onChosen(); }
+    catch (e) { setErr(errorMessage(e, "The timezone was not saved.")); }
+    setBusy(false);
+  };
+  return (
+    <div data-testid="seq-blocked" style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 12, padding: "16px 18px", fontSize: 13.5, color: T.ink, lineHeight: 1.6, maxWidth: 680 }}>
+      <div style={{ fontWeight: 800, marginBottom: 6 }}>Sequences are paused until you set your timezone.</div>
+      A sequence sends on weekday mornings where you are, so Steward has to know where that is. Nothing is lost while it waits.
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 10 }}>
+        {zone && orgId && <button type="button" data-testid="seq-use-browser-zone" disabled={busy} onClick={choose} style={{ ...S.btn("send"), fontSize: 12.5 }}>{busy ? "Saving…" : `Use ${zoneLabel(zone)}`}</button>}
+        <RecordLink to={tabHref("settings", { section: "giving", focus: "timezone" })} style={{ color: T.greenDk, fontWeight: 700, fontSize: 12.5 }}>Choose another in Settings</RecordLink>
+      </div>
+      {err && <div style={{ fontSize: 12.5, marginTop: 6 }}>{err}</div>}
+    </div>
+  );
+}
+
 function TrackedSequences() {
   const [builder, setBuilder] = useState(null);
   const [list, setList] = useState([]);
@@ -543,15 +591,9 @@ function TrackedSequences() {
     setPreview(p);
   };
 
-  // NO TIMEZONE ON FILE, NO SEQUENCES — AND THE SCREEN SAYS WHY.
-  if (builder && !builder.canRun) {
-    return (
-      <div data-testid="seq-blocked" style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 12, padding: "16px 18px", fontSize: 13.5, color: T.ink, lineHeight: 1.6, maxWidth: 620 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>Sequences are off until Steward knows where you are.</div>
-        {builder.blockedReason}
-      </div>
-    );
-  }
+  const [, reloadGate] = useSequenceGate();
+  const tzPaused = !!(builder && !builder.canRun);
+  const gateChosen = () => { apiFetch("/sequences/builder").then(setBuilder).catch(() => {}); reloadGate(); reload(); };
 
   const upd = (p) => setForm(f => ({ ...f, ...p }));
   const updTrack = (i, p) => setForm(f => ({ ...f, tracks: f.tracks.map((t, j) => j === i ? { ...t, ...p } : t) }));
@@ -658,6 +700,7 @@ function TrackedSequences() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
+      {tzPaused && <TimezoneGateBanner onChosen={gateChosen} />}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6, maxWidth: 560 }}>
           A sequence runs for each new person on its own, in your words, on weekday
@@ -672,8 +715,8 @@ function TrackedSequences() {
           <div key={s.id} data-testid="seq-row" style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.line}</div>
-              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }}>
-                {s.status === "active" ? "On" : "Off"}
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }} data-testid="seq-status">
+                {s.status === "active" ? (tzPaused ? PAUSED_FOR_TZ : "On") : "Off"}
               </div>
             </div>
             <button onClick={() => showPreview(s.id)} style={{ ...S.btn("ghost"), fontSize: 12 }}>Preview</button>
@@ -722,6 +765,8 @@ function TrackedSequences() {
 }
 
 function SequencesPanel({ data }) {
+  const [seqGate] = useSequenceGate();
+  const tzPaused = !!(seqGate && !seqGate.canRun);
   const [seqList, setSeqList] = useState([]);
   const [seqLoading, setSeqLoading] = useState(true);
   const [view, setView] = useState("list");
@@ -808,12 +853,11 @@ function SequencesPanel({ data }) {
     const step = form.steps[i];
     const trig = SEQ_TRIGGERS.find(t => t.id === form.trigger) || SEQ_TRIGGERS[3];
     setStepAiLoading(prev => ({ ...prev, [i]: true }));
-    let acc = "";
-    await askClaude(
-      "You are an expert nonprofit fundraiser. Write warm, personal, conversational donor emails. No fluff, no corporate jargon. Max 150 words.",
-      `Write a fundraising email for ${data.org.name} (mission: ${data.org.mission || "serving our community"}).\nContext: ${trig.ctx}.\nThis is step ${i + 1} of a ${form.steps.length}-step sequence.\n${step.subject ? `Subject: ${step.subject}` : "Also generate a compelling subject line — put it on the first line as 'Subject: ...' then the body."}\nUse {{donor_name}} to address them personally. Use {{org_name}} for the org name. Keep it under 150 words. Plain text only, no HTML.`,
-      chunk => { acc = chunk; updateStep(i, { body: chunk }); }
-    );
+    try {
+      const r = await apiFetch("/ai/draft-email", { method: "POST",
+        body: JSON.stringify({ purpose: "sequence", context: trig.ctx, step: i + 1, steps: form.steps.length, subjectHint: step.subject || "" }) });
+      updateStep(i, step.subject ? { body: r.body } : { subject: r.subject, body: r.body });
+    } catch (e) { alert(errorMessage(e, "The draft could not be written just now.")); }
     setStepAiLoading(prev => ({ ...prev, [i]: false }));
   };
 
@@ -903,7 +947,7 @@ function SequencesPanel({ data }) {
                     <div style={{ flex: 1 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{seq.name}</div>
-                        <span style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive ? T.green100 : T.bg2, color: isActive ? T.greenDk : T.ink3, letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? "Active" : "Paused"}</span>
+                        <span data-testid="legacy-seq-status" style={{ fontSize: 10, fontWeight: 700, borderRadius: 99, padding: "3px 9px", background: isActive && !tzPaused ? T.green100 : T.bg2, color: isActive && !tzPaused ? T.greenDk : T.ink3, letterSpacing:"0.04em", textTransform:"uppercase" }}>{isActive ? (tzPaused ? PAUSED_FOR_TZ : "Active") : "Paused"}</span>
                       </div>
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
                         {trigLabel(seq.trigger)} · <span style={{ color: T.gold700, fontWeight: 700 }}>{seq.step_count} step{seq.step_count != 1 ? "s" : ""}</span> · {seq.active_enrollments} active
@@ -1247,6 +1291,7 @@ function EmailToolPanel({ onNavigate }) {
 }
 
 export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed, highlightDraftId, onNavigate }) {
+  const [hubSeqGate] = useSequenceGate();   // FIX-27 Part 9: one truth about paused sequences
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
 
@@ -1291,6 +1336,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [sending, setSending]         = useState(false);
   const [aiLoading, setAiLoading]     = useState(false);
   const [aiDraft, setAiDraft]         = useState("");
+  const [aiNote, setAiNote]           = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
   const editorRef                     = useRef(null);
   const [editorKey, setEditorKey]     = useState(0);
@@ -1521,13 +1567,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     catch (e) { alert(errorMessage(e)); }
   };
 
+  // FIX-27 Part 7: the server writes the draft and checks every claim in it
+  // against the record (no invented video, link, amount, date, meeting or
+  // event); a draft that fails comes back as the plain template instead.
   const draftAI = async () => {
     setAiLoading(true); setAiDraft("");
-    await askClaude(
-      "You are an expert nonprofit development writer. Write warm, authentic, mission-driven donor emails. Max 250 words.",
-      `Write a donor email for ${data.org.name}.\nMission: ${data.org.mission}\nSegment: ${JSON.stringify(form.seg)}\nSubject hint: ${form.subject || "(generate a compelling one)"}\n\nUse these merge tags: {{first_name}}, {{org_name}}, {{gift_amount}}, {{total_giving}}\n\nFormat — first line: "Subject: [subject line]", blank line, then email body as HTML <p> tags.`,
-      chunk => setAiDraft(chunk)
-    );
+    try {
+      const r = await apiFetch("/ai/draft-email", { method: "POST",
+        body: JSON.stringify({ purpose: "campaign", segment: form.seg, subjectHint: form.subject || "" }) });
+      setAiDraft(`Subject: ${r.subject}\n\n${r.body}`);
+      if (r.aiOff && r.reasons && r.reasons[0]) setAiNote(r.reasons[0]); else setAiNote("");
+    } catch (e) { setAiNote(errorMessage(e, "The draft could not be written just now.")); }
     setAiLoading(false);
   };
 
@@ -1735,6 +1785,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: T.gold700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>✦ Suggested Draft</div>
                 <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiDraft}</div>
+                {aiNote && <div data-testid="ai-draft-note" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{aiNote}</div>}
                 <button onClick={applyAIDraft} style={{ ...S.btn("primary"), padding: "7px 12px", fontSize: 12 }}>Apply to editor</button>
               </div>
             )}
@@ -2037,7 +2088,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                                               borderBottom: i < hub.sequences.length - 1 ? "1px solid " + T.bg2 : "none" }}>
                         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.name}</span>
                         <span style={{ fontSize: 11, color: q.status === "active" ? T.greenMid : T.ink3, fontWeight: 700, flexShrink: 0 }}>
-                          {q.status === "active" ? `${q.active} enrolled` : "Off"}
+                          {q.status === "active" ? (hubSeqGate && !hubSeqGate.canRun ? PAUSED_FOR_TZ : `${q.active} enrolled`) : "Off"}
                         </span>
                       </li>
                     ))}
@@ -2052,8 +2103,15 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "campaigns" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             {/* Header row */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Campaigns</h2>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {/* FIX-27 Part 9b: Write stays. It lived only on the first-run
+                  card, which goes the moment one campaign exists, so the
+                  button showed once and vanished. It opens the thank-you,
+                  already written, every time. */}
+              {!isReadOnly && <button data-testid="comms-write" onClick={() => { const tpl = templates.find(x => x.key === "thank_you"); if (tpl) openTemplate(tpl); else openBuilder(); }}
+                style={{ ...S.btn("ghost") }}>Write a thank-you</button>}
               <button onClick={() => openBuilder()}
                 onMouseEnter={() => setNewBtnHover(true)}
                 onMouseLeave={() => setNewBtnHover(false)}
@@ -2062,6 +2120,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 style={{ ...S.btn("primary"), background: newBtnHover && !isReadOnly ? T.gold600 : T.gold500, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
                 + New Campaign
               </button>
+              </div>
             </div>
 
             {/* Stat pills — FIX-6 item 5: real values, and each one opens its rows. */}

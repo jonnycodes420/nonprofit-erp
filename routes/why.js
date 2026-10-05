@@ -165,8 +165,11 @@ async function showMe(req, res, typed) {
   const SM = await showMod();
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));
-  const events = await query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]);
-  const ctx = { today, events };
+  const [events, campaigns] = await Promise.all([
+    query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
+    query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
+  ]);
+  const ctx = { today, events, campaigns };
   let spec = null, specSource = "template", aiOff = false;
   const gate = await aiGate(orgId);
   if (gate.ok) {
@@ -184,7 +187,7 @@ async function showMe(req, res, typed) {
     await logQuestion(typed, "show me", false);
     return res.json({ answered: false, kind: "list", refused: true, sentence: SM.refusalSentence(what), specSource, aiOff, question: { key: "show", text: typed } });
   };
-  const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events });
+  const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
   if (!chk.ok) return refuse(chk.refused);
   const f = await GR.buildDonorFilter(orgId, chk.rules);
   if (f.badRole || f.badStatus) return refuse("a value Steward does not know");
@@ -194,13 +197,39 @@ async function showMe(req, res, typed) {
   ]);
   await logQuestion(typed, "show me", true);
   const count = Number(cnt.c) || 0;
+  // FIX-27 Part 2b · "and what should I ask them?" Each person carries the
+  // suggested ask from their own gifts (engagement.suggestedAsk, the profile's
+  // own) and, for a viewer allowed to see it, their Room to give word. The
+  // step is planning the ask; nothing is sent.
+  const asking = !!(spec.withAsk || chk.rules.noAsk);
+  let asks = new Map(), room = new Map(), maySee = false;
+  if (asking && rows.length) {
+    const E = require("../engagement");
+    maySee = await P.canSee(req.user.userId);
+    const ids = rows.map(r => r.id);
+    const screens = maySee ? await P.latestScreening(orgId, ids) : new Map();
+    const [askList, rtg] = await Promise.all([
+      Promise.all(ids.map(id => E.suggestedAsk(query, orgId, id, maySee ? { screening: screens.get(id) || null } : {}).catch(() => null))),
+      maySee ? P.roomToGive(orgId, ids) : Promise.resolve(new Map()),
+    ]);
+    ids.forEach((id, i) => asks.set(id, askList[i]));
+    room = rtg;
+  }
+  const RTW = asking && maySee ? await import("../shared/roomToGive.js") : null;
   res.json({
+    withAsk: asking,
+    askStep: asking ? { label: "Plan the ask", dueIn: 14, sentence: "Planning an ask adds a step to that person's Thread, due in two weeks. Nothing is sent." } : null,
     answered: true, kind: "list", question: { key: "show", text: typed }, specSource, aiOff,
     rules: chk.rules, words: SM.filterWords(chk.rules, ctx), sentence: SM.listSentence(count),
     count, countSource: { key: "show-me", params: { rules: JSON.stringify(chk.rules) } },
     countDefinition: "Everyone on file these filters find today, the same rows the Donors list shows for them.",
     groupSentence: GR.rulesSentence(chk.rules),
-    rows: rows.map(r => ({ donorId: r.id, name: r.name, city: r.city || "", cents: Math.round(Number(r.total_giving || 0) * 100), lastGift: r.last_gift_date || null })),
+    rows: rows.map(r => {
+      const a = asks.get(r.id), w = room.get(r.id);
+      return { donorId: r.id, name: r.name, city: r.city || "", cents: Math.round(Number(r.total_giving || 0) * 100), lastGift: r.last_gift_date || null,
+        ...(asking ? { ask: a ? { cents: a.askCents, sentence: a.sentence } : null } : {}),
+        ...(asking && RTW && w ? { room: { word: w.word, label: RTW.LABELS[w.word] || w.word } } : {}) };
+    }),
   });
 }
 

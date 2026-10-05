@@ -21,6 +21,12 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-FIX-27 · RE-SEED THE PROD DEMO (2026-10-04)
+
+- **Re-seed Harborlight** (`scripts/seed-demo.js` with your prod flags): the seed now confirms the
+  timezone (so sequences run and Communications says nothing about pausing) and gives 24 roster volunteers
+  an approved application with their days (so the Availability filter has people to find).
+
 ## 0-AGENT-2 · THE ANTHROPIC ACCOUNT IS OUT OF CREDIT (2026-10-03)
 
 - **Top up the Anthropic account behind Railway's `ANTHROPIC_API_KEY`** (console.anthropic.com → Plans & Billing → add credit). Since about 19:10 ET on 3 Oct every model call answers "Your credit balance is too low", so on prod the Agent's planned instructions, drafting, cheque reading and Ask Steward fail; the rule-based paths (a gift you tell it about, a new volunteer, reports by name) still work. AGENT-2's 30-instruction measurement ran on this key (with your go-ahead) and used part of the balance.

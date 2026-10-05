@@ -66,6 +66,9 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
 - **A guard that greps source for a forbidden string must strip comments first**, or the file that
   explains the rule fails it. (BUILD-89S, BUILD-90)
 
+- **Never write Postgres's `?` jsonb operator in a query.** db.js turns every `?` into a parameter; use
+  `jsonb_exists(col, ?)`. `availability ? ?` was a syntax error on prod for weeks. (FIX-27)
+
 ## Gotchas
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser

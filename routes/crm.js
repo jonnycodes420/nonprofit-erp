@@ -17930,7 +17930,7 @@ async function fundraisingCampaignRows(orgId) {
     ),
     query(
       `SELECT p.campaign_id AS cid,
-              COALESCE(SUM(p.amount - COALESCE(pp.paid,0)), 0) AS pledged,
+              COALESCE(SUM(GREATEST(p.amount - COALESCE(pp.paid,0), 0)), 0) AS pledged,
               COUNT(*) AS pledge_count
          FROM pledges p
          LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id = ? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
@@ -18023,6 +18023,16 @@ function fundraisingGoalsPortfolio(rows) {
       rolledOver: isOverarching ? rolled.over : r.over,
       rolledPaceState: isOverarching ? rolled.paceState : r.paceState,
       rolledPaceSentence: isOverarching ? rolled.paceSentence : r.paceSentence,
+      // FIX-27 Part 1: every figure on a campaign card and page opens its rows
+      // (figureSources.js), so the list and the page foot to the same rows.
+      sources: {
+        raised: { key: isOverarching ? "goal-rollup-raised" : "goal-raised", params: { campaign: r.id } },
+        goal: { key: "campaign-goal", params: { campaign: r.id } },
+        percent: { key: isOverarching ? "goal-rollup-progress" : "goal-progress", params: { campaign: r.id } },
+        donors: { key: "campaign-donors", params: { campaign: r.id } },
+        pledged: { key: "pledges-open", params: { campaign: r.id } },
+        grants: { key: "campaign-grants", params: { campaign: r.id } },
+      },
     };
   });
   // Org roll-up header: total raised vs total goal across ACTIVE top-level goals

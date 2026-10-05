@@ -104,6 +104,37 @@ function MoreSteps({ w, isReadOnly, onStepTaken }) {
   );
 }
 
+// FIX-27 Part 2b: "what should I ask them?" Each person's suggested ask (the
+// math in one line, from their own gifts), their Room to give word when the
+// viewer may see it, and one step: plan the ask on their Thread. Nothing sends.
+function AskCell({ r, step, isReadOnly }) {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState("");
+  const [err, setErr] = useState("");
+  const plan = async () => {
+    setBusy(true); setErr("");
+    try {
+      const label = r.ask ? `Make the ask: ${fmtFull(r.ask.cents / 100)}` : "Make the ask";
+      setDone(await takePlan({ dueIn: step.dueIn, due: addDays(step.dueIn), items: [{ donorId: r.donorId, name: r.name, label }] }));
+    } catch (e) { setErr(errorMessage(e, "That step could not be planned.")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div data-testid="show-me-ask" style={{ textAlign: "right", minWidth: 0, flex: "0 1 55%" }}>
+      <div style={{ fontSize: 13, color: T.ink, fontWeight: 700 }}>
+        {r.ask ? <span title={r.ask.sentence}>Ask {fmtFull(r.ask.cents / 100)}</span> : <span style={{ fontWeight: 400, color: T.ink3 }}>No gifts to base an ask on</span>}
+        {r.room && <span data-testid="show-me-room" style={{ fontWeight: 400, color: T.ink3 }}> · Room to give: {r.room.label}</span>}
+      </div>
+      {r.ask && <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.4 }}>{r.ask.sentence}</div>}
+      {!isReadOnly && step && (done
+        ? <div data-testid="show-me-ask-done" style={{ fontSize: 12, color: T.greenDk, fontWeight: 600 }}>{done}</div>
+        : <button type="button" data-testid="show-me-plan-ask" disabled={busy} onClick={plan}
+            style={{ ...CHIP, padding: "3px 10px", fontSize: 12, marginTop: 4 }}>{busy ? "Planning…" : step.label}</button>)}
+      {err && <div style={{ fontSize: 12, color: T.ink2 }}>{err}</div>}
+    </div>
+  );
+}
+
 // PARITY-4 Part 3: SHOW ME. A list question's answer: the filters in words,
 // the count (a Figure that opens every row), the first fifty people, each
 // opening their record, and two doors: save it as a Group by rule (the same
@@ -154,7 +185,8 @@ function ShowMeAnswer({ answer, isReadOnly }) {
               <DonorLink id={r.donorId} style={{ fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{r.name}</DonorLink>
               {r.city && <div style={{ fontSize: 12, color: T.ink3 }}>{r.city}</div>}
             </div>
-            <span style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }} title="Given in total">{fmtFull(r.cents / 100)}</span>
+            {answer.withAsk ? <AskCell r={r} step={answer.askStep} isReadOnly={isReadOnly} />
+              : <span style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }} title="Given in total">{fmtFull(r.cents / 100)}</span>}
           </div>
         ))}
         {answer.count > rows.length && <div style={{ fontSize: 12, color: T.ink3, paddingTop: 6 }}>And {answer.count - rows.length} more; the count above opens all of them.</div>}

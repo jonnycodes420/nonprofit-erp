@@ -174,6 +174,15 @@ async function foots(tok, fig) {
     [ORG, fy.start, fy.end]);
   await gift(donors[16][0], 750, today, null, { campaign: "c_fx2af", fee: 22.8 });
   await q(`INSERT INTO grants (id,org_id,funder,program,amount,status,campaign_id,awarded_at) VALUES ('gr_fx2af_aw',$1,'Harbor Fund','Risers',5000,'awarded','c_fx2af',NOW())`, [ORG]);
+  // FIX-27 Part 1: an umbrella over it, a second donor, and an open pledge
+  // part-paid, so every figure on a campaign card and page has rows to foot.
+  await q(`INSERT INTO campaigns (id,org_id,name,goal_amount,status,start_date,end_date) VALUES ('c_fx2af_um',$1,'Risers Umbrella',50000,'active',$2,$3)`,
+    [ORG, fy.start, fy.end]);
+  await q(`UPDATE campaigns SET parent_goal_id='c_fx2af_um' WHERE id='c_fx2af' AND org_id=$1`, [ORG]);
+  await gift(donors[17][0], 125.5, today, null, { campaign: "c_fx2af" });
+  await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,campaign_id) VALUES ('p_fx2af_c',$1,$2,400,$3,'open','c_fx2af')`,
+    [ORG, donors[17][0], orgTime.addDays(today, 90)]);
+  await gift(donors[17][0], 100, today, null, { pledge: "p_fx2af_c", campaign: "c_fx2af" });
   await q(`INSERT INTO grants (id,org_id,funder,program,amount,status,deadline) VALUES ('gr_fx2af_due',$1,'Ridgeline Trust','Summer tour',15000,'prospecting',$2)`,
     [ORG, orgTime.addDays(today, 30)]);
   // Pledges: one part-paid, one untouched, one fulfilled.
@@ -248,6 +257,45 @@ async function foots(tok, fig) {
     ret.body?.parts?.[0]?.role === "numerator" && ret.body?.parts?.[1]?.role === "denominator"
     && ret.body.parts[0].value === expRetained && ret.body.parts[1].value === expPrior,
     { parts: ret.body?.parts?.map(p => [p.role, p.value]), expRetained, expPrior });
+
+  // FIX-27 Part 1 — the Campaigns list and each campaign's page: every figure
+  // a card or page draws (raised, goal, progress, donors, pledged, grants)
+  // carries a source and foots to it, the umbrella's roll-up included.
+  const ov = (await api("GET", "/fundraising/overview", tok)).body || {};
+  const campFigs = [];
+  for (const g of ov.goals || []) {
+    const s = g.sources || {};
+    const over = g.isOverarching;
+    campFigs.push({ where: `${g.name} raised`, value: over ? g.rolledRaised : g.raised, source: s.raised });
+    campFigs.push({ where: `${g.name} goal`, value: g.goalAmount, source: s.goal });
+    campFigs.push({ where: `${g.name} percent`, value: over ? g.rolledRawPercent : g.rawPercent, source: s.percent });
+    campFigs.push({ where: `${g.name} donors`, value: g.donorCount, source: s.donors });
+    if (g.pledged > 0) campFigs.push({ where: `${g.name} pledged`, value: g.pledged, source: s.pledged });
+    if (g.grantAwarded > 0) campFigs.push({ where: `${g.name} grants`, value: g.grantAwarded, source: s.grants });
+  }
+  const campBad = [];
+  for (const f of campFigs) {
+    if (!f.source || typeof f.source.key !== "string") { campBad.push(`${f.where}: no source`); continue; }
+    const [good, why] = await foots(tok, f);
+    if (!good) campBad.push(`${f.where}: ${why}`);
+  }
+  const risers = (ov.goals || []).find(g => g.id === "c_fx2af") || {};
+  ok("§1 Campaigns: every figure on every card and page carries a source and foots (umbrella, pledge and grant included)",
+    campFigs.length >= 10 && campBad.length === 0 && (ov.goals || []).some(g => g.isOverarching)
+    && risers.donorCount === 2 && cents(risers.pledged) === cents(300) && cents(risers.grantAwarded) === cents(5000),
+    { n: campFigs.length, campBad, risers: [risers.raised, risers.donorCount, risers.pledged] });
+  const [campPlanted] = await foots(tok, { ...campFigs.find(f => /donors$/.test(f.where)), value: risers.donorCount + 1 });
+  ok("§3 …and a campaign's donor count one off its rows fails the footing", campPlanted === false);
+
+  // The other half of the guard, on the source: on an in-scope screen (the
+  // four dashboards, the Campaigns list and every campaign page) a number is
+  // drawn only by a <Figure> written with a source.
+  const census = require("../scripts/build97-number-census");
+  const srcProbs = census.figureSourceProblems();
+  ok(`§1 every <Figure> on ${census.FIGURE_SOURCE_SCOPE.join(", ")} has a source, and no number is drawn any other way`,
+    census.FIGURE_SOURCE_SCOPE.includes("components/CampaignsList.jsx") && srcProbs.length === 0, srcProbs.slice(0, 5));
+  const planted = census.figureSourceProblems({ files: { "x.jsx": `<Figure value={1} kind="count" label="x" />\n<span>{fmtFull(raised)}</span>` } });
+  ok("§3 …and that census fails on a <Figure> with no source and on a bare money figure", planted.length === 2, planted);
 
   // ── §2 · the endpoint's shape ──────────────────────────────────────────
   console.log("\n— §2 · paginated, tenant-scoped, read-only —");

@@ -134,6 +134,11 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   period through `orgPeriodBounds(org, period, -1)`. It reserves `board_pack_sends` before the first send and
   releases it when nothing was accepted, and rides the existing 5-minute tick. "Send a test to me" goes to the
   caller alone and reserves nothing. (REPORTS-3)
+- **A figure still loading is a skeleton, never a 0; a read that failed is a dash.** Home's rail starts
+  at `null`, not `||0`. (FIX-27)
+- **A campaign has a page, and its list and page are on the census.** `CampaignsList.jsx` is in
+  FIGURE_SOURCE_SCOPE, and `fix2-a-footing` runs that census. (FIX-27)
+
 ## Gotchas
 - **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
   figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)

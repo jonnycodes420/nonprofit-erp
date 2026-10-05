@@ -134,6 +134,14 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   `openSustainerLapseThread` opens one when the dunning cadence is exhausted. (Recurring recovery 2026-09-11)
 - **Do not build the visual workflow canvas without new direction.** (BUILD-13)
 
+- **A drafted message claims only what the record holds.** Every model-written draft for a donor or a
+  segment goes through `guardDraft` (shared/suggestionGuard.js, record from draftCheck.js): a video only
+  when one is ready for that person and with its own link; links, gift amounts, dates, meetings and events
+  from the record. A failed draft is the template sentence, never an edit of the model's words. (FIX-27)
+- **The Agent finds people through the one filter.** `agentFindPeople` reads the WHO in her words with
+  Show me's templates (the model's filter form only when a campaign, event or ask is named) and hands the
+  model exactly those people. (FIX-27)
+
 ## Gotchas
 - **An outcome-claim filter that only refused uncited lines had no teeth.** Prove a refusal fires on a line
   that DOES cite something. (BUILD-100)

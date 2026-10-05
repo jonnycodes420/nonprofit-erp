@@ -190,6 +190,28 @@ const T = civilToday();
   const link = await api("POST", `/volunteer-hub/people`, tok, { personId: BOB, availability: ["Sundays"] });
   ok("§3 picking them links that person instead of making a new one", link.body.personId === BOB && await onRoll() === n0, link.body);
 
+  // ── §4 FIX-27 · LOG A SHIFT, AND THE FILTERS THAT FAILED ON THE WALK ─────
+  // Planted before trusted: put back `availability ? ?` → the Availability
+  // filter answers 500; drop the hours dates default → "at least 4 hours"
+  // keeps a person whose hours are all in another year.
+  const logged = await api("POST", `/donors/${ADA}/volunteer-hours`, tok, { date: civilPlusDays(-1), hours: "2", role: "Food drive" });
+  ok("§4 Log a shift saves", logged.status === 201 && logged.body.totalHours === 2, logged.body);
+  const recent = await api("GET", "/volunteer-hub/shifts?limit=50", tok);
+  ok("§4 …and it is in the recent shifts under her name", (recent.body.shifts || []).some(x => x.person_id === ADA && x.person_name === "Ada Petrossian" && x.hours === 2), (recent.body.shifts || []).slice(0, 3));
+  const rosterNow = await api("GET", "/volunteer-hub/roster", tok);
+  const all = await api("GET", "/volunteer-hub/list", tok);
+  ok("§4 the picker (the roster) and the list are the same people, by the same names",
+    JSON.stringify((rosterNow.body.people || []).map(x => [x.id, x.name]).sort()) === JSON.stringify((all.body.rows || []).map(x => [x.id, x.name]).sort()), { roster: (rosterNow.body.people || []).length, list: (all.body.rows || []).length });
+  const sat = await api("GET", "/volunteer-hub/list?volAvail=Saturdays", tok);
+  ok("§4 the Availability filter answers, with the people free that day", sat.status === 200 && (sat.body.rows || []).some(r => r.id === ADA) && !(sat.body.rows || []).some(r => r.id === BOB), sat.status === 200 ? (sat.body.rows || []).map(r => r.name) : sat.body);
+  await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,via,created_by,created_by_name) VALUES ('vs_par3v_old',$1,$2,$3,9,'Old year','staff','system:test','test')`,
+    [ORG, BOB, `${Number(T.slice(0, 4)) - 2}-06-01`]);
+  const four = await api("GET", "/volunteer-hub/list?volHoursMin=4", tok);
+  ok("§4 the Hours filter counts the column's dates (this year): 9 hours two years ago is not 4 this year",
+    four.status === 200 && (four.body.rows || []).every(r => r.rangeHours >= 4) && !(four.body.rows || []).some(r => r.id === BOB), (four.body.rows || []).map(r => [r.name, r.rangeHours]));
+  const cleared = await api("GET", "/volunteer-hub/list", tok);
+  ok("§4 cleared, the list is everybody again", cleared.status === 200 && cleared.body.rows.length === all.body.rows.length && all.body.rows.length > 0, cleared.body.sentence);
+
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); ok("the suite ran to the end", false, e.message); await closeDb().catch(() => {}); summary(); });

@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
+import { SkeletonBar } from "./Skeleton";
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
@@ -510,7 +511,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     onNavigate("agent",{agentText:text,autoAsk:true});
   }
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
-  const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>{});
+  const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
@@ -696,7 +697,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       setScope(prev=>prev!==undefined?prev:((r?.portfolioCount||0)>0?"mine":"all"));
     }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
     apiFetch("/donors/stage-counts").then(r=>setStageCounts(r&&r.counts?r:{counts:Array.isArray(r)?r:[],placed:[],suggested:[],anyPlaced:true})).catch(()=>{});
-    apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
+    apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>setRecurringHealth(h=>h||{failed:true,atRisk:[]}));
     apiFetch("/impact").then(r=>setImpact(r)).catch(()=>{});
     apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
     loadGoal();
@@ -2179,7 +2180,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
               <AskWhy isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
             </div>}
-            {threadsData&&threadList.length===0&&(
+            {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
+            {threadsData&&!threadsData.failed&&threadList.length===0&&(
               threadsData.hasAny
                 ?<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="Nothing waiting."
                     detail={`Every conversation has its next step scheduled${threadStat?.snoozed>0?`, and ${threadStat.snoozed} are set aside to revisit later`:""}.`}/>
@@ -2604,7 +2606,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     return (Date.now()-new Date(r.first_failed_at).getTime())<=7*86400000;
   });
   const railFailedThisWeek=railFailedRows.length;
-  const railDueToday=(threadsData?.bands||[]).find(b=>b.key==="today")?.count||0;
+  // FIX-27 Part 3: a figure still loading is a skeleton, never a 0. null
+  // means "not read yet"; a read that failed is a dash, not a zero either.
+  const railDueToday=!threadsData?null:threadsData.failed?"—":((threadsData.bands||[]).find(b=>b.key==="today")?.count||0);
   // A jump to a card on this page when the card is here, and the tab that owns
   // BUILD-89 — a tile no longer scrolls the page to a card; it opens the list
   // in the rail beside you (see THE RAIL HAS TWO STATES below).
@@ -2655,11 +2659,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // a definition is what it counted. Each is one line of warm grey under the
   // label, saying exactly which rows the tile would show if you pressed it.
   const railTiles=[
-    {key:"open",n:threadStat?.open||0,label:"Open follow-ups",
+    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
-    {key:"failed",n:railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,
+    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
@@ -2763,10 +2767,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <div className="home-rail-date" style={{fontSize:12.5,color:T.ink3,margin:"0 0 18px"}}>{todayLongStr}</div>
         <div style={{display:"flex",flexDirection:"column",gap:2}}>
           {railTiles.map(tile=>(
-            <div key={tile.key} {...interactive(()=>setRailView({kind:"list",key:tile.key}),{label:`${tile.n} ${tile.label}`})}
+            <div key={tile.key} {...interactive(()=>setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
               className="home-rail-row" data-testid={"rail-tile-"+tile.key}
               style={{padding:"14px 12px",borderRadius:10,margin:"0 -12px",display:"flex",flexDirection:"column",gap:2}}>
-              <span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>
+              {tile.n==null
+                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:42,padding:"4px 0"}}><SkeletonBar width={56} height={34}/></span>
+                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
               <span style={{fontSize:13,lineHeight:1.4,color:T.ink3}}>{tile.label}</span>
               <span data-testid={"rail-def-"+tile.key} style={{fontSize:11.5,lineHeight:1.45,color:T.ink3,opacity:0.85}}>{tile.definition}</span>
             </div>

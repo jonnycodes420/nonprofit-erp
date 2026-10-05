@@ -186,7 +186,7 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   const [making, setMaking] = useState(false);
   const [open, setOpen] = useState(initialGroupId || null);
   const load = useCallback(() => {
-    apiFetch("/groups").then(r => { setList(r); setErr(""); }).catch(e => setErr(errorMessage(e, "Groups did not load.")));
+    apiFetch("/groups").then(r => { setList(r); setErr(""); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
   useEffect(() => { load(); }, [load]);
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
@@ -194,15 +194,20 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   return (
     <FigureContext.Provider value={{ openPerson }}>
       <div data-testid="groups-page">
-        <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 32, margin: "0 0 6px", color: T.ink }}>Groups</h1>
+        {/* FIX-27 Part 4: Groups opens on the list. New group sits in the
+            title row and opens only from its button; while the list loads the
+            page says so, so it never reads as an empty New group page. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", margin: "0 0 6px" }}>
+          <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 32, margin: 0, color: T.ink }}>Groups</h1>
+          {!isReadOnly && !making && <button type="button" data-testid="groups-new" style={primary} onClick={() => setMaking(true)}>New group</button>}
+        </div>
         <p style={{ fontSize: 14, color: T.ink3, lineHeight: 1.6, margin: "0 0 16px", maxWidth: 680 }}>
           Lists of people with a name. Keep one by hand, or let a rule keep it for you. A group works wherever a list does:
           campaigns, your email tool's tags, journeys, surveys and the board pack.
         </p>
-        {!isReadOnly && !making && <button type="button" style={{ ...primary, marginBottom: 16 }} onClick={() => setMaking(true)}>New group</button>}
         {making && <NewGroup onCancel={() => setMaking(false)} onMade={g => { setMaking(false); load(); if (g && g.id) setOpen(g.id); }} />}
         {err && <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>}
-        {!list && !err && <SkeletonCards count={4} label="Loading groups" />}
+        {!list && !err && <div data-testid="groups-loading"><div style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Loading your groups…</div><SkeletonCards count={4} label="Loading groups" /></div>}
         {list && !list.groups.length && (
           <div style={{ ...card, color: T.ink3, fontSize: 14 }}>No groups yet. Make one for the people you think of together: table hosts, board prospects, or warm volunteers who have never given.</div>
         )}

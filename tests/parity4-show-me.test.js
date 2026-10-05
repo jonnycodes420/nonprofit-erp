@@ -21,6 +21,12 @@
 //   §4 AI on, the stand-in names what it cannot express: refused.
 //   §5 AI off, a question with no filter ("zip code starting 019"): refused,
 //      nothing in the org changed, and the question log has it, unanswered.
+//   §6 FIX-27: "gave to last year's spring appeal but not this year's" (AI
+//      off) finds the campaign by its year and is the hand-built rows; a
+//      gift attributed only by the campaign's name counts.
+//   §7 FIX-27: "which donors haven't been asked and what should I ask them"
+//      (AI off): no proposal open and no ask in twelve months, each row with
+//      its suggested ask; a model naming a campaign Steward lacks is refused.
 //
 // HOW IT WOULD GO RED: drop the notGave rule (current donors appear), drop
 // notDeceased (the deceased donor appears), let checkSpec pass an unknown key
@@ -47,7 +53,7 @@ async function orgCounts() {
 }
 
 (async () => {
-  for (const t of ["audiences", "gifts", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
+  for (const t of ["audiences", "interactions", "opportunities", "gifts", "campaigns", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Show Me Fixture','show-me-p4',1,'active','team','UTC')`, [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_p4show',$1,'staff@p4show.local',$2,'Show Staff','admin')`, [ORG, bcrypt.hashSync("loadtest1234", 10)]);
@@ -71,6 +77,18 @@ async function orgCounts() {
   await g(6, "e", 500, `${Y - 1}-06-01`);
   await g(7, "f", 600, `${Y - 1}-07-01`); await g(8, "f", -600, `${Y}-01-03`);
   await g(9, "g", 700, `${Y - 1}-08-01`);
+  // FIX-27: two spring appeals. a gave to last year's by id; f's gift names it
+  // only by name (an imported row); b gave to both; e (deceased) to last year's.
+  await q(`INSERT INTO campaigns (id,org_id,name,goal_amount,status,start_date,end_date) VALUES
+           ('c_p4show_prev',$1,$2,1000,'ended',$3,$4),('c_p4show_now',$1,$5,1000,'active',$6,$7)`,
+    [ORG, `Spring Appeal ${Y - 1}`, `${Y - 1}-03-01`, `${Y - 1}-05-31`, `Spring Appeal ${Y}`, `${Y}-03-01`, `${Y}-05-31`]);
+  await q(`UPDATE gifts SET campaign_id='c_p4show_prev' WHERE org_id=$1 AND id IN ('g_p4show_1','g_p4show_2','g_p4show_6')`, [ORG]);
+  await q(`UPDATE gifts SET campaign=$2 WHERE org_id=$1 AND id='g_p4show_7'`, [ORG, `Spring Appeal ${Y - 1}`]);
+  await q(`UPDATE gifts SET campaign_id='c_p4show_now' WHERE org_id=$1 AND id='g_p4show_3'`, [ORG]);
+  // An ask logged on a's timeline last month, and a proposal open for b.
+  await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES ('i_p4show_ask',$1,'d_p4show_a','ask','Asked for a renewal',$2,'system:test')`,
+    [ORG, new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)]);
+  await q(`INSERT INTO opportunities (id,org_id,donor_id,target_amount,status,proposal_stage) VALUES ('o_p4show_b',$1,'d_p4show_b',5000,'open','cultivating')`, [ORG]);
 
   // THE HAND-BUILT FILTER: written here, not by the code under test.
   const hand = await q(`SELECT d.id FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE
@@ -137,7 +155,7 @@ async function orgCounts() {
     ok("§2 AI on: the model was asked once", captured.length === before + 1, `${captured.length} vs ${before}`);
     const sent = JSON.parse(captured[captured.length - 1] || "{}");
     const tool = (sent.tools || [])[0] || {};
-    const fields = Object.keys((tool.input_schema || {}).properties || {}).filter(k => k !== "unsupported");
+    const fields = Object.keys((tool.input_schema || {}).properties || {}).filter(k => k !== "unsupported" && k !== "suggestAsk");
     const GR = require("../groups");
     ok("§2 the model's form holds only donor list filters", fields.length > 0 && fields.every(k => GR.RULE_KEYS.includes(k)) && tool.input_schema.additionalProperties === false, fields.join(","));
     ok("§2 AI on: answered from the model's spec", a2.answered === true && a2.specSource === "ai", JSON.stringify(a2).slice(0, 300));
@@ -169,6 +187,33 @@ async function orgCounts() {
     ok("§5 nothing in the org changed", changed.length === 0, changed.map(t => `${t} ${c0[t]}->${c1[t]}`).join(", "));
     const logged = await q(`SELECT topic, answered FROM question_log WHERE surface='why' AND question=$1`, [REFUSE_Q]);
     ok("§5 the question log has it, unanswered", logged.length === 1 && logged[0].answered === false && logged[0].topic === "show me", JSON.stringify(logged));
+
+    // §6 FIX-27: a campaign, by its year.
+    const handCamp = await q(`SELECT d.id FROM donors d WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE
+        AND EXISTS (SELECT 1 FROM gifts x WHERE x.org_id=d.org_id AND x.donor_id=d.id AND x.amount > 0 AND (x.campaign_id='c_p4show_prev' OR x.campaign=$2))
+        AND NOT EXISTS (SELECT 1 FROM gifts x WHERE x.org_id=d.org_id AND x.donor_id=d.id AND x.amount > 0 AND (x.campaign_id='c_p4show_now' OR x.campaign=$3))`,
+      [ORG, `Spring Appeal ${Y - 1}`, `Spring Appeal ${Y}`]);
+    const a6 = await ask("Donors who gave to last year's spring appeal but not this year's");
+    ok("§6 the campaign rule: a and f (f by the campaign's name), not b, not the deceased",
+      a6.answered === true && JSON.stringify(ids(a6.rows || [])) === JSON.stringify(ids(handCamp)) && JSON.stringify(ids(handCamp)) === JSON.stringify(["d_p4show_a", "d_p4show_f"])
+      && a6.rules.gaveCampaign === "c_p4show_prev" && a6.rules.notGaveCampaign === "c_p4show_now",
+      JSON.stringify({ got: ids(a6.rows || []), hand: ids(handCamp), rules: a6.rules }));
+    ok("§6 …and the filters name the campaigns", (a6.words || []).join(" · ") === `Gave to Spring Appeal ${Y - 1} · nothing to Spring Appeal ${Y} · not deceased`, (a6.words || []).join(" · "));
+
+    // §7 FIX-27: no ask this year, and what to ask.
+    const a7 = await ask("Which donors haven't been asked and what should I ask them?");
+    ok("§7 no ask this year: c, d and f (a was asked last month, b has a proposal open)",
+      a7.answered === true && JSON.stringify(ids(a7.rows || [])) === JSON.stringify(["d_p4show_c", "d_p4show_d", "d_p4show_f"]) && a7.rules.noAsk === "1",
+      JSON.stringify({ got: ids(a7.rows || []), rules: a7.rules }));
+    const askOf = id => (a7.rows || []).find(r => r.donorId === id) || {};
+    ok("§7 …each with the suggested ask from their own gifts, and the step to plan it",
+      a7.withAsk === true && askOf("d_p4show_c").ask && askOf("d_p4show_c").ask.cents === 35000 && askOf("d_p4show_d").ask.cents === 50000
+      && a7.askStep && a7.askStep.label === "Plan the ask",
+      JSON.stringify((a7.rows || []).map(r => [r.donorId, r.ask && r.ask.cents])));
+    await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
+    reply = { gaveCampaign: "c_not_ours", notDeceased: "1" };
+    const a8 = await ask("Donors who gave to the summer drive");
+    ok("§7 a campaign Steward does not have is refused, never guessed", a8.answered === false && a8.refused === true && !a8.rows, JSON.stringify(a8).slice(0, 200));
   } finally {
     child.kill();
     mock.close();
