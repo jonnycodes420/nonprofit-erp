@@ -1,4 +1,4 @@
-// onboarded.js — MAIL-1. WHEN AN ORGANIZATION HAS ONBOARDED.
+// onboarded.js: MAIL-1. WHEN AN ORGANIZATION HAS ONBOARDED.
 //
 // Jonathan's definition (4 Oct 2026): an org is onboarded once a committed
 // import has written at least one non-sample donor. A super-admin can also

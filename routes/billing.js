@@ -2129,7 +2129,7 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
   res.json({ ok: true, org: after });
 }));
 
-// ── MAIL-1 — ONE ORG'S MAIL, AS A SUPER-ADMIN SEES IT ─────────────────────
+// ── MAIL-1: ONE ORG'S MAIL, AS A SUPER-ADMIN SEES IT ─────────────────────
 // Onboarded or not, the donor-mail switch, the sending identity, and what each
 // family of mail would do right now, in sentences (mailPolicy.js decides; this
 // only reports it). A demonstration org shows everything locked, with why.

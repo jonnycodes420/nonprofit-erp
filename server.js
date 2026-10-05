@@ -6359,7 +6359,7 @@ async function processSequences() {
           seqErr = null;
           seqDelivered = false;
           try {
-            // BUILD-88c C.1 — a DONOR-facing sequence carries the org's own identity.
+            // BUILD-88c C.1: a DONOR-facing sequence carries the org's own identity.
             const sendOpts = { ...(await donorSendOpts(enr.org_id, recipient.email, "sequence")),
                                to: recipient.email, subject, html: bodyHtml };
             const { error: sendErr } = await resend.emails.send(sendOpts);

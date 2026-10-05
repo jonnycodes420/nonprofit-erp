@@ -210,7 +210,7 @@ const mkDonor = async (id, org, email, isSample) =>
     goodOn.status === 200 && goodOn.body.org.emails_enabled === true && goodOn.body.org.is_demo_org === false,
     { s: goodOn.status, b: goodOn.body });
 
-  // MAIL-1 Part 2 — the super-admin's view of one org's mail.
+  // MAIL-1 Part 2: the super-admin's view of one org's mail.
   const creoMail = await api("GET", "/admin/orgs/org_creo/mail", superTok);
   ok("MAIL-1: the CREO fixture shows locked, with the reason in a sentence",
     creoMail.status === 200 && creoMail.body.locked === true && /demonstration/.test(creoMail.body.lockedSentence || ""), creoMail.body);

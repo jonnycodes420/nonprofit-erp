@@ -2384,7 +2384,7 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ALTER COLUMN is_demo_org SET DEFAULT false`);
   await pool.query(`UPDATE orgs SET is_demo_org = false WHERE is_demo_org IS NULL`);
 
-  // ── MAIL-1 — ONBOARDED, AND THE ONBOARDING SEQUENCE OFF FOR GOOD ─────────
+  // ── MAIL-1: ONBOARDED, AND THE ONBOARDING SEQUENCE OFF FOR GOOD ─────────
   // An org is onboarded once a committed import wrote at least one real
   // (non-sample) donor, or a super-admin marked it by hand. Until then Steward
   // sends it no staff or donor mail (mailPolicy.js). `onboarded_via` says

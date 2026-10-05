@@ -379,7 +379,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
             ))}
           </div>
 
-          {/* MAIL-1 — this org's mail. A demonstration org shows it all locked, with why. */}
+          {/* MAIL-1: this org's mail. A demonstration org shows it all locked, with why. */}
           {mail && (
             <div data-testid="admin-org-mail">
               <div style={PSH}>Email</div>

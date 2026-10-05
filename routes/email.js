@@ -270,9 +270,9 @@ async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
       orgMailGateCache.set(orgId, { at: Date.now(), org });
     } catch (err) {
       // NOT cached. A refusal caused by a database blip must not be remembered
-      // for five seconds, and — more importantly — must not be remembered as an
+      // for five seconds, and (more importantly) must not be remembered as an
       // ALLOW either. Every retry re-asks.
-      console.error("[mail-gate] could not read org", orgId, err.message, "— refusing to send");
+      console.error("[mail-gate] could not read org", orgId, err.message, ": refusing to send");
       return { send: false, reason: "org_gate_unreadable" };
     }
   }

@@ -1,4 +1,4 @@
-// MAIL-1 (Jonathan, 4 Oct 2026) — ONE MAIL POLICY, READ AT THE ONE MAIL GATE.
+// MAIL-1 (Jonathan, 4 Oct 2026): ONE MAIL POLICY, READ AT THE ONE MAIL GATE.
 //
 // Every send Steward makes belongs to one of five families, and this file is
 // the only place that says which family a kind of mail is in and what each
