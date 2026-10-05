@@ -181,7 +181,9 @@ async function orgCounts() {
     // The one audit write records the request itself (every POST is logged);
     // it is the request's record, not a change to anything in the org.
     const c1 = await orgCounts();
-    const changed = Object.keys(c1).filter(t => t !== "fin_audit_log" && c1[t] !== c0[t]);
+    // ASK-2: the question log now carries the org (for the box's suggestions);
+    // the log is the one write asking is allowed to make.
+    const changed = Object.keys(c1).filter(t => t !== "fin_audit_log" && t !== "question_log" && c1[t] !== c0[t]);
     ok("§5 refused with the plain words", a5.answered === false && a5.refused === true && /^Steward can't filter by that yet/.test(a5.sentence || ""), JSON.stringify(a5).slice(0, 300));
     ok("§5 no list came back", !a5.rows && a5.count === undefined, JSON.stringify(a5).slice(0, 200));
     ok("§5 nothing in the org changed", changed.length === 0, changed.map(t => `${t} ${c0[t]}->${c1[t]}`).join(", "));
