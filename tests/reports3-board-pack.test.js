@@ -183,6 +183,8 @@ const sink = http.createServer((req, res) => {
   for (const [id, email, name, slug] of [[ORG, EMAIL, "Westbrook Community Arts", "rp3-pack"], [ORG2, EMAIL2, "Other Shop", "rp3-pack2"]]) {
     await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,created_at)
              VALUES ($1,$2,$3,1,'active','growth', NOW() - INTERVAL '1200 days')`, [id, name, slug]);
+  // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [id]);
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Pack Admin','admin')`, ["u_" + id, id, email, hash]);
   }
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES

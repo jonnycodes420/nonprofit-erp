@@ -231,6 +231,8 @@ const LOOPBACK_HARDCODED = [
 const PROD_READONLY = [
   // CLEAN-1 follow-up: counts rows the July merge left pointing at folded records, in a READ ONLY transaction.
   "clean1-orphan-report",
+  // MAIL-1: what each org's mail would do, in a READ ONLY transaction, counts and org names only.
+  "mail-preflight",
   "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "build61-prod-verify", "check-webhook-subscriptions",
   "consistency-audit", "finance-overview-capture",

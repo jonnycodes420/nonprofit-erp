@@ -37,7 +37,7 @@ const {
   reconcileStripeVsGifts, recordTick, registerLimiter, requireAdmin, requireAuth, requireSuperAdmin,
   resend, retryFailedNotifications, run, sampleDataMod, sessionCache, signToken,
   stripeChargesEnabled, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink,
-  validateOrgClose, withTransaction, wrap,
+  validateOrgClose, withTransaction, wrap, orgSendingIdentity,
   // GTM-1a — the pricing catalogue, the plan-amount helpers, the click-through
   // agreement and the founder address public signup reports to.
   PRICING, planAmountUsd, planInterval, SELLABLE_CLOSE_PLANS, customerAgreement,
@@ -454,18 +454,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing", trial_ends_at: trialEndsAt },
     stripeCustomerId,
   });
-  // Belt AND braces. sendOnboardingSequence refuses for a gated org on its
-  // own (that is the gate that protects every other caller), but a
-  // provisioning run should not even ask — the intent is legible here, at the
-  // call site, where the next person to read this route will look.
-  if (!isProvisioned) {
-    sendOnboardingSequence(orgId, userId, userName, normalizedEmail).catch(e =>
-      console.error("[onboarding] failed to start sequence:", e.message)
-    );
-  } else {
-    console.log(`[provision] org ${orgId} created with mail OFF and no onboarding drip` +
-      (isDemoData ? " (marked as a demonstration org)" : " (REAL org — holds no invented data)"));
-  }
+  // MAIL-1 (Jonathan, 4 Oct 2026): no onboarding sequence, for any signup.
+  // Jonathan writes and sends onboarding himself, so nothing is queued here.
+  console.log(`[mail-policy] org ${orgId} created; no onboarding sequence (off for good, MAIL-1)` +
+    (isProvisioned ? (isDemoData ? ", provisioned as a demonstration org" : ", provisioned (REAL org, holds no invented data)") : ""));
 }));
 
 // ── Invite ─────────────────────────────────────────────────────────────────
@@ -714,129 +706,8 @@ app.post("/admin/observability/run-checks", requireAuth, requireSuperAdmin, wrap
   res.json({ ok: true, demo });
 }));
 
-// ── Sequence Engine ─────────────────────────────────────────────────────────
-async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
-  // INCIDENT 2026-09-22 — "You just made a great decision for your mission"
-  // was delivered to a real prospect eight hours before anyone meant to tell
-  // her the product existed, because provisioning her organisation went down
-  // the same road as a self-serve signup and step 0 has delay_days: 0.
-  //
-  // The sequence is not merely un-sent for a gated org, it is not CREATED.
-  // A dormant enrolment is a loaded gun: the hourly engine would have picked
-  // it up the moment mail came back on, and delivered a "welcome!" drip to an
-  // organisation that had been using Steward for a month.
-  const gate = await orgMaySendEmail(orgId);
-  if (!gate.send) {
-    console.log(`[onboarding] NOT creating drip for ${orgId} (${gate.reason})`);
-    return;
-  }
-  console.log("[onboarding] creating sequence for", orgId, userId, userEmail);
-  try {
-    const seqId = "seq_" + uuid().slice(0, 8);
-    await run(
-      "INSERT INTO sequences (id, org_id, name, trigger, status, created_by, created_by_name) VALUES (?, ?, 'Onboarding', 'onboarding', 'active', ?, ?)",
-      [seqId, orgId, SYS_AUTO.id, SYS_AUTO.name]
-    );
-    const steps = [
-      {
-        delay_days: 0,
-        subject: "You just made a great decision for your mission",
-        body: `Hi {{first_name}},\n\nWelcome to Steward. I'm Jonathan — I built this.\n\nI built Steward because a nonprofit I cared about was managing their entire donor relationships in Google Sheets. They were spending hours every week on things that should take minutes — tracking who gave what, remembering who to follow up with, pulling together board reports.\n\nSound familiar?\n\nOver the next few days I'm going to show you exactly how to get the most out of Steward. But first — one question:\n\nWhat's the #1 thing eating your time in fundraising right now?\n\nJust reply to this email. I read every response personally.\n\n— Jonathan\nFounder, Steward`,
-      },
-      {
-        delay_days: 2,
-        subject: "The spreadsheet problem (and how to fix it in 10 minutes)",
-        body: `Hi {{first_name}},\n\nMost development officers I talk to manage donors in one of three ways:\n\n1. Google Sheets (the classic)\n2. A CRM they barely use because it's too complicated\n3. Their own memory (terrifying)\n\nAll three have the same problem: they don't tell you what to do next.\n\nSteward does.\n\nToday's task: import your donor list.\n\nIf you have a spreadsheet with donor names, emails, and giving history — you can import it in about 10 minutes. Steward will automatically score each donor, assign them a stage, and tell you who to call first.\n\nHere's how:\n1. Go to Donors → Import\n2. Upload your CSV\n3. Map your columns (takes 2 minutes)\n4. Done — your whole donor list is in Steward\n\nTomorrow I'll show you something that development officers tell me saves them 2 hours a week.\n\n— Jonathan`,
-      },
-      {
-        delay_days: 4,
-        subject: `What if your CRM texted you "call Sarah today"?`,
-        body: `Hi {{first_name}},\n\nEvery morning when you open Steward, you get a daily briefing.\n\nIt reads your donor data overnight and tells you:\n- Who you haven't contacted in too long\n- Who just gave and needs a thank you\n- Which grant deadline is coming up\n- What your one priority action is for the day\n\nIt's like having a chief of staff who never sleeps and never forgets anything.\n\nTo generate your first briefing:\n1. Go to Dashboard\n2. Hit "Generate briefing"\n3. Read it. Do the first thing it says.\n\n— Jonathan\n\nP.S. — If you haven't imported your donors yet, do that first. The briefing gets dramatically smarter when it has real data to work with.`,
-      },
-      {
-        delay_days: 7,
-        subject: "Your board report used to take how long?",
-        body: `Hi {{first_name}},\n\nI asked a development director at an arts organization how long it took her to put together a quarterly board report.\n\n"Two days," she said. "Sometimes three."\n\nTwo days. Every quarter. Just compiling data that already existed in five different places.\n\nSteward generates your board report in about 45 seconds.\n\nIt pulls your YTD giving, grant status, top donors, pipeline summary, and key metrics — formats it into a PDF — and it's ready to email to your board.\n\nTry it:\n1. Go to Board tab\n2. Hit "Generate Board Report"\n3. Download the PDF\n\nThat's time you could spend actually talking to donors.\n\n— Jonathan`,
-      },
-      {
-        delay_days: 10,
-        subject: "The donors you're about to lose (and how to keep them)",
-        body: `Hi {{first_name}},\n\nHere's a number most development officers don't know off the top of their head:\n\nTheir donor retention rate — of the donors who gave last year, how many gave again this year.\n\nSteward tracks this automatically. It flags donors who are at risk of lapsing and puts them in a Re-engage queue so nothing falls through the cracks.\n\nGo to Donors → Re-engage and see who's there.\n\nIf you've set up email sequences, Steward will also automatically reach out to lapsed donors on your behalf — a warm, personal email that goes out without you having to remember to send it.\n\nRetaining one major donor is worth more than acquiring ten new ones. This is where the money is.\n\n— Jonathan`,
-      },
-      {
-        delay_days: 18,
-        subject: "Quick question",
-        body: `Hi {{first_name}},\n\nYou've been using Steward for a couple weeks now.\n\nQuick question — what's one thing you wish it did that it doesn't?\n\nI'm building this in real time and I read every reply. The features on the roadmap right now came directly from conversations with users like you.\n\nWhat would make Steward a no-brainer for your org?\n\n— Jonathan`,
-      },
-      {
-        delay_days: 28,
-        subject: "A month in with Steward",
-        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: nothing is charged for your first thirty days. Your first charge date is in Settings → Billing, and a week before it I'll email you the date, the amount and the card — with a one-click cancel. Cancel before then and you pay nothing.\n\nAfter that it's month to month, cancel any time. Plans start at $249/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
-      },
-    ];
-    for (let i = 0; i < steps.length; i++) {
-      const stepId = "ss_" + uuid().slice(0, 8);
-      await run(
-        "INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body) VALUES (?, ?, ?, ?, ?, ?)",
-        [stepId, seqId, i, steps[i].delay_days, steps[i].subject, steps[i].body]
-      );
-    }
-    const enrId = "se_" + uuid().slice(0, 8);
-    await run(
-      `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at)
-       VALUES (?, ?, ?, ?, 0, 'active', NOW())
-       ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
-      [enrId, seqId, orgId, userId]
-    );
-    // Send email 1 immediately — don't wait for the hourly engine tick
-    const firstName = userName ? userName.trim().split(/\s+/)[0] : "";
-    const applyTokens = str => (str || "")
-      .replace(/{{first_name}}/g, firstName)
-      .replace(/{{user_name}}/g, userName)
-      .replace(/{{donor_name}}/g, userName);
-    const step0 = steps[0];
-    const subject0 = applyTokens(step0.subject);
-    const body0 = applyTokens(step0.body);
-    const bodyHtml0 = `<p>${body0.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>` + await unsubscribeEmailFooterHtml(userEmail, orgId, "sequence");
-    const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
-    const decision0 = await donorMailDecision("onboarding_drip", userEmail, orgId);
-    // WHY-1 Part 8 — HONEST "SENT". Step 0 counts as sent only when the
-    // provider accepts it. A refusal keeps the enrollment on step 0 with its
-    // reason, and the engine tries once more a day later, never sooner.
-    let err0 = null;
-    if (!decision0.send) {
-      err0 = `Not sent: ${decision0.reason}`;
-      console.log(`[onboarding] skipping ${userEmail} (${decision0.reason})`);
-    } else if (!process.env.RESEND_API_KEY) {
-      err0 = "Not sent: no mail provider is configured";
-    } else {
-      try {
-        const { error: sendErr } = await resend.emails.send({
-          from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, replyTo: founderEmail,
-          headers: unsubscribeHeaders(userEmail, orgId, "sequence"),
-        });
-        if (sendErr) err0 = sendErr.message || "refused";
-        else console.log("[onboarding] email 1 sent to", userEmail);
-      } catch (e) { err0 = e.message || "send failed"; }
-    }
-    if (err0) {
-      console.error("[onboarding] email 1 not sent:", err0);
-      await run(
-        `UPDATE sequence_enrollments SET last_error = ?, last_failed_at = NOW(), next_send_at = NOW() + INTERVAL '1 day' WHERE id = ?`,
-        [String(err0).slice(0, 300), enrId]
-      );
-    } else {
-      // Advance past step 0; the engine picks up from step 1 (delay_days: 2).
-      await run(
-        `UPDATE sequence_enrollments SET current_step = 1, next_send_at = NOW() + INTERVAL '2 days', last_error = NULL, last_failed_at = NULL WHERE id = ?`,
-        [enrId]
-      );
-    }
-    console.log(`[onboarding] sequence created for org ${orgId}, user ${userId} (${userEmail})`);
-  } catch (e) {
-    console.error("[onboarding] sendOnboardingSequence error:", e.message);
-  }
-}
+// MAIL-1: the founder onboarding drip that lived here is gone. Jonathan writes
+// and sends onboarding himself; see mailPolicy.js.
 // Ops/test hook (super-admin — the guard reads across every org's connected
 // account, so it is a platform operation, not an org-scoped one). Returns the
 // full divergence detail so a human can act: charge id, account, amount, age.
@@ -2140,19 +2011,12 @@ app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res)
     query("SELECT COUNT(*) AS c FROM sequences WHERE org_id=?", [req.params.id]),
     query("SELECT COUNT(*) AS c FROM sequence_enrollments WHERE org_id=?", [req.params.id]),
   ]);
-  // WHY-1 Part 8 — the onboarding email that did not go, with its reason.
-  const onboardingFailed = await query(
-    `SELECT se.current_step, se.last_error, se.last_failed_at, se.next_send_at FROM sequence_enrollments se
-       JOIN sequences s ON s.id = se.sequence_id
-      WHERE se.org_id = ? AND s.trigger = 'onboarding' AND se.last_error IS NOT NULL`, [req.params.id]).catch(() => []);
-
   res.json({
     ...org,
     users,
     recent_activity: recentActivity,
     sequence_count: parseInt(sequences[0].c, 10),
     enrollment_count: parseInt(enrollments[0].c, 10),
-    onboarding_failed: onboardingFailed.map(r => ({ step: r.current_step + 1, reason: r.last_error, failedAt: r.last_failed_at, retryAt: r.next_send_at })),
   });
 }));
 
@@ -2263,6 +2127,82 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
 
   const [after] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
   res.json({ ok: true, org: after });
+}));
+
+// ── MAIL-1: ONE ORG'S MAIL, AS A SUPER-ADMIN SEES IT ─────────────────────
+// Onboarded or not, the donor-mail switch, the sending identity, and what each
+// family of mail would do right now, in sentences (mailPolicy.js decides; this
+// only reports it). A demonstration org shows everything locked, with why.
+const mailPolicy = require("../mailPolicy");
+async function adminMailPayload(orgId) {
+  const [org] = await query(
+    `SELECT id, name, emails_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name,
+            sending_domain, sending_domain_status, sending_from_email FROM orgs WHERE id=?`, [orgId]);
+  if (!org) return null;
+  const demo = mailPolicy.orgMailDecision(org, mailPolicy.CATEGORY.DONOR).reason === "demo_org";
+  const ident = await orgSendingIdentity(orgId).catch(() => null);
+  const families = {};
+  for (const c of ["staff", "donor", "account", "billing", "jonathan", "onboarding"]) {
+    const d = mailPolicy.orgMailDecision(org, c);
+    families[c] = { sends: d.send, sentence: d.send ? "Sends." : mailPolicy.REASON_SENTENCE[d.reason] || "Does not send." };
+  }
+  return {
+    orgId: org.id, name: org.name,
+    onboarded: !!org.onboarded_at, onboardedAt: org.onboarded_at || null,
+    onboardedHow: !org.onboarded_at ? null
+      : String(org.onboarded_via || "").startsWith("import:") ? "Their first donor file was imported."
+      : `Marked onboarded by ${org.onboarded_by_name || "a super-admin"}.`,
+    donorMailOn: org.emails_enabled !== false,
+    demo, locked: demo,
+    lockedSentence: demo ? mailPolicy.REASON_SENTENCE.demo_org + " Sign-in mail to its own logins still goes." : null,
+    domain: {
+      status: org.sending_domain_status || "none", domain: org.sending_domain || null,
+      from: ident ? ident.from : null,
+      sentence: ident && ident.verified ? `Mail goes out from ${ident.address}, the organization's own verified domain.`
+        : org.sending_domain ? `${org.sending_domain} is not verified yet, so mail goes out from Steward's address with the organization's name on it.`
+        : "No sending domain, so mail goes out from Steward's address with the organization's name on it.",
+    },
+    families,
+    waitsForOnboarding: mailPolicy.waitsForOnboarding(),
+  };
+}
+app.get("/admin/orgs/:id/mail", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const out = await adminMailPayload(req.params.id);
+  if (!out) return res.status(404).json({ error: "Org not found" });
+  res.json(out);
+}));
+// By hand, for an org whose donors came in some other way. Never on a demo org.
+app.post("/admin/orgs/:id/mark-onboarded", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const before = await adminMailPayload(req.params.id);
+  if (!before) return res.status(404).json({ error: "Org not found" });
+  if (before.demo) return res.status(409).json({ error: before.lockedSentence });
+  const [me] = await query("SELECT id, name, email FROM users WHERE id=?", [req.user.userId]);
+  await run(`UPDATE orgs SET onboarded_at = NOW(), onboarded_via = 'super_admin', onboarded_by = ?, onboarded_by_name = ?
+              WHERE id = ? AND onboarded_at IS NULL`,
+    [req.user.userId, (me && (me.name || me.email)) || "Super-admin", req.params.id]);
+  clearOrgMailGate(req.params.id);
+  console.log(`[mail-1] ${req.params.id} marked onboarded by ${req.user.email || req.user.userId}`);
+  res.json(await adminMailPayload(req.params.id));
+}));
+// A test of this org's sending identity, to the signed-in super-admin's OWN
+// address and nobody else's. The address is read from the session, never the body.
+app.post("/admin/orgs/:id/mail-test", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const info = await adminMailPayload(req.params.id);
+  if (!info) return res.status(404).json({ error: "Org not found" });
+  if (info.demo) return res.status(409).json({ error: info.lockedSentence });
+  const [me] = await query("SELECT email FROM users WHERE id=?", [req.user.userId]);
+  const to = me && me.email;
+  if (!to) return res.status(400).json({ error: "Your account has no email address to send the test to." });
+  if (!process.env.RESEND_API_KEY) return res.json({ sent: false, to, sentence: "No mail provider is configured, so nothing was sent." });
+  const ident = await orgSendingIdentity(req.params.id);
+  const { error } = await resend.emails.send({
+    from: ident.from, ...(ident.replyTo ? { replyTo: ident.replyTo } : {}), to,
+    subject: `Test from ${info.name}`,
+    html: `<p>This is a test of how ${displayNameCase(info.name)}'s mail leaves Steward. It went only to you.</p><p>${info.domain.sentence}</p>`,
+    _stewardOrgId: req.params.id, _stewardKind: "mail_test",
+  });
+  if (error) return res.json({ sent: false, to, sentence: `The mail provider did not accept it: ${error.message}` });
+  res.json({ sent: true, to, sentence: `Sent to ${to} only.` });
 }));
 
 // ── PARITY-2 Part 5: QUICKBOOKS SYNC, PER ORG ────────────────────────────

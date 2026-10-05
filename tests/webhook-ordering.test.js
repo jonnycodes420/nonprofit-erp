@@ -94,6 +94,8 @@ const donorCount = e => q("SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AN
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,recurring_dunning_enabled)
            VALUES ($1,'Ordering Org','ord',1,'active','growth',$2,true)`, [ORG, ACCT]);
+  // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_ord',$1,'Order Fund',true)`, [ORG]);
   // pre-existing donors for the failed-charge + recovery scenarios
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count) VALUES ('d_fail',$1,'Fay Fail','fail@order.test','mid','steward',0,0)`, [ORG]);

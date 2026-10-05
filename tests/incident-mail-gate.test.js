@@ -118,7 +118,7 @@ const mkDonor = async (id, org, email, isSample) =>
 
   // ── §2 · ONE ORG-LEVEL GATE, READ BY ALL THREE SEAMS ─────────────────────
   console.log("\n— §2 · one org-level gate, read by all three seams —");
-  ok("orgMaySendEmail exists", /async function orgMaySendEmail\(orgId\)/.test(src), null);
+  ok("orgMaySendEmail exists", /async function orgMaySendEmail\(orgId, category/.test(src), null);
   ok("it fails CLOSED when the org row cannot be read",
     /org_gate_unreadable/.test(src), null);
   ok("it names the two refusals it exists for",
@@ -130,10 +130,13 @@ const mkDonor = async (id, org, email, isSample) =>
 
   for (const [seam, re] of [
     ["donorMailDecision", /const orgGate = await orgMaySendEmail\(orgId\)/],
-    ["sendDigestEmail", /const digestGate = await orgMaySendEmail\(org && org\.id\)/],
+    ["sendDigestEmail", /const digestGate = await orgMaySendEmail\(org && org\.id, mailPolicy\.CATEGORY\.STAFF\)/],
     ["runDigestsForOrg", /const gate = await orgMaySendEmail\(org && org\.id\)/],
-    ["sendOnboardingSequence", /\[onboarding\] NOT creating drip/],
+    ["notifyUserOnce (staff notices)", /const gate = await orgMaySendEmail\(org\.id, mailPolicy\.CATEGORY\.STAFF\)/],
   ]) ok(`${seam} consults the org gate`, re.test(src), null);
+  // MAIL-1: the onboarding sequence is gone, not gated: nothing creates it.
+  ok("no code creates an onboarding sequence any more (MAIL-1)",
+    !/INSERT INTO sequences[^;]*'onboarding'/.test(src) && !/function sendOnboardingSequence/.test(src), null);
 
   // ── §3 · PROVISIONING IS NOT A SIGNUP ────────────────────────────────────
   console.log("\n— §3 · provisioning an org is not a signup —");
@@ -206,6 +209,22 @@ const mkDonor = async (id, org, email, isSample) =>
   ok("…but clearing the mark in the same breath is allowed",
     goodOn.status === 200 && goodOn.body.org.emails_enabled === true && goodOn.body.org.is_demo_org === false,
     { s: goodOn.status, b: goodOn.body });
+
+  // MAIL-1 Part 2: the super-admin's view of one org's mail.
+  const creoMail = await api("GET", "/admin/orgs/org_creo/mail", superTok);
+  ok("MAIL-1: the CREO fixture shows locked, with the reason in a sentence",
+    creoMail.status === 200 && creoMail.body.locked === true && /demonstration/.test(creoMail.body.lockedSentence || ""), creoMail.body);
+  const creoMark = await api("POST", "/admin/orgs/org_creo/mark-onboarded", superTok);
+  ok("MAIL-1: a demo org cannot be marked onboarded", creoMark.status === 409, { s: creoMark.status });
+  const offMail = await api("GET", `/admin/orgs/${OFF}/mail`, superTok);
+  ok("MAIL-1: a real org not yet onboarded says so, and its staff mail waits",
+    offMail.body.onboarded === false && offMail.body.families.staff.sends === false && offMail.body.families.account.sends === true, offMail.body);
+  const offMark = await api("POST", `/admin/orgs/${OFF}/mark-onboarded`, superTok);
+  ok("MAIL-1: a super-admin marks it onboarded by hand, dated and named",
+    offMark.status === 200 && offMark.body.onboarded === true && !!offMark.body.onboardedAt && /Marked onboarded by/.test(offMark.body.onboardedHow || ""), offMark.body);
+  const testSend = await api("POST", `/admin/orgs/${OFF}/mail-test`, superTok, { to: "someone-else@example.org" });
+  ok("MAIL-1: the test send goes to the super-admin's own address, never one in the body",
+    testSend.status === 200 && testSend.body.to === SUPER, testSend.body);
 
   const adminTok = await login(ADMIN, PW);
   const notSuper = await api("POST", `/admin/orgs/${OFF}/email-switch`, adminTok, { emailsEnabled: true });

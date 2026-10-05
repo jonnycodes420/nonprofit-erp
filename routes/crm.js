@@ -277,6 +277,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
       const { error } = await resend.emails.send({
         from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
         to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        _stewardOrgId: orgId, _stewardKind: "campaign_test",   // MAIL-1: waits for onboarding like the campaign
         html: T.renderMergeFields(html, { first_name: first }),
       });
       if (error) throw new Error(error.message);
@@ -7484,6 +7485,9 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
      act.id, actorName, JSON.stringify(summary), migrationSource]);
   const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
+  // MAIL-1: her first real donor file is what turns Steward's mail on for the org.
+  await require("../onboarded").stampOnboardedFromImport(query, orgId, id)
+    .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
   require("./dataHealth").afterImport(orgId, id);   // CLEAN-1: Data health runs after every import
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
@@ -18491,6 +18495,18 @@ app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
 
 // The hub's single read. One payload so the landing screen is one request
 // rather than five that arrive in a different order every time.
+// MAIL-1 Part 3: ONE SENTENCE ABOUT WHETHER HER EMAIL GOES, decided by the
+// mail policy (mailPolicy.js), never a raw flag. Before the donor file is in:
+// "Email turns on once your donor file is in." Once it sends: the From address.
+const mailPolicy = require("../mailPolicy");
+async function hubMailState(orgId) {
+  const [org] = await query("SELECT id, emails_enabled, is_demo_org, onboarded_at FROM orgs WHERE id=?", [orgId]).catch(() => []);
+  const d = mailPolicy.orgMailDecision(org || null, mailPolicy.CATEGORY.DONOR);
+  if (!d.send) return { sends: false, sentence: mailPolicy.REASON_SENTENCE[d.reason] || "Email is not going out from this organization right now." };
+  const ident = await orgSendingIdentity(orgId).catch(() => null);
+  return { sends: true, from: ident ? ident.from : null, sentence: ident ? `Your email goes out from ${ident.from}.` : null };
+}
+
 app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [roster, campaigns, seqs] = await Promise.all([
@@ -18507,6 +18523,7 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const totalOpen = sent.reduce((n, c) => n + (c.open_count || 0), 0);
   res.json({
     ...roster,
+    mail: await hubMailState(orgId),
     campaigns,
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {
@@ -19086,7 +19103,7 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl,
     // PARITY-2 Part 2: a page that waits for approval says so, rather than
     // telling somebody their page is live when it is not yet.
     const { error } = await resend.emails.send({
-      from,
+      from, _stewardOrgId: org.id, _stewardKind: "fundraiser_manage",   // MAIL-1: the org's mail policy applies
       to: fundraiser.email,
       subject: pending ? `Your fundraiser for ${displayNameCase(org.name)} is waiting for approval`
                        : `Your fundraiser for ${displayNameCase(org.name)} is live!`,
@@ -21695,7 +21712,7 @@ async function sendMilestoneDraft(req, draft) {
   const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
     : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
   const decision = await donorMailDecision(kind, donor.email, req.user.orgId);
-  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
+  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : (mailPolicy.REASON_SENTENCE[decision.reason] || `this donor is suppressed (${String(decision.reason).replace(/_/g, " ")})`)}` };
 
   if (process.env.RESEND_API_KEY) {
     // PARITY-2 Part 4: a link in a draft (a winner's pay link, an auction
@@ -24118,7 +24135,7 @@ app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(
   // FIX-15 Part 3: the provider's answer decides the sentence (a refused
   // offer is queued for retry by the lifecycle helper).
   const offerSent = await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
-    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => { console.error("[event] waitlist offer:", e.message); return false; });
+    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR()), orgId).catch(e => { console.error("[event] waitlist offer:", e.message); return false; });
   // FIX-7 Part 6.2 — the demonstration org sends no ticket email; the screen
   // says what would have gone out and to whom rather than implying it did.
   const demoNote = await demoMailNote(orgId, { what: "the offer of a place, with the event's link", to: w.email });

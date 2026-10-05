@@ -3378,7 +3378,8 @@ app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
     sentence: decision.reason === "demo_org" || (decision.reason === "org_emails_disabled" && (await query("SELECT is_demo_org FROM orgs WHERE id=?", [orgId]))[0]?.is_demo_org)
       ? "This is a demonstration organisation, so Steward emails nobody. On a real account this note would go to them now."
       : decision.reason === "org_emails_disabled" ? "Email is turned off for your organisation, so nothing was sent. An admin can turn it on in Settings."
-      : `Nothing was sent: Steward will not email this address (${String(decision.reason).replace(/_/g, " ")}).` });
+      : decision.reason === "not_onboarded" ? "Nothing was sent. Email turns on once your donor file is in."
+      : "Nothing was sent: Steward will not email this address." });
   // Claim it before sending, so two presses cannot send two notes.
   const me = actor(req);
   const claimed = await run(`UPDATE gift_starts SET note_sent_at=NOW(), note_sent_by=?, note_sent_by_name=? WHERE id=? AND org_id=? AND note_sent_at IS NULL`, [me.id, me.name, r.id, orgId]);
@@ -4077,7 +4078,7 @@ app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkW
          <p><a href="${link}" style="display:inline-block;background:#c9a84c;color:#0f1a12;text-decoration:none;font-weight:700;padding:11px 22px;border-radius:8px">Reconnect my monthly gift</a></p>
          <p style="color:#8fa896;font-size:13px">If you'd rather not continue your monthly gift, no action is needed — and thank you for everything you've already given.</p>`;
     const from = await donorFromAddress(orgId).catch(() => undefined);
-    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from);
+    const ok = await sendDonorLifecycleEmail("reconnect", d.email, `Reconnect your monthly gift to ${dfName}`, html, from, orgId);
     if (ok) {
       await run(
         `INSERT INTO reconnect_sends (id, org_id, donor_id, historical_amount, historical_interval, sent_by)
@@ -5113,6 +5114,7 @@ async function sendPortalMutationEmail(org, email, subject, bodyText) {
       from: ident.from,
       ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
       to: email, subject: `${subject} — ${theme.displayName}`, html,
+      _stewardOrgId: org.id, _stewardKind: "portal_change",   // MAIL-1: the org's mail policy applies
     });
     if (sendErr) console.error("[portal] mutation email error:", sendErr.message);
   } catch (e) { console.error("[portal] mutation email failed:", e.message); }

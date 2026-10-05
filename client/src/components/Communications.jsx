@@ -229,6 +229,7 @@ const LEFT_OUT_REASONS = {
 const ORG_NO_MAIL = {
   demo_org: "This is the demonstration organisation, so nothing is sent from it. In a real organisation, these people would get it.",
   org_emails_disabled: "Email is switched off for this organisation, so nothing will be sent until it is switched back on.",
+  not_onboarded: "Email turns on once your donor file is in.",   // MAIL-1
 };
 function LeftOut({ preview }) {
   const [open, setOpen] = useState(false);
@@ -1960,6 +1961,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                          <strong style={{ color: T.ink }}>{hub.audiences.length}</strong>{" "}
                          {hub.audiences.length === 1 ? "audience" : "audiences"}.</>}
                 </div>
+                {/* MAIL-1: one sentence from the mail policy. Before the donor file
+                    is in, "Email turns on once your donor file is in."; once it
+                    sends, the From address. Never a raw flag. */}
+                {hub?.mail?.sentence && (
+                  <div data-testid="comm-mail-state" style={{ fontSize: 13, color: T.ink3, marginTop: 6, lineHeight: 1.5, maxWidth: "60ch" }}>
+                    {hub.mail.sentence}
+                  </div>
+                )}
               </div>
 
               {/* the three numbers that describe sending, not people */}

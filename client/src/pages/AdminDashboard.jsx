@@ -281,9 +281,24 @@ function OrgPanel({ org, onClose, onRefresh }) {
   const [showDelete, setShowDelete] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
 
+  // MAIL-1: this org's mail, as the policy sees it.
+  const [mail, setMail] = useState(null);
+  const [mailNote, setMailNote] = useState("");
+
   useEffect(() => {
     adminFetch("/admin/orgs/" + org.id).then(setDetail).catch(console.error);
+    adminFetch("/admin/orgs/" + org.id + "/mail").then(setMail).catch(console.error);
   }, [org.id]);
+
+  async function mailAction(path, body) {
+    setWorking(true); setMailNote("");
+    try {
+      const r = await adminFetch("/admin/orgs/" + org.id + path, { method: "POST", body: JSON.stringify(body || {}) });
+      if (path === "/mail-test") setMailNote(r.sentence || "");
+      setMail(await adminFetch("/admin/orgs/" + org.id + "/mail"));
+    } catch (e) { setMailNote(errorMessage(e)); }
+    setWorking(false);
+  }
 
   async function extendTrial() {
     setWorking(true);
@@ -364,12 +379,50 @@ function OrgPanel({ org, onClose, onRefresh }) {
             ))}
           </div>
 
-          {/* WHY-1 Part 8 — an onboarding email that did not go says so, and why. */}
-          {(detail?.onboarding_failed || []).map((f, i) => (
-            <div key={"obf" + i} data-testid="admin-onboarding-failed" style={{ fontSize: 12.5, color: A.ink, background: A.card, border: `1px solid ${A.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
-              Onboarding email {f.step} was not sent: {f.reason}. Steward tries once more {f.retryAt ? `after ${new Date(f.retryAt).toLocaleString()}` : "tomorrow"}.
+          {/* MAIL-1: this org's mail. A demonstration org shows it all locked, with why. */}
+          {mail && (
+            <div data-testid="admin-org-mail">
+              <div style={PSH}>Email</div>
+              {mail.locked && (
+                <div data-testid="admin-mail-locked" style={{ fontSize: 12.5, color: A.ink, background: A.surface, border: `1px solid ${A.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
+                  {mail.lockedSentence}
+                </div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13, color: A.secondary }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ flex: 1 }} data-testid="admin-mail-onboarded">
+                    Onboarded: {mail.onboarded ? `${fmtDate(mail.onboardedAt)}. ${mail.onboardedHow}` : "not yet"}
+                  </span>
+                  {!mail.onboarded && !mail.locked && (
+                    <button data-testid="admin-mark-onboarded" onClick={() => mailAction("/mark-onboarded")} disabled={working} style={{ ...PBTN }}>
+                      Mark onboarded
+                    </button>
+                  )}
+                </div>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: mail.locked ? "not-allowed" : "pointer" }}>
+                  <input type="checkbox" data-testid="admin-donor-mail-switch" checked={mail.donorMailOn && !mail.locked}
+                    disabled={working || mail.locked}
+                    onChange={e => mailAction("/email-switch", { emailsEnabled: e.target.checked })} />
+                  <span style={{ flex: 1 }}>This organization can email its donors</span>
+                </label>
+                <div data-testid="admin-mail-domain">
+                  Sending domain: {mail.domain.domain ? `${mail.domain.domain} (${mail.domain.status})` : "none"}.
+                  {mail.domain.from ? ` From: ${mail.domain.from}.` : ""} {mail.domain.sentence}
+                </div>
+                <div style={{ fontSize: 12, color: A.muted }}>
+                  {[["Staff mail", "staff"], ["Donor mail", "donor"], ["Sign-in mail", "account"], ["Billing mail", "billing"]].map(([label, k]) => (
+                    <div key={k}>{label}: {mail.families[k].sentence}</div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button data-testid="admin-mail-test" onClick={() => mailAction("/mail-test")} disabled={working || mail.locked} style={{ ...PBTN }}>
+                    Send a test to my own address
+                  </button>
+                  {mailNote && <span data-testid="admin-mail-note" style={{ fontSize: 12, color: A.ink }}>{mailNote}</span>}
+                </div>
+              </div>
             </div>
-          ))}
+          )}
 
           {/* Users */}
           {detail?.users?.length > 0 && (

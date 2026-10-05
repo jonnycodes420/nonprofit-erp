@@ -74,6 +74,7 @@ const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
 // went to yahoo.com from a demo org; they do not need a list of donors'
 // email addresses in an ops table (steward-data-handling.md).
 const _rawResend = new Resend(process.env.RESEND_API_KEY);
+const mailPolicy = require("./mailPolicy");   // MAIL-1: the one mail policy, by family of mail
 const EMAIL_LOG_RETENTION_DAYS = 30;
 
 // The org this send belongs to is taken from an explicit `_stewardOrgId` on the
@@ -134,9 +135,12 @@ const resend = new Proxy(_rawResend, {
           }
           // An org-tagged send (donorSendOpts tags it) whose org has mail OFF
           // is refused here too — the second lock behind donorMailDecision.
+          // MAIL-1: the policy is per family (mailPolicy.js), taken from the
+          // kind. The onboarding sequence is refused with or without an org.
           const orgId = opts && opts._stewardOrgId;
-          if (orgId) {
-            const gate = await orgMaySendEmail(orgId);
+          const category = mailPolicy.categoryOf(opts && opts._stewardKind);
+          if (orgId || category === mailPolicy.CATEGORY.ONBOARDING) {
+            const gate = await orgMaySendEmail(orgId, category);
             if (!gate.send) {
               const why = "org_mail_off: " + gate.reason;
               console.warn(`[mail-gate] REFUSED at the client: org ${orgId} (${gate.reason}), kind=${opts._stewardKind || "?"}`);
@@ -6222,15 +6226,16 @@ async function processSequences() {
           await run("UPDATE sequence_enrollments SET status='completed', completed_at=NOW() WHERE id=?", [enr.id]);
           continue;
         }
-        // Onboarding sequences store user_id in donor_id — look up users table instead of donors
-        let recipient;
+        // MAIL-1 (Jonathan, 4 Oct 2026): the onboarding sequence is OFF FOR
+        // GOOD. Jonathan writes and sends onboarding himself. An enrolment that
+        // survived from before is stopped here, with its reason, and sends nothing.
         if (enr.seq_trigger === "onboarding") {
-          const rows = await query("SELECT id, name, email FROM users WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
-          recipient = rows[0];
-        } else {
-          const rows = await query("SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
-          recipient = rows[0];
+          console.log(`[mail-policy] stopped onboarding enrolment ${enr.id} (org ${enr.org_id}): the onboarding sequence is off for good (MAIL-1)`);
+          await run(`UPDATE sequence_enrollments SET status='stopped', last_error=? WHERE id=?`,
+            ["Not sent: the onboarding sequence is off for good", enr.id]);
+          continue;
         }
+        const [recipient] = await query("SELECT id, name, email FROM donors WHERE id = ? AND org_id = ?", [enr.donor_id, enr.org_id]);
         // "Write a note" reminders are handled before the email-presence
         // check below — they're an in-app nudge for staff to write a real
         // note, not an email send, so a donor without an email on file can
@@ -6342,12 +6347,8 @@ async function processSequences() {
         const bodyHtml = (bodyRaw.includes("<") ? bodyRaw
           : `<p>${bodyRaw.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
           + await unsubscribeEmailFooterHtml(recipient.email, enr.org_id, "sequence");
-        const founderEmail = process.env.FOUNDER_EMAIL || "noreply@stewardapp.dev";
-        // BUILD-64: a donor-facing sequence carries the org's name in the inbox;
-        // the onboarding drip is founder→staff mail and keeps the founder From.
-        const smtpFrom = enr.seq_trigger === "onboarding"
-          ? founderEmail
-          : await donorFromAddress(enr.org_id);
+        // BUILD-64: a donor-facing sequence carries the org's name in the inbox.
+        const smtpFrom = await donorFromAddress(enr.org_id);
         // W-4 log honesty: the "Sequence: … Step N" interaction and the step
         // advance happen ONLY after a real delivery. A provider failure skips
         // both — next_send_at is untouched, so the next tick retries, and no
@@ -6358,15 +6359,9 @@ async function processSequences() {
           seqErr = null;
           seqDelivered = false;
           try {
-            // BUILD-88c C.1 — a DONOR-facing sequence carries the org's own
-            // identity; the onboarding drip is founder-to-staff mail and keeps
-            // the founder's From and Reply-To.
-            const sendOpts = enr.seq_trigger === "onboarding"
-              ? { from: smtpFrom, to: recipient.email, subject, html: bodyHtml,
-                  headers: unsubscribeHeaders(recipient.email, enr.org_id, "sequence"),
-                  replyTo: founderEmail }
-              : { ...(await donorSendOpts(enr.org_id, recipient.email, "sequence")),
-                  to: recipient.email, subject, html: bodyHtml };
+            // BUILD-88c C.1: a DONOR-facing sequence carries the org's own identity.
+            const sendOpts = { ...(await donorSendOpts(enr.org_id, recipient.email, "sequence")),
+                               to: recipient.email, subject, html: bodyHtml };
             const { error: sendErr } = await resend.emails.send(sendOpts);
             if (sendErr) { seqErr = sendErr.message || "refused"; console.error("[seq] send error:", sendErr.message); }
             else seqDelivered = true;
@@ -6381,8 +6376,7 @@ async function processSequences() {
           continue;
         }
         if (enr.last_error) await run(`UPDATE sequence_enrollments SET last_error = NULL, last_failed_at = NULL WHERE id = ?`, [enr.id]).catch(() => {});
-        // Only log donor interactions for non-onboarding sequences (donor_id is a user_id for onboarding)
-        if (enr.seq_trigger !== "onboarding") {
+        {
           const intId = "i_" + uuid().slice(0, 8);
           const today = orgToday(await orgTz(enr.org_id));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
           await run(
@@ -7560,6 +7554,10 @@ const escHtmlWf = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt
 async function notifyUserOnce({ org, userId, email, eventKey, channel, prefKind, subject, bodyHtml }) {
   if (!org || !userId || !email || !eventKey) return { sent: false, reason: "no_recipient" };
   if (prefKind && !(await userWantsEmail(userId, prefKind))) return { sent: false, reason: "opted_out" };
+  // MAIL-1: staff mail waits for onboarding. Asked before anything is reserved
+  // or queued, so a refusal leaves no retry behind it.
+  const gate = await orgMaySendEmail(org.id, mailPolicy.CATEGORY.STAFF);
+  if (!gate.send) { console.log(`[mail-policy] staff notice ${eventKey} not sent for org ${org.id} (${gate.reason})`); return { sent: false, reason: gate.reason }; }
   const id = "ns_" + uuid().slice(0, 8);
   const reserved = await query(
     `INSERT INTO notification_sends (id,org_id,event_key,recipient_user_id,channel)
@@ -7603,8 +7601,14 @@ const DONOR_EMAIL_ORG = "donor-network";
 // failed send lands in notification_failures (retried on the 5-min tick,
 // surfaced on /health.notifications.failedPending) — never fire-and-forget:
 // a silently-lost reset email locks a donor out.
-async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverride) {
-  const ok = await sendRawEmail(toEmail, subject, html, fromOverride);
+// MAIL-1: an org-to-supporter kind passes `orgId`; a refusal by the org's mail
+// policy is a decision, not a failure, so it is never queued for retry.
+async function sendDonorLifecycleEmail(kind, toEmail, subject, html, fromOverride, orgId = null) {
+  if (orgId) {
+    const gate = await orgMaySendEmail(orgId, mailPolicy.CATEGORY.DONOR);
+    if (!gate.send) { console.log(`[mail-policy] ${kind} not sent for org ${orgId} (${gate.reason})`); return false; }
+  }
+  const ok = await sendRawEmail(toEmail, subject, html, fromOverride, orgId ? { orgId, kind } : null);
   if (ok) return true;
   try {
     await run(
@@ -8655,6 +8659,7 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
       try {
         const { error } = await resend.emails.send({
           from, to, replyTo: from,
+          _stewardOrgId: org.id, _stewardKind: "trial_ending",   // MAIL-1: billing, sent before onboarding
           subject: `Your first Steward charge is ${formatChargeDate(org.trial_ends_at, tz)}`,
           html: trialReminderEmailHtml({
             orgName: org.name, sentence,
@@ -9349,7 +9354,7 @@ async function sendEventTicketEmail({ orgId, event, level, attendee, split, gues
       ${event.location ? `<p style="font-size:13px;color:#555;"><a href="https://maps.google.com/?q=${encodeURIComponent(event.location)}">Directions</a> · <a href="${base}/e/${encodeURIComponent(event.public_slug || "")}/calendar.ics">Add to calendar</a></p>` : ""}
     </div>`;
   await sendDonorLifecycleEmail("event_ticket", attendee.email,
-    `Your ticket for ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()));
+    `Your ticket for ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()), event.org_id);
 }
 
 // ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────
@@ -10582,7 +10587,7 @@ require("./routes/billing").mount({
   reconcileStripeVsGifts, recordTick, registerLimiter, requireAdmin, requireAuth, requireSuperAdmin,
   resend, retryFailedNotifications, run, sampleDataMod, sessionCache, signToken,
   stripeChargesEnabled, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink,
-  validateOrgClose, wrap,
+  validateOrgClose, wrap, orgSendingIdentity,
   // GTM-1a — the pricing catalogue, the amount/cadence helpers for a plan that
   // may be yearly, and the click-through agreement.
   PRICING,

@@ -2383,6 +2383,25 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS is_demo_org BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE orgs ALTER COLUMN is_demo_org SET DEFAULT false`);
   await pool.query(`UPDATE orgs SET is_demo_org = false WHERE is_demo_org IS NULL`);
+
+  // ── MAIL-1: ONBOARDED, AND THE ONBOARDING SEQUENCE OFF FOR GOOD ─────────
+  // An org is onboarded once a committed import wrote at least one real
+  // (non-sample) donor, or a super-admin marked it by hand. Until then Steward
+  // sends it no staff or donor mail (mailPolicy.js). `onboarded_via` says
+  // which: 'import:<id>' or 'super_admin'.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_via TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS onboarded_by_name TEXT`);
+  // Backfill by the same definition, never by guess (onboarded.js).
+  await require("./onboarded").backfillOnboarded(query)
+    .catch(e => console.error("[mail-1] onboarded backfill:", e.message));
+  // The founder drip never sends again: stop every onboarding enrolment so a
+  // dormant one cannot fire, whatever later changes.
+  await pool.query(`
+    UPDATE sequence_enrollments SET status = 'stopped'
+     WHERE status = 'active' AND sequence_id IN (SELECT id FROM sequences WHERE trigger = 'onboarding')`).catch(() => {});
+  await pool.query(`UPDATE sequences SET status = 'paused' WHERE trigger = 'onboarding' AND status = 'active'`).catch(() => {});
   // Per-org sequence for receipt numbers, always incremented via
   // UPDATE ... RETURNING (never SELECT MAX+1 — see allocateReceiptNumber()
   // in server.js) so two concurrent issues can never collide on a number.

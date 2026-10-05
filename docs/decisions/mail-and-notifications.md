@@ -32,6 +32,16 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 - **Transactional mail ignores the marketing opt-out but never deliverability.** Receipts, year-end,
   dunning, recovered thank-you, recurring changes and card-expiring skip `email_suppressions` opt-outs and
   still honour bounced/complained, `email_unreachable` and `deceased`. (BUILD-58, BUILD-94)
+- **One mail policy: `mailPolicy.js`, asked by `orgMaySendEmail` and the client proxy (MAIL-1).** Every send
+  is staff, donor, account, billing, Jonathan or onboarding by its `_stewardKind`; an unknown kind on an
+  org's send is donor mail. Onboarding never sends. Staff and donor mail wait for `orgs.onboarded_at` (first
+  real donor-file import, or a super-admin's mark) and the org switch. Account and Jonathan mail always go;
+  billing goes before onboarding unless `MAIL_BILLING_BEFORE_ONBOARDING=0`. Tag every new org send with
+  `_stewardOrgId` and a kind, or route it through `donorSendOpts`, `notifyUserOnce` or `sendDigestEmail`.
+- **Before the real Resend key goes back on, or an org's donor mail is switched on, run
+  `DATABASE_URL=<prod> node scripts/mail-preflight.js`.** It only reads, in a READ ONLY transaction. (MAIL-1)
+- **No automated onboarding or welcome series to org staff, ever (Jonathan, 2026-10-04).** He writes and
+  sends onboarding himself; nothing creates an onboarding sequence and the engine stops any left over.
 - **Refuse `is_sample` donors, demo orgs and mail-off orgs for every kind, above the transactional split.**
   `orgMaySendEmail` reads `orgs.emails_enabled` + `is_demo_org`, fails closed, and is asked by
   `donorMailDecision`, the digests and the onboarding drip. (INCIDENT 2026-09-22)

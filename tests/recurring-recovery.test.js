@@ -96,6 +96,8 @@ async function reset() {
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]);
   await q(`INSERT INTO orgs (id,name,onboarding_complete,plan,timezone,stripe_account_id)
            VALUES ($1,'Recurring Recovery Org',1,'team','America/New_York',$2)`, [ORG, ACCT]);
+  // MAIL-1: an org that has onboarded (its donor file is in); without it nothing sends.
+  await q("UPDATE orgs SET onboarded_at=NOW() WHERE id=$1", [ORG]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'RR Admin','admin')`,
     ["u_recrec", ORG, EMAIL, bcrypt.hashSync(PASS, 10)]);
   // Two sustainers, each with an officer who owns them.
