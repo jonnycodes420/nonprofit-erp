@@ -737,12 +737,19 @@ async function volunteerList(req) {
   const rules = { role: "volunteer" };
   for (const k of LIST_RULES) if (q[k] !== undefined && q[k] !== "") rules[k] = String(q[k]);
   if (coord && GIVING_RULES.some(k => rules[k])) return { refused: true };
-  const f = await GR.buildDonorFilter(orgId, rules);
-  if (f.badRole || f.badStatus) return { bad: true };
   const D = /^\d{4}-\d{2}-\d{2}$/;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const hFrom = D.test(String(q.hoursFrom || "")) ? String(q.hoursFrom) : today.slice(0, 4) + "-01-01";
   const hTo = D.test(String(q.hoursTo || "")) ? String(q.hoursTo) : today;
+  // FIX-27 Part 8: the Hours filter counts the SAME dates as the "Hours in
+  // range" column beside it (this year when blank). It counted every year,
+  // so "at least 10 hours" kept people the column showed with 2 and the
+  // filter looked ignored.
+  if ((rules.volHoursMin !== undefined || rules.volHoursMax !== undefined) && !rules.volHoursFrom && !rules.volHoursTo) {
+    rules.volHoursFrom = hFrom; rules.volHoursTo = hTo;
+  }
+  const f = await GR.buildDonorFilter(orgId, rules);
+  if (f.badRole || f.badStatus) return { bad: true };
   const rows = await query(
     `SELECT donors.id, donors.name, donors.email, donors.phone, donors.total_giving, donors.last_gift_date,
             (SELECT COALESCE(SUM(ROUND(vx.hours*100)),0) FROM volunteer_shifts vx WHERE vx.org_id=donors.org_id AND vx.person_id=donors.id)::bigint AS life_h,

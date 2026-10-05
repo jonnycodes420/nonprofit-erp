@@ -146,7 +146,9 @@ async function highlights(orgId, d, today, w) {
 // reads, and the suggested ask from ENGAGE-1 (engagement.suggestedAsk).
 async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = false) {
   const [[thread], [sub], [score], [unthanked]] = await Promise.all([
-    query(`SELECT next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL LIMIT 1`, [orgId, d.id]),
+    // FIX-27 Part 5: the CURRENT open step, the newest one, as the rail reads it.
+    query(`SELECT next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL
+            ORDER BY COALESCE(edited_at, created_at) DESC NULLS LAST, id DESC LIMIT 1`, [orgId, d.id]),
     query(`SELECT 1 AS y FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered') LIMIT 1`, [orgId, d.id]),
     query(`SELECT generosity FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]),
     query(`SELECT 1 AS y FROM thank_you_drafts WHERE org_id = ? AND donor_id = ? AND sent_at IS NULL AND skipped_at IS NULL LIMIT 1`, [orgId, d.id]).catch(() => []),

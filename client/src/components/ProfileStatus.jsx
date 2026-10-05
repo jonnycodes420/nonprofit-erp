@@ -17,14 +17,16 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate } from "../../../shared/displayDate";
 import { birthdayLabel } from "../../../shared/birthday.js";
 
-export function useDonorStatus(donorId, refreshKey) {
+// FIX-27 Part 5: `stepKey` moves whenever a next step is saved, so the
+// summary's Next line is read again with the rail and The Ask, no reload.
+export function useDonorStatus(donorId, refreshKey, stepKey) {
   const [status, setStatus] = useState(null);
   useEffect(() => {
     let live = true;
     if (!donorId) return undefined;
     apiFetch(`/donors/${donorId}/status`).then(s => { if (live) setStatus(s || null); }).catch(() => { if (live) setStatus(null); });
     return () => { live = false; };
-  }, [donorId, refreshKey]);
+  }, [donorId, refreshKey, stepKey]);
   return status;
 }
 

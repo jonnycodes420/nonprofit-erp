@@ -188,7 +188,10 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     params.push(m[1], m[2]);
   }
   if (q.volAvail) {
-    where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND ax.availability ? ?)`);
+    // FIX-27 Part 8: jsonb_exists, not the `?` operator. The query layer
+    // turns every `?` into a parameter, so `availability ? ?` was a syntax
+    // error and the screen printed "Internal server error".
+    where.push(`EXISTS (SELECT 1 FROM volunteer_applications ax WHERE ax.org_id = donors.org_id AND ax.person_id = donors.id AND jsonb_exists(ax.availability, ?))`);
     params.push(String(q.volAvail));
   }
   // ── FIX-27 Part 2 · A CAMPAIGN AND AN ASK ────────────────────────────────

@@ -6,7 +6,7 @@ import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
-import { tabHref, urlParam } from "../lib/appUrls";
+import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
@@ -1144,6 +1144,13 @@ export function EventKiosk({ eventId }) {
   const base = view === "in" ? guests.filter(g => g.checked_in_at) : guests;
   const shown = q ? base.filter(g => (g.name || "").toLowerCase().includes(q)) : base;
   const onList = new Set(guests.map(g => g.donor_id).filter(Boolean));
+  // FIX-27 Part 6: a guest the name search has picked out (one match, not yet
+  // in) is SELECTED, and Check checks them in. Check is ready the moment a
+  // guest is selected or a code is typed, never only after something else.
+  const notIn = shown.filter(g => !g.checked_in_at);
+  const picked = q && notIn.length === 1 ? notIn[0] : null;
+  const canCheck = !!code.trim() || !!picked;
+  const submitCheck = () => (code.trim() ? scanTyped() : picked ? tap(picked).then(() => setTerm("")) : null);
   const offList = walkins.filter(d => !onList.has(d.id));
   const tones = {
     in: { background: T.greenDk, color: T.white, border: T.greenDk },
@@ -1196,15 +1203,18 @@ export function EventKiosk({ eventId }) {
 
       {/* The code box: a Bluetooth scanner or a scanner app types into it, and
           a code can be pasted or typed. Same handler as the camera. */}
-      <form onSubmit={e => { e.preventDefault(); scanTyped(); }} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+      <form onSubmit={e => { e.preventDefault(); submitCheck(); }} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
         <input ref={codeBoxRef} data-testid="ev-kiosk-scan" value={code} onChange={e => setCode(e.target.value)}
           placeholder="Or type the code on the ticket" autoComplete="off" aria-label="Ticket or member card code"
           style={{ flex: 1, minWidth: 0, boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink }} />
-        <button type="submit" disabled={!code.trim()} data-testid="ev-kiosk-scan-go"
-          style={{ ...big, background: T.white, color: T.ink, border: "1.5px solid " + T.bg3, cursor: code.trim() ? "pointer" : "not-allowed", opacity: code.trim() ? 1 : 0.5 }}>Check</button>
+        <button type="submit" disabled={!canCheck} data-testid="ev-kiosk-scan-go"
+          aria-label={picked && !code.trim() ? `Check in ${picked.name}` : "Check the code"}
+          style={{ ...big, background: picked && !code.trim() ? T.greenDk : T.white, color: picked && !code.trim() ? T.white : T.ink, border: "1.5px solid " + (picked && !code.trim() ? T.greenDk : T.bg3), cursor: canCheck ? "pointer" : "not-allowed", opacity: canCheck ? 1 : 0.5 }}>
+          {picked && !code.trim() ? "Check in" : "Check"}</button>
       </form>
 
       <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Find a guest or a walk-in by name"
+        onKeyDown={e => { if (e.key === "Enter" && picked) { e.preventDefault(); submitCheck(); } }}
         aria-label="Find a guest or a walk-in by name"
         style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginBottom: 8 }}>{msg}</div>}
@@ -1217,17 +1227,21 @@ export function EventKiosk({ eventId }) {
       <div style={{ maxHeight: 360, overflowY: "auto" }}>
         {shown.slice(0, 200).map(g => (
           <div key={g.id} style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-            <button data-testid="ev-kiosk-row" onClick={() => tap(g)}
+            <div role="button" tabIndex={0} data-testid="ev-kiosk-row" data-selected={picked && picked.id === g.id ? "1" : undefined}
+              onClick={() => tap(g)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); tap(g); } }}
               style={{ flex: 1, minWidth: 0, textAlign: "left", background: g.checked_in_at ? T.green100 : T.white,
-                       border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", minHeight: 48,
+                       border: (picked && picked.id === g.id ? "2px solid " + T.greenDk : "1px solid " + T.bg3), borderRadius: 10, padding: "11px 13px", minHeight: 48,
                        cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600, overflowWrap: "anywhere" }}>
-                {g.name}{g.vip ? <span style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
+                {/* FIX-27 Part 6: the name opens their person; the rest of the row checks them in. */}
+                {g.donor_id
+                  ? <RecordLink to={donorHref(g.donor_id)} data-testid="ev-kiosk-name" style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{g.name}</RecordLink>
+                  : g.name}{g.vip ? <span style={{ color: T.gold700, fontWeight: 800 }}> · VIP</span> : null}
               </span>
               <span style={{ fontSize: 12, color: g.checked_in_at ? T.greenDk : T.ink3 }}>
                 {g.checked_in_at ? "In" : g.table_label || "No seat"}{g.checked_in_at && g.table_label ? ` · ${g.table_label}` : ""}{g.dietary ? ` · ${g.dietary}` : ""}
               </span>
-            </button>
+            </div>
             {g.checked_in_at && (
               <button type="button" onClick={() => undoIn(g)} aria-label={`Undo check-in for ${g.name}`}
                 style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "0 12px", fontSize: 12, color: T.ink3, cursor: "pointer", fontFamily: "inherit", minHeight: 48 }}>Undo</button>

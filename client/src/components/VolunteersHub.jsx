@@ -344,13 +344,22 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
   const [importing, setImporting] = useState(false);
   const load = useCallback(() => { apiFetch("/volunteer-hub/shifts?limit=50").then(setData).catch(() => setData({ shifts: [] })); }, []);
   useEffect(() => { load(); }, [load]);
-  const people = (roster && roster.people) || [];
+  // FIX-27 Part 8: the picker is the roster, read fresh when this part opens
+  // (the hub kept the copy it read first, so a picker could show names the
+  // roster no longer had), and in name order like the roster's own list.
+  useEffect(() => { onChanged(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  const people = [...((roster && roster.people) || [])].sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const log = async () => {
     setMsg("");
     try {
       await apiFetch(`/donors/${form.personId}/volunteer-hours`, { method: "POST", body: JSON.stringify({ date: form.date, hours: form.hours, role: form.role }) });
       setForm({ personId: form.personId, date: "", hours: "", role: "" }); setMsg("Shift logged."); load(); onChanged();
-    } catch (e) { setMsg(errorMessage(e, "That shift did not save.")); }
+    } catch (e) {
+      if (e && e.authHandled) setMsg("Your session has ended, so the shift was not saved. Sign in again and log it.");
+      else if (e && e.status === 404) { setForm(f => ({ ...f, personId: "" })); onChanged(); setMsg("That person is no longer on the roster, so the shift was not saved. The list is fresh now: pick them again."); }
+      else if (e && e.status === 400) setMsg(e.message || "That shift needs a date and hours.");
+      else setMsg("That shift did not save just now. Try again in a moment.");
+    }
   };
   const remove = async id => {
     setMsg("");

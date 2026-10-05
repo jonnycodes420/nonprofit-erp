@@ -299,7 +299,6 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
 
       {!g.isOverarching && (
         <div style={card}>
-          <div style={h}>How did it do?</div>
           <HowDidItDo campaignId={g.id} isReadOnly={isReadOnly} />
         </div>
       )}

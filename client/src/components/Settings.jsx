@@ -682,8 +682,11 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
   const [savedAt,setSavedAt]=useState(0);
+  // FIX-27 Part 9: the zone shown before anybody chose one is Steward's
+  // default, and choosing that same zone has to count as a choice.
+  const [confirmed,setConfirmed]=useState(true);
   useEffect(()=>{
-    apiFetch("/org").then(o=>setTz(o.timezone||"America/New_York")).catch(()=>setTz("America/New_York"));
+    apiFetch("/org").then(o=>{setTz(o.timezone||"America/New_York");setConfirmed(!!o.timezone_confirmed_at);}).catch(()=>setTz("America/New_York"));
   },[]);
   // The zones a US nonprofit actually sits in, plus the ones our tests pin.
   // Any valid IANA zone is accepted by the API; this list is the common path.
@@ -694,11 +697,11 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
     ["Pacific/Honolulu","Hawaii"],["America/Puerto_Rico","Puerto Rico"],
   ];
   async function save(next){
-    if(saving||next===tz)return;
+    if(saving||(next===tz&&confirmed))return;
     const prev=tz; setSaving(true); setTz(next); setErr("");
     try{
       await apiFetch(`/orgs/${orgId}`,{method:"PATCH",body:JSON.stringify({timezone:next})});
-      setSavedAt(Date.now());
+      setSavedAt(Date.now()); setConfirmed(true);
     }catch(e){ setTz(prev); setErr(errorMessage(e, "Could not save the timezone.")); }
     setSaving(false);
   }
@@ -726,10 +729,13 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
           {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
         </select>
         {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
+        {!confirmed&&isAdmin&&!isReadOnly&&tz&&<button type="button" data-testid="tz-confirm" disabled={saving} onClick={()=>save(tz)}
+          style={{background:T.greenDk,color:T.white,border:"none",borderRadius:8,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>This is right</button>}
         {savedAt>0&&<span style={{fontSize:12,color:T.green||T.greenDk}}>Saved</span>}
       </div>
       {err&&<div style={{fontSize:12,color:T.terracotta,marginTop:8}}>{err}</div>}
       {!isAdmin&&<div style={{fontSize:12,color:T.ink3,marginTop:8}}>Only an admin can change this.</div>}
+      {!confirmed&&<div data-testid="tz-unconfirmed" style={{fontSize:12,color:T.ink3,marginTop:8}}>Nobody has chosen this yet; it is Steward&rsquo;s default. Sequences and timed reminders wait until somebody here does.</div>}
     </div>
   );
 }
