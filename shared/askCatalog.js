@@ -482,7 +482,7 @@ export function readPlanTool(content) {
   const b = (content || []).find(x => x && x.type === "tool_use" && x.name === "ask_plan");
   if (!b || !b.input || typeof b.input !== "object") return null;
   const raw = JSON.parse(JSON.stringify(b.input));
-  const strip = o => { if (o && typeof o === "object") for (const k of Object.keys(o)) { if (o[k] === null) delete o[k]; else strip(o[k]); } };
+  function strip(o) { if (o && typeof o === "object") for (const k of Object.keys(o)) { if (o[k] === null) delete o[k]; else strip(o[k]); } }
   strip(raw);
   // A number the model wrote in its own words is never shown.
   if (raw.restatement) raw.restatement = String(raw.restatement).replace(/[$£€]?\d[\d,.]*%?/g, "").replace(/\s{2,}/g, " ").trim();
