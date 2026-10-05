@@ -5523,6 +5523,17 @@ async function runSchemaInit(pool) {
   // WHY-1 — Ask why logs here too (surface 'why'), with whether Steward could
   // answer. The question text only, never donor data and never the answer.
   await pool.query(`ALTER TABLE question_log ADD COLUMN IF NOT EXISTS answered BOOLEAN`);
+  // ASK-2 — the org a question came from, so the box suggests an org's own
+  // most-asked questions. Nullable: help and agent rows predate it.
+  await pool.query(`ALTER TABLE question_log ADD COLUMN IF NOT EXISTS org_id TEXT`);
+  // ASK-2 — an answer pinned to Home: the plan (never the numbers), re-run
+  // live every time Home opens. One person's pins; nobody else sees them.
+  await pool.query(`CREATE TABLE IF NOT EXISTS ask_pins (
+      id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES orgs(id), user_id TEXT NOT NULL,
+      question TEXT, plan JSONB NOT NULL, created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ask_pins_user ON ask_pins (org_id, user_id, created_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_question_log_org ON question_log (org_id, surface, answered)`);
   await pool.query(`DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'question_log_surface' AND pg_get_constraintdef(oid) LIKE '%why%') THEN
         ALTER TABLE question_log DROP CONSTRAINT IF EXISTS question_log_surface;

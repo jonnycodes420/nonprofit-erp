@@ -158,6 +158,8 @@ CORE=(
   agent2-gift
   why1-sentence-check
   parity4-show-me
+  ask2-plans
+  ask2-refuse
   fix12-ai-switch
   parity4-started
   fix12-recipe-drafts

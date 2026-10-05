@@ -23,15 +23,17 @@ const GR = require("../groups");
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
-const { whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
+const { whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, computeRetentionRate, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
 const app = routers.r0;
 let S = null, SMm = null;
 const shape = async () => (S = S || await import("../shared/whyShape.js"));
 const showMod = async () => (SMm = SMm || await import("../shared/showMe.js"));
 
-async function logQuestion(text, topic, answered) {
-  await run(`INSERT INTO question_log (surface, question, topic, answered) VALUES ('why', ?, ?, ?)`,
-    [String(text).slice(0, 1000), topic, !!answered]).catch(() => {});
+// ASK-2: the org is kept with the question, so the box's suggestions are the
+// org's own most-asked questions and never another organisation's.
+async function logQuestion(orgId, text, topic, answered) {
+  await run(`INSERT INTO question_log (surface, question, topic, answered, org_id) VALUES ('why', ?, ?, ?, ?)`,
+    [String(text).slice(0, 1000), topic, !!answered, orgId || null]).catch(() => {});
 }
 
 // A typed question that names a campaign or a person: matched against the
@@ -184,7 +186,7 @@ async function showMe(req, res, typed) {
   } else aiOff = gate.reason === "ai_disabled";
   if (!spec) spec = SM.templateSpec(typed, ctx);
   const refuse = async what => {
-    await logQuestion(typed, "show me", false);
+    await logQuestion(req.user.orgId, typed, "show me", false);
     return res.json({ answered: false, kind: "list", refused: true, sentence: SM.refusalSentence(what), specSource, aiOff, question: { key: "show", text: typed } });
   };
   const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
@@ -195,7 +197,7 @@ async function showMe(req, res, typed) {
     query(`SELECT id, name, city, total_giving, last_gift_date FROM donors WHERE ${f.whereSql} ORDER BY ${f.orderBy} LIMIT 50`, f.params),
     query(`SELECT COUNT(*)::int AS c FROM donors WHERE ${f.whereSql}`, f.params),
   ]);
-  await logQuestion(typed, "show me", true);
+  await logQuestion(req.user.orgId, typed, "show me", true);
   const count = Number(cnt.c) || 0;
   // FIX-27 Part 2b · "and what should I ask them?" Each person carries the
   // suggested ask from their own gifts (engagement.suggestedAsk, the profile's
@@ -235,7 +237,7 @@ async function showMe(req, res, typed) {
 
 // POST /why/ask — { text } typed, or { key, campaign?, donor? } tapped.
 // Writes the question to the log and nothing else.
-app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
+async function whyAskHandler(req, res) {
   const Sx = await shape();
   const orgId = req.user.orgId;
   const body = req.body || {};
@@ -255,7 +257,7 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   // PROSPECT-1 — room to give is for admins and major gifts staff. Anyone else
   // who types the question is told plainly, and nothing about anybody is shown.
   if (key === "more" && !(await P.canSee(req.user.userId))) {
-    await logQuestion(typed || "Who could give more?", "more", false);
+    await logQuestion(req.user.orgId, typed || "Who could give more?", "more", false);
     return res.status(403).json({ error: "major_gifts_only", answered: false,
       sentence: "Room to give is for admins and staff with the major gifts permission.", question: { text: typed } });
   }
@@ -264,16 +266,16 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   // with the subject left generic (a donor's name is donor data).
   const logged = typed || Sx.QUESTIONS.find(q => q.key === body.key)?.ask() || "(empty)";
   if (!key) {
-    await logQuestion(logged, "not covered", false);
+    await logQuestion(req.user.orgId, logged, "not covered", false);
     return res.json({ answered: false, sentence: Sx.CANT_ANSWER, question: { text: typed } });
   }
   const a = await WHY.answer(orgId, key, { campaign, donor, user: req.user.userId }, { computeDriftForDonors });
   if (!a) {
-    await logQuestion(logged, key, false);
+    await logQuestion(req.user.orgId, logged, key, false);
     return res.json({ answered: false, sentence: Sx.CANT_ANSWER, question: { text: typed } });
   }
   a.key = key;
-  await logQuestion(logged, key, true);
+  await logQuestion(req.user.orgId, logged, key, true);
   const params = { q: key, ...(campaign ? { campaign } : {}), ...(donor ? { donor } : {}), ...(key === "call" ? { user: req.user.userId } : {}) };
   const qText = typed || Sx.QUESTIONS.find(q => q.key === key).ask(a.campaign?.name || a.donor?.name);
   const s = await writeSentence(orgId, qText, a, Sx);
@@ -288,6 +290,174 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
     alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
       ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
   });
+}
+app.post("/why/ask", whyAskLimiter, requireAuth, wrap(whyAskHandler));
+
+// ── ASK-2 · ASK ANYTHING ABOUT YOUR OWN FILE ───────────────────────────────
+// POST /ask { text, previous?, scope? } or { plan } (a pinned answer, re-run).
+// The question becomes a typed plan (shared/askCatalog.js): a follow-up on the
+// last plan, the templates, or (AI on) the model's form. Steward validates it
+// and runs it (askEngine.js). A why or who question goes to Ask why and Show
+// me unchanged. Anything outside the catalog is refused in one sentence and
+// logged. Nothing is written but the question log.
+let ACm = null;
+const askCat = async () => (ACm = ACm || await import("../shared/askCatalog.js"));
+const AE = require("../askEngine");
+
+function scoped(plan, scope, C) {
+  if (!plan || !scope) return plan;
+  const m = C.METRICS[plan.metric];
+  if (!m || m.base !== "gifts") return plan;
+  const f = { ...(plan.filters || {}) };
+  if (scope.campaign && !f.campaign && !f.event) f.campaign = String(scope.campaign);
+  if (scope.donor && !f.donor) f.donor = String(scope.donor);
+  // A question asked on a campaign's page or a person's record means all of
+  // it unless it names a period; on the calendar, the dates on screen.
+  if (!plan.period && (scope.campaign || scope.donor)) plan = { ...plan, period: { kind: "all_time" } };
+  if (!plan.period && scope.from && scope.to) plan = { ...plan, period: { kind: "custom", from: String(scope.from), to: String(scope.to) } };
+  return Object.keys(f).length ? { ...plan, filters: f } : plan;
+}
+
+async function askAnswer(orgId, plan, ctx, C) {
+  const a = await AE.runPlan(orgId, plan, ctx, { computeRetentionRate, computeDriftForDonors });
+  if (plan.also) {
+    const b = await AE.runPlan(orgId, { kind: "metric", metric: plan.also, period: { kind: "today" } }, ctx, { computeRetentionRate, computeDriftForDonors });
+    a.also = b; a.alsoFig = b.value;
+  }
+  const s = C.answerSentence(a, plan, ctx);
+  const steps = [];
+  const f = plan.filters || {};
+  if (plan.kind === "who" && a.people && a.people.length)
+    steps.push({ kind: "plan", label: `Plan calls to the top ${Math.min(5, a.people.length) === 1 ? "one" : Math.min(5, a.people.length) === 5 ? "five" : Math.min(5, a.people.length)}`,
+      items: a.people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Call" })), dueIn: 1 });
+  else if (C.METRICS[plan.metric].base === "gifts" && plan.metric !== "first_year_retention" && !f.donor) steps.push({ kind: "ask", label: "Who are they?", text: "Who are they?" });
+  else if (["lapsed_count", "recurring_donors", "volunteer_count"].includes(plan.metric)) steps.push({ kind: "ask", label: "Who are they?", text: "Who are they?" });
+  if (f.campaign || plan.metric === "campaign_progress") steps.push({ kind: "open", label: "Open the campaign", href: `/app/fundraising?fr=campaigns&campaign=${encodeURIComponent(f.campaign || "")}` });
+  if (plan.metric === "retention_rate") steps.push({ kind: "ask", label: "Why is retention down?", text: "Why is retention down this year?" });
+  const table = a.groups ? { dimension: C.DIMENSIONS[plan.groupBy], compareLabel: a.comparePeriod ? a.comparePeriod.label : null,
+    rows: a.groups.map((g, i) => ({ label: g.key, value: g.value, compare: g.compare || null, i })) } : null;
+  return { answered: true, kind: "answer", plan, planWords: a.words, sentence: s.plain, sentenceParts: s.parts,
+    figures: { value: a.value, compare: a.compare || null, change: a.changeFig || null, also: a.alsoFig || null,
+      part0: (a.parts || [])[0] || null, part1: (a.parts || [])[1] || null, group0: a.groups && a.groups[0] ? a.groups[0].value : null },
+    parts: a.parts || null, table, chart: table && ["month", "quarter", "year"].includes(plan.groupBy) ? "bars" : null,
+    people: a.people || null, peopleCount: a.peopleCount ?? null, peopleSource: a.peopleSource || null,
+    counted: a.counted, steps };
+}
+
+async function askRefuse(req, res, typed, what, C, extra = {}) {
+  await logQuestion(req.user.orgId, typed || "(plan)", "ask: refused", false);
+  return res.json({ answered: false, refused: true, kind: "answer", sentence: C.refusalSentence(what), question: { text: typed }, ...extra });
+}
+
+app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
+  const C = await askCat();
+  const Sx = await shape();
+  const SM = await showMod();
+  const orgId = req.user.orgId;
+  const body = req.body || {};
+  const typed = String(body.text || "").trim().slice(0, 500);
+  const prev = body.previous && typeof body.previous === "object" && !Array.isArray(body.previous) ? body.previous : null;
+  const scope = body.scope && typeof body.scope === "object" ? body.scope : null;
+  const ctx = await AE.askContext(orgId);
+  let raw = null, source = "template", restatement = null;
+
+  if (body.plan && typeof body.plan === "object") { raw = body.plan; source = "saved"; }
+  if (!raw && prev && typed) { raw = C.followUp(prev, typed, ctx); if (raw) source = "follow-up"; }
+  let t = null;
+  if (!raw && typed) {
+    t = C.templatePlan(typed, ctx);
+    if (t.plan) raw = t.plan;
+    else if (t.named) return askRefuse(req, res, typed, t.unsupported, C);
+  }
+  // A why or who question: Ask why and Show me, unchanged.
+  if (!raw && typed && (Sx.matchQuestion(typed) || SM.listFirst(typed) || SM.isShowMe(typed))) {
+    req.body = { text: typed, ...(scope && scope.campaign ? { campaign: scope.campaign } : {}), ...(scope && scope.donor ? { donor: scope.donor } : {}) };
+    return whyAskHandler(req, res);
+  }
+  // AI on: the model fills the plan's form. It never writes a number.
+  if (!raw && typed) {
+    const gate = await aiGate(orgId);
+    if (gate.ok) {
+      try {
+        const out = await anthropicFor(orgId).messages.create({
+          model: AGENT_MODEL, max_tokens: 700, tools: [C.planTool({ ruleKeys: GR.RULE_KEYS })], tool_choice: { type: "tool", name: "ask_plan" },
+          messages: [{ role: "user", content: C.planPrompt(typed, ctx, prev) }],
+        });
+        const m = C.readPlanTool(out.content);
+        if (m) { restatement = m.restatement || null; delete m.restatement; raw = m; source = "ai"; }
+      } catch { /* the template's reading stands */ }
+    }
+  }
+  if (!raw) return askRefuse(req, res, typed, (t && t.unsupported) || "that question", C);
+  const chk = C.validatePlan(scoped(raw, scope, C), ctx);
+  if (!chk.ok) return askRefuse(req, res, typed, chk.refused, C, { planSource: source });
+  const plan = { ...chk.plan, ...(raw.also && C.METRICS[raw.also] ? { also: raw.also } : {}) };
+  const answer = await askAnswer(orgId, plan, ctx, C);
+  // A follow-up is logged as one, so "who are they?" is never offered as a question on its own.
+  if (source !== "saved") await logQuestion(req.user.orgId, typed || "(plan)", `ask: ${plan.metric}${source === "follow-up" ? " (follow-up)" : ""}`, true);
+  res.json({ ...answer, question: { text: typed }, planSource: source, restatement });
+}));
+
+// ── PINNED TO HOME ─────────────────────────────────────────────────────────
+// The plan is kept, never the answer: Home re-runs it every time it opens, so
+// a pinned number is always today's. Mine only.
+app.get("/ask/pins", requireAuth, wrap(async (req, res) => {
+  const rows = await query(`SELECT id, question, plan, created_at FROM ask_pins WHERE org_id = ? AND user_id = ? ORDER BY created_at LIMIT 12`,
+    [req.user.orgId, req.user.userId]);
+  res.json({ pins: rows.map(r => ({ id: r.id, question: r.question, plan: typeof r.plan === "string" ? JSON.parse(r.plan) : r.plan })) });
+}));
+app.post("/ask/pins", requireAuth, wrap(async (req, res) => {
+  const C = await askCat();
+  const ctx = await AE.askContext(req.user.orgId);
+  const chk = C.validatePlan((req.body || {}).plan, ctx);
+  if (!chk.ok) return res.status(400).json({ error: "plan_refused", sentence: C.refusalSentence(chk.refused) });
+  const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM ask_pins WHERE org_id = ? AND user_id = ?`, [req.user.orgId, req.user.userId]);
+  if (n >= 12) return res.status(400).json({ error: "too_many", sentence: "Home holds twelve pinned answers. Unpin one first." });
+  const id = "pin_" + require("crypto").randomBytes(6).toString("hex");
+  const plan = { ...chk.plan, ...(req.body.plan.also && C.METRICS[req.body.plan.also] ? { also: req.body.plan.also } : {}) };
+  await run(`INSERT INTO ask_pins (id, org_id, user_id, question, plan, created_by, created_by_name) VALUES (?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, req.user.userId, String((req.body || {}).question || "").slice(0, 300), JSON.stringify(plan), req.user.userId, req.user.name || req.user.email || "staff"]);
+  res.status(201).json({ id, sentence: "Pinned to Home. It is worked out again every time Home opens." });
+}));
+app.delete("/ask/pins/:id", requireAuth, wrap(async (req, res) => {
+  const out = await run(`DELETE FROM ask_pins WHERE id = ? AND org_id = ? AND user_id = ?`, [req.params.id, req.user.orgId, req.user.userId]);
+  res.json({ ok: true, removed: out && out.changes !== undefined ? out.changes : null });
+}));
+
+// ── SAVED TO A DASHBOARD (REPORTS-3) ───────────────────────────────────────
+// The answer's headline figure becomes a tile on one of her own dashboards:
+// the figure source "ask" with this plan, worked out again every time the
+// dashboard (or the board pack) is drawn. Only the dashboard's owner edits it.
+app.post("/ask/save-to-dashboard", requireAuth, wrap(async (req, res) => {
+  const C = await askCat();
+  const b = req.body || {};
+  const ctx = await AE.askContext(req.user.orgId);
+  const chk = C.validatePlan(b.plan, ctx);
+  if (!chk.ok) return res.status(400).json({ error: "plan_refused", sentence: C.refusalSentence(chk.refused) });
+  const m = C.METRICS[chk.plan.metric];
+  if (m.base !== "gifts" && m.base !== "donors") return res.status(400).json({ error: "not_a_tile", sentence: `${m.label} already has its own figure in Reports; add that one to the dashboard.` });
+  const [d] = await query("SELECT id, tiles FROM saved_dashboards WHERE id = ? AND org_id = ? AND owner_id = ?", [String(b.dashboardId || ""), req.user.orgId, req.user.userId]);
+  if (!d) return res.status(404).json({ error: "Not found", sentence: "Only the person who made a dashboard can add to it." });
+  const tiles = typeof d.tiles === "string" ? JSON.parse(d.tiles || "[]") : (d.tiles || []);
+  if (tiles.length >= 24) return res.status(400).json({ error: "too_many", sentence: "That dashboard is full. Take a tile off first." });
+  const cell = chk.plan.top ? "top" : m.base === "donors" ? "cur" : "cur";
+  tiles.push({ kind: "figure", source: "ask", label: String(b.label || "").slice(0, 120) || C.planWords(chk.plan, ctx).slice(0, 120), params: { plan: JSON.stringify(chk.plan), cell } });
+  await run("UPDATE saved_dashboards SET tiles = ?, updated_at = NOW() WHERE id = ? AND org_id = ?", [JSON.stringify(tiles), d.id, req.user.orgId]);
+  res.json({ ok: true, tiles: tiles.length });
+}));
+
+// The questions under the box: the org's own most-asked, answered ones.
+app.get("/ask/suggestions", requireAuth, wrap(async (req, res) => {
+  const C = await askCat();
+  const rows = await query(
+    `SELECT question, COUNT(*)::int AS n FROM question_log
+      WHERE surface = 'why' AND answered IS TRUE AND org_id = ? AND question NOT IN ('(empty)', '(plan)', '(saved answer)')
+        AND COALESCE(topic, '') NOT LIKE '%(follow-up)'
+        AND LENGTH(question) BETWEEN 8 AND 120
+      GROUP BY question ORDER BY n DESC, MAX(created_at) DESC LIMIT 6`, [req.user.orgId]).catch(() => []);
+  const asked = rows.map(r => r.question);
+  const out = [...asked, ...C.STARTERS.filter(q => !asked.includes(q))].slice(0, 6);
+  res.json({ suggestions: out, fromLog: asked.length });
 }));
 }
 

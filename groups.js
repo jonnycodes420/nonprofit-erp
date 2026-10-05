@@ -215,6 +215,16 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     params.push(String(q[key]));
     if (q[yearKey]) params.push(String(q[yearKey]));
   }
+  // ASK-2: "gave over $500 but hasn't been thanked": a gift over this many
+  // dollars (0 is any gift) not yet marked thanked, from the one place a
+  // thank-you is recorded on a gift (acknowledgement_sent).
+  if (q.unthankedOver !== undefined && q.unthankedOver !== "") {
+    const n = Number(q.unthankedOver);
+    if (!Number.isFinite(n) || n < 0) return { badStatus: true };
+    where.push(`EXISTS (SELECT 1 FROM gifts gu WHERE gu.org_id = donors.org_id AND gu.donor_id = donors.id AND gu.amount > ?
+                         AND gu.acknowledgement_sent IS NOT TRUE AND gu.disputed_at IS NULL)`);
+    params.push(n);
+  }
   if (q.noAsk === "1") {
     // NO ASK THIS YEAR: no proposal still open, and nothing asked of them in
     // the last twelve months (an ask logged on the timeline, or a proposal
@@ -256,7 +266,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // PARITY-4: Show me.
   "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
   // FIX-27: a campaign (and the year of the gift), and no ask this year.
-  "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk"];
+  "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk",
+  // ASK-2: a gift not yet thanked.
+  "unthankedOver"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -288,6 +300,7 @@ function normalizeRules(raw) {
     if (rules[k] !== "1") delete rules[k];
   }
   if (rules.gaveOver !== undefined && !(Number(rules.gaveOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
+  if (rules.unthankedOver !== undefined && !(Number(rules.unthankedOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
   for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo"])
     if (rules[k] && !/^\d{4}-\d{2}-\d{2}$/.test(rules[k])) errors.push("A date is written 2026-01-31.");
   for (const k of ["volHoursMin", "volHoursMax"])
@@ -331,6 +344,7 @@ function rulesSentence(rules = {}) {
   if (rules.gaveOver !== undefined) parts.push(`who gave more than $${Number(rules.gaveOver).toLocaleString("en-US")}`);
   if (rules.gaveCampaign) parts.push(`who gave to one campaign${rules.gaveCampaignYear ? ` in ${rules.gaveCampaignYear}` : ""}`);
   if (rules.notGaveCampaign) parts.push(`who have not given to one campaign${rules.notGaveCampaignYear ? ` in ${rules.notGaveCampaignYear}` : ""}`);
+  if (rules.unthankedOver !== undefined) parts.push(Number(rules.unthankedOver) > 0 ? `with a gift over $${Number(rules.unthankedOver).toLocaleString("en-US")} not yet thanked` : "with a gift not yet thanked");
   if (rules.noAsk) parts.push("with no ask this year (no proposal open, nothing asked in twelve months)");
   if (rules.notDeceased) parts.push("not deceased");
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);

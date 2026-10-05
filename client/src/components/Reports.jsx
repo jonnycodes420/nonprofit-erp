@@ -14,7 +14,8 @@ import { SavedDashboardView, DashboardBuilder, BoardPackPanel } from "./SavedDas
 import { useNavigate } from "react-router-dom";
 import { tabHref } from "../lib/appUrls";
 import { RecordLink } from "./RecordLink";
-import { WhyLink, ShowMeLine } from "./WhyAnswer";
+import { WhyLink } from "./WhyAnswer";
+import { AskBox } from "./AskPanel";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -673,7 +674,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     </div>
 
     {/* PARITY-4: Show me: a plain question becomes a list. */}
-    <div style={{ marginBottom: 14 }}><ShowMeLine /></div>
+    <div style={{ marginBottom: 14 }}><AskBox testid="reports-ask" /></div>
 
     {/* INT-BUILD-1 Part 6 — meetings per staff member per month. */}
     <div style={{ marginBottom: 14 }}><MeetingsByStaffCard /></div>

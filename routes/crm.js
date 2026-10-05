@@ -1936,8 +1936,8 @@ async function composeDashboardTiles(orgId, dash, window, deps, userId) {
       // The DEFINITION of a tile's number is the source's own sentence: it is
       // the one string that states exactly which rows were counted and over
       // which dates, and it is the string the drill-through shows too.
-      sections.push({ key: `tile${i}`, kind: "figures", title: sDef.label,
-        figures: [{ ...f, definition: f.sentence, kind: f.kind }] });
+      sections.push({ key: `tile${i}`, kind: "figures", title: tile.label || sDef.label,
+        figures: [{ ...f, ...(tile.label ? { label: tile.label } : {}), definition: f.sentence, kind: f.kind }] });
     } else if (tile.kind === "chart") {
       try {
         const points = await packGivingByMonth(orgId, deps);

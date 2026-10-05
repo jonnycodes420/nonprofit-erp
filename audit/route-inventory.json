@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-05T03:08:13.796Z",
- "count": 1056,
+ "generatedAt": "2026-10-05T03:43:30.618Z",
+ "count": 1062,
  "routes": [
   {
    "method": "POST",
@@ -22058,6 +22058,118 @@
    "identifiers": [],
    "frontend": {
     "probe": "/why/ask",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/ask",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/ask/pins",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask/pins",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/ask/pins",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask/pins",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/ask/pins/:id",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/ask/pins",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/ask/save-to-dashboard",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask/save-to-dashboard",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/ask/suggestions",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/ask/suggestions",
     "referenced": true
    }
   },

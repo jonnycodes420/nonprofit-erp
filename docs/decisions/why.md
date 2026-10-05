@@ -50,6 +50,17 @@ template sentences. Every future build is checked against this.
 - **No statistic without a source.** Every number in an answer is the org's own. Never quote another
   company's research as Steward's, and never name a competitor in the product or site. (WHY-1)
 
+- **Ask anything is a plan, never a guess.** The free box (`POST /ask`) turns a question into a typed plan
+  from `shared/askCatalog.js` (templates with AI off, the model's `ask_plan` form with AI on, or a follow-up
+  on the last plan) and runs it in `askEngine.js`. A metric, dimension, period, filter, fund, campaign or
+  event outside the catalog or the org is refused in one sentence ("Steward can't answer breaking giving
+  down by donor age yet") and logged. The model never writes SQL and no number it writes is shown. (ASK-2)
+- **Every number in an answer is a figure.** The sentence is parts (`answerSentence`): text and figure
+  references, each a `<Figure>` whose source is `ask` (cell `cur`, `cmp`, `g<n>`, `who`, `top`), `ask-change`
+  or the metric's own source. `tests/ask2-plans.test.js` foots them; `tests/ask2-refuse.test.js` refuses. (ASK-2)
+- **A question on a page is scoped to it.** A campaign page passes `{campaign}`, a profile `{donor}`, the
+  calendar `{from, to}`; with no period named it means all of it. (ASK-2)
+
 ## The eight questions (how each is computed)
 
 | key | question | facts | ranked by | step |
