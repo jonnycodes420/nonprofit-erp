@@ -93,7 +93,7 @@ export function Volunteers({data, setData, isReadOnly}) {
         </button>
       </div>
     </Card>}
-    {data.volunteers.length===0&&!showAdd&&<EmptyState icon="◎" title="No volunteers yet" message="Add volunteers to track hours, skills, and conversion potential."/>}
+    {data.volunteers.length===0&&!showAdd&&<EmptyState icon="◎" title="No volunteers yet" message="Add a volunteer, and every hour they give sits on the same record as their gifts."/>}
     {data.volunteers.map(v=>{
       const cc=v.convertPotential==="high"?T.gold500:v.convertPotential==="converted"?T.greenDk:T.ink3;
       return <Card key={v.id}>

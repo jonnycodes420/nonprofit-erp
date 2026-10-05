@@ -826,7 +826,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 20 }}>
         {(data.journeys || []).length === 0 && (
           <div style={{ fontSize: 13, color: T.ink3 }}>
-            No journeys yet. Create one, or start from one of the shapes below.
+            No journeys yet. A journey makes sure a new donor never slips away unnoticed. Start from one of the shapes below, or create your own.
           </div>
         )}
         {(data.journeys || []).map(j => (

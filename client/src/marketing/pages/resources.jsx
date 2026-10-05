@@ -249,7 +249,7 @@ export function Help() {
   const [q, setQ] = useState("");
   const list = q.trim() ? searchArticles(HELP_ARTICLES, q, 20) : [...HELP_ARTICLES].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
   return <>
-    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="An article for every screen and for the jobs people come for. If it is not here, a person answers." noCta />
+    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="Short answers for people doing a lot with a little. There is an article for every screen and for the jobs people come for, and if yours is not here, a person answers." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help centre" aria-label="Search the help centre"
         style={{ width: "100%", maxWidth: 560, padding: "12px 14px", fontSize: 16, borderRadius: 10, border: "1px solid #D4CFC6", marginBottom: 20, fontFamily: "inherit" }} />

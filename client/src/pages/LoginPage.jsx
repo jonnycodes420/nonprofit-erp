@@ -184,7 +184,7 @@ export default function LoginPage() {
               </span>
             </h1>
             <p style={{ fontSize: 15, color: T.ink3, margin: 0 }}>
-              Sign in to your Steward workspace.
+              Everyone who believes in your work is right where you left them.
             </p>
           </div>
 

@@ -58,7 +58,7 @@ function bandFor(n) {
 
 const labelStyle = { fontSize: 14.5, fontWeight: 600, color: INK, display: "block", marginBottom: 7 };
 const inputStyle = { width: "100%", padding: "12px 14px", fontSize: 15.5, borderRadius: 12, border: `1.5px solid ${LINE}`, background: WHITE, color: INK, fontFamily: "inherit" };
-const TICKS = ["Thirty days free, then month to month", "Unlimited users and every feature", "No platform fee on any gift", "Your move done with you"];
+const TICKS = ["Thirty days free, then month to month", "Your whole team and every feature", "No platform fee on any gift", "Your move done with you"];
 const Tick = () => (
   <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true" style={{ flex: "none", marginTop: 2 }}><path d="M3 8.5l3 3 7-7" fill="none" stroke={EMERALD} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
 );
@@ -145,7 +145,7 @@ export default function SignupPage() {
             <span aria-hidden="true" style={{ width: 22, height: 2, background: GOLD }}></span>Start free
           </span>
           <h1 data-testid="signup-headline" style={{ fontSize: "clamp(38px,4vw,54px)", fontWeight: 400, color: INK, fontFamily: SERIF, lineHeight: 1.08, margin: "20px 0 0" }}>
-            Start with <em style={{ fontStyle: "italic" }}>one conversation.</em>
+            Raise more from the people who <em style={{ fontStyle: "italic" }}>already believe in you.</em>
           </h1>
           <p style={{ fontSize: 19, color: SAGE_GREY, lineHeight: 1.6, margin: "22px 0 0", maxWidth: 520 }}>
             Your card goes in now and <strong style={{ color: INK }}>nothing is charged for thirty days</strong>.

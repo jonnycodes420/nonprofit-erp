@@ -34,15 +34,15 @@ export const seatsAreUnlimited = seats => {
 
 // The sentence a screen shows. One sentence, so onboarding, signup and Settings
 // cannot each phrase it differently.
-export const USERS_SENTENCE = "Every plan includes unlimited users.";
+export const USERS_SENTENCE = "Every plan includes your whole team, with no limit on how many people sign in.";
 
 // The same fact as a clause, for a sentence that already has a subject.
-export const USERS_PHRASE = "no limit on users";
+export const USERS_PHRASE = "no limit on the people who sign in";
 
 // What to say when an invite is refused for seats. A plan that sells unlimited
 // users should never reach this, so the sentence does not invent a cap: it says
 // the invite did not go through and that nothing is wrong with her plan.
 export const SEAT_REFUSED_SENTENCE =
-  "That invitation did not go through. Every plan includes unlimited users, so this is not a limit on your plan. Try again, or write to us and we will sort it out.";
+  "That invitation did not go through. Every plan includes your whole team, so this is not a limit on your plan. Try again, or write to us and we will sort it out.";
 
 export default { SEATS_UNLIMITED, seatsAreUnlimited, USERS_SENTENCE, USERS_PHRASE, SEAT_REFUSED_SENTENCE };
