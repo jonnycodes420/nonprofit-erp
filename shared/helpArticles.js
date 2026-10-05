@@ -63,6 +63,34 @@ export const HELP_ARTICLES = [
     ],
   },
   {
+    slug: `calendar`,
+    title: `Calendar`,
+    screens: [`calendar`],
+    summary: `Calendar puts everything with a date in one place: meetings, next steps, shifts, events and more.`,
+    sections: [
+      { h: `What you see`, p: [
+        `Week is the first view; Day, Month and Agenda are beside it (on a phone, Agenda comes first, with a strip of days at the top). Meetings, next steps and tasks, volunteer shifts (with how many places are filled), events, journey steps, campaign sends and pledge payments each have their own colour and their own tick box on the left. Birthdays are there too, ticked off until you want them.`,
+        `"Mine" shows what is yours; "Everyone" shows the whole organisation. An admin can also pick one person. The line across today is the current time, and the times are your organisation's time zone, named under the tick boxes.`,
+        `A small brass dot means something needs a look: two of your meetings at once, a shift short of people, or an event on top of a shift.`,
+      ]},
+      { h: `Move something`, steps: [
+        `Drag a meeting, a next step, a shift or an event to a new day or time. Drag the bottom edge of a meeting, shift or event to change how long it is.`,
+        `The change saves straight away, and "Undo" at the bottom of the screen puts it back.`,
+        `A meeting from your Google or Outlook calendar moves there too. If your calendar will not take the change, Steward says so and nothing moves.`,
+      ]},
+      { h: `Add something`, steps: [
+        `Click an empty slot (on a phone, press +).`,
+        `Choose Meeting, Call, Next step, Shift or Event. The form opens with that day and time filled in; find the person by name where there is one.`,
+      ]},
+      { h: `Ask about the dates on screen`, p: [
+        `"What's my week look like?" counts what is on the calendar and points out anything that needs a look. "Who am I meeting this week and when did they last give?" lists each meeting with that person's last gift. The box beside them answers other questions about the same dates.`,
+      ]},
+      { h: `What this screen does not do`, p: [
+        `Journey steps, campaign sends, pledge payments and birthdays are moved where they live, not by dragging here. Clicking any of them opens it.`,
+      ]},
+    ],
+  },
+  {
     slug: `donors`,
     title: `Donors`,
     screens: [`donors`],
