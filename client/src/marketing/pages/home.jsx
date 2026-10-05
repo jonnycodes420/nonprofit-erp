@@ -15,7 +15,8 @@ const HERO_CHIPS = ["Month to month", "No platform fee", "Your whole team"];
 // Each pillar's band: its tint, which side the text sits, the link under the
 // line, and the picture: a person at work with the Harborlight screen that
 // shows the pillar overlapping its corner. Pillar 6 shows the founder's own
-// portrait instead, so no stock photo ever stands in for a real person.
+// portrait instead, so no stock photo ever stands in for a real person (the
+// same file as WebP: the 482 KB PNG was the heaviest thing on Home).
 const BANDS = {
   1: { tint: "brass-tint", link: ["/crm", "Steward CRM"], photo: "phone-laughing", shot: "inset-drift" },
   2: { tint: "emerald-tint", flip: true, link: ["/agent", "Steward Agent"], photo: "laptop-delighted", shot: "inset-agent", pos: "center top" },
@@ -68,7 +69,7 @@ function Pillars() {
       <PillarBand key={p.n} p={p} tint={b.tint} flip={b.flip} link={b.link}>
         {p.n === 6
           ? <div className="partner">
-              <Portrait src={founder[2]} name={founder[0]} />
+              <Portrait src={founder[2].replace(/\.png$/, ".webp")} name={founder[0]} />
               <div className="partner-c"><b>{founder[0]}</b><span>{founder[1]}</span>
                 <ul><li>Month to month</li><li>No platform fee on your gifts</li><li>Email that reaches the founder</li></ul>
               </div>

@@ -65,13 +65,39 @@ telling Sarah it is there — an organisation should know which of its files a
 vendor holds. If CKRH ever asks for it to be removed, delete this file and this
 row and clear `orgs.logo_data` for their org; nothing else references it.
 
+## Marketing photographs on Home (LANDING-5, 2026-10-05)
+
+Every photograph on Home is a free Unsplash photo under the Unsplash License
+(commercial use allowed, no attribution required, no Unsplash+ photos). They
+were downloaded for LANDING-2; the full list of every marketing photo, with
+its slot, is `docs/landing/photo-credits.md`. The credit is the photographer
+named on each linked Unsplash page (the names were not recorded at download,
+and Unsplash refuses automated lookups, so the link is the record). The
+product crops beside them are Steward's own screens of the Harborlight demo
+org (`client/public/marketing/product/inset-*.webp`).
+
+| Asset | Where it is on Home | Source | Licence | Cleared |
+|---|---|---|---|---|
+| `desk-phone.webp` | Hero, large | https://unsplash.com/photos/BXLy_lXu5j0 | Unsplash License | ☐ |
+| `volunteers-boxes.webp` | Hero, small | https://unsplash.com/photos/jgm-LddkD88 | Unsplash License | ☐ |
+| `phone-laughing.webp` | Pillar 1, Never lose a single believer | https://unsplash.com/photos/L9U5UUScnHY | Unsplash License | ☐ |
+| `laptop-delighted.webp` | Pillar 2, Technology that knows its place | https://unsplash.com/photos/-zf6Y2mq0SQ | Unsplash License | ☐ |
+| `table-papers.webp` | Pillar 3, One home for everyone who believes | https://unsplash.com/photos/155XFb3xHpY | Unsplash License | ☐ |
+| `reading-letter.webp` | Pillar 4, Numbers you can stand behind | https://unsplash.com/photos/DVvY7-TSzTo | Unsplash License | ☐ |
+| `trainer-laptop.webp` | Pillar 5, You don't have to tear anything down | https://unsplash.com/photos/WX0scXYukVo | Unsplash License | ☐ |
+| `video-call.webp` | How it works | https://unsplash.com/photos/pccGXVm8XVM | Unsplash License | ☐ |
+| `laptop-coffee.webp` | Lost & Found | https://unsplash.com/photos/ITTqjS3UpoY | Unsplash License | ☐ |
+
+Pillar 6 shows the founder's own portrait (`client/public/landing/jonathan-atkinson.png`), never a stock photo.
+
 ## What is NOT in this file, and why
 
 Everything else Steward draws is geometry with no origin to trace: the
 wordmark is type, the icons are paths written from nothing, the palette is
-tokens, and the charts are computed. No photograph, illustration or font
-beyond the two Google families loaded by URL (`DM Sans`, `DM Serif Display`)
-is redistributed by this product.
+tokens, and the charts are computed. No illustration or font beyond the two
+Google families loaded by URL (`DM Sans`, `DM Serif Display`) is redistributed
+by this product; the marketing photographs are listed above and in
+`docs/landing/photo-credits.md`.
 
 If you add artwork that was traced, adapted, generated from a reference, or
 downloaded from anywhere, **add a row here in the same commit** — and commit
