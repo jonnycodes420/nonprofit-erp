@@ -121,7 +121,7 @@ function F({ fig, variant = "inline" }) {
     source={fig.source} blank={fig.blank} abs={!!fig.abs} suffix={fig.suffix || ""} />;
 }
 
-export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = false, onUnpin }) {
+export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = false, onUnpin, inRail = false }) {
   const [showPlan, setShowPlan] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
@@ -217,16 +217,16 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
       )}
 
       <div data-testid="ask-counted" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Counted: {answer.counted}</div>
-      <div>
+      {!inRail && <div>
         <button type="button" data-testid="ask-show-plan" onClick={() => setShowPlan(v => !v)}
           style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
           {showPlan ? "Hide how Steward read this" : "How Steward read this"}</button>
         {showPlan && <div data-testid="ask-plan-words" style={{ fontSize: 13, color: T.ink2, marginTop: 4 }}>{answer.planWords}</div>}
-      </div>
+      </div>}
 
       {!compact && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          {(answer.steps || []).map((s, i) => s.kind === "ask"
+          {(answer.steps || []).filter(s => !(inRail && s.kind === "ask")).map((s, i) => s.kind === "ask"
             ? <button key={i} type="button" data-testid="ask-step-ask" style={CHIP} onClick={() => onAsk && onAsk(s.text)}>{s.label}</button>
             : s.kind === "open"
               ? <RecordLink key={i} to={s.href} data-testid="ask-step-open" style={{ ...CHIP, display: "inline-block", textDecoration: "none" }}>{s.label}</RecordLink>

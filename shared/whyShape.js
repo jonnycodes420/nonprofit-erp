@@ -75,6 +75,22 @@ export function matchQuestion(text) {
 // ── Template sentences ─────────────────────────────────────────────────────
 // Each takes the computed facts for its question and returns one sentence.
 // A fact the facts object does not carry is a fact the sentence does not say.
+// ASK-3: one part of an appeal's breakdown, in a sentence. The dollars are
+// the part's own sum (negative for money that did not come back).
+export function partSentence(part, f) {
+  const n = f.count, d = dollars(Math.abs(f.cents || 0));
+  const who = cap(plural(n, "donor", "donors"));
+  switch (part) {
+    case "lapsed": return `${cap(spell(n))} of ${f.compareName}'s donors ${n === 1 ? "hasn't" : "haven't"} given to ${f.campaignName} yet; they gave ${d} last time.`;
+    case "more": return `${who} gave more to ${f.campaignName} than to ${f.compareName}, ${d} more between them.`;
+    case "less": return `${who} gave less to ${f.campaignName} than to ${f.compareName}, ${d} less between them.`;
+    case "timing": return `${who} gave later in ${f.compareName} than ${f.campaignName} has run so far; they gave ${d} last time.`;
+    case "new": return `${who} gave to ${f.campaignName} for the first time, ${d} between them.`;
+    case "back": return `${who} came back to ${f.campaignName} after skipping ${f.compareName}, ${d} between them.`;
+    default: return `${who}, ${d} between them.`;
+  }
+}
+
 export function templateSentence(key, f) {
   f = f || {};
   switch (key) {

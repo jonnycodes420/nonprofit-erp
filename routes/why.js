@@ -28,6 +28,8 @@ const app = routers.r0;
 let S = null, SMm = null;
 const shape = async () => (S = S || await import("../shared/whyShape.js"));
 const showMod = async () => (SMm = SMm || await import("../shared/showMe.js"));
+let AGm = null;
+const guide = async () => (AGm = AGm || await import("../shared/askGuide.js"));
 
 // ASK-2: the org is kept with the question, so the box's suggestions are the
 // org's own most-asked questions and never another organisation's.
@@ -277,19 +279,45 @@ async function whyAskHandler(req, res) {
   a.key = key;
   await logQuestion(req.user.orgId, logged, key, true);
   const params = { q: key, ...(campaign ? { campaign } : {}), ...(donor ? { donor } : {}), ...(key === "call" ? { user: req.user.userId } : {}) };
+  const G = await guide();
+  const canSeeMore = await P.canSee(req.user.userId);
+  // ASK-3: one part of the appeal's breakdown ("Who are the 11 who haven't
+  // given?"): the same reason, its own people, the template sentence only.
+  const partKey = key === "appeal" && body.part ? String(body.part) : null;
+  if (partKey) {
+    const r = (a.reasons || []).find(x => x.key === partKey);
+    if (!r || !a.compare) return res.json({ answered: false, sentence: Sx.CANT_ANSWER, question: { text: typed } });
+    const by = new Map();
+    for (const x of r.rows) {
+      const p = by.get(x.donor_id) || { donorId: x.donor_id, name: x.name, cents: 0, reason: x.detail || "" };
+      p.cents += Math.abs(Math.round(Number(x.amount || 0) * 100)); by.set(x.donor_id, p);
+    }
+    const who = [...by.values()].sort((m, n) => Math.abs(n.cents) - Math.abs(m.cents) || m.name.localeCompare(n.name));
+    const text = Sx.partSentence(partKey, { count: r.count, cents: r.cents, campaignName: a.campaign.name, compareName: a.compare.name });
+    const answer = {
+      answered: true, part: partKey, question: { key, text: typed || G.partQuestion(partKey, r.count) }, campaign: a.campaign, compare: a.compare, donor: null,
+      sentence: text, sentenceSource: "template", template: text, aiOff: false,
+      reasons: [publicReason(r, params)], who: who.slice(0, 50),
+      step: who.length ? { kind: "plan", label: `Plan calls to the top ${Math.min(5, who.length) === 5 ? "five" : Math.min(5, who.length)}`,
+        items: who.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Call" })), dueIn: 1, due: orgTime.addDays(orgToday(await orgTz(orgId)), 1) } : null,
+      cantSee: a.cantSee || null,
+    };
+    return res.json({ ...answer, followUps: G.followUpsFor(answer, { canSeeMore }) });
+  }
   const qText = typed || Sx.QUESTIONS.find(q => q.key === key).ask(a.campaign?.name || a.donor?.name);
   const s = await writeSentence(orgId, qText, a, Sx);
   const today = orgToday(await orgTz(orgId));
   const step = a.step ? { ...a.step, due: orgTime.addDays(today, a.step.dueIn || 1),
     ...(a.step.fallback ? { fallback: { ...a.step.fallback, due: orgTime.addDays(today, a.step.fallback.dueIn || 1) } } : {}) } : null;
-  res.json({
+  const out = {
     answered: true, question: { key, text: qText }, campaign: a.campaign || null, compare: a.compare || null, donor: a.donor || null,
     sentence: s.sentence, sentenceSource: s.source, template: s.template, aiOff: !!s.aiOff,
     reasons: (a.reasons || []).map(r => publicReason(r, params)),
     who: a.who || [], step, cantSee: a.cantSee || null,
     alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
       ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
-  });
+  };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
 }
 app.post("/why/ask", whyAskLimiter, requireAuth, wrap(whyAskHandler));
 
@@ -359,8 +387,21 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const prev = body.previous && typeof body.previous === "object" && !Array.isArray(body.previous) ? body.previous : null;
   const scope = body.scope && typeof body.scope === "object" ? body.scope : null;
   const ctx = await AE.askContext(orgId);
-  let raw = null, source = "template", restatement = null;
+  let raw = null, source = "template", restatement = null, person = null;
+  const G = await guide();
+  const canSeeMore = await P.canSee(req.user.userId);
 
+  // ASK-3: a question about one person, from the Why and What rail.
+  if (body.person && typeof body.person === "object") {
+    const [d] = await query(`SELECT id, name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [String(body.person.donor || ""), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    const intent = String(body.person.intent || "");
+    if (intent === "stopped") { req.body = { key: "stopped", donor: d.id }; return whyAskHandler(req, res); }
+    const by = { changed: "year", given: "campaign" }[intent];
+    if (!by) return askRefuse(req, res, typed || "(person)", "that question about one person", C);
+    raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: by, filters: { donor: d.id } };
+    source = "guided"; person = { id: d.id, name: d.name, intent };
+  }
   if (body.plan && typeof body.plan === "object") { raw = body.plan; source = "saved"; }
   if (!raw && prev && typed) { raw = C.followUp(prev, typed, ctx); if (raw) source = "follow-up"; }
   let t = null;
@@ -395,7 +436,8 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const answer = await askAnswer(orgId, plan, ctx, C);
   // A follow-up is logged as one, so "who are they?" is never offered as a question on its own.
   if (source !== "saved") await logQuestion(req.user.orgId, typed || "(plan)", `ask: ${plan.metric}${source === "follow-up" ? " (follow-up)" : ""}`, true);
-  res.json({ ...answer, question: { text: typed }, planSource: source, restatement });
+  const out = { ...answer, question: { text: typed }, planSource: source, restatement, ...(person ? { person } : {}) };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
 }));
 
 // ── PINNED TO HOME ─────────────────────────────────────────────────────────
@@ -444,6 +486,26 @@ app.post("/ask/save-to-dashboard", requireAuth, wrap(async (req, res) => {
   tiles.push({ kind: "figure", source: "ask", label: String(b.label || "").slice(0, 120) || C.planWords(chk.plan, ctx).slice(0, 120), params: { plan: JSON.stringify(chk.plan), cell } });
   await run("UPDATE saved_dashboards SET tiles = ?, updated_at = NOW() WHERE id = ? AND org_id = ?", [JSON.stringify(tiles), d.id, req.user.orgId]);
   res.json({ ok: true, tiles: tiles.length });
+}));
+
+// ── ASK-3 · WHY AND WHAT ───────────────────────────────────────────────────
+// GET /ask/guided?donor= — the questions behind the two buttons, written from
+// the org's own names, and whether the free box shows (AI on). Read-only.
+app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
+  const G = await guide();
+  const orgId = req.user.orgId;
+  let donor = null;
+  if (req.query.donor) {
+    const [d] = await query(`SELECT id, name, (SELECT MAX(LEFT(date,10)) FROM gifts g WHERE g.org_id = donors.org_id AND g.donor_id = donors.id AND g.amount > 0) AS last
+       FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [String(req.query.donor), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    // "Why did they stop?" is offered only to someone who has: no gift in a year.
+    const today = orgToday(await orgTz(orgId));
+    donor = { id: d.id, name: d.name, gave: !!d.last, lapsed: !!d.last && d.last < orgTime.addDays(today, -365) };
+  }
+  const [campaigns, canSeeMore, gate] = await Promise.all([
+    donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId), aiGate(orgId)]);
+  res.json({ ...G.guidedLists({ campaigns, canSeeMore, donor }), ai: !!gate.ok });
 }));
 
 // The questions under the box: the org's own most-asked, answered ones.

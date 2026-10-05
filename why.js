@@ -90,6 +90,21 @@ async function defaultCampaign(orgId) {
   }
   return rows[0] || null;
 }
+// ASK-3: every started appeal that has a campaign a year earlier to compare
+// with, newest first. These are the only campaigns the Why rail offers.
+async function comparableCampaigns(orgId, limit = 2) {
+  const t = await today(orgId);
+  const rows = await query(`SELECT id, name, start_date::text AS start_date FROM campaigns
+     WHERE org_id = ? AND start_date IS NOT NULL AND start_date <= ? AND sent_at IS NULL
+       AND COALESCE(subject,'') = '' ORDER BY start_date DESC, name LIMIT 12`, [orgId, t]);
+  const out = [];
+  for (const c of rows) {
+    const { compare } = await AW.comparableFor(orgId, await AW.campaignRow(orgId, c.id));
+    if (compare) out.push({ id: c.id, name: c.name, compare: { id: compare.id, name: compare.name } });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
 
 async function appeal(orgId, { campaign } = {}) {
   const c = campaign ? await AW.campaignRow(orgId, campaign) : null;
@@ -659,4 +674,4 @@ async function answer(orgId, key, ctx = {}, deps = {}) {
   return key === "lapse" ? fn(orgId, deps) : fn(orgId, ctx, deps);
 }
 
-module.exports = { answer, knowsBest, defaultCampaign, ANSWERS, sumRows, BIG_GIFT_FLOOR_CENTS, BIG_GIFT_DAYS, orgCallFloorCents };
+module.exports = { answer, knowsBest, defaultCampaign, comparableCampaigns, ANSWERS, sumRows, BIG_GIFT_FLOOR_CENTS, BIG_GIFT_DAYS, orgCallFloorCents };
