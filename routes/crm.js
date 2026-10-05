@@ -18495,6 +18495,18 @@ app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
 
 // The hub's single read. One payload so the landing screen is one request
 // rather than five that arrive in a different order every time.
+// MAIL-1 Part 3: ONE SENTENCE ABOUT WHETHER HER EMAIL GOES, decided by the
+// mail policy (mailPolicy.js), never a raw flag. Before the donor file is in:
+// "Email turns on once your donor file is in." Once it sends: the From address.
+const mailPolicy = require("../mailPolicy");
+async function hubMailState(orgId) {
+  const [org] = await query("SELECT id, emails_enabled, is_demo_org, onboarded_at FROM orgs WHERE id=?", [orgId]).catch(() => []);
+  const d = mailPolicy.orgMailDecision(org || null, mailPolicy.CATEGORY.DONOR);
+  if (!d.send) return { sends: false, sentence: mailPolicy.REASON_SENTENCE[d.reason] || "Email is not going out from this organization right now." };
+  const ident = await orgSendingIdentity(orgId).catch(() => null);
+  return { sends: true, from: ident ? ident.from : null, sentence: ident ? `Your email goes out from ${ident.from}.` : null };
+}
+
 app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [roster, campaigns, seqs] = await Promise.all([
@@ -18511,6 +18523,7 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const totalOpen = sent.reduce((n, c) => n + (c.open_count || 0), 0);
   res.json({
     ...roster,
+    mail: await hubMailState(orgId),
     campaigns,
     sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
     stats: {
@@ -21699,7 +21712,7 @@ async function sendMilestoneDraft(req, draft) {
   const kind = draft.source === "volunteer_reminder" ? "volunteer_reminder"
     : String(draft.milestone_key || "").startsWith("auction-winner:") ? "auction_winner" : "milestone";
   const decision = await donorMailDecision(kind, donor.email, req.user.orgId);
-  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
+  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : (mailPolicy.REASON_SENTENCE[decision.reason] || `this donor is suppressed (${String(decision.reason).replace(/_/g, " ")})`)}` };
 
   if (process.env.RESEND_API_KEY) {
     // PARITY-2 Part 4: a link in a draft (a winner's pay link, an auction

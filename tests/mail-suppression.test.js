@@ -400,6 +400,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     ok("§9a zero campaign mail reached its donors", sentTo(keep) === 0 && sentTo(gone) === 0, { keep: sentTo(keep), gone: sentTo(gone) });
     const fp = await fetch(BASE + "/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: m1Admin }) });
     await settle();
+    const hubPre = await api("GET", "/communications/hub", m1Tok);
+    ok("§9a Communications says one sentence: email turns on once the donor file is in",
+      hubPre.body?.mail?.sends === false && hubPre.body.mail.sentence === "Email turns on once your donor file is in.", hubPre.body?.mail);
     ok("§9a …and a password reset still goes", fp.status < 300 && sentTo(m1Admin) === 1, { s: fp.status, n: sentTo(m1Admin) });
 
     // §9b one real donor imported -> onboarded
@@ -415,6 +418,9 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     const dg2 = await api("POST", "/digests/run", m1Tok, { type: "weekly", weekStart: monday });
     await settle();
     ok("§9b the digest now reaches the admin", !dg2.body?.weekly?.gated && sentTo(m1Admin) >= 1, { b: dg2.body, n: sentTo(m1Admin) });
+    const hubPost = await api("GET", "/communications/hub", m1Tok);
+    ok("§9b once onboarded, Communications shows the From address and no email-off sentence",
+      hubPost.body?.mail?.sends === true && !!hubPost.body.mail.from && !/turns on|switched off/.test(hubPost.body.mail.sentence || ""), hubPost.body?.mail);
     const rc = await api("POST", `/gifts/${giftId}/receipt`, m1Tok, {});
     await settle();
     ok("§9b a receipt is sent", rc.status < 300 && sentTo(keep) === 1, { s: rc.status, b: rc.body, n: sentTo(keep) });
