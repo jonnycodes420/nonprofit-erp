@@ -1,0 +1,3301 @@
+[
+ {
+  "n": 1,
+  "q": "what can I do to get Flavia to give more",
+  "expect": [
+   "person",
+   "d_b72_44",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what can I do to get Flavia to give more"
+   },
+   "donor": {
+    "id": "d_b72_44",
+    "name": "Flavia Pentreath"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_44",
+    "name": "Flavia Pentreath",
+    "intent": "ask",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Flavia Pentreath · what to ask for · Spring Appeal 2026",
+   "sentence": "Flavia Pentreath gave $1,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $2,500.",
+   "sentenceSource": "template",
+   "template": "Flavia Pentreath gave $1,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $2,500.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "campaign",
+     "label": "Gave to Spring Appeal 2025, nothing yet to Spring Appeal 2026",
+     "cents": 100000,
+     "count": 1,
+     "measure": "sum",
+     "definition": "Their gifts to Spring Appeal 2025; they have none to Spring Appeal 2026 yet.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_44",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "campaign"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 169900,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_44",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_44",
+     "name": "Flavia Pentreath",
+     "cents": 169900,
+     "reason": "Last gave $1,699 in July 2026."
+    }
+   ],
+   "cantSee": "No conversation with Flavia is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_44",
+      "name": "Flavia Pentreath",
+      "label": "Call about an ask of $2,500",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $2,500",
+     "items": [
+      {
+       "donorId": "d_b72_44",
+       "name": "Flavia Pentreath",
+       "label": "Ask for $2,500",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_44"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_44",
+        "name": "Flavia Pentreath",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Flavia?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_44",
+      "intent": "next",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Flavia given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_44",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 2,
+  "q": "and Margaret?",
+  "expect": [
+   "person",
+   "d_b72_12",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "and Margaret?"
+   },
+   "donor": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen",
+    "intent": "ask",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Margaret Chen · what to ask for",
+   "sentence": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000.",
+   "sentenceSource": "template",
+   "template": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 1500000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_12",
+     "name": "Margaret Chen",
+     "cents": 1500000,
+     "reason": "Last gave $15,000 two months ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_12",
+      "name": "Margaret Chen",
+      "label": "Call about an ask of $15,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $15,000",
+     "items": [
+      {
+       "donorId": "d_b72_12",
+       "name": "Margaret Chen",
+       "label": "Ask for $15,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_12"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_12",
+        "name": "Margaret Chen",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Margaret?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "next",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Margaret given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 3,
+  "q": "what's the next step with her?",
+  "expect": [
+   "person",
+   "d_b72_12",
+   "next"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what's the next step with her?"
+   },
+   "donor": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen",
+    "intent": "next",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Margaret Chen · the next step",
+   "sentence": "Margaret Chen has a step planned for October 6, which reads \"Coffee tomorrow. Bring Lily's class schedule\". Steward suggests asking for $15,000.",
+   "sentenceSource": "template",
+   "template": "Margaret Chen has a step planned for October 6, which reads \"Coffee tomorrow. Bring Lily's class schedule\". Steward suggests asking for $15,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 1500000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "next",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "next",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_12",
+     "name": "Margaret Chen",
+     "cents": 1500000,
+     "reason": "Last gave $15,000 two months ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_12",
+      "name": "Margaret Chen",
+      "label": "Call about an ask of $15,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $15,000",
+     "items": [
+      {
+       "donorId": "d_b72_12",
+       "name": "Margaret Chen",
+       "label": "Ask for $15,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_12"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_12",
+        "name": "Margaret Chen",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What should I ask Margaret for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "ask",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Margaret given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 4,
+  "q": "why did her giving change?",
+  "expect": [
+   "person",
+   "d_b72_12",
+   "changed"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "why did her giving change?"
+   },
+   "donor": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen",
+    "intent": "changed",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Margaret Chen · this year against last",
+   "sentence": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year.",
+   "sentenceSource": "template",
+   "template": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "up",
+     "label": "More so far this year than by this date last year",
+     "cents": 4000000,
+     "count": 3,
+     "measure": "sum",
+     "definition": "Their gifts this year so far.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "up"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 1500000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_12",
+     "name": "Margaret Chen",
+     "cents": 1500000,
+     "reason": "Last gave $15,000 two months ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_12",
+      "name": "Margaret Chen",
+      "label": "Call about an ask of $15,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $15,000",
+     "items": [
+      {
+       "donorId": "d_b72_12",
+       "name": "Margaret Chen",
+       "label": "Ask for $15,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_12"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_12",
+        "name": "Margaret Chen",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What should I ask Margaret for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "ask",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What's the next step with Margaret?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "next",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Margaret given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 5,
+  "q": "what should I ask Zebulon Quatermaine for?",
+  "expect": [
+   "none"
+  ],
+  "answer": {
+   "answered": false,
+   "refused": true,
+   "kind": "answer",
+   "sentence": "Steward has no one named Zebulon Quatermaine on file.",
+   "question": {
+    "text": "what should I ask Zebulon Quatermaine for?"
+   },
+   "followUps": [
+    {
+     "text": "Why did Spring Appeal 2026 come in where it did?",
+     "go": {
+      "via": "why",
+      "key": "appeal",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "Why are these donors drifting?",
+     "go": {
+      "via": "why",
+      "key": "lapse"
+     }
+    },
+    {
+     "text": "Why did retention change this year?",
+     "go": {
+      "via": "why",
+      "key": "retention"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 6,
+  "q": "what should I ask them for?",
+  "expect": [
+   "list",
+   [
+    "d_b72_38",
+    "d_b72_39",
+    "d_b72_40",
+    "d_b72_52",
+    "d_b72_53"
+   ]
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "people",
+    "text": "what should I ask them for?"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": null,
+   "readAs": "The first 5 from the last answer · suggested asks",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500.",
+   "sentenceSource": "template",
+   "reasons": [],
+   "who": [
+    {
+     "donorId": "d_b72_38",
+     "name": "Nerissa Ashenhurst",
+     "cents": 350000,
+     "reason": "Suggested ask $3,500, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_39",
+     "name": "Leopold Frostwick",
+     "cents": 500000,
+     "reason": "Suggested ask $5,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_40",
+     "name": "Ezekiel Haverbrook",
+     "cents": 1000000,
+     "reason": "Suggested ask $10,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_52",
+     "name": "Gideon Blackmoor",
+     "cents": 500000,
+     "reason": "Suggested ask $5,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_53",
+     "name": "Cuthbert Marchbanks",
+     "cents": 750000,
+     "reason": "Suggested ask $7,500, from their own gifts."
+    }
+   ],
+   "cantSee": "A suggested ask is worked out from their own gifts only; it is a starting point for your judgment.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan calls to all five",
+    "items": [
+     {
+      "donorId": "d_b72_38",
+      "name": "Nerissa Ashenhurst",
+      "label": "Ask for $3,500"
+     },
+     {
+      "donorId": "d_b72_39",
+      "name": "Leopold Frostwick",
+      "label": "Ask for $5,000"
+     },
+     {
+      "donorId": "d_b72_40",
+      "name": "Ezekiel Haverbrook",
+      "label": "Ask for $10,000"
+     },
+     {
+      "donorId": "d_b72_52",
+      "name": "Gideon Blackmoor",
+      "label": "Ask for $5,000"
+     },
+     {
+      "donorId": "d_b72_53",
+      "name": "Cuthbert Marchbanks",
+      "label": "Ask for $7,500"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Nerissa for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_38",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What should I ask Leopold for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "Who should I call tomorrow?",
+     "go": {
+      "via": "why",
+      "key": "call"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 7,
+  "q": "why did Nerissa stop giving?",
+  "expect": [
+   "person",
+   "d_b72_38",
+   "stopped"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "stopped",
+    "text": "why did Nerissa stop giving?"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": {
+    "id": "d_b72_38",
+    "name": "Nerissa Ashenhurst"
+   },
+   "sentence": "Nerissa Ashenhurst last gave $1,048 in March 2026. On their record, their last gift of $1,048 was never marked thanked.",
+   "sentenceSource": "template",
+   "template": "Nerissa Ashenhurst last gave $1,048 in March 2026. On their record, their last gift of $1,048 was never marked thanked.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 104800,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_38",
+       "part": "thanks"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_38",
+     "name": "Nerissa Ashenhurst",
+     "cents": 104800,
+     "reason": "Last gave $1,048 in March 2026."
+    }
+   ],
+   "step": {
+    "kind": "log",
+    "label": "Log the thank-you you make",
+    "donorId": "d_b72_38",
+    "name": "Nerissa Ashenhurst",
+    "due": "2026-10-06"
+   },
+   "cantSee": "Steward sees gifts, logged contact, asks and mail; a conversation nobody logged is not here.",
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Nerissa for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_38",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Nerissa?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_38",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Nerissa given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_38",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 8,
+  "q": "what about Leopold?",
+  "expect": [
+   "person",
+   "d_b72_39",
+   "stopped"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "stopped",
+    "text": "what about Leopold?"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": {
+    "id": "d_b72_39",
+    "name": "Leopold Frostwick"
+   },
+   "sentence": "Leopold Frostwick last gave $3,209 in March 2026. On their record, their last gift of $3,209 was never marked thanked.",
+   "sentenceSource": "template",
+   "template": "Leopold Frostwick last gave $3,209 in March 2026. On their record, their last gift of $3,209 was never marked thanked.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 320900,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_39",
+       "part": "thanks"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_39",
+     "name": "Leopold Frostwick",
+     "cents": 320900,
+     "reason": "Last gave $3,209 in March 2026."
+    }
+   ],
+   "step": {
+    "kind": "log",
+    "label": "Log the thank-you you make",
+    "donorId": "d_b72_39",
+    "name": "Leopold Frostwick",
+    "due": "2026-10-06"
+   },
+   "cantSee": "Steward sees gifts, logged contact, asks and mail; a conversation nobody logged is not here.",
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Leopold for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Leopold?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Leopold given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 9,
+  "q": "what should I ask him for?",
+  "expect": [
+   "person",
+   "d_b72_39",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what should I ask him for?"
+   },
+   "donor": {
+    "id": "d_b72_39",
+    "name": "Leopold Frostwick"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_39",
+    "name": "Leopold Frostwick",
+    "intent": "ask",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Leopold Frostwick · what to ask for · Spring Appeal 2026",
+   "sentence": "Leopold Frostwick gave $2,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000.",
+   "sentenceSource": "template",
+   "template": "Leopold Frostwick gave $2,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "campaign",
+     "label": "Gave to Spring Appeal 2025, nothing yet to Spring Appeal 2026",
+     "cents": 200000,
+     "count": 1,
+     "measure": "sum",
+     "definition": "Their gifts to Spring Appeal 2025; they have none to Spring Appeal 2026 yet.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_39",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "campaign"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 320900,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_39",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "events",
+     "label": "Came to an event",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "Each event they are on the guest list for.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_39",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "events"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_39",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_39",
+     "name": "Leopold Frostwick",
+     "cents": 320900,
+     "reason": "Last gave $3,209 in March 2026."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_39",
+      "name": "Leopold Frostwick",
+      "label": "Call about an ask of $5,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $5,000",
+     "items": [
+      {
+       "donorId": "d_b72_39",
+       "name": "Leopold Frostwick",
+       "label": "Ask for $5,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_39"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_39",
+        "name": "Leopold Frostwick",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Leopold?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "next",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Leopold given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 10,
+  "q": "the top five",
+  "expect": [
+   "list",
+   [
+    "d_b72_38",
+    "d_b72_39",
+    "d_b72_40",
+    "d_b72_52",
+    "d_b72_53"
+   ]
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "people",
+    "text": "the top five"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": null,
+   "readAs": "The first 5 from the last answer · suggested asks",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500.",
+   "sentenceSource": "template",
+   "reasons": [],
+   "who": [
+    {
+     "donorId": "d_b72_38",
+     "name": "Nerissa Ashenhurst",
+     "cents": 350000,
+     "reason": "Suggested ask $3,500, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_39",
+     "name": "Leopold Frostwick",
+     "cents": 500000,
+     "reason": "Suggested ask $5,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_40",
+     "name": "Ezekiel Haverbrook",
+     "cents": 1000000,
+     "reason": "Suggested ask $10,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_52",
+     "name": "Gideon Blackmoor",
+     "cents": 500000,
+     "reason": "Suggested ask $5,000, from their own gifts."
+    },
+    {
+     "donorId": "d_b72_53",
+     "name": "Cuthbert Marchbanks",
+     "cents": 750000,
+     "reason": "Suggested ask $7,500, from their own gifts."
+    }
+   ],
+   "cantSee": "A suggested ask is worked out from their own gifts only; it is a starting point for your judgment.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan calls to all five",
+    "items": [
+     {
+      "donorId": "d_b72_38",
+      "name": "Nerissa Ashenhurst",
+      "label": "Ask for $3,500"
+     },
+     {
+      "donorId": "d_b72_39",
+      "name": "Leopold Frostwick",
+      "label": "Ask for $5,000"
+     },
+     {
+      "donorId": "d_b72_40",
+      "name": "Ezekiel Haverbrook",
+      "label": "Ask for $10,000"
+     },
+     {
+      "donorId": "d_b72_52",
+      "name": "Gideon Blackmoor",
+      "label": "Ask for $5,000"
+     },
+     {
+      "donorId": "d_b72_53",
+      "name": "Cuthbert Marchbanks",
+      "label": "Ask for $7,500"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Nerissa for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_38",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What should I ask Leopold for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_39",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "Who should I call tomorrow?",
+     "go": {
+      "via": "why",
+      "key": "call"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 11,
+  "q": "what should I ask Persis for?",
+  "expect": [
+   "person",
+   "d_b72_41",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what should I ask Persis for?"
+   },
+   "donor": {
+    "id": "d_b72_41",
+    "name": "Persis Gillingwater"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_41",
+    "name": "Persis Gillingwater",
+    "intent": "ask",
+    "lapsed": false,
+    "campaign": "camp_b72demo_spring"
+   },
+   "readAs": "Persis Gillingwater · what to ask for · Spring Appeal 2026",
+   "sentence": "Persis Gillingwater gave $1,200 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000.",
+   "sentenceSource": "template",
+   "template": "Persis Gillingwater gave $1,200 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "campaign",
+     "label": "Gave to Spring Appeal 2025, nothing yet to Spring Appeal 2026",
+     "cents": 120000,
+     "count": 1,
+     "measure": "sum",
+     "definition": "Their gifts to Spring Appeal 2025; they have none to Spring Appeal 2026 yet.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_41",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "campaign"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 279500,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_41",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "events",
+     "label": "Came to an event",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "Each event they are on the guest list for.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_41",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "events"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_41",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "campaign": "camp_b72demo_spring",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_41",
+     "name": "Persis Gillingwater",
+     "cents": 279500,
+     "reason": "Last gave $2,795 three weeks ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_41",
+      "name": "Persis Gillingwater",
+      "label": "Call about an ask of $5,000",
+      "ownerId": "u_b72demo_off"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $5,000",
+     "items": [
+      {
+       "donorId": "d_b72_41",
+       "name": "Persis Gillingwater",
+       "label": "Ask for $5,000",
+       "ownerId": "u_b72demo_off"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_41"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_41",
+        "name": "Persis Gillingwater",
+        "label": "Call",
+        "ownerId": "u_b72demo_off"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Persis?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_41",
+      "intent": "next",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "What has Persis given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_41",
+      "intent": "given",
+      "campaign": "camp_b72demo_spring"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 12,
+  "q": "why did Alaric Applewhite stop giving?",
+  "expect": [
+   "person",
+   "d_b72_32",
+   "stopped"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "stopped",
+    "text": "why did Alaric Applewhite stop giving?"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite"
+   },
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025. On their record, their last gift of $44,938 was never marked thanked.",
+   "sentenceSource": "template",
+   "template": "Alaric Applewhite last gave $44,938 in October 2025. On their record, their last gift of $44,938 was never marked thanked.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 4493800,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_32",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "contact",
+     "label": "No contact ever logged",
+     "cents": 0,
+     "count": 0,
+     "measure": "count",
+     "definition": "Their logged calls, meetings and emails, most recent first.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_32",
+       "part": "contact"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_32",
+     "name": "Alaric Applewhite",
+     "cents": 4493800,
+     "reason": "Last gave $44,938 in October 2025."
+    }
+   ],
+   "step": {
+    "kind": "log",
+    "label": "Log the thank-you you make",
+    "donorId": "d_b72_32",
+    "name": "Alaric Applewhite",
+    "due": "2026-10-06"
+   },
+   "cantSee": "Steward sees gifts, logged contact, asks and mail; a conversation nobody logged is not here.",
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Alaric for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Alaric?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Alaric given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 13,
+  "q": "what should I ask him for?",
+  "expect": [
+   "person",
+   "d_b72_32",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what should I ask him for?"
+   },
+   "donor": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite",
+    "intent": "ask",
+    "lapsed": false
+   },
+   "readAs": "Alaric Applewhite · what to ask for",
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000.",
+   "sentenceSource": "template",
+   "template": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 4493800,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "hours",
+     "label": "Volunteered 17 hours",
+     "cents": 0,
+     "count": 14,
+     "measure": "count",
+     "definition": "Each volunteer shift on their record.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "hours"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_32",
+     "name": "Alaric Applewhite",
+     "cents": 4493800,
+     "reason": "Last gave $44,938 in October 2025."
+    }
+   ],
+   "cantSee": "No conversation with Alaric is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_32",
+      "name": "Alaric Applewhite",
+      "label": "Call about an ask of $50,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $50,000",
+     "items": [
+      {
+       "donorId": "d_b72_32",
+       "name": "Alaric Applewhite",
+       "label": "Ask for $50,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_32"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_32",
+        "name": "Alaric Applewhite",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Alaric?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Alaric given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 14,
+  "q": "what's the next step with him?",
+  "expect": [
+   "person",
+   "d_b72_32",
+   "next"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what's the next step with him?"
+   },
+   "donor": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite",
+    "intent": "next",
+    "lapsed": false
+   },
+   "readAs": "Alaric Applewhite · the next step",
+   "sentence": "Nothing is planned with Alaric Applewhite, and no conversation with them is logged. Steward suggests asking for $50,000.",
+   "sentenceSource": "template",
+   "template": "Nothing is planned with Alaric Applewhite, and no conversation with them is logged. Steward suggests asking for $50,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 4493800,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "next",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "hours",
+     "label": "Volunteered 17 hours",
+     "cents": 0,
+     "count": 14,
+     "measure": "count",
+     "definition": "Each volunteer shift on their record.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "next",
+       "user": "u_b72demo",
+       "part": "hours"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "next",
+       "user": "u_b72demo",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_32",
+     "name": "Alaric Applewhite",
+     "cents": 4493800,
+     "reason": "Last gave $44,938 in October 2025."
+    }
+   ],
+   "cantSee": "No conversation with Alaric is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_32",
+      "name": "Alaric Applewhite",
+      "label": "Call about an ask of $50,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $50,000",
+     "items": [
+      {
+       "donorId": "d_b72_32",
+       "name": "Alaric Applewhite",
+       "label": "Ask for $50,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_32"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_32",
+        "name": "Alaric Applewhite",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What should I ask Alaric for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What has Alaric given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 15,
+  "q": "what has he given to?",
+  "expect": [
+   "given",
+   "d_b72_32"
+  ],
+  "answer": {
+   "answered": true,
+   "kind": "answer",
+   "plan": {
+    "kind": "metric",
+    "metric": "raised",
+    "period": {
+     "kind": "all_time"
+    },
+    "groupBy": "campaign",
+    "filters": {
+     "donor": "d_b72_32"
+    }
+   },
+   "planWords": "Amount raised · all time · by campaign · one person",
+   "sentence": "Alaric Applewhite gave $134,791 in all. Annual Fund 2023 leads with $45,093.",
+   "sentenceParts": [
+    "Alaric Applewhite gave ",
+    {
+     "fig": "value"
+    },
+    " in all",
+    ".",
+    " Annual Fund 2023 leads with ",
+    {
+     "fig": "group0"
+    },
+    "."
+   ],
+   "figures": {
+    "value": {
+     "label": "Amount raised · all time",
+     "value": 134791,
+     "kind": "money",
+     "definition": "Every gift in the period, with any refund subtracted.",
+     "source": {
+      "key": "ask",
+      "params": {
+       "plan": "{\"kind\":\"metric\",\"metric\":\"raised\",\"period\":{\"kind\":\"all_time\"},\"groupBy\":\"campaign\",\"filters\":{\"donor\":\"d_b72_32\"}}",
+       "cell": "cur"
+      }
+     },
+     "cents": 13479100
+    },
+    "compare": null,
+    "change": null,
+    "also": null,
+    "part0": null,
+    "part1": null,
+    "group0": {
+     "label": "Amount raised · Annual Fund 2023",
+     "value": 45093,
+     "kind": "money",
+     "definition": "Every gift in the period, with any refund subtracted.",
+     "source": {
+      "key": "ask",
+      "params": {
+       "plan": "{\"kind\":\"metric\",\"metric\":\"raised\",\"period\":{\"kind\":\"all_time\"},\"groupBy\":\"campaign\",\"filters\":{\"donor\":\"d_b72_32\"}}",
+       "cell": "g0"
+      }
+     },
+     "cents": 4509300
+    }
+   },
+   "parts": null,
+   "table": {
+    "dimension": "campaign",
+    "compareLabel": null,
+    "rows": [
+     {
+      "label": "Annual Fund 2023",
+      "value": {
+       "label": "Amount raised · Annual Fund 2023",
+       "value": 45093,
+       "kind": "money",
+       "definition": "Every gift in the period, with any refund subtracted.",
+       "source": {
+        "key": "ask",
+        "params": {
+         "plan": "{\"kind\":\"metric\",\"metric\":\"raised\",\"period\":{\"kind\":\"all_time\"},\"groupBy\":\"campaign\",\"filters\":{\"donor\":\"d_b72_32\"}}",
+         "cell": "g0"
+        }
+       },
+       "cents": 4509300
+      },
+      "compare": null,
+      "i": 0
+     },
+     {
+      "label": "Annual Fund 2025",
+      "value": {
+       "label": "Amount raised · Annual Fund 2025",
+       "value": 44938,
+       "kind": "money",
+       "definition": "Every gift in the period, with any refund subtracted.",
+       "source": {
+        "key": "ask",
+        "params": {
+         "plan": "{\"kind\":\"metric\",\"metric\":\"raised\",\"period\":{\"kind\":\"all_time\"},\"groupBy\":\"campaign\",\"filters\":{\"donor\":\"d_b72_32\"}}",
+         "cell": "g2"
+        }
+       },
+       "cents": 4493800
+      },
+      "compare": null,
+      "i": 1
+     },
+     {
+      "label": "Annual Fund 2024",
+      "value": {
+       "label": "Amount raised · Annual Fund 2024",
+       "value": 44760,
+       "kind": "money",
+       "definition": "Every gift in the period, with any refund subtracted.",
+       "source": {
+        "key": "ask",
+        "params": {
+         "plan": "{\"kind\":\"metric\",\"metric\":\"raised\",\"period\":{\"kind\":\"all_time\"},\"groupBy\":\"campaign\",\"filters\":{\"donor\":\"d_b72_32\"}}",
+         "cell": "g1"
+        }
+       },
+       "cents": 4476000
+      },
+      "compare": null,
+      "i": 2
+     }
+    ]
+   },
+   "chart": null,
+   "people": null,
+   "peopleCount": null,
+   "peopleSource": null,
+   "counted": "Gifts dated any time to Oct 5, 2026, refunds subtracted, all funds.",
+   "steps": [],
+   "question": {
+    "text": "what has he given to?"
+   },
+   "planSource": "guided",
+   "restatement": null,
+   "person": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite",
+    "intent": "given"
+   },
+   "followUps": [
+    {
+     "text": "What should I ask Alaric for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Alaric?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "next"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 16,
+  "q": "why did Ondine Cinderhalt stop giving?",
+  "expect": [
+   "person",
+   "d_b72_1076",
+   "stopped"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "stopped",
+    "text": "why did Ondine Cinderhalt stop giving?"
+   },
+   "campaign": null,
+   "compare": null,
+   "donor": {
+    "id": "d_b72_1076",
+    "name": "Ondine Cinderhalt"
+   },
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago. On their record, their recurring card failed two months ago.",
+   "sentenceSource": "template",
+   "template": "Ondine Cinderhalt last gave $150 two months ago. On their record, their recurring card failed two months ago.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "card",
+     "label": "A card payment failed",
+     "cents": 15000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Each recurring gift of theirs whose card payment failed.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_1076",
+       "part": "card"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 15000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_1076",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "contact",
+     "label": "No contact ever logged",
+     "cents": 0,
+     "count": 0,
+     "measure": "count",
+     "definition": "Their logged calls, meetings and emails, most recent first.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "stopped",
+       "donor": "d_b72_1076",
+       "part": "contact"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_1076",
+     "name": "Ondine Cinderhalt",
+     "cents": 15000,
+     "reason": "Last gave $150 two months ago."
+    }
+   ],
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call about the card",
+    "items": [
+     {
+      "donorId": "d_b72_1076",
+      "name": "Ondine Cinderhalt",
+      "label": "Call about the card"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "cantSee": "Steward sees gifts, logged contact, asks and mail; a conversation nobody logged is not here.",
+   "alsoSteps": [],
+   "followUps": [
+    {
+     "text": "What should I ask Ondine for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1076",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Ondine?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1076",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Ondine given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1076",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 17,
+  "q": "and what should I ask her for?",
+  "expect": [
+   "person",
+   "d_b72_1076",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "and what should I ask her for?"
+   },
+   "donor": {
+    "id": "d_b72_1076",
+    "name": "Ondine Cinderhalt"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_1076",
+    "name": "Ondine Cinderhalt",
+    "intent": "ask",
+    "lapsed": false
+   },
+   "readAs": "Ondine Cinderhalt · what to ask for",
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago, $2,400 across 16 gifts since 2025. Steward suggests asking for $150.",
+   "sentenceSource": "template",
+   "template": "Ondine Cinderhalt last gave $150 two months ago, $2,400 across 16 gifts since 2025. Steward suggests asking for $150.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 15000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_1076",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "card",
+     "label": "A card payment failed",
+     "cents": 15000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Each recurring gift of theirs whose card payment failed.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_1076",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "card"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_1076",
+     "name": "Ondine Cinderhalt",
+     "cents": 15000,
+     "reason": "Last gave $150 two months ago."
+    }
+   ],
+   "cantSee": "No conversation with Ondine is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_1076",
+      "name": "Ondine Cinderhalt",
+      "label": "Call about an ask of $150",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $150",
+     "items": [
+      {
+       "donorId": "d_b72_1076",
+       "name": "Ondine Cinderhalt",
+       "label": "Ask for $150",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_1076"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_1076",
+        "name": "Ondine Cinderhalt",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Ondine?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1076",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Ondine given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1076",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 18,
+  "q": "what should I ask Persis for?",
+  "expect": [
+   "choose"
+  ],
+  "answer": {
+   "answered": false,
+   "kind": "choose",
+   "question": {
+    "text": "what should I ask Persis for?"
+   },
+   "sentence": "Steward has 17 people named Persis; here are the six who gave most recently. Which one do you mean?",
+   "candidates": [
+    {
+     "donorId": "d_b72_186",
+     "name": "Persis Pentreath",
+     "city": "Beverly",
+     "lastGift": {
+      "cents": 538342,
+      "date": "2026-10-05"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_186",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_1088",
+     "name": "Persis Pendlebury",
+     "city": "Manchester",
+     "lastGift": {
+      "cents": 2500,
+      "date": "2026-09-24"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1088",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_1087",
+     "name": "Persis Oakhampton",
+     "city": "Gloucester",
+     "lastGift": {
+      "cents": 10000,
+      "date": "2026-09-21"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1087",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_41",
+     "name": "Persis Gillingwater",
+     "city": "Salem",
+     "lastGift": {
+      "cents": 279500,
+      "date": "2026-09-17"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_41",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_1080",
+     "name": "Persis Dunmoor",
+     "city": "Manchester",
+     "lastGift": {
+      "cents": 5000,
+      "date": "2026-09-07"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_1080",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_386",
+     "name": "Persis Yelverton",
+     "city": "Beverly",
+     "lastGift": {
+      "cents": 42500,
+      "date": "2026-07-11"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_386",
+      "intent": "ask"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 19,
+  "q": "what should I ask Flavia for?",
+  "expect": [
+   "choose"
+  ],
+  "answer": {
+   "answered": false,
+   "kind": "choose",
+   "question": {
+    "text": "what should I ask Flavia for?"
+   },
+   "sentence": "Steward has 17 people named Flavia; here are the six who gave most recently. Which one do you mean?",
+   "candidates": [
+    {
+     "donorId": "d_b72_44",
+     "name": "Flavia Pentreath",
+     "city": "Danvers",
+     "lastGift": {
+      "cents": 169900,
+      "date": "2026-07-21"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_44",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_187",
+     "name": "Flavia Pendlebury",
+     "city": "Marblehead",
+     "lastGift": {
+      "cents": 312500,
+      "date": "2026-05-28"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_187",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_91",
+     "name": "Flavia Jessamine",
+     "city": "Marblehead",
+     "lastGift": {
+      "cents": 130500,
+      "date": "2026-05-21"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_91",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_499",
+     "name": "Flavia Wharfedale",
+     "city": "Marblehead",
+     "lastGift": {
+      "cents": 15900,
+      "date": "2026-05-21"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_499",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_94",
+     "name": "Flavia Cinderhalt",
+     "city": "Swampscott",
+     "lastGift": {
+      "cents": 551400,
+      "date": "2026-05-19"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_94",
+      "intent": "ask"
+     }
+    },
+    {
+     "donorId": "d_b72_326",
+     "name": "Flavia Oakhampton",
+     "city": "Swampscott",
+     "lastGift": {
+      "cents": 14200,
+      "date": "2026-04-14"
+     },
+     "go": {
+      "via": "person",
+      "donor": "d_b72_326",
+      "intent": "ask"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 20,
+  "q": "how has Margaret Chen's giving changed?",
+  "expect": [
+   "person",
+   "d_b72_12",
+   "changed"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "how has Margaret Chen's giving changed?"
+   },
+   "donor": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen",
+    "intent": "changed",
+    "lapsed": false
+   },
+   "readAs": "Margaret Chen · this year against last",
+   "sentence": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year.",
+   "sentenceSource": "template",
+   "template": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "up",
+     "label": "More so far this year than by this date last year",
+     "cents": 4000000,
+     "count": 3,
+     "measure": "sum",
+     "definition": "Their gifts this year so far.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "part": "up"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 1500000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "changed",
+       "user": "u_b72demo",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_12",
+     "name": "Margaret Chen",
+     "cents": 1500000,
+     "reason": "Last gave $15,000 two months ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_12",
+      "name": "Margaret Chen",
+      "label": "Call about an ask of $15,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $15,000",
+     "items": [
+      {
+       "donorId": "d_b72_12",
+       "name": "Margaret Chen",
+       "label": "Ask for $15,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_12"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_12",
+        "name": "Margaret Chen",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What should I ask Margaret for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What's the next step with Margaret?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Margaret given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 21,
+  "q": "what's the next step with Flavia Pentreath?",
+  "expect": [
+   "person",
+   "d_b72_44",
+   "next"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what's the next step with Flavia Pentreath?"
+   },
+   "donor": {
+    "id": "d_b72_44",
+    "name": "Flavia Pentreath"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_44",
+    "name": "Flavia Pentreath",
+    "intent": "next",
+    "lapsed": false
+   },
+   "readAs": "Flavia Pentreath · the next step",
+   "sentence": "Nothing is planned with Flavia Pentreath, and no conversation with them is logged. Steward suggests asking for $2,500.",
+   "sentenceSource": "template",
+   "template": "Nothing is planned with Flavia Pentreath, and no conversation with them is logged. Steward suggests asking for $2,500.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "down",
+     "label": "Less so far this year than by this date last year",
+     "cents": 226300,
+     "count": 2,
+     "measure": "sum",
+     "definition": "Their gifts last year up to today's date; this year so far they gave $1,699.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_44",
+       "intent": "next",
+       "user": "u_b72demo",
+       "part": "down"
+      }
+     }
+    },
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 169900,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_44",
+       "intent": "next",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_44",
+     "name": "Flavia Pentreath",
+     "cents": 169900,
+     "reason": "Last gave $1,699 in July 2026."
+    }
+   ],
+   "cantSee": "No conversation with Flavia is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_44",
+      "name": "Flavia Pentreath",
+      "label": "Call about an ask of $2,500",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $2,500",
+     "items": [
+      {
+       "donorId": "d_b72_44",
+       "name": "Flavia Pentreath",
+       "label": "Ask for $2,500",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_44"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_44",
+        "name": "Flavia Pentreath",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What should I ask Flavia for?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_44",
+      "intent": "ask"
+     }
+    },
+    {
+     "text": "What has Flavia given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_44",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 22,
+  "q": "what can I do to get Margaret Chen to give more?",
+  "expect": [
+   "person",
+   "d_b72_12",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what can I do to get Margaret Chen to give more?"
+   },
+   "donor": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_12",
+    "name": "Margaret Chen",
+    "intent": "ask",
+    "lapsed": false
+   },
+   "readAs": "Margaret Chen · what to ask for",
+   "sentence": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000.",
+   "sentenceSource": "template",
+   "template": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 1500000,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_12",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_12",
+     "name": "Margaret Chen",
+     "cents": 1500000,
+     "reason": "Last gave $15,000 two months ago."
+    }
+   ],
+   "cantSee": null,
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_12",
+      "name": "Margaret Chen",
+      "label": "Call about an ask of $15,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $15,000",
+     "items": [
+      {
+       "donorId": "d_b72_12",
+       "name": "Margaret Chen",
+       "label": "Ask for $15,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_12"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_12",
+        "name": "Margaret Chen",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Margaret?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Margaret given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_12",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 23,
+  "q": "why did Bartholomew Nobody stop giving?",
+  "expect": [
+   "none"
+  ],
+  "answer": {
+   "answered": false,
+   "refused": true,
+   "kind": "answer",
+   "sentence": "Steward has no one named Bartholomew Nobody on file.",
+   "question": {
+    "text": "why did Bartholomew Nobody stop giving?"
+   },
+   "followUps": [
+    {
+     "text": "Why did Spring Appeal 2026 come in where it did?",
+     "go": {
+      "via": "why",
+      "key": "appeal",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "Why are these donors drifting?",
+     "go": {
+      "via": "why",
+      "key": "lapse"
+     }
+    },
+    {
+     "text": "Why did retention change this year?",
+     "go": {
+      "via": "why",
+      "key": "retention"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 24,
+  "q": "what should I ask her for?",
+  "expect": [
+   "refuse"
+  ],
+  "answer": {
+   "answered": false,
+   "refused": true,
+   "kind": "answer",
+   "sentence": "Steward can't answer \"should ask her\" yet. We've noted the question.",
+   "question": {
+    "text": "what should I ask her for?"
+   },
+   "followUps": [
+    {
+     "text": "Why did Spring Appeal 2026 come in where it did?",
+     "go": {
+      "via": "why",
+      "key": "appeal",
+      "campaign": "camp_b72demo_spring"
+     }
+    },
+    {
+     "text": "Why are these donors drifting?",
+     "go": {
+      "via": "why",
+      "key": "lapse"
+     }
+    },
+    {
+     "text": "Why did retention change this year?",
+     "go": {
+      "via": "why",
+      "key": "retention"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "n": 25,
+  "q": "what should I ask Alaric for?",
+  "expect": [
+   "person",
+   "d_b72_32",
+   "ask"
+  ],
+  "answer": {
+   "answered": true,
+   "question": {
+    "key": "person",
+    "text": "what should I ask Alaric for?"
+   },
+   "donor": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite"
+   },
+   "campaign": null,
+   "compare": null,
+   "person": {
+    "id": "d_b72_32",
+    "name": "Alaric Applewhite",
+    "intent": "ask",
+    "lapsed": false
+   },
+   "readAs": "Alaric Applewhite · what to ask for",
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000.",
+   "sentenceSource": "template",
+   "template": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000.",
+   "aiOff": false,
+   "reasons": [
+    {
+     "key": "thanks",
+     "label": "No thank-you on the last gift",
+     "cents": 4493800,
+     "count": 1,
+     "measure": "count",
+     "definition": "Their most recent gift, which has no thank-you marked.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "thanks"
+      }
+     }
+    },
+    {
+     "key": "hours",
+     "label": "Volunteered 17 hours",
+     "cents": 0,
+     "count": 14,
+     "measure": "count",
+     "definition": "Each volunteer shift on their record.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "hours"
+      }
+     }
+    },
+    {
+     "key": "room",
+     "label": "Some room to give",
+     "cents": 0,
+     "count": 1,
+     "measure": "count",
+     "definition": "What their own file (and a screening file, for those who may see it) shows about room to give more.",
+     "source": {
+      "key": "why",
+      "params": {
+       "q": "person",
+       "donor": "d_b72_32",
+       "intent": "ask",
+       "user": "u_b72demo",
+       "part": "room"
+      }
+     }
+    }
+   ],
+   "who": [
+    {
+     "donorId": "d_b72_32",
+     "name": "Alaric Applewhite",
+     "cents": 4493800,
+     "reason": "Last gave $44,938 in October 2025."
+    }
+   ],
+   "cantSee": "No conversation with Alaric is logged, so this is from their gifts alone.",
+   "step": {
+    "kind": "plan",
+    "label": "Plan a call",
+    "items": [
+     {
+      "donorId": "d_b72_32",
+      "name": "Alaric Applewhite",
+      "label": "Call about an ask of $50,000",
+      "ownerId": "u_b72demo"
+     }
+    ],
+    "dueIn": 1,
+    "due": "2026-10-06"
+   },
+   "alsoSteps": [
+    {
+     "kind": "plan",
+     "label": "Set the ask at $50,000",
+     "items": [
+      {
+       "donorId": "d_b72_32",
+       "name": "Alaric Applewhite",
+       "label": "Ask for $50,000",
+       "ownerId": "u_b72demo"
+      }
+     ],
+     "dueIn": 14,
+     "due": "2026-10-19"
+    },
+    {
+     "kind": "journey",
+     "preset": "major_donor",
+     "label": "Start the Major donor journey",
+     "donorIds": [
+      "d_b72_32"
+     ],
+     "fallback": {
+      "kind": "plan",
+      "items": [
+       {
+        "donorId": "d_b72_32",
+        "name": "Alaric Applewhite",
+        "label": "Call",
+        "ownerId": "u_b72demo"
+       }
+      ],
+      "dueIn": 7,
+      "due": "2026-10-12"
+     },
+     "due": "2026-10-12"
+    }
+   ],
+   "followUps": [
+    {
+     "text": "What's the next step with Alaric?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "next"
+     }
+    },
+    {
+     "text": "What has Alaric given to?",
+     "go": {
+      "via": "person",
+      "donor": "d_b72_32",
+      "intent": "given"
+     }
+    }
+   ]
+  }
+ }
+]

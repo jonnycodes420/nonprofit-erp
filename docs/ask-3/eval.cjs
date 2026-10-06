@@ -136,6 +136,10 @@ async function truthFor(c, id, today) {
   st.forEach(s => { if (s.due) for (const p of s.due.split("-")) add(p); for (const t of String(s.next_step_label || "").match(/\d+/g) || []) add(t); });
   const sub = (await c.query(`SELECT amount FROM recurring_subscriptions WHERE org_id=$1 AND donor_id=$2`, [ORG, id])).rows;
   sub.forEach(s => add(s.amount));
+  const vs = (await c.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(hours),0)::numeric AS h FROM volunteer_shifts WHERE org_id=$1 AND person_id=$2`, [ORG, id])).rows[0];
+  add(vs.n); add(vs.h);
+  const ev = (await c.query(`SELECT COUNT(*)::int AS n FROM event_attendees WHERE org_id=$1 AND donor_id=$2`, [ORG, id])).rows[0];
+  add(ev.n);
   const it = (await c.query(`SELECT LEFT(date,10) AS date FROM interactions WHERE org_id=$1 AND donor_id=$2`, [ORG, id])).rows;
   it.forEach(x => { for (const p of x.date.split("-")) add(p); });
   return nums;

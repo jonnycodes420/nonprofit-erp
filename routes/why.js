@@ -75,10 +75,15 @@ async function writeSentence(orgId, questionText, a, Sx) {
   if (!gate.ok) return { sentence: template, source: "template", template, aiOff: gate.reason === "ai_disabled" };
   const facts = sentenceFacts(a);
   try {
+    // ASK-3: one sentence needs no thinking. With the model's default thinking
+    // on, the 200 tokens went to thinking and the sentence came back cut off
+    // mid-word ("…strong room to give and") or empty. A reply that did not
+    // finish is never shown.
     const out = await anthropicFor(orgId).messages.create({
-      model: AGENT_MODEL, max_tokens: 200,
+      model: AGENT_MODEL, max_tokens: 300, thinking: { type: "disabled" },
       messages: [{ role: "user", content: Sx.sentencePrompt(questionText, facts) }],
     });
+    if (out.stop_reason && out.stop_reason !== "end_turn") return { sentence: template, source: "template", template, aiOff: false, refused: "unfinished" };
     const text = (out.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
     const G = await guide();
     // ASK-3: complete, plain, about the donor's world, and every number Steward's own.

@@ -1,0 +1,435 @@
+{
+ "rows": [
+  {
+   "n": 1,
+   "q": "How much did we raise in September?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $157,020 in September 2026."
+  },
+  {
+   "n": 2,
+   "q": "How much have we raised this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $1,521,602.59 in 2026 so far."
+  },
+  {
+   "n": 3,
+   "q": "This year vs last year by fund",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $1,521,602.59 in 2026 so far, up 18% on 2025 to the same day ($1,285,159). Gala Reserve leads with $1,452,907.59."
+  },
+  {
+   "n": 4,
+   "q": "How did the gala do?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Harbor Lights Gala 2026 brought in $110,550."
+  },
+  {
+   "n": 5,
+   "q": "How many gifts did we get last month?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You received 157 gifts in September 2026."
+  },
+  {
+   "n": 6,
+   "q": "What's our average gift this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "The average gift in 2026 so far was $1,073.82."
+  },
+  {
+   "n": 7,
+   "q": "What was our largest gift this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "The largest gift in 2026 so far was $42,111, from Octavian Cobbleworth."
+  },
+  {
+   "n": 8,
+   "q": "How much did we raise last quarter?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $411,899 in Q3 2026."
+  },
+  {
+   "n": 9,
+   "q": "How much came in for the Scholarship Fund this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $63,050 to Scholarship Fund in 2026 so far."
+  },
+  {
+   "n": 10,
+   "q": "What's our median gift this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "The median gift in 2026 so far was $148."
+  },
+  {
+   "n": 11,
+   "q": "How much did we raise this fiscal year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $436,915.03 this fiscal year (from July 2026)."
+  },
+  {
+   "n": 12,
+   "q": "Giving by month this year",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $1,521,602.59 in 2026 so far."
+  },
+  {
+   "n": 13,
+   "q": "Who are my top 20 donors this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Your top 20 donors in 2026 so far gave $633,145 between them; Octavian Cobbleworth gave the most."
+  },
+  {
+   "n": 14,
+   "q": "Who gave over $500 but hasn't been thanked?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "266 people match."
+  },
+  {
+   "n": 15,
+   "q": "How many donors gave this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "698 people gave in 2026 so far."
+  },
+  {
+   "n": 16,
+   "q": "Who are our donors in Marblehead?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "149 people match."
+  },
+  {
+   "n": 17,
+   "q": "Which donors gave more than $10,000 this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "21 people match."
+  },
+  {
+   "n": 18,
+   "q": "Show me donors who gave last year but not this year",
+   "before": "wrong",
+   "after": "right",
+   "answer": "248 people match."
+  },
+  {
+   "n": 19,
+   "q": "How many new donors did we get this year?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "173 people gave for the first time in 2026 so far."
+  },
+  {
+   "n": 20,
+   "q": "Who gave for the first time this month?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "4 people gave for the first time in October 2026; Rufus Ulverston gave the most."
+  },
+  {
+   "n": 21,
+   "q": "What's our retention rate?",
+   "before": "right",
+   "after": "right",
+   "answer": "Retention is 68%: of everyone who gave last calendar year, that share has given again this one."
+  },
+  {
+   "n": 22,
+   "q": "How many first-time donors gave again?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "Of the 236 people whose first gift was last calendar year, 120 have given again this year, 51%."
+  },
+  {
+   "n": 23,
+   "q": "What's our first-year retention?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "Of the 236 people whose first gift was last calendar year, 120 have given again this year, 51%."
+  },
+  {
+   "n": 24,
+   "q": "How many donors lapsed this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "269 people are tagged Lapsed today."
+  },
+  {
+   "n": 25,
+   "q": "Why is retention down this year?",
+   "before": "right",
+   "after": "right",
+   "answer": "Retention fell from 71% to 68% this year, with 248 of 773 donors not returning, concentrated among one-time donors, 248 of 704 not back (65%"
+  },
+  {
+   "n": 26,
+   "q": "How many lapsed donors came back this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "180 people came back in 2026 so far after twelve months or more with no gift."
+  },
+  {
+   "n": 27,
+   "q": "How is the Year-end 2026 campaign doing against its goal?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "Year-end 2026 has raised $13,682 of its $60,000 goal, 23%."
+  },
+  {
+   "n": 28,
+   "q": "Why did Spring Appeal 2026 come in where it did?",
+   "before": "right",
+   "after": "right",
+   "answer": "Spring Appeal 2026 raised $13,200 against $24,850 last year, down $11,650, mainly because 11 of last year's donors haven't given yet, worth "
+  },
+  {
+   "n": 29,
+   "q": "How much did Spring Appeal 2026 raise compared with Spring Appeal 2025?",
+   "before": "right",
+   "after": "right",
+   "answer": "Spring Appeal 2026 raised $13,200 compared with $24,850 for Spring Appeal 2025, a decrease of $11,650, and 11 of last year's donors haven't "
+  },
+  {
+   "n": 30,
+   "q": "How much did the Harbor Lights Gala 2026 bring in?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Harbor Lights Gala 2026 brought in $110,550."
+  },
+  {
+   "n": 31,
+   "q": "How many people gave to the Annual Fund this year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "657 people gave to Annual Fund 2026 in 2026 so far."
+  },
+  {
+   "n": 32,
+   "q": "Which campaign raised the most this year?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "You raised $1,521,602.59 in 2026 so far. Annual Fund 2026 leads with $1,365,840.04."
+  },
+  {
+   "n": 33,
+   "q": "How many monthly donors do we have and what's that a month?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "72 people give monthly, bringing in $3,610 a month."
+  },
+  {
+   "n": 34,
+   "q": "How much do we get in recurring gifts each month?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Monthly gifts bring in $3,610 a month."
+  },
+  {
+   "n": 35,
+   "q": "Who are our monthly donors in Salem?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "10 people match."
+  },
+  {
+   "n": 36,
+   "q": "How much is pledged and still outstanding?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "$6,000 is pledged and not yet paid."
+  },
+  {
+   "n": 37,
+   "q": "How many volunteer hours this quarter?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "Volunteers gave 0 hours in Q4 2026."
+  },
+  {
+   "n": 38,
+   "q": "How many volunteer hours this year?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "Volunteers gave 301 hours in 2026 so far."
+  },
+  {
+   "n": 39,
+   "q": "Which volunteers should we ask to give?",
+   "before": "right",
+   "after": "right",
+   "answer": "Ten volunteers have served and never given, served in the last 30 days, and have never been asked, so start with Dev Okonjo, who has volunte"
+  },
+  {
+   "n": 40,
+   "q": "How many active volunteers do we have?",
+   "before": "wrong",
+   "after": "right",
+   "answer": "You have 25 active volunteers."
+  },
+  {
+   "n": 41,
+   "q": "Who should I call tomorrow?",
+   "before": "right",
+   "after": "right",
+   "answer": "Call five donors tomorrow representing $106,118 at stake, starting with Alaric Applewhite, who gave $44,938 in October last year and nothing"
+  },
+  {
+   "n": 42,
+   "q": "Why did last year's appeal underperform?",
+   "before": "right",
+   "after": "right",
+   "answer": "Spring Appeal 2026 raised $13,200 against $24,850 last year, a $11,650 shortfall, mainly because 11 of last year's donors haven't given yet,"
+  },
+  {
+   "n": 43,
+   "q": "Who is about to lapse, and why?",
+   "before": "right",
+   "after": "right",
+   "answer": "49 donors are past their own usual gap between gifts, with $35,306 of usual gifts between them; Wilhelmina Elmsworth has gone longest."
+  },
+  {
+   "n": 44,
+   "q": "Which first-time donors need a second ask?",
+   "before": "right",
+   "after": "right",
+   "answer": "35 first-time donors from the last 90 days have no second gift and no thank-you call, $9,326.93 in first gifts; Rufus Ollerenshaw gave the m"
+  },
+  {
+   "n": 45,
+   "q": "Who could give more?",
+   "before": "right",
+   "after": "right",
+   "answer": "Of 283 donors with room to give, 31 show strong capacity totaling $122,651.00 and 252 show some capacity totaling $1,047,850.68, with Henrie"
+  },
+  {
+   "n": 46,
+   "q": "Why are donors leaving?",
+   "before": "right",
+   "after": "right",
+   "answer": "Retention slipped from 71% to 68%, with 248 donors lost from 773 last year, concentrated among one-time donors, where 248 of 704 did not ret"
+  },
+  {
+   "n": 47,
+   "q": "Which major donors haven't been asked and what should I ask them?",
+   "before": "right",
+   "after": "wrong",
+   "answer": "24 people match."
+  },
+  {
+   "n": 48,
+   "q": "Who should I thank this week?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "1,117 people match."
+  },
+  {
+   "n": 49,
+   "q": "Why did Margaret Chen stop giving?",
+   "before": "right",
+   "after": "right",
+   "answer": "Margaret Chen gave $15,000 two months ago and received no thank-you for that gift, and she was asked for $25,000, more than she had ever giv"
+  },
+  {
+   "n": 50,
+   "q": "What should I do about the donors who stopped giving?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Focus re-engagement on one-time donors, where 248 of 704 did not return, keeping 65% against 69% a year ago, since they account for the larg"
+  },
+  {
+   "n": 51,
+   "q": "How much did we raise in September? → and last year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $147,634.75 in September 2025."
+  },
+  {
+   "n": 52,
+   "q": "Who are my top 20 donors this year? → just the ones in Marblehead",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "Your top 20 donors in 2026 so far gave $193,966 between them; Ansel Pendlebury gave the most."
+  },
+  {
+   "n": 53,
+   "q": "How many monthly donors do we have? → who are they?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "72 people give monthly; Casper Merripen is first on the list."
+  },
+  {
+   "n": 54,
+   "q": "How much did we raise this year? → only monthly donors",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $34,557.87 from monthly donors in 2026 so far."
+  },
+  {
+   "n": 55,
+   "q": "How much did we raise this year? → by fund",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $1,521,602.59 in 2026 so far. Gala Reserve leads with $1,452,907.59."
+  },
+  {
+   "n": 56,
+   "q": "How many donors gave this year? → compared with last year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "698 people gave in 2026 so far, up 15% on 2025 to the same day (607)."
+  },
+  {
+   "n": 57,
+   "q": "How much did the Scholarship Fund raise this year? → and last year?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "You raised $12,150 to Scholarship Fund in 2025."
+  },
+  {
+   "n": 58,
+   "q": "How many new donors did we get this year? → who are they?",
+   "before": "can't answer",
+   "after": "right",
+   "answer": "173 people gave for the first time in 2026 so far; Halyard & Pike Architects gave the most."
+  },
+  {
+   "n": 59,
+   "q": "Break giving down by donor age",
+   "before": "wrong",
+   "after": "refused (correct)",
+   "answer": "Steward can't answer breaking giving down by donor age yet. We've noted the question."
+  },
+  {
+   "n": 60,
+   "q": "What's the weather going to do to the gala turnout?",
+   "before": "refused (correct)",
+   "after": "refused (correct)",
+   "answer": "Steward can't answer the weather yet. We've noted the question."
+  }
+ ],
+ "before": {
+  "can't answer": 35,
+  "wrong": 11,
+  "right": 13,
+  "refused (correct)": 1
+ },
+ "after": {
+  "right": 57,
+  "wrong": 1,
+  "refused (correct)": 2
+ }
+}

@@ -1,0 +1,235 @@
+{
+ "tally": {
+  "wrong": 1,
+  "refused": 20,
+  "right": 3,
+  "broken": 1
+ },
+ "rows": [
+  {
+   "n": 1,
+   "q": "what can I do to get Flavia to give more",
+   "expect": "person d_b72_44 ask",
+   "verdict": "wrong",
+   "why": "about Henrietta Blackmoor, Beatrix Nettlefold",
+   "source": "template",
+   "sentence": "283 people show room to give more, 31 of them strong; start with Henrietta Blackmoor."
+  },
+  {
+   "n": 2,
+   "q": "and Margaret?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"no prior context for what is being asked about Margaret\" yet. We've noted the question."
+  },
+  {
+   "n": 3,
+   "q": "what's the next step with her?",
+   "expect": "person d_b72_12 next",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"no donor identified (\"her\"); next step / recommended action not available\" yet. We've noted the question."
+  },
+  {
+   "n": 4,
+   "q": "why did her giving change?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"who \"her\" is isn't identified; reasons/causes for a change can't be explained\" yet. We've noted the question."
+  },
+  {
+   "n": 5,
+   "q": "what should I ask Zebulon Quatermaine for?",
+   "expect": "none",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"recommended ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 6,
+   "q": "what should I ask them for?",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"suggested ask amount per donor\" yet. We've noted the question."
+  },
+  {
+   "n": 7,
+   "q": "why did Nerissa stop giving?",
+   "expect": "person d_b72_38 stopped",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer that one yet. We've noted it."
+  },
+  {
+   "n": 8,
+   "q": "what about Leopold?",
+   "expect": "person d_b72_39 stopped",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"vague follow-up: unclear what is being asked about Leopold\" yet. We've noted the question."
+  },
+  {
+   "n": 9,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_39 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"which donor \"him\" refers to; recommending an ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 10,
+   "q": "the top five",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"\"the top five\" is ambiguous — no subject, measure, period, or result limit speci\" yet. We've noted the question."
+  },
+  {
+   "n": 11,
+   "q": "what should I ask Persis for?",
+   "expect": "person d_b72_41 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"recommending a suggested ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 12,
+   "q": "why did Alaric Applewhite stop giving?",
+   "expect": "person d_b72_32 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Alaric Applewhite's last gift of $44,938 in October 2025 received no thank-you, and no contact has ever been logged with him."
+  },
+  {
+   "n": 13,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"which donor \"he\" is; suggesting a recommended ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 14,
+   "q": "what's the next step with him?",
+   "expect": "person d_b72_32 next",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"asks for a recommended next step for an unidentified individual donor; no person\" yet. We've noted the question."
+  },
+  {
+   "n": 15,
+   "q": "what has he given to?",
+   "expect": "given d_b72_32",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"which donor \"he\" refers to is not identified\" yet. We've noted the question."
+  },
+  {
+   "n": 16,
+   "q": "why did Ondine Cinderhalt stop giving?",
+   "expect": "person d_b72_1076 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago. On their record, their recurring card failed two months ago."
+  },
+  {
+   "n": 17,
+   "q": "and what should I ask her for?",
+   "expect": "person d_b72_1076 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"suggesting an ask amount for a specific donor; no donor identified\" yet. We've noted the question."
+  },
+  {
+   "n": 18,
+   "q": "what should I ask Persis for?",
+   "expect": "choose",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"recommending an ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 19,
+   "q": "what should I ask Flavia for?",
+   "expect": "choose",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"recommending a specific ask amount\" yet. We've noted the question."
+  },
+  {
+   "n": 20,
+   "q": "how has Margaret Chen's giving changed?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"no per-donor gift history view\" yet. We've noted the question."
+  },
+  {
+   "n": 21,
+   "q": "what's the next step with Flavia Pentreath?",
+   "expect": "person d_b72_44 next",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"next step / recommended action for this donor\" yet. We've noted the question."
+  },
+  {
+   "n": 22,
+   "q": "what can I do to get Margaret Chen to give more?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "broken",
+   "why": "sentence fails the plain-sentence check",
+   "source": "ai",
+   "sentence": "The facts here cover 283 donors, with 31 showing strong room to give and 252 showing some room, but they include no information about"
+  },
+  {
+   "n": 23,
+   "q": "why did Bartholomew Nobody stop giving?",
+   "expect": "none",
+   "verdict": "refused",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer that one yet. We've noted it."
+  },
+  {
+   "n": 24,
+   "q": "what should I ask her for?",
+   "expect": "refuse",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"suggesting an ask amount for a specific unidentified donor\" yet. We've noted the question."
+  },
+  {
+   "n": 25,
+   "q": "what should I ask Alaric for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "refused",
+   "why": "answer",
+   "source": null,
+   "sentence": "Steward can't answer \"recommending a suggested ask amount\" yet. We've noted the question."
+  }
+ ]
+}

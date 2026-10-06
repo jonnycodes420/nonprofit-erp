@@ -1,0 +1,232 @@
+{
+ "tally": {
+  "right": 25
+ },
+ "rows": [
+  {
+   "n": 1,
+   "q": "what can I do to get Flavia to give more",
+   "expect": "person d_b72_44 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Since Flavia gave $1,000 to Spring Appeal 2025 but nothing yet to Spring Appeal 2026, and her $1,699 July 2026 gift was never thanked, Dana Reyes could thank her and then invite a $2,500 gift."
+  },
+  {
+   "n": 2,
+   "q": "and Margaret?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Margaret Chen has given $187,500 across 13 gifts since 2016, including $15,000 two months ago, and with $40,000 this year against $14,750 last year, ask her for $15,000 over coffee tomorrow, noting her last gift went unthanked."
+  },
+  {
+   "n": 3,
+   "q": "what's the next step with her?",
+   "expect": "person d_b72_12 next",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Dana Reyes meets Margaret for coffee tomorrow, October 6, and should bring Lily's class schedule, thank her for the $15,000 gift two months ago that has not been acknowledged, and consider a $15,000 ask."
+  },
+  {
+   "n": 4,
+   "q": "why did her giving change?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year."
+  },
+  {
+   "n": 5,
+   "q": "what should I ask Zebulon Quatermaine for?",
+   "expect": "none",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has no one named Zebulon Quatermaine on file."
+  },
+  {
+   "n": 6,
+   "q": "what should I ask them for?",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500."
+  },
+  {
+   "n": 7,
+   "q": "why did Nerissa stop giving?",
+   "expect": "person d_b72_38 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Nerissa Ashenhurst gave $1,048 in March 2026 and did not receive a thank-you for that gift."
+  },
+  {
+   "n": 8,
+   "q": "what about Leopold?",
+   "expect": "person d_b72_39 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Leopold Frostwick gave $3,209 in March 2026, and that gift never received a thank-you."
+  },
+  {
+   "n": 9,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_39 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ask Leopold Frostwick for $5,000 to the Spring Appeal 2026, since he gave $2,000 to the Spring Appeal 2025 and nothing yet this year, and thank him for his $3,209 in March 2026 first."
+  },
+  {
+   "n": 10,
+   "q": "the top five",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500."
+  },
+  {
+   "n": 11,
+   "q": "what should I ask Persis for?",
+   "expect": "person d_b72_41 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ask Persis for $5,000, noting her $2,795 three weeks ago and her $1,200 to Spring Appeal 2025 with nothing yet toward Spring Appeal 2026, and thank her for that last gift first."
+  },
+  {
+   "n": 12,
+   "q": "why did Alaric Applewhite stop giving?",
+   "expect": "person d_b72_32 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Alaric Applewhite's last gift of $44,938 in October 2025 received no thank-you, and no contact has ever been logged with him."
+  },
+  {
+   "n": 13,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ask Alaric Applewhite for $50,000, building on his $44,938 in October 2025 and his three gifts totaling $134,791 since 2023, and be sure to thank him for that last gift and his 17 volunteer hours."
+  },
+  {
+   "n": 14,
+   "q": "what's the next step with him?",
+   "expect": "person d_b72_32 next",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Dana Reyes should thank Alaric Applewhite for his $44,938 gift in October 2025, which was never acknowledged, recognize his 17 volunteer hours, and then invite a $50,000 gift given his three gifts totaling $134,791 since 2023."
+  },
+  {
+   "n": 15,
+   "q": "what has he given to?",
+   "expect": "given d_b72_32",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Alaric Applewhite gave $134,791 in all. Annual Fund 2023 leads with $45,093."
+  },
+  {
+   "n": 16,
+   "q": "why did Ondine Cinderhalt stop giving?",
+   "expect": "person d_b72_1076 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago, and our records show one failed card payment of $150, one gift of $150 with no thank-you sent, and no contact ever logged."
+  },
+  {
+   "n": 17,
+   "q": "and what should I ask her for?",
+   "expect": "person d_b72_1076 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ask Ondine for $150, matching her last gift of $150 two months ago to the Annual Fund 2026, and note that gift has no thank-you on record and a card payment failed."
+  },
+  {
+   "n": 18,
+   "q": "what should I ask Persis for?",
+   "expect": "choose",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has 17 people named Persis; here are the six who gave most recently. Which one do you mean?"
+  },
+  {
+   "n": 19,
+   "q": "what should I ask Flavia for?",
+   "expect": "choose",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has 17 people named Flavia; here are the six who gave most recently. Which one do you mean?"
+  },
+  {
+   "n": 20,
+   "q": "how has Margaret Chen's giving changed?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Margaret Chen has given $40,000 across three gifts so far this year, compared with $14,750 by this date last year, including $15,000 two months ago, which has not yet been acknowledged with a thank-you."
+  },
+  {
+   "n": 21,
+   "q": "what's the next step with Flavia Pentreath?",
+   "expect": "person d_b72_44 next",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Dana Reyes should thank Flavia Pentreath for her $1,699 gift in July 2026, which remains unacknowledged, then invite a $2,500 ask since her five gifts total $6,477 and this year trails the $2,263 given by this date last year."
+  },
+  {
+   "n": 22,
+   "q": "what can I do to get Margaret Chen to give more?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Over coffee tomorrow, thank Margaret for her $15,000 two months ago, which was never acknowledged, share Lily's class schedule, and ask for $15,000, noting she has given $40,000 this year since her first gift in 2016."
+  },
+  {
+   "n": 23,
+   "q": "why did Bartholomew Nobody stop giving?",
+   "expect": "none",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has no one named Bartholomew Nobody on file."
+  },
+  {
+   "n": 24,
+   "q": "what should I ask her for?",
+   "expect": "refuse",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"suggesting an ask amount for a specific unnamed donor; no donor identified\" yet. We've noted the question."
+  },
+  {
+   "n": 25,
+   "q": "what should I ask Alaric for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "ai",
+   "sentence": "Ask Alaric for $50,000, building on his $44,938 in October 2025 and three lifetime gifts totaling $134,791, while noting his 17 volunteer hours and that his last gift still has no thank-you."
+  }
+ ]
+}
