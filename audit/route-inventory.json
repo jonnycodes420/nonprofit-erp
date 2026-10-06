@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-06T21:27:02.742Z",
- "count": 1074,
+ "generatedAt": "2026-10-06T21:58:19.060Z",
+ "count": 1078,
  "routes": [
   {
    "method": "POST",
@@ -23263,6 +23263,86 @@
    ],
    "frontend": {
     "probe": "/org/users",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/grant-overview",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/grant-overview",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/org/grant-goal",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/org/grant-goal",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/grants/:id/plan-renewal",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/grants/:id/renewal/undo",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 4,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/grants",
     "referenced": true
    }
   },

@@ -99,6 +99,7 @@ const SURFACES = [
   "components/FunderPanel.jsx",    // BUILD-100 (grants) Part 7 — the funder on an organisation's record
   "components/RestrictedView.jsx", // BUILD-100 (grants) Part 7 — Finance → Restricted
   "components/GrantImport.jsx",    // BUILD-100 (grants) Part 7 — Import grants
+  "components/GrantOverview.jsx",  // GRANTS-1 — Grants → Reports (every number a <Figure>, also in FIGURE_SOURCE_SCOPE)
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather
@@ -171,6 +172,7 @@ const OUT_OF_SCOPE = {
 const FIGURE_SOURCE_SCOPE = [
   "components/Dashboards.jsx",      // Board, Fundraising, People, Recurring (FIX-2 A)
   "components/CampaignsList.jsx",   // FIX-27 Part 1 — the Campaigns list and every campaign page
+  "components/GrantOverview.jsx",   // GRANTS-1 — Grants → Reports: pipeline, awarded against goal, win rate, what is due
 ];
 // The component and the panel themselves: they are where a figure's number
 // and its rows' total are drawn, so the patterns below find numbers in them by
