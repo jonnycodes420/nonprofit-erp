@@ -263,15 +263,24 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
 // wrote nothing, and the panel says so.
 function readPanel({ read, wide, onNavigate, onClose }) {
   const go = (tab, opts) => onNavigate && onNavigate(tab, opts);
-  const eyebrow = read.kind === "explain" ? "Read · what it means" : read.kind === "person" || read.kind === "people" ? "Read · found" : "Read · a report";
+  const eyebrow = read.kind === "explain" ? "Read · what it means" : read.kind === "person" || read.kind === "people" || read.kind === "list" ? "Read · found" : "Read · a report";
   return (
     <section data-testid="agent-read" data-kind={read.kind} style={{ ...PANEL, padding: wide ? "26px 28px" : "18px 16px", minWidth: 0 }}>
       <div style={EYEBROW}>{eyebrow}</div>
       <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 8px", overflowWrap: "anywhere" }}>
-        {read.kind === "person" ? read.name : read.kind === "people" ? "More than one record matches" : read.name}
+        {read.kind === "person" ? read.name : read.kind === "people" ? "More than one record matches" : read.kind === "list" ? read.title : read.name}
       </h2>
       {read.answer && <p style={{ fontSize: 16, lineHeight: 1.5, margin: "0 0 8px", color: T.ink }}>{read.answer}</p>}
       <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: "0 0 8px", color: T.ink2 }}>{read.sentence}</p>
+      {read.kind === "list" && (read.people || []).length > 0 && (
+        <div data-testid="agent-read-list" style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
+          {read.people.map(p => (
+            <DonorLink key={p.id} id={p.id} onOpen={() => go("donors", { selectDonorId: p.id })}
+              style={{ ...OUTLINE_BTN, textAlign: "left", fontWeight: 600, borderWidth: 1 }}>{p.name}</DonorLink>
+          ))}
+          {read.more > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>and {read.more.toLocaleString("en-US")} more</div>}
+        </div>
+      )}
       {read.kind === "people" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
           {(read.people || []).map(p => (

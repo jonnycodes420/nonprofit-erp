@@ -220,11 +220,16 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
 // (groups.js), and the people are the Donors list's own rows for that filter.
 // The model never writes the filter's SQL and never sees anyone else.
 const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan)\b\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
+// AI-FIX: the words with "Steward," (or "Hey Steward") taken off the front.
+function agentUnaddressed(text) { return String(text || "").replace(/^\s*(hey |hi |ok |okay )?steward\s*[,:!-]?\s*/i, ""); }
 async function agentFindPeople(orgId, text, today, { client = null } = {}) {
   const SM = await import("../shared/showMe.js");
   const GR = require("../groups");
-  const who = String(text || "").replace(AGENT_ACTION_LEAD, "").replace(/[,;]?\s*(due|by|within|in the next)\b.*$/i, "").trim();
-  if (!who || who === String(text || "").trim()) return null;
+  // AI-FIX: "Steward, find donors…" is addressed to Steward; the name is not the ask.
+  const said = agentUnaddressed(text);
+  const FIND_LEAD = /^\s*(please\s+)?(find|show( me)?|list|pull up|look up|who are)\b\s*(me\s+)?(all\s+)?(the\s+)?/i;
+  const who = said.replace(AGENT_ACTION_LEAD, "").replace(FIND_LEAD, "").replace(/[,;]?\s*(due|by|within|in the next)\b.*$/i, "").trim();
+  if (!who || who === said.trim()) return null;
   const [events, campaigns] = await Promise.all([
     query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
     query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
@@ -234,7 +239,10 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
   // The model's form is asked only when her words name something the people
   // rows cannot show (a campaign, an event, an ask); every other instruction
   // is planned exactly as before.
-  if ((spec.unsupported || !Object.keys(spec.rules).length) && client && /\b(appeal|campaign|drive|gala|event|asked|ask this year|no ask)\b/i.test(who)) {
+  // AI-FIX: the model's form whenever the templates could not read every word
+  // (it used to be asked only for a campaign, an event or an ask, so "in North
+  // Carolina" fell through to a planner that had no states to look at).
+  if ((spec.unsupported || !Object.keys(spec.rules).length) && client) {
     try {
       const out = await client.messages.create({ model: AGENT_MODEL, max_tokens: 600, tools: [SM.specTool()],
         tool_choice: { type: "tool", name: "filter_spec" }, messages: [{ role: "user", content: SM.specPrompt(who, ctx) }] });
@@ -971,6 +979,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     // AGENT-2: DO THE THING, OR SAY IT CANNOT BE DONE.
     "- Do what she asked with the tool that does it. NEVER put a note, a tag or a task in place of an action a tool above can do.",
     "- If no tool can do part of what she asked, leave that part out and say so in `cannot`, in one plain sentence. Do not invent a substitute.",
+    "- Write `cannot` about her donors and her work. Never mention rows, data, columns, lists or what you were shown.",
     "- The people listed are the people she meant. Never create a task or note asking which person she meant.",
     "- A conversation she says already happened is log_conversation with its date (today is " + today + "; yesterday is " + orgTime.addDays(today, -1) + "). Anything still to do is set_next_step with a due date.",
     "- Use an id only from the lists below (people, STAFF, GROUPS, HOUSEHOLDS, JOURNEYS, SHIFTS, EVENTS, GIFTS). `citesRows` holds the person's id, and the gift id for a gift step.",
@@ -1570,7 +1579,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     sentence: "That is not one of the records that name matches. Pick one from the list." });
 
   const giftNews = kind === A.KIND_TASK && A.isGiftNews(text) && !!A.parseAmountCents(text);
-  const read = kind === A.KIND_TASK && !giftNews ? A.readIntent(text) : null;
+  const read = kind === A.KIND_TASK && !giftNews ? A.readIntent(agentUnaddressed(text)) : null;
   // FIX-3 B — MORE THAN ONE ADA: ASK WHICH, BEFORE ANY PLAN. The walk's plan
   // carried a task "Confirm which Ada"; the question belongs before the plan,
   // and asking it writes nothing. A read ("find ada") lists them itself.
@@ -1610,6 +1619,22 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     // without the drafting switch, and they WRITE NOTHING: no instruction row,
     // no run, no audit. The answer says so.
     if (read) {
+      // AI-FIX: "find donors in North Carolina I haven't reached out to" is a
+      // filtered list, answered from the donor list's own filters and read-only.
+      if (read.kind === "find" && !(named.scope && named.scope.length)) {
+        const g = await agentGate(req.user.orgId);
+        const today = orgToday(await orgTz(req.user.orgId));
+        const found = await agentFindPeople(req.user.orgId, text, today, { client: g.ok ? anthropicFor(req.user.orgId) : null });
+        if (found) {
+          const n = found.ids.length > 1000 ? 1000 : found.ids.length;
+          const people = n ? await agentReadPeople(req.user.orgId, { ids: found.ids.slice(0, 12) }) : [];
+          return res.json({ read: { kind: "list", count: n, words: found.words,
+            title: n === 0 ? "Nobody matches" : n === 1 ? "One person matches" : `${found.ids.length > 1000 ? "More than 1,000" : n.toLocaleString("en-US")} people match`,
+            sentence: n === 0 ? `Nobody on file matches (${found.words.join(" · ")}).` : found.words.join(" · "),
+            people: people.map(p => ({ id: p.id, name: p.name })), more: found.ids.length > 1000 ? 0 : Math.max(0, n - people.length),
+            note: "Steward read this and wrote nothing. To act on them, say what to do, for example \"plan a call to each of them\"." } });
+        }
+      }
       const answer = await agentAnswerRead(A, req.user.orgId, read, named);
       if (answer) return res.json({ read: answer });
     }
@@ -1663,6 +1688,10 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     // AGENT-2: find and count are reads with no executor: as a step they ran
     // as "Done · 0". They are left out, and an instruction that is only a
     // question is told so rather than given a plan that does nothing.
+    // AI-FIX: a "cannot" that talks about Steward's insides ("the rows in front
+    // of me") is not shown; she gets a plain sentence instead.
+    if (built.cannot && /\b(rows?|in front of me|data ?set|the data|columns?|fields?|json|records? (shown|provided|given)|i was (shown|given))\b/i.test(built.cannot))
+      built.cannot = "Steward can't do that part yet. Try naming who you mean, for example by state, city or when they last gave.";
     const runnable = built.steps.filter(x => !["find_people", "count"].includes(x.tool));
     const readOnly = built.steps.length - runnable.length;
     plan = A.compilePlan(runnable, { people: built.people, reads: readNames, withheld: built.withheld,

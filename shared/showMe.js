@@ -20,6 +20,8 @@
 //
 // House style for the words: no colons, no em dashes.
 
+import { US_STATES, stateCode } from "./usStates.js";
+
 export const SHOW_KEYS = [
   "role", "level", "lifecycle", "retained", "given", "volunteer", "volActive", "household",
   "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "notDeceased", "monthly", "city", "gaveEvent", "gaveOver",
@@ -27,6 +29,8 @@ export const SHOW_KEYS = [
   "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk",
   // ASK-2: a gift not yet thanked.
   "unthankedOver",
+  // AI-FIX: the state on their address; nobody in touch since a date.
+  "state", "noContactSince",
 ];
 export const CANT_FILTER = "Steward can't filter by that yet";
 
@@ -59,7 +63,12 @@ function yearRange(y) { return [ymd(y, 1, 1), ymd(y, 12, 31)]; }
 const FILLER = new Set(("show me list find pull up give get all our the a an of who whom that which have has had " +
   "and but or with to at for in on from were was are is be been who've who'd they them their people donors donor " +
   "everyone everybody anyone givers giver supporters supporter members member someone ones any please also just " +
-  "did do does yet so far still which what my i we been").split(" "));
+  "did do does yet so far still which what my i we been steward hey").split(" "));
+// AI-FIX: "a while" is six months, and the words say the date it means.
+const SPAN_DAYS = { "a while": 180, "awhile": 180, "a long time": 365, "ages": 365, "a year": 365, "this year": null };
+const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+function minusDays(ymdStr, n) { const d = new Date(ymdStr + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() - n); return d.toISOString().slice(0, 10); }
+const STATE_NAMES = Object.values(US_STATES).map(n => n.toLowerCase()).sort((a, b) => b.length - a.length);
 
 // ── AI OFF: THE TEMPLATES ─────────────────────────────────────────────────
 // ctx: { today: "YYYY-MM-DD" (the org's), events: [{ id, name, date }] }
@@ -70,6 +79,25 @@ export function templateSpec(text, ctx = {}) {
   const yearOf = w => (w === "this year" ? thisYear : w === "last year" ? thisYear - 1 : Number(w));
   const take = (re, fn) => { s = s.replace(re, (...m) => { fn(...m); return " "; }); };
   const YEAR = "(this year|last year|(?:19|20)\\d{2})";
+
+  // AI-FIX · NOBODY IN TOUCH: "donors I haven't reached out to in a while",
+  // "haven't been contacted in six months", "no contact this year".
+  const today = String(ctx.today || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const sinceFor = (span, n, unit) => {
+    if (span && span in SPAN_DAYS) return SPAN_DAYS[span] == null ? `${today.slice(0, 4)}-01-01` : minusDays(today, SPAN_DAYS[span]);
+    const k = Number(n) || NUM_WORDS[n] || 0; const per = /^day/.test(unit) ? 1 : /^week/.test(unit) ? 7 : /^month/.test(unit) ? 30 : 365;
+    return k ? minusDays(today, k * per) : null;
+  };
+  take(/\b(?:that |who |whom )?(?:(?:i|we|nobody|no one|anyone) )?(?:haven't|have not|hasn't|has not|didn't|did not|not|never)(?: yet| been)? (?:reached out to|reached out|reached|contacted|called|talked to|talked with|spoken to|spoken with|been in touch with|in touch with|heard from|connected with|followed up with)(?: them| him| her)?(?: (?:in|for|since|over))? (?:the )?(?:last |past )?(a while|awhile|a long time|ages|a year|this year|(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (days?|weeks?|months?|years?))\b/g,
+    (m, span, n, unit) => { const d = sinceFor(span && !n ? span : null, n, unit); if (d) rules.noContactSince = d; });
+  take(/\bno (?:contact|outreach|calls?|conversations?)(?: logged)?(?: (?:in|for|since))? (?:the )?(?:last |past )?(a while|awhile|a long time|ages|a year|this year|(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (days?|weeks?|months?|years?))\b/g,
+    (m, span, n, unit) => { const d = sinceFor(span && !n ? span : null, n, unit); if (d) rules.noContactSince = d; });
+  // AI-FIX · A STATE: "in North Carolina", "in the state of Maine", "in NC"
+  // (a two-letter code only as she typed it, in capitals, so "in me" is not Maine).
+  const raw = norm(text);
+  for (const m of raw.matchAll(/\b(?:in|from) ([A-Z]{2})\b/g)) if (US_STATES[m[1]]) { rules.state = m[1]; s = s.replace(new RegExp(`\\b(?:in|from) ${m[1].toLowerCase()}\\b`), " "); }
+  take(new RegExp(`\\b(?:who )?(?:live |living |based |are |is )?(?:in|from) (?:the )?(?:state of )?(${STATE_NAMES.join("|")})\\b`, "g"),
+    (m, name) => { rules.state = stateCode(name); });
 
   // FIX-27 · NO ASK THIS YEAR, and "what should I ask them" (the list then
   // carries each person's suggested ask; it is not a filter).
@@ -202,6 +230,8 @@ const KEY_HELP = {
   notGaveCampaign: "the id of one of the org's campaigns listed below: has NOT given to that campaign",
   notGaveCampaignYear: "YYYY: only gifts to notGaveCampaign dated in this calendar year (only with notGaveCampaign)",
   noAsk: "1: no ask this year (no proposal open, and nothing asked of them in the last twelve months)",
+  state: "a US state's two-letter postal code (NC for North Carolina): the state on their address",
+  noContactSince: "YYYY-MM-DD: nobody has logged a call, meeting, email or stewardship with them on or after this date ('a while' is six months before today)",
 };
 export function specTool() {
   const props = {};
@@ -233,6 +263,8 @@ export function readToolSpec(content) {
     if (v === null || v === undefined || v === "") continue;
     rules[k] = String(v);
   }
+  // A state the model wrote out ("North Carolina") is filed by its code.
+  if (rules.state) { const c = stateCode(rules.state); if (c) rules.state = c; }
   return { rules, unsupported, withAsk };
 }
 
@@ -287,11 +319,17 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.noAsk) w.push("no ask this year");
   if (rules.unthankedOver !== undefined) w.push(Number(rules.unthankedOver) > 0 ? `a gift over $${Number(rules.unthankedOver).toLocaleString("en-US")} not yet thanked` : "a gift not yet thanked");
   if (rules.city) w.push(`in ${rules.city}`);
+  if (rules.state) w.push(`in ${US_STATES[rules.state] || rules.state}`);
+  if (rules.noContactSince) w.push(`no contact logged since ${dayWords(rules.noContactSince)}`);
   if (rules.household) w.push(rules.household === "none" ? "not in a household" : "in a household");
   if (rules.notDeceased) w.push("not deceased");
   return w.map((x, i) => (i === 0 ? cap(x) : x));
 }
 
+function dayWords(d) {
+  const M = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? `${M[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}, ${d.slice(0, 4)}` : String(d);
+}
 const WORDS = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"];
 export function listSentence(count) {
   const n = count < 10 ? WORDS[count] : Number(count).toLocaleString("en-US");
