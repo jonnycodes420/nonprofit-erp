@@ -270,6 +270,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   // renders it, with her own name in it and the real footer where the
   // renderer left its slot. A copy the send would refuse is refused here too.
   let blocksHtml = null;
+  let testSubject = campaign.subject || campaign.name || "";
   if (emailCompose.hasBlocks(campaign)) {
     const ctx = await emailCompose.orgRenderContext(orgId);
     const r = await emailCompose.render(ctx, {
@@ -278,6 +279,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
       mode: "send" });
     if (r.problems.length) return res.status(400).json({ error: "email_not_ready", message: emailCompose.refusalSentence(r.problems), problems: r.problems });
     blocksHtml = emailCompose.withFooter(r, await unsubscribeEmailFooterHtml(to, orgId, "campaign") + testNote, "");
+    testSubject = await emailCompose.subjectFor(campaign.subject, emailCompose.sampleFields(ctx, { name: me?.name || "", email: to }));
   }
   const html = blocksHtml || await brandEmailHeaderHtml(orgId)
     + T.renderMergeFields(campaign.body || "", {
@@ -292,7 +294,7 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
     try {
       const { error } = await resend.emails.send({
         from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
-        to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        to, subject: `[Test] ${testSubject}`,
         _stewardOrgId: orgId, _stewardKind: "campaign_test",   // MAIL-1: waits for onboarding like the campaign
         html: blocksHtml ? html : T.renderMergeFields(html, { first_name: first }),
       });

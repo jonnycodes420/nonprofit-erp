@@ -4915,6 +4915,7 @@ async function runCampaignSend(campaign, org, donors) {
         const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" alt="" style="display:none">`;
         const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
         let htmlFull;
+        let personSubject = campaign.subject || "";
         if (fromBlocks) {
           // The header block IS the header: no brand band on top. The footer
           // goes where the renderer left its slot, once, and a copy with a
@@ -4924,6 +4925,7 @@ async function runCampaignSend(campaign, org, donors) {
           const r = await emailCompose.render(renderCtx, {
             blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
           htmlFull = r.problems.length ? null : emailCompose.withFooter(r, footer, pixel);
+          personSubject = await emailCompose.subjectFor(campaign.subject, fields);
           if (!htmlFull) {
             failCount++;
             await run("UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
@@ -4959,7 +4961,7 @@ async function runCampaignSend(campaign, org, donors) {
               // cannot disagree about which domain is in force.
               ...(await donorSendOpts(org.id, donor.email, "campaign")),
               to: donor.email,
-              subject: campaign.subject || "",
+              subject: personSubject,
               html: htmlFull,
             });
             if (sendError) throw new Error(sendError.message);

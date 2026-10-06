@@ -139,9 +139,10 @@ async function personFields(ctx, donor, { campaignName = "" } = {}) {
       [donor.id, ctx.orgId]).catch(() => []);
   }
   return {
-    first_name: firstName || "friend",
+    // Empty means "use the renderer's own fallback" ("friend", "your gift").
+    first_name: firstName,
     last_name: lastName,
-    last_gift_amount: last ? formatMoney(last.amount) : "your last gift",
+    last_gift_amount: last ? formatMoney(last.amount) : "",
     last_gift_date: last ? formatDate(last.date) : "",
     campaign: campaignName || "",
     give_link: giveLink(ctx, donor ? { email: donor.email, firstName, lastName } : null),
@@ -167,7 +168,8 @@ function sampleFields(ctx, { name, email, campaignName = "" } = {}) {
 // The renderer's problems that stop a send. The contract returns strings; a
 // renderer that marks some as advisory ({ message, blocking: false }) is
 // honoured, and anything else blocks, because an email with a hole in it is
-// not one to send to four thousand people.
+// not one to send to four thousand people. (renderEmail itself throws in mode
+// "send" when it has any problem; render() below turns that into this list.)
 function blockingProblems(problems) {
   return (Array.isArray(problems) ? problems : [])
     .filter(p => !(p && typeof p === "object" && p.blocking === false))
@@ -176,15 +178,39 @@ function blockingProblems(problems) {
 
 async function render(ctx, { blocks, subject, preheader, fields, mode = "send" }) {
   const B = await blocksMod();
-  const out = B.renderEmail({
-    blocks: toArray(blocks), brand: ctx.brand, fields, preheader: preheader || "",
-    subject: subject || "", links: ctx.links, mode,
-  });
+  let out;
+  try {
+    out = B.renderEmail({
+      blocks: toArray(blocks), brand: ctx.brand, fields, preheader: preheader || "",
+      subject: subject || "", links: ctx.links, mode,
+    });
+  } catch (e) {
+    // In mode "send" the renderer THROWS on any problem (code EMAIL_NOT_READY)
+    // so there is no html to send by mistake. Said here as problems.
+    if (e && e.code === "EMAIL_NOT_READY") {
+      const problems = blockingProblems(e.problems);
+      return { html: "", text: "", images: [], problems: problems.length ? problems : ["The email is not ready."], slot: B.FOOTER_SLOT };
+    }
+    throw e;
+  }
   const html = String((out && out.html) || "");
   const slots = html.split(B.FOOTER_SLOT).length - 1;
   const problems = blockingProblems(out && out.problems);
   if (mode === "send" && slots !== 1) problems.push("The email has no place for the unsubscribe footer, so it cannot be sent.");
   return { html, text: String((out && out.text) || ""), images: (out && out.images) || [], problems, slot: B.FOOTER_SLOT };
+}
+
+// The subject line, filled the way the renderer fills the body: a known field
+// takes the person's value or the renderer's own fallback, never braces.
+async function subjectFor(subject, fields) {
+  const B = await blocksMod();
+  const defs = new Map((B.EMAIL_MERGE_FIELDS || []).map(f => [f.key, f]));
+  return String(subject || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (m, k) => {
+    const key = k === "first" ? "first_name" : k === "org" ? "org_name" : k;
+    const v = fields && fields[key];
+    if (v != null && String(v).trim() !== "") return String(v);
+    return defs.has(key) ? defs.get(key).fallback : m;
+  });
 }
 
 // The send's HTML: the footer goes where the renderer left its slot, exactly
@@ -231,11 +257,10 @@ async function templateTextFor(orgId, template, donor, { campaignName = "" } = {
   const ctx = await orgRenderContext(orgId);
   const fields = await personFields(ctx, donor, { campaignName });
   const r = await render(ctx, { blocks: template.blocks, subject: template.subject, preheader: template.preheader, fields, mode: "preview" });
-  const fill = s => String(s || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (m, k) => (fields[k] != null ? String(fields[k]) : m));
-  return { subject: fill(template.subject), body: r.text.replace(/\n{3,}/g, "\n\n").trim(), problems: r.problems };
+  return { subject: await subjectFor(template.subject, fields), body: r.text.replace(/\n{3,}/g, "\n\n").trim(), problems: r.problems };
 }
 
 module.exports = {
   configure, blocksMod, hasBlocks, orgRenderContext, personFields, sampleFields, giveLink,
-  render, withFooter, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray,
+  render, withFooter, subjectFor, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray,
 };
