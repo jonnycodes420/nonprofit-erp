@@ -3965,7 +3965,9 @@ app.use(require("./routes/grantSystem").routers.r0);   // GRANTS-1 funders, pipe
 app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, documents, reports, drafting
 app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
 app.use(require("./routes/grantReports").routers.r0);
-app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets  // GRANTS-1 the grants reports
+app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
+app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
+app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -10795,6 +10797,11 @@ require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
 require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
+// EMAIL-1: the media library and email templates share the grant modules'
+// context plus the mail seams they render and test-send through.
+const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage };
+require("./routes/media").mount(EMAIL1_CTX);
+require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

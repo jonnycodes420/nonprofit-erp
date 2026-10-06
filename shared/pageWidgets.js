@@ -16,20 +16,23 @@
 // there is exactly one of it. A second builder for giving pages would be two
 // places to keep a widget, which is the problem this module just solved.
 
-export const SURFACES = ["portal", "give"];
+// EMAIL-1: email is the third surface. The blocks a page and an email share
+// are the same widgets (same keys, same fields, same editor options); the few
+// only an email needs are listed below with surfaces ["email"].
+export const SURFACES = ["portal", "give", "email"];
 
 // `full` = spans both grid tracks on a wide screen (the old FULL_WIDTH_WIDGETS).
 // `defaults` = what the editor inserts. Both were separate literals before.
 export const WIDGETS = [
-  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give"], full: true,
-    defaults: { heading: "", sub: "", image: null, size: "standard" } },
-  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give"], full: true,
+  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give", "email"], full: true,
+    defaults: { heading: "", sub: "", image: null, alt: "", size: "standard" } },
+  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give", "email"], full: true,
     defaults: { blocks: [{ type: "p", text: "Write something in your own words." }] } },
-  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give"], full: false,
-    defaults: { image: null, caption: "" } },
+  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give", "email"], full: false,
+    defaults: { image: null, alt: "", caption: "" } },
   { key: "gallery",  label: "Gallery",          hint: "Up to 8 photos",              surfaces: ["portal", "give"], full: false,
     defaults: { images: [] } },
-  { key: "stats",    label: "Stats",            hint: "Your own numbers",            surfaces: ["portal", "give"], full: false,
+  { key: "stats",    label: "Stats",            hint: "Your own numbers",            surfaces: ["portal", "give", "email"], full: false,
     defaults: { items: [{ value: "", label: "" }] } },
   { key: "funds",    label: "Programs & funds", hint: "Cards from your real funds",  surfaces: ["portal", "give"], full: false,
     defaults: { heading: "Where you can give", fundIds: [] } },
@@ -37,14 +40,34 @@ export const WIDGETS = [
     defaults: { campaignId: "" } },
   { key: "impact",   label: "Impact feed",      hint: "Your impact updates",         surfaces: ["portal", "give"], full: false,
     defaults: { heading: "What your giving made possible" } },
-  { key: "quote",    label: "Quote",            hint: "A voice from your community", surfaces: ["portal", "give"], full: false,
+  { key: "quote",    label: "Quote",            hint: "A voice from your community", surfaces: ["portal", "give", "email"], full: false,
     defaults: { text: "", attribution: "" } },
   { key: "staff",    label: "People & contact", hint: "Faces + a way to reach you",  surfaces: ["portal", "give"], full: false,
     defaults: { members: [{ name: "", role: "", photo: null }], contactEmail: "" } },
   { key: "faq",      label: "FAQ",              hint: "Questions donors ask",        surfaces: ["portal", "give"], full: false,
     defaults: { items: [{ q: "", a: "" }] } },
-  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give"], full: true,
+  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give", "email"], full: true,
     defaults: { url: "", caption: "" } },
+
+  // ── EMAIL-1 · WHAT ONLY AN EMAIL NEEDS ───────────────────────────────────
+  // The header and footer are the org's brand and the MAIL-1 footer (address
+  // and unsubscribe), filled at render time, never typed. A video in email is
+  // its thumbnail with a play button, linking to the video's page, because no
+  // inbox plays video.
+  { key: "header",     label: "Header with logo", hint: "Your logo and name, from your brand", surfaces: ["email"], full: true,
+    defaults: {} },
+  { key: "photos2",    label: "Two photos",       hint: "Side by side",                surfaces: ["email"], full: true,
+    defaults: { images: [{ src: null, alt: "" }, { src: null, alt: "" }] } },
+  { key: "button",     label: "Button",           hint: "Give, RSVP, volunteer or read more", surfaces: ["email"], full: true,
+    defaults: { action: "give", label: "Give today", url: "" } },
+  { key: "event",      label: "Event card",       hint: "One of your events",          surfaces: ["email"], full: true,
+    defaults: { eventId: "" } },
+  { key: "givingpage", label: "Giving page card", hint: "One of your giving pages",    surfaces: ["email"], full: true,
+    defaults: { givingPageId: "" } },
+  { key: "signature",  label: "Signature",        hint: "A name, a title and a photo", surfaces: ["email"], full: true,
+    defaults: { name: "", title: "", photo: null } },
+  { key: "footer",     label: "Footer",           hint: "Your address and unsubscribe (always included)", surfaces: ["email"], full: true,
+    defaults: {} },
 
   // ── CAMPAIGN-2 · THE THREE A CAMPAIGN PAGE NEEDS ─────────────────────────
   // GIVE-ONLY, each for a reason the portal cannot satisfy: a countdown and a
