@@ -76,6 +76,7 @@ ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(grants), "Grants im
 const grantBoard = read("client/src/components/GrantBoard.jsx");
 ok(has(grantBoard, "stages: f.stages.includes(s.key) ? f.stages.filter(x => x !== s.key) : [...f.stages, s.key]"), "Grants pipeline stage chips toggle the filter");
 ok(has(grantBoard, "(!f.stages.length || f.stages.includes(g.status))"), "Grant list respects the stage filter");
+ok(has(grantBoard, 'data-record-link="grant"') && has(grantBoard, "onOpen={() => onOpenGrant(g.id)}"), "Grant names on the board and list open the grant (record links)");
 ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communications imports interactive");
 ok(has(comms, "onClick: () => setNav(\"campaigns\")"), "Comms 'Campaigns Sent' card → Campaigns subtab");
 ok(has(comms, 'interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}`'), "Comms 'Best Campaign' card → Campaigns subtab");
