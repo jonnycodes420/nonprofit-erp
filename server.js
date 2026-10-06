@@ -577,6 +577,9 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
 app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+// EMAIL-1: a photo added to the media library is a camera photo too
+// (routes/media.js PHOTO_MAX_BYTES, 15MB decoded). Move both or neither.
+app.use("/media/photos", express.json({ limit: "22mb" }));
 // CLEAN-1: a returned change-of-address file for a large file of people.
 app.use("/data-health/ncoa/results", express.json({ limit: "20mb" }));
 // PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.

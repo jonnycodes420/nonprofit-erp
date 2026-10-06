@@ -24,6 +24,19 @@ const routers = {
   r1: express.Router(),
 };
 
+// Allowlisted video providers, server-side ID parsing ONLY (§4). Module scope
+// and exported: the media library (routes/media.js) adds videos through it.
+function parseVideoRef(url) {
+  const s = String(url || "").trim().slice(0, 300);
+  let m = /^https?:\/\/(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=([A-Za-z0-9_-]{6,20})/.exec(s)
+    || /^https?:\/\/youtu\.be\/([A-Za-z0-9_-]{6,20})/.exec(s)
+    || /^https?:\/\/(?:www\.)?youtube\.com\/embed\/([A-Za-z0-9_-]{6,20})/.exec(s);
+  if (m) return { provider: "youtube", videoId: m[1] };
+  m = /^https?:\/\/(?:www\.)?vimeo\.com\/(\d{6,12})/.exec(s);
+  if (m) return { provider: "vimeo", videoId: m[1] };
+  return null;
+}
+
 function mount(ctx) {
 const {
   ASSET_ID_RE, CARD_CHECK_BUDGET, DONOR_ACCOUNTS_ENABLED, DONOR_MAIL_ADDR, GIVE_MONTHLY_DEFAULT,
@@ -6151,17 +6164,6 @@ async function pruneImpactAssets(orgId) {
   await pruneUnreferencedAssets(orgId, "impact", keep);
 }
 
-// Allowlisted video providers, server-side ID parsing ONLY (§4).
-function parseVideoRef(url) {
-  const s = String(url || "").trim().slice(0, 300);
-  let m = /^https?:\/\/(?:www\.)?youtube\.com\/watch\?(?:.*&)?v=([A-Za-z0-9_-]{6,20})/.exec(s)
-    || /^https?:\/\/youtu\.be\/([A-Za-z0-9_-]{6,20})/.exec(s)
-    || /^https?:\/\/(?:www\.)?youtube\.com\/embed\/([A-Za-z0-9_-]{6,20})/.exec(s);
-  if (m) return { provider: "youtube", videoId: m[1] };
-  m = /^https?:\/\/(?:www\.)?vimeo\.com\/(\d{6,12})/.exec(s);
-  if (m) return { provider: "vimeo", videoId: m[1] };
-  return null;
-}
 
 async function storeWidgetImage(orgId, v) {
   if (v == null || v === "") return { url: null };
@@ -6192,6 +6194,7 @@ async function validateWidget(raw, orgId) {
       case "hero":
         w.heading = wStr(raw.heading, 120); w.sub = wStr(raw.sub, 300);
         w.image = await img(raw.image);
+        w.alt = wStr(raw.alt, 300);                             // EMAIL-1: the photo's words, from the library or typed
         w.imageCrop = parseCrop(raw.imageCrop);                 // BUILD-65 Part 3 — non-destructive crop
         w.size = raw.size === "tall" ? "tall" : "standard";     // resize-where-sensible
         break;
@@ -6204,6 +6207,7 @@ async function validateWidget(raw, orgId) {
       case "image":
         w.image = await img(raw.image);
         if (!w.image) return { error: "The image widget needs an image." };
+        w.alt = wStr(raw.alt, 300);
         w.imageCrop = parseCrop(raw.imageCrop);                 // BUILD-65 Part 3 — non-destructive crop
         w.caption = wStr(raw.caption, 300);
         break;
@@ -6297,10 +6301,14 @@ async function validateWidgets(rawList, orgId) {
 // Every asset path a widget list references (BUILD-56: also the pointer-
 // history value for portal_pages — the paths, not the whole JSONB, so history
 // rows stay tiny while still recording which hashes were on the page).
+// EMAIL-1: an email block's photo may sit in `images` as { src, alt } (two
+// photos) or in `photo` (the signature), so both shapes are read here.
 function extractWidgetAssetPaths(list) {
   const out = [];
   for (const w of (Array.isArray(list) ? list : [])) {
-    for (const u of [w.image, ...(w.images || []), ...((w.members || []).map(m => m && m.photo))]) {
+    if (!w || typeof w !== "object") continue;
+    const imgs = (Array.isArray(w.images) ? w.images : []).map(u => (u && typeof u === "object" ? u.src : u));
+    for (const u of [w.image, w.photo, ...imgs, ...((w.members || []).map(m => m && m.photo))]) {
       if (/^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(u || ""))) out.push(u);
     }
   }
@@ -6319,6 +6327,8 @@ async function pruneWidgetAssets(orgId) {
   const rows = [
     ...await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [orgId]),
     ...await query(`SELECT draft, published FROM giving_pages WHERE org_id = ?`, [orgId]),
+    // EMAIL-1: a photo used only in an email template is still live.
+    ...(await query(`SELECT blocks FROM email_templates WHERE org_id = ?`, [orgId])).map(r => ({ draft: r.blocks, published: null })),
   ];
   const keep = rows
     .flatMap(r => [...extractWidgetAssetPaths(r.draft), ...extractWidgetAssetPaths(r.published)])
@@ -6529,10 +6539,23 @@ app.put("/portal-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   for (const [key, colBase, kind] of [["logoData", "logo", "logo"], ["headerImageData", "header_image", "header"]]) {
     const v = b[key];
     if (v === undefined) continue;
-    if (typeof v === "string" && (v.startsWith("/portal-assets/") || ASSET_ID_RE.test(v.replace("/portal-assets/", "")))) continue; // echo of the stored URL — keep
     // The pointer being replaced: the stored URL, or a legacy in-row base64
     // rescued into the store so the old bytes land in the retention window.
     let fromVal = curPtr?.[`${colBase}_url`] || null;
+    if (typeof v === "string" && (v.startsWith("/portal-assets/") || ASSET_ID_RE.test(v.replace("/portal-assets/", "")))) {
+      const path = v.startsWith("/portal-assets/") ? v : "/portal-assets/" + v;
+      if (path === fromVal) continue; // echo of the stored URL — keep
+      // EMAIL-1: Undo of a brand change puts the PREVIOUS logo back by its
+      // path. Only an asset this org already owns, of this kind; the old bytes
+      // sit in the retention window, so pointing at them again un-deletes them.
+      const [own] = await query(`SELECT id FROM portal_assets WHERE id = ? AND org_id = ? AND kind = ?`, [path.replace("/portal-assets/", ""), req.user.orgId, kind]);
+      if (!own) continue;
+      await run(`UPDATE portal_assets SET deleted_at = NULL WHERE id = ?`, [own.id]);
+      updates.push(`${colBase}_url = ?`); params.push(path);
+      updates.push(`${colBase}_data = ?`); params.push(null);
+      assetOps.push({ kind, keepId: own.id, entity: `portal_settings.${colBase}`, fromVal, toVal: path });
+      continue;
+    }
     if (!fromVal && curPtr?.[`${colBase}_data`]) fromVal = await rescueLegacyImageValue(req.user.orgId, kind, curPtr[`${colBase}_data`]);
     if (v == null || v === "") {
       updates.push(`${colBase}_data = ?`); params.push(null);
@@ -7526,4 +7549,4 @@ app.get("/network/application", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, parseVideoRef };
