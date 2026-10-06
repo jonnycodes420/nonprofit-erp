@@ -18,7 +18,7 @@ export function TemplateStart({ onPick, disabled }) {
     if (cache) return;
     let dead = false;
     apiFetch("/email-templates")
-      .then(r => { cache = Array.isArray(r) ? r : (Array.isArray(r?.templates) ? r.templates : []); if (!dead) setList(cache); })
+      .then(r => { cache = (Array.isArray(r) ? r : (Array.isArray(r?.templates) ? r.templates : [])).filter(x => !x.archived); if (!dead) setList(cache); })
       .catch(() => { if (!dead) setList([]); });
     return () => { dead = true; };
   }, []);

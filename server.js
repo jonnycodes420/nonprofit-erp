@@ -4868,7 +4868,7 @@ async function campaignAudience(campaign, orgId) {
 // sat in status='scheduled' forever and never sent.
 // EMAIL-1: the seam that renders a template for one person (emailCompose.js).
 const emailCompose = require("./emailCompose");
-emailCompose.configure({ resolveOrgBrandTheme, portalCardTheme, donorFacingOrgName, displayNameCase });
+emailCompose.configure({ displayNameCase });
 
 async function runCampaignSend(campaign, org, donors) {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
@@ -10826,7 +10826,8 @@ require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
-const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage };
+const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,
+  unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter };
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/groups").mount({

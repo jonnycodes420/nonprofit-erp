@@ -308,46 +308,6 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false });
 }));
 
-// ── EMAIL-1 · A CAMPAIGN FROM A TEMPLATE ──────────────────────────────────
-// The campaign keeps the template's BLOCKS, and each person's copy is rendered
-// from them at send time (runCampaignSend). `body` holds a preview rendering
-// so the older list views that read it still show the words. The same path
-// is `POST /campaigns/from-template` with `{ template }` for the campaign-page
-// starters in routes/give.js; this one answers only `{ templateId }`.
-async function templatePreviewHtml(orgId, t, campaignName) {
-  const ctx = await emailCompose.orgRenderContext(orgId);
-  const fields = {
-    first_name: "{{first_name}}", last_name: "{{last_name}}", last_gift_amount: "{{gift_amount}}",
-    last_gift_date: "", campaign: campaignName || "", give_link: emailCompose.giveLink(ctx, null), org_name: ctx.orgName,
-  };
-  const r = await emailCompose.render(ctx, { blocks: t.blocks, subject: t.subject, preheader: t.preheader, fields, mode: "preview" });
-  return r.html.split(r.slot).join("");
-}
-
-app.post("/campaigns/from-template", requireAuth, checkWriteAccess, wrap(async (req, res, next) => {
-  if (!req.body || !req.body.templateId) return next();   // routes/give.js: the campaign-page starters
-  const orgId = req.user.orgId;
-  const t = await emailCompose.templateFor(orgId, req.body.templateId);
-  if (!t) return res.status(404).json({ error: "template_not_found", message: "That template is not one of yours." });
-  const name = String(req.body.name || t.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
-  if (!name) return res.status(400).json({ error: "Name required" });
-  let body = "";
-  try { body = await templatePreviewHtml(orgId, t, name); }
-  catch (e) { console.error("[campaigns] template preview:", e.message); }
-  const id = "cmp_" + uuid().slice(0, 8);
-  await run(
-    `INSERT INTO campaigns (id,org_id,name,type,subject,preheader,body,email_blocks,template_id,status,segment,
-                            recipient_count,open_count,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?::jsonb,?,'draft',?,0,0,?,?)`,
-    [id, orgId, name, "appeal", t.subject || "", t.preheader || "", body,
-     JSON.stringify(emailCompose.toArray(t.blocks)), t.id, JSON.stringify({ mode: "all" }),
-     actor(req).id, actor(req).name]);
-  req.audit.entity("campaign", id, name);
-  req.audit.action(`started a campaign from the template ${t.name}`);
-  const [row] = await query("SELECT * FROM campaigns WHERE id=?", [id]);
-  res.status(201).json({ ...row, sentence: `${name} is a draft, from the template ${t.name}. Nothing has been sent.` });
-}));
-
 // ── EMAIL-1 · WAITING FOR APPROVAL ────────────────────────────────────────
 // Somebody writes a campaign and asks an admin to approve it. While it waits
 // its status is `awaiting_approval`, which the scheduler never picks up (it

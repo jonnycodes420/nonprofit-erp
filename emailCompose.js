@@ -6,8 +6,8 @@
 // a journey step's draft and the review queue's "Start from a template" all
 // fill a template the same way:
 //
-//   brand   the org's one brand (resolveOrgBrandTheme + portalCardTheme),
-//           read at render time, never stored on the template
+//   brand   the org's one brand, read at render time by buildEmailContext
+//           (routes/emailTemplates.js), never stored on the template
 //   fields  first_name, last_name, last_gift_amount, last_gift_date,
 //           campaign, give_link, org_name
 //   links   the public video page, the org's events and giving pages
@@ -27,7 +27,7 @@ const { publicAppUrl } = require("./publicUrl");
 
 // Server functions this module needs but cannot require (they live in
 // server.js). server.js calls configure() once at boot.
-const deps = { resolveOrgBrandTheme: null, portalCardTheme: null, donorFacingOrgName: null, displayNameCase: null };
+const deps = { displayNameCase: null };
 function configure(d) { Object.assign(deps, d || {}); }
 
 let _blocks = null;
@@ -46,61 +46,22 @@ const toArray = v => {
 function hasBlocks(campaign) { return toArray(campaign && campaign.email_blocks).length > 0; }
 
 // ── THE ORG HALF, read once per send ───────────────────────────────────────
+// The brand and links come from routes/emailTemplates.js buildEmailContext,
+// the same context the template editor's preview and test use, so what a
+// person previews is what each donor gets.
 async function orgRenderContext(orgId) {
-  const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
-  const theme = deps.resolveOrgBrandTheme ? await deps.resolveOrgBrandTheme(orgId).catch(() => null) : null;
-  const [ps] = await query(
-    `SELECT primary_color, accent_color, button_color, background_tint, type_pairing, card_style
-       FROM portal_settings WHERE org_id=?`, [orgId]).catch(() => []);
-  const card = deps.portalCardTheme ? deps.portalCardTheme(ps || {}) : {};
-  const orgName = deps.donorFacingOrgName
-    ? await deps.donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "")
-    : ((org && org.name) || "");
-  const brand = {
-    band: (theme && theme.band) || card.primary,
-    bandFg: (theme && theme.bandFg) || card.primaryFg,
-    accent: (theme && theme.accent) || card.accent,
-    accentFg: (theme && theme.accentFg) || card.accentFg,
-    buttonColor: card.buttonColor || (theme && theme.band),
-    buttonFg: card.buttonFg || (theme && theme.bandFg),
-    typePairing: card.typePairing || "dm",
-    logoUrl: (theme && (theme.logoAbsUrl || theme.logoDataUri)) || null,
-    displayName: (theme && theme.displayName) || orgName,
-  };
+  const ectx = await require("./routes/emailTemplates").buildEmailContext(orgId);
   const base = publicAppUrl();
-  const slug = (org && org.org_slug) || "";
-  // The renderer's link lookups are synchronous, so the org's rows are read
-  // here once: only events with a public page and active giving pages.
-  const events = await query(
-    `SELECT id, name, date, public_slug FROM events
-      WHERE org_id=? AND public_slug IS NOT NULL AND public_slug <> ''`, [orgId]).catch(() => []);
-  const pages = await query(
-    `SELECT id, slug, title, image_url FROM giving_pages WHERE org_id=? AND status='active'`, [orgId]).catch(() => []);
-  const evById = new Map(events.map(e => [e.id, e]));
-  const pgById = new Map(pages.map(p => [p.id, p]));
-  const abs = u => (!u ? null : /^https?:\/\//.test(u) ? u : base + (u.startsWith("/") ? "" : "/") + u);
-  const links = {
-    assetBase: base,
-    videoPage: (provider, videoId) =>
-      `${base}/watch/${encodeURIComponent(slug)}/${encodeURIComponent(String(provider || ""))}/${encodeURIComponent(String(videoId || ""))}`,
-    event: id => {
-      const e = evById.get(id);
-      if (!e) return null;
-      const date = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date || "").slice(0, 10);
-      return { name: e.name, date, url: `${base}/e/${encodeURIComponent(e.public_slug)}` };
-    },
-    givingPage: id => {
-      const p = pgById.get(id);
-      if (!p) return null;
-      return { title: p.title, url: `${base}/give/${encodeURIComponent(slug)}/${encodeURIComponent(p.slug)}`, image: abs(p.image_url) };
-    },
+  const m = /\/give\/([^/?#]+)$/.exec(ectx.giveLink || "");
+  return {
+    orgId, orgSlug: m ? decodeURIComponent(m[1]) : "", orgName: ectx.orgName,
+    brand: ectx.brand, links: ectx.links, base, giveBase: ectx.giveLink || "",
   };
-  return { orgId, orgSlug: slug, orgName, brand, links, base };
 }
 
 // ── THE PERSON HALF ────────────────────────────────────────────────────────
 function giveLink(ctx, person) {
-  const url = `${ctx.base}/give/${encodeURIComponent(ctx.orgSlug)}`;
+  const url = ctx.giveBase || `${ctx.base}/give/${encodeURIComponent(ctx.orgSlug)}`;
   if (!person) return url;
   const frag = new URLSearchParams();
   if (person.email) frag.set("email", String(person.email).trim());
@@ -260,7 +221,48 @@ async function templateTextFor(orgId, template, donor, { campaignName = "" } = {
   return { subject: await subjectFor(template.subject, fields), body: r.text.replace(/\n{3,}/g, "\n\n").trim(), problems: r.problems };
 }
 
+// ── A CAMPAIGN FROM A TEMPLATE ─────────────────────────────────────────────
+// The campaign keeps the template's BLOCKS, and each person's copy is rendered
+// from them at send time (runCampaignSend). `body` holds a preview rendering
+// so the older list views that read it still show the words. Reached through
+// the one route POST /campaigns/from-template (routes/give.js) when the body
+// carries `templateId`; `{ template }` there is the campaign-page starters.
+// A route registered twice on one path breaks the tenant matrix, so this is a
+// handler the one route calls, not a second registration.
+async function templatePreviewHtml(orgId, t, campaignName) {
+  const ctx = await orgRenderContext(orgId);
+  const fields = {
+    first_name: "{{first_name}}", last_name: "{{last_name}}", last_gift_amount: "{{gift_amount}}",
+    last_gift_date: "", campaign: campaignName || "", give_link: giveLink(ctx, null), org_name: ctx.orgName,
+  };
+  const r = await render(ctx, { blocks: t.blocks, subject: t.subject, preheader: t.preheader, fields, mode: "preview" });
+  return r.html.split(r.slot).join("");
+}
+
+async function campaignFromTemplate(req, res, { run, uuid, actor }) {
+  const orgId = req.user.orgId;
+  const t = await templateFor(orgId, req.body.templateId);
+  if (!t) return res.status(404).json({ error: "template_not_found", message: "That template is not one of yours." });
+  const name = String(req.body.name || t.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (!name) return res.status(400).json({ error: "Name required" });
+  let body = "";
+  try { body = await templatePreviewHtml(orgId, t, name); }
+  catch (e) { console.error("[campaigns] template preview:", e.message); }
+  const id = "cmp_" + uuid().slice(0, 8);
+  const who = actor(req);
+  await run(
+    `INSERT INTO campaigns (id,org_id,name,type,subject,preheader,body,email_blocks,template_id,status,segment,
+                            recipient_count,open_count,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?::jsonb,?,'draft',?,0,0,?,?)`,
+    [id, orgId, name, "appeal", t.subject || "", t.preheader || "", body,
+     JSON.stringify(toArray(t.blocks)), t.id, JSON.stringify({ mode: "all" }), who.id, who.name]);
+  if (req.audit) { req.audit.entity("campaign", id, name); req.audit.action(`started a campaign from the template ${t.name}`); }
+  const [row] = await query("SELECT * FROM campaigns WHERE id=?", [id]);
+  return res.status(201).json({ ...row, sentence: `${name} is a draft, from the template ${t.name}. Nothing has been sent.` });
+}
+
 module.exports = {
+  campaignFromTemplate,
   configure, blocksMod, hasBlocks, orgRenderContext, personFields, sampleFields, giveLink,
   render, withFooter, subjectFor, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray,
 };
