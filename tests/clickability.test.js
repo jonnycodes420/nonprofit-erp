@@ -72,9 +72,10 @@ ok(has(fin, "View ${m.label} transactions"), "Monthly breakdown rows drill to tr
 
 // ── Part 2: app-wide pass — Grants + Communications + Donors ────────────────
 ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(grants), "Grants imports interactive");
-ok(has(grants, "const [statusFilter,setStatusFilter]=useState(null)"), "Grants pipeline has a status filter");
-ok(has(grants, "interactive(()=>setStatusFilter(on?null:s)"), "Grants pipeline cards toggle the filter (interactive)");
-ok(has(grants, "data.grants.filter(g=>!statusFilter||g.status===statusFilter)"), "Grant list respects the pipeline-card filter");
+// GRANTS-1: the pipeline moved to GrantBoard.jsx; its stage chips filter the list.
+const grantBoard = read("client/src/components/GrantBoard.jsx");
+ok(has(grantBoard, "stages: f.stages.includes(s.key) ? f.stages.filter(x => x !== s.key) : [...f.stages, s.key]"), "Grants pipeline stage chips toggle the filter");
+ok(has(grantBoard, "(!f.stages.length || f.stages.includes(g.status))"), "Grant list respects the stage filter");
 ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communications imports interactive");
 ok(has(comms, "onClick: () => setNav(\"campaigns\")"), "Comms 'Campaigns Sent' card → Campaigns subtab");
 ok(has(comms, 'interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}`'), "Comms 'Best Campaign' card → Campaigns subtab");

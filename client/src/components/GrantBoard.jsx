@@ -11,6 +11,8 @@ import { apiFetch } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import { RecordLink } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 
 const money = c => "$" + Math.round((Number(c) || 0) / 100).toLocaleString("en-US");
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -73,12 +75,14 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
     <div key={g.id} data-testid="grant-card" draggable={!isReadOnly && !narrow}
       onDragStart={() => setDrag(g)} onDragEnd={() => { setDrag(null); setOver(""); }}
       style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 10px", cursor: isReadOnly ? "default" : "grab", opacity: drag && drag.id === g.id ? 0.45 : 1 }}>
-      <button type="button" onClick={() => onOpenGrant(g.id)} style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}>
-        <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{g.funderName}</div>
+      <div>
+        <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>
+          <RecordLink to={tabHref("grants", { grantId: g.id })} onOpen={() => onOpenGrant(g.id)} draggable={false} data-record-link="grant">{g.funderName}</RecordLink>
+        </div>
         {g.program && <div style={{ fontSize: 12, color: T.ink3, marginTop: 1 }}>{g.program}</div>}
         <div style={{ fontSize: 14, fontWeight: 800, color: T.greenDk, marginTop: 6 }}>{money(askCents(g))}</div>
         {g.nextDeadline && !["closed", "declined"].includes(g.status) && <div style={{ fontSize: 11.5, color: T.ink2, marginTop: 2 }}>{g.nextDeadlineLabel || "Due"} {day(g.nextDeadline)}</div>}
-      </button>
+      </div>
       {!isReadOnly && narrow && (
         <select aria-label={`Move ${g.funderName}`} value={g.status} onChange={e => tryMove(g, e.target.value)} style={{ ...inp, marginTop: 8, width: "100%", fontSize: 12.5 }} data-testid="grant-card-stage">
           {stages.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
@@ -142,7 +146,7 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
             </tr></thead>
             <tbody>{rows.map(g => (
               <tr key={g.id} style={{ borderTop: "1px solid " + T.bg3 }}>
-                <td style={{ padding: "9px 12px" }}><button type="button" onClick={() => onOpenGrant(g.id)} style={{ all: "unset", cursor: "pointer", fontWeight: 700, color: T.ink, textDecoration: "underline dotted" }}>{g.funderName}</button></td>
+                <td style={{ padding: "9px 12px", fontWeight: 700 }}><RecordLink to={tabHref("grants", { grantId: g.id })} onOpen={() => onOpenGrant(g.id)}>{g.funderName}</RecordLink></td>
                 <td style={{ padding: "9px 12px", color: T.ink2 }}>{g.program}</td>
                 <td style={{ padding: "9px 12px" }}>{isReadOnly ? (stages.find(s => s.key === g.status) || {}).label
                   : <select aria-label={`Stage for ${g.funderName}`} value={g.status} onChange={e => tryMove(g, e.target.value)} style={{ ...inp, padding: "4px 8px", fontSize: 12.5 }}>
