@@ -44,7 +44,7 @@ const {
   // unsubscribe write. Both passed in rather than reimplemented.
   resolveSegmentSpec, filterBySegment, recordUnsubscribe,
   // INT-BUILD-1 — the mailbox and calendar syncs, and the token seam.
-  syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
+  syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
 } = ctx;
 let app = routers.r0;
 // FIX-1 E — the payout reconciliation and the money-in sentences (pure, ESM).
@@ -1665,6 +1665,37 @@ app.get("/calendar/items", requireAuth, wrap(async (req, res) => {
   const items = await CAL.calendarItems(orgId, { from, to, tz, userId: req.user.userId, scope: req.query.scope === "mine" ? "mine" : "everyone", staff, types });
   const staffList = isAdmin ? await query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY name`, [orgId]).catch(() => []) : [];
   res.json({ items, today: orgToday(tzRow), timezone: tz, timezoneConfirmed: !!tzRow.timezone_confirmed_at, types: CAL.TYPES, defaultOn: CAL.DEFAULT_ON, staff: staffList });
+}));
+
+// FIX-28 · HER STEWARD DATES ON HER OWN CALENDAR. Off until she turns it on.
+// GET says whether she can and whether it is on; PUT turns it on or off and
+// runs once straight away; POST /run brings her calendar up to date now.
+app.get("/calendar/push-dates", requireAuth, wrap(async (req, res) => {
+  const [conn] = await query(
+    `SELECT provider, push_dates FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
+        AND credentials_sealed IS NOT NULL ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
+  res.json({ connected: !!conn, provider: conn ? conn.provider : null, enabled: !!(conn && conn.push_dates) });
+}));
+app.put("/calendar/push-dates", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [conn] = await query(
+    `SELECT id, provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
+        AND credentials_sealed IS NOT NULL ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
+  if (!conn) return res.status(409).json({ error: "no_calendar", sentence: "Connect your calendar first. Settings, Connections, Email and calendar." });
+  const enabled = req.body?.enabled === true;
+  await run(`UPDATE mailbox_connections SET push_dates=? WHERE id=?`, [enabled, conn.id]);
+  const r = await pushStewardDates(req.user.userId, req.user.orgId, conn.provider).catch(() => ({ pushed: 0 }));
+  const where = conn.provider === "microsoft" ? "Outlook" : "Google";
+  res.json({ ok: true, enabled, pushed: r.pushed, sentence: enabled
+    ? `Your grant deadlines, next steps and journey steps for the next 60 days are on your ${where} calendar.`
+    : `Steward took its dates off your ${where} calendar.` });
+}));
+app.post("/calendar/push-dates/run", requireAuth, wrap(async (req, res) => {
+  const [conn] = await query(
+    `SELECT provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true AND push_dates=true
+      ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
+  if (!conn) return res.json({ ok: true, pushed: 0 });
+  const r = await pushStewardDates(req.user.userId, req.user.orgId, conn.provider).catch(() => ({ pushed: 0 }));
+  res.json({ ok: true, pushed: r.pushed });
 }));
 
 // An event's day and times, on their own: what a drag on the calendar

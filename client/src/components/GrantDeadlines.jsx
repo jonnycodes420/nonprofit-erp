@@ -14,6 +14,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { offerUndo } from "./EditHistory";
 import { deadlinesInWindow, HOME_WINDOW_DAYS } from "../../../shared/grantMilestones";
 import { grantDeadlineSentence } from "../../../shared/homeNote";
 
@@ -58,7 +59,10 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
   useEffect(() => { load(); }, []);
   const done = async m => {
     setMsg("");
-    try { await apiFetch(`/grants/milestones/${m.id}/done`, { method: "POST", body: "{}" }); load(); }
+    try {
+      await apiFetch(`/grants/milestones/${m.id}/done`, { method: "POST", body: "{}" }); load();
+      offerUndo({ message: `Marked ${m.kindLabel || "the deadline"} done.`, undoAction: async () => { const x = await apiFetch(`/grants/milestones/${m.id}/reopen`, { method: "POST", body: "{}" }); load(); return x; } }, "deadline");
+    }
     catch (e) { setMsg(errorMessage(e, "That deadline could not be marked done.")); }
   };
   const saveLead = async () => {
@@ -98,7 +102,7 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
 
       <section>
         <h3 style={{ margin: "0 0 4px", fontSize: 16, color: T.ink }}>Open deadlines</h3>
-        {!data.milestones.length && <div style={{ fontSize: 13, color: T.ink3 }}>No open deadlines. Add one from a grant, and Steward opens a follow-up when it comes close.</div>}
+        {!data.milestones.length && <div style={{ fontSize: 13, color: T.ink3 }}>No open deadlines. Add them from a grant, and Steward opens a follow-up when each comes close.</div>}
         {data.milestones.map(m => <MilestoneRow key={m.id} m={m} onDone={done} onOpenGrant={onOpenGrant} isReadOnly={isReadOnly} />)}
       </section>
 
@@ -122,53 +126,122 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
 }
 
 // ── On a grant ──────────────────────────────────────────────────────────────
+// FIX-28: any number of deadlines. Adding one leaves the form open for the
+// next; each can be edited, moved, marked done or taken off, and every one of
+// those offers Undo on the shared toast.
 export function GrantDeadlinesPanel({ grantId, isReadOnly }) {
   const [all, setAll] = useState(null);
+  const [doneList, setDoneList] = useState([]);
   const [types, setTypes] = useState([]);
   const [form, setForm] = useState(null);
+  const [edit, setEdit] = useState(null);
   const [msg, setMsg] = useState("");
-  const load = () => apiFetch("/grants/deadlines").then(d => { setAll((d.milestones || []).filter(m => m.grantId === grantId)); setTypes(d.milestoneTypes || []); })
-    .catch(e => { setAll([]); setMsg(errorMessage(e, "The deadlines could not be loaded.")); });
+  const load = () => apiFetch("/grants/deadlines").then(d => {
+    setAll((d.milestones || []).filter(m => m.grantId === grantId));
+    setDoneList((d.doneMilestones || []).filter(m => m.grantId === grantId));
+    setTypes(d.milestoneTypes || []);
+  }).catch(e => { setAll([]); setMsg(errorMessage(e, "The deadlines could not be loaded.")); });
   useEffect(() => { load(); }, [grantId]);
+  const post = (path, body) => apiFetch(path, { method: "POST", body: JSON.stringify(body || {}) });
+  const put = (id, body) => apiFetch(`/grants/milestones/${id}`, { method: "PUT", body: JSON.stringify(body) });
+  const nameOf = m => m.kindLabel || "Deadline";
   const add = async () => {
     setMsg("");
-    try { await apiFetch(`/grants/${grantId}/milestones`, { method: "POST", body: JSON.stringify(form) }); setForm(null); load(); }
-    catch (e) { setMsg(errorMessage(e, "That deadline did not save.")); }
+    try {
+      const r = await post(`/grants/${grantId}/milestones`, form);
+      setForm({ kind: form.kind, label: "", dueDate: "", notes: "" });
+      setMsg(`${r.kindLabel || "Deadline"} added for ${dayLabel(r.dueDate)}. Add the next one, or close the form.`);
+      offerUndo({ message: `Added ${r.kindLabel || "the deadline"}.`, undoAction: async () => { const x = await post(`/grants/milestones/${r.id}/remove`); load(); return x; } }, "deadline");
+      load();
+    } catch (e) { setMsg(errorMessage(e, "That deadline did not save.")); }
+  };
+  const saveEdit = async () => {
+    setMsg("");
+    const m = all.find(x => x.id === edit.id);
+    try {
+      await put(edit.id, { kind: edit.kind, label: edit.label, dueDate: edit.dueDate, notes: edit.notes });
+      setEdit(null); load();
+      offerUndo({ message: `Changed ${nameOf(m)}.`, undoAction: async () => { const x = await put(m.id, { kind: m.kind, label: m.label, dueDate: m.dueDate, notes: m.notes }); load(); return x; } }, "deadline");
+    } catch (e) { setMsg(errorMessage(e, "That change did not save.")); }
   };
   const move = async (m, dueDate) => {
     setMsg("");
-    try { await apiFetch(`/grants/milestones/${m.id}`, { method: "PUT", body: JSON.stringify({ dueDate }) }); load(); }
-    catch (e) { setMsg(errorMessage(e, "The date did not move.")); }
+    try {
+      await put(m.id, { dueDate }); load();
+      offerUndo({ message: `Moved ${nameOf(m)} to ${dayLabel(dueDate)}.`, undoAction: async () => { const x = await put(m.id, { dueDate: m.dueDate }); load(); return x; } }, "deadline");
+    } catch (e) { setMsg(errorMessage(e, "The date did not move.")); }
   };
   const done = async m => {
     setMsg("");
-    try { await apiFetch(`/grants/milestones/${m.id}/done`, { method: "POST", body: "{}" }); load(); }
-    catch (e) { setMsg(errorMessage(e, "That deadline could not be marked done.")); }
+    try {
+      await post(`/grants/milestones/${m.id}/done`); load();
+      offerUndo({ message: `Marked ${nameOf(m)} done.`, undoAction: async () => { const x = await post(`/grants/milestones/${m.id}/reopen`); load(); return x; } }, "deadline");
+    } catch (e) { setMsg(errorMessage(e, "That deadline could not be marked done.")); }
+  };
+  const reopen = async m => {
+    setMsg("");
+    try {
+      await post(`/grants/milestones/${m.id}/reopen`); load();
+      offerUndo({ message: `${nameOf(m)} is open again.`, undoAction: async () => { const x = await post(`/grants/milestones/${m.id}/done`); load(); return x; } }, "deadline");
+    } catch (e) { setMsg(errorMessage(e, "That deadline could not be reopened.")); }
+  };
+  const remove = async m => {
+    setMsg("");
+    try {
+      await post(`/grants/milestones/${m.id}/remove`); load();
+      offerUndo({ message: `Took ${nameOf(m)} off this grant.`, undoAction: async () => { const x = await post(`/grants/milestones/${m.id}/reopen`); load(); return x; } }, "deadline");
+    } catch (e) { setMsg(errorMessage(e, "That deadline could not be taken off.")); }
   };
   if (!all) return null;
+  const kindFields = (v, set) => (<>
+    <select value={v.kind} onChange={e => set({ ...v, kind: e.target.value })} style={inp} aria-label="Kind of deadline" data-testid="deadline-kind">
+      {types.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+    </select>
+    {v.kind === "custom" && <input placeholder="Name it, like Site visit" value={v.label} onChange={e => set({ ...v, label: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} aria-label="Deadline name" data-testid="deadline-label" />}
+    <input type="date" value={v.dueDate} onChange={e => set({ ...v, dueDate: e.target.value })} style={inp} aria-label="Due date" data-testid="deadline-date" />
+    <input placeholder="Notes (optional)" value={v.notes} onChange={e => set({ ...v, notes: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} aria-label="Notes" />
+  </>);
   return (
     <div data-testid="grant-deadlines" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
         <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Deadlines Steward watches</div>
         {!isReadOnly && !form && <button style={{ ...quietBtn, marginLeft: "auto" }} data-testid="deadline-add"
-          onClick={() => setForm({ kind: types[0]?.key || "", dueDate: "", notes: "" })}>Add a deadline</button>}
+          onClick={() => setForm({ kind: types[0]?.key || "", label: "", dueDate: "", notes: "" })}>Add a deadline</button>}
       </div>
-      {!all.length && !form && <div style={{ fontSize: 13, color: T.ink3 }}>None yet. Add the LOI, proposal, decision or report date and a follow-up opens when it comes close.</div>}
+      {!all.length && !form && <div style={{ fontSize: 13, color: T.ink3 }}>None yet. Add the LOI, proposal, decision, report or renewal date, or any other, and each shows on the Calendar.</div>}
       {all.map(m => (
         <div key={m.id}>
-          <MilestoneRow m={m} onDone={done} isReadOnly={isReadOnly} showGrant={false} />
-          {!isReadOnly && <label style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 6, alignItems: "center", paddingLeft: 16 }}>Move to
-            <input type="date" defaultValue={m.dueDate} onBlur={e => e.target.value && e.target.value !== m.dueDate && move(m, e.target.value)} style={inp} /></label>}
+          {edit && edit.id === m.id ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", padding: "10px 0", borderTop: "1px solid " + T.bg3 }}>
+              {kindFields(edit, setEdit)}
+              <button style={primaryBtn} onClick={saveEdit} disabled={!edit.dueDate} data-testid="deadline-edit-save">Save</button>
+              <button style={quietBtn} onClick={() => setEdit(null)}>Cancel</button>
+            </div>
+          ) : <>
+            <MilestoneRow m={m} onDone={done} isReadOnly={isReadOnly} showGrant={false} />
+            {!isReadOnly && <div style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 16, paddingBottom: 6 }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>Move to
+                <input type="date" key={m.dueDate} defaultValue={m.dueDate} onBlur={e => e.target.value && e.target.value !== m.dueDate && move(m, e.target.value)} style={inp} data-testid="deadline-move" /></label>
+              <button style={quietBtn} data-testid="deadline-edit" onClick={() => setEdit({ id: m.id, kind: m.kind, label: m.label || "", dueDate: m.dueDate, notes: m.notes || "" })}>Edit</button>
+              <button style={quietBtn} data-testid="deadline-remove" onClick={() => remove(m)}>Take off</button>
+            </div>}
+          </>}
         </div>))}
       {form && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
-          <select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} style={inp} data-testid="deadline-kind">
-            {types.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
-          </select>
-          <input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} style={inp} data-testid="deadline-date" />
-          <input placeholder="Notes (optional)" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inp, flex: "1 1 160px" }} />
-          <button style={primaryBtn} onClick={add} disabled={!form.dueDate} data-testid="deadline-save">Add</button>
-          <button style={quietBtn} onClick={() => setForm(null)}>Cancel</button>
+          {kindFields(form, setForm)}
+          <button style={primaryBtn} onClick={add} disabled={!form.dueDate || (form.kind === "custom" && !form.label.trim())} data-testid="deadline-save">Add</button>
+          <button style={quietBtn} onClick={() => setForm(null)}>Close</button>
+        </div>)}
+      {doneList.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, marginBottom: 2 }}>Done</div>
+          {doneList.map(m => (
+            <div key={m.id} data-testid="deadline-done-row" style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, color: T.ink3, padding: "4px 0", flexWrap: "wrap" }}>
+              <span style={{ minWidth: 64 }}>{dayLabel(m.dueDate)}</span>
+              <span style={{ flex: "1 1 160px" }}>{m.kindLabel}{m.completedByName ? `, done by ${m.completedByName}` : ""}</span>
+              {!isReadOnly && <button style={quietBtn} data-testid="deadline-reopen" onClick={() => reopen(m)}>Undo done</button>}
+            </div>))}
         </div>)}
       {msg && <div role="status" style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>{msg}</div>}
     </div>

@@ -30,6 +30,7 @@ const VIEWS = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["agenda", 
 const TYPE_META = {
   meeting: { label: "Meetings", bg: "rgba(13,92,58,0.14)", bar: T.greenDk, ink: T.ink },
   step:    { label: "Next steps and tasks", bg: "rgba(201,168,76,0.22)", bar: T.gold, ink: T.ink },
+  deadline:{ label: "Grant deadlines", bg: "rgba(13,92,58,0.06)", bar: T.greenDk, ink: T.ink, outline: true },
   shift:   { label: "Volunteer shifts", bg: "rgba(15,26,18,0.10)", bar: T.ink, ink: T.ink },
   event:   { label: "Events", bg: T.greenDk, bar: T.greenDk, ink: T.white },
   journey: { label: "Journey steps", bg: T.white, bar: T.gold, ink: T.ink, outline: true },
@@ -37,7 +38,7 @@ const TYPE_META = {
   pledge:  { label: "Pledge instalments", bg: "rgba(201,168,76,0.12)", bar: T.gold, ink: T.ink },
   birthday:{ label: "Birthdays", bg: T.bg, bar: T.bg3, ink: T.ink },
 };
-const TYPE_ORDER = ["meeting", "step", "shift", "event", "journey", "send", "pledge", "birthday"];
+const TYPE_ORDER = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "birthday"];
 const TYPES_KEY = "steward_calendar_types";
 const chip = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -59,8 +60,19 @@ function step(view, anchor, dir) {
   if (view === "month") { let y = +anchor.slice(0, 4), m = +anchor.slice(5, 7) + dir; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } return `${y}-${pad(m)}-01`; }
   return addDaysCivil(anchor, (view === "agenda" ? 14 : 7) * dir);
 }
+// FIX-28: a kind added since the choice was saved is shown, so a saved
+// choice from before grant deadlines existed does not hide them.
+const KNOWN_KEY = "steward_calendar_types_known";
 function loadTypes(defaults) {
-  try { const v = JSON.parse(window.localStorage.getItem(TYPES_KEY) || "null"); if (Array.isArray(v)) return v; } catch { /* private mode */ }
+  try {
+    const v = JSON.parse(window.localStorage.getItem(TYPES_KEY) || "null");
+    if (Array.isArray(v)) {
+      const known = JSON.parse(window.localStorage.getItem(KNOWN_KEY) || "null") || ["meeting", "step", "shift", "event", "journey", "send", "pledge", "birthday"];
+      const added = defaults.filter(t => !known.includes(t) && !v.includes(t));
+      window.localStorage.setItem(KNOWN_KEY, JSON.stringify(TYPE_ORDER));
+      return [...v, ...added];
+    }
+  } catch { /* private mode */ }
   return defaults;
 }
 const narrowNow = () => typeof window !== "undefined" && window.innerWidth < 760;
@@ -93,9 +105,27 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
   useEffect(() => {
     apiFetch(`/calendar/items?from=2000-01-01&to=2000-01-01`).then(d => {
       setAnchor(d.today); setTypes(loadTypes(d.defaultOn));
-    }).catch(() => { const t = new Date().toISOString().slice(0, 10); setAnchor(t); setTypes(loadTypes(["meeting", "step", "shift", "event", "journey", "send", "pledge"])); });
+    }).catch(() => { const t = new Date().toISOString().slice(0, 10); setAnchor(t); setTypes(loadTypes(["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"])); });
   }, []);
   useEffect(() => { load(); }, [load]);
+  // FIX-28: her own dates on her own connected calendar, when she turns it on.
+  const [push, setPush] = useState(null);
+  const [pushNote, setPushNote] = useState("");
+  useEffect(() => {
+    apiFetch("/calendar/push-dates").then(p => {
+      setPush(p);
+      if (p.enabled) apiFetch("/calendar/push-dates/run", { method: "POST", body: "{}" }).catch(() => {});
+    }).catch(() => setPush(null));
+  }, []);
+  const togglePush = async () => {
+    const enabled = !push.enabled;
+    setPushNote("");
+    try {
+      const r = await apiFetch("/calendar/push-dates", { method: "PUT", body: JSON.stringify({ enabled }) });
+      setPush({ ...push, enabled }); setPushNote(r.sentence || "");
+      offerUndo({ message: r.sentence || "Saved.", undoAction: async () => { const x = await apiFetch("/calendar/push-dates", { method: "PUT", body: JSON.stringify({ enabled: !enabled }) }); setPush(p => ({ ...p, enabled: !enabled })); setPushNote(""); return x; } }, "calendar setting");
+    } catch (e) { setPushNote((e && e.sentence) || errorMessage(e, "That did not save.")); }
+  };
   const toggleType = k => setTypes(cur => { const next = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]; try { window.localStorage.setItem(TYPES_KEY, JSON.stringify(next)); } catch { /* */ } return next; });
 
   // ── A MOVE: the item's own route, then Undo the same way ─────────────────
@@ -144,6 +174,12 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
           </label>))}
       </div>
       </>}
+      {push && push.connected && !isReadOnly && (
+        <label data-testid="cal-push" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, color: T.ink2, cursor: "pointer", lineHeight: 1.4 }}>
+          <input type="checkbox" checked={push.enabled} onChange={togglePush} data-testid="cal-push-toggle" style={{ marginTop: 2 }} />
+          <span>Put my deadlines, next steps and journey steps on my {push.provider === "microsoft" ? "Outlook" : "Google"} calendar too</span>
+        </label>)}
+      {pushNote && <div role="status" style={{ fontSize: 12, color: T.ink3 }}>{pushNote}</div>}
       {data && <div data-testid="cal-tz" style={{ fontSize: 12, color: T.ink3 }}>Times are {data.timezone.replace(/_/g, " ")}{data.timezoneConfirmed ? "" : " (Steward's default; set yours in Settings)"}.</div>}
     </div>
   );
@@ -365,7 +401,7 @@ function Summary({ kind, items, scope, range, onClose, onOpen }) {
   const count = t => items.filter(i => i.type === t).length;
   const meetings = items.filter(i => i.type === "meeting" && !i.logged).sort((a, b) => String(a.start).localeCompare(String(b.start)));
   const flagged = items.filter(i => i.conflict);
-  const parts = [["meeting", "meeting", "meetings"], ["step", "next step or task", "next steps and tasks"], ["shift", "shift", "shifts"], ["event", "event", "events"],
+  const parts = [["meeting", "meeting", "meetings"], ["step", "next step or task", "next steps and tasks"], ["deadline", "grant deadline", "grant deadlines"], ["shift", "shift", "shifts"], ["event", "event", "events"],
     ["journey", "journey step", "journey steps"], ["send", "campaign send", "campaign sends"], ["pledge", "pledge instalment", "pledge instalments"]]
     .filter(([t]) => count(t)).map(([t, one, many]) => `${count(t)} ${count(t) === 1 ? one : many}`);
   const who = scope === "mine" ? "You have" : "The calendar has";
@@ -417,6 +453,7 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
     if (it.type === "shift") return <button type="button" style={btn} onClick={() => onEditShift(it)}>Change this shift</button>;
     if (it.type === "event") return <RecordLink to={tabHref("fundraising", { frSection: "events", eventId: it.ref.eventId })} onOpen={() => go("fundraising", { frSection: "events", eventId: it.ref.eventId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the event to check in</RecordLink>;
     if (it.type === "step" && it.ref.threadId && !isReadOnly) return <button type="button" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button>;
+    if (it.type === "deadline") return <RecordLink to={tabHref("grants", {})} onOpen={() => go("grants", { grantId: it.ref.grantId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the grant</RecordLink>;
     if (it.type === "send") return <RecordLink to={tabHref("communications", {})} onOpen={() => go("communications", {})} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the campaign</RecordLink>;
     if (it.donorId) return <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open {it.donorName}</DonorLink>;
     return null;
@@ -428,7 +465,7 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
         <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{it.title}</div>
         <div style={{ fontSize: 13.5, color: T.ink2 }}>{when}</div>
         {it.detail && <div style={{ fontSize: 13.5, color: T.ink2 }}>{it.detail}</div>}
-        {it.donorId && it.type !== "birthday" && <div style={{ fontSize: 13.5 }}>With <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ fontWeight: 700, textDecoration: "underline dotted" }}>{it.donorName}</DonorLink></div>}
+        {it.donorId && it.type !== "birthday" && it.type !== "deadline" && <div style={{ fontSize: 13.5 }}>With <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ fontWeight: 700, textDecoration: "underline dotted" }}>{it.donorName}</DonorLink></div>}
         {it.conflict && <div data-testid="cal-card-conflict" style={{ fontSize: 13, color: T.ink, borderLeft: `3px solid ${T.gold}`, paddingLeft: 8 }}>{it.conflict}</div>}
         {it.ref && it.ref.synced && <div style={{ fontSize: 12.5, color: T.ink3 }}>Moving it here moves it on your connected calendar too.</div>}
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}

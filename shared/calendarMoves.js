@@ -7,6 +7,7 @@
 //   step     PUT   /threads/:id                { due, time }
 //   shift    PATCH /volunteer-hub/slots/:id    { date, startTime, endTime }
 //   event    PATCH /events/:id/schedule        { date, startTime, endTime }
+//   deadline PUT   /grants/milestones/:id      { dueDate }  (its follow-up moves too)
 // so each move is that route's one audit write. Undo is the same route with
 // the values the item had before: exactly back, and audited like any write.
 //
@@ -66,13 +67,19 @@ export function moveRequest(item, d) {
     const body = { date, ...(startTime ? { startTime, endTime } : {}) };
     return { method: "PATCH", path, body, undo: { method: "PATCH", path, body: { date: was.date, ...(was.startTime ? { startTime: was.startTime, endTime: was.endTime } : {}) } } };
   }
+  if (item.type === "deadline") {
+    if (!item.ref || !item.ref.milestoneId) return { refused: "That deadline is moved from its grant." };
+    const path = `/grants/milestones/${encodeURIComponent(item.ref.milestoneId)}`;
+    const was = dayOf(item.start);
+    return { method: "PUT", path, body: { dueDate: addDaysCivil(was, days) }, undo: { method: "PUT", path, body: { dueDate: was } } };
+  }
   return { refused: "That item is moved where it lives, not here." };
 }
 
 // The words on the Undo toast: "Moved Coffee with Margaret to Tue Oct 6, 10:30."
 export function movedWords(item, req) {
   const b = req.body || {};
-  const when = b.startsAt ? null : b.date || b.due;
+  const when = b.startsAt ? null : b.date || b.due || b.dueDate;
   const t = b.startTime || b.time || null;
   const day = w => { const [y, m, d] = w.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }); };
   const clock = hhmm => { const [h, m] = hhmm.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + pad(m) : ""}${h >= 12 ? "pm" : "am"}`; };

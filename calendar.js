@@ -13,12 +13,20 @@
 //
 // Org-scoped on every query; deleted people and cancelled or dismissed items
 // are left out.
+//
+// FIX-28: THE ONE RULE. Every dated thing in Steward is on this calendar:
+// meetings, next steps and tasks, grant deadlines, shifts, events, journey
+// steps, campaign sends and pledge instalments (birthdays when asked). A new
+// kind of dated row joins TYPES here, or it is not on the calendar.
 const { query } = require("./db");
 
-const TYPES = ["meeting", "step", "shift", "event", "journey", "send", "pledge", "birthday"];
-const DEFAULT_ON = ["meeting", "step", "shift", "event", "journey", "send", "pledge"];   // birthdays off by default
+const TYPES = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "birthday"];
+const DEFAULT_ON = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"];   // birthdays off by default
 
 const pad = n => String(n).padStart(2, "0");
+// The labels shared/grantMilestones.js gives each kind (an ES module, so the
+// words are repeated here rather than imported into this CommonJS read).
+const DEADLINE_LABEL = { loi_due: "LOI due", proposal_due: "Proposal due", decision: "Decision expected", report_due: "Report due", renewal_opens: "Renewal window opens" };
 const addMin = (hhmm, m) => { const [h, mm] = String(hhmm).split(":").map(Number); const t = Math.min(23 * 60 + 59, h * 60 + mm + m); return `${pad(Math.floor(t / 60))}:${pad(t % 60)}`; };
 const hm = v => (v ? String(v).slice(0, 5) : null);
 
@@ -84,6 +92,26 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         const day = String(r.due).slice(0, 10);
         out.push({ id: `task:${r.id}`, type: "step", title: r.title, start: day, end: day, allDay: true, ownerId: r.assigned_to, ownerName: r.assigned_to_name || "",
           donorId: r.donor_id || null, donorName: r.donor_name || null, detail: "A task", editable: { move: false, resize: false }, ref: { taskId: r.id } });
+      })));
+  }
+  if (want.has("deadline")) {
+    // Grant deadlines, open ones only, owned by the grant's officer. Moved here
+    // through the deadline's own route, which moves its follow-up with it.
+    jobs.push(query(
+      `SELECT m.id, m.kind, m.label, m.due_date, m.grant_id, g.program, g.officer_id, u.name AS officer_name,
+              COALESCE(d.name, g.funder) AS funder_name, d.id AS donor_id
+         FROM grant_milestones m JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+         LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
+         LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+        WHERE m.org_id = ? AND m.state NOT IN ('done', 'skipped') AND g.is_sample IS NOT TRUE
+          AND LEFT(m.due_date, 10) >= ? AND LEFT(m.due_date, 10) <= ?
+          AND (?::text IS NULL OR g.officer_id = ?)`,
+      [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {
+        const day = String(r.due_date).slice(0, 10);
+        const name = DEADLINE_LABEL[r.kind] && !(r.kind === "custom" && r.label) ? DEADLINE_LABEL[r.kind] : (r.label || "Deadline");
+        out.push({ id: `deadline:${r.id}`, type: "deadline", title: `${name}: ${r.funder_name || "a grant"}`, start: day, end: day, allDay: true,
+          ownerId: r.officer_id || null, ownerName: r.officer_name || "", donorId: r.donor_id || null, donorName: r.funder_name || null,
+          detail: r.program ? `Grant: ${r.program}` : "A grant deadline", editable: { move: true, resize: false }, ref: { milestoneId: r.id, grantId: r.grant_id } });
       })));
   }
   if (want.has("shift")) {

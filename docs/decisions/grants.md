@@ -32,6 +32,11 @@ Read this when you touch funders, grant deadlines, documents, restricted money, 
 - **A deadline is a milestone Steward watches, not a date on a row.** Five kinds with per-org lead days
   (`orgs.grant_lead_days`); inside its lead it becomes a Thread on the funder, owned by the grant's
   officer and due on the milestone's date (shared/grantMilestones.js). (BUILD-100 grants)
+- **A grant carries any number of deadlines, of any kind.** Only the same kind on the same day twice is
+  refused; `custom` carries its own name in `label` (`milestoneName`). Taking one off sets `skipped`, and
+  re-adding the same kind and day revives that row. Every change offers the shared Undo. (FIX-28)
+- **Every open grant deadline is on the Steward Calendar** as type `deadline`, owned by the grant's
+  officer; a drag goes through PUT /grants/milestones/:id. (FIX-28)
 - **Keep the milestone's three states (pending, waiting, raised).** `threads_one_open` makes a milestone
   WAIT behind an open thread; the sweep re-reads pending and waiting every pass, so it self-heals with no
   tick, and `waitingSentence` explains the wait. (BUILD-100 grants)

@@ -164,6 +164,7 @@ CORE=(
   ask3-sentence-check
   ask4-query-guard
   cal1-moves
+  fix28-calendar-rule
   fix12-ai-switch
   parity4-started
   fix12-recipe-drafts

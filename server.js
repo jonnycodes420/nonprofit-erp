@@ -3694,7 +3694,7 @@ async function raiseGrantMilestone(orgId, ms, { today }) {
 
     const { sanitizeStepLabel } = await threadShapeMod();
     const label = sanitizeStepLabel(M.milestoneStepLabel({
-      kind: ms.kind, funderName: g.funder_name, program: g.program,
+      kind: ms.kind, label: ms.label, funderName: g.funder_name, program: g.program,
     })) || "Follow up on the grant";
 
     // The officer who owns the GRANT owns the deadline; otherwise whoever owns
@@ -6743,6 +6743,9 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
+      // FIX-28: a short draft needs no thinking (the ASK-3 bug: thinking can eat
+      // a small budget and leave the reply cut off or empty).
+      thinking: { type: "disabled" },
       system: `You write short, warm donor thank-you emails for a nonprofit development team. The donor just reached a real giving milestone. Rules: no hype, no exclamation-point overload, absolutely no gamification language — never say "tier", "level up", "unlock", "badge", "milestone reward", "leaderboard", or "you're so close to your next milestone". Write like a staff member who personally noticed and cared, not an app tracking progress. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
@@ -6756,7 +6759,9 @@ ${impactLine ? `Concrete impact to reference naturally (weave it in, don't just 
 Write the email now.`,
       }],
     });
-    const text = msg.content[0].text.trim();
+    // FIX-28: a reply that did not finish is never shown.
+    if (msg.stop_reason && msg.stop_reason !== "end_turn") return null;
+    const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
@@ -6799,6 +6804,7 @@ async function generateAtRiskDraft(recipient, orgId) {
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
+      thinking: { type: "disabled" },   // FIX-28: the ASK-3 rule, as above
       system: `You write short, warm "checking in" emails for a nonprofit development team to a longtime donor who has quietly gone a while without giving. Rules: no guilt trip, no hard ask, no gamification language — never say "tier", "level up", "unlock", "badge", "lapsed", "at risk", or "we noticed you stopped giving". Write like a staff member who genuinely thought of them and wanted to reconnect, not a system flagging inactivity. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
@@ -6810,7 +6816,9 @@ ${daysSinceGift ? `Days since their last gift: ${daysSinceGift}` : ""}
 Write the email now.`,
       }],
     });
-    const text = msg.content[0].text.trim();
+    // FIX-28: a reply that did not finish is never shown.
+    if (msg.stop_reason && msg.stop_reason !== "end_turn") return null;
+    const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
     const parsed = JSON.parse(jsonMatch[0]);
@@ -8911,6 +8919,79 @@ async function syncCalendar(userId, orgId, providerKey) {
   return { kept };
 }
 
+// ── FIX-28 · STEWARD'S DATES ON HER OWN CALENDAR ───────────────────────────
+// One way, and only when she turned it on (mailbox_connections.push_dates).
+// The dated items that are HERS (a grant deadline she is the officer on, her
+// next steps and tasks, her journey steps) for the next 60 days go onto her
+// connected calendar as all-day entries. A moved item moves there, a finished
+// or removed one comes off. Meetings are already on her calendar, and items
+// with no one person (shifts, events, sends, pledges) stay on the Steward
+// Calendar only. The entries carry no attendees, so the calendar read above
+// drops them and they never come back as meetings.
+const PUSH_TYPES = ["step", "deadline", "journey"];
+const PUSH_AHEAD_DAYS = 60;
+async function pushStewardDates(userId, orgId, providerKey) {
+  const [conn] = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+    [userId, orgId, providerKey]);
+  if (!conn || conn.calendar_granted !== true || conn.paused === true || !conn.credentials_sealed) return { pushed: 0 };
+  // Turned off: whatever Steward put there comes off, and nothing goes on.
+  const on = conn.push_dates === true;
+  const stored = await query(`SELECT * FROM calendar_pushes WHERE org_id=? AND user_id=? AND provider=?`, [orgId, userId, providerKey]);
+  if (!on && !stored.length) return { pushed: 0 };
+  const token = await mailboxAccessToken(conn, orgId, providerKey);
+  if (!token) return { pushed: 0 };
+  const CALR = require("./calendar");
+  const tzRow = await orgTz(orgId);
+  const tz = tzRow.timezone || orgTime.DEFAULT_TZ;
+  const from = orgToday(tzRow), to = orgTime.addDays(from, PUSH_AHEAD_DAYS);   // ORG_TZ_SEAM_OK
+  const items = on ? (await CALR.calendarItems(orgId, { from, to, tz, userId, scope: "mine", types: PUSH_TYPES }))
+    .filter(i => i.ownerId === userId) : [];
+  const byKey = new Map(stored.map(r => [r.item_key, r]));
+  const google = providerKey === "google";
+  const base = google ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events`
+    : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events`;
+  const call = (method, url, body) => fetch(url, { method, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+    ...(body ? { body: JSON.stringify(body) } : {}) }).catch(() => null);
+  const entry = (it, day) => {
+    const next = orgTime.addDays(day, 1);
+    const note = `From Steward: ${it.detail || "a dated item"}. Change it in Steward and it changes here.`;
+    return google
+      ? { summary: it.title, description: note, start: { date: day }, end: { date: next }, transparency: "transparent",
+          extendedProperties: { private: { steward_item: it.id } } }
+      : { subject: it.title, body: { contentType: "text", content: note }, isAllDay: true, showAs: "free",
+          start: { dateTime: `${day}T00:00:00`, timeZone: tz }, end: { dateTime: `${next}T00:00:00`, timeZone: tz } };
+  };
+  let pushed = 0;
+  const live = new Set();
+  for (const it of items) {
+    const day = String(it.start).slice(0, 10);
+    live.add(it.id);
+    const had = byKey.get(it.id);
+    if (had && had.day === day && had.title === it.title) continue;
+    if (had) {
+      const r = await call("PATCH", `${base}/${encodeURIComponent(had.provider_event_id)}`, entry(it, day));
+      if (r && r.ok) { await run(`UPDATE calendar_pushes SET day=?, title=?, updated_at=NOW() WHERE id=?`, [day, it.title, had.id]); pushed++; }
+      continue;
+    }
+    const r = await call("POST", base, entry(it, day));
+    const made = r && r.ok ? await r.json().catch(() => null) : null;
+    if (!made || !made.id) continue;
+    await run(`INSERT INTO calendar_pushes (id,org_id,user_id,provider,item_key,provider_event_id,day,title,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (user_id, provider, item_key) DO NOTHING`,
+      ["cpush_" + uuid().slice(0, 12), orgId, userId, providerKey, it.id, String(made.id), day, it.title,
+       `system:calendar-push/${providerKey}/${userId}`, "Calendar sync"]);
+    pushed++;
+  }
+  // Done, removed, reassigned or moved past the window: off her calendar.
+  for (const r of stored) {
+    if (live.has(r.item_key)) continue;
+    const del = await call("DELETE", `${base}/${encodeURIComponent(r.provider_event_id)}`);
+    if (del && (del.ok || del.status === 404 || del.status === 410)) await run(`DELETE FROM calendar_pushes WHERE id=?`, [r.id]);
+  }
+  return { pushed };
+}
+
 // The provider is asked for the window, with the description masked out.
 // Returns null when the provider refuses, so a revoked calendar never reads
 // as "she has no meetings" and wipes what is stored.
@@ -10600,7 +10681,7 @@ require("./routes/billing").mount({
 require("./routes/finance").mount({
   AGENT_MODEL,   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
   // INT-BUILD-1 — the first sync after a connect, and the calendar.
-  syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
+  syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
@@ -10788,7 +10869,7 @@ require("./routes/jobs").mount({
   // ENGAGE-1 — the scores, recomputed on the six-hour tick.
   recomputeAllScores,
   // INT-BUILD-1 — every live mailbox, mail and calendar, on the 15-minute tick.
-  syncMailbox, syncCalendar,
+  syncMailbox, syncCalendar, pushStewardDates,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,

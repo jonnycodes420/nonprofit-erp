@@ -109,12 +109,13 @@ app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res)
   let text = "";
   try {
     const msg = await anthropicFor(req.user.orgId).messages.create({
-      model: "claude-haiku-4-5-20251001", max_tokens: 1024,
+      model: "claude-haiku-4-5-20251001", max_tokens: 1024, thinking: { type: "disabled" },   // FIX-28: the ASK-3 rule
       system: "You are an expert nonprofit development writer. Write warm, authentic, mission-driven donor emails. Max 250 words. "
         + "Never mention a video, a recording, a link, a meeting, an event, a date or a gift amount: you do not know any. Use the merge tags for the facts.",
       messages: [{ role: "user", content: prompt }],
     });
-    text = ((msg.content || []).find(x => x.type === "text") || {}).text || "";
+    // FIX-28: a draft that did not finish is never shown; the template is.
+    text = msg.stop_reason && msg.stop_reason !== "end_turn" ? "" : ((msg.content || []).find(x => x.type === "text") || {}).text || "";
   } catch (e) {
     if (e && e.code === "ai_off") return res.json({ ...tpl, source: "template", aiOff: true, reasons: ["AI is turned off for your organization."] });
     return res.json({ ...tpl, source: "template", reasons: ["The draft could not be written just now."] });
@@ -139,6 +140,7 @@ app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
   const msg = await client.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 512,
+    thinking: { type: "disabled" },   // FIX-28: the ASK-3 rule
     system: "You are a data mapping assistant for nonprofit CRM systems. Return only valid JSON, no explanation or markdown.",
     messages: [{
       role: "user",
@@ -158,7 +160,8 @@ Return ONLY a JSON object like: {"Original Header": "fieldName", "Another Header
   });
 
   try {
-    const text = msg.content[0].text.trim();
+    if (msg.stop_reason && msg.stop_reason !== "end_turn") throw new Error("unfinished");   // FIX-28
+    const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("no json");
     res.json({ mapping: JSON.parse(jsonMatch[0]) });
@@ -1448,8 +1451,12 @@ app.post("/help/ask", requireAuth, wrap(async (req, res) => {
   try {
     const client = anthropicFor(req.user.orgId);
     // No `tools`: the help persona has none, so the model has nothing to call.
-    const r = await client.messages.create({ model: AGENT_MODEL, max_tokens: 700, system: prompt.system, messages: prompt.messages });
-    answer = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || null;
+    // FIX-28: the ASK-3 bug in its other place. A short answer needs no
+    // thinking, and with the model's default thinking on it could eat the 700
+    // tokens. An answer that did not finish is never shown; the articles are.
+    const r = await client.messages.create({ model: AGENT_MODEL, max_tokens: 700, thinking: { type: "disabled" }, system: prompt.system, messages: prompt.messages });
+    answer = r.stop_reason && r.stop_reason !== "end_turn" ? null
+      : (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || null;
   } catch (e) { console.error("[help] ask:", e.message); }
   res.json({ covered: true, answer, articles: cite, sentence: answer ? null : "Here is what the help centre says." });
 }));
