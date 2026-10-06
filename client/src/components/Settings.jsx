@@ -3661,7 +3661,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <SectionLabel>Reading and drafting</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6,maxWidth:560}}>
             Steward&apos;s AI features send what each one needs to Anthropic: cheque photographs to suggest an
-            amount, and your records for drafts, briefs, scores, board summaries and Ask Steward. Voice memos
+            amount, and your records for drafts, briefs, scores, board summaries and Ask Steward, and your grant library pieces for a grant section draft. Voice memos
             are transcribed by OpenAI, which receives the recording only. Nothing is entered or sent until
             you confirm it. This one switch covers all of them.
           </div>

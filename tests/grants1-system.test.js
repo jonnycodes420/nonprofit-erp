@@ -1,6 +1,9 @@
 // tests/grants1-system.test.js · GRANTS-1's one test. GRANTS AS THEIR OWN SYSTEM.
 //
-// §1 award instalments (added by the lead)
+// §1 award instalments: an awarded grant paid in two instalments links each
+//    cheque (recorded through the ordinary gift form, the one gift path) to
+//    its instalment, and the grant's received total foots to the cent; a gift
+//    of another amount from the same funder is not grant money.
 // §2 email: what goes to and comes from a funder lands on the funder and its
 //    grant, attachments included, and nothing else lands on any grant.
 //
@@ -24,7 +27,11 @@
 // Donor data and email: a funder report filed on the wrong grant, or a
 // stranger's mail filed on a grant, is the record lying about who was told what.
 //
-// HOW IT WOULD GO RED: skip the attachment store (no grant document, §2
+// HOW IT WOULD GO RED (§1): sum the funder's gifts instead of the award
+// pledge's (the stray gift counts and received is wrong); skip the instalment
+// apply in recordGift (no instalment shows its gift). Proven able to fail by
+// summing by donor: §1 went red.
+// HOW IT WOULD GO RED (§2): skip the attachment store (no grant document, §2
 // "the PDF is in the grant's documents"); pick the grant by recency alone (the
 // closed grant gets the email); route on any matched person rather than a
 // funder contact (the ordinary donor's email lands on a grant); drop the type
@@ -109,7 +116,55 @@ async function reset() {
   await new Promise(r => mock.listen(PORT, r));
   await reset();
 
-  // ── §1 award instalments (added by the lead) ─────────────────────────────
+  // ── §1 · an awarded grant's two instalments, each linked to its gift ─────
+  // The award is recorded through PUT /grants/:id/award (one pledge, two
+  // instalments). Each cheque is recorded through the ordinary gift form, the
+  // one gift path, and applies itself to its instalment. The grant's received
+  // total is the sum of exactly those gifts and foots to the cent; a gift of
+  // another amount from the same funder is not grant money.
+  console.log("\n§1 award instalments");
+  {
+    const A_ORG = "org_grants1_award";
+    const clearA = async () => {
+      await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [A_ORG]).catch(() => {});
+      for (const t of ["thank_you_drafts", "pledge_installments", "fin_transactions", "gifts", "pledges", "grants", "interactions", "tasks", "budgets", "accounts", "fin_funds", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [A_ORG]).catch(() => {});
+      await q(`DELETE FROM orgs WHERE id=$1`, [A_ORG]).catch(() => {});
+    };
+    await clearA();
+    const pw1 = bcrypt.hashSync("loadtest1234", 4);
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
+             VALUES ($1,'Grants award fixture','grants1-award',1,'active','team','America/New_York',NOW())`, [A_ORG]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Ada','admin')`, [`u_${A_ORG}`, A_ORG, `ada@${A_ORG}.local`, pw1]);
+    const atok = await login(`ada@${A_ORG}.local`);
+    await api("POST", "/onboarding/complete", atok, {});
+    const f = await api("POST", "/grant-funders", atok, { name: "Award Fixture Foundation", funderType: "private_foundation" });
+    ok("§1 the funder is on file", f.status === 201, f.body);
+    await q(`INSERT INTO grants (id,org_id,funder,funder_donor_id,program,status,amount_requested,created_by,created_by_name)
+             VALUES ('gr_g1_award',$1,'Award Fixture Foundation',$2,'Boats','submitted',12345.67,'system:test','test')`, [A_ORG, f.body.id]);
+    const aw = await api("PUT", "/grants/gr_g1_award/award", atok, { amountAwarded: "12345.67", installmentCount: 2, frequency: "semiannual", firstDue: "2026-01-15" });
+    ok("§1 the award is recorded with two instalments", aw.status === 200, aw.body);
+    let plan = (await api("GET", "/grants/gr_g1_award/award-plan", atok)).body;
+    const inst = plan.installments || [];
+    ok("§1 two instalments that sum to the award, to the cent", inst.length === 2 && inst[0].amountCents + inst[1].amountCents === 1234567 && plan.awardedCents === 1234567, plan);
+    const give = (cents, date) => api("POST", `/donors/${f.body.id}/gifts`, atok, { amount: (cents / 100).toFixed(2), date, type: "cash", paymentMethod: "Check" });
+    const g1 = await give(inst[0].amountCents, "2026-01-20");
+    plan = (await api("GET", "/grants/gr_g1_award/award-plan", atok)).body;
+    ok("§1 the first cheque links itself to the first instalment", g1.status === 201 && plan.installments[0].gift && plan.installments[0].gift.amountCents === inst[0].amountCents && !plan.installments[1].gift, plan.installments);
+    ok("§1 received is the first cheque, and the rest is outstanding", plan.receivedCents === inst[0].amountCents && plan.outstandingCents === inst[1].amountCents, plan);
+    const stray = await give(5000, "2026-02-01");
+    plan = (await api("GET", "/grants/gr_g1_award/award-plan", atok)).body;
+    ok("§1 a gift of another amount from the funder is not grant money", stray.status === 201 && plan.receivedCents === inst[0].amountCents, plan);
+    const g2 = await give(inst[1].amountCents, "2026-07-20");
+    plan = (await api("GET", "/grants/gr_g1_award/award-plan", atok)).body;
+    ok("§1 the second cheque links itself to the second instalment", g2.status === 201 && plan.installments.every(i => i.gift) && plan.installments[1].gift.amountCents === inst[1].amountCents, plan.installments);
+    const [sum] = await q(`SELECT COALESCE(SUM(gf.amount),0)::numeric AS s FROM gifts gf JOIN pledge_installments pi ON pi.paid_gift_id = gf.id WHERE pi.org_id=$1`, [A_ORG]);
+    ok("§1 the received total foots to the cent: $12,345.67, the sum of the two linked gifts", plan.receivedCents === 1234567 && Math.round(Number(sum.s) * 100) === 1234567 && plan.outstandingCents === 0, { plan, sum });
+    const restricted = await api("GET", "/grants/gr_g1_award/restricted", atok);
+    ok("§1 …and every other screen reads the same received figure", restricted.status === 200 && restricted.body.balance && restricted.body.balance.receivedCents === 1234567, restricted.body);
+    await clearA();
+    const [left] = await q(`SELECT COUNT(*)::int AS n FROM orgs WHERE id=$1`, [A_ORG]);
+    ok("§1 the fixture cleans up after itself", left.n === 0, left);
+  }
 
   // ── §2 email ─────────────────────────────────────────────────────────────
   const pw = bcrypt.hashSync("loadtest1234", 4);
