@@ -3300,6 +3300,10 @@ async function main() {
   await require("./seed/clean1-mess").seedClean1Mess(q, ORG, { TODAY });   // CLEAN-1 Part 6: Data health has something to show
   await require("./seed/prospect1-prospects").seedProspect1(q, ORG, { TODAY });   // PROSPECT-1 Part 7: believable prospects
   await require("./seed/parity4-dinner").seedParity4Dinner(q, ORG, { TODAY });   // PARITY-4 Part 4: tonight's supper, half seated, five in
+  {   // EMAIL-1: one brand, a media library, every template, a sent and a waiting appeal
+    const r = await require("./seed/email1-demo").seedEmail1(q, ORG, { TODAY, dAdd });
+    console.log(`[seed] email: ${r.photos} photos, ${r.videos} videos, ${r.templates} templates`);
+  }
 
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
