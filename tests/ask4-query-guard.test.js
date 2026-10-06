@@ -85,9 +85,11 @@ const yr = today.slice(0, 4);
       { entity: "gifts", measure: { fn: "drop" } },
       { entity: "people", related: [{ entity: "orgs" }] },
       { entity: "people", groupBy: { field: "lifetime_giving" } },
-      { entity: "people", sort: { by: "1; DROP TABLE donors" } },
     ];
     for (const raw of refused) ok(`§4 refused: ${JSON.stringify(raw).slice(0, 70)}`, AQ.validateQuery(raw).ok === false);
+    // A sort key changes no number, so one that is not a field is read as "by the figure", never as SQL.
+    const sorted = AQ.validateQuery({ entity: "people", sort: { by: "1; DROP TABLE donors" } });
+    ok("§4 a sort key that is not a field becomes the figure, never SQL", sorted.ok && sorted.plan.sort.by === "value", sorted);
 
     // §5
     const v = AQ.validateQuery({ entity: "gifts", where: [{ field: "payment_method", op: "eq", value: "check" }], measure: { fn: "sum", field: "amount" } });
