@@ -3,6 +3,13 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **A "find" is a list, not a plan (AI-FIX).** "Steward, find donors in North Carolina I haven't reached out to"
+  is read with the donor list's own filters (`agentFindPeople`: the templates, then the model's filter form
+  whenever the templates could not read every word) and answered as a read: how many match, the filters in
+  words, the first twelve names. Nothing is written. A leading "Steward," is ignored. The filters gained
+  `state` (postal code; a record written "NC" or "North Carolina" matches, `shared/usStates.js`) and
+  `noContactSince` (no call, meeting, email or stewardship logged since; "a while" is six months). A plan's
+  `cannot` never talks about rows or data; one that does is replaced with a plain sentence.
 - **The Agent does the work through the screens' own routes.** A real action (contact details, owner,
   stage, groups, household, a logged call/meeting/email, the next step, make a volunteer, a shift, hours,
   start or stop a journey, a free event's guest list, mark a gift thanked, propose a merge) is the route a

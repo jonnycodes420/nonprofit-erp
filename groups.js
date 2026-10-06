@@ -150,6 +150,20 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
                          AND rx.interval = 'month' AND rx.status IN ('active','past_due','recovering','recovered'))`);
   }
   if (q.city) { where.push("lower(trim(COALESCE(city,''))) = lower(trim(?))"); params.push(String(q.city)); }
+  // AI-FIX: a state, by postal code; a record may hold "NC" or "North Carolina".
+  if (q.state) {
+    const US = await import("./shared/usStates.js");
+    const code = String(q.state).toUpperCase();
+    where.push("(upper(trim(COALESCE(state,''))) = ? OR lower(trim(COALESCE(state,''))) = lower(?))");
+    params.push(code, US.US_STATES[code] || code);
+  }
+  // AI-FIX: nobody has been in touch since this date: no call, meeting, email
+  // or stewardship logged on or after it (the contact "Why did they stop?" reads).
+  if (q.noContactSince) {
+    where.push(`NOT EXISTS (SELECT 1 FROM interactions ix WHERE ix.org_id = donors.org_id AND ix.donor_id = donors.id
+                 AND ix.type IN ('call','meeting','email','stewardship') AND LEFT(ix.date,10) >= ?)`);
+    params.push(String(q.noContactSince));
+  }
   if (q.gaveEvent) {
     where.push("EXISTS (SELECT 1 FROM gifts ge WHERE ge.org_id = donors.org_id AND ge.donor_id = donors.id AND ge.amount > 0 AND ge.event_id = ?)");
     params.push(String(q.gaveEvent));
@@ -268,7 +282,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // FIX-27: a campaign (and the year of the gift), and no ask this year.
   "gaveCampaign", "gaveCampaignYear", "notGaveCampaign", "notGaveCampaignYear", "noAsk",
   // ASK-2: a gift not yet thanked.
-  "unthankedOver"];
+  "unthankedOver",
+  // AI-FIX: the state on their address, and no contact logged since a date.
+  "state", "noContactSince"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -301,7 +317,8 @@ function normalizeRules(raw) {
   }
   if (rules.gaveOver !== undefined && !(Number(rules.gaveOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
   if (rules.unthankedOver !== undefined && !(Number(rules.unthankedOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
-  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo"])
+  if (rules.state && !/^[A-Z]{2}$/.test(String(rules.state))) errors.push("A state is its two-letter code, like NC.");
+  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "noContactSince"])
     if (rules[k] && !/^\d{4}-\d{2}-\d{2}$/.test(rules[k])) errors.push("A date is written 2026-01-31.");
   for (const k of ["volHoursMin", "volHoursMax"])
     if (rules[k] !== undefined && !(Number(rules[k]) >= 0)) errors.push("Hours is a number, 0 or more.");
@@ -340,6 +357,8 @@ function rulesSentence(rules = {}) {
   if (rules.notGaveFrom || rules.notGaveTo) parts.push(`with nothing given ${rules.notGaveFrom || "any time"} to ${rules.notGaveTo || "today"}`);
   if (rules.monthly) parts.push("giving monthly");
   if (rules.city) parts.push(`in ${rules.city}`);
+  if (rules.state) parts.push(`in ${rules.state}`);
+  if (rules.noContactSince) parts.push(`with no contact logged since ${rules.noContactSince}`);
   if (rules.gaveEvent) parts.push("who gave to one event");
   if (rules.gaveOver !== undefined) parts.push(`who gave more than $${Number(rules.gaveOver).toLocaleString("en-US")}`);
   if (rules.gaveCampaign) parts.push(`who gave to one campaign${rules.gaveCampaignYear ? ` in ${rules.gaveCampaignYear}` : ""}`);
