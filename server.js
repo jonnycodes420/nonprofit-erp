@@ -3952,6 +3952,10 @@ app.use(require("./routes/why").routers.r0);         // WHY-1
 app.use(require("./routes/profileStatus").routers.r0); // PARITY-1
 app.use(require("./routes/dataHealth").routers.r0);    // CLEAN-1
 app.use(require("./routes/prospect").routers.r0);      // PROSPECT-1
+app.use(require("./routes/grantSystem").routers.r0);   // GRANTS-1 funders, pipeline, checklist, renewals
+app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, documents, reports, drafting
+app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
+app.use(require("./routes/grantReports").routers.r0);  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -10723,6 +10727,13 @@ require("./routes/why").mount({
   whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, computeRetentionRate, orgTime, orgToday, orgTz, query, requireAuth, run, wrap,
 });
 require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
+// GRANTS-1: one shared context for the four grant modules.
+const GRANTS1_CTX = { actor, checkWriteAccess, query, run, requireAdmin, requireAuth, requirePlan, uuid, wrap, orgTz, orgToday, orgTime,
+  grantMoneyRows, grantBalanceFrom, agentGate, withTransaction, testMode };
+require("./routes/grantSystem").mount(GRANTS1_CTX);
+require("./routes/grantLibrary").mount(GRANTS1_CTX);
+require("./routes/grantMail").mount(GRANTS1_CTX);
+require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

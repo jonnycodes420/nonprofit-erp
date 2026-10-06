@@ -1372,7 +1372,7 @@ const SOURCES = {
                    ROUND(COALESCE(gr.amount, 0)::numeric, 2) AS amount, gr.program AS detail
               FROM grants gr
              WHERE gr.org_id = ? AND gr.deadline IS NOT NULL AND gr.deadline <> '' AND gr.deadline >= ? AND gr.deadline <= ?
-               AND gr.status NOT IN ('awarded','active','closed','rejected')`,
+               AND gr.status NOT IN ('awarded','reporting','active','closed','rejected','declined')`,
       args: [orgId, p.from, p.to],
       order: "date ASC, id",
     }),

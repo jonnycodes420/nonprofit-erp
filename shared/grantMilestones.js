@@ -126,9 +126,11 @@ export function dueWithinLead(milestone, today, leadDays) {
 
 // A CLOSED GRANT OPENS NOTHING. `closed` and `declined` are finished; an
 // awarded grant's report is still live work, which is the whole point.
-export const MILESTONE_OPEN_GRANT_STATUSES = ["researching", "loi", "submitted", "awarded"];
+export const MILESTONE_OPEN_GRANT_STATUSES = ["researching", "loi", "invited", "submitted", "awarded", "reporting"];
+const MS_ALIASES = { prospecting: "researching", research: "researching", applied: "submitted", draft: "submitted", pending: "submitted", active: "awarded" };
 export function grantWantsMilestones(status) {
-  return MILESTONE_OPEN_GRANT_STATUSES.includes(String(status || "").toLowerCase());
+  const s = String(status || "").toLowerCase();
+  return MILESTONE_OPEN_GRANT_STATUSES.includes(MS_ALIASES[s] || s);
 }
 
 // ── WHAT THE THREAD SAYS ──────────────────────────────────────────────────

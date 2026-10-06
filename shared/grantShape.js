@@ -22,17 +22,23 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
-// ── THE SIX STATUSES ───────────────────────────────────────────────────────
+// ── THE EIGHT STAGES ───────────────────────────────────────────────────────
 // `kind`: `open` is live in the pipeline, `won` is money promised, `lost` is a
-// no, `done` is finished and out of the way.
+// no, `done` is finished and out of the way. GRANTS-1 added `invited` (they
+// asked for the full proposal) and `reporting` (the money is in and the
+// reports are owed). The key `researching` reads "Prospecting" on screen.
 export const GRANT_STATUSES = [
-  { key: "researching", label: "Researching", kind: "open", blurb: "we are working out whether to ask" },
+  { key: "researching", label: "Prospecting", kind: "open", blurb: "we are working out whether to ask" },
   { key: "loi",         label: "LOI",         kind: "open", blurb: "a letter of inquiry is with them" },
+  { key: "invited",     label: "Invited",     kind: "open", blurb: "they asked for the full proposal" },
   { key: "submitted",   label: "Submitted",   kind: "open", blurb: "the proposal is in and we are waiting" },
   { key: "awarded",     label: "Awarded",     kind: "won",  blurb: "they said yes" },
   { key: "declined",    label: "Declined",    kind: "lost", blurb: "they said no, and we wrote down why" },
+  { key: "reporting",   label: "Reporting",   kind: "won",  blurb: "the money is in and the reports are owed" },
   { key: "closed",      label: "Closed",      kind: "done", blurb: "reported on and finished" },
 ];
+// Stages that hold an award: the money and `awarded_at` stay through all three.
+export const AWARDED_STATUS_KEYS = ["awarded", "reporting", "closed"];
 export const STATUS_KEYS = GRANT_STATUSES.map(s => s.key);
 export const OPEN_STATUS_KEYS = GRANT_STATUSES.filter(s => s.kind === "open").map(s => s.key);
 
@@ -49,6 +55,9 @@ export const STATUS_ALIASES = {
   active: "awarded",        // an awarded grant being delivered is still awarded
   complete: "closed",
   completed: "closed",
+  invitation: "invited",
+  full_proposal: "invited",
+  report: "reporting",
 };
 
 export function normalizeStatus(raw) {
@@ -63,6 +72,7 @@ export function statusFor(key) {
 export function statusLabel(key) { const s = statusFor(key); return s ? s.label : ""; }
 export function isOpenStatus(key) { const s = statusFor(key); return !!s && s.kind === "open"; }
 export function isAwarded(key) { return normalizeStatus(key) === "awarded"; }
+export function holdsAward(key) { return AWARDED_STATUS_KEYS.includes(normalizeStatus(key)); }
 
 // ── WHO A FUNDER MAY BE ────────────────────────────────────────────────────
 export const FUNDER_TYPES = [
@@ -240,7 +250,7 @@ export function pipelineCentsFor(g) {
   const k = normalizeStatus(g && g.status);
   const awarded = Number((g && g.amountAwardedCents) || 0);
   const requested = Number((g && g.amountRequestedCents) || 0);
-  if (k === "awarded" || k === "closed") return awarded || requested;
+  if (AWARDED_STATUS_KEYS.includes(k)) return awarded || requested;
   if (k === "declined") return requested;
   return requested;
 }
@@ -249,7 +259,7 @@ export function statusTileSentence(row, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!row) return "";
   const s = statusFor(row.status);
-  if (row.count === 0) return `No grants at ${row.label} — ${s ? s.blurb : ""}.`;
+  if (row.count === 0) return `No grants at ${row.label}: ${s ? s.blurb : ""}.`;
   const money = row.kind === "won" ? "awarded" : "requested";
   return `${fm(row.cents)} ${money} across ${row.count} ${row.count === 1 ? "grant" : "grants"} at ${row.label}: ${s ? s.blurb : ""}.`;
 }

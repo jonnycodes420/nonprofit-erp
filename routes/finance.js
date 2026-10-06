@@ -59,7 +59,7 @@ app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
   const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
   // Only AWARDED or CLOSED grants hold money. A submitted grant's restriction
   // is a proposal, not a balance.
-  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','reporting','closed')");
   const balances = rows.map(r => grantBalanceFrom(R, r, today));
   const restricted = balances.filter(b => b.restricted);
   const totals = R.restrictedTotals(balances);
@@ -245,7 +245,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   const deadlines = await query(
     `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
        FROM grants g
-      WHERE g.org_id=? AND g.status = 'awarded'
+      WHERE g.org_id=? AND g.status IN ('awarded','reporting')
         AND g.report_due IS NOT NULL AND g.report_due <> ''
         AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
       ORDER BY g.report_due LIMIT 25`, [orgId]);
@@ -309,7 +309,7 @@ app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
     const rows = await query(
       `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
          FROM grants g
-        WHERE g.org_id=? AND g.status = 'awarded' AND g.report_due IS NOT NULL AND g.report_due <> ''
+        WHERE g.org_id=? AND g.status IN ('awarded','reporting') AND g.report_due IS NOT NULL AND g.report_due <> ''
           AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
         ORDER BY g.report_due LIMIT 100`, [orgId]);
     return res.json({ rows, count: rows.length, foots: true,
