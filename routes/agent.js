@@ -2238,6 +2238,37 @@ app.get("/agent/drafts", requireAuth, wrap(async (req, res) => {
   res.json({ drafts: rows });
 }));
 
+// EMAIL-1 — START FROM A TEMPLATE. The draft's subject and words become the
+// template's text, with this person's fields in it, and the draft remembers
+// the template. Still a draft she sends herself; Undo is /restore.
+app.post("/agent/drafts/:id/from-template", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const emailCompose = require("../emailCompose");
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT * FROM agent_drafts WHERE id=? AND org_id=? AND status='pending'", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  const t = await emailCompose.templateFor(orgId, req.body && req.body.templateId);
+  if (!t) return res.status(404).json({ error: "template_not_found", message: "That template is not one of yours." });
+  const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [d.donor_id, orgId]);
+  const words = await emailCompose.templateTextFor(orgId, t, donor || null);
+  if (!words.body) return res.status(400).json({ error: "template_empty", message: "That template has no words in it yet." });
+  await run("UPDATE agent_drafts SET subject=?, body=?, template_id=? WHERE id=? AND org_id=? AND status='pending'",
+    [words.subject || d.subject, words.body, t.id, d.id, orgId]);
+  res.json({ ok: true, subject: words.subject || d.subject, body: words.body, templateId: t.id,
+    previous: { subject: d.subject, body: d.body, templateId: d.template_id || null },
+    sentence: `The draft now starts from ${t.name}. Read it before you send it.` });
+}));
+
+app.post("/agent/drafts/:id/restore", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const emailCompose = require("../emailCompose");
+  const { subject, body, templateId } = req.body || {};
+  if (!body) return res.status(400).json({ error: "body required" });
+  const tid = templateId ? ((await emailCompose.templateFor(req.user.orgId, templateId)) || {}).id || null : null;
+  const { changes } = await run("UPDATE agent_drafts SET subject=?, body=?, template_id=? WHERE id=? AND org_id=? AND status='pending'",
+    [subject == null ? null : String(subject), String(body), tid, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
 // The daily line, for Home and the morning email.
 app.get("/agent/daily-line", requireAuth, wrap(async (req, res) => {
   // BUILD-96 Part 3 — the box on Home asks this first, so a gated org gets one

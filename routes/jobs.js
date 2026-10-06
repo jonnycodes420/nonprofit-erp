@@ -120,6 +120,15 @@ async function processScheduledCampaigns() {
           console.error(`[campaign-scheduler] org ${org.id} has no mailing address — campaign ${campaign.id} back to draft`);
           continue;
         }
+        // EMAIL-1 — a template campaign the renderer would refuse goes back to
+        // draft whole, never half-sent. (A campaign waiting for approval is
+        // never here: this reads status='scheduled' only.)
+        const pre = await require("../emailCompose").campaignPreflight(campaign, campaign.org_id);
+        if (!pre.ok) {
+          await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
+          console.error(`[campaign-scheduler] campaign ${campaign.id} back to draft: ${pre.message}`);
+          continue;
+        }
         const claimed = await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
         if (!claimed.changes) continue; // another tick got it
         const donors = await resolveCampaignRecipients(campaign, campaign.org_id);

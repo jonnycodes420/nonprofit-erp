@@ -40,6 +40,8 @@ import { makeT } from "../../../shared/vocabulary";
 import { displayDateShort } from "../../../shared/displayDate";
 import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
 import { DonorLink } from "./RecordLink";
+import { offerUndo } from "./EditHistory";
+import { TemplateStart } from "./TemplateStart";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -532,6 +534,22 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     setBusyId(null);
   }
 
+  // EMAIL-1 — an Agent draft's words from one of the org's templates, with
+  // this person's name in them. Still a draft she sends; Undo restores it.
+  async function draftFromTemplate(it, tpl) {
+    if (busyId) return;
+    setBusyId(it.kind + it.id); setWaitErr("");
+    try {
+      const r = await apiFetch(`/agent/drafts/${it.id}/from-template`, { method: "POST", body: JSON.stringify({ templateId: tpl.id }) });
+      offerUndo({ message: r.sentence, undoAction: async () => {
+        const y = await apiFetch(`/agent/drafts/${it.id}/restore`, { method: "POST", body: JSON.stringify(r.previous) });
+        loadWaiting(); return y;
+      } }, "draft");
+      loadWaiting();
+    } catch (e) { setWaitErr(errorMessage(e, "That did not go through. Nothing was changed.")); }
+    setBusyId(null);
+  }
+
   const list = plans || [];
   const open = list.find(p => p.id === openId) || list[0] || null;
   const asked = askedId ? list.find(p => p.id === askedId) : null;
@@ -795,7 +813,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
 
         {view === "waiting" && (
           waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm: confirm, onDiscard: discard,
-                        settled, waitErr, onAct: actOnWaiting })
+                        settled, waitErr, onAct: actOnWaiting, onTemplate: draftFromTemplate })
         )}
 
         {view === "guardrails" && guardrails({ wide, isReadOnly, data: guardData, instr: guardInstr, busy: guardBusy, err: guardErr,
@@ -820,7 +838,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
 // THE RESULT STAYS ON THE ROW. A row that vanishes and a row that was never
 // there look the same, so the server's own sentence replaces the buttons and
 // the row is visibly settled.
-function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate, onConfirm, onDiscard, onAct }) {
+function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate, onConfirm, onDiscard, onAct, onTemplate }) {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const key = it.kind + it.id;
@@ -872,6 +890,9 @@ function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate,
           Open the record
         </DonorLink>
       )}
+      {it.kind === "agent_draft" && onTemplate && !isReadOnly && (
+        <TemplateStart disabled={!!busyId} onPick={tpl => onTemplate(it, tpl)} />
+      )}
       <button data-testid="agent-skip" onClick={() => setAsking(true)} disabled={isReadOnly || !!busyId} style={quiet}>Skip</button>
       <button data-testid="agent-approve" onClick={() => onAct(it, "approve")} disabled={isReadOnly || !!busyId}
         style={{ ...YES_BTN, borderRadius: 9, padding: "9px 16px", fontSize: 13 }}>
@@ -882,7 +903,7 @@ function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate,
 }
 
 // ── WAITING FOR YOU ────────────────────────────────────────────────────────
-function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm, onDiscard, settled = {}, waitErr = "", onAct }) {
+function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm, onDiscard, settled = {}, waitErr = "", onAct, onTemplate }) {
   const live = (waiting && waiting.items) || [];
   // WHAT THE SERVER STILL HAS, PLUS WHAT THIS VISIT SETTLED. Approving an item
   // takes it out of the server's list, so rendering the server's list alone
@@ -917,7 +938,7 @@ function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm,
           </div>
           <WaitingActions it={it} wide={wide} isReadOnly={isReadOnly} busyId={busyId}
             settledText={(settled[it.kind + it.id] || {}).sentence} onNavigate={onNavigate}
-            onConfirm={onConfirm} onDiscard={onDiscard} onAct={onAct} />
+            onConfirm={onConfirm} onDiscard={onDiscard} onAct={onAct} onTemplate={onTemplate} />
         </div>
       ))}
     </div>

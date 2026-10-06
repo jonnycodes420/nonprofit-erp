@@ -4866,6 +4866,10 @@ async function campaignAudience(campaign, orgId) {
 // from the send route (BUILD-06 Phase C) so processScheduledCampaigns() can
 // use the identical path — before that job existed, a scheduled campaign
 // sat in status='scheduled' forever and never sent.
+// EMAIL-1: the seam that renders a template for one person (emailCompose.js).
+const emailCompose = require("./emailCompose");
+emailCompose.configure({ resolveOrgBrandTheme, portalCardTheme, donorFacingOrgName, displayNameCase });
+
 async function runCampaignSend(campaign, org, donors) {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
   {
@@ -4885,6 +4889,10 @@ async function runCampaignSend(campaign, org, donors) {
 
       const year = orgToday(await orgTz(org.id)).slice(0, 4); // ORG_TZ_SEAM_OK (BUILD-75 A.5) — the {{year}} token is the org's civil year
       const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
+      // EMAIL-1 — A TEMPLATE CAMPAIGN is rendered from its blocks for each
+      // person. The org half (brand, links) is read once, here, at send time.
+      const fromBlocks = emailCompose.hasBlocks(campaign);
+      const renderCtx = fromBlocks ? await emailCompose.orgRenderContext(org.id) : null;
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
       for (const donor of donors) {
@@ -4904,24 +4912,41 @@ async function runCampaignSend(campaign, org, donors) {
           [recipientId, org.id, campaign.id, donor.id, donor.email]
         );
 
-        const firstName   = donor.name.split(" ")[0];
-        const lastName    = donor.name.split(" ").slice(1).join(" ");
-        const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
-        const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
-        const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-
-        const bodyHtml = (campaign.body || "")
-          .replace(/{{first_name}}/g,   firstName)
-          .replace(/{{last_name}}/g,    lastName)
-          .replace(/{{donor_name}}/g,   donor.name)
-          .replace(/{{org_name}}/g,     displayNameCase(org.name))
-          .replace(/{{gift_amount}}/g,  giftAmount)
-          .replace(/{{total_giving}}/g, totalGiving)
-          .replace(/{{year}}/g,         year);
-
-        const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
+        const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" alt="" style="display:none">`;
         const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-        const htmlFull = brandHeader + bodyHtml + footer + pixel;
+        let htmlFull;
+        if (fromBlocks) {
+          // The header block IS the header: no brand band on top. The footer
+          // goes where the renderer left its slot, once, and a copy with a
+          // problem in it is never sent (the send route refused the whole
+          // campaign before this if the problem was in the blocks).
+          const fields = await emailCompose.personFields(renderCtx, donor, { campaignName: campaign.name || "" });
+          const r = await emailCompose.render(renderCtx, {
+            blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
+          htmlFull = r.problems.length ? null : emailCompose.withFooter(r, footer, pixel);
+          if (!htmlFull) {
+            failCount++;
+            await run("UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
+              [("not rendered: " + (r.problems[0] || "no footer slot")).slice(0, 500), recipientId]).catch(() => {});
+            continue;
+          }
+        } else {
+          const firstName   = donor.name.split(" ")[0];
+          const lastName    = donor.name.split(" ").slice(1).join(" ");
+          const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
+          const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
+          const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
+
+          const bodyHtml = (campaign.body || "")
+            .replace(/{{first_name}}/g,   firstName)
+            .replace(/{{last_name}}/g,    lastName)
+            .replace(/{{donor_name}}/g,   donor.name)
+            .replace(/{{org_name}}/g,     displayNameCase(org.name))
+            .replace(/{{gift_amount}}/g,  giftAmount)
+            .replace(/{{total_giving}}/g, totalGiving)
+            .replace(/{{year}}/g,         year);
+          htmlFull = brandHeader + bodyHtml + footer + pixel;
+        }
 
         try {
           // No provider means nothing left: that is a failure with its

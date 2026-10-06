@@ -1,0 +1,241 @@
+// emailCompose.js · EMAIL-1. ONE EMAIL, RENDERED FOR ONE PERSON.
+//
+// shared/emailBlocks.js is pure: it turns blocks, a brand, fields and links
+// into HTML and text. This module is the seam that READS those inputs for a
+// real organisation and a real person, so the campaign send, "Send me a test",
+// a journey step's draft and the review queue's "Start from a template" all
+// fill a template the same way:
+//
+//   brand   the org's one brand (resolveOrgBrandTheme + portalCardTheme),
+//           read at render time, never stored on the template
+//   fields  first_name, last_name, last_gift_amount, last_gift_date,
+//           campaign, give_link, org_name
+//   links   the public video page, the org's events and giving pages
+//
+// THE GIVE LINK carries the person's name and email in the URL FRAGMENT, never
+// the query string (docs/decisions/portal-and-donor-network.md): a fragment is
+// not sent to a server, not written to an access log and not passed on in a
+// Referer. Donate.jsx reads it, fills the empty fields and clears it.
+//
+// Nothing here sends. The send path takes the html, puts the footer where the
+// renderer left FOOTER_SLOT, and goes through the wrapped resend client and
+// donorMailDecision exactly as before.
+"use strict";
+
+const { query } = require("./db");
+const { publicAppUrl } = require("./publicUrl");
+
+// Server functions this module needs but cannot require (they live in
+// server.js). server.js calls configure() once at boot.
+const deps = { resolveOrgBrandTheme: null, portalCardTheme: null, donorFacingOrgName: null, displayNameCase: null };
+function configure(d) { Object.assign(deps, d || {}); }
+
+let _blocks = null;
+async function blocksMod() {
+  if (!_blocks) _blocks = await import("./shared/emailBlocks.js");
+  return _blocks;
+}
+
+const toArray = v => {
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string" && v.trim()) { try { const a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch { return []; } }
+  return [];
+};
+
+// A campaign is a template campaign when it carries blocks.
+function hasBlocks(campaign) { return toArray(campaign && campaign.email_blocks).length > 0; }
+
+// ── THE ORG HALF, read once per send ───────────────────────────────────────
+async function orgRenderContext(orgId) {
+  const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
+  const theme = deps.resolveOrgBrandTheme ? await deps.resolveOrgBrandTheme(orgId).catch(() => null) : null;
+  const [ps] = await query(
+    `SELECT primary_color, accent_color, button_color, background_tint, type_pairing, card_style
+       FROM portal_settings WHERE org_id=?`, [orgId]).catch(() => []);
+  const card = deps.portalCardTheme ? deps.portalCardTheme(ps || {}) : {};
+  const orgName = deps.donorFacingOrgName
+    ? await deps.donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "")
+    : ((org && org.name) || "");
+  const brand = {
+    band: (theme && theme.band) || card.primary,
+    bandFg: (theme && theme.bandFg) || card.primaryFg,
+    accent: (theme && theme.accent) || card.accent,
+    accentFg: (theme && theme.accentFg) || card.accentFg,
+    buttonColor: card.buttonColor || (theme && theme.band),
+    buttonFg: card.buttonFg || (theme && theme.bandFg),
+    typePairing: card.typePairing || "dm",
+    logoUrl: (theme && (theme.logoAbsUrl || theme.logoDataUri)) || null,
+    displayName: (theme && theme.displayName) || orgName,
+  };
+  const base = publicAppUrl();
+  const slug = (org && org.org_slug) || "";
+  // The renderer's link lookups are synchronous, so the org's rows are read
+  // here once: only events with a public page and active giving pages.
+  const events = await query(
+    `SELECT id, name, date, public_slug FROM events
+      WHERE org_id=? AND public_slug IS NOT NULL AND public_slug <> ''`, [orgId]).catch(() => []);
+  const pages = await query(
+    `SELECT id, slug, title, image_url FROM giving_pages WHERE org_id=? AND status='active'`, [orgId]).catch(() => []);
+  const evById = new Map(events.map(e => [e.id, e]));
+  const pgById = new Map(pages.map(p => [p.id, p]));
+  const abs = u => (!u ? null : /^https?:\/\//.test(u) ? u : base + (u.startsWith("/") ? "" : "/") + u);
+  const links = {
+    assetBase: base,
+    videoPage: (provider, videoId) =>
+      `${base}/watch/${encodeURIComponent(slug)}/${encodeURIComponent(String(provider || ""))}/${encodeURIComponent(String(videoId || ""))}`,
+    event: id => {
+      const e = evById.get(id);
+      if (!e) return null;
+      const date = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date || "").slice(0, 10);
+      return { name: e.name, date, url: `${base}/e/${encodeURIComponent(e.public_slug)}` };
+    },
+    givingPage: id => {
+      const p = pgById.get(id);
+      if (!p) return null;
+      return { title: p.title, url: `${base}/give/${encodeURIComponent(slug)}/${encodeURIComponent(p.slug)}`, image: abs(p.image_url) };
+    },
+  };
+  return { orgId, orgSlug: slug, orgName, brand, links, base };
+}
+
+// ── THE PERSON HALF ────────────────────────────────────────────────────────
+function giveLink(ctx, person) {
+  const url = `${ctx.base}/give/${encodeURIComponent(ctx.orgSlug)}`;
+  if (!person) return url;
+  const frag = new URLSearchParams();
+  if (person.email) frag.set("email", String(person.email).trim());
+  if (person.firstName) frag.set("first_name", person.firstName);
+  if (person.lastName) frag.set("last_name", person.lastName);
+  const s = frag.toString();
+  return s ? `${url}#${s}` : url;
+}
+
+function formatMoney(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 });
+}
+function formatDate(d) {
+  if (!d) return "";
+  const iso = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
+  const dt = new Date(iso + "T12:00:00Z");
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+function splitName(name) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") };
+}
+
+// Fields for a donor row. `campaignName` fills {{campaign}}.
+async function personFields(ctx, donor, { campaignName = "" } = {}) {
+  const nameCase = deps.displayNameCase || (s => s);
+  const { firstName, lastName } = splitName(nameCase(donor && donor.name ? donor.name : ""));
+  let last = null;
+  if (donor && donor.id) {
+    [last] = await query(
+      "SELECT amount, date FROM gifts WHERE donor_id=? AND org_id=? ORDER BY date DESC, created_at DESC LIMIT 1",
+      [donor.id, ctx.orgId]).catch(() => []);
+  }
+  return {
+    first_name: firstName || "friend",
+    last_name: lastName,
+    last_gift_amount: last ? formatMoney(last.amount) : "your last gift",
+    last_gift_date: last ? formatDate(last.date) : "",
+    campaign: campaignName || "",
+    give_link: giveLink(ctx, donor ? { email: donor.email, firstName, lastName } : null),
+    org_name: ctx.orgName,
+  };
+}
+
+// Fields for a staff member's test copy: their own name and address, and a
+// sample gift so the email reads the way a donor's will.
+function sampleFields(ctx, { name, email, campaignName = "" } = {}) {
+  const { firstName, lastName } = splitName(name);
+  return {
+    first_name: firstName || "Margaret",
+    last_name: lastName,
+    last_gift_amount: "$250",
+    last_gift_date: formatDate(new Date()),
+    campaign: campaignName || "",
+    give_link: giveLink(ctx, { email, firstName, lastName }),
+    org_name: ctx.orgName,
+  };
+}
+
+// The renderer's problems that stop a send. The contract returns strings; a
+// renderer that marks some as advisory ({ message, blocking: false }) is
+// honoured, and anything else blocks, because an email with a hole in it is
+// not one to send to four thousand people.
+function blockingProblems(problems) {
+  return (Array.isArray(problems) ? problems : [])
+    .filter(p => !(p && typeof p === "object" && p.blocking === false))
+    .map(p => (typeof p === "string" ? p : (p && (p.message || p.sentence)) || String(p)));
+}
+
+async function render(ctx, { blocks, subject, preheader, fields, mode = "send" }) {
+  const B = await blocksMod();
+  const out = B.renderEmail({
+    blocks: toArray(blocks), brand: ctx.brand, fields, preheader: preheader || "",
+    subject: subject || "", links: ctx.links, mode,
+  });
+  const html = String((out && out.html) || "");
+  const slots = html.split(B.FOOTER_SLOT).length - 1;
+  const problems = blockingProblems(out && out.problems);
+  if (mode === "send" && slots !== 1) problems.push("The email has no place for the unsubscribe footer, so it cannot be sent.");
+  return { html, text: String((out && out.text) || ""), images: (out && out.images) || [], problems, slot: B.FOOTER_SLOT };
+}
+
+// The send's HTML: the footer goes where the renderer left its slot, exactly
+// once, and the open pixel follows. No brand header on top: the header block
+// IS the header.
+function withFooter(rendered, footerHtml, pixelHtml = "") {
+  const i = rendered.html.indexOf(rendered.slot);
+  if (i < 0) return null;
+  return rendered.html.slice(0, i) + footerHtml + rendered.html.slice(i + rendered.slot.length) + pixelHtml;
+}
+
+// One sentence for a refusal, naming the first problem.
+function refusalSentence(problems) {
+  const first = problems[0] || "The email is not ready.";
+  const more = problems.length > 1 ? ` (and ${problems.length - 1} more)` : "";
+  return `This email cannot go out yet: ${first.replace(/\.$/, "")}${more}. Nothing was sent.`;
+}
+
+// Before a template campaign is sent, scheduled or approved: render it once
+// with sample fields. A problem that is in the blocks (a picture with no alt,
+// a field Steward does not fill) is in everybody's copy.
+async function campaignPreflight(campaign, orgId) {
+  if (!hasBlocks(campaign)) return { ok: true };
+  const ctx = await orgRenderContext(orgId);
+  const r = await render(ctx, {
+    blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader,
+    fields: sampleFields(ctx, { name: "Margaret Chen", email: "margaret@example.com", campaignName: campaign.name }),
+    mode: "send",
+  });
+  if (r.problems.length) return { ok: false, problems: r.problems, message: refusalSentence(r.problems) };
+  return { ok: true };
+}
+
+// A template, read for an org, never another's.
+async function templateFor(orgId, templateId) {
+  if (!templateId) return null;
+  const [t] = await query(
+    "SELECT * FROM email_templates WHERE id=? AND org_id=? AND archived_at IS NULL", [String(templateId), orgId]);
+  return t || null;
+}
+
+// The template's words for one person, as plain text: what a draft holds.
+async function templateTextFor(orgId, template, donor, { campaignName = "" } = {}) {
+  const ctx = await orgRenderContext(orgId);
+  const fields = await personFields(ctx, donor, { campaignName });
+  const r = await render(ctx, { blocks: template.blocks, subject: template.subject, preheader: template.preheader, fields, mode: "preview" });
+  const fill = s => String(s || "").replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (m, k) => (fields[k] != null ? String(fields[k]) : m));
+  return { subject: fill(template.subject), body: r.text.replace(/\n{3,}/g, "\n\n").trim(), problems: r.problems };
+}
+
+module.exports = {
+  configure, blocksMod, hasBlocks, orgRenderContext, personFields, sampleFields, giveLink,
+  render, withFooter, blockingProblems, refusalSentence, campaignPreflight, templateFor, templateTextFor, toArray,
+};

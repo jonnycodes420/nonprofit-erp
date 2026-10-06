@@ -674,6 +674,21 @@ export default function Donate() {
       .then(r => { if (r.ok) setSessionTick(t => t + 1); else setSignInNote("That sign-in link has expired or was already used. Sign in again for a fresh one."); })
       .catch(() => setSignInNote("That sign-in link did not work. Sign in again for a fresh one."));
   }, [membershipsMode, orgSlug]);
+  // EMAIL-1 — THE GIVE LINK IN AN EMAIL carries the person's name and email
+  // in the URL FRAGMENT (#email=…&first_name=…&last_name=…), which no server,
+  // access log or Referer ever sees. Read once, fill only the empty fields,
+  // then take it off the address bar so it is not bookmarked or shared.
+  useEffect(() => {
+    const raw = (window.location.hash || "").replace(/^#/, "");
+    if (!raw || /(^|&)signin=/.test(raw)) return;
+    const f = new URLSearchParams(raw);
+    const em = (f.get("email") || "").trim(), fn = (f.get("first_name") || "").trim(), ln = (f.get("last_name") || "").trim();
+    if (!em && !fn && !ln) return;
+    if (em && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) setEmail(v => v || em.slice(0, 254));
+    if (fn) setFirstName(v => v || fn.slice(0, 100));
+    if (ln) setLastName(v => v || ln.slice(0, 100));
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
 
   const th = resolveTheme(org?.theme);
 
