@@ -282,14 +282,30 @@ async function collectLiveAssetRefs(orgId) {
     add(r.hero_image_url);
     for (const ph of (Array.isArray(r.gallery) ? r.gallery : [])) add(ph && ph.path);
   }
-  for (const r of await query(`SELECT draft, published FROM portal_pages${w}`, p)) {
+  // EMAIL-1: a giving page's widgets are the same blocks as the portal's, and
+  // an email template's blocks are the same widgets again, where a photo may
+  // sit as { src, alt } (two photos) or in `photo` (the signature).
+  const pageRows = [
+    ...await query(`SELECT draft, published FROM portal_pages${w}`, p),
+    ...await query(`SELECT draft, published FROM giving_pages${w}`, p),
+    ...(await query(`SELECT blocks FROM email_templates${w}`, p)).map(r => ({ draft: r.blocks, published: null })),
+  ];
+  for (const r of pageRows) {
     for (const list of [r.draft, r.published]) {
       for (const wd of (Array.isArray(list) ? list : [])) {
-        add(wd.image);
-        for (const u of (wd.images || [])) add(u);
-        for (const m of (wd.members || [])) add(m && m.photo);
+        if (!wd || typeof wd !== "object") continue;
+        add(wd.image); add(wd.photo);
+        for (const u of (Array.isArray(wd.images) ? wd.images : [])) add(u && typeof u === "object" ? u.src : u);
+        for (const m of (Array.isArray(wd.members) ? wd.members : [])) add(m && m.photo);
       }
     }
+  }
+  // EMAIL-1: the media library. Kept while the row exists, removed or not,
+  // because a removed item can be put back and its photo may already be in
+  // an email somebody opens next month.
+  for (const r of await query(`SELECT asset_id, thumb_asset_id FROM media_items${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+    if (ASSET_ID_RE.test(String(r.thumb_asset_id || ""))) refs.add(r.thumb_asset_id);
   }
   return refs;
 }

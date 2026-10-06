@@ -26,6 +26,7 @@ import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../
 import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "../components/ConfirmDialog";
+import MediaPicker from "../components/MediaPicker";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -655,13 +656,28 @@ function DesignRail({ ps, onSet, note }) {
 }
 
 function WidgetOptions({ w, funds, camps, onChange, onClose }) {
-  const head = (
+  // EMAIL-1: the media library, shared with emails. `picker` is
+  // { kind, onPick } while the picker is open; picking fills the widget with
+  // the item's /portal-assets path (and its words where the widget has them),
+  // which the draft route stores as it is. The upload beside it still works.
+  const [picker, setPicker] = useState(null);
+  const pickerModal = picker && (
+    <MediaPicker kind={picker.kind} onClose={() => setPicker(null)}
+      onPick={item => { setPicker(null); picker.onPick(item); }} />
+  );
+  const libraryBtn = (kind, onPick) => (
+    <button type="button" data-testid="choose-from-library" onClick={() => setPicker({ kind, onPick })}
+      style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 6, padding: "6px 12px", fontSize: 12 }}>
+      Choose from your library
+    </button>
+  );
+  const head = (<>{pickerModal}
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <div style={{ fontSize: 13, fontWeight: 700 }}>{WIDGET_META[w.type]?.label}</div>
       <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>Done ✕</button>
-    </div>
+    </div></>
   );
-  const imgUploader = (value, set, label = "Photo") => (
+  const imgUploader = (value, set, label = "Photo", onPickItem = null) => (
     <>
       <div style={lbl}>{label}</div>
       <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
@@ -669,7 +685,14 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
         label={value ? "Replace" : "Drag a photo here, or browse — or drop one straight onto the widget"}
         onFile={({ dataUrl }) => set(dataUrl)}
         onRemove={() => set(null)} />
+      {libraryBtn("photo", item => (onPickItem ? onPickItem(item) : set(item.url)))}
     </>
+  );
+  // The words a screen reader hears for the photo; filled from the library.
+  const altField = () => (
+    <><div style={lbl}>Describe the photo</div>
+      <input style={inp} value={w.alt || ""} maxLength={300} placeholder="What the photo shows, in a few words"
+        onChange={e => onChange({ alt: e.target.value })} /></>
   );
   // BUILD-65 Part 3 — the non-destructive crop for a widget image; same
   // PortalBannerCrop the banner uses, at the widget ratio, so preview==render.
@@ -687,14 +710,16 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <select style={inp} value={w.size || "standard"} onChange={e => onChange({ size: e.target.value })}>
         <option value="standard">Standard</option><option value="tall">Tall</option>
       </select>
-      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }))}
-      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}</>;
+      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
+      {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
+      {w.image && altField()}</>;
     case "richtext": return <>{head}
       <div style={lbl}>Text <span style={{ fontWeight: 400, textTransform: "none" }}>(blank line = paragraph, "## " heading, "- " list)</span></div>
       <textarea style={{ ...inp, resize: "vertical" }} rows={8} value={storyToText(w.blocks)} onChange={e => onChange({ blocks: textToStory(e.target.value) })} /></>;
     case "image": return <>{head}
-      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }))}
+      {imgUploader(w.image, v => onChange({ image: v, imageCrop: null }), "Photo", item => onChange({ image: item.url, imageCrop: null, alt: item.alt }))}
       {imgCropper(w.image, w.imageCrop, c => onChange({ imageCrop: c }))}
+      {w.image && altField()}
       <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
     case "gallery": return <>{head}
       <div style={lbl}>Photos</div>
@@ -716,7 +741,8 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
             ))}
           </div>
         )}
-      </Uploader></>;
+      </Uploader>
+      {(w.images || []).length < 8 && libraryBtn("photo", item => onChange({ images: [...(w.images || []), item.url].slice(0, 8) }))}</>;
     case "stats": return <>{head}
       <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words — nothing is computed or invented for you.</div>
       {(w.items || []).map((it, i) => (
@@ -806,6 +832,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <div style={lbl}>YouTube or Vimeo link</div>
       <input style={inp} placeholder="https://youtu.be/…" value={w.url || (w.videoId ? `(saved ${w.provider} video)` : "")}
         onChange={e => onChange({ url: e.target.value, provider: undefined, videoId: undefined })} />
+      {libraryBtn("video", item => onChange({ url: item.url, provider: undefined, videoId: undefined, caption: w.caption || item.title || "" }))}
       <div style={{ fontSize: 12, color: E.muted, marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work — the video ID is stored, never pasted embed code.</div>
       <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
     case "give": return <>{head}
