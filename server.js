@@ -2615,6 +2615,7 @@ app.use((req, res, next) => {
   }
   next();
 });
+app.use(require("./routes/grantMail").routers.r1);     // GRANTS-1 fixed /grants/* paths, ahead of crm's /grants/:id
 app.use(require("./routes/crm").routers.r0);
 
 // ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
@@ -8855,6 +8856,17 @@ async function syncMailbox(userId, orgId, providerKey) {
       // could: the only write is to `interactions` and to an open thread step.
       await closeThreadStepForContact(orgId, donorId, decision.date, intId).catch(() => {});
     }
+
+    // GRANTS-1 · A MESSAGE TO OR FROM A FUNDER CONTACT ALSO LANDS ON THE
+    // FUNDER AND ITS GRANT, attachments included (routes/grantMail.js holds
+    // the one rule, shared with the BCC path). Anybody else: nothing on any grant.
+    await require("./routes/grantMail").routeToFunderGrant({
+      orgId, source: "mailbox", provider: providerKey, actorId, actorName: staffName,
+      ownerAddress: conn.address, staffEmails, note: body, attachmentCount: m.attachmentCount,
+      message: { id: String(m.id), from: m.from, to: m.to, cc: m.cc, subject: decision.subject,
+                 sentOn: decision.date, receivedAt: m.receivedAt },
+      loadAttachments: () => fetchMailboxAttachments(providerKey, token, m),
+    }).catch(e => console.error("[mailbox] grant routing:", e.message));
   }
 
   await run(
@@ -9077,6 +9089,10 @@ async function mailboxAccessToken(conn, orgId, providerKey) {
  * The query sent to the provider names the addresses; anything else in the
  * mailbox is never returned, so Steward never holds it even in memory.
  */
+// The provider roots, read per call so a suite's stand-in (GMAIL_API_BASE,
+// GRAPH_API_BASE) serves every mail URL, the attachments included.
+const GMAIL_BASE = () => process.env.GMAIL_API_BASE || "https://gmail.googleapis.com";
+const GRAPH_BASE = () => process.env.GRAPH_API_BASE || "https://graph.microsoft.com";
 async function fetchMailboxMessages(providerKey, token, donorEmails) {
   const out = [];
   const CHUNK = 15, CAP = 120;
@@ -9086,12 +9102,12 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
       if (providerKey === "google") {
         const q = chunk.map(e => `from:${e} OR to:${e} OR cc:${e}`).join(" OR ");
         const list = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=${encodeURIComponent(q)}`,
+          `${GMAIL_BASE()}/gmail/v1/users/me/messages?maxResults=40&q=${encodeURIComponent(q)}`,
           { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
         for (const { id } of (list?.messages || [])) {
           if (out.length >= CAP) break;
           const full = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+            `${GMAIL_BASE()}/gmail/v1/users/me/messages/${id}?format=full`,
             { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
           if (full) out.push(gmailToMessage(full));
         }
@@ -9099,7 +9115,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
         const filter = chunk.map(e =>
           `from/emailAddress/address eq '${e.replace(/'/g, "''")}'`).join(" or ");
         const list = await fetch(
-          `https://graph.microsoft.com/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,webLink&$filter=${encodeURIComponent(filter)}`,
+          `${GRAPH_BASE()}/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,webLink&$filter=${encodeURIComponent(filter)}`,
           { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
         for (const m of (list?.value || [])) {
           if (out.length >= CAP) break;
@@ -9121,11 +9137,17 @@ function gmailToMessage(full) {
     if (part.mimeType === "text/plain" && part.body?.data) {
       acc.text += Buffer.from(part.body.data, "base64").toString("utf8");
     }
-    if (part.filename && part.body?.attachmentId) acc.attachments++;
+    if (part.filename && part.body?.attachmentId) {
+      acc.attachments++;
+      // Where to fetch it, if the message turns out to be to or from a funder
+      // contact (GRANTS-1). Nothing is downloaded here.
+      acc.parts.push({ fileName: part.filename, contentType: part.mimeType || "",
+                       size: Number(part.body.size) || null, attachmentId: part.body.attachmentId });
+    }
     for (const p of part.parts || []) walk(p, acc);
     return acc;
   };
-  const acc = walk(full.payload, { text: "", attachments: 0 });
+  const acc = walk(full.payload, { text: "", attachments: 0, parts: [] });
   return {
     id: full.id,
     from: addrOf(hdr("from")),
@@ -9134,9 +9156,38 @@ function gmailToMessage(full) {
     subject: hdr("subject"),
     bodyText: acc.text || full.snippet || "",
     attachmentCount: acc.attachments,
+    attachmentParts: acc.parts,
     date: new Date(Number(full.internalDate) || Date.now()).toISOString().slice(0, 10),
     receivedAt: new Date(Number(full.internalDate) || Date.now()).toISOString(),
   };
+}
+
+/**
+ * GRANTS-1 · THE ATTACHMENTS OF ONE MESSAGE, fetched only once the message is
+ * known to be to or from a funder contact. Gmail hands each attachment over by
+ * id as base64url; Graph lists them with their bytes as base64. A file over the
+ * grant-document cap is listed with its size and never downloaded.
+ */
+async function fetchMailboxAttachments(providerKey, token, m) {
+  const MAX = require("./grantDocs").DOC_MAX_BYTES;
+  const auth = { headers: { Authorization: "Bearer " + token } };
+  if (providerKey === "google") {
+    const out = [];
+    for (const p of m.attachmentParts || []) {
+      if (p.size && p.size > MAX) { out.push({ ...p, buffer: null }); continue; }
+      const r = await fetch(`${GMAIL_BASE()}/gmail/v1/users/me/messages/${encodeURIComponent(m.id)}/attachments/${encodeURIComponent(p.attachmentId)}`, auth)
+        .then(x => x.ok ? x.json() : null).catch(() => null);
+      out.push({ ...p, buffer: r && r.data ? Buffer.from(String(r.data), "base64url") : null });
+    }
+    return out;
+  }
+  const list = await fetch(`${GRAPH_BASE()}/v1.0/me/messages/${encodeURIComponent(m.id)}/attachments`, auth)
+    .then(x => x.ok ? x.json() : null).catch(() => null);
+  if (!list) return null;
+  return (list.value || [])
+    .filter(a => a && !a.isInline && (!a["@odata.type"] || a["@odata.type"] === "#microsoft.graph.fileAttachment"))
+    .map(a => ({ fileName: a.name || "", contentType: a.contentType || "", size: Number(a.size) || null,
+                 buffer: a.contentBytes && !(Number(a.size) > MAX) ? Buffer.from(String(a.contentBytes), "base64") : null }));
 }
 
 function graphToMessage(m) {
@@ -10729,7 +10780,7 @@ require("./routes/why").mount({
 require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
 // GRANTS-1: one shared context for the four grant modules.
 const GRANTS1_CTX = { actor, checkWriteAccess, query, run, requireAdmin, requireAuth, requirePlan, uuid, wrap, orgTz, orgToday, orgTime,
-  grantMoneyRows, grantBalanceFrom, agentGate, withTransaction, testMode };
+  grantMoneyRows, grantBalanceFrom, agentGate, withTransaction, testMode, putThemeAsset, recordAssetPointerHistory };
 require("./routes/grantSystem").mount(GRANTS1_CTX);
 require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
