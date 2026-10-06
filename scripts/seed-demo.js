@@ -1365,6 +1365,132 @@ async function main() {
   await ft(dateIn2(TODAY, -31), "Boat hull and trailer", "Kestrel Marine", 21400, "expense", "fund_b72demo_boat");
   await ft(dateIn2(TODAY, -12), "Outboard and safety kit", "Kestrel Marine", 6250, "expense", "fund_b72demo_boat");
 
+  // ── GRANTS-1 · GRANTS AS ITS OWN SYSTEM ─────────────────────────────────
+  // Three funders with a history (Meridian, Tidewater, Coastal Bank), each
+  // with a program officer on file; eight grants, one at every stage; four
+  // deadlines inside this month; one awarded grant paid in two instalments,
+  // the first received; a library of six pieces; one submitted report from
+  // last year that this year's starts from.
+  console.log("[seed] grants (funders, eight stages, instalments, library)…");
+  {
+    const S = "system:seed-demo", SN = "The demo seed";
+    const tide = (await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Tidewater Community Foundation'`, [ORG]))[0].id;
+    const mer = "d_b72_meridian", bank = "d_b72_coastalbank";
+    for (const [id, name, email, type] of [[mer, "Meridian Foundation", "grants@meridianfdn.example.demo", "private_foundation"],
+                                           [bank, "Coastal Bank Foundation", "foundation@coastalbank.example.demo", "corporate"]]) {
+      await q(`INSERT INTO donors (id,org_id,name,email,kind,person_types,stage,status,tags,funder_type,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'organisation','["other"]'::jsonb,'prospect','active','[]',$5,$6,$7)`, [id, ORG, name, email, type, S, SN]);
+    }
+    const prof = [
+      [mer, "Youth development and maritime skills on the Gulf coast. Prefers programs with a clear path to work.", 25000, 100000, "annual", [3, 9], "They like a site visit before the proposal. Perpetua reads every report herself."],
+      [tide, "Access for low-income families in the county: scholarships, transport, summer programs.", 5000, 25000, "biannual", [4, 10], "Two cycles a year. The board meets the second Tuesday after the deadline."],
+      [bank, "Financial literacy and first jobs for teenagers in the bank's branch towns.", 10000, 40000, "rolling", [], "Applications any time; the committee meets quarterly."],
+    ];
+    for (const [id, interests, min, max, cycle, months, notes] of prof) {
+      await q(`UPDATE donors SET funder_interests=$3, funder_award_min=$4, funder_award_max=$5, funder_cycle=$6, funder_due_months=$7::int[], funder_notes=$8
+                WHERE id=$1 AND org_id=$2`, [id, ORG, interests, min, max, cycle, months, notes]);
+    }
+    const officers = [
+      ["d_b72_po_perpetua", "Perpetua Hollingsworth", "perpetua.hollingsworth@meridianfdn.example.demo", mer, "Program officer, youth and workforce"],
+      ["d_b72_po_granville", "Granville Thistlewood", "granville.thistlewood@tidewatercf.example.demo", tide, "Grants manager"],
+      ["d_b72_po_leonora", "Leonora Quillfeather", "leonora.quillfeather@coastalbank.example.demo", bank, "Community giving lead"],
+    ];
+    for (const [id, name, email, funder, title] of officers) {
+      await q(`INSERT INTO donors (id,org_id,name,email,kind,person_types,stage,status,tags,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'person','["other"]'::jsonb,'prospect','active','[]',$5,$6)`, [id, ORG, name, email, S, SN]);
+      await q(`INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type,notes,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'program_officer',$5,$6,$7)`, [`rel_${id}`, ORG, funder, id, title, S, SN]);
+    }
+    // Four deadlines inside this month, however late in the month the seed runs.
+    const lastDay = (() => { const [y, m] = TODAY.split("-").map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); })();
+    const inMonth = n => { const d = dateIn2(TODAY, n); return d > lastDay ? lastDay : d; };
+    const G = [
+      // id, funder id, funder name, program, status, requested, awarded, extra
+      ["gr_b72_bank_lit", bank, "Coastal Bank Foundation", "Money basics for teens", "researching", 20000, null, {}],
+      ["gr_b72_mer_winter", mer, "Meridian Foundation", "Winter boatbuilding workshop", "loi", 40000, null, {}],
+      ["gr_b72_tide_mentor", tide, "Tidewater Community Foundation", "Youth mentor stipends", "invited", 25000, null, {}],
+      ["gr_b72_bank_jobs", bank, "Coastal Bank Foundation", "Summer jobs pilot", "submitted", 30000, null, {}],
+      ["gr_b72_tide_sail", tide, "Tidewater Community Foundation", "Summer sailing scholarships", "awarded", 15000, 15000, { awardedAt: dateIn2(TODAY, -60) }],
+      ["gr_b72_mer_dock", mer, "Meridian Foundation", "Dock repairs", "declined", 60000, null, { declineReason: "already_funded", declinedOn: dateIn2(TODAY, -200) }],
+      ["gr_b72_mer_pilot", mer, "Meridian Foundation", "Harbor Skills pilot year", "closed", 50000, 50000, { awardedAt: dateIn2(TODAY, -540), closedOn: dateIn2(TODAY, -170) }],
+    ];
+    for (const [id, fid, fname, program, status, req, awd, x] of G) {
+      await q(`INSERT INTO grants (id,org_id,funder,funder_donor_id,program,status,amount,amount_requested,amount_awarded,awarded_at,decline_reason,declined_on,closed_on,officer_id,officer,cycle_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$7,$8,$9,$10,$11,$12,'u_b72demo','Dana Reyes',$13,$14,$15)`,
+        [id, ORG, fname, fid, program, status, req, awd, x.awardedAt || null, x.declineReason || null, x.declinedOn || null, x.closedOn || null,
+         `FY${String(Number(TODAY.slice(0, 4)) + (Number(TODAY.slice(5, 7)) >= 7 ? 1 : 0)).slice(2)}`, S, SN]);
+    }
+    // The boat grant (above) joins the system: Meridian's, awarded, now reporting.
+    await q(`UPDATE grants SET funder_donor_id=$3, amount_requested=85000, amount_awarded=85000, status='reporting', officer_id='u_b72demo',
+               awarded_at=COALESCE(awarded_at, $4::timestamptz), restriction='program', fund_id='fund_b72demo_boat',
+               outcomes='Second training boat bought and fitted out; 46 young people trained on it this season, 12 earned their first certificate.'
+             WHERE id=$1 AND org_id=$2`, [GRANT_ID, ORG, mer, dateIn2(TODAY, -90)]);
+    await q(`UPDATE grants SET outcomes='31 scholarships awarded so far; 28 finished the full session.' WHERE id='gr_b72_tide_sail' AND org_id=$1`, [ORG]);
+    // The award paid in two instalments: one received, one to come.
+    await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,status,frequency,installment_count,created_by,created_by_name)
+             VALUES ('pl_b72_tide_sail',$1,$2,15000,$3,'Grant award: Summer sailing scholarships','open','semiannual',2,$4,$5)`,
+      [ORG, tide, dateIn2(TODAY, -45), S, SN]);
+    await q(`UPDATE grants SET award_pledge_id='pl_b72_tide_sail' WHERE id='gr_b72_tide_sail' AND org_id=$1`, [ORG]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,pledge_id,created_by,created_by_name)
+             VALUES ('g_b72_tide_sail1',$1,$2,7500,$3,'check','Check','pl_b72_tide_sail',$4,$5)`, [ORG, tide, dateIn2(TODAY, -40), S, SN]);
+    await q(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount,paid_gift_id,paid_at) VALUES
+               ('pli_b72_tide_1',$1,'pl_b72_tide_sail',1,$2,7500,'g_b72_tide_sail1',$3::timestamptz),
+               ('pli_b72_tide_2',$1,'pl_b72_tide_sail',2,$4,7500,NULL,NULL)`, [ORG, dateIn2(TODAY, -45), dateIn2(TODAY, -40), dateIn2(TODAY, 135)]);
+    // Deadlines: four this month, then the rest of the year.
+    const MS = [
+      ["gms_b72_1", "gr_b72_bank_lit", "loi_due", inMonth(3), null],
+      ["gms_b72_2", "gr_b72_mer_winter", "proposal_due", inMonth(8), null],
+      ["gms_b72_3", "gr_b72_tide_mentor", "proposal_due", inMonth(14), null],
+      ["gms_b72_4", "gr_b72_tide_sail", "report_due", inMonth(20), null],
+      ["gms_b72_5", "gr_b72_bank_jobs", "decision", dateIn2(TODAY, 34), null],
+      ["gms_b72_6", GRANT_ID, "report_due", dateIn2(TODAY, 41), null],
+      ["gms_b72_7", "gr_b72_tide_mentor", "custom", dateIn2(TODAY, 4), "Site visit"],
+    ];
+    for (const [id, gid, kind, due, label] of MS) {
+      await q(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8)
+               ON CONFLICT DO NOTHING`, [id, ORG, gid, kind, label, due, S, SN]);
+    }
+    // The invited proposal's checklist: tasks with owners, so they are on the Calendar.
+    for (const [id, title, due, done] of [["tk_b72_g1", "Ask Tidewater for the budget template", dateIn2(TODAY, -2), 1],
+                                          ["tk_b72_g2", "Draft the mentor job description", inMonth(6), 0],
+                                          ["tk_b72_g3", "Board chair letter of support", inMonth(10), 0]]) {
+      await q(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,grant_id,assigned_to,assigned_to_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'medium','grant',$5,'gr_b72_tide_mentor','u_b72demo','Dana Reyes',$6,$7)`, [id, ORG, title, due, done, S, SN]);
+    }
+    // The library: six reusable pieces, one already on its second version.
+    const LIB = [
+      ["lib_b72_mission", "mission", "Mission", "Harborlight Youth Collective gives young people on the Gulf coast a place on the water, real skills and a crew who believes in them."],
+      ["lib_b72_history", "history", "Our history", "Founded in 2011 by two retired shipwrights with one borrowed skiff, Harborlight now runs year-round programs for 400 young people from three harbor towns."],
+      ["lib_b72_program", "program", "Harbor Skills", "Harbor Skills is a twelve-week program in boat handling, maintenance and safety. Graduates earn a recognised first certificate, and many go on to paid summer work on the docks."],
+      ["lib_b72_budget", "budget", "Organisation budget summary", "Annual budget about $1.1M: programs 78%, management 12%, fundraising 10%. About a third comes from foundations, the rest from individuals, events and fees on a sliding scale."],
+      ["lib_b72_board", "board_list", "Board of directors", "Eleanor Vance (chair), Marcus Bell (treasurer), Rosa Delgado (secretary), Tom Ashby, Grace Kim, Dr. Alan Ruiz."],
+      ["lib_b72_bios", "bios", "Staff bios", "Dana Reyes, executive director: fifteen years in youth development, a licensed captain. Sam Okafor, program director: former harbor pilot and Harborlight graduate."],
+    ];
+    for (const [id, kind, title, body] of LIB) {
+      await q(`INSERT INTO grant_library (id,org_id,kind,title,body,version,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
+        [id, ORG, kind, title, body, id === "lib_b72_program" ? 2 : 1]);
+      await q(`INSERT INTO grant_library_versions (id,org_id,piece_id,version,title,body,created_by,created_by_name) VALUES ($1,$2,$3,1,$4,$5,'u_b72demo','Dana Reyes')`,
+        [`${id}_v1`, ORG, id, title, id === "lib_b72_program" ? "Harbor Skills is a ten-week program in boat handling and safety." : body]);
+      if (id === "lib_b72_program") await q(`INSERT INTO grant_library_versions (id,org_id,piece_id,version,title,body,created_by,created_by_name) VALUES ($1,$2,$3,2,$4,$5,'u_b72demo','Dana Reyes')`, [`${id}_v2`, ORG, id, title, body]);
+    }
+    // Last year's report to Meridian, submitted and kept: this year's starts from it.
+    const sent = dateIn2(TODAY, -175);
+    await q(`INSERT INTO grant_reports (id,org_id,grant_id,title,due_date,asked_for,status,sections,version,submitted_on,submitted_to_name,submitted_to_email,submitted_by,submitted_by_name,created_by,created_by_name)
+             VALUES ('grr_b72_pilot',$1,'gr_b72_mer_pilot','Final report: Harbor Skills pilot year',$2,'Outcomes against the three goals in the proposal, a budget against actual, and one story.','submitted',$3::jsonb,1,$4,'Perpetua Hollingsworth','perpetua.hollingsworth@meridianfdn.example.demo','u_b72demo','Dana Reyes','u_b72demo','Dana Reyes')`,
+      [ORG, dateIn2(TODAY, -170), JSON.stringify([
+        { key: "outcomes", title: "Outcomes", text: "38 young people finished the pilot; 9 earned a first certificate; 6 found summer work on the docks." },
+        { key: "budget", title: "Budget against actual", text: "Awarded $50,000. Spent $49,120 on instructors, fuel and safety kit; $880 returned to the fund." },
+        { key: "story", title: "One story", text: "Jaylen came in unable to swim. By August he was teaching knots to the new intake." },
+      ]), sent]);
+    await q(`INSERT INTO grant_sends (id,org_id,grant_id,funder_donor_id,what,report_id,subject,sent_on,sent_to_name,sent_to_email,direction,source,created_by,created_by_name)
+             VALUES ('gsd_b72_pilot',$1,'gr_b72_mer_pilot',$2,'report','grr_b72_pilot','Final report: Harbor Skills pilot year',$3,'Perpetua Hollingsworth','perpetua.hollingsworth@meridianfdn.example.demo','out','manual','u_b72demo','Dana Reyes')`,
+      [ORG, mer, sent]);
+    await q(`INSERT INTO grant_sends (id,org_id,grant_id,funder_donor_id,what,library_piece_id,library_version,subject,sent_on,sent_to_name,sent_to_email,direction,source,created_by,created_by_name)
+             VALUES ('gsd_b72_prog',$1,'gr_b72_mer_pilot',$2,'library','lib_b72_program',1,'Harbor Skills',$3,'Perpetua Hollingsworth','perpetua.hollingsworth@meridianfdn.example.demo','out','manual','u_b72demo','Dana Reyes')`,
+      [ORG, mer, dateIn2(TODAY, -560)]);
+    await q(`UPDATE orgs SET grant_goal_cents=15000000 WHERE id=$1`, [ORG]);
+  }
+
   // The scholarship fund, restricted by named donors rather than by a grant,
   // so the Funds screen shows BOTH ways a restriction arrives.
   const schDonors = (await q(

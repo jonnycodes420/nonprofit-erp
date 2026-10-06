@@ -13485,13 +13485,21 @@ app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
        LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
       WHERE ${where.join(" AND ")}`, args);
   const funds = await orgFundNamesG(orgId), officers = await orgOfficerNames(orgId);
-  const all = rows.map(r => ({
-    ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
-    // The next dated thing on this grant, whichever it is. Part 2 replaces this
-    // with the milestone table; until then the two dates the row already has are
-    // the honest answer rather than a blank column.
-    nextDeadline: [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null,
-  }));
+  // GRANTS-1: the next open milestone on each grant, in one read.
+  const M = await grantMsMod();
+  const nextMs = new Map((await query(
+    `SELECT DISTINCT ON (grant_id) grant_id, kind, label, due_date FROM grant_milestones
+      WHERE org_id=? AND state NOT IN ('done','skipped') ORDER BY grant_id, due_date`, [orgId])).map(m => [m.grant_id, m]));
+  const all = rows.map(r => {
+    const ms = nextMs.get(r.id);
+    const legacy = [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null;
+    const useMs = ms && (!legacy || ms.due_date <= legacy || G.holdsAward(r.status));
+    return {
+      ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
+      nextDeadline: useMs ? ms.due_date : legacy,
+      nextDeadlineLabel: useMs ? M.milestoneName(ms) : (legacy ? (legacy === r.report_due ? "Report due" : "Deadline") : null),
+    };
+  });
   const sort = ["deadline", "amount", "funder", "status"].includes(String(req.query.sort)) ? String(req.query.sort) : "deadline";
   const grants = G.sortGrants(all, sort);
   const byStatus = G.pipelineByStatus(all).map(r => ({
