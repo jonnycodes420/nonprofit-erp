@@ -132,7 +132,7 @@ export function GrantImport({ onClose, parseFile, onDone }) {
                 {plan.refused.slice(0, 20).map(r => <div key={r.line} style={{ fontSize: 12, color: T.ink3, padding: "3px 0" }}>Line {r.line}: {r.why}</div>)}
                 {plan.refused.length > 20 && <div style={{ fontSize: 12, color: T.ink3 }}>and {plan.refused.length - 20} more</div>}
               </div>)}
-            {plan.unrecognised?.length > 0 && <div style={{ fontSize: 12, color: T.ink3 }}>Columns not read: {plan.unrecognised.join(", ")}</div>}
+            {plan.unrecognised?.length > 0 && <div style={{ fontSize: 12, color: T.ink3 }}>Columns not read: {plan.unrecognised.map(u => (u && u.header) || u).join(", ")}</div>}
             <div data-testid="grant-import-writes" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
               This writes {plan.writes.join(" and ")}. It does not write {plan.doesNotWrite.join(", ")}.
             </div>

@@ -249,6 +249,12 @@ async function collectLiveAssetRefs(orgId) {
   for (const r of await query(`SELECT asset_id FROM grant_documents${w}`, p)) {
     if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
   }
+  // SHEETS-1: the original file behind a stored board report or a grant
+  // tracker brought in. Kept while the row exists (a removed one can be put
+  // back), because the file is the record of what the board was shown.
+  for (const r of await query(`SELECT asset_id FROM stored_sheets${w}`, p).catch(() => [])) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+  }
   // PARITY-1 Part B — a file attached to a conversation or a note. A live
   // attachment row keeps its bytes; a soft-deleted one lets them age out.
   for (const r of await query(`SELECT asset_id FROM interaction_attachments WHERE deleted_at IS NULL${orgId ? " AND org_id = ?" : ""}`, p)) {

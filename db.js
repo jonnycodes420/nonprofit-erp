@@ -3350,6 +3350,34 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_grant_sends_message ON grant_sends (org_id, grant_id, message_id) WHERE message_id IS NOT NULL`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_grant_docs_message ON grant_documents (grant_id, message_id, file_name) WHERE message_id IS NOT NULL`);
 
+  // ── SHEETS-1 · OLD SPREADSHEETS, KEPT ────────────────────────────────────
+  // A spreadsheet somebody brought in: an old grant tracker (its grants went
+  // into the pipeline) or a board report (its table is kept as it was). The
+  // original file is in the asset store (asset_id, listed in
+  // collectLiveAssetRefs), and every column Steward could not place is kept
+  // here with its values, line by line, rather than dropped.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stored_sheets (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      period_label TEXT,
+      file_name TEXT NOT NULL,
+      content_type TEXT NOT NULL,
+      bytes INTEGER NOT NULL DEFAULT 0,
+      asset_id TEXT,
+      sheet_name TEXT,
+      headers JSONB NOT NULL DEFAULT '[]'::jsonb,
+      rows JSONB NOT NULL DEFAULT '[]'::jsonb,
+      unplaced JSONB NOT NULL DEFAULT '{}'::jsonb,
+      grant_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      removed_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stored_sheets_org ON stored_sheets (org_id, kind)`);
+
   // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
   // meant on a grant that has not been awarded, and on an awarded one it is what
   // was asked for. Never guessed — a row with no amount stays null.

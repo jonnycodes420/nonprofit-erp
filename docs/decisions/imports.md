@@ -3,6 +3,12 @@
 Read this when you touch file import (CSV, xlsx, workbooks), shape detection, the column mapper, money or date parsing, dedupe on import, exclusions, or export files.
 
 ## Rules
+- **An old spreadsheet comes in through one door (SHEETS-1).** `POST /sheets/read` says what a sheet is
+  and writes nothing: grants (a funder column and an amount column, read by shared/grantImport.js) or a
+  table of numbers (a column mostly numbers). Neither is refused, never guessed. Grants go through
+  `POST /grants/import`, the one grant importer, which keeps the file and every unplaced column's values
+  line by line in `stored_sheets`; the file is checked before anything is written. A board report keeps
+  its table exactly and its file (`stored_sheets.asset_id`, in `collectLiveAssetRefs`).
 - **Build every vendor or statement format as a preset on the one mapper, never as a second importer.**
   Presets live in `shared/*Preset(s).js`, `grantImport.js` and `membershipImport.js`. (BUILD-89S, BUILD-98)
 - **Let a preset claim a file only when two of its own signal columns are present.** A tie is a question
