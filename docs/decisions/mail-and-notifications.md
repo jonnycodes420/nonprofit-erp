@@ -3,6 +3,18 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **An email is built from the same widget blocks as a page (EMAIL-1).** shared/pageWidgets.js has the
+  "email" surface; shared/emailBlocks.js `renderEmail` turns blocks into table-based, inline-styled HTML with
+  the org's ONE brand (portal_settings) read at render time, so a colour change reaches pages and emails at
+  once. In send mode any problem (an image without alt text, an unknown field, a blank still in brackets)
+  throws `EMAIL_NOT_READY` and the whole send is refused. The footer slot is always emitted and is filled
+  with `unsubscribeEmailFooterHtml` for each person. No WebP in email: media photos are stored as JPEG.
+- **Video in email is a picture.** The video block is its thumbnail with a play button, linking to the
+  org's own video page `GET /watch/:orgSlug/:provider/:videoId`; no inbox plays video.
+- **A campaign can wait for approval.** `awaiting_approval` is never picked up by the scheduler; an admin's
+  Approve stamps `approved_*` and schedules it; a non-admin edit to an approved campaign sends it back.
+- **A journey step can start from a template (`draft: "template:<id>"`)**: it writes a review draft, never
+  a send. Review and Agent drafts can start from a template the same way.
 - **A video thank-you is a draft, never a send.** Saving one writes a `milestone_drafts` row with a link
   to `/v/:token`; staff send it. The page's GET writes nothing; the view is a POST beacon that records it
   once on the timeline (`video_thanks`). Files are per org through assetStore, 60 MB, WebM or MP4 by magic

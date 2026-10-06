@@ -577,6 +577,9 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
 app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+// EMAIL-1: a photo added to the media library is a camera photo too
+// (routes/media.js PHOTO_MAX_BYTES, 15MB decoded). Move both or neither.
+app.use("/media/photos", express.json({ limit: "22mb" }));
 // CLEAN-1: a returned change-of-address file for a large file of people.
 app.use("/data-health/ncoa/results", express.json({ limit: "20mb" }));
 // PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.
@@ -3965,7 +3968,9 @@ app.use(require("./routes/grantSystem").routers.r0);   // GRANTS-1 funders, pipe
 app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, documents, reports, drafting
 app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
 app.use(require("./routes/grantReports").routers.r0);
-app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets  // GRANTS-1 the grants reports
+app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
+app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
+app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -4864,6 +4869,10 @@ async function campaignAudience(campaign, orgId) {
 // from the send route (BUILD-06 Phase C) so processScheduledCampaigns() can
 // use the identical path — before that job existed, a scheduled campaign
 // sat in status='scheduled' forever and never sent.
+// EMAIL-1: the seam that renders a template for one person (emailCompose.js).
+const emailCompose = require("./emailCompose");
+emailCompose.configure({ displayNameCase });
+
 async function runCampaignSend(campaign, org, donors) {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
   {
@@ -4883,6 +4892,10 @@ async function runCampaignSend(campaign, org, donors) {
 
       const year = orgToday(await orgTz(org.id)).slice(0, 4); // ORG_TZ_SEAM_OK (BUILD-75 A.5) — the {{year}} token is the org's civil year
       const brandHeader = await brandEmailHeaderHtml(org.id); // BUILD-13 — once per send, not per recipient
+      // EMAIL-1 — A TEMPLATE CAMPAIGN is rendered from its blocks for each
+      // person. The org half (brand, links) is read once, here, at send time.
+      const fromBlocks = emailCompose.hasBlocks(campaign);
+      const renderCtx = fromBlocks ? await emailCompose.orgRenderContext(org.id) : null;
       const campaignFrom = smtpFrom ? fromWithDisplayName((await resolveOrgBrandTheme(org.id).catch(() => null))?.displayName, smtpFrom) : smtpFrom; // BUILD-64: org name in the inbox, resolved once
 
       for (const donor of donors) {
@@ -4902,24 +4915,43 @@ async function runCampaignSend(campaign, org, donors) {
           [recipientId, org.id, campaign.id, donor.id, donor.email]
         );
 
-        const firstName   = donor.name.split(" ")[0];
-        const lastName    = donor.name.split(" ").slice(1).join(" ");
-        const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
-        const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
-        const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-
-        const bodyHtml = (campaign.body || "")
-          .replace(/{{first_name}}/g,   firstName)
-          .replace(/{{last_name}}/g,    lastName)
-          .replace(/{{donor_name}}/g,   donor.name)
-          .replace(/{{org_name}}/g,     displayNameCase(org.name))
-          .replace(/{{gift_amount}}/g,  giftAmount)
-          .replace(/{{total_giving}}/g, totalGiving)
-          .replace(/{{year}}/g,         year);
-
-        const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
+        const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" alt="" style="display:none">`;
         const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
-        const htmlFull = brandHeader + bodyHtml + footer + pixel;
+        let htmlFull;
+        let personSubject = campaign.subject || "";
+        if (fromBlocks) {
+          // The header block IS the header: no brand band on top. The footer
+          // goes where the renderer left its slot, once, and a copy with a
+          // problem in it is never sent (the send route refused the whole
+          // campaign before this if the problem was in the blocks).
+          const fields = await emailCompose.personFields(renderCtx, donor, { campaignName: campaign.name || "" });
+          const r = await emailCompose.render(renderCtx, {
+            blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader, fields, mode: "send" });
+          htmlFull = r.problems.length ? null : emailCompose.withFooter(r, footer, pixel);
+          personSubject = await emailCompose.subjectFor(campaign.subject, fields);
+          if (!htmlFull) {
+            failCount++;
+            await run("UPDATE campaign_recipients SET failure_reason=? WHERE id=?",
+              [("not rendered: " + (r.problems[0] || "no footer slot")).slice(0, 500), recipientId]).catch(() => {});
+            continue;
+          }
+        } else {
+          const firstName   = donor.name.split(" ")[0];
+          const lastName    = donor.name.split(" ").slice(1).join(" ");
+          const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
+          const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
+          const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
+
+          const bodyHtml = (campaign.body || "")
+            .replace(/{{first_name}}/g,   firstName)
+            .replace(/{{last_name}}/g,    lastName)
+            .replace(/{{donor_name}}/g,   donor.name)
+            .replace(/{{org_name}}/g,     displayNameCase(org.name))
+            .replace(/{{gift_amount}}/g,  giftAmount)
+            .replace(/{{total_giving}}/g, totalGiving)
+            .replace(/{{year}}/g,         year);
+          htmlFull = brandHeader + bodyHtml + footer + pixel;
+        }
 
         try {
           // No provider means nothing left: that is a failure with its
@@ -4932,7 +4964,7 @@ async function runCampaignSend(campaign, org, donors) {
               // cannot disagree about which domain is in force.
               ...(await donorSendOpts(org.id, donor.email, "campaign")),
               to: donor.email,
-              subject: campaign.subject || "",
+              subject: personSubject,
               html: htmlFull,
             });
             if (sendError) throw new Error(sendError.message);
@@ -10795,6 +10827,12 @@ require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
 require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
+// EMAIL-1: the media library and email templates share the grant modules'
+// context plus the mail seams they render and test-send through.
+const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,
+  unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter };
+require("./routes/media").mount(EMAIL1_CTX);
+require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

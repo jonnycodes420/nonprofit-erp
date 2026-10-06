@@ -55,6 +55,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/v/:path*"
     },
     {
+      "source": "/watch/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/watch/:path*"
+    },
+    {
       "source": "/survey/:path*",
       "destination": "https://nonprofit-erp-production.up.railway.app/survey/:path*"
     },

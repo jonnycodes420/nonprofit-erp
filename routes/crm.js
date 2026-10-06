@@ -29,6 +29,8 @@ const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
+// EMAIL-1 — a template rendered for one person (the send, the test, drafts).
+const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
 const { rateLimit } = require("express-rate-limit");
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
@@ -261,24 +263,40 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
   const T = await templatesMod();
   const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
   const first = String(me?.name || "").trim().split(/\s+/)[0] || "Margaret";
-  const html = await brandEmailHeaderHtml(orgId)
+  const testNote = `<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
+         This is a test of "${escapeHtml(campaign.name || "")}". Nobody else received it, and it is not counted.
+       </div>`;
+  // EMAIL-1 — a template campaign's test is rendered exactly as the send
+  // renders it, with her own name in it and the real footer where the
+  // renderer left its slot. A copy the send would refuse is refused here too.
+  let blocksHtml = null;
+  let testSubject = campaign.subject || campaign.name || "";
+  if (emailCompose.hasBlocks(campaign)) {
+    const ctx = await emailCompose.orgRenderContext(orgId);
+    const r = await emailCompose.render(ctx, {
+      blocks: campaign.email_blocks, subject: campaign.subject, preheader: campaign.preheader,
+      fields: emailCompose.sampleFields(ctx, { name: me?.name || "", email: to, campaignName: campaign.name || "" }),
+      mode: "send" });
+    if (r.problems.length) return res.status(400).json({ error: "email_not_ready", message: emailCompose.refusalSentence(r.problems), problems: r.problems });
+    blocksHtml = emailCompose.withFooter(r, await unsubscribeEmailFooterHtml(to, orgId, "campaign") + testNote, "");
+    testSubject = await emailCompose.subjectFor(campaign.subject, emailCompose.sampleFields(ctx, { name: me?.name || "", email: to }));
+  }
+  const html = blocksHtml || await brandEmailHeaderHtml(orgId)
     + T.renderMergeFields(campaign.body || "", {
         first_name: first, donor_name: me?.name || first,
         org_name: displayNameCase(org?.name || ""), gift_amount: "$250", total_giving: "$4,150",
         year: String(new Date().getUTCFullYear()),
       })
-    + `<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
-         This is a test of "${escapeHtml(campaign.name || "")}". Nobody else received it, and it is not counted.
-       </div>`;
+    + testNote;
   const identity = await orgSendingIdentity(orgId);
   let delivered = false;
   if (process.env.RESEND_API_KEY) {
     try {
       const { error } = await resend.emails.send({
         from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
-        to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        to, subject: `[Test] ${testSubject}`,
         _stewardOrgId: orgId, _stewardKind: "campaign_test",   // MAIL-1: waits for onboarding like the campaign
-        html: T.renderMergeFields(html, { first_name: first }),
+        html: blocksHtml ? html : T.renderMergeFields(html, { first_name: first }),
       });
       if (error) throw new Error(error.message);
       delivered = true;
@@ -288,6 +306,80 @@ app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, 
     }
   }
   res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false });
+}));
+
+// ── EMAIL-1 · WAITING FOR APPROVAL ────────────────────────────────────────
+// Somebody writes a campaign and asks an admin to approve it. While it waits
+// its status is `awaiting_approval`, which the scheduler never picks up (it
+// reads status='scheduled' only). Approving stamps who and when and makes it
+// `scheduled`; with no send time it waits as an approved draft. Undo is
+// /unapprove, back to waiting.
+async function campaignForApproval(req, res) {
+  const [c] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!c) { res.status(404).json({ error: "Campaign not found" }); return null; }
+  return c;
+}
+
+app.post("/campaigns/:id/request-approval", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await campaignForApproval(req, res); if (!c) return;
+  if (!["draft", "scheduled"].includes(c.status)) {
+    return res.status(400).json({ error: "not_a_draft", message: "Only a draft or a scheduled campaign can be sent for approval." });
+  }
+  const pre = await emailCompose.campaignPreflight(c, req.user.orgId);
+  if (!pre.ok) return res.status(400).json({ error: "email_not_ready", message: pre.message, problems: pre.problems });
+  await run(
+    `UPDATE campaigns SET status='awaiting_approval', approved_at=NULL, approved_by=NULL, approved_by_name=NULL, updated_at=NOW()
+      WHERE id=? AND org_id=? AND status IN ('draft','scheduled')`, [c.id, req.user.orgId]);
+  req.audit.entity("campaign", c.id, c.name);
+  req.audit.action("asked for approval");
+  res.json({ ok: true, status: "awaiting_approval", previousStatus: c.status,
+    sentence: `${c.name || "The campaign"} is waiting for an admin to approve it. It will not go before then.` });
+}));
+
+// Undo of a request: back to a draft (or to scheduled, if that is where it was
+// and the caller is an admin, whose scheduling needs nobody's approval).
+app.post("/campaigns/:id/withdraw-approval", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await campaignForApproval(req, res); if (!c) return;
+  if (c.status !== "awaiting_approval") return res.status(400).json({ error: "not_waiting", message: "That campaign is not waiting for approval." });
+  const [me] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+  const back = req.body && req.body.status === "scheduled" && me && me.role === "admin" && c.scheduled_at ? "scheduled" : "draft";
+  await run("UPDATE campaigns SET status=?, updated_at=NOW() WHERE id=? AND org_id=? AND status='awaiting_approval'",
+    [back, c.id, req.user.orgId]);
+  res.json({ ok: true, status: back, sentence: back === "draft" ? "Back to a draft." : "Back to scheduled." });
+}));
+
+app.post("/campaigns/:id/approve", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const c = await campaignForApproval(req, res); if (!c) return;
+  if (c.status !== "awaiting_approval") return res.status(400).json({ error: "not_waiting", message: "That campaign is not waiting for approval." });
+  const pre = await emailCompose.campaignPreflight(c, req.user.orgId);
+  if (!pre.ok) return res.status(400).json({ error: "email_not_ready", message: pre.message, problems: pre.problems });
+  const nextStatus = c.scheduled_at ? "scheduled" : "draft";
+  const who = actor(req);
+  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  await run(
+    `UPDATE campaigns SET status=?, approved_at=NOW(), approved_by=?, approved_by_name=?, updated_at=NOW()
+      WHERE id=? AND org_id=? AND status='awaiting_approval'`,
+    [nextStatus, who.id, (me && me.name) || who.name, c.id, req.user.orgId]);
+  req.audit.entity("campaign", c.id, c.name);
+  req.audit.action("approved the campaign");
+  const when = c.scheduled_at ? new Date(c.scheduled_at) : null;
+  res.json({ ok: true, status: nextStatus,
+    sentence: !when ? "Approved. It has no send time, so it waits as a draft until somebody sends it."
+      : when <= new Date() ? "Approved. Its send time has passed, so it goes out within five minutes."
+      : "Approved. It goes out at its scheduled time." });
+}));
+
+app.post("/campaigns/:id/unapprove", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const c = await campaignForApproval(req, res); if (!c) return;
+  if (!c.approved_at || !["scheduled", "draft"].includes(c.status)) {
+    return res.status(400).json({ error: "not_approved", message: "That campaign is not approved, or it has already started sending." });
+  }
+  await run(
+    `UPDATE campaigns SET status='awaiting_approval', approved_at=NULL, approved_by=NULL, approved_by_name=NULL, updated_at=NOW()
+      WHERE id=? AND org_id=? AND status IN ('scheduled','draft')`, [c.id, req.user.orgId]);
+  req.audit.entity("campaign", c.id, c.name);
+  req.audit.action("took back the approval");
+  res.json({ ok: true, status: "awaiting_approval", sentence: "The approval is taken back. It is waiting again." });
 }));
 
 // ── BUILD-88c C.1 — HER OWN DOMAIN, VERIFIED ──────────────────────────────
@@ -10956,6 +11048,12 @@ async function journeyRefsRefused(orgId, v) {
   if (tf.fundId && !(await orgOwns("fin_funds", tf.fundId, orgId))) return { error: "fund_not_found", message: "That fund is not one of yours." };
   if (tf.campaignId && !(await orgOwns("campaigns", tf.campaignId, orgId)))
     return { error: "campaign_not_found", message: "That campaign is not one of yours." };
+  // EMAIL-1 — a step's draft that names a template names one of THIS org's.
+  for (const st of v.steps || []) {
+    const tid = String(st.draft || "").startsWith("template:") ? String(st.draft).slice(9) : null;
+    if (tid && !(await emailCompose.templateFor(orgId, tid)))
+      return { error: "template_not_found", message: "A step names an email template that is not one of yours." };
+  }
   return null;
 }
 // Switching on a "joins a group" journey on a group by rule: today's members
@@ -11023,7 +11121,34 @@ async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, toda
   // ON CONFLICT is the arbiter, never a check-then-insert). The step waits.
   if (!opened) return plan.id;
   await run("UPDATE cultivation_plan_steps SET status='open', thread_id=? WHERE id=? AND status='pending'", [opened.id, step.id]);
+  await journeyTemplateDraft(orgId, donorId, step).catch(e => console.error("[journey] template draft:", e.message));
   return plan.id;
+}
+
+// EMAIL-1 — A STEP THAT NAMES A TEMPLATE GETS ITS WORDS WRITTEN, NOT SENT.
+// When the step opens, the template's subject and its text (with this
+// person's name and last gift in it) become ONE draft in the review queue
+// (milestone_drafts, key `journey-step:<step id>`), remembering the template.
+// A person reads it there and presses Send; this function has no send in it,
+// and tests/thread2a-no-send.test.js holds the whole journey path to that.
+async function journeyTemplateDraft(orgId, donorId, step) {
+  const tid = String(step.draft_kind || "").startsWith("template:") ? String(step.draft_kind).slice(9) : null;
+  if (!tid) return null;
+  const t = await emailCompose.templateFor(orgId, tid);
+  if (!t) return null;
+  const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [donorId, orgId]);
+  if (!donor) return null;
+  const words = await emailCompose.templateTextFor(orgId, t, donor);
+  if (!words.body) return null;
+  const key = `journey-step:${step.id}`;
+  const id = "md_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,template_id,created_by,created_by_name)
+     SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'pending_review','journey',?::text,?::text,?::text
+      WHERE NOT EXISTS (SELECT 1 FROM milestone_drafts WHERE org_id=?::text AND milestone_key=?::text)`,
+    [id, orgId, donorId, key, words.subject || step.label || t.name, words.body, t.id,
+     JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, orgId, key]);
+  return id;
 }
 
 // GET /cultivation-templates — the plans the organisation keeps.
@@ -11206,6 +11331,9 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
     timingUnits: J.TIMING_UNITS,
     timingFrom: J.TIMING_FROM,
     draftKinds: J.DRAFT_KINDS,
+    // EMAIL-1 — a step's draft may start from one of the org's email templates.
+    emailTemplates: (await query(`SELECT id, name FROM email_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name`,
+      [req.user.orgId]).catch(() => [])).map(t => ({ id: t.id, name: t.name })),
     priority: { min: J.PRIORITY_MIN, max: J.PRIORITY_MAX, default: J.PRIORITY_DEFAULT },
     stages: stageRows.map(r => r.stage),
     tags: tagRows.map(r => r.tag),
@@ -17776,7 +17904,7 @@ app.get("/campaigns/sent", requireAuth, wrap(async (req, res) => {
             COUNT(cr.failure_reason)::int                              AS failed
        FROM campaigns c
        LEFT JOIN campaign_recipients cr ON cr.campaign_id = c.id
-      WHERE c.org_id = ? AND c.status IN ('sent','sending','scheduled','failed')
+      WHERE c.org_id = ? AND c.status IN ('sent','sending','scheduled','failed','awaiting_approval')
       GROUP BY c.id ORDER BY COALESCE(c.sent_at, c.scheduled_at, c.created_at) DESC
       LIMIT 100`, [orgId]);
   // Unsubscribes attributable to a campaign: a suppression for one of ITS
@@ -17842,17 +17970,45 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
     [req.params.id, req.user.orgId]
   );
   if (!existing.length) return res.status(404).json({ error: "Campaign not found" });
-  if (!["draft", "scheduled"].includes(existing[0].status))
-    return res.status(400).json({ error: "Only draft or scheduled campaigns can be edited" });
+  if (!["draft", "scheduled", "awaiting_approval"].includes(existing[0].status))
+    return res.status(400).json({ error: "Only draft, scheduled or waiting campaigns can be edited" });
+
+  // EMAIL-1 — AN APPROVAL COVERS THE WORDS THAT WERE APPROVED. A campaign that
+  // is waiting stays waiting whatever status the composer sends, and one that
+  // was approved goes back to waiting when somebody who is not an admin
+  // changes it. An admin's own edit needs nobody's approval.
+  const ex = existing[0];
+  const [meRole] = await query("SELECT role FROM users WHERE id=?", [req.user.userId]);
+  const isAdminEditor = !!(meRole && meRole.role === "admin");
+  const wordsChanged = (subject || "") !== (ex.subject || "") || (body || "") !== (ex.body || "")
+    || req.body.emailBlocks !== undefined;
+  let nextStatus = status || "draft";
+  let clearApproval = false;
+  if (ex.status === "awaiting_approval" && !(isAdminEditor && nextStatus === "draft")) nextStatus = "awaiting_approval";
+  if (ex.approved_at && !isAdminEditor && wordsChanged) { nextStatus = "awaiting_approval"; clearApproval = true; }
+  if (nextStatus !== "awaiting_approval" && !["draft", "scheduled"].includes(nextStatus)) nextStatus = "draft";
 
   await run(
     `UPDATE campaigns SET name=?,type=?,subject=?,body=?,segment=?,status=?,scheduled_at=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
     [name, type || "appeal", subject || "", body || "",
-     JSON.stringify(segment || {}), status || "draft",
+     JSON.stringify(segment || {}), nextStatus,
      await scheduledInstant(req.user.orgId, scheduledAt),
      req.params.id, req.user.orgId]
   );
+  if (clearApproval) {
+    await run("UPDATE campaigns SET approved_at=NULL, approved_by=NULL, approved_by_name=NULL WHERE id=? AND org_id=?",
+      [req.params.id, req.user.orgId]);
+  }
+  // A template campaign's words are its blocks. `emailBlocks: null` lets it go
+  // and the campaign becomes an ordinary one whose words are `body`; a preheader
+  // edit rides along.
+  if (req.body.emailBlocks === null) {
+    await run("UPDATE campaigns SET email_blocks=NULL, template_id=NULL WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  }
+  if (typeof req.body.preheader === "string") {
+    await run("UPDATE campaigns SET preheader=? WHERE id=? AND org_id=?", [req.body.preheader.slice(0, 300), req.params.id, req.user.orgId]);
+  }
   await markStarterReviewed(req, req.body.starterKey, body, req.params.id).catch(e => console.error("[campaigns] starter review:", e.message));
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [req.params.id]);
   res.json(rows[0]);
@@ -18631,6 +18787,13 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
   // before anything is marked sending: nothing in bulk leaves without one.
   const addrGate = await bulkSendAddressGate(req.user.orgId);
   if (!addrGate.ok) return res.status(400).json({ error: addrGate.reason, message: addrGate.message });
+  // EMAIL-1 — A TEMPLATE CAMPAIGN WITH A HOLE IN IT IS REFUSED WHOLE: a
+  // picture with no alt text, a field Steward does not fill, no footer.
+  if (campaign.status === "awaiting_approval") {
+    return res.status(400).json({ error: "awaiting_approval", message: "This campaign is waiting for approval. Approve it first, then it can go." });
+  }
+  const pre = await emailCompose.campaignPreflight(campaign, req.user.orgId);
+  if (!pre.ok) return res.status(400).json({ error: "email_not_ready", message: pre.message, problems: pre.problems });
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
@@ -21828,6 +21991,38 @@ app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req,
   if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
   const rows = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
   res.json(rows[0]);
+}));
+
+// EMAIL-1 — START FROM A TEMPLATE. The draft's subject and words become the
+// template's, rendered as text with this person's name and last gift in it,
+// and the draft remembers the template. It is still a draft: a person reads
+// it and presses Send. Undo is /restore with the words it had before.
+app.post("/milestone-drafts/:id/from-template", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Not found or already sent" });
+  const t = await emailCompose.templateFor(orgId, req.body && req.body.templateId);
+  if (!t) return res.status(404).json({ error: "template_not_found", message: "That template is not one of yours." });
+  const [donor] = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [d.donor_id, orgId]);
+  const words = await emailCompose.templateTextFor(orgId, t, donor || null);
+  if (!words.body) return res.status(400).json({ error: "template_empty", message: "That template has no words in it yet." });
+  await run("UPDATE milestone_drafts SET subject=?, body=?, template_id=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [words.subject || d.subject, words.body, t.id, d.id, orgId]);
+  const [row] = await query("SELECT * FROM milestone_drafts WHERE id=?", [d.id]);
+  res.json({ draft: row, previous: { subject: d.subject, body: d.body, templateId: d.template_id || null },
+    sentence: `The draft now starts from ${t.name}. Read it before you send it.` });
+}));
+
+app.post("/milestone-drafts/:id/restore", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { subject, body, templateId } = req.body || {};
+  if (!subject || !body) return res.status(400).json({ error: "subject and body required" });
+  const { changes } = await run(
+    "UPDATE milestone_drafts SET subject=?, body=?, template_id=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [String(subject), String(body), templateId ? ((await emailCompose.templateFor(req.user.orgId, templateId)) || {}).id || null : null,
+     req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found or already sent" });
+  const [row] = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
+  res.json({ draft: row });
 }));
 
 app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => {

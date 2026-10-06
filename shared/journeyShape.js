@@ -299,6 +299,14 @@ export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 // carries a draft. This constant exists so the guard can assert the property
 // over the whole catalogue rather than step by step.
 export const DRAFT_KINDS = ["impact_report", "event_invitation", "the_ask", "thank_you"];
+// EMAIL-1 — a step's draft may instead name one of the org's email templates:
+// `template:<id>`. When the step opens, the template's subject and words (as
+// text, with the person's name in them) become a draft in the review queue.
+// It is still a draft: a person reads it and sends it. Whether the id is one
+// of THIS org's templates is checked by the server, which can see the table.
+const TEMPLATE_DRAFT_RE = /^template:([A-Za-z0-9_-]{1,64})$/;
+export const templateIdOfDraft = d => { const m = TEMPLATE_DRAFT_RE.exec(String(d || "")); return m ? m[1] : null; };
+export const isKnownDraft = d => DRAFT_KINDS.includes(d) || !!templateIdOfDraft(d);
 
 // ── FIX-5 · HOW A STEP'S TIMING IS EXPRESSED, AND WHAT IS STORED ──────────
 // "Fourteen days after the trigger" and "two weeks after the previous step"
@@ -459,7 +467,7 @@ export function validateJourney(input = {}) {
   const steps = base.steps.map((s, i) => {
     const raw = timed[i] || {};
     const draft = raw.draft == null || raw.draft === "" ? null : String(raw.draft);
-    if (draft && !DRAFT_KINDS.includes(draft)) {
+    if (draft && !isKnownDraft(draft)) {
       errors.push({ field: `steps.${i}.draft`,
         message: `Step ${i + 1} names a draft Steward does not write: ${draft}.` });
     }
@@ -472,7 +480,7 @@ export function validateJourney(input = {}) {
     const timing = i === 0 && raw.timing && raw.timing.from === "previous"
       ? { ...raw.timing, from: "trigger" } : (raw.timing || { from: "trigger", value: s.offsetDays, unit: "days" });
     return { ...s, timing, note: sanitizeNote(raw.note),
-             draft: DRAFT_KINDS.includes(draft) ? draft : null, ownerMode,
+             draft: isKnownDraft(draft) ? draft : null, ownerMode,
              ownerId: ownerMode === "specific" ? (raw.ownerId || null) : null,
              ownerName: ownerMode === "specific" ? sanitizeLabel(raw.ownerName) : "" };
   });

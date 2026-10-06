@@ -65,7 +65,7 @@ export function WidgetView({ w, ctx }) {
               (focal-center fallback); the editor crop preview shares it. */}
           {w.image && (
             <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_WIDGET_IMAGE_RATIO, overflow: "hidden", borderRadius: "var(--pt-card-radius, 14px)" }}>
-              <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt="" loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
+              <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt={w.alt || ""} loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
             </div>
           )}
           {(w.heading || w.sub) && (
@@ -83,7 +83,7 @@ export function WidgetView({ w, ctx }) {
         <figure style={{ margin: "0 0 18px" }}>
           {/* BUILD-65 Part 3 — fixed-ratio frame + non-destructive crop. */}
           <div style={{ position: "relative", width: "100%", aspectRatio: PORTAL_WIDGET_IMAGE_RATIO, overflow: "hidden", borderRadius: "var(--pt-card-radius, 14px)" }}>
-            <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt={w.caption || ""} loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
+            <img src={resolveAssetUrl(w.image)} {...(bannerSrcSet(w.image) ? { srcSet: bannerSrcSet(w.image), sizes: "100vw" } : {})} alt={w.alt || w.caption || ""} loading="lazy" decoding="async" style={bannerImgStyle(undefined, w.imageCrop)} />
           </div>
           {w.caption && <figcaption style={{ ...muted, marginTop: 6 }}>{w.caption}</figcaption>}
         </figure>

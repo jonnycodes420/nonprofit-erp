@@ -474,6 +474,11 @@ function StepEditor({ step, index, total, data, editable, onSet, onAdd, onDuplic
             value={step.draft || ""} onChange={e => onSet({ draft: e.target.value || null })}>
             <option value="">No draft, you write it</option>
             {(data.draftKinds || []).map(k => <option key={k} value={k}>{DRAFT_LABEL[k] || k}</option>)}
+            {(data.emailTemplates || []).length > 0 && (
+              <optgroup label="From an email template">
+                {data.emailTemplates.map(t => <option key={t.id} value={`template:${t.id}`}>{t.name}</option>)}
+              </optgroup>
+            )}
           </select>
         </label>
       </div>

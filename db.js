@@ -3378,6 +3378,60 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_stored_sheets_org ON stored_sheets (org_id, kind)`);
 
+  // ── EMAIL-1 · ONE EDITOR FOR PAGES AND EMAILS ────────────────────────────
+  // The media library: every photo and video an org can put on a page or in
+  // an email. A photo points at a JPEG in the asset store (inboxes such as
+  // Outlook do not show WebP) and must carry alt text; a video is a YouTube
+  // or Vimeo id, shown in email as its thumbnail linking to its page.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS media_items (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      alt TEXT NOT NULL DEFAULT '',
+      asset_id TEXT,
+      width INTEGER, height INTEGER,
+      provider TEXT, video_id TEXT,
+      thumb_asset_id TEXT,
+      tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+      removed_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_media_items_org ON media_items (org_id, kind)`);
+  // An email template: the same widget blocks a page uses (shared/pageWidgets.js,
+  // surface "email"), a subject and a preheader. The brand is NOT stored here:
+  // it is read from portal_settings at render time, so one colour change
+  // reaches every page and every email.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      starter_key TEXT,
+      name TEXT NOT NULL,
+      purpose TEXT NOT NULL DEFAULT 'appeal',
+      subject TEXT NOT NULL DEFAULT '',
+      preheader TEXT NOT NULL DEFAULT '',
+      blocks JSONB NOT NULL DEFAULT '[]'::jsonb,
+      archived_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_templates_org ON email_templates (org_id)`);
+  // Where a template is used: a campaign keeps its blocks (rendered for each
+  // person at send), and a sequence step, a review draft and an Agent draft
+  // remember the template they started from.
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS template_id TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS email_blocks JSONB`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS preheader TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS approved_by TEXT`);
+  await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS approved_by_name TEXT`);
+  await pool.query(`ALTER TABLE sequence_steps ADD COLUMN IF NOT EXISTS template_id TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS template_id TEXT`);
+
   // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
   // meant on a grant that has not been awarded, and on an awarded one it is what
   // was asked for. Never guessed — a row with no amount stays null.
@@ -4915,6 +4969,8 @@ async function runSchemaInit(pool) {
       sent_at TIMESTAMPTZ, dismissed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
+  // EMAIL-1: an Agent draft remembers the template it started from.
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS template_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_drafts_org ON agent_drafts (org_id, status, created_at DESC)`);
   // ── FIX-6 item 1 · WHO LOOKED AT IT, AND WHAT THEY DECIDED ──────────────
   // The approval queue had no way to approve or skip anything, so a draft's

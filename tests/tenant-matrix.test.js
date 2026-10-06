@@ -227,6 +227,10 @@ async function seedOrg(o, tag) {
   // is exactly the act the wall exists to stop reaching across.
   await q(`INSERT INTO event_waitlist (id,org_id,event_id,level_id,name,email,position) VALUES ($1,$2,$3,$4,$5,$6,1)`,
     [`ewl_${o}`, o, `ev_${o}`, `evl_${o}`, `${mark} Waiting`, `${mark.toLowerCase()}-waiting@matrix.test`]);
+  // EMAIL-1 — one photo in each org's media library, so editing, removing
+  // and restoring it are probed against a REAL row of the other org.
+  await q(`INSERT INTO media_items (id,org_id,kind,title,alt,created_by,created_by_name) VALUES ($1,$2,'photo',$3,'A photo','system:test','matrix')`,
+    [`med_${o}`, o, `${mark} Photo`]);
   await q(`INSERT INTO volunteers (id,org_id,donor_id,name) VALUES ($1,$2,$3,$4)`, [`v_${o}`, o, `d_${o}`, `${mark} Volunteer`]);
   await q(`INSERT INTO board_members (id,org_id,name,role) VALUES ($1,$2,$3,'Member')`, [`bd_${o}`, o, `${mark} Board`]);
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id) VALUES ($1,$2,$3,$4)`, [`h_${o}`, o, `${mark} Household`, `d_${o}`]);
@@ -409,6 +413,11 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,cites)
            VALUES ($1,$2,$3,$4,'set_stage','donors',$5,'{"stage":"prospect"}'::jsonb,'[]'::jsonb)`,
     [`aw_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`]).catch(() => {});
+  // EMAIL-1 — an Agent draft, so "start from a template" and its Undo are
+  // probed against org B's real draft.
+  await q(`INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'[{"t":"note"}]'::jsonb)`,
+    [`adr_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`, `${mark} subject`, `${mark} draft`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -466,6 +475,7 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
+    media: `med_${B}`,              // EMAIL-1: a photo in another org's media library
     "gift-starts": `gs_${B}`,       // PARITY-4 Part 2: a started gift, its draft and its note
     "matching-employers": `me_${B}`,  // GIVE-2 §8 — an employer on another org's own list
     // INT-3 — /email-marketing/campaigns/:id/people opens the people behind one
@@ -519,6 +529,7 @@ function bResolver(routePath, param) {
   // disconnecting them would each be a different kind of disaster, and all four
   // must answer 404.
   if (routePath.startsWith("/bookkeeping/")) return `bkc_${B}`;
+  if (routePath.startsWith("/agent/drafts/")) return `adr_${B}`;   // EMAIL-1
   // INT-POS — the register's event report is read by EVENT id, so org A asking
   // for what org B's gala took at the till must answer 404 like anything else.
   if (routePath.startsWith("/pos/event/")) return `ev_${B}`;

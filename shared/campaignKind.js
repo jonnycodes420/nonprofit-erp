@@ -27,7 +27,7 @@
 const blank = v => v === null || v === undefined || String(v).trim() === "";
 
 // The statuses that only an email campaign ever reaches.
-export const EMAIL_STATUSES = ["draft", "scheduled", "sending", "sent", "failed"];
+export const EMAIL_STATUSES = ["draft", "scheduled", "sending", "sent", "failed", "awaiting_approval"];
 // The statuses only a fundraising goal ever reaches.
 export const GOAL_STATUSES = ["active", "completed", "planned", "archived"];
 
@@ -37,7 +37,8 @@ export function isEmailCampaign(c) {
   if (!blank(c.subject) || !blank(c.body)) return true;
   if (Number(c.recipient_count) > 0 || Number(c.open_count) > 0) return true;
   const status = String(c.status || "").toLowerCase();
-  if (["scheduled", "sending", "sent", "failed"].includes(status)) return true;
+  if (["scheduled", "sending", "sent", "failed", "awaiting_approval"].includes(status)) return true;
+  if (Array.isArray(c.email_blocks) && c.email_blocks.length) return true;   // EMAIL-1: built from a template
   // Only a goal from here: it has a goal amount, or it sits in a status an
   // email never reaches.
   if (GOAL_STATUSES.includes(status)) return false;
@@ -59,7 +60,7 @@ export function sentWord(campaign) {
   const n = Number((campaign && campaign.recipient_count) || 0);
   if (n > 0) return n.toLocaleString("en-US");
   const status = String((campaign && campaign.status) || "").toLowerCase();
-  return ["draft", "scheduled"].includes(status) || !campaign.sent_at ? "Not sent yet" : "0";
+  return ["draft", "scheduled", "awaiting_approval"].includes(status) || !campaign.sent_at ? "Not sent yet" : "0";
 }
 
 export function openRateWord(campaign) {
