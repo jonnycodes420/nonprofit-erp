@@ -39,6 +39,9 @@ export const MILESTONE_TYPES = [
     verb: "Write the report" },
   { key: "renewal_opens", label: "Renewal window opens", lead: 45, repeatable: false,
     verb: "Start the renewal" },
+  // FIX-28: anything else a funder asks for, named by the person adding it.
+  { key: "custom",        label: "Custom",            lead: 14, repeatable: true,
+    verb: "Get it done" },
 ];
 export const MILESTONE_KEYS = MILESTONE_TYPES.map(t => t.key);
 export const DEFAULT_LEAD_DAYS = Object.fromEntries(MILESTONE_TYPES.map(t => [t.key, t.lead]));
@@ -47,6 +50,11 @@ export function milestoneType(key) {
   return MILESTONE_TYPES.find(t => t.key === key) || null;
 }
 export function milestoneLabel(key) { const t = milestoneType(key); return t ? t.label : ""; }
+// FIX-28: a custom deadline carries its own name; every other kind its label.
+export function milestoneName(m) {
+  const own = String((m && m.label) || "").trim();
+  return (m && m.kind === "custom" && own) ? own : milestoneLabel(m && m.kind);
+}
 
 // THE ORG'S OWN LEAD TIMES, and a stored value is only honoured if it is a
 // sane whole number of days. A negative lead would open a thread AFTER the
@@ -128,7 +136,7 @@ export function grantWantsMilestones(status) {
 // with no subject tells an officer nothing about which of four reports.
 export function milestoneStepLabel(m) {
   const t = milestoneType(m && m.kind);
-  const verb = t ? t.verb : "Follow up";
+  const verb = m && m.kind === "custom" && String(m.label || "").trim() ? String(m.label).trim() : (t ? t.verb : "Follow up");
   const who = String((m && m.funderName) || "").trim();
   const prog = String((m && m.program) || "").trim();
   const subject = prog && who ? `${who}: ${prog}` : (who || prog);
@@ -144,7 +152,7 @@ export function milestoneTiming(m, today) {
     return { band: "unknown", days: null, overdueDays: 0, sentence: "" };
   }
   const days = daysBetween(today, m.dueDate);
-  const label = milestoneLabel(m.kind) || "This";
+  const label = milestoneName(m) || "This";
   if (days < 0) {
     const late = -days;
     return { band: "overdue", days, overdueDays: late,
@@ -210,8 +218,8 @@ export function calendarFromMilestones(milestones = [], today, opts = {}) {
 // The sentence a WAITING milestone carries. It names the reason, because
 // "waiting" with no reason reads as a bug.
 export function waitingSentence(m) {
-  const label = milestoneLabel(m && m.kind) || "This deadline";
-  return `${label} is next for this funder — they already have one open follow-up, and this one opens when that closes. Nothing is stuck.`;
+  const label = milestoneName(m) || "This deadline";
+  return `${label} is next for this funder. They already have one open follow-up, and this one opens when that closes. Nothing is stuck.`;
 }
 
 export function sortMilestones(rows = []) {

@@ -844,6 +844,7 @@ async function calcWealthScore(donorId, orgId) {
       const msg = await client.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 130,
+        thinking: { type: "disabled" },   // FIX-28: two sentences need no thinking (the ASK-3 rule)
         messages: [{
           role: "user",
           content: `Write exactly 2 sentences: first explain why this donor scored ${finalScore}/10 (${capacityTier} tier, ${confidence} confidence) referencing their specific numbers; second, name one concrete action that would raise their score. No labels, no headers.
@@ -851,7 +852,9 @@ async function calcWealthScore(donorId, orgId) {
 Data: ${d.name} | Total giving: $${total.toLocaleString()} | ${gc} gifts avg $${avgGiftAmt.toLocaleString()} | Largest gift: $${maxGift.toLocaleString()} | Last gift: ${d.last_gift_date || "none"} | Stage: ${d.stage} | Touchpoints: ${interactions.length}`,
         }],
       });
-      rationale = msg.content[0].text;
+      // FIX-28: an unfinished reply is never shown; the template rationale stands.
+      const text = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+      if ((!msg.stop_reason || msg.stop_reason === "end_turn") && text) rationale = text;
     } catch(e) {
       console.error("Score rationale:", e.message);
     }
@@ -13510,7 +13513,7 @@ app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
 
 function milestoneRow(r, M, today, leadDays) {
   const m = {
-    id: r.id, grantId: r.grant_id, kind: r.kind, kindLabel: M.milestoneLabel(r.kind),
+    id: r.id, grantId: r.grant_id, kind: r.kind, kindLabel: M.milestoneName(r), label: r.label || "",
     dueDate: r.due_date, state: r.state, threadId: r.thread_id || null,
     funderName: r.funder_name || r.funder || "", program: r.program || "",
     grantStatus: r.status || null, notes: r.notes || "",
@@ -13521,6 +13524,28 @@ function milestoneRow(r, M, today, leadDays) {
   m.leadDays = M.leadDaysFor(r.kind, leadDays);
   if (r.state === "waiting") m.waitingSentence = M.waitingSentence(m);
   return m;
+}
+
+// FIX-28: one insert for a deadline. A deadline removed earlier on the same
+// kind and day comes back rather than colliding with the unique index.
+async function addGrantMilestone(res, { orgId, grantId, kind, due, label, notes, who }) {
+  const [same] = await query("SELECT id, state FROM grant_milestones WHERE grant_id=? AND kind=? AND due_date=? AND org_id=?",
+    [grantId, kind, due, orgId]);
+  if (same && same.state !== "skipped") {
+    res.status(400).json({ code: "milestone_exists", error: "This grant already has that deadline on that day." });
+    return null;
+  }
+  if (same) {
+    await run(`UPDATE grant_milestones SET state='pending', label=?, notes=?, thread_id=NULL, completed_at=NULL, completed_by=NULL,
+                 completed_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?`,
+      [label || null, String(notes || "").slice(0, 2000), same.id, orgId]);
+    return same.id;
+  }
+  const id = "gms_" + uuid().slice(0, 10);
+  await run(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?, 'pending', ?,?,?)`,
+    [id, orgId, grantId, kind, label || null, due, String(notes || "").slice(0, 2000), who.id, who.name]);
+  return id;
 }
 
 // POST /grants/:id/milestones — add a dated thing owed on this grant.
@@ -13536,21 +13561,12 @@ app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteA
   }
   const due = String(req.body.dueDate || "");
   if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
-  const type = M.milestoneType(kind);
-  if (!type.repeatable) {
-    const [dupe] = await query(
-      "SELECT id, due_date FROM grant_milestones WHERE grant_id=? AND kind=? AND state <> 'skipped'",
-      [g.id, kind]);
-    if (dupe) {
-      return res.status(400).json({ code: "milestone_exists",
-        error: `This grant already has a ${type.label} on ${dupe.due_date}. Move that date rather than adding a second one.` });
-    }
-  }
-  const id = "gms_" + uuid().slice(0, 10);
-  await run(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,due_date,state,notes,created_by,created_by_name)
-             VALUES (?,?,?,?,?, 'pending', ?,?,?)`,
-    [id, orgId, g.id, kind, due, String(req.body.notes || "").slice(0, 2000),
-     actor(req).id, actor(req).name]);
+  // FIX-28: a grant carries any number of deadlines. The one thing refused is
+  // the same kind on the same day twice, which is one deadline typed twice.
+  const label = String(req.body.label || "").trim().slice(0, 120);
+  if (kind === "custom" && !label) return res.status(400).json({ code: "custom_needs_name", error: "Give a custom deadline a name, like Site visit or Budget revision." });
+  const id = await addGrantMilestone(res, { orgId, grantId: g.id, kind, due, label, notes: req.body.notes, who: actor(req) });
+  if (!id) return;
 
   // Raise it NOW if its lead time has already arrived — a report due next week
   // typed in today must not wait for a sweep to notice.
@@ -13558,7 +13574,7 @@ app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteA
   const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
   const leadDays = await orgLeadDays(orgId);
   if (M.dueWithinLead({ kind, dueDate: due }, today, leadDays)) {
-    await raiseGrantMilestone(orgId, { id, grant_id: g.id, kind, due_date: due }, { today });
+    await raiseGrantMilestone(orgId, { id, grant_id: g.id, kind, label, due_date: due }, { today });
   }
   const [row] = await query(
     `SELECT m.*, g.program, g.status, g.funder, d.name AS funder_name
@@ -13578,14 +13594,24 @@ app.put("/grants/milestones/:msId", requireAuth, requirePlan("team"), checkWrite
   if (!ms) return res.status(404).json({ error: "Milestone not found" });
   const due = req.body.dueDate === undefined ? ms.due_date : String(req.body.dueDate || "");
   if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
+  // FIX-28: the kind and a custom name are editable too.
+  const kind = req.body.kind === undefined ? ms.kind : String(req.body.kind || "");
+  if (!M.MILESTONE_KEYS.includes(kind)) return res.status(400).json({ code: "bad_milestone_kind", error: "That is not a kind of deadline." });
+  const label = req.body.label === undefined ? (ms.label || "") : String(req.body.label || "").trim().slice(0, 120);
+  if (kind === "custom" && !label) return res.status(400).json({ code: "custom_needs_name", error: "Give a custom deadline a name, like Site visit or Budget revision." });
+  if (kind !== ms.kind || due !== ms.due_date) {
+    const [clash] = await query("SELECT id FROM grant_milestones WHERE grant_id=? AND kind=? AND due_date=? AND id<>? AND org_id=?",
+      [ms.grant_id, kind, due, ms.id, orgId]);
+    if (clash) return res.status(400).json({ code: "milestone_exists", error: "This grant already has that deadline on that day." });
+  }
 
   const org = await orgTz(orgId);
   const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
   const leadDays = await orgLeadDays(orgId);
 
-  await run(`UPDATE grant_milestones SET due_date=?, notes=COALESCE(?, notes), updated_at=NOW()
+  await run(`UPDATE grant_milestones SET due_date=?, kind=?, label=?, notes=COALESCE(?, notes), updated_at=NOW()
               WHERE id=? AND org_id=?`,
-    [due, req.body.notes === undefined ? null : String(req.body.notes).slice(0, 2000), ms.id, orgId]);
+    [due, kind, label || null, req.body.notes === undefined ? null : String(req.body.notes).slice(0, 2000), ms.id, orgId]);
 
   if (due !== ms.due_date && ms.thread_id) {
     // The thread's own due date follows, through the threads table the Thread
@@ -13637,6 +13663,39 @@ app.post("/grants/milestones/:msId/done", requireAuth, requirePlan("team"), chec
     nextDeadlineSentence: M.milestoneTiming({ kind: ms.kind, dueDate: ms.due_date }, orgToday(org)).sentence });  // ORG_TZ_SEAM_OK
 }));
 
+// FIX-28: UNDO A DONE, AND TAKE ONE OFF. Done goes back to open (its thread,
+// if one was raised and is still open, is still its thread); a removed
+// deadline is `skipped`, which every read already leaves out, so putting it
+// back is the same reopen.
+app.post("/grants/milestones/:msId/reopen", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  let threadOpen = false;
+  if (ms.thread_id) {
+    const [t] = await query("SELECT id FROM threads WHERE id=? AND org_id=? AND closed_at IS NULL", [ms.thread_id, orgId]);
+    threadOpen = !!t;
+  }
+  await run(`UPDATE grant_milestones SET state=?, thread_id=?, completed_at=NULL, completed_by=NULL, completed_by_name=NULL, updated_at=NOW()
+              WHERE id=? AND org_id=?`, [threadOpen ? "raised" : "pending", threadOpen ? ms.thread_id : null, ms.id, orgId]);
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+  if (!threadOpen && M.dueWithinLead({ kind: ms.kind, dueDate: ms.due_date }, today, leadDays)) {
+    await raiseGrantMilestone(orgId, ms, { today });
+  }
+  res.json({ ok: true, id: ms.id });
+}));
+
+app.post("/grants/milestones/:msId/remove", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT id FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  await run("UPDATE grant_milestones SET state='skipped', updated_at=NOW() WHERE id=? AND org_id=?", [ms.id, orgId]);
+  res.json({ ok: true, id: ms.id });
+}));
+
 // GET /grants/deadlines — the calendar, the list, and the Home line.
 app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
   const M = await grantMsMod();
@@ -13676,6 +13735,7 @@ app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
     today,
     milestones: M.sortMilestones(open),
     done: all.filter(m => m.state === "done").length,
+    doneMilestones: all.filter(m => m.state === "done"),
     overdue: open.filter(m => m.band === "overdue").length,
     calendar: M.calendarFromMilestones(open, today),
     homeLine: M.homeDeadlineLine(open, today),
@@ -19096,6 +19156,23 @@ function generateEditToken() {
   return uuid().replace(/-/g, "") + uuid().replace(/-/g, "");
 }
 
+// BUILD-103 Part 5: ONE PERSON RECORD, shared by the public sign-up and the
+// staff "Add a fundraiser" (FIX-28). Exact email, never name; nobody known
+// becomes a person typed volunteer; two matches link to neither.
+async function fundraiserPerson(orgId, name, cleanEmail, who) {
+  const matched = await query(
+    `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 2`,
+    [orgId, cleanEmail]);
+  if (matched.length === 1) return matched[0].id;
+  if (matched.length) return null;
+  const personId = "d_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+     VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
+    [personId, orgId, name, cleanEmail, who.id, who.name]);
+  return personId;
+}
+
 async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl, { pending = false } = {}) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
@@ -19195,24 +19272,14 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     }
   }
 
-  // BUILD-103 Part 5 — ONE PERSON RECORD. The fundraiser is matched to the
+  // BUILD-103 Part 5: ONE PERSON RECORD. The fundraiser is matched to the
   // CRM by EXACT EMAIL, never by name, and somebody nobody has heard of
   // becomes a person typed VOLUNTEER — not a donor. They are not a donor
   // until they give, and typing them as one would put somebody who has never
   // given a penny into every donor list the office reads.
   const cleanEmail = email.trim().toLowerCase();
-  let personId = null;
-  const matched = await query(
-    `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 2`,
-    [org.id, cleanEmail]);
-  if (matched.length === 1) personId = matched[0].id;
-  if (!personId && !matched.length) {
-    personId = "d_" + uuid().slice(0, 10);
-    await run(
-      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
-       VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,'system:p2p-signup','The fundraiser, from the sign-up page')`,
-      [personId, org.id, name.trim(), cleanEmail]);
-  }
+  const personId = await fundraiserPerson(org.id, name.trim(), cleanEmail,
+    { id: "system:p2p-signup", name: "The fundraiser, from the sign-up page" });
 
   const base = slugifyGivingPage(name);
   const id = "pf_" + uuid().slice(0, 8);
@@ -19279,6 +19346,54 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   res.status(201).json({ id, slug, publicUrl, emailSent, teamId, pending,
     ...(pending ? { pendingSentence: `${displayNameCase(org.name)} looks at every new page before it goes live. Yours is waiting for them now, and the link to manage it is in your email.` } : {}),
     ...(demoNote ? { demoNote } : {}) });
+}));
+
+// FIX-28: STAFF ADD A FUNDRAISER FOR SOMEBODY. The same person match and the
+// same token shape as the public sign-up, but nobody is emailed: the manage
+// link comes back to the staff member who made the page (an admin accountable
+// for it, the way an invite link does), and they decide how to pass it on.
+// Staff made it, so it is live at once whatever the approval setting.
+app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { name, email, personalGoalAmount } = req.body || {};
+  if (!name || !String(name).trim() || !email || !String(email).trim()) return res.status(400).json({ error: "A name and an email are needed. The email is how Steward finds the person." });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ error: "That email does not look right." });
+  if (String(name).trim().length > 200 || String(email).trim().length > 320) return res.status(400).json({ error: "The name or email is too long." });
+  if (personalGoalAmount && (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "The goal must be a positive number." });
+  const [page] = await query("SELECT id, slug, p2p_enabled FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [req.params.id, orgId]);
+  if (!page) return res.status(404).json({ error: "That campaign could not be found." });
+  if (page.p2p_enabled !== true) return res.status(400).json({ error: "Turn peer-to-peer on for this campaign first." });
+  let teamId = null;
+  if (req.body.teamId) {
+    const [t] = await query("SELECT id FROM p2p_teams WHERE id=? AND giving_page_id=? AND org_id=? AND status='active'", [String(req.body.teamId), page.id, orgId]);
+    if (!t) return res.status(404).json({ error: "That team is not on this campaign." });
+    teamId = t.id;
+  }
+  const cleanEmail = String(email).trim().toLowerCase();
+  const personId = await fundraiserPerson(orgId, String(name).trim(), cleanEmail, actor(req));
+  const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [orgId]);
+  const id = "pf_" + uuid().slice(0, 8);
+  const editToken = generateEditToken();
+  const editTokenHash = require("crypto").createHash("sha256").update(editToken).digest("hex");
+  const base = slugifyGivingPage(String(name));
+  let slug = await uniquePeerFundraiserSlug(page.id, base);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await run(
+        `INSERT INTO peer_fundraisers (id, org_id, giving_page_id, name, email, slug, personal_goal_amount, story, image_url, status, edit_token, edit_token_hash, team_id, person_id)
+         VALUES (?,?,?,?,?,?,?,'','','active',NULL,?,?,?)`,
+        [id, orgId, page.id, String(name).trim(), cleanEmail, slug, personalGoalAmount ? parseFloat(personalGoalAmount) : null, editTokenHash, teamId, personId]);
+      break;
+    } catch (e) {
+      if (attempt === 2) throw e;
+      slug = await uniquePeerFundraiserSlug(page.id, `${base}-${Date.now().toString(36).slice(-4)}`);
+    }
+  }
+  const frontendUrl = publicAppUrl();
+  res.status(201).json({ id, slug, teamId, personId,
+    publicUrl: `${frontendUrl}/give/${o?.org_slug || ""}/${page.slug}/${slug}`,
+    manageUrl: `${frontendUrl}/fundraiser/manage/${editToken}`,
+    sentence: `${String(name).trim()}'s page is live. Nobody was emailed; copy their manage link and send it to them yourself.` });
 }));
 
 // Public — fundraiser's own page: name/image/story/goal + real live
@@ -19548,6 +19663,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 600,
+      thinking: { type: "disabled" },   // FIX-28: three short paragraphs need no thinking (the ASK-3 rule)
       messages: [{
         role: "user",
         content: `Write an executive summary for a nonprofit board of directors. Exactly 3 paragraphs. Confident, board-appropriate, factual tone. No bullet points. No headers. Prose only.
@@ -19561,7 +19677,10 @@ Paragraph 3 — Grants & Opportunities: ${activeGrants.length} active grants, $$
 Organization: ${org.name}. Mission: ${org.mission || "not specified"}. Period: Q${q} ${yr}.`,
       }],
     });
-    execSummary = msg.content[0].text.trim();
+    // FIX-28: an unfinished summary is never printed; the template paragraphs are used instead.
+    if (msg.stop_reason && msg.stop_reason !== "end_turn") throw new Error(`unfinished reply (${msg.stop_reason})`);
+    execSummary = (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+    if (!execSummary) throw new Error("empty reply");
     console.log("[board-report] step 7: Claude OK —", execSummary.length, "chars");
   } catch(e) {
     console.error("[board-report] step 7: Claude FAILED (using fallback) —", e.message);
@@ -21881,10 +22000,13 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 200,
+      thinking: { type: "disabled" },   // FIX-28: a short extraction needs no thinking (the ASK-3 rule)
       system: `Extract from a voice memo a nonprofit development officer just recorded about a donor. Return ONLY valid JSON: {"personalDetail":"..." or null,"suggestedAction":"..." or null} — no markdown, no explanation. personalDetail: one short, specific, worth-remembering fact about the donor (family, interests, preferences, life event) mentioned in the memo — null if nothing like that was mentioned. suggestedAction: one short, concrete next step implied by the memo (e.g. "Send the gala invite", "Follow up after their trip in March") — null if none is implied.`,
       messages: [{ role: "user", content: `Donor: ${donorRows[0].name}\nTranscript: ${transcript}` }],
     });
-    const text = msg.content[0].text.trim();
+    // FIX-28: an unfinished reply suggests nothing.
+    const text = msg.stop_reason && msg.stop_reason !== "end_turn" ? ""
+      : (msg.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);

@@ -17,6 +17,7 @@ import { errorMessage } from "../lib/domainError";
 import { Figure } from "./Figure";
 import { coachDrafts, coachMailto } from "../../../shared/p2p.js";
 import { displayDate } from "../../../shared/displayDate";
+import { offerUndo } from "./EditHistory";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -170,6 +171,88 @@ function FundraiserDetail({ f, page, orgSlug, canEdit, onSaved }) {
   );
 }
 
+// FIX-28: A NEW PEER-TO-PEER CAMPAIGN, FROM THIS TAB. It goes through the one
+// page-creation path (POST /giving-pages) with the switch already on, so it is
+// the same kind of page the Campaigns form makes with its tick.
+const slugify = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+function NewCampaignForm({ orgSlug, onMade, onCancel }) {
+  const [f, setF] = useState({ title: "", goalAmount: "", endsOn: "", slug: "", approval: false });
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [err, setErr] = useState("");
+  const [saving, setSaving] = useState(false);
+  const slug = slugTouched ? slugify(f.slug) : slugify(f.title);
+  const save = async () => {
+    setErr("");
+    if (!f.title.trim()) { setErr("Give the campaign a name."); return; }
+    setSaving(true);
+    try {
+      const page = await apiFetch("/giving-pages", { method: "POST", body: JSON.stringify({
+        title: f.title.trim(), goalAmount: f.goalAmount || undefined, endsOn: f.endsOn || undefined,
+        slug: slug || undefined, p2pEnabled: true, p2pRequiresApproval: f.approval }) });
+      onMade(page);
+    } catch (e) { setErr(errorMessage(e, "The campaign did not save.")); setSaving(false); }
+  };
+  const lab = { display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink2 };
+  return (
+    <Card style={{ padding: "16px 18px" }} data-testid="p2p-new-form">
+      <div style={h}>New peer-to-peer campaign</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ ...lab, flex: "1 1 220px" }}>Name
+          <input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} style={inp} data-testid="p2p-new-name" autoFocus /></label>
+        <label style={lab}>Goal ($)
+          <input type="number" min="1" value={f.goalAmount} onChange={e => setF({ ...f, goalAmount: e.target.value })} style={{ ...inp, width: 120 }} data-testid="p2p-new-goal" /></label>
+        <label style={lab}>Ends on
+          <input type="date" value={f.endsOn} onChange={e => setF({ ...f, endsOn: e.target.value })} style={inp} data-testid="p2p-new-ends" /></label>
+      </div>
+      <label style={{ ...lab, marginTop: 10 }}>Public page address
+        <input value={slugTouched ? f.slug : slug} onChange={e => { setSlugTouched(true); setF({ ...f, slug: e.target.value }); }} style={{ ...inp, maxWidth: 320 }} data-testid="p2p-new-slug" /></label>
+      <div style={{ fontSize: 12, color: T.ink3, marginTop: 4, wordBreak: "break-all" }} data-testid="p2p-new-url">
+        {slug ? `${typeof window !== "undefined" ? window.location.origin : ""}/give/${orgSlug || "your-org"}/${slug}` : "The address comes from the name."}
+        {" "}If it is taken, Steward adds a number.
+      </div>
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: T.ink2, marginTop: 10 }}>
+        <input type="checkbox" checked={f.approval} onChange={e => setF({ ...f, approval: e.target.checked })} data-testid="p2p-new-approval" />
+        New fundraiser pages need approval before they go public
+      </label>
+      {err && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8 }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button style={btn(true)} onClick={save} disabled={saving} data-testid="p2p-new-save">{saving ? "Making it…" : "Make the campaign"}</button>
+        <button style={btn(false)} onClick={onCancel}>Cancel</button>
+      </div>
+    </Card>);
+}
+
+// FIX-28: STAFF ADD A FUNDRAISER FOR SOMEBODY. Nobody is emailed; the manage
+// link comes back here for the staff member to pass on.
+function AddFundraiserForm({ pageId, teams, onMade, onCancel }) {
+  const [f, setF] = useState({ name: "", email: "", personalGoalAmount: "", teamId: "" });
+  const [err, setErr] = useState("");
+  const save = async () => {
+    setErr("");
+    try {
+      const r = await apiFetch(`/giving-pages/${pageId}/fundraisers`, { method: "POST", body: JSON.stringify({
+        name: f.name, email: f.email, personalGoalAmount: f.personalGoalAmount || undefined, teamId: f.teamId || undefined }) });
+      onMade(r, f.name.trim());
+    } catch (e) { setErr(errorMessage(e, "That fundraiser did not save.")); }
+  };
+  return (
+    <div style={{ marginTop: 10 }} data-testid="p2p-add-fundraiser-form">
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <input placeholder="Their name" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} style={{ ...inp, width: 180 }} data-testid="p2p-addf-name" />
+        <input placeholder="Their email" type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} style={{ ...inp, width: 210 }} data-testid="p2p-addf-email" />
+        <input placeholder="Goal ($)" type="number" value={f.personalGoalAmount} onChange={e => setF({ ...f, personalGoalAmount: e.target.value })} style={{ ...inp, width: 110 }} />
+        {teams.length > 0 && <select value={f.teamId} onChange={e => setF({ ...f, teamId: e.target.value })} style={inp} aria-label="Team">
+          <option value="">No team</option>
+          {teams.filter(t => t.status === "active").map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>}
+        <button style={btn(true)} onClick={save} data-testid="p2p-addf-save">Add</button>
+        <button style={btn(false)} onClick={onCancel}>Cancel</button>
+      </div>
+      <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>Steward finds them by email, or adds them as a new person. Nobody is emailed.</div>
+      {err && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>{err}</div>}
+    </div>);
+}
+
 export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNavigate, openPageId = "" }) {
   const [pages, setPages] = useState(null);
   const [pageId, setPageId] = useState("");
@@ -179,6 +262,11 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   const [openRaised, setOpenRaised] = useState(false);
   const [newTeam, setNewTeam] = useState(null);
   const [openF, setOpenF] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [addingF, setAddingF] = useState(false);
+  const [manage, setManage] = useState(null);
+  const [pagesTick, setPagesTick] = useState(0);
+  const [wantPage, setWantPage] = useState("");
 
   useEffect(() => {
     apiFetch("/giving-pages")
@@ -188,11 +276,33 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
         // FIX-7 Part 4 — a page the caller asked for wins, so a campaign just
         // created with peer-to-peer on opens on its OWN page, not on whichever
         // one happens to be first.
-        setPageId(x => (openPageId && list.some(p => p.id === openPageId) ? openPageId : x)
+        setPageId(x => (wantPage && list.some(p => p.id === wantPage) ? wantPage : null)
+          || (openPageId && list.some(p => p.id === openPageId) ? openPageId : (list.some(p => p.id === x) ? x : ""))
           || list.find(p => p.p2p_enabled)?.id || list[0]?.id || "");
       })
       .catch(() => setPages([]));
-  }, [openPageId]);
+  }, [openPageId, pagesTick, wantPage]);
+
+  const made = page => {
+    setCreating(false); setMsg("");
+    setWantPage(page.id); setPagesTick(n => n + 1);
+    offerUndo({ message: `Made ${page.title}.`, undoAction: async () => {
+      const r = await apiFetch(`/giving-pages/${page.id}`, { method: "PUT", body: JSON.stringify({ status: "archived" }) });
+      setWantPage(""); setPageId(""); setPagesTick(n => n + 1);
+      return r;
+    } }, "campaign");
+  };
+  const fundraiserMade = (r, name) => {
+    setAddingF(false); setMsg(r.sentence || `${name}'s page is live.`); setManage({ name, url: r.manageUrl });
+    load();
+    offerUndo({ message: `Added ${name}.`, undoAction: async () => {
+      const x = await apiFetch(`/peer-fundraisers/${r.id}`, { method: "PUT", body: JSON.stringify({ status: "archived" }) });
+      setManage(null); load(); return x;
+    } }, "fundraiser");
+  };
+  const newBtn = !isReadOnly && isAdmin && !creating && (
+    <button style={btn(true)} data-testid="p2p-new" onClick={() => setCreating(true)}>New peer-to-peer campaign</button>);
+  const newForm = creating && <NewCampaignForm orgSlug={orgSlug} onMade={made} onCancel={() => setCreating(false)} />;
 
   const load = () => {
     if (!pageId) return;
@@ -241,9 +351,12 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
 
   if (!pages) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   if (!pages.length) return (
-    <div style={{ fontSize: 13, color: T.ink3, maxWidth: 520 }}>
-      Peer-to-peer runs on a giving page. Make one first, then turn it on here and supporters can start their own
-      fundraisers under it.
+    <div data-testid="p2p-view" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "flex-start" }}>
+      <div style={{ fontSize: 13, color: T.ink3, maxWidth: 520 }}>
+        No peer-to-peer campaigns yet. Make one and supporters can start their own fundraisers under it.
+      </div>
+      {newBtn}
+      {newForm && <div style={{ alignSelf: "stretch" }}>{newForm}</div>}
     </div>);
 
   const t = d?.totals;
@@ -253,6 +366,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
         <select value={pageId} onChange={e => setPageId(e.target.value)} style={inp} aria-label="Campaign" data-testid="p2p-campaign">
           {pages.map(p => <option key={p.id} value={p.id}>{p.title}{p.p2p_enabled ? "" : " (not peer-to-peer yet)"}</option>)}
         </select>
+        {newBtn}
         <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="p2p-csv"
           onClick={() => openAuthed("/reports/p2p-fundraisers?format=csv", "fundraisers-by-campaign.csv", { download: true })
             .catch(e => setMsg(errorMessage(e, "The file could not be made.")))}>Fundraisers CSV</button>
@@ -261,7 +375,13 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
         <span>{msg}</span>
         {undo && <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} data-testid="p2p-undo"
           onClick={() => takedown(undo.kind, undo.id, undo.status, undo.name)}>Undo</button>}
+        {manage?.url && <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} data-testid="p2p-copy-manage"
+          onClick={() => {
+            if (navigator.clipboard?.writeText) navigator.clipboard.writeText(manage.url).then(() => setMsg(`${manage.name}'s manage link is copied. Send it to them yourself.`)).catch(() => setMsg(manage.url));
+            else setMsg(manage.url);
+          }}>Copy their manage link</button>}
       </div>}
+      {newForm}
 
       {d && !d.page.p2pEnabled && (
         <Card style={{ padding: "16px 18px" }}>
@@ -410,12 +530,17 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
 
         {/* EVERY FUNDRAISER — the leaderboard the public sees, plus takedown */}
         <Card style={{ padding: "16px 18px" }} data-testid="p2p-fundraisers">
-          <div style={h}>Fundraisers</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <div style={{ ...h, marginBottom: 0 }}>Fundraisers</div>
+            {!isReadOnly && isAdmin && !addingF && <button style={btn(false)} data-testid="p2p-add-fundraiser"
+              onClick={() => setAddingF(true)}>Add a fundraiser</button>}
+          </div>
+          {addingF && <AddFundraiserForm pageId={pageId} teams={d.teams} onMade={fundraiserMade} onCancel={() => setAddingF(false)} />}
           <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10, lineHeight: 1.5 }}>
             In the order the public leaderboard shows them. Raised is a live sum over the gifts each one brought in, in cents; click it for the gifts. Open a name for their gifts, their page and words to coach them with.
           </div>
           {!d.fundraisers.length && <div style={{ fontSize: 13, color: T.ink3 }}>
-            Nobody has signed up yet. The button is on the public page.
+            Nobody has signed up yet. The button is on the public page, or add somebody here.
           </div>}
           {d.fundraisers.map((f, i) => (
             <div key={f.id} data-testid="p2p-fundraiser-row" style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: 13,

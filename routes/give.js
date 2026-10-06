@@ -1533,13 +1533,20 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     const campRow = await query("SELECT id FROM campaigns WHERE id=? AND org_id=?", [campaignId, req.user.orgId]);
     if (!campRow.length) return res.status(400).json({ error: "Invalid campaign" });
   }
+  // FIX-28: the Peer-to-peer tab's own "New peer-to-peer campaign" sends the
+  // end date and the approval setting here too, so a campaign is one request.
+  let endsOn = null;
+  if (req.body.endsOn !== undefined && req.body.endsOn !== null && req.body.endsOn !== "") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(req.body.endsOn))) return res.status(400).json({ error: "The end date must be a date written 2026-05-31." });
+    endsOn = String(req.body.endsOn);
+  }
   const base = slugifyGivingPage(slug || title);
   const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
   const id = "gp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, created_by, created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?)`,
-    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, actor(req).id, actor(req).name]
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, p2p_requires_approval, ends_on, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?::date,?,?)`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, req.body.p2pRequiresApproval === true, endsOn, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);

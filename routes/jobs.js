@@ -12,7 +12,7 @@
 function mount(ctx) {
 const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
-  deliverWebhooks, syncMailbox, syncCalendar,
+  deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue,
@@ -382,6 +382,7 @@ async function syncAllGmail() {
   for (const conn of connections) {
     await syncMailbox(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[mailbox-sync]", e.message));
     await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
+    await pushStewardDates(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-push]", e.message));
   }
 }
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {

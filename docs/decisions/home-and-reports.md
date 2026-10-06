@@ -149,6 +149,10 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **A campaign has a page, and its list and page are on the census.** `CampaignsList.jsx` is in
   FIGURE_SOURCE_SCOPE, and `fix2-a-footing` runs that census. (FIX-27)
 
+- **Every dated thing in Steward is on the Calendar.** A new kind of dated row joins `TYPES` in
+  calendar.js in the same build, or it is not on the calendar (`tests/fix28-calendar-rule.test.js`).
+  A person's own items (deadlines, steps, tasks, journey steps) go to her connected Google or Outlook
+  calendar only when she turns it on (`push_dates`), one way, all-day, no attendees. (FIX-28)
 - **The calendar reads; each item's own route writes.** `GET /calendar/items` never changes anything, and a
   drag is `shared/calendarMoves.js`'s request to the item's own route, so it is that route's one audit write;
   Undo is the same route with the old values through `offerUndo({ undoAction, message })`. Add a type to the

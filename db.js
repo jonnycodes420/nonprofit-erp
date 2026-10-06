@@ -895,6 +895,25 @@ async function runSchemaInit(pool) {
   // included the calendar scope (INT-4 connections did not, and they keep
   // logging mail until she adds it), and the meetings themselves.
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_granted BOOLEAN NOT NULL DEFAULT false`);
+  // FIX-28: she can put Steward's dates that are hers onto this calendar.
+  // Off until she turns it on; calendar_pushes remembers each entry made.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS push_dates BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS calendar_pushes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      item_key TEXT NOT NULL,
+      provider_event_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      title TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (user_id, provider, item_key)
+    )`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_synced_at TIMESTAMPTZ`);
   // ONE ROW PER MEETING WITH SOMEBODY ON FILE, AND SIX FIELDS FROM THE
   // PROVIDER (shared/calendarLog.js): title, start, end, location, the
@@ -3154,6 +3173,8 @@ async function runSchemaInit(pool) {
   // two milestones, two reports on the SAME date are one thing typed twice.
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_ms_one_per_date
                       ON grant_milestones (grant_id, kind, due_date)`);
+  // FIX-28: a custom deadline is named by whoever adds it.
+  await pool.query(`ALTER TABLE grant_milestones ADD COLUMN IF NOT EXISTS label TEXT`);
 
   // ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ────────────────
   // One row per file, pointing at the BUILD-51 asset store by bare asset id
