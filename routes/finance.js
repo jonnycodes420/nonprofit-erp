@@ -855,8 +855,8 @@ function oauthKeyFor(vendor) {
 async function mailboxAddress(providerKey, accessToken) {
   try {
     const url = providerKey === "google"
-      ? "https://gmail.googleapis.com/gmail/v1/users/me/profile"
-      : "https://graph.microsoft.com/v1.0/me";
+      ? `${process.env.GMAIL_API_BASE || "https://gmail.googleapis.com"}/gmail/v1/users/me/profile`
+      : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me`;
     const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" } });
     if (!r.ok) { console.error(`[mailbox] ${providerKey} profile answered ${r.status}`); return null; }
     const b = await r.json();

@@ -199,6 +199,9 @@ export function adaptResendInbound(payload) {
     providerEmailId: d.email_id || null,
     provider: "resend",
     attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : 0,
+    // GRANTS-1: the list itself, so an email to a funder contact can store any
+    // attachment that arrives with its bytes or a download URL.
+    attachments: Array.isArray(d.attachments) ? d.attachments : [],
   };
 }
 
@@ -227,6 +230,8 @@ export function mergeResendBody(adapted, body) {
     bcc: b.bcc !== undefined ? b.bcc : adapted.bcc,
     from: b.from !== undefined ? b.from : adapted.from,
     subject: b.subject !== undefined ? b.subject : adapted.subject,
+    attachments: Array.isArray(b.attachments) ? b.attachments : adapted.attachments,
+    attachmentCount: Array.isArray(b.attachments) ? b.attachments.length : adapted.attachmentCount,
     headers: b.headers,
   };
 }
