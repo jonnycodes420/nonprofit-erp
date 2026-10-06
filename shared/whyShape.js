@@ -50,7 +50,9 @@ export const CANT_ANSWER = "Steward can't answer that one yet. We've noted it.";
 const DONORS = "(donors?|givers?|supporters?|people|members)";
 const MATCHERS = [
   ["more", /\b(could|can|might|able to)\b.*\bgive more\b|\broom to give\b|\b(capacity|upgrade|major (gift|donor) prospects?)\b|\b(ask|asked) for more\b|\bbiggest prospects?\b|\bgive (a )?(bigger|larger) gifts?\b/i],
-  ["volunteers", /\bvolunteer/i],
+  // ASK-4: a volunteer question is the volunteer question only when it is about
+  // asking them to give; "came to the gala and volunteered" is a query.
+  ["volunteers", /\bvolunteers?\b.*\b(ask|asked|give|gave|giving|given|donat|never)\b|\b(ask|give|giving|donat)\w*\b.*\bvolunteers?\b/i],
   ["second", /\b(first[- ]time|first gift|new donors?|second (ask|gift))\b|\bgave (just |only )?once\b|\bone[- ]time (donors?|givers?)\b.*\b(again|second|back)\b/i],
   ["call", /\b(who|whom)\b.*\b(call|ring|phone|reach out|contact|follow up with|get in touch)\b|\b(call|ring)\b.*\b(tomorrow|today|this morning|next|this week|first)\b/i],
   ["retention", new RegExp("\\bretention\\b|\\bretain|\\b(keep|kept|keeping) (our |my )?" + DONORS + "\\b|\\b" + DONORS + "\\b.*\\b(did we|do we) keep\\b"

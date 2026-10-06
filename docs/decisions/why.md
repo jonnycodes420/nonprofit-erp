@@ -90,6 +90,22 @@ template sentences. Every future build is checked against this.
   template. The model's "read as" line passes the same check and holds only numbers the question or plan
   holds, or it is not shown. `tests/ask3-sentence-check.test.js`. (ASK-3)
 
+- **Any question about the org's own records is a QUERY, never a guess (ASK-4).** `askQuery.js` is the catalog of
+  every record kind a question may be about (people, gifts, conversations, events, guests, volunteer shifts,
+  recurring gifts, campaigns, next steps, asks, grants, tasks, memberships) and every field of each. The model
+  fills `query_plan` (entity, conditions, conditions on the person's other records, count, total, average,
+  largest, breakdown, list); `validateQuery` reads harmless variants (aliases, any case) and refuses anything
+  outside the catalog; the compiler writes every table, column and join itself, binds every value, and puts
+  the org's id first in every query and sub-query (related records get their own aliases). Read-only.
+  `tests/ask4-query-guard.test.js`. (ASK-4)
+- **Answer what was asked, not the nearest question.** With AI on, a question that is not asking WHY and not
+  asking for a recommendation (should, could, need, about to, at risk) goes to the query layer before the
+  eight why answers and the ASK-2 catalog model, which keep what it cannot express. Every refusal path tries it
+  last. The sentence is Steward's template with each number a figure of source `query` (cell `value` or
+  `g<n>`), which opens the same rows; a breakdown names its largest group, not its first row. (ASK-4)
+- **The sentence model writes for the question its facts answer, never her words** (`writeSentence` is given
+  the canonical question), so it cannot stretch a neighbouring answer to fit. (ASK-4)
+
 ## The eight questions (how each is computed)
 
 | key | question | facts | ranked by | step |

@@ -250,7 +250,12 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
     } catch { /* the template's reading stands, and is refused below if it is incomplete */ }
   }
   const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
-  if (!chk.ok) return null;
+  if (!chk.ok) {
+    // ASK-4: words the donor list's filters cannot express ("came to the gala
+    // and volunteered over ten hours") go to the query layer, people only.
+    try { const q = await require("../askQuery").peopleForWords(orgId, who, client, AGENT_MODEL); if (q) return q; } catch (e) { console.error("[agent] query layer", e && e.message); }
+    return null;
+  }
   const f = await GR.buildDonorFilter(orgId, chk.rules);
   if (f.badRole || f.badStatus) return null;
   const rows = await query(`SELECT id FROM donors WHERE ${f.whereSql} ORDER BY ${f.orderBy} LIMIT 1001`, f.params);

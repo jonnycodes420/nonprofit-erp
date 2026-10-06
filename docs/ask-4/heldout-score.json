@@ -1,0 +1,143 @@
+{
+ "tally": {
+  "right": 14,
+  "wrong": 1
+ },
+ "rows": [
+  {
+   "n": 101,
+   "q": "How much was given by cash last year?",
+   "verdict": "right",
+   "truth": "8522.00",
+   "got": 8522,
+   "source": "query",
+   "sentence": "$8,522 in 32 gifts (payment method is Cash · date between January 1, 2025 and December 31, 2025 · total amount)."
+  },
+  {
+   "n": 102,
+   "q": "How many emails were logged in the last 60 days?",
+   "verdict": "right",
+   "truth": "18",
+   "got": 18,
+   "source": "query",
+   "sentence": "18 conversations match (kind is email · date in the last 60 days)."
+  },
+  {
+   "n": 103,
+   "q": "How many people in Peabody have given more than $2,500 in their lifetime?",
+   "verdict": "right",
+   "truth": "35",
+   "got": 35,
+   "source": "query",
+   "sentence": "35 people match (city mentions Peabody · lifetime giving over $2,500)."
+  },
+  {
+   "n": 104,
+   "q": "What's the smallest gift we received this year?",
+   "verdict": "right",
+   "truth": "10.00",
+   "got": 10,
+   "source": "query",
+   "sentence": "The smallest amount is $10, Henrietta Pendlebury on January 28, 2026 (date between January 1, 2026 and December 31, 2026 · smallest amount)."
+  },
+  {
+   "n": 105,
+   "q": "How many gifts to the General Operating fund were made in 2025?",
+   "verdict": "right",
+   "truth": "5",
+   "got": 5,
+   "source": "query",
+   "sentence": "5 gifts match (fund is General Operating · date between January 1, 2025 and December 31, 2025)."
+  },
+  {
+   "n": 106,
+   "q": "How many guests are on the Harbor Run list?",
+   "verdict": "right",
+   "truth": "7",
+   "got": 7,
+   "source": "query",
+   "sentence": "7 event guests match (event is Harbor Run 2026)."
+  },
+  {
+   "n": 107,
+   "q": "Which payment method brought in the most money this year?",
+   "verdict": "right",
+   "truth": "Card",
+   "got": "card",
+   "source": "query",
+   "sentence": "$1,521,602.59 in all (date between January 1, 2026 and December 31, 2026 · total amount · by payment method); Card leads with $607,561.03, of 6 payment methods."
+  },
+  {
+   "n": 108,
+   "q": "How many people have never given a gift?",
+   "verdict": "right",
+   "truth": "100",
+   "got": 100,
+   "source": "query",
+   "sentence": "100 people match (no gifts)."
+  },
+  {
+   "n": 109,
+   "q": "How many volunteer shifts were logged in 2025?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "query",
+   "sentence": "0 volunteer shifts match (date between January 1, 2025 and December 31, 2025)."
+  },
+  {
+   "n": 110,
+   "q": "How many donors in Manchester gave by card this year?",
+   "verdict": "right",
+   "truth": "78",
+   "got": 78,
+   "source": "query",
+   "sentence": "78 people match (giver's city mentions Manchester · payment method is Card · date between January 1, 2026 and December 31, 2026 · counted by person)."
+  },
+  {
+   "n": 111,
+   "q": "What's the average gift from donors in Marblehead?",
+   "verdict": "wrong",
+   "truth": "1522.46",
+   "got": 1202.55,
+   "source": "template",
+   "sentence": "The average gift in 2026 so far was $1,202.55."
+  },
+  {
+   "n": 112,
+   "q": "How many people gave both last year and this year?",
+   "verdict": "right",
+   "truth": "525",
+   "got": 525,
+   "source": "query",
+   "sentence": "525 people match (any gifts with date between January 1, 2025 and December 31, 2025 · any gifts with date between January 1, 2026 and December 31, 2026)."
+  },
+  {
+   "n": 113,
+   "q": "How many people have had a meeting logged and given over $5,000 in their lifetime?",
+   "verdict": "right",
+   "truth": "9",
+   "got": 9,
+   "source": "query",
+   "sentence": "9 people match (lifetime giving over $5,000 · any conversations with kind is meeting)."
+  },
+  {
+   "n": 114,
+   "q": "Which city do most of our donors live in?",
+   "verdict": "right",
+   "truth": "Marblehead",
+   "got": "marblehead",
+   "source": "query",
+   "sentence": "1,117 people (any gifts · by city); Marblehead leads with 138, of 16 citys."
+  },
+  {
+   "n": 115,
+   "q": "How many of our donors' horoscopes are Scorpio?",
+   "verdict": "right",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"zodiac sign / birthdate attribute not available\" yet. We've noted the question."
+  }
+ ]
+}

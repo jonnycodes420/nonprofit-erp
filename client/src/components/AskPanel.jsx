@@ -188,7 +188,7 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
       {t && answer.chart !== "bars" && (
         <div data-testid="ask-table" style={{ border: "1px solid " + T.bg2, borderRadius: 10, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: t.compareLabel ? "minmax(0,1fr) auto auto" : "minmax(0,1fr) auto", gap: 12, padding: "8px 12px", background: T.bg, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-            <span>{t.dimension}</span><span>{answer.planWords.split(" · ")[1] || "This period"}</span>{t.compareLabel && <span>{t.compareLabel}</span>}
+            <span>{t.dimension}</span><span>{t.valueLabel || answer.planWords.split(" · ")[1] || "This period"}</span>{t.compareLabel && <span>{t.compareLabel}</span>}
           </div>
           {t.rows.map(r => (
             <div key={r.label} style={{ display: "grid", gridTemplateColumns: t.compareLabel ? "minmax(0,1fr) auto auto" : "minmax(0,1fr) auto", gap: 12, padding: "7px 12px", borderTop: "1px solid " + T.bg2, fontSize: 13.5, alignItems: "center" }}>
@@ -231,8 +231,8 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
             : s.kind === "open"
               ? <RecordLink key={i} to={s.href} data-testid="ask-step-open" style={{ ...CHIP, display: "inline-block", textDecoration: "none" }}>{s.label}</RecordLink>
               : !isReadOnly && <button key={i} type="button" data-testid="ask-step-plan" disabled={!!busy} style={BTN} onClick={() => plan5(s)}>{busy === "plan" ? "Planning…" : s.label}</button>)}
-          {!isReadOnly && <button type="button" data-testid="ask-pin" disabled={!!busy} style={CHIP} onClick={pin}>{busy === "pin" ? "Pinning…" : "Pin to Home"}</button>}
-          {!isReadOnly && <button type="button" data-testid="ask-save-dash" disabled={!!busy} style={CHIP} onClick={openDash}>Save to a dashboard</button>}
+          {!isReadOnly && answer.plan && <button type="button" data-testid="ask-pin" disabled={!!busy} style={CHIP} onClick={pin}>{busy === "pin" ? "Pinning…" : "Pin to Home"}</button>}
+          {!isReadOnly && answer.plan && <button type="button" data-testid="ask-save-dash" disabled={!!busy} style={CHIP} onClick={openDash}>Save to a dashboard</button>}
         </div>
       )}
       {compact && onUnpin && <div><button type="button" data-testid="ask-unpin" onClick={onUnpin} style={{ ...CHIP, padding: "3px 10px", fontSize: 12 }}>Unpin</button></div>}

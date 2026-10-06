@@ -1,0 +1,475 @@
+{
+ "tally": {
+  "right": 52
+ },
+ "rows": [
+  {
+   "n": 1,
+   "q": "How much came in by check this year?",
+   "verdict": "right",
+   "truth": "378801.56",
+   "got": 378801.56,
+   "source": "query",
+   "sentence": "$378,801.56 in 132 gifts (payment method is Check · date between January 1, 2026 and December 31, 2026 · total amount)."
+  },
+  {
+   "n": 2,
+   "q": "How many gifts were made by card in September 2026?",
+   "verdict": "right",
+   "truth": "134",
+   "got": 134,
+   "source": "query",
+   "sentence": "134 gifts match (payment method is Card · date between September 1, 2026 and September 30, 2026)."
+  },
+  {
+   "n": 3,
+   "q": "What was the largest gift of stock we've ever received?",
+   "verdict": "right",
+   "truth": "45093.00",
+   "got": 45093,
+   "source": "query",
+   "sentence": "The largest amount is $45,093, Alaric Applewhite on October 10, 2023 (gift type is stock · largest amount)."
+  },
+  {
+   "n": 4,
+   "q": "What's the average ACH gift?",
+   "verdict": "right",
+   "truth": "9183.11",
+   "got": 9183.11,
+   "source": "query",
+   "sentence": "The average amount is $9,183.11 across 94 gifts (payment method is ACH · average amount)."
+  },
+  {
+   "n": 5,
+   "q": "How much did we raise for Youth Arts Access this year?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "template",
+   "sentence": "You raised $0 to Youth Arts Access in 2026 so far."
+  },
+  {
+   "n": 6,
+   "q": "Which fund raised the most in 2025?",
+   "verdict": "right",
+   "truth": "Gala Reserve",
+   "got": "gala reserve",
+   "source": "template",
+   "sentence": "You raised $1,628,344 in 2025. Gala Reserve leads with $1,611,338."
+  },
+  {
+   "n": 7,
+   "q": "How many gifts from the last 30 days haven't been thanked?",
+   "verdict": "right",
+   "truth": "170",
+   "got": 170,
+   "source": "query",
+   "sentence": "170 gifts match (date in the last 30 days · not thanked)."
+  },
+  {
+   "n": 8,
+   "q": "How much did donors in Salem give this year?",
+   "verdict": "right",
+   "truth": "139603.49",
+   "got": 139603.49,
+   "source": "template",
+   "sentence": "You raised $139,603.49 from people in Salem in 2026 so far."
+  },
+  {
+   "n": 9,
+   "q": "How many DAF gifts did we get last year?",
+   "verdict": "right",
+   "truth": "27",
+   "got": 27,
+   "source": "query",
+   "sentence": "27 gifts match (gift type is daf · date between January 1, 2025 and December 31, 2025)."
+  },
+  {
+   "n": 10,
+   "q": "What's the total of gifts over $10,000 this year?",
+   "verdict": "right",
+   "truth": "633657.00",
+   "got": 633657,
+   "source": "query",
+   "sentence": "$633,657 in 22 gifts (amount over $10,000 · date between January 1, 2026 and December 31, 2026 · total amount)."
+  },
+  {
+   "n": 11,
+   "q": "How many gifts were given in tribute?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "query",
+   "sentence": "0 gifts match (given in tribute)."
+  },
+  {
+   "n": 12,
+   "q": "Which month this year had the most gifts?",
+   "verdict": "right",
+   "truth": "2026-05",
+   "got": "2026-05",
+   "source": "query",
+   "sentence": "1,417 gifts (date between January 1, 2026 and December 31, 2026 · by month); 2026-05 leads with 228, of 10 months."
+  },
+  {
+   "n": 13,
+   "q": "How many people gave by check this year?",
+   "verdict": "right",
+   "truth": "123",
+   "got": 123,
+   "source": "query",
+   "sentence": "123 people match (gift type is check · date between January 1, 2026 and December 31, 2026 · counted by person)."
+  },
+  {
+   "n": 14,
+   "q": "How many people live in Marblehead?",
+   "verdict": "right",
+   "truth": "149",
+   "got": 149,
+   "source": "query",
+   "sentence": "149 people match (city mentions Marblehead)."
+  },
+  {
+   "n": 15,
+   "q": "How many donors have given more than $10,000 in their lifetime?",
+   "verdict": "right",
+   "truth": "157",
+   "got": 157,
+   "source": "query",
+   "sentence": "157 people match (lifetime giving over $10,000)."
+  },
+  {
+   "n": 16,
+   "q": "How many people have no email address on file?",
+   "verdict": "right",
+   "truth": "19",
+   "got": 19,
+   "source": "query",
+   "sentence": "19 people match (email address is blank)."
+  },
+  {
+   "n": 17,
+   "q": "How many people are marked do not contact?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "query",
+   "sentence": "0 people match (do not contact)."
+  },
+  {
+   "n": 18,
+   "q": "What is the highest lifetime giving of any one donor?",
+   "verdict": "right",
+   "truth": "187500.00",
+   "got": 187500,
+   "source": "query",
+   "sentence": "The largest lifetime giving is $187,500, Margaret Chen on August 8, 2026 (largest lifetime giving)."
+  },
+  {
+   "n": 19,
+   "q": "How many people made their first gift in 2026?",
+   "verdict": "right",
+   "truth": "170",
+   "got": 170,
+   "source": "query",
+   "sentence": "170 people match (first gift date between January 1, 2026 and December 31, 2026)."
+  },
+  {
+   "n": 20,
+   "q": "How many donors in Beverly gave this year?",
+   "verdict": "right",
+   "truth": "83",
+   "got": 83,
+   "source": "template",
+   "sentence": "83 people gave from people in Beverly in 2026 so far."
+  },
+  {
+   "n": 21,
+   "q": "How many donors have made more than five gifts?",
+   "verdict": "right",
+   "truth": "107",
+   "got": 107,
+   "source": "query",
+   "sentence": "107 people match (number of gifts over 5)."
+  },
+  {
+   "n": 22,
+   "q": "How many calls were logged this year?",
+   "verdict": "right",
+   "truth": "13",
+   "got": 13,
+   "source": "query",
+   "sentence": "13 conversations match (kind is call · date between January 1, 2026 and December 31, 2026)."
+  },
+  {
+   "n": 23,
+   "q": "How many meetings have we logged in total?",
+   "verdict": "right",
+   "truth": "10",
+   "got": 10,
+   "source": "query",
+   "sentence": "10 conversations match (kind is meeting)."
+  },
+  {
+   "n": 24,
+   "q": "What kind of conversation do we log most often?",
+   "verdict": "right",
+   "truth": "email",
+   "got": "email",
+   "source": "query",
+   "sentence": "115 conversations (by kind); email leads with 42, of 6 kinds."
+  },
+  {
+   "n": 25,
+   "q": "How many people have at least one conversation logged?",
+   "verdict": "right",
+   "truth": "64",
+   "got": 64,
+   "source": "query",
+   "sentence": "64 people match (any conversations)."
+  },
+  {
+   "n": 26,
+   "q": "How many guests are on the Scholarship Supper list?",
+   "verdict": "right",
+   "truth": "40",
+   "got": 40,
+   "source": "query",
+   "sentence": "40 event guests match (event is Scholarship Supper)."
+  },
+  {
+   "n": 27,
+   "q": "Which event has the most guests?",
+   "verdict": "right",
+   "truth": "Harbor Lights Gala 2026",
+   "got": "harbor lights gala 2026",
+   "source": "query",
+   "sentence": "121 event guests (by event); Harbor Lights Gala 2026 leads with 74, of 3 events."
+  },
+  {
+   "n": 28,
+   "q": "How many VIP guests are there across all our events?",
+   "verdict": "right",
+   "truth": "4",
+   "got": 4,
+   "source": "query",
+   "sentence": "4 event guests match (VIP)."
+  },
+  {
+   "n": 29,
+   "q": "How many people came to the Harbor Lights Gala and also gave this year?",
+   "verdict": "right",
+   "truth": "74",
+   "got": 74,
+   "source": "query",
+   "sentence": "74 people match (any event guests with event is Harbor Lights Gala 2026 · any gifts with date between January 1, 2026 and December 31, 2026)."
+  },
+  {
+   "n": 30,
+   "q": "What's the total fundraising goal across our events?",
+   "verdict": "right",
+   "truth": "140000",
+   "got": 140000,
+   "source": "query",
+   "sentence": "$140,000 in 3 events (total goal)."
+  },
+  {
+   "n": 31,
+   "q": "How many volunteer hours have been logged in total?",
+   "verdict": "right",
+   "truth": "301.00",
+   "got": 301,
+   "source": "query",
+   "sentence": "301 hours across 138 volunteer shifts (total hours)."
+  },
+  {
+   "n": 32,
+   "q": "How many volunteer hours were logged this year?",
+   "verdict": "right",
+   "truth": "301.00",
+   "got": 301,
+   "source": "query",
+   "sentence": "301 hours across 138 volunteer shifts (date between January 1, 2026 and December 31, 2026 · total hours)."
+  },
+  {
+   "n": 33,
+   "q": "Who has volunteered the most hours?",
+   "verdict": "right",
+   "truth": "Quenby Blackmoor",
+   "got": "Quenby Blackmoor",
+   "source": "query",
+   "sentence": "301 in all (total hours · by volunteer); Quenby Blackmoor leads with 41, of 24 volunteers."
+  },
+  {
+   "n": 34,
+   "q": "How many people have volunteered?",
+   "verdict": "right",
+   "truth": "24",
+   "got": 24,
+   "source": "query",
+   "sentence": "24 people match (any volunteer shifts)."
+  },
+  {
+   "n": 35,
+   "q": "How many volunteers also gave a gift this year?",
+   "verdict": "right",
+   "truth": "9",
+   "got": 9,
+   "source": "query",
+   "sentence": "9 people match (any volunteer shifts · any gifts with date between January 1, 2026 and December 31, 2026)."
+  },
+  {
+   "n": 36,
+   "q": "How many recurring gifts are active?",
+   "verdict": "right",
+   "truth": "70",
+   "got": 70,
+   "source": "query",
+   "sentence": "70 recurring gifts match (status is active)."
+  },
+  {
+   "n": 37,
+   "q": "What do our active recurring gifts add up to each time they're charged?",
+   "verdict": "right",
+   "truth": "3460",
+   "got": 3460,
+   "source": "query",
+   "sentence": "$3,460 in 70 recurring gifts (status is active · total amount each time)."
+  },
+  {
+   "n": 38,
+   "q": "How many recurring gifts are past due?",
+   "verdict": "right",
+   "truth": "1",
+   "got": 1,
+   "source": "query",
+   "sentence": "1 recurring gift matches (status is past_due)."
+  },
+  {
+   "n": 39,
+   "q": "How many campaigns have a goal over $50,000?",
+   "verdict": "right",
+   "truth": "3",
+   "got": 3,
+   "source": "query",
+   "sentence": "3 campaigns match (goal over $50,000)."
+  },
+  {
+   "n": 40,
+   "q": "What's the combined goal of all our campaigns?",
+   "verdict": "right",
+   "truth": "1930000",
+   "got": 1930000,
+   "source": "query",
+   "sentence": "$1,930,000 in 8 campaigns (total goal)."
+  },
+  {
+   "n": 41,
+   "q": "How many open next steps are overdue?",
+   "verdict": "right",
+   "truth": "3",
+   "got": 3,
+   "source": "query",
+   "sentence": "3 next steps match (still open · due date before October 6, 2026)."
+  },
+  {
+   "n": 42,
+   "q": "How many open next steps does Dana own?",
+   "verdict": "right",
+   "truth": "11",
+   "got": 11,
+   "source": "query",
+   "sentence": "11 next steps match (still open · owner is Dana Reyes)."
+  },
+  {
+   "n": 43,
+   "q": "How many tasks are still not done?",
+   "verdict": "right",
+   "truth": "17",
+   "got": 17,
+   "source": "query",
+   "sentence": "17 tasks match (not done)."
+  },
+  {
+   "n": 44,
+   "q": "How many open asks are there?",
+   "verdict": "right",
+   "truth": "2",
+   "got": 2,
+   "source": "query",
+   "sentence": "2 asks match (status is open)."
+  },
+  {
+   "n": 45,
+   "q": "What's the total amount of our open asks?",
+   "verdict": "right",
+   "truth": "35000",
+   "got": 35000,
+   "source": "query",
+   "sentence": "$35,000 in 2 asks (status is open · total amount asked)."
+  },
+  {
+   "n": 46,
+   "q": "How many grants have we been awarded?",
+   "verdict": "right",
+   "truth": "1",
+   "got": 1,
+   "source": "query",
+   "sentence": "1 grant matches (status is awarded)."
+  },
+  {
+   "n": 47,
+   "q": "How many memberships are active?",
+   "verdict": "right",
+   "truth": "2",
+   "got": 2,
+   "source": "query",
+   "sentence": "2 memberships match (status mentions active)."
+  },
+  {
+   "n": 48,
+   "q": "How many people in Danvers have given over $1,000 lifetime but never had a conversation logged?",
+   "verdict": "right",
+   "truth": "33",
+   "got": 33,
+   "source": "query",
+   "sentence": "33 people match (city mentions Danvers · lifetime giving over $1,000 · no conversations)."
+  },
+  {
+   "n": 49,
+   "q": "How many people gave to Spring Appeal 2026 and came to the Harbor Lights Gala?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "query",
+   "sentence": "0 people match (any gifts with campaign is Spring Appeal 2026 · any event guests with event is Harbor Lights Gala 2026)."
+  },
+  {
+   "n": 50,
+   "q": "How many people have a recurring gift and also volunteer?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "query",
+   "sentence": "0 people match (any recurring gifts · any volunteer shifts)."
+  },
+  {
+   "n": 51,
+   "q": "What's the weather going to be like for the Harbor Run?",
+   "verdict": "right",
+   "truth": null,
+   "got": null,
+   "source": "answer",
+   "sentence": "Steward can't answer \"weather forecasts aren't in the donor records\" yet. We've noted the question."
+  },
+  {
+   "n": 52,
+   "q": "Which of our donors have the best credit scores?",
+   "verdict": "right",
+   "truth": null,
+   "got": null,
+   "source": "list",
+   "sentence": "Steward can't filter by that yet (best credit scores). Nothing was changed, and we've noted the question."
+  }
+ ]
+}
