@@ -76,10 +76,22 @@ async function storeLogo(q, org) {
 
 // Harborlight's own words over each starter's blocks: photos from the
 // library, alt text from the photo, and two templates carrying a video.
-function harborlightBlocks(starter, media, i) {
+const STATS = [["46", "young people on the water this season"], ["12", "first certificates earned"], ["212", "volunteer hours given"]];
+const BRACKETS = { "[hours]": "212 hours" };
+const fillBrackets = t => String(t || "").replace(/\[[^\]]+\]/g, m => BRACKETS[m]
+  || "The second training boat goes in the water in May, with twelve new students on the spring roster.");
+
+function harborlightBlocks(starter, media, i, refs) {
   const photo = n => media.photos[(i + n) % media.photos.length];
   return (starter.blocks || []).map((b, k) => {
     const x = JSON.parse(JSON.stringify(b));
+    if (x.type === "richtext" && Array.isArray(x.blocks)) x.blocks = x.blocks.map(bl => ({ ...bl, ...(bl.text != null ? { text: fillBrackets(bl.text) } : {}),
+      ...(Array.isArray(bl.items) ? { items: bl.items.map(fillBrackets) } : {}) }));
+    if (x.type === "quote") { x.text = fillBrackets(x.text) || "I came for the boats. I stayed for the people who believed I could steer one."; x.attribution = x.attribution && !/\[/.test(x.attribution) ? x.attribution : "A Harbor Skills student"; }
+    if (x.type === "stats" && Array.isArray(x.items)) x.items = x.items.map((it, n) => ({ value: it.value || STATS[n % 3][0], label: it.label && !/\[/.test(it.label) ? it.label : STATS[n % 3][1] }));
+    if (x.type === "event" && !x.eventId && refs.eventId) x.eventId = refs.eventId;
+    if (x.type === "givingpage" && !x.givingPageId && refs.givingPageId) x.givingPageId = refs.givingPageId;
+    if (x.type === "button" && !x.url && x.action !== "give") x.url = x.action === "volunteer" ? "https://harborlight.example.org/volunteer" : "https://harborlight.example.org/stories";
     if (x.type === "hero") { const p = photo(0); x.image = p.url; x.alt = p.alt; }
     if (x.type === "image") { const p = photo(k + 1); x.image = p.url; x.alt = p.alt; }
     if (x.type === "photos2") x.images = [photo(k + 2), photo(k + 3)].map(p => ({ src: p.url, alt: p.alt }));
@@ -118,9 +130,12 @@ async function seedEmail1(q, ORG, { TODAY, dAdd }) {
   const L = await import(path.join(ROOT, "shared", "emailTemplateLibrary.js"));
   const starters = L.STARTERS || L.EMAIL_STARTERS || L.default || [];
   const tplByKey = {};
+  const [ev] = await q(`SELECT id FROM events WHERE org_id=$1 AND date >= $2::date AND public_slug IS NOT NULL ORDER BY date LIMIT 1`, [ORG, TODAY]);
+  const [gp] = await q(`SELECT id FROM giving_pages WHERE org_id=$1 AND status='active' AND p2p_enabled IS TRUE ORDER BY id LIMIT 1`, [ORG]);
+  const refs = { eventId: ev ? ev.id : null, givingPageId: gp ? gp.id : null };
   for (const [i, st] of starters.entries()) {
-    const id = `etpl_b72_${st.key}`;
-    const blocks = harborlightBlocks(st, media, i);
+    const id = "et_" + sha("b72|" + st.key).slice(0, 12);
+    const blocks = harborlightBlocks(st, media, i, refs);
     // At least two templates carry a video, whether or not the starter had one.
     if ((st.key === "year_end_appeal" || st.key === "impact_report") && !blocks.some(b => b.type === "video")) {
       const v = media.videos[st.key === "year_end_appeal" ? 0 : 1];
