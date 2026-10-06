@@ -19,7 +19,9 @@ const dollars = c => "$" + (Math.round(Number(c) || 0) / 100).toLocaleString("en
 const smallBtn = { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "4px 9px", fontSize: 12,
                    fontWeight: 600, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
 
-export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson }) {
+export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson, limit = 0 }) {
+  // HOME-TIDY: on Home the first `limit` people show and the rest open in place.
+  const [all, setAll] = useState(false);
   const [data, setData] = useState(undefined);
   const [goal, setGoal] = useState(undefined);
   const [busy, setBusy] = useState(null);
@@ -53,7 +55,8 @@ export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson 
   }
 
   if (data === undefined) return null;
-  const rows = data?.rows || [];
+  const allRows = data?.rows || [];
+  const rows = limit && !all ? allRows.slice(0, limit) : allRows;
   return (
     <FigureContext.Provider value={{ openPerson: onOpenPerson || null }}>
       <div data-testid="home-calls" style={{ marginTop: 22, paddingTop: 18, borderTop: "1px solid " + T.bg2 }}>
@@ -66,7 +69,9 @@ export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson 
                   definition={data.count.definition} source={data.count.source} />
               </span>
             </div>
-            <div style={{ fontSize: 11.5, lineHeight: 1.45, color: T.ink3, margin: "4px 0 10px" }}>{data.count.definition}</div>
+            {limit ? <div style={{ margin: "2px 0 8px" }}><span tabIndex={0} title={data.count.definition} aria-label={data.count.definition} data-testid="calls-def"
+                style={{ fontSize: 11.5, color: T.ink3, cursor: "help", textDecoration: "underline dotted" }}>Who is on this list?</span></div>
+              : <div style={{ fontSize: 11.5, lineHeight: 1.45, color: T.ink3, margin: "4px 0 10px" }}>{data.count.definition}</div>}
             {rows.length === 0
               ? <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>Nobody is waiting on a thank-you call.</div>
               : rows.map((r, i) => (
@@ -88,15 +93,20 @@ export function CallsToMake({ isAdmin = false, isReadOnly = false, onOpenPerson 
                     <span style={{ fontSize: 12, color: T.ink3 }}>{r.dateLabel}</span>
                     {!isReadOnly && <span style={{ display: "flex", gap: 6 }}>
                       <button data-testid="home-call-called" disabled={!!busy} onClick={() => act(r, "called")}
-                        style={{ ...smallBtn, background: T.greenDk, borderColor: T.greenDk, color: T.white }}>Mark called</button>
+                        style={limit ? { ...smallBtn, color: T.greenDk, borderColor: T.greenDk } : { ...smallBtn, background: T.greenDk, borderColor: T.greenDk, color: T.white }}>{limit ? "Called" : "Mark called"}</button>
                       <button data-testid="home-call-snooze" disabled={!!busy} onClick={() => act(r, "snooze")}
-                        title={`Hide this for ${data.snoozeDays} days`} style={smallBtn}>Snooze</button>
+                        title={`Hide this for ${data.snoozeDays} days`} style={limit ? { ...smallBtn, border: "none", color: T.ink3 } : smallBtn}>Snooze</button>
                     </span>}
                   </div>
                 </div>
               ))}
-            {data.more > 0 && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>and {data.more} more, in the count above.</div>}
-            {isAdmin && !isReadOnly && (
+            {limit > 0 && allRows.length > limit && (
+              <button data-testid="calls-see-all" onClick={() => setAll(v => !v)}
+                style={{ background: "none", border: "none", padding: 0, marginTop: 6, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                {all ? "Show three" : `Show ${allRows.length - limit} more`}</button>
+            )}
+            {data.more > 0 && (!limit || all) && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>and {data.more} more, in the count above.</div>}
+            {isAdmin && !isReadOnly && (!limit || all) && (
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 10 }}>
                 {editFloor ? (
                   <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>

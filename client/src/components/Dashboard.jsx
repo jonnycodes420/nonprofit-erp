@@ -27,7 +27,7 @@ import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
-import { AskButtons } from "./AskRail";
+import { AskHero } from "./AskRail";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -456,6 +456,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [driftStepDirty,setDriftStepDirty]=useState(false);
   // ENGAGE-1 — the Drift list can be put in engagement order (closest first).
   const [driftSort,setDriftSort]=useState("");
+  // HOME-TIDY: Home shows the first five drifting donors; the rest open in place.
+  const [driftExpanded,setDriftExpanded]=useState(false);
+  // HOME-TIDY 2: where the header goes depends on the width (one copy only).
+  const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
+  useEffect(()=>{
+    if(typeof window==="undefined"||!window.matchMedia)return;
+    const mq=window.matchMedia("(min-width:1100px)"); const on=()=>setHomeWide(mq.matches);
+    mq.addEventListener?mq.addEventListener("change",on):mq.addListener(on);
+    return()=>{mq.removeEventListener?mq.removeEventListener("change",on):mq.removeListener(on);};
+  },[]);
   const driftQs=s=>s==="engagement"?"sort=engagement":"";
   const loadDrift=(s=driftSort)=>apiFetch(`/drift${driftQs(s)?"?"+driftQs(s):""}`).then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
 
@@ -1565,7 +1575,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the list and on their own profile.
   const driftHighRows=driftRows0.filter(r=>r.confidence!=="medium");
   const driftMediumRows=driftRows0.filter(r=>r.confidence==="medium");
-  const driftRows=[...driftHighRows,...driftMediumRows];
+  const driftRowsAll=[...driftHighRows,...driftMediumRows];
+  const driftRows=surface==="home"&&!driftExpanded&&!driftAllData?driftRowsAll.slice(0,5):driftRowsAll;
   const driftEarlyStart=driftMediumRows.length>0?driftHighRows.length:-1;
   const openDriftLine=donorId=>{
     setDriftLineFor(donorId);setDriftLine("");setDriftStepDirty(false);
@@ -1728,12 +1739,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                           record. Dismiss is secondary and writes its reason. */}
                       <button onClick={()=>onNavigate("donors",{selectDonorId:r.donorId,openConversation:true})} disabled={isReadOnly}
                         title={isReadOnly?"Reactivate your subscription to make changes.":"Log the call and the next step comes back"}
-                        className="attn-row-action" style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        className="attn-row-action" style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 12px",color:T.greenDk,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Log the call
                       </button>
                       <button onClick={()=>openDriftLine(r.donorId)} disabled={isReadOnly}
                         title="Not drifting? Say why and it stops asking"
-                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",marginLeft:8,color:T.ink3,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        style={{background:"transparent",border:"none",padding:"7px 4px",marginLeft:6,color:T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Not drifting
                       </button>
                     </div>
@@ -1780,6 +1791,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             );
           })}
         </ul>
+        )}
+        {surface==="home"&&!driftAllData&&driftRowsAll.length>5&&(
+          <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:12,borderTop:"1px solid "+T.bg3}}>
+            <button data-testid="drift-more" onClick={()=>setDriftExpanded(v=>!v)} style={{...sLink,padding:0}}>
+              {driftExpanded?"Show the first five":`Show the other ${driftRowsAll.length-5}`}
+            </button>
+          </div>
         )}
         {/* BUILD-80 Part 7 — INSTITUTIONAL GIVING: a foundation's grant cycle
             is not a person's giving cadence. Their own list, grant-cycle
@@ -2179,7 +2197,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 rail of questions the org's own records can answer. An
                 answer's step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <AskButtons isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
               <PinnedAnswers isReadOnly={isReadOnly}/>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
@@ -2201,43 +2218,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 "why this one first", and the fold counts are the bands the
                 server already returns. On the Dashboard surface (the board
                 view) the list stays as it was: this is Home's problem. */}
-            {threadList.length>0&&surface==="home"&&!threadAllOpen&&(()=>{
-              const first=threadList[0];
-              return (
-                <div data-testid="home-first-thing" style={{...cPad,paddingTop:4,paddingBottom:16}}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",
-                    color:T.ink3,marginBottom:6}}>First thing</div>
-                  <a href={`/donors/${first.donorId}`}
-                    onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button>0)return;e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
-                    style={{display:"block",textDecoration:"none",color:"inherit"}}>
-                    <div style={{fontFamily:"'DM Serif Display',serif",fontSize:20,lineHeight:1.35,color:T.ink,
-                      maxWidth:"52ch"}}>
-                      {first.donorName} {threadClause(first).replace(/^./,c=>c.toLowerCase())}
-                    </div>
-                    <div style={{fontSize:13,color:T.ink3,marginTop:4,lineHeight:1.5,maxWidth:"52ch"}}>
-                      Next: {String(first.nextStep?.label||"").replace(/^./,c=>c.toLowerCase())}
-                      {first.overdue?` · ${rowFigure(first)} day${rowFigure(first)===1?"":"s"} ${rowFigure(first)>(first.overdueDays||0)?"waiting":"overdue"}`:""}
-                    </div>
-                  </a>
-                  <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap",alignItems:"center"}}>
-                    <DonorLink id={first.donorId} data-testid="home-first-open"
-                      onOpen={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
-                      style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 15px",color:T.white,
-                        fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                      Open {firstNameOf(first.donorName)||first.donorName}
-                    </DonorLink>
-                    <button data-testid="home-first-done" disabled={isReadOnly}
-                      onClick={()=>setConvoFor({donor:{id:first.donorId,name:first.donorName},thread:first})}
-                      style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",
-                        color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",
-                        opacity:isReadOnly?0.45:1,fontFamily:"inherit"}}>Mark it done</button>
-                    {/* "Not today" is the snooze that already exists
-                        (threads.snoozed_until, through the dismiss menu's
-                        revisit reason). It writes nothing new. */}
-                    <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
-                  </div>
-                </div>);
-            })()}
+
             {/* HOME-CALM — AND THEN THE LIST, on the screen. Part E folded it
                 behind two "Show them" links, which made the one thing she
                 opened Home for the one thing not on it. */}
@@ -2661,11 +2642,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // a definition is what it counted. Each is one line of warm grey under the
   // label, saying exactly which rows the tile would show if you pressed it.
   const railTiles=[
-    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",
+    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
-    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,
+    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
@@ -2763,20 +2744,62 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     }
     return (
       <div>
-        <span style={{...sSerif,display:"inline-block",marginBottom:16}}>Today</span>
-        {/* the date is the header's line; on a phone the rail sits above the
-            header and the two read as a stutter, so it shows only beside it. */}
-        <div className="home-rail-date" style={{fontSize:12.5,color:T.ink3,margin:"0 0 18px"}}>{todayLongStr}</div>
-        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+        <span style={{...sSerif,display:"inline-block",marginBottom:12}}>Today</span>
+        {/* HOME-TIDY 2 — WHAT IS IN FRONT OF HER TODAY sits here, beside the
+            work: "how did the meeting go?" when one just ended, then the
+            Thread's first thing (threadList[0], threadRank's own answer). */}
+        {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
+          <MorningBrief compact onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
+          {threadList.length>0&&(()=>{
+            const first=threadList[0];
+            return (
+              <div data-testid="home-first-thing" style={{border:"1px solid "+T.bg2,borderRadius:14,padding:"14px 16px",background:T.white}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>First thing</div>
+                <a href={`/donors/${first.donorId}`}
+                  onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button>0)return;e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
+                  style={{display:"block",textDecoration:"none",color:"inherit"}}>
+                  <div style={{fontFamily:"'DM Serif Display',serif",fontSize:17,lineHeight:1.3,color:T.ink}}>
+                    {first.donorName} {threadClause(first).replace(/^./,c=>c.toLowerCase())}
+                  </div>
+                  <div style={{fontSize:12.5,color:T.ink3,marginTop:4,lineHeight:1.45}}>
+                    Next: {String(first.nextStep?.label||"").replace(/^./,c=>c.toLowerCase())}
+                    {first.overdue?` · ${rowFigure(first)} day${rowFigure(first)===1?"":"s"} ${rowFigure(first)>(first.overdueDays||0)?"waiting":"overdue"}`:""}
+                  </div>
+                </a>
+                <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <DonorLink id={first.donorId} data-testid="home-first-open"
+                    onOpen={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
+                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                    Open {firstNameOf(first.donorName)||first.donorName}
+                  </DonorLink>
+                  <button data-testid="home-first-done" disabled={isReadOnly}
+                    onClick={()=>setConvoFor({donor:{id:first.donorId,name:first.donorName},thread:first})}
+                    style={{background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 11px",color:T.ink,fontSize:12.5,fontWeight:700,
+                      cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"inherit"}}>Mark it done</button>
+                  <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
+                </div>
+              </div>);
+          })()}
+        </div>}
+        {/* HOME-TIDY — the day is the header's line, so the rail does not say it
+            again. Three numbers side by side; each definition travels with its
+            label on the profile tiles' "?" (keyboard-reachable, BUILD-100). */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,margin:"0 -8px"}}>
           {railTiles.map(tile=>(
             <div key={tile.key} {...interactive(()=>setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
               className="home-rail-row" data-testid={"rail-tile-"+tile.key}
-              style={{padding:"14px 12px",borderRadius:10,margin:"0 -12px",display:"flex",flexDirection:"column",gap:2}}>
+              style={{padding:"10px 8px",borderRadius:10,borderTop:"none",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
               {tile.n==null
-                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:42,padding:"4px 0"}}><SkeletonBar width={56} height={34}/></span>
-                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
-              <span style={{fontSize:13,lineHeight:1.4,color:T.ink3}}>{tile.label}</span>
-              <span data-testid={"rail-def-"+tile.key} style={{fontSize:11.5,lineHeight:1.45,color:T.ink3,opacity:0.85}}>{tile.definition}</span>
+                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:34,padding:"2px 0"}}><SkeletonBar width={40} height={28}/></span>
+                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
+              <span style={{fontSize:12,lineHeight:1.35,color:T.ink3}}>
+                {(tile.short||tile.label).split(" ").slice(0,-1).join(" ")}{(tile.short||tile.label).includes(" ")?" ":""}
+                <span style={{whiteSpace:"nowrap"}}>{(tile.short||tile.label).split(" ").slice(-1)[0]}
+                <span tabIndex={0} title={tile.definition} aria-label={tile.definition} data-testid={"rail-def-"+tile.key}
+                  onClick={e=>e.stopPropagation()}
+                  style={{marginLeft:4,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,width:13,height:13,
+                          display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span></span>
+              </span>
             </div>
           ))}
         </div>
@@ -2790,7 +2813,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         )}
         {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
-        <CallsToMake isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
+        <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
       </div>
     );
   })();
@@ -2862,7 +2885,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:surface==="home"?null:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
@@ -2948,7 +2971,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           // INT-BUILD-1 Parts 4 and 5 — today's meetings with their briefs, and
           // "how did it go" for a meeting that just ended. Not a layout row:
           // it only exists on a day there is something on a connected calendar.
-          top:<>{surface==="home"&&!editMode&&<div className="home-block"><MorningBrief onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>}{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
+          top:<>{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
           lower:lowerRows.length?<>{lowerRows.map((row,i)=>renderRow(row,splitAt+i))}{tail}</>:null,
         };
   })():null;
@@ -2958,30 +2981,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // dash-root the containing block for every position:fixed descendant —
   // dropping the set-goal modal (and any drill-down not portalled to body) at
   // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
-  return(
-    <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
-      {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
-          which on a 27" monitor stretched a four-section morning screen across
-          1800px and made every card look like a table. 1100px is the column.
-          The breakdown panels and the three modals sit OUTSIDE it, and the
-          set-goal modal inside it is fine either way: a max-width ancestor does
-          not constrain a position:fixed child, only a TRANSFORMED one does —
-          which is the BUILD-22 trap the dash-root comment above guards against,
-          and the reason nothing here gets a `fade-in`. The board keeps the full
-          width: it is a grid of numbers, not a page of prose. */}
-      <div className="dash-col" style={{width:"100%",maxWidth:surface==="home"?1320:"none",margin:"0 auto",display:"flex",flexDirection:"column",gap:16}}>
-
-      {/* ── BUILD-89 — ONE PANEL, NOT A STACK OF TILES ────────────────────
-          Home was eight floating cards on a cream field, and eight edges is
-          what made it read as a dashboard rather than a page. There is ONE
-          white panel now: the work on the left, the rail on the right, a
-          single hairline between them. Everything inside the panel is a
-          block separated by air and a rule — no card carries its own border,
-          because the panel already drew it. */}
-      <div className={surface==="home"?"home-shell":""}>
-      <div className={surface==="home"?"home-shell-top":""}>
-      <div className={surface==="home"?"home-shell-main":""}>
-
+  const homeHead=(<>
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
           stray line of card copy rather than a page-level welcome.
@@ -3046,6 +3046,47 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         )}
       </div>
 
+      {/* HOME-TIDY 2 — THE CALL TO ACTION, UNDER THE GREETING. One box to ask
+          a question or tell Steward what to do (the Agent's input moved here),
+          over the two doors, Why and What, each saying what it is. */}
+      {surface==="home"&&!editMode&&(
+        <div style={{padding:"0 2px"}}>
+          <AskHero isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}
+            agent={{available:!(agentDaily&&agentDaily.available===false),line:agentDaily&&agentDaily.line,
+              onSend:t=>onNavigate("agent",{agentText:t,autoAsk:true}),
+              onOpen:()=>onNavigate("agent",{agentView:((agentDaily&&agentDaily.waiting)||0)>0?"waiting":"guardrails"})}}/>
+        </div>
+      )}
+      </>);
+  return(
+    <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+      {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
+          which on a 27" monitor stretched a four-section morning screen across
+          1800px and made every card look like a table. 1100px is the column.
+          The breakdown panels and the three modals sit OUTSIDE it, and the
+          set-goal modal inside it is fine either way: a max-width ancestor does
+          not constrain a position:fixed child, only a TRANSFORMED one does —
+          which is the BUILD-22 trap the dash-root comment above guards against,
+          and the reason nothing here gets a `fade-in`. The board keeps the full
+          width: it is a grid of numbers, not a page of prose. */}
+      <div className="dash-col" style={{width:"100%",maxWidth:surface==="home"?1320:"none",margin:"0 auto",display:"flex",flexDirection:"column",gap:16}}>
+
+      {/* ── BUILD-89 — ONE PANEL, NOT A STACK OF TILES ────────────────────
+          Home was eight floating cards on a cream field, and eight edges is
+          what made it read as a dashboard rather than a page. There is ONE
+          white panel now: the work on the left, the rail on the right, a
+          single hairline between them. Everything inside the panel is a
+          block separated by air and a rule — no card carries its own border,
+          because the panel already drew it. */}
+      <div className={surface==="home"?"home-shell":""}>
+      {surface==="home"&&!homeWide&&<div className="home-head-narrow">{homeHead}</div>}
+      <div className={surface==="home"?"home-shell-top":""}>
+      <div className={surface==="home"?"home-shell-main":""}>
+
+      {/* HOME-TIDY 2 — the header (greeting, day, Ask). On a wide screen it
+          heads the work column; on a phone it renders above the stacked
+          panel instead, so Ask is under the greeting there too. */}
+      {surface!=="home"?homeHead:homeWide?<div className="home-head-wide">{homeHead}</div>:null}
       {/* BUILD-77 Part 7 — the Recurring tab left the home screen (it lives
           under Fundraising → Recurring Giving). Home keeps one tab and no
           tab bar; when any recurring count is non-zero, ONE line below links

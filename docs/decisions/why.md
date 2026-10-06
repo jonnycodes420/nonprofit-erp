@@ -69,8 +69,9 @@ template sentences. Every future build is checked against this.
   (`NOT_YET` in routes/why.js), never answered with a neighbouring question. (ASK-3)
 - **Every answer offers its own next questions.** `followUpsFor(answer)` gives two to four, built from what
   that answer found ("Who are the 11 who haven't given?", "What should I ask Nerissa for?"). The free box
-  appears only inside the rail, after an answer, and only with AI on; off, the rail says "Follow-up questions
-  return when AI is on." A refusal offers the three closest guided questions (`closestQuestions`). (ASK-3)
+  appears only inside the rail (on the Why and What lists and after every answer, HOME-TIDY), and on Home as the
+  Ask box under the greeting (HOME-TIDY 2, on Jonathan's word), where a question opens the rail and an
+  instruction goes to Agent. Inside the rail it shows only with AI on; off, it says so in one line. A refusal offers the three closest guided questions (`closestQuestions`). (ASK-3)
 - **A name is read against the thread first.** The rail sends `context`: everyone the thread named, newest
   first (`people`), the last answer's list (`list`, for "them" and "the top five"), the person it was on, and
   its appeal. `resolvePerson` takes a full name in the thread, a full name on file, then a first or last name

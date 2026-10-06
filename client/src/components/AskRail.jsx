@@ -38,6 +38,18 @@ const RAIL_CSS = `
 .ask-q:focus-visible, .ask-btn:focus-visible { outline: 2px solid ${T.greenDk}; outline-offset: 2px; }
 `;
 
+const HERO_CSS = `
+.ask-hero-box { display: flex; gap: 10px; align-items: center; background: ${T.white}; border: 1px solid ${T.bg3}; border-radius: 999px;
+  padding: 6px 6px 6px 20px; box-shadow: 0 1px 2px rgba(15,26,18,0.05); }
+.ask-hero-box:focus-within { border-color: ${T.greenDk}; box-shadow: 0 0 0 3px rgba(13,92,58,0.12); }
+.ask-doors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ask-door { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: ${T.ground}; border: 1px solid ${T.bg2};
+  border-radius: 14px; padding: 14px 18px; cursor: pointer; font: inherit; min-width: 0; transition: background .12s ease, border-color .12s ease; }
+.ask-door:hover { background: ${T.white}; border-color: ${T.greenDk}; }
+.ask-door:focus-visible { outline: 2px solid ${T.greenDk}; outline-offset: 2px; }
+@media (max-width: 520px) { .ask-doors { grid-template-columns: 1fr; } }
+`;
+
 function readKept() {
   try { const k = JSON.parse(localStorage.getItem(KEEP_KEY) || "null"); return k && Array.isArray(k.turns) && k.turns.length ? k : null; } catch { return null; }
 }
@@ -98,11 +110,18 @@ function readAs(a) {
 
 // ── THE TWO BUTTONS ────────────────────────────────────────────────────────
 // `scope` is { donor: { id, name } } on a profile; nothing on Home.
-export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-buttons" }) {
+export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-buttons", compact = false }) {
   const [open, setOpen] = useState(null);       // { mode, replay? }
   const [kept, setKept] = useState(() => (scope ? null : readKept()));
   const donor = scope && scope.donor;
-  const btn = mode => (
+  // HOME-TIDY: in Home's header the two buttons are small pills.
+  const pill = mode => (
+    <button key={mode} type="button" className="ask-btn" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
+      aria-expanded={!!open && open.mode === mode} title={BLURB[mode]}
+      style={{ background: T.white, border: "1px solid " + T.greenDk, color: T.greenDk, borderRadius: 999, padding: "6px 16px",
+        fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Fraunces', Georgia, serif" }}>{MODES[mode]}</button>
+  );
+  const btn = mode => compact ? pill(mode) : (
     <button key={mode} type="button" className="ask-btn" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
       aria-expanded={!!open && open.mode === mode}
       style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 0, flex: "1 1 180px", maxWidth: 300,
@@ -112,7 +131,7 @@ export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-butto
     </button>
   );
   return (
-    <div data-testid={testid} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch", minWidth: 0 }}>
+    <div data-testid={testid} style={{ display: "flex", flexWrap: "wrap", gap: compact ? 8 : 10, alignItems: compact ? "center" : "stretch", minWidth: 0 }}>
       <style>{RAIL_CSS}</style>
       {btn("why")}{btn("what")}
       {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
@@ -123,6 +142,66 @@ export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-butto
     </div>
   );
 }
+// ── HOME-TIDY 2 · THE ASK HERO ─────────────────────────────────────────────
+// Home's call to action, under the greeting: one box to ask a question or tell
+// Steward what to do, and the two doors, Why and What, each saying what it is.
+// A question (ends in "?" or starts like one) opens the rail with its answer;
+// anything else is an instruction and goes to Agent, where a plan is read, run
+// and undone (agent.onSend). With Agent off, everything typed is a question.
+const QUESTION_START = /^\s*(why|what|whats|what's|who|whom|whose|how|which|when|where|did|does|do|is|are|was|were|can|could|should|will|show me|list|tell me)\b/i;
+export const isQuestion = t => /\?\s*$/.test(String(t || "")) || QUESTION_START.test(String(t || ""));
+const DOORS = { why: "The reasons behind your numbers", what: "Results, and who to call next" };
+export function AskHero({ isReadOnly, onStepTaken, agent }) {
+  const [open, setOpen] = useState(null);
+  const [text, setText] = useState("");
+  const [kept, setKept] = useState(() => readKept());
+  const canAgent = !!(agent && agent.available && agent.onSend);
+  const narrow = typeof window !== "undefined" && window.innerWidth < 560;
+  const submit = e => {
+    e.preventDefault();
+    const t = text.trim(); if (!t) return;
+    if (canAgent && !isQuestion(t)) { agent.onSend(t); return; }
+    setText("");
+    setOpen({ mode: "thread", replay: [{ text: t, go: { via: "ask", text: t } }], n: Date.now() });
+  };
+  const door = mode => (
+    <button key={mode} type="button" className="ask-door" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
+      aria-expanded={!!open && open.mode === mode}>
+      <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, textAlign: "left" }}>
+        <span style={{ fontFamily: "'DM Serif Display', Georgia, serif", fontSize: 22, lineHeight: 1.1, color: T.greenDk }}>{MODES[mode]}</span>
+        <span style={{ fontSize: 13, color: T.ink3, lineHeight: 1.35 }}>{DOORS[mode]}</span>
+      </span>
+      <span aria-hidden="true" style={{ fontSize: 22, color: T.greenDk, lineHeight: 1 }}>›</span>
+    </button>
+  );
+  return (
+    <div data-testid="ask-hero" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <style>{RAIL_CSS + HERO_CSS}</style>
+      <form onSubmit={submit} className="ask-hero-box">
+        <input data-testid="ask-hero-input" value={text} onChange={e => setText(e.target.value)}
+          aria-label={canAgent ? "Ask a question, or tell Steward what to do" : "Ask Steward a question"}
+          placeholder={canAgent ? (narrow ? "Ask, or tell Steward…" : "Ask a question, or tell Steward what to do…") : "Ask Steward a question…"}
+          style={{ flex: 1, minWidth: 0, border: "none", outline: "none", background: "transparent", fontSize: 15.5, fontFamily: "inherit", color: T.ink, padding: "4px 2px" }} />
+        <button type="submit" data-testid="ask-hero-go" disabled={!text.trim()}
+          style={{ ...BTN, borderRadius: 999, padding: "9px 20px", fontSize: 14, opacity: text.trim() ? 1 : 0.45, cursor: text.trim() ? "pointer" : "not-allowed" }}>
+          {text.trim() && canAgent && !isQuestion(text) ? "Go" : "Ask"}</button>
+      </form>
+      <div className="ask-doors">{door("why")}{door("what")}</div>
+      {(agent && agent.line) || kept ? (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "baseline", fontSize: 12.5, color: T.ink3 }}>
+          {agent && agent.line && <button type="button" data-testid="agent-daily-line" onClick={agent.onOpen}
+            style={{ background: "none", border: "none", padding: 0, color: T.ink2, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{agent.line}</button>}
+          {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
+            style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+            Your kept thread · {kept.turns[0].text}</button>}
+        </div>
+      ) : null}
+      {open && <AskRail key={open.n} mode={open.mode} replay={open.replay} isReadOnly={isReadOnly} onStepTaken={onStepTaken}
+        onKept={setKept} kept={kept} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
 // ── THE RAIL ───────────────────────────────────────────────────────────────
 export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTaken, onClose, onKept, kept }) {
   const [mode, setMode] = useState(replay ? "thread" : startMode);
@@ -243,17 +322,17 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
         )}
       </div>
 
-      {mode === "thread" && lastDone && (
+      {(mode !== "thread" ? !!lists && !busy : lastDone) && (
         <div style={{ borderTop: "1px solid " + T.bg2, padding: "12px 18px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           {ai ? (
             <form data-testid="ask-chat" onSubmit={e => { e.preventDefault(); const v = text.trim(); if (v && !busy) { setText(""); ask({ text: v, go: { via: "ask", text: v, thread: true } }); } }}
               style={{ display: "flex", gap: 8 }}>
               <input aria-label="Ask a follow-up" data-testid="ask-chat-input" value={text} onChange={e => setText(e.target.value)}
-                placeholder="Ask about this in your own words" style={INPUT} />
+                placeholder={mode === "thread" ? "Ask about this in your own words" : mode === "why" ? "Or ask why in your own words" : "Or ask your own question"} style={INPUT} />
               <button type="submit" disabled={busy || !text.trim()} style={{ ...BTN, opacity: busy || !text.trim() ? 0.5 : 1 }}>Ask</button>
             </form>
-          ) : <div data-testid="ask-chat-off" style={{ fontSize: 13, color: T.ink3 }}>Follow-up questions return when AI is on.</div>}
-          {!scope && <div style={{ display: "flex", gap: 12 }}>
+          ) : <div data-testid="ask-chat-off" style={{ fontSize: 13, color: T.ink3 }}>{turns.length ? "Follow-up questions return when AI is on." : "Questions in your own words return when AI is on."}</div>}
+          {!scope && turns.length > 0 && mode === "thread" && <div style={{ display: "flex", gap: 12 }}>
             {kept && kept.turns[0].text === (turns[0] && turns[0].text)
               ? <button type="button" data-testid="ask-unkeep" onClick={unkeep} style={{ background: "none", border: "none", padding: 0, color: T.ink3, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Stop keeping this thread on Home</button>
               : <button type="button" data-testid="ask-keep" onClick={keep} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Keep this thread on Home</button>}
