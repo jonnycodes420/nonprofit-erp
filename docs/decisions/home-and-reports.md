@@ -31,11 +31,15 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Compute lateness once, on the server, in the org's calendar (`overdueDays` on the row).** The note only
   reads that value. A browser-clock derivation once put two numbers on one fact. (BUILD-86 A)
 - **Home is a header (greeting and day) above one `.home-shell` panel: the work, then a 340px Today rail.**
-  The note sits in the Thread header (`.thread-note`). Below 1100px the rail stacks first. Cards inside the panel
+  The note sits in the Thread header (`.thread-note`). Below 1100px the header, then the rail, then the work. Cards inside the panel
   draw no edge (`.home-block`). The board keeps real cards. (BUILD-89)
-- **Home's header is the greeting and the day, with Why and What beside them (HOME-TIDY).** The day is said
-  once: the Today rail does not repeat it. Calls to make shows three people on Home, Drift the first five;
-  the rest open in place. One filled action per row at most; the list actions are outlines or text.
+- **Home's header is the greeting, the day and Ask (HOME-TIDY).** Under the greeting, one box asks a
+  question or tells Steward what to do (`AskHero`: a question opens the Why/What rail, anything else goes to
+  Agent), over the two doors, Why and What, each with its grey line. Agent's input lives there, not as a
+  section. The header renders once: in the work column on a wide screen, above the stacked panel on a phone
+  (`homeWide`), so Ask is always under the greeting. The meeting prompt and the Thread's first thing sit at
+  the top of the Today rail; the day is not repeated there. Calls to make shows three people, Drift the
+  first five; the rest open in place. List actions are outlines or text.
 - **The Today rail has two states and is never empty.** At rest it shows three numbers side by side, each
   definition on the label's "?" (the profile tiles' keyboard-reachable convention, BUILD-100). A number opens its
   list and a row opens the donor, so every tile goes somewhere. No tab strip. (BUILD-89, BUILD-88d)

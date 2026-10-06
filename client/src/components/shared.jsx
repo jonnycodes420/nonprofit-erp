@@ -532,10 +532,15 @@ export function GlobalStyles() {
     .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
     .home-shell-lower{min-width:0;padding:0 40px 40px;display:flex;flex-direction:column;border-top:1px solid ${T.bg2};}
     .home-rail{min-width:0;padding:32px;border-top:1px solid ${T.bg2};order:-1;}
+    /* HOME-TIDY 2 — the header leads on every width: above the stacked panel
+       on a phone, at the top of the work column beside the rail on a wide one. */
+    .home-head-narrow{padding:28px 24px 8px;display:flex;flex-direction:column;gap:20px;}
+    .home-head-wide{display:flex;flex-direction:column;gap:22px;margin-bottom:6px;}
     @media (min-width:1100px){
       .home-shell-top{flex-direction:row;align-items:stretch;}
       .home-shell-main{flex:1;}
       .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
+
     }
     /* A row in the rail is pressable and says so quietly. */
     .home-rail-row{cursor:pointer;transition:background 0.12s ease;}

@@ -717,7 +717,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
 }
 
 // ── HOME: TODAY'S MEETINGS, AND THE ONES WAITING FOR A NOTE ────────────────
-export function MorningBrief({ userName, onOpenPerson }) {
+export function MorningBrief({ userName, onOpenPerson, compact = false }) {
   const [today, setToday] = useState(null);
   const [toLog, setToLog] = useState(null);
   const [done, setDone] = useState("");
@@ -745,13 +745,15 @@ export function MorningBrief({ userName, onOpenPerson }) {
       {done && <div role="status" style={{ background: T.white, borderRadius: 14, padding: "12px 16px", fontSize: 14 }}>{done}</div>}
       {toLog.slice(0, 1).map(m => logging === m.id
         ? <AfterMeetingForm key={m.id} meeting={m} onDone={s => { setDone(s); setLogging(null); load(); }}/>
-        : <div key={m.id} data-testid="after-prompt" style={{ background: T.white, borderRadius: 20, padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        : <div key={m.id} data-testid="after-prompt" style={compact
+            ? { background: T.ground, border: "1px solid " + T.bg2, borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }
+            : { background: T.white, borderRadius: 20, padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{relDay(m.startsAt)} · {m.title}</div>
-              <div style={{ fontFamily: SERIF, fontSize: 24, lineHeight: 1.15, marginTop: 4 }}>How did {meetingNoun(m.title)} with {firstNameOf(m.people?.[0]?.name) || "them"} go?</div>
+              <div style={{ fontSize: compact ? 10.5 : 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{relDay(m.startsAt)} · {m.title}</div>
+              <div style={{ fontFamily: SERIF, fontSize: compact ? 19 : 24, lineHeight: 1.2, marginTop: 4 }}>How did {meetingNoun(m.title)} with {firstNameOf(m.people?.[0]?.name) || "them"} go?</div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" onClick={() => setLogging(m.id)} style={btnPrimary}>Write it down</button>
+              <button type="button" onClick={() => setLogging(m.id)} style={compact ? { ...btnPrimary, padding: "8px 14px", fontSize: 13.5 } : btnPrimary}>Write it down</button>
               <button type="button" onClick={() => apiFetch(`/calendar/events/${m.id}/dismiss`, { method: "POST", body: "{}" }).then(load)} style={{ ...btnOutline, border: "1px solid " + T.bg2 }}>Not now</button>
             </div>
           </div>)}
