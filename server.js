@@ -10802,7 +10802,8 @@ require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
-const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage };
+const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,
+  unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter };
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/groups").mount({

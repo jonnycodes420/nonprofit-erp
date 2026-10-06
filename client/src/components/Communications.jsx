@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { TemplateLibrary } from "./BrandKit";
 import { SurveysPanel } from "./Surveys";
+import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
@@ -1866,6 +1867,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "hub",        label: "Overview",   icon: "◉" },
     { id: "campaigns",  label: "Campaigns",  icon: "✉" },
     { id: "templates",  label: "Templates",  icon: "⊞" },
+    // EMAIL-1: emails built from blocks, with the org's brand and a live preview.
+    { id: "emailtemplates", label: "Email templates", icon: "▤" },
     { id: "audience",   label: "Audience",   icon: "◈" },
     { id: "analytics",  label: "Analytics",  icon: "⬡" },
     { id: "sequences",  label: "Sequences",  icon: "⟳" },
@@ -2544,6 +2547,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}
+        {nav === "emailtemplates" && <EmailTemplates isReadOnly={isReadOnly} />}
         {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>
