@@ -38,8 +38,10 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   Agent), over the two doors, Why and What, each with its grey line. Agent's input lives there, not as a
   section. The header renders once: in the work column on a wide screen, above the stacked panel on a phone
   (`homeWide`), so Ask is always under the greeting. The meeting prompt and the Thread's first thing sit at
-  the top of the Today rail; the day is not repeated there. Calls to make shows three people, Drift the
-  first five; the rest open in place. List actions are outlines or text.
+  the top of the Today rail; the day is not repeated there. Calls to make shows three people, the Thread
+  and Drift the first five; the rest open in place, and the Thread and Drift lists each fold away from a
+  chevron by their title (remembered in that browser, `steward_home_fold`). Institutional givers are gold
+  links to their records. List actions are outlines or text.
 - **The Today rail has two states and is never empty.** At rest it shows three numbers side by side, each
   definition on the label's "?" (the profile tiles' keyboard-reachable convention, BUILD-100). A number opens its
   list and a row opens the donor, so every tile goes somewhere. No tab strip. (BUILD-89, BUILD-88d)
