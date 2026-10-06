@@ -458,7 +458,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [driftSort,setDriftSort]=useState("");
   // HOME-TIDY: Home shows the first five drifting donors; the rest open in place.
   const [driftExpanded,setDriftExpanded]=useState(false);
+  // HOME-COLLAPSE: the Thread shows five rows, the rest open in place; the
+  // Thread and Drift lists each fold away, remembered in this browser only.
+  const [threadExpanded,setThreadExpanded]=useState(false);
+  const [homeFold,setHomeFold]=useState(()=>{try{return JSON.parse(localStorage.getItem("steward_home_fold")||"{}")||{};}catch{return {};}});
+  const toggleFold=k=>setHomeFold(f=>{const n={...f,[k]:!f[k]};try{localStorage.setItem("steward_home_fold",JSON.stringify(n));}catch{/* kept for this visit only */}return n;});
   // HOME-TIDY 2: where the header goes depends on the width (one copy only).
+  const foldBtn=(k,label)=>(
+    <button type="button" data-testid={"fold-"+k} aria-expanded={!homeFold[k]} aria-label={(homeFold[k]?"Show ":"Hide ")+label} onClick={()=>toggleFold(k)}
+      style={{background:"none",border:"1px solid "+T.bg3,borderRadius:999,width:24,height:24,display:"inline-flex",alignItems:"center",justifyContent:"center",
+        cursor:"pointer",color:T.ink3,padding:0,flexShrink:0,transition:"transform .15s ease",transform:homeFold[k]?"rotate(-90deg)":"none"}}>
+      <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg>
+    </button>
+  );
   const [homeWide,setHomeWide]=useState(()=>typeof window==="undefined"||!window.matchMedia||window.matchMedia("(min-width:1100px)").matches);
   useEffect(()=>{
     if(typeof window==="undefined"||!window.matchMedia)return;
@@ -1657,6 +1669,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
           <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             <span style={sSerif}>Drift</span>
+            {surface==="home"&&foldBtn("drift","the Drift list")}
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
                 ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
@@ -1682,7 +1695,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {/* FIX-10 Part A — one quiet line, under the high-confidence card.
             Home is allowed to lead with the confirmed drifters; it is not
             allowed to leave the early ones with no door. */}
-        {driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
+        {!homeFold.drift&&driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
           <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
             {earlySignsPhrase(driftCounts(driftData).medium)}, {EARLY_SIGNS_MEANING}.{" "}
             <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
@@ -1691,7 +1704,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {driftRows.length===0&&driftEmptyState&&(
           <OneLineEmpty flush={onPanel} testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
         )}
-        {driftRows.length>0&&(
+        {driftRows.length>0&&!(surface==="home"&&homeFold.drift)&&(
         <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
           {driftRows.map((r,i)=>{
             const lineOpen=driftLineFor===r.donorId;
@@ -1792,7 +1805,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           })}
         </ul>
         )}
-        {surface==="home"&&!driftAllData&&driftRowsAll.length>5&&(
+        {surface==="home"&&!homeFold.drift&&!driftAllData&&driftRowsAll.length>5&&(
           <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:12,borderTop:"1px solid "+T.bg3}}>
             <button data-testid="drift-more" onClick={()=>setDriftExpanded(v=>!v)} style={{...sLink,padding:0}}>
               {driftExpanded?"Show the first five":`Show the other ${driftRowsAll.length-5}`}
@@ -1809,7 +1822,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
             {driftData.institutional.slice(0,8).map(inst=>(
               <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
-                <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.ink}}>{inst.name}</span>
+                <DonorLink id={inst.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:inst.donorId})} data-testid="institution-link"
+                  style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.gold700,fontWeight:600,textDecoration:"underline",
+                    textDecorationColor:"rgba(138,109,31,0.4)",textUnderlineOffset:3,background:"none",border:"none",padding:0,font:"inherit",cursor:"pointer",textAlign:"left"}}>{inst.name}</DonorLink>
                 <span style={{flexShrink:0,fontVariantNumeric:"tabular-nums",color:T.ink3}}>
                   {/* FIX-1 — the server's word (a grant only from a foundation or DAF) and the date as it reads */}
                   {fmtFull(inst.totalGiving)}{inst.lastGiftLabel?` · ${inst.lastWord||"last gift"} ${inst.lastGiftLabel}`:""}
@@ -2147,7 +2162,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
-                <span style={{...sSerif,alignSelf:"flex-start"}}>The Thread</span>
+                <span style={{display:"flex",alignItems:"center",gap:10,alignSelf:"flex-start"}}>
+                  <span style={sSerif}>The Thread</span>
+                  {surface==="home"&&foldBtn("thread","the Thread")}
+                </span>
                 {/* HOME-CALM — THE MORNING SENTENCE IS GONE FROM HOME, and it
                     is gone because First thing says the same thing better. It
                     read "Four people are waiting on you; Underhill has been
@@ -2242,11 +2260,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   onClick={()=>apiFetch("/gift-starts/notice/seen",{method:"POST",body:"{}"}).then(()=>setGsNotice(null)).catch(()=>{})}
                   style={{background:"none",border:"none",padding:"0 4px",color:T.ink3,fontSize:15,cursor:"pointer",fontFamily:"inherit"}}>×</button>
               </div>)}
-            {homeCalm&&homeRows.length>0&&(
+            {homeCalm&&homeRows.length>0&&!homeFold.thread&&(<>
               <ul data-testid="home-thread-list" style={{listStyle:"none",margin:0,padding:0}}>
-                {homeRows.map(r=>r.el)}
+                {(threadExpanded?homeRows:homeRows.slice(0,5)).map(r=>r.el)}
               </ul>
-            )}
+              {homeRows.length>5&&(
+                <div style={{...cPad,paddingTop:10,paddingBottom:4}}>
+                  <button data-testid="thread-more" onClick={()=>setThreadExpanded(v=>!v)} style={{...sLink,padding:0}}>
+                    {threadExpanded?"Show fewer":`Show ${homeRows.length-5} more`}
+                  </button>
+                </div>
+              )}
+            </>)}
             {/* Next week is still folded, because next week is not this
                 morning's work. */}
             {homeCalm&&threadList.length>0&&(()=>{
