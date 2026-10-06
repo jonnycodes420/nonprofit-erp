@@ -131,6 +131,16 @@ function resolveSrc(src, links) {
   return "";
 }
 
+// The subject line as plain text with the fields filled (a subject is not
+// HTML, so nothing is escaped). Unknown fields are left as typed; renderEmail
+// reports them.
+export function renderSubject(subject, fields) {
+  return String(subject || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
+    const k = MERGE_ALIASES[n] || n;
+    return MERGE_KEYS.has(k) ? fieldValue(fields || {}, k) : w;
+  }).replace(/[\r\n]+/g, " ").trim();
+}
+
 // ── The renderer ───────────────────────────────────────────────────────────
 export function renderEmail({ blocks, brand, fields, preheader, subject, links, mode } = {}) {
   const problems = [];
