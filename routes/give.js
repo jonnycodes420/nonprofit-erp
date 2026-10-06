@@ -1719,7 +1719,17 @@ app.get("/campaign-templates", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/campaigns/from-template", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+// EMAIL-1 — the same path starts an EMAIL campaign from one of the org's email
+// templates when the body names `templateId` (emailCompose.campaignFromTemplate).
+// Anybody who can write may start a draft that way; it sends nothing, and a
+// person who is not an admin then asks an admin to approve it. The
+// campaign-page starters below stay admin-only.
+function adminUnlessEmailTemplate(req, res, next) {
+  if (req.body && req.body.templateId) return next();
+  return requireAdmin(req, res, next);
+}
+app.post("/campaigns/from-template", requireAuth, adminUnlessEmailTemplate, checkWriteAccess, wrap(async (req, res) => {
+  if (req.body && req.body.templateId) return require("../emailCompose").campaignFromTemplate(req, res, { run, uuid, actor });
   const CP = await campaignPageMod();
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK

@@ -413,6 +413,11 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,cites)
            VALUES ($1,$2,$3,$4,'set_stage','donors',$5,'{"stage":"prospect"}'::jsonb,'[]'::jsonb)`,
     [`aw_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`]).catch(() => {});
+  // EMAIL-1 — an Agent draft, so "start from a template" and its Undo are
+  // probed against org B's real draft.
+  await q(`INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'[{"t":"note"}]'::jsonb)`,
+    [`adr_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`, `${mark} subject`, `${mark} draft`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -524,6 +529,7 @@ function bResolver(routePath, param) {
   // disconnecting them would each be a different kind of disaster, and all four
   // must answer 404.
   if (routePath.startsWith("/bookkeeping/")) return `bkc_${B}`;
+  if (routePath.startsWith("/agent/drafts/")) return `adr_${B}`;   // EMAIL-1
   // INT-POS — the register's event report is read by EVENT id, so org A asking
   // for what org B's gala took at the till must answer 404 like anything else.
   if (routePath.startsWith("/pos/event/")) return `ev_${B}`;
