@@ -21,6 +21,10 @@ const P = require("../prospect");
 const GR = require("../groups");
 
 const routers = { r0: express.Router() };
+// ASK-3: money and small numbers in the words of a list answer.
+const fmtUsd = c => "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const spellN = n => (["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"][n] || String(n));
+
 
 function mount(ctx) {
 const { whyAskLimiter, AGENT_MODEL, aiGate, anthropicFor, computeDriftForDonors, computeRetentionRate, orgTime, orgToday, orgTz, query, requireAuth, run, wrap } = ctx;
@@ -28,6 +32,8 @@ const app = routers.r0;
 let S = null, SMm = null;
 const shape = async () => (S = S || await import("../shared/whyShape.js"));
 const showMod = async () => (SMm = SMm || await import("../shared/showMe.js"));
+let AGm = null;
+const guide = async () => (AGm = AGm || await import("../shared/askGuide.js"));
 
 // ASK-2: the org is kept with the question, so the box's suggestions are the
 // org's own most-asked questions and never another organisation's.
@@ -69,13 +75,20 @@ async function writeSentence(orgId, questionText, a, Sx) {
   if (!gate.ok) return { sentence: template, source: "template", template, aiOff: gate.reason === "ai_disabled" };
   const facts = sentenceFacts(a);
   try {
+    // ASK-3: one sentence needs no thinking. With the model's default thinking
+    // on, the 200 tokens went to thinking and the sentence came back cut off
+    // mid-word ("…strong room to give and") or empty. A reply that did not
+    // finish is never shown.
     const out = await anthropicFor(orgId).messages.create({
-      model: AGENT_MODEL, max_tokens: 200,
+      model: AGENT_MODEL, max_tokens: 300, thinking: { type: "disabled" },
       messages: [{ role: "user", content: Sx.sentencePrompt(questionText, facts) }],
     });
+    if (out.stop_reason && out.stop_reason !== "end_turn") return { sentence: template, source: "template", template, aiOff: false, refused: "unfinished" };
     const text = (out.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
-    if (text && Sx.sentencePasses(text, facts)) return { sentence: text, source: "ai", template, aiOff: false };
-    return { sentence: template, source: "template", template, aiOff: false, refused: text ? "numbers" : "empty" };
+    const G = await guide();
+    // ASK-3: complete, plain, about the donor's world, and every number Steward's own.
+    if (text && Sx.sentencePasses(text, facts) && G.sentenceIsPlain(text)) return { sentence: text, source: "ai", template, aiOff: false };
+    return { sentence: template, source: "template", template, aiOff: false, refused: !text ? "empty" : Sx.sentencePasses(text, facts) ? "plain" : "numbers" };
   } catch (e) {
     return { sentence: template, source: "template", template, aiOff: e && e.code === "ai_off" };
   }
@@ -277,19 +290,45 @@ async function whyAskHandler(req, res) {
   a.key = key;
   await logQuestion(req.user.orgId, logged, key, true);
   const params = { q: key, ...(campaign ? { campaign } : {}), ...(donor ? { donor } : {}), ...(key === "call" ? { user: req.user.userId } : {}) };
+  const G = await guide();
+  const canSeeMore = await P.canSee(req.user.userId);
+  // ASK-3: one part of the appeal's breakdown ("Who are the 11 who haven't
+  // given?"): the same reason, its own people, the template sentence only.
+  const partKey = key === "appeal" && body.part ? String(body.part) : null;
+  if (partKey) {
+    const r = (a.reasons || []).find(x => x.key === partKey);
+    if (!r || !a.compare) return res.json({ answered: false, sentence: Sx.CANT_ANSWER, question: { text: typed } });
+    const by = new Map();
+    for (const x of r.rows) {
+      const p = by.get(x.donor_id) || { donorId: x.donor_id, name: x.name, cents: 0, reason: x.detail || "" };
+      p.cents += Math.abs(Math.round(Number(x.amount || 0) * 100)); by.set(x.donor_id, p);
+    }
+    const who = [...by.values()].sort((m, n) => Math.abs(n.cents) - Math.abs(m.cents) || m.name.localeCompare(n.name));
+    const text = Sx.partSentence(partKey, { count: r.count, cents: r.cents, campaignName: a.campaign.name, compareName: a.compare.name });
+    const answer = {
+      answered: true, part: partKey, question: { key, text: typed || G.partQuestion(partKey, r.count) }, campaign: a.campaign, compare: a.compare, donor: null,
+      sentence: text, sentenceSource: "template", template: text, aiOff: false,
+      reasons: [publicReason(r, params)], who: who.slice(0, 50),
+      step: who.length ? { kind: "plan", label: `Plan calls to the top ${Math.min(5, who.length) === 5 ? "five" : Math.min(5, who.length)}`,
+        items: who.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Call" })), dueIn: 1, due: orgTime.addDays(orgToday(await orgTz(orgId)), 1) } : null,
+      cantSee: a.cantSee || null,
+    };
+    return res.json({ ...answer, followUps: G.followUpsFor(answer, { canSeeMore }) });
+  }
   const qText = typed || Sx.QUESTIONS.find(q => q.key === key).ask(a.campaign?.name || a.donor?.name);
   const s = await writeSentence(orgId, qText, a, Sx);
   const today = orgToday(await orgTz(orgId));
   const step = a.step ? { ...a.step, due: orgTime.addDays(today, a.step.dueIn || 1),
     ...(a.step.fallback ? { fallback: { ...a.step.fallback, due: orgTime.addDays(today, a.step.fallback.dueIn || 1) } } : {}) } : null;
-  res.json({
+  const out = {
     answered: true, question: { key, text: qText }, campaign: a.campaign || null, compare: a.compare || null, donor: a.donor || null,
     sentence: s.sentence, sentenceSource: s.source, template: s.template, aiOff: !!s.aiOff,
     reasons: (a.reasons || []).map(r => publicReason(r, params)),
     who: a.who || [], step, cantSee: a.cantSee || null,
     alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
       ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
-  });
+  };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
 }
 app.post("/why/ask", whyAskLimiter, requireAuth, wrap(whyAskHandler));
 
@@ -344,10 +383,142 @@ async function askAnswer(orgId, plan, ctx, C) {
     counted: a.counted, steps };
 }
 
-async function askRefuse(req, res, typed, what, C, extra = {}) {
+async function askRefuse(req, res, typed, what, C, extra = {}, sentence = null) {
   await logQuestion(req.user.orgId, typed || "(plan)", "ask: refused", false);
-  return res.json({ answered: false, refused: true, kind: "answer", sentence: C.refusalSentence(what), question: { text: typed }, ...extra });
+  // ASK-3: never a neighbouring list; the three closest questions it can answer.
+  const G = await guide();
+  const [campaigns, canSeeMore] = await Promise.all([WHY.comparableCampaigns(req.user.orgId), P.canSee(req.user.userId)]);
+  const followUps = G.closestQuestions(typed, G.guidedLists({ campaigns, canSeeMore }));
+  return res.json({ answered: false, refused: true, kind: "answer", sentence: sentence || C.refusalSentence(what), question: { text: typed }, followUps, ...extra });
 }
+
+// ── ASK-3 · ONE PERSON ──────────────────────────────────────────────────────
+// The person answer (why.js `person`), in Ask why's own shape, so every reason
+// opens her rows through the figure source `why`.
+const INTENT_WORDS = { ask: "what to ask for", next: "the next step", changed: "this year against last", stopped: "why they stopped" };
+async function personAnswer(req, res, { donor, intent, campaign, typed }) {
+  const Sx = await shape();
+  const G = await guide();
+  const orgId = req.user.orgId;
+  if (intent === "stopped") { req.body = { key: "stopped", donor, ...(typed ? { text: typed } : {}) }; return whyAskHandler(req, res); }
+  const a = await WHY.answer(orgId, "person", { donor, intent, campaign, user: req.user.userId }, { computeDriftForDonors });
+  if (!a) return res.status(404).json({ error: "Donor not found" });
+  a.key = "person";
+  const generic = { ask: "What should I ask this person for?", next: "What's the next step with this person?", changed: "Why did this person's giving change?" }[a.intent];
+  await logQuestion(orgId, typed || generic, "person", true);
+  const qText = typed || generic.replace("this person", a.donor.name);
+  const s = await writeSentence(orgId, qText, a, Sx);
+  const today = orgToday(await orgTz(orgId));
+  const params = { q: "person", donor: a.donor.id, intent: a.intent, user: req.user.userId, ...(campaign ? { campaign } : {}) };
+  const st = a.facts.stand;
+  const out = {
+    answered: true, question: { key: "person", text: qText }, donor: a.donor, campaign: null, compare: null,
+    person: { id: a.donor.id, name: a.donor.name, intent: a.intent, lapsed: a.reasons.some(r => r.key === "drift"), ...(campaign ? { campaign } : {}) },
+    readAs: [a.donor.name, INTENT_WORDS[a.intent], st && (st.thenCents || st.nowCents) ? st.campaignName : null].filter(Boolean).join(" · "),
+    sentence: s.sentence, sentenceSource: s.source, template: s.template, aiOff: !!s.aiOff,
+    reasons: a.reasons.map(r => publicReason(r, params)), who: a.who, cantSee: a.cantSee,
+    step: a.step ? { ...a.step, due: orgTime.addDays(today, a.step.dueIn || 1) } : null,
+    alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
+      ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
+  };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+}
+
+// "What should I ask them for?" / "the top five": the people the last answer
+// named, in its order, each with the suggested ask from their own gifts.
+async function peopleAsks(req, res, { typed, list, n }) {
+  const orgId = req.user.orgId;
+  const G = await guide();
+  const E = require("../engagement");
+  const ids = list.slice(0, Math.min(n, 20)).map(p => String(p.id));
+  const rows = await query(`SELECT id, name FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL`, [orgId, ids]);
+  const byId = new Map(rows.map(r => [r.id, r]));
+  const people = ids.map(id => byId.get(id)).filter(Boolean);
+  if (!people.length) return askRefuse(req, res, typed, "that question", await askCat());
+  const asks = await Promise.all(people.map(p => E.suggestedAsk(query, orgId, p.id).catch(() => null)));
+  const who = people.map((p, i) => ({ donorId: p.id, name: p.name, cents: asks[i] ? asks[i].askCents : null,
+    reason: asks[i] ? `Suggested ask ${fmtUsd(asks[i].askCents)}, from their own gifts.` : "No suggested ask; there are no gifts on their record." }));
+  await logQuestion(orgId, typed, "person: the list", true);
+  const firstAsk = who.find(w => w.cents);
+  const today = orgToday(await orgTz(orgId));
+  const out = {
+    answered: true, question: { key: "people", text: typed }, campaign: null, compare: null, donor: null,
+    readAs: `${who.length === 1 ? "One person" : `The first ${who.length}`} from the last answer · suggested asks`,
+    sentence: firstAsk ? `Here ${who.length === 1 ? "is the suggested ask" : `are suggested asks for ${spellN(who.length)} people`} from the last answer, each from their own gifts; ${firstAsk.name} is first at ${fmtUsd(firstAsk.cents)}.`
+      : "None of these people has a gift on file to suggest an ask from.",
+    sentenceSource: "template", reasons: [], who, cantSee: "A suggested ask is worked out from their own gifts only; it is a starting point for your judgment.",
+    step: { kind: "plan", label: `Plan calls to ${who.length === 1 ? "them" : `all ${spellN(who.length)}`}`, items: who.map(w => ({ donorId: w.donorId, name: w.name, label: w.cents ? `Ask for ${fmtUsd(w.cents)}` : "Call" })), dueIn: 1, due: orgTime.addDays(today, 1) },
+    alsoSteps: [],
+  };
+  res.json({ ...out, followUps: G.followUpsFor({ ...out, part: "list" }, { canSeeMore: await P.canSee(req.user.userId) }) });
+}
+
+// Who a typed question is about. The thread first (anyone named in the last
+// answer), then the org. One clear match, several (she picks), or none.
+async function orgWordsFor(orgId) {
+  const rows = await query(`SELECT name FROM campaigns WHERE org_id = ? UNION SELECT name FROM events WHERE org_id = ?
+     UNION SELECT name FROM fin_funds WHERE org_id = ?`, [orgId, orgId, orgId]);
+  const w = new Set();
+  for (const r of rows) for (const t of String(r.name || "").toLowerCase().split(/[^a-z']+/)) if (t.length > 2) w.add(t);
+  return w;
+}
+async function candidatesFor(orgId, ids) {
+  if (!ids.length) return [];
+  const rows = await query(`SELECT d.id, d.name, d.city, (SELECT g.amount FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0 ORDER BY g.date DESC LIMIT 1) AS last_amount,
+       (SELECT LEFT(MAX(g.date),10) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) AS last_date
+     FROM donors d WHERE d.org_id = ? AND d.id = ANY(?) AND d.deleted_at IS NULL LIMIT 8`, [orgId, ids]);
+  const order = new Map(ids.map((id, i) => [id, i]));
+  rows.sort((a, b) => order.get(a.id) - order.get(b.id));
+  return rows.map(r => ({ donorId: r.id, name: r.name, city: r.city || "", lastGift: r.last_amount != null ? { cents: Math.round(Number(r.last_amount) * 100), date: r.last_date } : null }));
+}
+async function resolvePerson(orgId, text, context, G) {
+  const people = Array.isArray(context && context.people) ? context.people.filter(p => p && p.id && p.name).slice(0, 60) : [];
+  const lc = String(text || "").toLowerCase();
+  // A full name, in the thread and then on file.
+  const inThread = people.filter(p => p.name.length > 3 && lc.includes(p.name.toLowerCase()));
+  if (inThread.length) return { kind: "one", donor: inThread.sort((a, b) => b.name.length - a.name.length)[0] };
+  const full = await query(`SELECT id, name FROM donors WHERE org_id = ? AND deleted_at IS NULL AND LENGTH(name) > 3
+      AND POSITION(LOWER(name) IN LOWER(?)) > 0 ORDER BY LENGTH(name) DESC LIMIT 6`, [orgId, String(text || "")]);
+  if (full.length) {
+    const best = full.filter(d => d.name.length === full[0].name.length && d.name.toLowerCase() === full[0].name.toLowerCase());
+    return best.length === 1 ? { kind: "one", donor: best[0] } : { kind: "many", ids: best.map(d => d.id), word: full[0].name };
+  }
+  const orgWords = await orgWordsFor(orgId);
+  // A full name typed (two capitalised words together) that matches nobody, in
+  // the thread or on file: say so, never offer the other people with that first name.
+  const pair = (String(text || "").match(/\b([A-Z][a-z'-]{2,}) ([A-Z][a-z'-]{2,})\b/g) || [])
+    .filter(x => x.split(" ").every(w => G.capitalisedNames("x " + w, orgWords).length === 1));
+  if (pair.length) return { kind: "none", word: pair[0] };
+  for (const tok of G.nameTokens(text, orgWords)) {
+    const t = tok.toLowerCase();
+    const part = n => String(n).toLowerCase().split(/\s+/);
+    const hits = people.filter(p => { const w = part(p.name); return w[0] === t || w[w.length - 1] === t; });
+    if (hits.length === 1) return { kind: "one", donor: hits[0] };
+    if (hits.length > 1) return { kind: "many", ids: hits.map(h => h.id), word: tok };
+    const rows = await query(`SELECT d.id, d.name, COUNT(*) OVER () AS n FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL
+        AND (LOWER(split_part(d.name, ' ', 1)) = ? OR LOWER(regexp_replace(d.name, '^.* ', '')) = ?)
+        ORDER BY (SELECT MAX(g.date) FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.amount > 0) DESC NULLS LAST, d.name LIMIT 6`, [orgId, t, t]);
+    if (rows.length === 1) return { kind: "one", donor: rows[0] };
+    if (rows.length > 1) return { kind: "many", ids: rows.map(r => r.id), word: tok, total: Number(rows[0].n) };
+  }
+  const unknown = G.capitalisedNames(text, orgWords);
+  if (unknown.length) return { kind: "none", word: unknown.join(" ") };
+  // No name: "her" / "him" means the person the thread is on.
+  if (G.PRONOUN_ONE.test(text)) {
+    if (context && context.lastPerson && context.lastPerson.id) return { kind: "one", donor: context.lastPerson };
+    if (people.length === 1) return { kind: "one", donor: people[0] };
+    if (people.length > 1) return { kind: "many", ids: people.slice(0, 6).map(p => p.id), word: "that" };
+  }
+  return null;
+}
+
+// ASK-3: questions Steward has no computation for yet, refused by name and
+// logged, never answered with a neighbouring question. They go to the next build.
+const NOT_YET = [
+  [/(behind|short of|under|below|off) (its |the |our )?(goal|target)|miss(ed|ing)? (its |the |our )?goal/i, "why a campaign is behind its goal"],
+  [/why did.*(event|gala|dinner|run|auction|supper|lunch|breakfast).*raise|why did.*(event|gala)/i, "why an event raised what it did"],
+  [/(monthly|recurring).*(drop|down|fell|fall|declin|lower|less)\w*|why.*(monthly|recurring) giving/i, "why monthly giving changed"],
+];
 
 app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const C = await askCat();
@@ -359,8 +530,55 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const prev = body.previous && typeof body.previous === "object" && !Array.isArray(body.previous) ? body.previous : null;
   const scope = body.scope && typeof body.scope === "object" ? body.scope : null;
   const ctx = await AE.askContext(orgId);
-  let raw = null, source = "template", restatement = null;
+  let raw = null, source = "template", restatement = null, person = null;
+  const G = await guide();
+  const canSeeMore = await P.canSee(req.user.userId);
 
+  // ASK-3: a question about one person, from the Why and What rail.
+  if (body.person && typeof body.person === "object") {
+    const [d] = await query(`SELECT id, name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [String(body.person.donor || ""), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    const intent = String(body.person.intent || "");
+    const campaign = body.person.campaign ? String(body.person.campaign) : null;
+    if (["ask", "next", "changed", "stopped"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
+    if (intent !== "given") return askRefuse(req, res, typed || "(person)", "that question about one person", C);
+    raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: d.id } };
+    source = "guided"; person = { id: d.id, name: d.name, intent };
+  }
+  // ASK-3: a typed question about one person, read against the thread.
+  const context = body.context && typeof body.context === "object" ? body.context : null;
+  if (!raw && typed && !body.plan) {
+    const nope = NOT_YET.find(([re]) => re.test(typed));
+    if (nope) return askRefuse(req, res, typed, nope[1], C);
+    let intent = G.personIntent(typed);
+    const follow = G.isNameFollowUp(typed);
+    // "the top five", "what should I ask them for": the last answer's people.
+    const topOnly = G.topN(typed) && /\bthe top\b/i.test(typed) && !/\b(donors?|givers?|year|month|quarter|fund|campaign|gifts?)\b/i.test(typed);
+    const list = context && Array.isArray(context.list) ? context.list : context && Array.isArray(context.people) ? context.people : [];
+    if (list.length > 1 && !G.PRONOUN_ONE.test(typed)
+        && (topOnly || (G.PRONOUN_MANY.test(typed) && intent === "ask"))) {
+      return peopleAsks(req, res, { typed, list, n: G.topN(typed) || 5 });
+    }
+    if (intent || follow || G.PRONOUN_ONE.test(typed)) {
+      const who = await resolvePerson(orgId, typed, context, G);
+      if (who && !intent) intent = (context && context.lastPerson && context.lastPerson.intent) || "ask";
+      const campaign = context && context.campaign ? String(context.campaign) : null;
+      if (who && who.kind === "one") {
+        if (intent === "given") { raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: who.donor.id } }; source = "guided"; person = { id: who.donor.id, name: who.donor.name, intent }; }
+        else return personAnswer(req, res, { donor: who.donor.id, intent, campaign, typed });
+      } else if (who && who.kind === "many") {
+        await logQuestion(orgId, typed, "person: which one", false);
+        const cands = await candidatesFor(orgId, who.ids);
+        return res.json({ answered: false, kind: "choose", question: { text: typed },
+          sentence: who.word === "that" ? "Which person do you mean?"
+            : (who.total || cands.length) > cands.length ? `Steward has ${who.total} people named ${who.word}; here are the ${spellN(cands.length)} who gave most recently. Which one do you mean?`
+            : `Steward has ${spellN(cands.length)} people named ${who.word}. Which one do you mean?`,
+          candidates: cands.map(c => ({ ...c, go: { via: "person", donor: c.donorId, intent, ...(campaign ? { campaign } : {}) } })) });
+      } else if (who && who.kind === "none") {
+        return askRefuse(req, res, typed, null, C, {}, `Steward has no one named ${who.word} on file.`);
+      }
+    }
+  }
   if (body.plan && typeof body.plan === "object") { raw = body.plan; source = "saved"; }
   if (!raw && prev && typed) { raw = C.followUp(prev, typed, ctx); if (raw) source = "follow-up"; }
   let t = null;
@@ -384,7 +602,13 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
           messages: [{ role: "user", content: C.planPrompt(typed, ctx, prev) }],
         });
         const m = C.readPlanTool(out.content);
-        if (m) { restatement = m.restatement || null; delete m.restatement; raw = m; source = "ai"; }
+        if (m) {
+          // ASK-3: the model's "read as" line is shown only if it is plain and
+          // every number in it is one the person typed or the plan holds.
+          const r = String(m.restatement || "").trim(), allowed = Sx.allowedNumbers({ q: typed, plan: JSON.stringify(m) });
+          restatement = r && G.sentenceIsPlain(r) && Sx.numbersIn(r).every(n => allowed.has(Math.round(n * 100) / 100)) ? r : null;
+          delete m.restatement; raw = m; source = "ai";
+        }
       } catch { /* the template's reading stands */ }
     }
   }
@@ -395,7 +619,8 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   const answer = await askAnswer(orgId, plan, ctx, C);
   // A follow-up is logged as one, so "who are they?" is never offered as a question on its own.
   if (source !== "saved") await logQuestion(req.user.orgId, typed || "(plan)", `ask: ${plan.metric}${source === "follow-up" ? " (follow-up)" : ""}`, true);
-  res.json({ ...answer, question: { text: typed }, planSource: source, restatement });
+  const out = { ...answer, question: { text: typed }, planSource: source, restatement, ...(person ? { person } : {}) };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
 }));
 
 // ── PINNED TO HOME ─────────────────────────────────────────────────────────
@@ -444,6 +669,26 @@ app.post("/ask/save-to-dashboard", requireAuth, wrap(async (req, res) => {
   tiles.push({ kind: "figure", source: "ask", label: String(b.label || "").slice(0, 120) || C.planWords(chk.plan, ctx).slice(0, 120), params: { plan: JSON.stringify(chk.plan), cell } });
   await run("UPDATE saved_dashboards SET tiles = ?, updated_at = NOW() WHERE id = ? AND org_id = ?", [JSON.stringify(tiles), d.id, req.user.orgId]);
   res.json({ ok: true, tiles: tiles.length });
+}));
+
+// ── ASK-3 · WHY AND WHAT ───────────────────────────────────────────────────
+// GET /ask/guided?donor= — the questions behind the two buttons, written from
+// the org's own names, and whether the free box shows (AI on). Read-only.
+app.get("/ask/guided", requireAuth, wrap(async (req, res) => {
+  const G = await guide();
+  const orgId = req.user.orgId;
+  let donor = null;
+  if (req.query.donor) {
+    const [d] = await query(`SELECT id, name, (SELECT MAX(LEFT(date,10)) FROM gifts g WHERE g.org_id = donors.org_id AND g.donor_id = donors.id AND g.amount > 0) AS last
+       FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [String(req.query.donor), orgId]);
+    if (!d) return res.status(404).json({ error: "Donor not found" });
+    // "Why did they stop?" is offered only to someone who has: no gift in a year.
+    const today = orgToday(await orgTz(orgId));
+    donor = { id: d.id, name: d.name, gave: !!d.last, lapsed: !!d.last && d.last < orgTime.addDays(today, -365) };
+  }
+  const [campaigns, canSeeMore, gate] = await Promise.all([
+    donor ? [] : WHY.comparableCampaigns(orgId), P.canSee(req.user.userId), aiGate(orgId)]);
+  res.json({ ...G.guidedLists({ campaigns, canSeeMore, donor }), ai: !!gate.ok });
 }));
 
 // The questions under the box: the org's own most-asked, answered ones.

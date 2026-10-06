@@ -9,8 +9,8 @@
 //     It never sends.
 //   what Steward can't see, in one honest line
 //
-// `AskWhy` is the line at the top of Home's Thread: two one-tap questions and
-// a box to type. `WhyLink` is the small "Why?" a report number carries.
+// Home's Why and What buttons live in AskRail.jsx (ASK-3). `WhyLink` is the
+// small "Why?" a report number carries.
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { EXAMPLES as SHOW_EXAMPLES } from "../../../shared/showMe";
@@ -19,7 +19,6 @@ import { Figure } from "./Figure";
 import { DonorLink } from "./RecordLink";
 import { LogConversationModal } from "./LogConversation";
 import { errorMessage } from "../lib/domainError";
-import { AskPanel } from "./AskPanel";
 
 const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
 const BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -318,37 +317,6 @@ export function WhyPanel({ payload, onClose, isReadOnly, onStepTaken }) {
         {!a && !err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
         {a && <WhyAnswerBody answer={a} isReadOnly={isReadOnly} onStepTaken={onStepTaken} />}
       </div>
-    </div>
-  );
-}
-
-// The line at the top of the Thread on Home.
-export function AskWhy({ isReadOnly, onStepTaken }) {
-  const [taps, setTaps] = useState([]);
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(null);
-  const [asking, setAsking] = useState(null);
-  const [sugg, setSugg] = useState([]);
-  useEffect(() => { apiFetch("/why/questions").then(r => setTaps(r.taps || [])).catch(() => setTaps([])); }, []);
-  // ASK-2: a typed question opens the Ask panel (a thread), and the questions
-  // offered under the box are the org's own most-asked ones.
-  useEffect(() => { apiFetch("/ask/suggestions").then(r => setSugg(r.suggestions || [])).catch(() => setSugg([])); }, []);
-  const submit = e => { e.preventDefault(); const t = text.trim(); if (t) { setAsking({ first: t, n: Date.now() }); setText(""); } };
-  return (
-    <div data-testid="ask-why" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "6px 0 2px" }}>
-      <span style={{ ...LABEL, marginRight: 2 }}>Ask why</span>
-      {taps.map(t => <button key={t.key + (t.campaign || "")} type="button" data-why-tap={t.key} style={CHIP}
-        onClick={() => setOpen({ key: t.key, ...(t.campaign ? { campaign: t.campaign } : {}) })}>{t.text}</button>)}
-      <form onSubmit={submit} style={{ flex: "1 1 220px", display: "flex", minWidth: 0 }}>
-        <input aria-label="Ask Steward why" data-testid="ask-why-input" value={text} onChange={e => setText(e.target.value)} placeholder="Or ask anything about your file"
-          style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontFamily: "inherit", background: T.white, color: T.ink }} />
-      </form>
-      {sugg.length > 0 && <div data-testid="ask-suggestions" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", flexBasis: "100%" }}>
-        <span style={{ ...LABEL, marginRight: 2 }}>Asked most</span>
-        {sugg.slice(0, 5).map(q => <button key={q} type="button" style={CHIP} onClick={() => setAsking({ first: q, n: Date.now() })}>{q}</button>)}
-      </div>}
-      {open && <WhyPanel payload={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onStepTaken={onStepTaken} />}
-      {asking && <AskPanel key={asking.n} first={asking.first} isReadOnly={isReadOnly} onClose={() => setAsking(null)} onStepTaken={onStepTaken} />}
     </div>
   );
 }

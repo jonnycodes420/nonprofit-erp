@@ -27,7 +27,7 @@ import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
-import { AskWhy } from "./WhyAnswer";
+import { AskButtons } from "./AskRail";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -2175,11 +2175,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 </button>
               </span>
             </div>
-            {/* WHY-1 — Ask why, at the top of the Thread: who to call
-                tomorrow and the latest campaign, one tap each, or typed. The
-                answer opens in a panel; its step lands on this Thread. */}
+            {/* ASK-3 — Why and What, at the top of the Thread: each opens a
+                rail of questions the org's own records can answer. An
+                answer's step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <AskWhy isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
+              <AskButtons isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
               <PinnedAnswers isReadOnly={isReadOnly}/>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}

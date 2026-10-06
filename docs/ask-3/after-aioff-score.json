@@ -1,0 +1,232 @@
+{
+ "tally": {
+  "right": 25
+ },
+ "rows": [
+  {
+   "n": 1,
+   "q": "what can I do to get Flavia to give more",
+   "expect": "person d_b72_44 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Flavia Pentreath gave $1,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $2,500."
+  },
+  {
+   "n": 2,
+   "q": "and Margaret?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000."
+  },
+  {
+   "n": 3,
+   "q": "what's the next step with her?",
+   "expect": "person d_b72_12 next",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen has a step planned for October 6, which reads \"Coffee tomorrow. Bring Lily's class schedule\". Steward suggests asking for $15,000."
+  },
+  {
+   "n": 4,
+   "q": "why did her giving change?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year."
+  },
+  {
+   "n": 5,
+   "q": "what should I ask Zebulon Quatermaine for?",
+   "expect": "none",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has no one named Zebulon Quatermaine on file."
+  },
+  {
+   "n": 6,
+   "q": "what should I ask them for?",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500."
+  },
+  {
+   "n": 7,
+   "q": "why did Nerissa stop giving?",
+   "expect": "person d_b72_38 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Nerissa Ashenhurst last gave $1,048 in March 2026. On their record, their last gift of $1,048 was never marked thanked."
+  },
+  {
+   "n": 8,
+   "q": "what about Leopold?",
+   "expect": "person d_b72_39 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Leopold Frostwick last gave $3,209 in March 2026. On their record, their last gift of $3,209 was never marked thanked."
+  },
+  {
+   "n": 9,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_39 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Leopold Frostwick gave $2,000 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000."
+  },
+  {
+   "n": 10,
+   "q": "the top five",
+   "expect": "list d_b72_38,d_b72_39,d_b72_40,d_b72_52,d_b72_53",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Here are suggested asks for five people from the last answer, each from their own gifts; Nerissa Ashenhurst is first at $3,500."
+  },
+  {
+   "n": 11,
+   "q": "what should I ask Persis for?",
+   "expect": "person d_b72_41 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Persis Gillingwater gave $1,200 to Spring Appeal 2025 and nothing yet to Spring Appeal 2026. Steward suggests asking for $5,000."
+  },
+  {
+   "n": 12,
+   "q": "why did Alaric Applewhite stop giving?",
+   "expect": "person d_b72_32 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025. On their record, their last gift of $44,938 was never marked thanked."
+  },
+  {
+   "n": 13,
+   "q": "what should I ask him for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000."
+  },
+  {
+   "n": 14,
+   "q": "what's the next step with him?",
+   "expect": "person d_b72_32 next",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Nothing is planned with Alaric Applewhite, and no conversation with them is logged. Steward suggests asking for $50,000."
+  },
+  {
+   "n": 15,
+   "q": "what has he given to?",
+   "expect": "given d_b72_32",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Alaric Applewhite gave $134,791 in all. Annual Fund 2023 leads with $45,093."
+  },
+  {
+   "n": 16,
+   "q": "why did Ondine Cinderhalt stop giving?",
+   "expect": "person d_b72_1076 stopped",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago. On their record, their recurring card failed two months ago."
+  },
+  {
+   "n": 17,
+   "q": "and what should I ask her for?",
+   "expect": "person d_b72_1076 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Ondine Cinderhalt last gave $150 two months ago, $2,400 across 16 gifts since 2025. Steward suggests asking for $150."
+  },
+  {
+   "n": 18,
+   "q": "what should I ask Persis for?",
+   "expect": "choose",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has 17 people named Persis; here are the six who gave most recently. Which one do you mean?"
+  },
+  {
+   "n": 19,
+   "q": "what should I ask Flavia for?",
+   "expect": "choose",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has 17 people named Flavia; here are the six who gave most recently. Which one do you mean?"
+  },
+  {
+   "n": 20,
+   "q": "how has Margaret Chen's giving changed?",
+   "expect": "person d_b72_12 changed",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen gave $14,750 by this date last year and $40,000 so far this year."
+  },
+  {
+   "n": 21,
+   "q": "what's the next step with Flavia Pentreath?",
+   "expect": "person d_b72_44 next",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Nothing is planned with Flavia Pentreath, and no conversation with them is logged. Steward suggests asking for $2,500."
+  },
+  {
+   "n": 22,
+   "q": "what can I do to get Margaret Chen to give more?",
+   "expect": "person d_b72_12 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Margaret Chen last gave $15,000 two months ago, $187,500 across 13 gifts since 2016. Steward suggests asking for $15,000."
+  },
+  {
+   "n": 23,
+   "q": "why did Bartholomew Nobody stop giving?",
+   "expect": "none",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward has no one named Bartholomew Nobody on file."
+  },
+  {
+   "n": 24,
+   "q": "what should I ask her for?",
+   "expect": "refuse",
+   "verdict": "right",
+   "why": "",
+   "source": null,
+   "sentence": "Steward can't answer \"should ask her\" yet. We've noted the question."
+  },
+  {
+   "n": 25,
+   "q": "what should I ask Alaric for?",
+   "expect": "person d_b72_32 ask",
+   "verdict": "right",
+   "why": "",
+   "source": "template",
+   "sentence": "Alaric Applewhite last gave $44,938 in October 2025, $134,791 across three gifts since 2023. Steward suggests asking for $50,000."
+  }
+ ]
+}

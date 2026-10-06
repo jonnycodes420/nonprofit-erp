@@ -75,6 +75,26 @@ export function matchQuestion(text) {
 // ── Template sentences ─────────────────────────────────────────────────────
 // Each takes the computed facts for its question and returns one sentence.
 // A fact the facts object does not carry is a fact the sentence does not say.
+// ASK-3: one part of an appeal's breakdown, in a sentence. The dollars are
+// the part's own sum (negative for money that did not come back).
+export function partSentence(part, f) {
+  const n = f.count, d = dollars(Math.abs(f.cents || 0));
+  const who = cap(plural(n, "donor", "donors"));
+  switch (part) {
+    case "lapsed": return `${cap(spell(n))} of ${f.compareName}'s donors ${n === 1 ? "hasn't" : "haven't"} given to ${f.campaignName} yet; they gave ${d} last time.`;
+    case "more": return `${who} gave more to ${f.campaignName} than to ${f.compareName}, ${d} more between them.`;
+    case "less": return `${who} gave less to ${f.campaignName} than to ${f.compareName}, ${d} less between them.`;
+    case "timing": return `${who} gave later in ${f.compareName} than ${f.campaignName} has run so far; they gave ${d} last time.`;
+    case "new": return `${who} gave to ${f.campaignName} for the first time, ${d} between them.`;
+    case "back": return `${who} came back to ${f.campaignName} after skipping ${f.compareName}, ${d} between them.`;
+    default: return `${who}, ${d} between them.`;
+  }
+}
+
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const dayWords = d => (d ? `${MONTH_NAMES[Number(String(d).slice(5, 7)) - 1]} ${Number(String(d).slice(8, 10))}` : "a day not yet set");
+const article = t => (/^[aeiou]/i.test(String(t || "")) ? `an ${t}` : `a ${t}`);
+
 export function templateSentence(key, f) {
   f = f || {};
   switch (key) {
@@ -103,6 +123,29 @@ export function templateSentence(key, f) {
       const top = f.topReason;
       if (!top || !top.count) return `${head}, and no group of donors stands out.`;
       return `${head}; the most donors were lost among ${top.phrase}.`;
+    }
+    case "person": {
+      // ASK-3: one person. Where they stand, then the one thing to do.
+      if (!f.name) return "That person isn't on file.";
+      if (!f.lastGift) return `${f.name} hasn't given yet, so there is no giving to read.`;
+      const st = f.stand;
+      const where = st && st.thenCents > 0 && !st.nowCents
+        ? `${f.name} gave ${dollars(st.thenCents)} to ${st.compareName} and nothing yet to ${st.campaignName}`
+        : st && st.thenCents > st.nowCents
+          ? `${f.name} gave ${dollars(st.nowCents)} to ${st.campaignName} against ${dollars(st.thenCents)} to ${st.compareName}`
+          : `${f.name} last gave ${f.lastGiftPhrase}, ${dollars(f.lifetimeCents)} across ${plural(f.giftCount, "gift", "gifts")} since ${f.firstYear}`;
+      const askLine = f.askCents ? ` Steward suggests asking for ${dollars(f.askCents)}.` : "";
+      if (f.intent === "changed") {
+        const a = f.lastYearToDateCents, b = f.thisYearCents;
+        if (a === b) return `${f.name} has given ${dollars(b)} so far this year, the same as by this date last year.`;
+        return `${f.name} gave ${a ? dollars(a) : "nothing"} by this date last year and ${b ? dollars(b) : "nothing"} so far this year.`;
+      }
+      if (f.intent === "next") {
+        if (f.openStep) return `${f.name} has a step planned for ${dayWords(f.openStep.due)}, which reads "${String(f.openStep.label).trim().replace(/[.!?\s]+$/, "")}".${askLine}`;
+        const talk = f.lastContact ? `the last conversation logged was ${article(f.lastContact.type)} ${f.lastContact.phrase}` : "no conversation with them is logged";
+        return `Nothing is planned with ${f.name}, and ${talk}.${askLine || " A call is the next step."}`;
+      }
+      return `${where}.${askLine}`;
     }
     case "stopped": {
       if (!f.name) return "That donor isn't on file.";

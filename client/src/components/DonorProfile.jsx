@@ -38,7 +38,7 @@ import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   /
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
-import { AskBox } from "./AskPanel";
+import { AskButtons } from "./AskRail";
 import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { ProfileGroups } from "./Groups";
@@ -2202,10 +2202,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               action with its suggested ask. Lifetime and Last gift are the
               tiles above, never repeated here. */}
           <ProfileGlance status={status} birthday={donor.birthday}/>
-          {/* ASK-2: the box, scoped to this person. */}
+          {/* ASK-3: Why and What, scoped to this person. */}
           <div data-testid="dp-ask" style={{padding:"8px 20px 2px 24px",flexShrink:0}}>
-            <AskBox scope={{donor:donor.id}} isReadOnly={isReadOnly} testid="donor-ask" label="Ask about them"
-              starters={["How has their giving changed?","What was their largest gift?","How many gifts have they made?"]}/>
+            <AskButtons scope={{donor:{id:donor.id,name:donor.name}}} isReadOnly={isReadOnly} testid="donor-ask"/>
           </div>
           <div style={{padding:"10px 20px 4px 24px",flexShrink:0}}>
           {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
