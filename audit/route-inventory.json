@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-06T22:31:15.998Z",
- "count": 1119,
+ "generatedAt": "2026-10-06T23:08:03.406Z",
+ "count": 1128,
  "routes": [
   {
    "method": "POST",
@@ -24217,6 +24217,199 @@
    ],
    "frontend": {
     "probe": "/sheets",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/email-templates",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/email-templates/:id",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/archive",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/restore",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/preview",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/test",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/draft-ai",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/watch/:orgSlug/:provider/:videoId",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "orgSlug",
+     "provider",
+     "videoId"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug",
+    "videoId"
+   ],
+   "frontend": {
+    "probe": "/watch",
     "referenced": true
    }
   },
