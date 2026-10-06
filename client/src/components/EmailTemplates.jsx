@@ -274,6 +274,9 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
   };
 
   const problems = preview.problems || [];
+  // Below 900px the blocks and the preview stack, the preview first, so a
+  // phone never scrolls sideways.
+  const narrow = typeof window !== "undefined" && window.innerWidth < 900;
   return (
     <div style={{ padding: "4px 0 40px" }} data-testid="email-editor">
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
@@ -315,7 +318,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(300px, 1fr) minmax(320px, 640px)", gap: 18, alignItems: "start" }} className="email-editor-grid">
+      <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0, 1fr)" : "minmax(300px, 1fr) minmax(320px, 640px)", gap: 18, alignItems: "start" }} className="email-editor-grid">
         <div>
           <div style={card}>
             <label style={{ ...label, marginTop: 0 }} htmlFor="et-name">Template name</label>
@@ -349,7 +352,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
           </div>
         </div>
 
-        <div style={{ position: "sticky", top: 12 }}>
+        <div style={{ position: narrow ? "static" : "sticky", top: 12, order: narrow ? -1 : 0, minWidth: 0 }}>
           <div style={{ display: "flex", gap: 6, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
             {[["desktop", "Desktop"], ["phone", "Phone"]].map(([id, l]) => (
               <button key={id} style={{ ...btn.small, background: device === id ? T.ink : "transparent", color: device === id ? T.white : T.ink }} aria-pressed={device === id} onClick={() => setDevice(id)}>{l}</button>

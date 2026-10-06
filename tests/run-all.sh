@@ -167,6 +167,7 @@ CORE=(
   cal1-moves
   grants1-system
   sheets1-import
+  email1-brand-render
   fix28-calendar-rule
   fix12-ai-switch
   parity4-started

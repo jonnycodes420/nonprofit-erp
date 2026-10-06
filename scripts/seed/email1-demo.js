@@ -62,6 +62,7 @@ async function storeJpeg(q, org, file, kind = "media") {
 async function storeLogo(q, org) {
   const sharp = require("sharp");
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="720" height="180" viewBox="0 0 720 180">
+    <rect x="0" y="0" width="720" height="180" rx="28" fill="#ffffff"/>
     <circle cx="90" cy="90" r="70" fill="#1F4E5F"/><path d="M30 104 q30 -22 60 0 t60 0" stroke="#F2B544" stroke-width="12" fill="none" stroke-linecap="round"/>
     <path d="M90 32 v52 M90 32 l26 40 h-26" stroke="#ffffff" stroke-width="8" fill="#ffffff" stroke-linejoin="round"/>
     <text x="185" y="112" font-family="Georgia, 'Times New Roman', serif" font-size="78" fill="#1F4E5F">Harborlight</text></svg>`;
