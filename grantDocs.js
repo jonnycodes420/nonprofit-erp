@@ -53,6 +53,7 @@ const DOC_TYPES = [
   { key: "award_letter",   label: "Award letter",      repeatable: false },
   { key: "agreement",      label: "Signed agreement",  repeatable: false },
   { key: "report",         label: "Report submitted",  repeatable: true  },
+  { key: "budget",         label: "Budget",            repeatable: true  },
   { key: "correspondence", label: "Correspondence",    repeatable: true  },
 ];
 const DOC_TYPE_KEYS = DOC_TYPES.map(t => t.key);
