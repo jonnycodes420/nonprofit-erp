@@ -162,6 +162,7 @@ CORE=(
   ask2-refuse
   ask3-person-thread
   ask3-sentence-check
+  ask4-query-guard
   cal1-moves
   fix12-ai-switch
   parity4-started

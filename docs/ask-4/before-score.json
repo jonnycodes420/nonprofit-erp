@@ -1,0 +1,477 @@
+{
+ "tally": {
+  "right": 11,
+  "wrong": 12,
+  "refused": 29
+ },
+ "rows": [
+  {
+   "n": 1,
+   "q": "How much came in by check this year?",
+   "verdict": "right",
+   "truth": "378801.56",
+   "got": 378801.56,
+   "source": "ai",
+   "sentence": "You raised $378,801.56 in 2026 so far."
+  },
+  {
+   "n": 2,
+   "q": "How many gifts were made by card in September 2026?",
+   "verdict": "right",
+   "truth": "134",
+   "got": 134,
+   "source": "ai",
+   "sentence": "You received 134 gifts in September 2026."
+  },
+  {
+   "n": 3,
+   "q": "What was the largest gift of stock we've ever received?",
+   "verdict": "right",
+   "truth": "45093.00",
+   "got": 45093,
+   "source": "ai",
+   "sentence": "The largest gift ever was $45,093, from Alaric Applewhite."
+  },
+  {
+   "n": 4,
+   "q": "What's the average ACH gift?",
+   "verdict": "wrong",
+   "truth": "9183.11",
+   "got": 9505.04,
+   "source": "ai",
+   "sentence": "The average gift in 2026 so far was $9,505.04."
+  },
+  {
+   "n": 5,
+   "q": "How much did we raise for Youth Arts Access this year?",
+   "verdict": "right",
+   "truth": "0",
+   "got": 0,
+   "source": "template",
+   "sentence": "You raised $0 to Youth Arts Access in 2026 so far."
+  },
+  {
+   "n": 6,
+   "q": "Which fund raised the most in 2025?",
+   "verdict": "right",
+   "truth": "Gala Reserve",
+   "got": "gala reserve",
+   "source": "template",
+   "sentence": "You raised $1,628,344 in 2025. Gala Reserve leads with $1,611,338."
+  },
+  {
+   "n": 7,
+   "q": "How many gifts from the last 30 days haven't been thanked?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer filtering gifts by whether a thank-you was sent (only donor-level unthanked filt yet. We've noted the question."
+  },
+  {
+   "n": 8,
+   "q": "How much did donors in Salem give this year?",
+   "verdict": "right",
+   "truth": "139603.49",
+   "got": 139603.49,
+   "source": "template",
+   "sentence": "You raised $139,603.49 from people in Salem in 2026 so far."
+  },
+  {
+   "n": 9,
+   "q": "How many DAF gifts did we get last year?",
+   "verdict": "right",
+   "truth": "27",
+   "got": 27,
+   "source": "ai",
+   "sentence": "You received 27 gifts in 2025."
+  },
+  {
+   "n": 10,
+   "q": "What's the total of gifts over $10,000 this year?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer filtering to individual gifts over an amount (gaveOver filters donors by total g yet. We've noted the question."
+  },
+  {
+   "n": 11,
+   "q": "How many gifts were given in tribute?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"tribute/honor-memorial gift designation filter\" yet. We've noted the question."
+  },
+  {
+   "n": 12,
+   "q": "Which month this year had the most gifts?",
+   "verdict": "wrong",
+   "truth": "2026-05",
+   "got": "2026-01",
+   "source": "ai",
+   "sentence": "You received 1,417 gifts in 2026 so far."
+  },
+  {
+   "n": 13,
+   "q": "How many people gave by check this year?",
+   "verdict": "right",
+   "truth": "123",
+   "got": 123,
+   "source": "ai",
+   "sentence": "123 people gave in 2026 so far."
+  },
+  {
+   "n": 14,
+   "q": "How many people live in Marblehead?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"population of a city; no census/residency data, only donors\" yet. We've noted the question."
+  },
+  {
+   "n": 15,
+   "q": "How many donors have given more than $10,000 in their lifetime?",
+   "verdict": "wrong",
+   "truth": "157",
+   "got": 158,
+   "source": "ai",
+   "sentence": "158 people gave from who gave more than $10,000; Margaret Chen gave the most."
+  },
+  {
+   "n": 16,
+   "q": "How many people have no email address on file?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"missing email address filter\" yet. We've noted the question."
+  },
+  {
+   "n": 17,
+   "q": "How many people are marked do not contact?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"\"do not contact\" flag not available (only a no-ask filter exists)\" yet. We've noted the question."
+  },
+  {
+   "n": 18,
+   "q": "What is the highest lifetime giving of any one donor?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"lifetime total per donor (only single largest gift available)\" yet. We've noted the question."
+  },
+  {
+   "n": 19,
+   "q": "How many people made their first gift in 2026?",
+   "verdict": "wrong",
+   "truth": "170",
+   "got": null,
+   "source": null,
+   "sentence": "35 first-time donors from the last 90 days have no second gift and no thank-you call, $9,326.93 in first gifts; Rufus Ollerenshaw gave the most."
+  },
+  {
+   "n": 20,
+   "q": "How many donors in Beverly gave this year?",
+   "verdict": "right",
+   "truth": "83",
+   "got": 83,
+   "source": "template",
+   "sentence": "83 people gave from people in Beverly in 2026 so far."
+  },
+  {
+   "n": 21,
+   "q": "How many donors have made more than five gifts?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer filtering donors by number of gifts yet. We've noted the question."
+  },
+  {
+   "n": 22,
+   "q": "How many calls were logged this year?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"call/activity logging counts are not available\" yet. We've noted the question."
+  },
+  {
+   "n": 23,
+   "q": "How many meetings have we logged in total?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"meeting/activity counts are not available\" yet. We've noted the question."
+  },
+  {
+   "n": 24,
+   "q": "What kind of conversation do we log most often?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"interaction/contact type counts — no activity metric or grouping\" yet. We've noted the question."
+  },
+  {
+   "n": 25,
+   "q": "How many people have at least one conversation logged?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"counting people by logged conversations/interactions\" yet. We've noted the question."
+  },
+  {
+   "n": 26,
+   "q": "How many guests are on the Scholarship Supper list?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"event guest/invite list counts (only donors with gifts to the event)\" yet. We've noted the question."
+  },
+  {
+   "n": 27,
+   "q": "Which event has the most guests?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"guest/attendee counts (only donors per event available)\" yet. We've noted the question."
+  },
+  {
+   "n": 28,
+   "q": "How many VIP guests are there across all our events?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"VIP guest designation and event attendee counts across all events\" yet. We've noted the question."
+  },
+  {
+   "n": 29,
+   "q": "How many people came to the Harbor Lights Gala and also gave this year?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"event attendance (only giving recorded against the event is available)\" yet. We've noted the question."
+  },
+  {
+   "n": 30,
+   "q": "What's the total fundraising goal across our events?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"event goal/target amounts (only campaign goals exist, via campaign_progress)\" yet. We've noted the question."
+  },
+  {
+   "n": 31,
+   "q": "How many volunteer hours have been logged in total?",
+   "verdict": "wrong",
+   "truth": "301.00",
+   "got": null,
+   "source": null,
+   "sentence": "Ten volunteers have logged hours so far, with Dev Okonjo contributing 10 hours."
+  },
+  {
+   "n": 32,
+   "q": "How many volunteer hours were logged this year?",
+   "verdict": "wrong",
+   "truth": "301.00",
+   "got": null,
+   "source": null,
+   "sentence": "10 volunteers have served and never given; Dev Okonjo leads with 10 hours this year."
+  },
+  {
+   "n": 33,
+   "q": "Who has volunteered the most hours?",
+   "verdict": "wrong",
+   "truth": "Quenby Blackmoor",
+   "got": "Dev Okonjo",
+   "source": null,
+   "sentence": "Dev Okonjo has volunteered the most hours with 10, and all 10 of these volunteers have served without ever giving, served in the last 30 days, and have never been asked."
+  },
+  {
+   "n": 34,
+   "q": "How many people have volunteered?",
+   "verdict": "wrong",
+   "truth": "24",
+   "got": null,
+   "source": null,
+   "sentence": "Ten people have volunteered, including Dev Okonjo with 10 hours, and all 10 have served and never given, served in the last 30 days, and were never asked."
+  },
+  {
+   "n": 35,
+   "q": "How many volunteers also gave a gift this year?",
+   "verdict": "wrong",
+   "truth": "9",
+   "got": null,
+   "source": null,
+   "sentence": "10 volunteers have served and never given; Dev Okonjo leads with 10 hours this year."
+  },
+  {
+   "n": 36,
+   "q": "How many recurring gifts are active?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"count of recurring gifts (plans), not donors\" yet. We've noted the question."
+  },
+  {
+   "n": 37,
+   "q": "What do our active recurring gifts add up to each time they're charged?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"per-charge total for non-monthly recurring schedules (metric normalizes to month\" yet. We've noted the question."
+  },
+  {
+   "n": 38,
+   "q": "How many recurring gifts are past due?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"past-due / failed recurring gift status not available; only active recurring cou\" yet. We've noted the question."
+  },
+  {
+   "n": 39,
+   "q": "How many campaigns have a goal over $50,000?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"counting campaigns by goal size; filtering on goal amount\" yet. We've noted the question."
+  },
+  {
+   "n": 40,
+   "q": "What's the combined goal of all our campaigns?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"summing goal amounts across all campaigns; goal totals only available as progres\" yet. We've noted the question."
+  },
+  {
+   "n": 41,
+   "q": "How many open next steps are overdue?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"overdue open next steps / tasks count not available\" yet. We've noted the question."
+  },
+  {
+   "n": 42,
+   "q": "How many open next steps does Dana own?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"counting open next steps/tasks — no task metric exists\" yet. We've noted the question."
+  },
+  {
+   "n": 43,
+   "q": "How many tasks are still not done?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"open task count — not a giving metric\" yet. We've noted the question."
+  },
+  {
+   "n": 44,
+   "q": "How many open asks are there?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"count of open asks/solicitations — no ask or proposal count metric exists\" yet. We've noted the question."
+  },
+  {
+   "n": 45,
+   "q": "What's the total amount of our open asks?",
+   "verdict": "wrong",
+   "truth": "35000",
+   "got": 6000,
+   "source": "ai",
+   "sentence": "$6,000 is pledged and not yet paid."
+  },
+  {
+   "n": 46,
+   "q": "How many grants have we been awarded?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"no grant/award tracking — gifts cannot be identified as grants\" yet. We've noted the question."
+  },
+  {
+   "n": 47,
+   "q": "How many memberships are active?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"active membership count — memberships are not tracked\" yet. We've noted the question."
+  },
+  {
+   "n": 48,
+   "q": "How many people in Danvers have given over $1,000 lifetime but never had a conversation logged?",
+   "verdict": "refused",
+   "truth": null,
+   "got": null,
+   "source": "ai",
+   "sentence": "Steward can't answer \"never had a conversation logged\" yet. We've noted the question."
+  },
+  {
+   "n": 49,
+   "q": "How many people gave to Spring Appeal 2026 and came to the Harbor Lights Gala?",
+   "verdict": "wrong",
+   "truth": "0",
+   "got": null,
+   "source": null,
+   "sentence": "Spring Appeal 2026 came in $11,650 under Spring Appeal 2025, mostly because 11 of last year's donors haven't given yet."
+  },
+  {
+   "n": 50,
+   "q": "How many people have a recurring gift and also volunteer?",
+   "verdict": "wrong",
+   "truth": "0",
+   "got": null,
+   "source": null,
+   "sentence": "Ten people have a recurring gift and also volunteer."
+  },
+  {
+   "n": 51,
+   "q": "What's the weather going to be like for the Harbor Run?",
+   "verdict": "right",
+   "truth": null,
+   "got": null,
+   "source": "answer",
+   "sentence": "Steward can't answer the weather yet. We've noted the question."
+  },
+  {
+   "n": 52,
+   "q": "Which of our donors have the best credit scores?",
+   "verdict": "right",
+   "truth": null,
+   "got": null,
+   "source": "list",
+   "sentence": "Steward can't filter by that yet (best credit scores). Nothing was changed, and we've noted the question."
+  }
+ ]
+}

@@ -199,6 +199,8 @@ async function showMe(req, res, typed) {
   } else aiOff = gate.reason === "ai_disabled";
   if (!spec) spec = SM.templateSpec(typed, ctx);
   const refuse = async what => {
+    const q = await tryQuery(req, typed);
+    if (q && q.answer) return res.json(q.answer);
     await logQuestion(req.user.orgId, typed, "show me", false);
     return res.json({ answered: false, kind: "list", refused: true, sentence: SM.refusalSentence(what), specSource, aiOff, question: { key: "show", text: typed } });
   };
@@ -279,6 +281,8 @@ async function whyAskHandler(req, res) {
   // with the subject left generic (a donor's name is donor data).
   const logged = typed || Sx.QUESTIONS.find(q => q.key === body.key)?.ask() || "(empty)";
   if (!key) {
+    const q = typed ? await tryQuery(req, typed) : null;
+    if (q && q.answer) return res.json(q.answer);
     await logQuestion(req.user.orgId, logged, "not covered", false);
     return res.json({ answered: false, sentence: Sx.CANT_ANSWER, question: { text: typed } });
   }
@@ -316,7 +320,11 @@ async function whyAskHandler(req, res) {
     return res.json({ ...answer, followUps: G.followUpsFor(answer, { canSeeMore }) });
   }
   const qText = typed || Sx.QUESTIONS.find(q => q.key === key).ask(a.campaign?.name || a.donor?.name);
-  const s = await writeSentence(orgId, qText, a, Sx);
+  // ASK-4 HARDENING: the model writes the sentence for the question these
+  // facts answer, never for her words, so it cannot stretch the facts to fit
+  // a question they do not answer ("came to the gala AND volunteered").
+  const answered = Sx.QUESTIONS.find(q => q.key === key).ask(a.campaign?.name || a.donor?.name);
+  const s = await writeSentence(orgId, answered, a, Sx);
   const today = orgToday(await orgTz(orgId));
   const step = a.step ? { ...a.step, due: orgTime.addDays(today, a.step.dueIn || 1),
     ...(a.step.fallback ? { fallback: { ...a.step.fallback, due: orgTime.addDays(today, a.step.fallback.dueIn || 1) } } : {}) } : null;
@@ -342,6 +350,82 @@ app.post("/why/ask", whyAskLimiter, requireAuth, wrap(whyAskHandler));
 let ACm = null;
 const askCat = async () => (ACm = ACm || await import("../shared/askCatalog.js"));
 const AE = require("../askEngine");
+const AQ = require("../askQuery");
+
+// ── ASK-4 · ANY QUESTION ABOUT THE ORG'S OWN RECORDS ───────────────────────
+// When the catalog of ASK-2 and the eight why questions cannot take a
+// question, and AI is on, the model fills askQuery.js's query form (any record
+// the org keeps, any field of it). Steward validates it, runs it read-only and
+// org-scoped, and writes the sentence itself: every number in it is a figure
+// with the source "query", which opens the same rows. Nothing is written but
+// the question log.
+const qsrc = (plan, cell) => ({ key: "query", params: { plan: JSON.stringify(plan), cell } });
+function queryAnswerShape(plan, r) {
+  const E = AQ.ENTITIES[plan.entity];
+  const m = plan.measure;
+  const fd = m.field ? E.fields[m.field] : null;
+  const isMoney = fd ? fd.type === "money" : false;
+  const kindOf = isMoney ? "money" : "count";
+  const words = AQ.queryWords(plan);
+  const conds = words.split(" · ").slice(1).join(" · ");
+  const defn = `${words}. Counted from the org's own records, read today.`;
+  const fig = (value, cell, label) => ({ value: value == null ? 0 : value, kind: kindOf, label, definition: defn, source: qsrc(plan, cell) });
+  const countFig = (n, cell, label) => ({ value: n, kind: "count", label, definition: defn, source: qsrc({ ...plan, measure: { fn: m.fn === "count_people" ? "count_people" : "count", field: null } }, cell) });
+  const figures = {};
+  const parts = [];
+  const noun = m.fn === "count_people" ? (r.value === 1 ? "person" : "people") : (r.value === 1 ? E.label : E.plural);
+  const tail = conds ? ` (${conds})` : "";
+  if (plan.groupBy && r.groups && r.groups.length) {
+    // The sentence names the LARGEST group (or the smallest, when asked), never
+    // simply the first row of a calendar-ordered breakdown.
+    const pick = r.groups.reduce((b, g, i) => ((plan.sort && plan.sort.dir === "asc" ? Number(g.value) < Number(r.groups[b].value) : Number(g.value) > Number(r.groups[b].value)) ? i : b), 0);
+    figures.value = fig(r.value, "value", words);
+    figures.group0 = fig(r.groups[pick].value, "g" + pick, `${r.groups[pick].key}`);
+    const gl = plan.groupBy.bucket || E.fields[plan.groupBy.field].label;
+    parts.push(m.fn === "sum" ? "" : "", { fig: "value" }, m.fn === "sum" ? ` in all${tail}; ` : ` ${noun}${tail}; `,
+      `${r.groups[pick].key} ${plan.sort && plan.sort.dir === "asc" ? "is lowest at" : "leads with"} `, { fig: "group0" }, `, of ${r.groups.length} ${r.groups.length === 1 ? gl : gl === "fund" ? "funds" : gl + "s"}.`);
+  } else if (["min", "max"].includes(m.fn)) {
+    const top = (r.list || [])[0];
+    figures.value = fig(r.value, "value", words);
+    parts.push(`The ${m.fn === "max" ? "largest" : "smallest"} ${fd.label} is `, { fig: "value" },
+      top ? `, ${top.name}${top.date ? ` on ${AQ.dayWords(String(top.date).slice(0, 10))}` : ""}${tail}.` : `${tail}.`);
+  } else if (m.fn === "sum") {
+    figures.value = fig(r.value, "value", words);
+    figures.n = countFig(r.rows, "value", `${E.plural} counted`);
+    parts.push({ fig: "value" }, fd.type === "money" ? " in " : ` ${fd.label} across `, { fig: "n" }, ` ${r.rows === 1 ? E.label : E.plural}${tail}.`);
+  } else if (m.fn === "avg") {
+    figures.value = { ...fig(r.value == null ? 0 : Math.round(r.value * 100) / 100, "value", words), kind: isMoney ? "money" : "count" };
+    figures.n = countFig(r.rows, "value", `${E.plural} counted`);
+    parts.push(`The average ${fd.label} is `, { fig: "value" }, " across ", { fig: "n" }, ` ${r.rows === 1 ? E.label : E.plural}${tail}.`);
+  } else {
+    figures.value = { ...fig(r.value, "value", words), kind: "count" };
+    parts.push({ fig: "value" }, ` ${noun}${tail ? (r.value === 1 ? " matches" : " match") + tail : " on file"}`,
+      r.list && r.list[0] && plan.list ? `; ${r.list[0].name} first.` : ".");
+  }
+  const table = plan.groupBy && r.groups ? {
+    dimension: plan.groupBy.bucket ? plan.groupBy.bucket : E.fields[plan.groupBy.field].label, compareLabel: null,
+    valueLabel: m.fn === "sum" ? `Total ${fd.label}` : m.fn === "count_people" ? "People" : m.fn === "avg" ? `Average ${fd.label}` : E.plural.charAt(0).toUpperCase() + E.plural.slice(1),
+    rows: r.groups.map((g, i) => ({ label: g.key, value: { ...fig(g.value, "g" + i, g.key), kind: m.fn === "avg" || m.fn === "sum" ? kindOf : "count" }, compare: null, i })),
+  } : null;
+  const personRows = (r.list || []).filter(x => x.donor_id);
+  const people = personRows.length ? personRows.map(x => ({ donorId: x.donor_id, name: x.name, cents: Math.round(Number(x.amount || 0) * 100) })) : null;
+  const recordTable = !people && r.list && r.list.length ? { dimension: E.label, compareLabel: null, valueLabel: E.row.amount !== "NULL::numeric" ? "Amount" : "Date",
+    rows: r.list.map((x, i) => ({ label: `${x.name}${x.detail ? ` · ${x.detail}` : ""}`, value: { value: x.amount != null ? Number(x.amount) : 0, kind: x.amount != null && E.amountKind !== "count" ? "money" : "count",
+      label: x.name, definition: "This one record.", source: qsrc(plan, "value") }, compare: null, i })) } : null;
+  const steps = [];
+  if (people && people.length) steps.push({ kind: "plan", label: `Plan calls to the top ${Math.min(5, people.length) === 5 ? "five" : Math.min(5, people.length)}`,
+    items: people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Call" })), dueIn: 1 });
+  // The plain sentence (logs, the follow-up box, screen readers) carries the
+  // same numbers the figures draw.
+  const plainNum = k => { const g = figures[k]; if (!g) return ""; const v = Number(g.value) || 0;
+    return g.kind === "money" ? "$" + v.toLocaleString("en-US", { minimumFractionDigits: v % 1 ? 2 : 0, maximumFractionDigits: 2 }) : v.toLocaleString("en-US", { maximumFractionDigits: 2 }); };
+  return { answered: true, kind: "answer", plan: null, qplan: plan, planWords: words, sentence: parts.map(x => (typeof x === "string" ? x : plainNum(x.fig))).join(""),
+    sentenceParts: parts.filter(x => x !== ""), figures, parts: null, table: table || recordTable, chart: table && plan.groupBy.bucket ? "bars" : null,
+    people, peopleCount: people ? (m.fn === "count_people" || plan.entity === "people" ? r.value : people.length) : null,
+    peopleSource: people ? qsrc(plan.entity === "people" ? plan : { ...plan, measure: { fn: "count_people", field: null } }, "value") : null,
+    counted: `${words}. Steward read this from your own records and wrote nothing.`, steps };
+}
+
 
 function scoped(plan, scope, C) {
   if (!plan || !scope) return plan;
@@ -383,6 +467,51 @@ async function askAnswer(orgId, plan, ctx, C) {
     counted: a.counted, steps };
 }
 
+// ASK-4: the query layer, for a question nothing above could take. Returns the
+// answer to send, or null (AI off, the model could not read it, or the catalog
+// cannot express it; the caller then refuses as before).
+function queryFollowUps(plan) {
+  const E = AQ.ENTITIES[plan.entity];
+  const out = [];
+  if (E.person && !plan.list && plan.measure.fn !== "min" && plan.measure.fn !== "max")
+    out.push({ text: plan.entity === "gifts" ? "Who gave them?" : "Who are they?",
+      go: { via: "ask", qplan: { ...plan, list: true, groupBy: null, measure: plan.entity === "people" ? { fn: "count", field: null } : { fn: "count_people", field: null } } } });
+  const dateField = plan.entity === "people" ? null : Object.keys(E.fields).find(k => E.fields[k].type === "date");
+  if (!plan.groupBy && dateField && !plan.list) out.push({ text: "By month", go: { via: "ask", qplan: { ...plan, groupBy: { field: dateField, bucket: "month" } } } });
+  if (!plan.groupBy && dateField && !plan.list) out.push({ text: "By year", go: { via: "ask", qplan: { ...plan, groupBy: { field: dateField, bucket: "year" } } } });
+  return out.slice(0, 3);
+}
+async function runQueryPlan(req, plan, typed, source) {
+  const today = orgToday(await orgTz(req.user.orgId));
+  const r = await AQ.runQuery(req.user.orgId, plan, today);
+  if (source !== "replay") await logQuestion(req.user.orgId, typed || "(query)", `query: ${plan.entity}`, true);
+  const a = queryAnswerShape(plan, r);
+  return { ...a, question: { text: typed }, planSource: source, followUps: queryFollowUps(plan) };
+}
+async function tryQuery(req, typed, previousQuery = null) {
+  if (!typed) return null;
+  const orgId = req.user.orgId;
+  const gate = await aiGate(orgId);
+  if (!gate.ok) return null;
+  try {
+    const today = orgToday(await orgTz(orgId));
+    const catalog = AQ.catalogText(await AQ.catalogValues(orgId));
+    const prev = previousQuery && typeof previousQuery === "object" ? AQ.validateQuery(previousQuery) : null;
+    const out = await anthropicFor(orgId).messages.create({
+      model: AGENT_MODEL, max_tokens: 1500, tools: [AQ.queryTool()], tool_choice: { type: "tool", name: "query_plan" },
+      messages: [{ role: "user", content: AQ.queryPrompt(typed, { today, catalog, previous: prev && prev.ok ? prev.plan : null }) }],
+    });
+    const raw = AQ.readQueryTool(out.content);
+    if (!raw || raw.answerable === false) return { refused: raw && raw.unsupported ? String(raw.unsupported).slice(0, 120) : null };
+    const chk = AQ.validateQuery(raw);
+    if (!chk.ok) return { refused: chk.refused };
+    return { answer: await runQueryPlan(req, chk.plan, typed, "query") };
+  } catch (e) {
+    console.error("[ask] query layer", e && e.message);
+    return null;
+  }
+}
+
 async function askRefuse(req, res, typed, what, C, extra = {}, sentence = null) {
   await logQuestion(req.user.orgId, typed || "(plan)", "ask: refused", false);
   // ASK-3: never a neighbouring list; the three closest questions it can answer.
@@ -407,7 +536,7 @@ async function personAnswer(req, res, { donor, intent, campaign, typed }) {
   const generic = { ask: "What should I ask this person for?", next: "What's the next step with this person?", changed: "Why did this person's giving change?" }[a.intent];
   await logQuestion(orgId, typed || generic, "person", true);
   const qText = typed || generic.replace("this person", a.donor.name);
-  const s = await writeSentence(orgId, qText, a, Sx);
+  const s = await writeSentence(orgId, generic.replace("this person", a.donor.name), a, Sx);
   const today = orgToday(await orgTz(orgId));
   const params = { q: "person", donor: a.donor.id, intent: a.intent, user: req.user.userId, ...(campaign ? { campaign } : {}) };
   const st = a.facts.stand;
@@ -579,13 +708,35 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
       }
     }
   }
+  if (body.qplan && typeof body.qplan === "object") {
+    const chk = AQ.validateQuery(body.qplan);
+    if (!chk.ok) return askRefuse(req, res, typed || "(query)", chk.refused, C);
+    return res.json(await runQueryPlan(req, chk.plan, typed, "replay"));
+  }
   if (body.plan && typeof body.plan === "object") { raw = body.plan; source = "saved"; }
   if (!raw && prev && typed) { raw = C.followUp(prev, typed, ctx); if (raw) source = "follow-up"; }
   let t = null;
   if (!raw && typed) {
     t = C.templatePlan(typed, ctx);
     if (t.plan) raw = t.plan;
-    else if (t.named) return askRefuse(req, res, typed, t.unsupported, C);
+    else if (t.named) {
+      const q = await tryQuery(req, typed, body.previousQuery);
+      if (q && q.answer) return res.json(q.answer);
+      return askRefuse(req, res, typed, (q && q.refused) || t.unsupported, C);
+    }
+  }
+  // ASK-4 · WHAT WAS ASKED, NOT THE NEAREST QUESTION. With AI on, a question
+  // that is not asking WHY and not asking for a RECOMMENDATION goes to the query
+  // layer first, which answers exactly the conditions it names. The why answers
+  // keep "why…" and "who should I call / ask / thank", "who could give more",
+  // "who is about to lapse"; the catalog model below keeps what the query layer
+  // cannot express (retention, medians, pledges). Before this, "how many people
+  // made their first gift in 2026" was answered as "which first-time donors
+  // need a second ask", and "recurring AND volunteers" as monthly donors.
+  const RECOMMEND = /^\s*why\b|\b(should|could|ought to|need to|needs?|about to|at risk|likely to|going to)\b|\bwho (do|can) i (call|ask|thank)\b/i;
+  if (!raw && typed && !RECOMMEND.test(typed)) {
+    const q = await tryQuery(req, typed, body.previousQuery);
+    if (q && q.answer) return res.json(q.answer);
   }
   // A why or who question: Ask why and Show me, unchanged.
   if (!raw && typed && (Sx.matchQuestion(typed) || SM.listFirst(typed) || SM.isShowMe(typed))) {
@@ -612,9 +763,19 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
       } catch { /* the template's reading stands */ }
     }
   }
-  if (!raw) return askRefuse(req, res, typed, (t && t.unsupported) || "that question", C);
+  if (!raw) {
+    const q = await tryQuery(req, typed, body.previousQuery);
+    if (q && q.answer) return res.json(q.answer);
+    return askRefuse(req, res, typed, (q && q.refused) || (t && t.unsupported) || "that question", C);
+  }
   const chk = C.validatePlan(scoped(raw, scope, C), ctx);
-  if (!chk.ok) return askRefuse(req, res, typed, chk.refused, C, { planSource: source });
+  if (!chk.ok) {
+    if (typed && source !== "saved") {
+      const q = await tryQuery(req, typed, body.previousQuery);
+      if (q && q.answer) return res.json(q.answer);
+    }
+    return askRefuse(req, res, typed, chk.refused, C, { planSource: source });
+  }
   const plan = { ...chk.plan, ...(raw.also && C.METRICS[raw.also] ? { also: raw.also } : {}) };
   const answer = await askAnswer(orgId, plan, ctx, C);
   // A follow-up is logged as one, so "who are they?" is never offered as a question on its own.

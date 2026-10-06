@@ -58,12 +58,14 @@ function writeKept(v) {
 }
 
 // One question to the server, by the way its `go` says it is asked.
-function runGo(go, { lastPlan, scope, context }) {
+function runGo(go, { lastPlan, lastQuery, scope, context }) {
   const post = (path, body) => apiFetch(path, { method: "POST", body: JSON.stringify(body) });
   if (go.via === "why") return post("/why/ask", { key: go.key, ...(go.campaign ? { campaign: go.campaign } : {}), ...(go.donor ? { donor: go.donor } : {}), ...(go.part ? { part: go.part } : {}) });
   if (go.via === "person") return post("/ask", { person: { donor: go.donor, intent: go.intent, ...(go.campaign ? { campaign: go.campaign } : {}) } });
   if (go.plan) return post("/ask", { plan: go.plan });
-  return post("/ask", { text: go.text, previous: go.thread ? lastPlan || null : null, ...(scope ? { scope } : {}), ...(go.thread && context ? { context } : {}) });
+  if (go.qplan) return post("/ask", { qplan: go.qplan });
+  return post("/ask", { text: go.text, previous: go.thread ? lastPlan || null : null, ...(go.thread && lastQuery ? { previousQuery: lastQuery } : {}),
+    ...(scope ? { scope } : {}), ...(go.thread && context ? { context } : {}) });
 }
 
 // What the thread knows, for the next question: the people the last answer
@@ -224,12 +226,13 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
   useEffect(() => { endRef.current && endRef.current.scrollIntoView && endRef.current.scrollIntoView({ block: "end", behavior: "smooth" }); }, [turns.length, busy]);
 
   const lastPlan = list => { for (let i = list.length - 1; i >= 0; i--) if (list[i].a && list[i].a.plan) return list[i].a.plan; return null; };
+  const lastQuery = list => { const a = list.length && list[list.length - 1].a; return a && a.qplan ? a.qplan : null; };
   const ask = async (q, base) => {
     setBusy(true); setMode("thread");
     const before = base || turns;
     setTurns([...before, { text: q.text, go: q.go }]);
     let a = null, err = "";
-    try { a = await runGo(q.go, { lastPlan: lastPlan(before), scope: donorId ? { donor: donorId } : null, context: threadContext(before, scope) }); }
+    try { a = await runGo(q.go, { lastPlan: lastPlan(before), lastQuery: lastQuery(before), scope: donorId ? { donor: donorId } : null, context: threadContext(before, scope) }); }
     catch (e) { err = errorMessage(e, "Steward could not work that out just now."); }
     const next = [...before, { text: q.text, go: q.go, a, err }];
     setTurns(next); setBusy(false);

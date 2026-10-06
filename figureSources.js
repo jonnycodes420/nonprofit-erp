@@ -76,6 +76,16 @@ const T = {
     if (!o || typeof o !== "object" || Array.isArray(o) || String(v).length > 4000 || typeof o.metric !== "string") throw new FigureParamError(`${k} is not a plan Steward knows.`);
     return o;
   },
+  // ASK-4: a query plan as JSON, validated against askQuery.js's catalog; a
+  // field, entity or operator it does not know is refused, never dropped.
+  qplan: (v, k) => {
+    let o = null;
+    try { o = JSON.parse(String(v)); } catch { o = null; }
+    if (!o || typeof o !== "object" || Array.isArray(o) || String(v).length > 6000) throw new FigureParamError(`${k} is not a question Steward knows.`);
+    const chk = require("./askQuery").validateQuery(o);
+    if (!chk.ok) throw new FigureParamError(`${k} is not a question Steward knows.`);
+    return chk.plan;
+  },
   // PARITY-4: a donor list rule as JSON, checked by groups.js normalizeRules:
   // a key or value it does not know is refused, never dropped.
   rules: (v, k) => {
@@ -1429,6 +1439,20 @@ const SOURCES = {
       { role: "numerator", label: "Raised", key: "goal-rollup-raised", params: { campaign: p.campaign } },
       { role: "denominator", label: "The goal", key: "campaign-goal", params: { campaign: p.campaign } },
     ],
+  },
+  // ── ASK-4 · ANY QUESTION, AND THE ROWS BEHIND ITS NUMBER ─────────────────
+  // A query answer's figure: "value" the whole answer, "g<n>" one group. The
+  // rows are askQuery.js's listRows under the same compiled conditions, so the
+  // drawer's total (or count) is the number. Counting people gives one row per
+  // person; a largest or smallest is the one record it is.
+  query: {
+    label: "The records behind this answer",
+    measure: p => ({ count: "count", count_people: "count", sum: "sum", avg: "mean", min: "sum", max: "sum" }[p.plan.measure.fn] || "count"),
+    params: { plan: "qplan:required", cell: "word:required" },
+    sentence: p => (p.plan.measure.fn === "count_people" ? "Each person behind this answer, once, with their total."
+      : ["min", "max"].includes(p.plan.measure.fn) ? "The one record this answer names."
+      : "Each record behind this answer, under the same conditions Steward counted."),
+    js: async (orgId, p) => require("./askQuery").figureRows(orgId, p.plan, p.cell),
   },
   // ── ASK-2 · EVERY NUMBER IN AN ANSWER OPENS ITS ROWS ──────────────────────
   // An answer's figure is one cell of a plan (askEngine.js): "cur" the period,
