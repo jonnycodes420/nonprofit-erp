@@ -99,7 +99,7 @@ export function funderProblem(donor) {
   if (kind !== "organisation" && kind !== "organization") {
     return {
       code: "funder_must_be_an_organisation",
-      message: `${donor.name || "That record"} is a person. A grant is a request to an institution — a cheque from an individual is a gift, and counting it as a grant puts it in the wrong half of every report. Add the foundation as an organisation and link them as its program officer.`,
+      message: `${donor.name || "That record"} is a person. A grant is a request to an institution. A cheque from an individual is a gift, and counting it as a grant puts it in the wrong half of every report. Add the foundation as an organisation and link them as its program officer.`,
     };
   }
   return null;
@@ -170,7 +170,7 @@ export function validateGrant(input = {}, { mode = "create" } = {}) {
 
   if (need("program")) {
     if (!sanitizeProgram(input.program)) {
-      errors.push({ field: "program", message: "Say what the grant is for — the programme, in your own words." });
+      errors.push({ field: "program", message: "Say what the grant is for: the programme, in your own words." });
     }
   }
   if (need("amountRequestedCents")) {
@@ -272,7 +272,7 @@ export function openPipelineSentence({ cents, count }, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   const n = Number(count) || 0;
   if (n === 0) return "Nothing is with a funder right now.";
-  return `${fm(cents)} requested across ${n} open ${n === 1 ? "grant" : "grants"} — what you have asked for, not what anybody expects to land.`;
+  return `${fm(cents)} requested across ${n} open ${n === 1 ? "grant" : "grants"}: what you have asked for, not what anybody expects to land.`;
 }
 
 // ── SORTING ────────────────────────────────────────────────────────────────

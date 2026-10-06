@@ -1391,7 +1391,7 @@ async function main() {
                 WHERE id=$1 AND org_id=$2`, [id, ORG, interests, min, max, cycle, months, notes]);
     }
     const officers = [
-      ["d_b72_po_perpetua", "Perpetua Hollingsworth", "perpetua.hollingsworth@meridianfdn.example.demo", mer, "Program officer, youth and workforce"],
+      ["d_b72_po_perpetua", "Perpetua Hollingsworth", "perpetua.hollingsworth@meridianfdn.example.demo", mer, "Youth and workforce"],
       ["d_b72_po_granville", "Granville Thistlewood", "granville.thistlewood@tidewatercf.example.demo", tide, "Grants manager"],
       ["d_b72_po_leonora", "Leonora Quillfeather", "leonora.quillfeather@coastalbank.example.demo", bank, "Community giving lead"],
     ];

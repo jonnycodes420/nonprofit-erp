@@ -186,13 +186,15 @@ ok("T defines the BUILD-33 ramp stops (sage, green650, terracotta ramp, gold700/
 // ── 8) BUILD-33 surface guards ──
 // Grants (Part 2): on-palette columns, no colored top borders, honest overdue.
 const grants = read("src/components/Grants.jsx");
-ok("Grants kanban columns reference T tokens only", /id:"prospecting", label:"Prospecting",  color:T\.green500/.test(grants));
+// GRANTS-1: the board moved to GrantBoard.jsx; its columns take only T tokens.
+const grantBoard = read("src/components/GrantBoard.jsx");
+ok("Grants board columns reference T tokens only", !/#[0-9a-fA-F]{3,6}\b/.test(grantBoard) && grantBoard.includes("background: over === s.key ?"));
 ok("Grants has NO colored top borders on stat cards", !grants.includes("borderTop:`3px solid"));
 ok("Grants has NO colored left border bars on cards/columns", !grants.includes("borderLeft:`3px solid"));
 ok("Grants overdue is honest — only actionable statuses carry deadline urgency",
   grants.includes("GRANT_ACTIONABLE") && grants.includes("const deadlineMeta = g => {") && grants.includes("!GRANT_ACTIONABLE.has(g.status)) return null"));
-ok("Grants keeps a summary strip above the board/list", grants.includes("grants-summary-strip"));
-ok("Grants keeps Kanban/List toggle + drag-and-drop", grants.includes('[["kanban","Kanban"],["list","List"]]') && grants.includes("onDragStart"));
+ok("Grants keeps a summary line above the board/list", grantBoard.includes("data.openPipeline && data.openPipeline.sentence"));
+ok("Grants keeps Board/List toggle + drag-and-drop", grantBoard.includes('[["board", "Board"], ["list", "List"]]') && grantBoard.includes("onDragStart"));
 
 // Donors (Part 3): consolidated action row — one menu, every path reachable.
 const donors = read("src/components/Donors.jsx");

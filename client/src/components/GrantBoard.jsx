@@ -72,14 +72,12 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
   const card = g => (
     <div key={g.id} data-testid="grant-card" draggable={!isReadOnly && !narrow}
       onDragStart={() => setDrag(g)} onDragEnd={() => { setDrag(null); setOver(""); }}
-      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", cursor: isReadOnly ? "default" : "grab", opacity: drag && drag.id === g.id ? 0.45 : 1 }}>
+      style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 10px", cursor: isReadOnly ? "default" : "grab", opacity: drag && drag.id === g.id ? 0.45 : 1 }}>
       <button type="button" onClick={() => onOpenGrant(g.id)} style={{ all: "unset", cursor: "pointer", display: "block", width: "100%" }}>
         <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{g.funderName}</div>
         {g.program && <div style={{ fontSize: 12, color: T.ink3, marginTop: 1 }}>{g.program}</div>}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 6, gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: T.greenDk }}>{money(askCents(g))}</span>
-          {g.nextDeadline && <span style={{ fontSize: 11.5, color: T.ink2, textAlign: "right" }}>{g.nextDeadlineLabel || "Due"} {day(g.nextDeadline)}</span>}
-        </div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: T.greenDk, marginTop: 6 }}>{money(askCents(g))}</div>
+        {g.nextDeadline && !["closed", "declined"].includes(g.status) && <div style={{ fontSize: 11.5, color: T.ink2, marginTop: 2 }}>{g.nextDeadlineLabel || "Due"} {day(g.nextDeadline)}</div>}
       </button>
       {!isReadOnly && narrow && (
         <select aria-label={`Move ${g.funderName}`} value={g.status} onChange={e => tryMove(g, e.target.value)} style={{ ...inp, marginTop: 8, width: "100%", fontSize: 12.5 }} data-testid="grant-card-stage">
@@ -114,7 +112,7 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
 
       {view === "board" ? (
-        <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8 }}>
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8 }}>
           {stages.map(s => {
             const items = rows.filter(g => g.status === s.key);
             const t = tile[s.key];
@@ -123,11 +121,11 @@ export default function GrantBoard({ onOpenGrant, onAdd, isReadOnly, refreshKey 
                 onDragOver={e => { e.preventDefault(); setOver(s.key); }}
                 onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(""); }}
                 onDrop={() => { const g = drag; setDrag(null); setOver(""); if (g) tryMove(g, s.key); }}
-                style={{ minWidth: 220, flex: "1 0 220px", background: over === s.key ? "rgba(13,92,58,0.08)" : T.bg2, borderRadius: 12, padding: 10,
+                style={{ minWidth: 132, flex: "1 1 132px", background: over === s.key ? "rgba(13,92,58,0.08)" : T.bg2, borderRadius: 12, padding: 10,
                   outline: over === s.key ? `2px dashed ${T.greenDk}` : "2px dashed transparent", outlineOffset: -2 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8, padding: "0 2px" }} title={t ? t.sentence : ""}>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{s.label}</span>
-                  <span style={{ fontSize: 11.5, color: T.ink3 }}>{items.length}{t && t.cents ? ` · ${money(t.cents)}` : ""}</span>
+                <div style={{ marginBottom: 8, padding: "0 2px" }} title={t ? t.sentence : ""}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: T.ink }}>{s.label}</div>
+                  <div style={{ fontSize: 11.5, color: T.ink3 }}>{items.length}{t && t.cents ? ` · ${money(t.cents)}` : ""}</div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {items.map(card)}

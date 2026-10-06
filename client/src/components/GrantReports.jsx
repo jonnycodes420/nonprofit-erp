@@ -327,7 +327,7 @@ export function GrantReportsPanel({ grantId, funderId, isReadOnly = false }) {
         <SendsList sends={sends} isReadOnly={isReadOnly} onRemove={removeSend} />
         {!isReadOnly && <RecordSend grantId={grantId} pieces={pieces} reports={reports} onDone={loadSends} />}
       </div>
-      {funderId && <FunderHistoryPanel funderId={funderId} />}
+      {funderId && <FunderHistoryPanel key={`${done.length}:${sends.length}`} funderId={funderId} />}
     </div>
   );
 }
