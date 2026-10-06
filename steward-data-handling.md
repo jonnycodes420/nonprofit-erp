@@ -74,12 +74,13 @@ arrive that way and deleting that history would be the lie.
 
 ## Reading cheques and drafting text (BUILD-96 Part 3, 2026-09-24)
 
-**Anthropic** (anthropic.com) is a **subprocessor**, in the United States. Two
+**Anthropic** (anthropic.com) is a **subprocessor**, in the United States. These
 features send data to it, and nothing else in Steward does.
 
 | | What is sent | What is NOT sent |
 |---|---|---|
 | **Reading a cheque photograph** | the photograph your treasurer chose to upload, and nothing beside it — no donor record, no name lookup, no history | your donor list. The image is read on its own; the payer's name is matched against your records **afterwards, inside Steward** |
+| **Drafting a grant section from your library** (GRANTS-1) | the library pieces your staff picked for that section, the funder's giving interests as written on its record, and any instruction typed with it | your donor list, the grant's money, any other funder's record. The draft is shown to edit and is never saved or sent on its own |
 | **Steward's agent drafting text** | the instruction your staff typed, your organisation's vocabulary, and the rows **Steward selected for that instruction** — capped, org-scoped, and excluding anyone nothing may be drafted for | a database handle, a query the model wrote, any row outside the org, or any row outside the selection |
 
 **Images and records are not retained by the provider for training.**

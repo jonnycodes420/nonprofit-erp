@@ -56,7 +56,7 @@ const MERGE_REFS = [
   ["email_marketing_activity", "donor_id"], ["event_attendees", "donor_id"], ["fin_transactions", "donor_id"],
   ["gift_duplicate_questions", "donor_id"], ["gift_soft_credits", "donor_id"], ["gifts", "donor_id"],
   ["gifts", "tribute_donor_id"], ["gifts", "match_employer_id"], ["giving_recurring", "donor_id", "refuse"],
-  ["grants", "funder_donor_id"], ["group_members", "donor_id"], ["group_sweep_seen", "donor_id"],
+  ["grants", "funder_donor_id"], ["grant_sends", "funder_donor_id"], ["group_members", "donor_id"], ["group_sweep_seen", "donor_id"],
   ["households", "primary_donor_id"], ["import_merges", "donor_id"], ["interaction_attachments", "donor_id"],
   ["interactions", "donor_id"], ["memberships", "donor_id", "refuse"], ["milestone_drafts", "donor_id"],
   ["moves", "donor_id"], ["ncoa_moves", "donor_id"], ["note_reminders", "donor_id"],

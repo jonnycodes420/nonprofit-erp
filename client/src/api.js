@@ -1,6 +1,36 @@
 import { errorMessage, isProgrammerError } from "./lib/domainError";
 import { setOrgTimezone } from "./lib/orgToday";
 
+// GRANTS-1: one adapter for a legacy grant row, used by the first load and by
+// the Grants screen when it opens a grant created since (a planned renewal).
+export function adaptGrant(g) {
+  return {
+    id:        g.id,
+    funder:    g.funder,
+    program:   g.program || "",
+    // BUILD-100 Part 1 migrated `grants.amount`/`received` INTEGER →
+    // NUMERIC(12,2), and pg serialises NUMERIC as a STRING. Four client sums
+    // read these (the Kanban column totals, the pipeline totals, and the
+    // summary strip's "In the works" / "Received"), and `0 + "5000.00"`
+    // CONCATENATES: two grants summed to "05000.003000.00". parseFloat here
+    // fixes all four at the boundary rather than patching each reduce —
+    // exactly what BUILD-08 Phase B did to `adaptDonor` when the gift columns
+    // made the same move.
+    amount:    parseFloat(g.amount) || 0,
+    received:  parseFloat(g.received) || 0,
+    status:    g.status,
+    deadline:  g.deadline || "",
+    reportDue: g.report_due || null,
+    officer:   g.officer || "",
+    notes:     g.notes || "",
+    campaignId: g.campaign_id || null,   // attribution FIX — awarded amount counts toward this campaign
+    history:   Array.isArray(g.history) ? g.history : JSON.parse(g.history || "[]"),
+    funderId:  g.funder_donor_id || null,
+    description: g.description || "",
+    requirements: g.requirements || "",
+  };
+}
+
 export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
 export const getToken = () => localStorage.getItem("npe_token");
@@ -339,28 +369,7 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       emailsEnabled: org.emails_enabled !== false,
     },
     donors: donors.map(adaptDonor),
-    grants: grants.map(g => ({
-      id:        g.id,
-      funder:    g.funder,
-      program:   g.program || "",
-      // BUILD-100 Part 1 migrated `grants.amount`/`received` INTEGER →
-      // NUMERIC(12,2), and pg serialises NUMERIC as a STRING. Four client sums
-      // read these (the Kanban column totals, the pipeline totals, and the
-      // summary strip's "In the works" / "Received"), and `0 + "5000.00"`
-      // CONCATENATES: two grants summed to "05000.003000.00". parseFloat here
-      // fixes all four at the boundary rather than patching each reduce —
-      // exactly what BUILD-08 Phase B did to `adaptDonor` when the gift columns
-      // made the same move.
-      amount:    parseFloat(g.amount) || 0,
-      received:  parseFloat(g.received) || 0,
-      status:    g.status,
-      deadline:  g.deadline || "",
-      reportDue: g.report_due || null,
-      officer:   g.officer || "",
-      notes:     g.notes || "",
-      campaignId: g.campaign_id || null,   // attribution FIX — awarded amount counts toward this campaign
-      history:   Array.isArray(g.history) ? g.history : JSON.parse(g.history || "[]"),
-    })),
+    grants: grants.map(adaptGrant),
     volunteers: volunteers.map(v => ({
       id:              v.id,
       name:            v.name,

@@ -3,9 +3,27 @@
 Read this when you touch funders, grant deadlines, documents, restricted money, grant reports or grant import.
 
 ## Rules
-- **Use the six canonical grant statuses and never add a second `grant_stage` column.** researching ·
-  loi · submitted · awarded · declined · closed; every older spelling is an alias resolved only in
-  `normalizeStatus` (shared/grantShape.js), and a status filter must match the aliases too. (BUILD-100 grants)
+- **Use the eight canonical grant stages and never add a second `grant_stage` column.** researching
+  (shown as Prospecting) · loi · invited · submitted · awarded · declined · reporting · closed; every older
+  spelling is an alias resolved only in `normalizeStatus` (shared/grantShape.js), and a status filter must
+  match the aliases too. `AWARDED_STATUS_KEYS` (awarded, reporting, closed) hold an award: SQL that means
+  "awarded money" says all three. (BUILD-100 grants, GRANTS-1)
+- **A stage move is `PATCH /grants/:id/stage`, the board's one route.** It stamps `awarded_at` entering
+  an award stage and clears it leaving one, needs a decline reason for Declined, plans the renewal on
+  Closed, and answers with `previous` so Undo puts it back exactly (GRANTS-1).
+- **A funder's people are person rows linked by `donor_relationships`** (`program_officer` or
+  `funder_contact`, a = the funder, b = the person), never a contacts table. They are who email routing
+  matches on (GRANTS-1).
+- **A grant's checklist is tasks with a `grant_id`**, so every item is on the Calendar and in Tasks (GRANTS-1).
+- **Email to and from a funder contact lands through `routeToFunderGrant` (routes/grantMail.js)**, the one
+  function both the mailbox sync and the BCC path call: a line on the funder, a `grant_sends` row on its
+  open grant, attachments as grant documents. Mail with anyone else writes nothing on a grant (GRANTS-1).
+- **A submitted grant report is kept and read-only; the next one for the same funder starts from it.**
+  Figures are stored when a report is built; outcomes must be confirmed by a person before submit (GRANTS-1).
+- **Drafting from the library is a draft.** It uses only the picked pieces and the funder's interests,
+  refuses a reply with a number or an outcome claim the pieces do not hold, and saves nothing (GRANTS-1).
+- **Fixed GET paths under `/grants/` are two segments or mounted early.** crm.js's `GET /grants/:id` answers
+  404 for any single segment, so a new one-segment path is never reached (GRANTS-1).
 - **A grant is a request to an institution; refuse a person as a funder.** `funderProblem` says why at
   every door: an individual's cheque is a gift, and filing it as a grant puts it in the wrong half of
   every report. (BUILD-100 grants)

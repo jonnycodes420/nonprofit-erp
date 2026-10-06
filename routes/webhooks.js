@@ -2843,6 +2843,28 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
   //     on the screen a minute later, and a background pass cannot promise that.
   //     The actor is the SYSTEM path that wrote it (BUILD-75 C.1) and the
   //     display name is the staff member whose mail it was.
+  // GRANTS-1 · A MESSAGE TO A FUNDER CONTACT ALSO LANDS ON THE FUNDER AND
+  // ITS GRANT, through the same function the mailbox sync uses
+  // (routes/grantMail.js). Run for a logged or a held message alike: which
+  // donor a held message belongs to is a human's question, but which funder it
+  // went to is not. Anybody else on the message writes nothing on any grant.
+  const GM = require("./grantMail");
+  const bccId = GM.bccMessageId(payload);
+  const routeGrant = note => GM.routeToFunderGrant({
+    orgId: org.id, source: "bcc", provider: payload.provider || "inbound", actorId: "system:inbound-email",
+    actorName: senderRows[0].name || from, ownerAddress: from, staffEmails: userRows.map(u => u.email),
+    note, attachmentCount: Number(payload.attachmentCount) || (Array.isArray(payload.attachments) ? payload.attachments.length : 0),
+    message: { id: bccId, from, to: IE.recipientAddresses(payload).filter(a => !IE.isLoggingAddress(a, INBOUND_EMAIL_DOMAIN)),
+               cc: [], subject: decision.subject, sentOn: decision.date },
+    loadAttachments: GM.bccAttachmentLoader(payload, {
+      receivingBase: process.env.RESEND_RECEIVING_BASE_URL || process.env.RESEND_BASE_URL, apiKey: process.env.RESEND_API_KEY }),
+  }).then(r => r && {
+    funders: r.funders.length,
+    documents: r.funders.reduce((n, f) => n + f.documents, 0),
+    ...(r.funders.some(f => f.attachmentsUnavailable)
+      ? { attachments: "The attachments on this email were not available through the BCC address, so they are not on the grant." } : {}),
+  }).catch(e => { console.error("[inbound-email] grant routing:", e.message); return null; });
+
   if (decision.action === "log") {
     const id = "int_" + uuid().slice(0, 8);
     const note = decision.subject + (decision.body ? "\n\n" + decision.body : "");
@@ -2850,9 +2872,11 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
       [id, org.id, decision.donorId, "email", note, decision.date,
        "system:inbound-email", senderRows[0].name || from,
-       JSON.stringify({ via: "inbound_email", from, to: decision.to, subject: decision.subject, direction: "outbound" })]
+       JSON.stringify({ via: "inbound_email", from, to: decision.to, subject: decision.subject, direction: "outbound",
+                        message_id: bccId })]
     );
-    return res.json({ received: true, action: "log", donorId: decision.donorId });
+    const grant = await routeGrant(note);
+    return res.json({ received: true, action: "log", donorId: decision.donorId, ...(grant ? { grant } : {}) });
   }
 
   // 4 · zero or several matches → held for a human. NEVER a new donor.
@@ -2863,7 +2887,8 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
     [uid, org.id, decision.kind, from, decision.to, decision.subject, decision.body, decision.date,
      JSON.stringify(decision.candidates || []), "system:inbound-email", senderRows[0].name || from]
   );
-  res.json({ received: true, action: "hold", kind: decision.kind });
+  const grant = await routeGrant(decision.subject + (decision.body ? "\n\n" + decision.body : ""));
+  res.json({ received: true, action: "hold", kind: decision.kind, ...(grant ? { grant } : {}) });
 }));
 }
 

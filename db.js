@@ -3240,6 +3240,116 @@ async function runSchemaInit(pool) {
   // they ever change.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_lead_days JSONB`);
 
+  // ── GRANTS-1 · GRANTS AS ITS OWN SYSTEM ──────────────────────────────────
+  // The funder is a row in `donors` (one person record); these columns are
+  // what a grants office knows about it. Program officers and other funder
+  // contacts are people rows linked by donor_relationships
+  // (relationship_type 'program_officer' or 'funder_contact', donor_id_a =
+  // the funder, donor_id_b = the person).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_interests TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_award_min NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_award_max NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_cycle TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_due_months INTEGER[]`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_notes TEXT`);
+  await pool.query(`ALTER TABLE donor_relationships ADD COLUMN IF NOT EXISTS created_by TEXT`);
+  await pool.query(`ALTER TABLE donor_relationships ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
+  // A grant's outcomes to report, the grant it renews, and the org's goal.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS outcomes TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS renewal_of TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS closed_on TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_goal_cents BIGINT`);
+  // A grant's checklist is ordinary tasks with a grant_id, so each one has an
+  // owner, a due date and its place on the Calendar like every other task.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS grant_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_grant ON tasks (org_id, grant_id) WHERE grant_id IS NOT NULL`);
+  // Where a grant document came from: typed in, or an attachment on an email
+  // that went to (or came from) a funder contact.
+  await pool.query(`ALTER TABLE grant_documents ADD COLUMN IF NOT EXISTS source TEXT`);
+  await pool.query(`ALTER TABLE grant_documents ADD COLUMN IF NOT EXISTS sent_on TEXT`);
+  await pool.query(`ALTER TABLE grant_documents ADD COLUMN IF NOT EXISTS sent_to_name TEXT`);
+  await pool.query(`ALTER TABLE grant_documents ADD COLUMN IF NOT EXISTS sent_to_email TEXT`);
+  await pool.query(`ALTER TABLE grant_documents ADD COLUMN IF NOT EXISTS message_id TEXT`);
+  // The shared library of reusable pieces, each edit kept as a version.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_library (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      version INTEGER NOT NULL DEFAULT 1,
+      archived_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_library_org ON grant_library (org_id)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_library_versions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      piece_id TEXT REFERENCES grant_library(id) ON DELETE CASCADE,
+      version INTEGER NOT NULL,
+      title TEXT, body TEXT NOT NULL DEFAULT '',
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (piece_id, version)
+    )`);
+  // A grant's reports: what is due, when, what the funder asked for, the
+  // draft, and once submitted the kept record of what went to whom.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_reports (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      milestone_id TEXT,
+      title TEXT NOT NULL,
+      due_date TEXT,
+      asked_for TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      sections JSONB NOT NULL DEFAULT '[]'::jsonb,
+      figures JSONB,
+      version INTEGER NOT NULL DEFAULT 1,
+      started_from TEXT,
+      submitted_on TEXT,
+      submitted_to_name TEXT,
+      submitted_to_email TEXT,
+      submitted_by TEXT, submitted_by_name TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_reports_grant ON grant_reports (org_id, grant_id)`);
+  // What went to which funder, when, and to whom: a document, a library
+  // piece at a version, a report, or an email. Read for "which version went
+  // where" and for each funder's history.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      funder_donor_id TEXT,
+      what TEXT NOT NULL,
+      document_id TEXT,
+      library_piece_id TEXT,
+      library_version INTEGER,
+      report_id TEXT,
+      subject TEXT,
+      sent_on TEXT NOT NULL,
+      sent_to_name TEXT,
+      sent_to_email TEXT,
+      direction TEXT NOT NULL DEFAULT 'out',
+      source TEXT NOT NULL DEFAULT 'manual',
+      message_id TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_sends_grant ON grant_sends (org_id, grant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_sends_funder ON grant_sends (org_id, funder_donor_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_grant_sends_message ON grant_sends (org_id, grant_id, message_id) WHERE message_id IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_grant_docs_message ON grant_documents (grant_id, message_id, file_name) WHERE message_id IS NOT NULL`);
+
   // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
   // meant on a grant that has not been awarded, and on an awarded one it is what
   // was asked for. Never guessed — a row with no amount stays null.

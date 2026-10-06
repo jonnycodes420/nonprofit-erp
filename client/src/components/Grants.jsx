@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, adaptGrant } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
@@ -8,6 +8,15 @@ import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card
 import { askConfirm } from "./ConfirmDialog";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, rowClick } from "../lib/appUrls";
+import { GRANT_STATUSES, statusLabel, normalizeStatus } from "../../../shared/grantShape";
+import { offerUndo } from "./EditHistory";
+import GrantBoard from "./GrantBoard";
+import GrantFunders from "./GrantFunders";
+import { GrantChecklist, GrantAwardPlan } from "./GrantWork";
+import GrantLibrary from "./GrantLibrary";
+import { GrantReportsPanel } from "./GrantReports";
+import GrantOverview from "./GrantOverview";
+import GrantEmailPath from "./GrantEmailPath";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -52,13 +61,13 @@ function GrantLogModal({grant,onSave,onClose}){
 }
 
 // ── Grant Profile ──────────────────────────────────────────────────────────
-function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=false}){
+function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=false,onOpenFunder}){
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[notes,setNotes]=useState(grant.notes||"");const[savingNotes,setSavingNotes]=useState(false);
   const[editing,setEditing]=useState(false);
   const[ef,setEf]=useState({
     funder:grant.funder,program:grant.program,amount:grant.amount,received:grant.received||0,
-    status:grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||"",
+    status:normalizeStatus(grant.status)||grant.status,deadline:grant.deadline||"",reportDue:grant.reportDue||"",officer:grant.officer||"",
     description:grant.description||"",requirements:grant.requirements||"",
     campaignId:grant.campaignId||"",
   });
@@ -82,7 +91,8 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   // definition, so "Overdue" there is noise, not information (BUILD-33).
   const actionable=GRANT_ACTIONABLE.has(grant.status);
   const reportDays=grant.reportDue?daysUntil(grant.reportDue):null;
-  const statuses=["prospecting","pending","active","closed"];
+  const statuses=GRANT_STATUSES.map(x=>x.key);
+  const curStatus=normalizeStatus(grant.status)||grant.status;
 
   const getAI=async(type)=>{
     const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
@@ -97,11 +107,22 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
     setLoadingKey(null);
   };
 
+  // GRANTS-1: a stage move is PATCH /grants/:id/stage, the board's own route, with Undo.
   const changeStatus=async(status)=>{
     const g=grant;
-    const adoptTxnId=await resolveAwardAdoption(g.id,g.status,status);
-    await apiFetch(`/grants/${g.id}`,{method:"PUT",body:JSON.stringify({funder:g.funder,program:g.program,amount:g.amount,received:g.received||0,status,deadline:g.deadline||"",reportDue:g.reportDue||"",officer:g.officer,notes:g.notes,description:g.description||"",requirements:g.requirements||"",adoptTxnId})});
-    onUpdate({...g,status});
+    try{
+      const r=await apiFetch(`/grants/${g.id}/stage`,{method:"PATCH",body:JSON.stringify({status})});
+      onUpdate({...g,status:r.status});
+      const renewal=r.renewal&&r.renewal.renewalGrantId?r.renewal:null;
+      offerUndo({message:[r.sentence,r.renewal&&r.renewal.sentence].filter(Boolean).join(" "),undoAction:async()=>{
+        if(renewal)await apiFetch(`/grants/${g.id}/renewal/undo`,{method:"POST",body:"{}"}).catch(()=>{});
+        const x=await apiFetch(`/grants/${g.id}/stage`,{method:"PATCH",body:JSON.stringify({status:r.previous.status,awardedAt:r.previous.awardedAt,declineReason:r.previous.declineReason,planRenewal:false})});
+        onUpdate({...g,status:x.status});return x;
+      }},"stage");
+    }catch(e){
+      if(e&&(e.error==="decline_reason"||e.code==="decline_reason")){alert("Move it to Declined from the pipeline board, where Steward asks why they declined.");return;}
+      alert((e&&e.sentence)||errorMessage(e,"That grant did not move."));
+    }
   };
 
   const saveNotes=async()=>{
@@ -134,11 +155,12 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         <div style={{flex:1,minWidth:0}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{grant.funder}</span>
-            <Pill label={grant.status} color={SC[grant.status]}/>
+            <Pill label={statusLabel(grant.status)||grant.status} color={SC[curStatus]||SC[grant.status]}/>
           </div>
           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{grant.program} · {fmtFull(grant.amount)} ask</div>
         </div>
         <div style={{display:"flex",gap:6,flexShrink:0}}>
+          {grant.funderId&&onOpenFunder&&<button onClick={()=>onOpenFunder(grant.funderId)} data-testid="grant-open-funder" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,cursor:"pointer"}}>Funder</button>}
           <button onClick={()=>setEditing(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
           {isAdmin&&<button onClick={()=>onDelete(grant.id)} style={{background:"transparent",border:"1px solid "+T.terracotta,borderRadius:8,padding:"7px 14px",color:T.terracotta,fontSize:13,cursor:"pointer"}}>Delete</button>}
         </div>
@@ -166,7 +188,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           <div>
             <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Status</div>
             <select value={ef.status} onChange={e=>setEf(p=>({...p,status:e.target.value}))} style={{...inp,cursor:"pointer"}}>
-              {statuses.map(s=><option key={s} value={s}>{s}</option>)}
+              {statuses.map(s=><option key={s} value={s}>{statusLabel(s)}</option>)}
             </select>
           </div>
           {fundCampaigns.length>0&&<div>
@@ -248,6 +270,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           {/* BUILD-100 Part 7 — the deadlines Steward watches, and the grant's documents. */}
           <GrantDeadlinesPanel grantId={grant.id} isReadOnly={isReadOnly}/>
+          <GrantChecklist grantId={grant.id} isReadOnly={isReadOnly}/>
+          <GrantAwardPlan grantId={grant.id} isReadOnly={isReadOnly}/>
+          <GrantReportsPanel grantId={grant.id} funderId={grant.funderId} isReadOnly={isReadOnly}/>
           <GrantDocuments grantId={grant.id} isReadOnly={isReadOnly}/>
 
           {grant.history&&grant.history.length>0&&<div>
@@ -264,9 +289,10 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {statuses.map(s=>(
-                <button key={s} onClick={()=>changeStatus(s)}
-                  aria-pressed={grant.status===s} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize",...activeMark(grant.status===s,"bottom")}}>
-                  {s}
+                <button key={s} onClick={()=>changeStatus(s)} disabled={isReadOnly||s==="declined"&&curStatus!=="declined"}
+                  title={s==="declined"?"Move it to Declined from the board, where Steward asks why.":undefined}
+                  aria-pressed={curStatus===s} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(curStatus===s,"bottom")}}>
+                  {statusLabel(s)}
                 </button>
               ))}
             </div>
@@ -308,30 +334,10 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
   );
 }
 
-// ── Grant Kanban ───────────────────────────────────────────────────────────
-// Column accents are LOCKED to the Steward palette (BUILD-33) — green ramp +
-// gold for the working stages, deep green for the win, warm grey for closed.
-// Same deliberately-varied logic as the donor STAGES set; no blue/purple/amber.
-const KANBAN_COLS = [
-  { id:"prospecting", label:"Prospecting",  color:T.green500 },
-  { id:"loi",         label:"LOI",          color:T.gold500 },
-  { id:"applied",     label:"Applied",      color:T.greenMid },
-  { id:"pending",     label:"Under Review", color:T.gold600 },
-  { id:"awarded",     label:"Awarded",      color:T.greenDk },
-  { id:"closed",      label:"Closed",       color:T.ink3 },
-];
-
 // Statuses still being pursued — the only ones where a deadline carries
 // urgency. Awarded/active/closed grants' application deadlines have passed by
 // definition, so they never show "Overdue" (the BUILD-33 honest-overdue rule).
-const GRANT_ACTIONABLE = new Set(["prospecting","loi","applied","submitted","draft","pending"]);
-
-const statusToCol = s => {
-  if (s === "active" || s === "applied" || s === "submitted") return "applied";
-  if (s === "draft") return "loi";
-  if (s === "rejected") return "closed";
-  return KANBAN_COLS.find(c => c.id === s) ? s : "prospecting";
-};
+const GRANT_ACTIONABLE = new Set(["prospecting","researching","loi","invited","applied","submitted","draft","pending"]);
 
 // Finance entity-routing FIX (2026-08-04) — award-side double-count guard.
 // Marking a grant Awarded auto-stamps the ledger (BUILD-09); if the same money
@@ -365,86 +371,14 @@ const deadlineMeta = g => {
   return { label: `${days}d`, color: days < 30 ? T.gold600 : T.ink3 };
 };
 
-function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }) {
-  const [dragging, setDragging] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
-
-  const colGrants = id => grants.filter(g => statusToCol(g.status) === id);
-
-  const drop = async colId => {
-    if (!dragging || statusToCol(dragging.status) === colId) { setDragging(null); setDragOver(null); return; }
-    const g = dragging;
-    setDragging(null); setDragOver(null);
-    try {
-      const adoptTxnId = await resolveAwardAdoption(g.id, g.status, colId);
-      await apiFetch(`/grants/${g.id}`, { method:"PUT", body: JSON.stringify({
-        funder:g.funder, program:g.program, amount:g.amount, received:g.received||0,
-        status:colId, deadline:g.deadline||"", reportDue:g.reportDue||"",
-        officer:g.officer||"", notes:g.notes||"", description:g.description||"", requirements:g.requirements||"",
-        adoptTxnId,
-      })});
-      onUpdate({ ...g, status: colId });
-    } catch(e) { console.error(e); }
-  };
-
-  return (
-    <div style={{ display:"flex", gap:10, overflowX:"auto", paddingBottom:8, scrollSnapType:"x mandatory" }}>
-      {KANBAN_COLS.map(col => {
-        const items = colGrants(col.id);
-        const colTotal = items.reduce((s,g) => s+g.amount, 0);
-        const isOver = dragOver === col.id;
-        return (
-          <div key={col.id}
-            style={{ minWidth:260, flex:"1 1 260px", background: isOver?T.green100:T.bg2, borderRadius:12, padding:10, outline:isOver?`2px dashed ${T.green600}`:"2px dashed transparent", outlineOffset:-2, transition:"background 0.15s, outline-color 0.15s", scrollSnapAlign:"start" }}
-            onDragOver={e => { e.preventDefault(); setDragOver(col.id); }}
-            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null); }}
-            onDrop={() => drop(col.id)}
-          >
-            <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", padding:"2px 4px", marginBottom:8 }}>
-              <div style={{ fontSize:13, fontWeight:800, color:T.ink }}>{col.label}</div>
-              <div style={{ display:"flex", alignItems:"baseline", gap:8 }}>
-                {colTotal > 0 && <div style={{ fontSize:11, color:T.ink3, fontWeight:700 }}>{fmt(colTotal)}</div>}
-                <div style={{ fontSize:12, color:T.ink3 }}>{items.length}</div>
-              </div>
-            </div>
-            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {items.map(g => {
-                const dl = deadlineMeta(g);
-                return (
-                  <div key={g.id}
-                    draggable
-                    onDragStart={() => setDragging(g)}
-                    onDragEnd={() => { setDragging(null); setDragOver(null); }}
-                    onClick={() => onSelectGrant(g)}
-                    style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:10, padding:"10px 12px", cursor:"grab", userSelect:"none", opacity:dragging?.id===g.id?0.45:1, transition:"opacity 0.12s,box-shadow 0.12s", boxShadow:"0 1px 3px rgba(10,10,10,0.06)" }}
-                  >
-                    <div style={{ fontSize:13, fontWeight:700, color:T.ink, marginBottom:2 }}>
-                      <RecordLink to={tabHref("grants",{grantId:g.id})} onOpen={() => onSelectGrant(g)} draggable={false} data-record-link="grant">{g.funder}</RecordLink>
-                    </div>
-                    {g.program && <div style={{ fontSize:11, color:T.ink3, marginBottom:6 }}>{g.program}</div>}
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-                      <div style={{ fontSize:13, fontWeight:800, color:T.greenMid }}>{fmt(g.amount)}</div>
-                      {dl && <div style={{ fontSize:10, fontWeight:700, color:dl.color }}>{dl.label}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-              {col.id === "prospecting" && (
-                <button onClick={onAddClick} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ width:"100%", background:"transparent", border:`1px dashed ${T.bg3}`, borderRadius:8, padding:"8px", color:T.ink3, fontSize:12, cursor:isReadOnly?"not-allowed":"pointer", textAlign:"center", opacity:isReadOnly?0.45:1 }}>+ Add Grant</button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Grants ─────────────────────────────────────────────────────────────────
 export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSection,onIntentConsumed}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
-  const [subTab,setSubTab]=useState(initialSection==="deadlines"||initialSection==="findgrants"?initialSection:"pipeline");
+  const SUBTABS=[["pipeline","Pipeline"],["funders","Funders"],["deadlines","Deadlines"],["library","Library"],["reports","Reports"],["findgrants","Find grants"]];
+  const [subTab,setSubTab]=useState(SUBTABS.some(([k])=>k===initialSection)?initialSection:"pipeline");
+  const [openFunderId,setOpenFunderId]=useState("");
+  const [boardKey,setBoardKey]=useState(0);
   const [openMiss,setOpenMiss]=useState("");
   const [selected,setSelectedRaw]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
   // FIX-14 Part 5: a grant is /app/grants?grant=<id> and a section is
@@ -453,7 +387,15 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
   const goUrl=useUrlWriter();
   const sectionHref=st=>tabHref("grants",st&&st!=="pipeline"?{grantsSection:st}:undefined);
   const setSelected=g=>{setSelectedRaw(g);goUrl(g?tabHref("grants",{grantId:g.id}):sectionHref(subTab));};
-  const openGrant=id=>{const g=data.grants.find(x=>x.id===id); if(g){setOpenMiss("");setSelected(g);} else setOpenMiss("That grant is not in the list yet. Reload the page to see it.");};
+  // A grant made since the page loaded (a planned renewal, a new ask) is read fresh.
+  const openGrant=async id=>{
+    let g=data.grants.find(x=>x.id===id);
+    if(!g){
+      try{const all=await apiFetch("/grants");const list=(Array.isArray(all)?all:all.grants||[]).map(adaptGrant);setData(prev=>({...prev,grants:list}));g=list.find(x=>x.id===id);}catch{/* said below */}
+    }
+    if(g){setOpenMiss("");setSelected(g);} else setOpenMiss("That grant could not be found. It may have been deleted.");
+  };
+  const openFunder=id=>{setSelectedRaw(null);setOpenFunderId(id);setSubTab("funders");goUrl(sectionHref("funders"));};
   useEffect(()=>{
     if(selected||!/^\/app\/grants\/?$/.test(window.location.pathname))return;
     const q=new URLSearchParams(window.location.search);
@@ -466,12 +408,8 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
   },[]);
   const [prospectAI,setProspectAI]=useState(""); const [prospectLoading,setProspectLoading]=useState(false);
   const [showAdd,setShowAdd]=useState(false);
-  const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
+  const [newGrant,setNewGrant]=useState({funder:"",program:"",amount:"",status:"researching",deadline:"",officer:""});
   const [addLoading,setAddLoading]=useState(false);
-  const [grantView,setGrantView]=useState("kanban");
-  const [statusFilter,setStatusFilter]=useState(null); // pipeline card → filter the list
-  const pipeline=["prospecting","pending","active","closed"];
-  const totals=pipeline.reduce((a,s)=>{a[s]=data.grants.filter(g=>g.status===s).reduce((sum,g)=>sum+g.amount,0);return a;},{});
 
   const addGrant=async()=>{
     if(!newGrant.funder.trim())return;
@@ -488,8 +426,9 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
         description:raw.description||"",requirements:raw.requirements||"",
         history:Array.isArray(raw.history)?raw.history:JSON.parse(raw.history||"[]")};
       setData(prev=>({...prev,grants:[adapted,...prev.grants]}));
-      setNewGrant({funder:"",program:"",amount:"",status:"prospecting",deadline:"",officer:""});
-      setShowAdd(false);
+      setNewGrant({funder:"",program:"",amount:"",status:"researching",deadline:"",officer:""});
+      setShowAdd(false);setBoardKey(k=>k+1);
+      offerUndo({message:`Added ${adapted.funder}.`,undoAction:async()=>{const x=await apiFetch(`/grants/${adapted.id}`,{method:"DELETE"});setData(prev=>({...prev,grants:prev.grants.filter(g=>g.id!==adapted.id)}));setBoardKey(k=>k+1);return x||{};}},"grant");
     }catch(e){console.error(e);}
     setAddLoading(false);
   };
@@ -521,12 +460,12 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected ? (
-    <GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org} isReadOnly={isReadOnly}/>
+    <GrantProfile grant={selected} onClose={()=>{setSelected(null);setBoardKey(k=>k+1);}} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org} isReadOnly={isReadOnly} onOpenFunder={openFunder}/>
     ) : (<>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-      <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":subTab==="deadlines"?"deadlines.":"pipeline."}/>
-      <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3}}>
-        {[["pipeline","Pipeline"],["deadlines","Deadlines"],["findgrants","Find Grants"]].map(([id,label])=>(
+      <PageTitle main="Grant" accent={{findgrants:"discovery.",deadlines:"deadlines.",funders:"funders.",library:"library.",reports:"reports."}[subTab]||"pipeline."}/>
+      <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3,overflowX:"auto",maxWidth:"100%"}}>
+        {SUBTABS.map(([id,label])=>(
           <button key={id} role="tab" aria-selected={subTab===id} onClick={()=>setSubTab(id)} style={{background:"transparent",color:T.ink3,border:"none",borderRadius:"8px 8px 0 0",padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5,...activeMark(subTab===id,"bottom")}}>
             {id==="findgrants"&&<span style={{fontSize:10}}>✦</span>}{label}
           </button>
@@ -534,107 +473,37 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
       </div>
     </div>
     {subTab==="findgrants"&&<FindGrants data={data}/>}
+    {subTab==="funders"&&<GrantFunders isReadOnly={isReadOnly} onOpenGrant={openGrant} openFunderId={openFunderId}/>}
+    {subTab==="library"&&<GrantLibrary isReadOnly={isReadOnly}/>}
+    {subTab==="reports"&&<GrantOverview onOpenGrant={openGrant}/>}
     {subTab==="deadlines"&&<>{openMiss&&<div role="status" style={{fontSize:13,color:T.ink3}}>{openMiss}</div>}<DeadlinesView isReadOnly={isReadOnly} isAdmin={isAdmin} onOpenGrant={openGrant}/></>}
     {subTab==="pipeline"&&<>
-    {data.grants.length>0&&(()=>{
-      const open=data.grants.filter(g=>GRANT_ACTIONABLE.has(g.status));
-      const openAsk=open.reduce((t,g)=>t+(g.amount||0),0);
-      const received=data.grants.reduce((t,g)=>t+(g.received||0),0);
-      const next=open.filter(g=>g.deadline&&daysUntil(g.deadline)>=0).sort((a,b)=>a.deadline<b.deadline?-1:1)[0];
-      const stat=(label,value,sub2,color)=>(
-        <div key={label} style={{textAlign:"left"}}>
-          <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{label}</div>
-          <div style={{fontSize:22,fontWeight:800,color,fontFamily:"'DM Serif Display',serif",lineHeight:1.2}}>{value}</div>
-          <div style={{fontSize:11,color:T.ink3}}>{sub2}</div>
-        </div>);
-      return <div className="grants-summary-strip" style={{display:"flex",gap:36,flexWrap:"wrap",alignItems:"flex-start",padding:"2px 2px 0"}}>
-        {stat("In the works",fmt(openAsk),`${open.length} open ask${open.length!==1?"s":""}`,T.gold600)}
-        {stat("Received",fmt(received),"across all grants",T.greenMid)}
-        {stat("Next deadline",next?new Date(next.deadline).toLocaleDateString("en-US",{month:"short",day:"numeric"}):"—",next?next.funder:"nothing pending",T.ink)}
-      </div>;
-    })()}
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-      <AIBtn onClick={findProspects} loading={prospectLoading} label="✦ Prospect Research"/>
-      <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:8,padding:2}}>
-        {[["kanban","Kanban"],["list","List"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setGrantView(id)} style={{background:grantView===id?T.white:"transparent",border:grantView===id?"1px solid "+T.bg3:"1px solid transparent",borderRadius:7,padding:"5px 13px",fontSize:12,fontWeight:600,color:grantView===id?T.ink:T.ink3,cursor:"pointer",transition:"all 0.12s"}}>{label}</button>
-        ))}
-      </div>
-      {grantView==="list"&&<button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.gold500,border:"none",borderRadius:10,padding:"10px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",marginLeft:"auto",boxShadow:"0 2px 8px rgba(201,168,76,0.25)",opacity:isReadOnly?0.45:1}}>+ Add Grant</button>}
-    </div>
-    {(prospectLoading||prospectAI)&&<AIPanel text={prospectAI} onClose={()=>setProspectAI("")}/>}
-
-    {showAdd&&grantView==="list"&&(()=>{
+    <GrantEmailPath/>
+    {showAdd&&(()=>{
       const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
       return <Card style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Grant</div>
-        <div className="grant-add-form-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          {[["funder","Funder *","text","e.g. Rockefeller Foundation"],["program","Program / Grant Name","text","e.g. Arts Education Initiative"],["amount","Ask Amount ($)","number","50000"],["officer","Program Officer","text","e.g. Angela Wu"]].map(([k,l,t,ph])=>(
+        <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New grant</div>
+        <div className="grant-add-form-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10}}>
+          {[["funder","Funder *","text","e.g. Meridian Foundation"],["program","Program","text","e.g. After-school sailing"],["amount","Ask ($)","number","50000"],["officer","Program officer","text",""]].map(([k,l,t,ph])=>(
             <div key={k} style={{display:"flex",flexDirection:"column",gap:4}}>
-              <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</label>
+              <label style={{fontSize:11,fontWeight:700,color:T.ink3}}>{l}</label>
               <input type={t} value={newGrant[k]} onChange={e=>setNewGrant(p=>({...p,[k]:e.target.value}))} placeholder={ph} style={inp}/>
             </div>
           ))}
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Status</label>
+            <label style={{fontSize:11,fontWeight:700,color:T.ink3}}>Stage</label>
             <select value={newGrant.status} onChange={e=>setNewGrant(p=>({...p,status:e.target.value}))} style={{...inp,cursor:"pointer"}}>
-              {pipeline.map(s=><option key={s} value={s} style={{textTransform:"capitalize"}}>{s}</option>)}
+              {GRANT_STATUSES.filter(x=>x.kind==="open").map(x=><option key={x.key} value={x.key}>{x.label}</option>)}
             </select>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:4}}>
-            <label style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Deadline</label>
-            <input type="date" value={newGrant.deadline} onChange={e=>setNewGrant(p=>({...p,deadline:e.target.value}))} style={inp}/>
           </div>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={addGrant} disabled={addLoading||!newGrant.funder.trim()} style={{background:newGrant.funder.trim()?T.gold500:T.bg2,border:"none",borderRadius:8,padding:"9px 18px",color:newGrant.funder.trim()?T.ink:T.ink3,fontSize:13,fontWeight:600,cursor:newGrant.funder.trim()?"pointer":"not-allowed"}}>{addLoading?"Saving…":"Save Grant"}</button>
+          <button onClick={addGrant} disabled={addLoading||!newGrant.funder.trim()} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:newGrant.funder.trim()?"pointer":"not-allowed",opacity:newGrant.funder.trim()?1:0.5}}>{addLoading?"Saving…":"Save grant"}</button>
           <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>;
     })()}
-
-    {grantView==="kanban"&&<>
-      {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>{ setGrantView("list"); setShowAdd(true); }}/>}
-      <GrantKanban grants={data.grants} onUpdate={onUpdate} onAddClick={()=>{ setGrantView("list"); setShowAdd(true); }} onSelectGrant={setSelected} isReadOnly={isReadOnly}/>
-    </>}
-
-    {grantView==="list"&&<>
-    <div className="grants-pipeline-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-      {pipeline.map(s=>{const on=statusFilter===s;return <div key={s} {...interactive(()=>setStatusFilter(on?null:s),{label:`Filter grants to ${s}`})} style={{background:on?T.gold100:T.white,border:`1px solid ${on?T.gold500:T.bg3}`,borderRadius:12,padding:"14px 16px"}}>
-        <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>{s}</div>
-        <div style={{fontSize:22,fontWeight:800,color:T.ink,fontFamily:"'DM Serif Display',serif",lineHeight:1}}>{fmt(totals[s])}</div>
-        <div style={{fontSize:11,color:T.ink3,marginTop:4}}>{data.grants.filter(g=>g.status===s).length} grant{data.grants.filter(g=>g.status===s).length!==1?"s":""}</div>
-      </div>;})}
-    </div>
-
-    {statusFilter&&<div style={{display:"flex",alignItems:"center",gap:10,margin:"2px 0"}}>
-      <span style={{fontSize:12,color:T.ink3}}>Showing <strong style={{color:T.ink}}>{statusFilter}</strong> grants</span>
-      <button onClick={()=>setStatusFilter(null)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,padding:"3px 10px",fontSize:11,fontWeight:600,color:T.ink3,cursor:"pointer"}}>Clear ×</button>
-    </div>}
-
-    {data.grants.length===0&&<EmptyState icon="◉" title="No grants yet" message="Start tracking your grant portfolio — add one manually or use Find Grants to discover new funders." action="+ Add your first grant" onAction={()=>setShowAdd(true)}/>}
-    {data.grants.filter(g=>!statusFilter||g.status===statusFilter).map(g=>{
-      const pct=g.amount>0?Math.round((g.received||0)/g.amount*100):0;
-      const days=daysUntil(g.deadline);
-      // FIX-13 Part 6 — the funder's name is a real link to the grant.
-      return <Card key={g.id} accent={SC[g.status]} onClick={rowClick(tabHref("grants",{grantId:g.id}),()=>setSelected(g))} style={{cursor:"pointer"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:15,fontWeight:700,color:T.ink}}><RecordLink to={tabHref("grants",{grantId:g.id})} onOpen={()=>setSelected(g)}>{g.funder}</RecordLink></div>
-            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{g.program}</div>
-            {g.history&&g.history.length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>History: {g.history.join(" · ")}</div>}
-          </div>
-          <div style={{textAlign:"right"}}>
-            <div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmt(g.amount)}</div>
-            {g.status==="active"&&<div style={{fontSize:11,color:T.ink3}}>{pct}% received</div>}
-            {(()=>{const dl=deadlineMeta(g);return dl&&(dl.label==="Overdue"||days<=60)?<div style={{fontSize:11,color:dl.color,marginTop:2,fontWeight:600}}>{dl.label==="Overdue"?"Overdue":days+"d left"}</div>:null;})()}
-          </div>
-          <Pill label={g.status} color={SC[g.status]}/>
-        </div>
-        {g.status==="active"&&<div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}><div style={{height:"100%",width:`${pct}%`,background:T.greenMid,borderRadius:99}}/></div>}
-      </Card>;
-    })}
-    </>}
+    <GrantBoard onOpenGrant={openGrant} onAdd={()=>setShowAdd(true)} isReadOnly={isReadOnly} refreshKey={boardKey}/>
     </>}
     </>)}
   </div>;

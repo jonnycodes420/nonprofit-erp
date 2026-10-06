@@ -53,6 +53,53 @@ async function displayDateMod() { return _dd || (_dd = await import("./shared/di
 // awaits it), which is why nothing here has to copy a stage list.
 let _ps = null;
 async function proposalShapeMod() { return _ps || (_ps = await import("./shared/proposalShape.js")); }
+// GRANTS-1 — the eight grant stages and their aliases live in
+// shared/grantShape.js, the deadline window in shared/grantMilestones.js. They
+// load as the server starts, so a sentence (which is synchronous) can name a
+// stage by its label; the SQL builders await them all the same.
+let _gs = null, _gm = null;
+const _gsReady = import("./shared/grantShape.js").then(m => (_gs = m));
+const _gmReady = import("./shared/grantMilestones.js").then(m => (_gm = m));
+async function grantShapeMod() { return _gs || _gsReady; }
+async function grantMsMod() { return _gm || _gmReady; }
+const GRANT_DEADLINE_WINDOWS = ["30", "60", "90"];
+// A grant's status as one of the eight canonical keys, in SQL: every alias
+// normalizeStatus knows maps to its key here, so a legacy `pending` row is a
+// submitted grant in every grant figure. Keys are plain words, checked anyway.
+function grantStatusSql(G, col) {
+  const pairs = [...G.STATUS_KEYS.map(k => [k, k]), ...Object.entries(G.STATUS_ALIASES)];
+  if (pairs.some(([a, c]) => !/^[a-z_]+$/.test(a) || !/^[a-z_]+$/.test(c))) throw new Error("grant status keys must be plain words");
+  return `(CASE REGEXP_REPLACE(LOWER(TRIM(COALESCE(${col}, ''))), '\\s+', '_', 'g') ${pairs.map(([a, c]) => `WHEN '${a}' THEN '${c}'`).join(" ")} END)`;
+}
+// The grants a grant figure reads, each with `st` (its canonical stage) and
+// `pv` (its pipeline value: pipelineCentsFor in grantShape, in SQL: a stage
+// that holds an award at what was awarded, falling back to what was asked; any
+// other at what was asked). A sample grant is not counted, as on the pipeline.
+function grantBaseSql(G) {
+  const awarded = G.AWARDED_STATUS_KEYS.map(k => `'${k}'`).join(",");
+  const st = grantStatusSql(G, "gr.status");
+  return `(SELECT gr.*, ${st} AS st,
+                  ROUND(CASE WHEN ${st} IN (${awarded})
+                             THEN COALESCE(NULLIF(gr.amount_awarded, 0), COALESCE(gr.amount_requested, gr.amount), 0)
+                             ELSE COALESCE(gr.amount_requested, gr.amount, 0) END::numeric, 2) AS pv
+             FROM grants gr WHERE gr.org_id = ? AND gr.is_sample IS NOT TRUE)`;
+}
+// Which funders a win-rate figure reads: every one, one type, or "none" for a
+// funder with no type on file (or a grant not linked to a funder record).
+async function funderTypeFilter(p) {
+  const G = await grantShapeMod();
+  const t = p.funderType;
+  if (!t || t === "all") return { sql: "", args: [] };
+  if (t === "none") return { sql: " AND (d.funder_type IS NULL OR d.funder_type = '')", args: [] };
+  if (!G.FUNDER_TYPE_KEYS.includes(t)) throw new FigureParamError("funderType is not a funder type Steward knows.");
+  return { sql: " AND d.funder_type = ?", args: [t] };
+}
+function funderTypeWords(t) {
+  if (!t || t === "all") return "every funder";
+  if (t === "none") return "funders with no type on file";
+  const label = _gs ? _gs.funderTypeLabel(t) : "";
+  return label ? `${label.toLowerCase()} funders` : "these funders";
+}
 
 // ── PARAMETERS ─────────────────────────────────────────────────────────────
 // A source names the parameters it reads and their shape. Anything else is
@@ -1372,7 +1419,7 @@ const SOURCES = {
                    ROUND(COALESCE(gr.amount, 0)::numeric, 2) AS amount, gr.program AS detail
               FROM grants gr
              WHERE gr.org_id = ? AND gr.deadline IS NOT NULL AND gr.deadline <> '' AND gr.deadline >= ? AND gr.deadline <= ?
-               AND gr.status NOT IN ('awarded','active','closed','rejected')`,
+               AND gr.status NOT IN ('awarded','reporting','active','closed','rejected','declined')`,
       args: [orgId, p.from, p.to],
       order: "date ASC, id",
     }),
@@ -1407,6 +1454,178 @@ const SOURCES = {
                    ROUND(COALESCE(gr.amount, 0)::numeric, 2) AS amount, 'Grant awarded' AS detail
               FROM grants gr WHERE gr.org_id = ? AND gr.campaign_id = ? AND gr.awarded_at IS NOT NULL`,
       args: [orgId, p.campaign],
+    }),
+  },
+  // ── GRANTS-1 · THE GRANTS REPORTS SCREEN ────────────────────────────────
+  // Every number on Grants → Reports (routes/grantReports.js GET
+  // /grant-overview) is one of these, read through figure() there and opened
+  // here, so the screen and the drawer are one computation.
+  "grants-stage": {
+    label: "Grants at this stage",
+    measure: () => "sum",
+    params: { status: "word:required" },
+    sentence: p => {
+      const s = _gs ? _gs.statusFor(p.status) : null;
+      if (!s) return "Every grant at this stage.";
+      const at = _gs.AWARDED_STATUS_KEYS.includes(s.key) ? "what the funder awarded" : "what was asked for";
+      return `Every grant at ${s.label} (${s.blurb}), counted at ${at}. An older spelling of the stage counts here too.`;
+    },
+    sql: async (orgId, p) => {
+      const G = await grantShapeMod();
+      const key = G.normalizeStatus(p.status);
+      if (!key) throw new FigureParamError("status is not a grant stage Steward knows.");
+      return {
+        sql: `SELECT g.id, 'grant' AS type, g.funder_donor_id AS donor_id, COALESCE(d.name, g.funder) AS name,
+                     CASE WHEN g.awarded_at IS NOT NULL THEN TO_CHAR(g.awarded_at, 'YYYY-MM-DD') ELSE NULLIF(g.deadline, '') END AS date,
+                     g.pv AS amount, g.program AS detail
+                FROM ${grantBaseSql(G)} g
+                LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+               WHERE g.st = ?`,
+        args: [orgId, key],
+        order: "amount DESC NULLS LAST, id",
+      };
+    },
+  },
+  "grants-awarded-year": {
+    label: "Awarded this year",
+    measure: () => "sum",
+    params: { from: "date:required", to: "date:required", fiscal: "bool" },
+    sentence: (p, dd) => `Every grant marked awarded ${dd(p.from)} to ${dd(p.to)}${p.fiscal ? ", your fiscal year" : ""}, at what the funder awarded. It stays counted when the grant moves on to Reporting or Closed.`,
+    sql: async (orgId, p) => {
+      const G = await grantShapeMod();
+      const [o] = await query(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
+      const tz = orgTime.normalizeTimezone(o && o.timezone);
+      return {
+        sql: `SELECT g.id, 'grant' AS type, g.funder_donor_id AS donor_id, COALESCE(d.name, g.funder) AS name,
+                     TO_CHAR(g.awarded_at AT TIME ZONE ?, 'YYYY-MM-DD') AS date, g.pv AS amount, g.program AS detail
+                FROM ${grantBaseSql(G)} g
+                LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+               WHERE g.st IN (${G.AWARDED_STATUS_KEYS.map(k => `'${k}'`).join(",")}) AND g.awarded_at IS NOT NULL
+                 AND TO_CHAR(g.awarded_at AT TIME ZONE ?, 'YYYY-MM-DD') BETWEEN ? AND ?`,
+        args: [tz, orgId, tz, p.from, p.to],
+        order: "date DESC NULLS LAST, id",
+      };
+    },
+  },
+  "grant-goal": {
+    label: "Grant goal",
+    measure: () => "sum",
+    params: {},
+    sentence: () => "The amount the organisation means to win in grants this year, as an admin set it on Grants reports.",
+    sql: orgId => ({
+      sql: `SELECT o.id, 'goal' AS type, NULL::text AS donor_id, 'Grant goal' AS name, NULL::text AS date,
+                   ROUND(o.grant_goal_cents / 100.0, 2) AS amount, 'Set on Grants reports' AS detail
+              FROM orgs o WHERE o.id = ? AND o.grant_goal_cents IS NOT NULL`,
+      args: [orgId],
+    }),
+  },
+  "grant-goal-progress": {
+    label: "Toward the grant goal",
+    ratio: "share",
+    params: { from: "date:required", to: "date:required", fiscal: "bool" },
+    sentence: (p, dd) => `What was awarded ${dd(p.from)} to ${dd(p.to)}${p.fiscal ? ", your fiscal year" : ""}, as a share of the year's grant goal.`,
+    parts: p => [
+      { role: "numerator", label: "Awarded this year", key: "grants-awarded-year", params: { from: p.from, to: p.to, ...(p.fiscal ? { fiscal: "true" } : {}) } },
+      { role: "denominator", label: "Grant goal", key: "grant-goal", params: {} },
+    ],
+    blank: async (orgId, p, deps, parts) => (parts[1] && parts[1].totalRows ? null
+      : "No grant goal is set yet, so there is nothing to measure the awards against."),
+  },
+  "grants-won": {
+    label: "Awarded",
+    measure: () => "count",
+    params: { funderType: "word" },
+    sentence: p => `Every grant ${funderTypeWords(p.funderType)} awarded: Awarded, Reporting and Closed.`,
+    sql: async (orgId, p) => {
+      const G = await grantShapeMod();
+      const f = await funderTypeFilter(p);
+      return {
+        sql: `SELECT g.id, 'grant' AS type, g.funder_donor_id AS donor_id, COALESCE(d.name, g.funder) AS name,
+                     TO_CHAR(g.awarded_at, 'YYYY-MM-DD') AS date, g.pv AS amount, g.program AS detail
+                FROM ${grantBaseSql(G)} g
+                LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+               WHERE g.st IN (${G.AWARDED_STATUS_KEYS.map(k => `'${k}'`).join(",")})${f.sql}`,
+        args: [orgId, ...f.args],
+      };
+    },
+  },
+  "grants-decided": {
+    label: "Decided",
+    measure: () => "count",
+    params: { funderType: "word" },
+    sentence: p => `Every grant ${funderTypeWords(p.funderType)} have answered: awarded (Awarded, Reporting, Closed) or Declined. A grant still waiting is not here.`,
+    sql: async (orgId, p) => {
+      const G = await grantShapeMod();
+      const f = await funderTypeFilter(p);
+      return {
+        sql: `SELECT g.id, 'grant' AS type, g.funder_donor_id AS donor_id, COALESCE(d.name, g.funder) AS name,
+                     CASE WHEN g.st = 'declined' THEN NULLIF(g.declined_on, '') ELSE TO_CHAR(g.awarded_at, 'YYYY-MM-DD') END AS date,
+                     g.pv AS amount, CASE WHEN g.st = 'declined' THEN 'Declined' ELSE 'Awarded' END AS detail
+                FROM ${grantBaseSql(G)} g
+                LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+               WHERE g.st IN (${[...G.AWARDED_STATUS_KEYS, "declined"].map(k => `'${k}'`).join(",")})${f.sql}`,
+        args: [orgId, ...f.args],
+      };
+    },
+  },
+  "grant-win-rate": {
+    label: "Win rate",
+    ratio: "share",
+    params: { funderType: "word" },
+    sentence: p => `Of the grants ${funderTypeWords(p.funderType)} have answered, the share they awarded. A grant still waiting is neither a win nor a loss.`,
+    parts: p => [
+      { role: "numerator", label: "Awarded", key: "grants-won", params: p.funderType ? { funderType: p.funderType } : {} },
+      { role: "denominator", label: "Decided", key: "grants-decided", params: p.funderType ? { funderType: p.funderType } : {} },
+    ],
+    blank: async (orgId, p, deps, parts) => (parts[1] && parts[1].totalRows ? null
+      : `No grant from ${funderTypeWords(p.funderType)} has been decided yet, so there is no win rate to show.`),
+  },
+  // Counted through grantMilestones' ONE window (deadlinesInWindow), the one
+  // Home's line and the Deadlines screen use: overdue and not done is owed.
+  "grant-deadlines": {
+    label: "Grant deadlines ahead",
+    measure: () => "count",
+    params: { days: "word:required", today: "date:required" },
+    sentence: (p, dd) => `Every open grant deadline due by ${dd(orgTime.addDays(p.today, Number(p.days)))}, the next ${p.days} days from ${dd(p.today)}. One already past and not marked done is still owed, so it is counted too.`,
+    js: async (orgId, p) => {
+      if (!GRANT_DEADLINE_WINDOWS.includes(String(p.days))) throw new FigureParamError("days is 30, 60 or 90.");
+      const GM = await grantMsMod();
+      const rows = await query(
+        `SELECT m.id, m.kind, m.label, m.due_date, g.program, g.funder, g.funder_donor_id, d.name AS funder_name
+           FROM grant_milestones m
+           JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+           LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+          WHERE m.org_id = ? AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE
+          ORDER BY m.due_date ASC, m.id`, [orgId]);
+      return GM.deadlinesInWindow(rows.map(r => ({ ...r, dueDate: r.due_date })), p.today, { windowDays: Number(p.days) })
+        .map(r => ({ id: r.id, type: "deadline", donor_id: r.funder_donor_id || null, name: r.funder_name || r.funder || "",
+                     date: r.due_date, amount: null, detail: [GM.milestoneName(r), r.program].filter(Boolean).join(" · ") }));
+    },
+  },
+  "grant-reports-due": {
+    label: "Grant reports owed",
+    measure: () => "count",
+    params: {},
+    sentence: () => "Every grant report still owed: each report deadline not yet done, and each draft report with a due date that is not already one of those deadlines.",
+    sql: orgId => ({
+      sql: `SELECT m.id, 'report' AS type, g.funder_donor_id AS donor_id, COALESCE(d.name, g.funder) AS name, m.due_date AS date,
+                   NULL::numeric AS amount, CONCAT_WS(' · ', 'Report due', NULLIF(g.program, '')) AS detail
+              FROM grant_milestones m
+              JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+              LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+             WHERE m.org_id = ? AND m.kind = 'report_due' AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE
+            UNION ALL
+            SELECT r.id, 'report', g.funder_donor_id, COALESCE(d.name, g.funder), r.due_date,
+                   NULL::numeric, CONCAT_WS(' · ', 'Draft report', NULLIF(r.title, ''))
+              FROM grant_reports r
+              JOIN grants g ON g.id = r.grant_id AND g.org_id = r.org_id
+              LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+             WHERE r.org_id = ? AND r.status = 'draft' AND r.due_date IS NOT NULL AND r.due_date <> '' AND g.is_sample IS NOT TRUE
+               AND NOT EXISTS (SELECT 1 FROM grant_milestones m2
+                                WHERE m2.id = r.milestone_id AND m2.org_id = r.org_id AND m2.kind = 'report_due'
+                                  AND m2.state NOT IN ('done','skipped'))`,
+      args: [orgId, orgId],
+      order: "date ASC NULLS LAST, id",
     }),
   },
   // An umbrella goal's raised is the sum of its children's (the roll-up).

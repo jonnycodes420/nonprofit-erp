@@ -1455,7 +1455,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
       fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null),
       query(`SELECT id, funder, program, deadline FROM grants
               WHERE org_id=? AND deadline IS NOT NULL AND deadline <> '' AND deadline >= ? AND deadline <= ?
-                AND status NOT IN ('awarded','active','closed','rejected')
+                AND status NOT IN ('awarded','reporting','active','closed','rejected','declined')
               ORDER BY deadline ASC, id LIMIT 12`, [orgId, grantWin.from, grantWin.to]),
       isTeam ? query(`SELECT COALESCE(stage,'none') AS stage FROM donors
                        WHERE org_id=? AND deleted_at IS NULL AND assigned_to IS NOT NULL
@@ -13052,7 +13052,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // still-pursuing or rejected status (an un-award — the thermometer reverses).
   let newAwardedAt = prevRows[0]?.awarded_at || null;
   if (status === "awarded" && prevStatus !== "awarded" && !newAwardedAt) newAwardedAt = new Date().toISOString();
-  if (["prospecting", "loi", "applied", "submitted", "draft", "pending", "rejected"].includes(status)) newAwardedAt = null;
+  if (["prospecting", "researching", "loi", "invited", "applied", "submitted", "draft", "pending", "rejected", "declined"].includes(status)) newAwardedAt = null;
 
   const affected = await run(
     `UPDATE grants
@@ -13198,7 +13198,7 @@ app.get("/funders", requireAuth, wrap(async (req, res) => {
     `SELECT d.id, d.name, d.funder_type, d.email, d.city, d.state, d.total_giving,
             COUNT(g.id)::int AS grant_count,
             COALESCE(SUM(CASE WHEN g.status = ANY(?::text[]) THEN COALESCE(g.amount_requested, g.amount) END),0) AS open_requested,
-            COALESCE(SUM(CASE WHEN g.status='awarded' THEN COALESCE(g.amount_awarded, g.amount) END),0) AS awarded_total
+            COALESCE(SUM(CASE WHEN g.status IN ('awarded','reporting','closed') THEN COALESCE(g.amount_awarded, g.amount) END),0) AS awarded_total
        FROM donors d
        LEFT JOIN grants g ON g.funder_donor_id = d.id AND g.org_id = d.org_id AND g.is_sample IS NOT TRUE
       WHERE d.org_id=? AND d.deleted_at IS NULL AND LOWER(COALESCE(d.kind,'person')) IN ('organisation','organization')
@@ -13485,13 +13485,21 @@ app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
        LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
       WHERE ${where.join(" AND ")}`, args);
   const funds = await orgFundNamesG(orgId), officers = await orgOfficerNames(orgId);
-  const all = rows.map(r => ({
-    ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
-    // The next dated thing on this grant, whichever it is. Part 2 replaces this
-    // with the milestone table; until then the two dates the row already has are
-    // the honest answer rather than a blank column.
-    nextDeadline: [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null,
-  }));
+  // GRANTS-1: the next open milestone on each grant, in one read.
+  const M = await grantMsMod();
+  const nextMs = new Map((await query(
+    `SELECT DISTINCT ON (grant_id) grant_id, kind, label, due_date FROM grant_milestones
+      WHERE org_id=? AND state NOT IN ('done','skipped') ORDER BY grant_id, due_date`, [orgId])).map(m => [m.grant_id, m]));
+  const all = rows.map(r => {
+    const ms = nextMs.get(r.id);
+    const legacy = [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null;
+    const useMs = ms && (!legacy || ms.due_date <= legacy || G.holdsAward(r.status));
+    return {
+      ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
+      nextDeadline: useMs ? ms.due_date : legacy,
+      nextDeadlineLabel: useMs ? M.milestoneName(ms) : (legacy ? (legacy === r.report_due ? "Report due" : "Deadline") : null),
+    };
+  });
   const sort = ["deadline", "amount", "funder", "status"].includes(String(req.query.sort)) ? String(req.query.sort) : "deadline";
   const grants = G.sortGrants(all, sort);
   const byStatus = G.pipelineByStatus(all).map(r => ({
@@ -20924,7 +20932,7 @@ async function reportGrantRestricted(orgId) {
   const R = await restrictedMod();
   const org = await orgTz(orgId);
   const today = orgToday(org);                                       // ORG_TZ_SEAM_OK
-  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','reporting','closed')");
   const balances = rows.map(r => grantBalanceFrom(R, r, today));
   const restricted = balances.filter(b => b.restricted);
   const totals = R.restrictedTotals(balances);
