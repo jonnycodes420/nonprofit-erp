@@ -33,7 +33,11 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Home is a header (greeting and day) above one `.home-shell` panel: the work, then a 340px Today rail.**
   The note sits in the Thread header (`.thread-note`). Below 1100px the rail stacks first. Cards inside the panel
   draw no edge (`.home-block`). The board keeps real cards. (BUILD-89)
-- **The Today rail has two states and is never empty.** At rest it shows three numbers. A number opens its
+- **Home's header is the greeting and the day, with Why and What beside them (HOME-TIDY).** The day is said
+  once: the Today rail does not repeat it. Calls to make shows three people on Home, Drift the first five;
+  the rest open in place. One filled action per row at most; the list actions are outlines or text.
+- **The Today rail has two states and is never empty.** At rest it shows three numbers side by side, each
+  definition on the label's "?" (the profile tiles' keyboard-reachable convention, BUILD-100). A number opens its
   list and a row opens the donor, so every tile goes somewhere. No tab strip. (BUILD-89, BUILD-88d)
 - **A Thread row has Drift's shape.** It shows a face, then a wrapping sentence ending "Next: <step>"
   (`lowerFirst`), then one fact on the right: how late it is. Use `min-height:64px`, never a fixed height.

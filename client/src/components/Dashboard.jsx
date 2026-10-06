@@ -456,6 +456,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [driftStepDirty,setDriftStepDirty]=useState(false);
   // ENGAGE-1 — the Drift list can be put in engagement order (closest first).
   const [driftSort,setDriftSort]=useState("");
+  // HOME-TIDY: Home shows the first five drifting donors; the rest open in place.
+  const [driftExpanded,setDriftExpanded]=useState(false);
   const driftQs=s=>s==="engagement"?"sort=engagement":"";
   const loadDrift=(s=driftSort)=>apiFetch(`/drift${driftQs(s)?"?"+driftQs(s):""}`).then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
 
@@ -1565,7 +1567,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the list and on their own profile.
   const driftHighRows=driftRows0.filter(r=>r.confidence!=="medium");
   const driftMediumRows=driftRows0.filter(r=>r.confidence==="medium");
-  const driftRows=[...driftHighRows,...driftMediumRows];
+  const driftRowsAll=[...driftHighRows,...driftMediumRows];
+  const driftRows=surface==="home"&&!driftExpanded&&!driftAllData?driftRowsAll.slice(0,5):driftRowsAll;
   const driftEarlyStart=driftMediumRows.length>0?driftHighRows.length:-1;
   const openDriftLine=donorId=>{
     setDriftLineFor(donorId);setDriftLine("");setDriftStepDirty(false);
@@ -1728,12 +1731,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                           record. Dismiss is secondary and writes its reason. */}
                       <button onClick={()=>onNavigate("donors",{selectDonorId:r.donorId,openConversation:true})} disabled={isReadOnly}
                         title={isReadOnly?"Reactivate your subscription to make changes.":"Log the call and the next step comes back"}
-                        className="attn-row-action" style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        className="attn-row-action" style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 12px",color:T.greenDk,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Log the call
                       </button>
                       <button onClick={()=>openDriftLine(r.donorId)} disabled={isReadOnly}
                         title="Not drifting? Say why and it stops asking"
-                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",marginLeft:8,color:T.ink3,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        style={{background:"transparent",border:"none",padding:"7px 4px",marginLeft:6,color:T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Not drifting
                       </button>
                     </div>
@@ -1780,6 +1783,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             );
           })}
         </ul>
+        )}
+        {surface==="home"&&!driftAllData&&driftRowsAll.length>5&&(
+          <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:12,borderTop:"1px solid "+T.bg3}}>
+            <button data-testid="drift-more" onClick={()=>setDriftExpanded(v=>!v)} style={{...sLink,padding:0}}>
+              {driftExpanded?"Show the first five":`Show the other ${driftRowsAll.length-5}`}
+            </button>
+          </div>
         )}
         {/* BUILD-80 Part 7 — INSTITUTIONAL GIVING: a foundation's grant cycle
             is not a person's giving cadence. Their own list, grant-cycle
@@ -2179,7 +2189,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 rail of questions the org's own records can answer. An
                 answer's step lands on this Thread. */}
             {surface==="home"&&<div className="dash-cpad" style={{...cPad,paddingTop:0,paddingBottom:8}}>
-              <AskButtons isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
               <PinnedAnswers isReadOnly={isReadOnly}/>
             </div>}
             {threadsData&&threadsData.failed&&threadList.length===0&&<OneLineEmpty flush={onPanel} testId="thread-load-failed" line="The Thread could not be loaded just now." detail="Reload the page to try again."/>}
@@ -2661,11 +2670,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // a definition is what it counted. Each is one line of warm grey under the
   // label, saying exactly which rows the tile would show if you pressed it.
   const railTiles=[
-    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",
+    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
-    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,
+    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
@@ -2763,20 +2772,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     }
     return (
       <div>
-        <span style={{...sSerif,display:"inline-block",marginBottom:16}}>Today</span>
-        {/* the date is the header's line; on a phone the rail sits above the
-            header and the two read as a stutter, so it shows only beside it. */}
-        <div className="home-rail-date" style={{fontSize:12.5,color:T.ink3,margin:"0 0 18px"}}>{todayLongStr}</div>
-        <div style={{display:"flex",flexDirection:"column",gap:2}}>
+        <span style={{...sSerif,display:"inline-block",marginBottom:12}}>Today</span>
+        {/* HOME-TIDY — the day is the header's line, so the rail does not say it
+            again. Three numbers side by side; each definition travels with its
+            label on the profile tiles' "?" (keyboard-reachable, BUILD-100). */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,margin:"0 -8px"}}>
           {railTiles.map(tile=>(
             <div key={tile.key} {...interactive(()=>setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
               className="home-rail-row" data-testid={"rail-tile-"+tile.key}
-              style={{padding:"14px 12px",borderRadius:10,margin:"0 -12px",display:"flex",flexDirection:"column",gap:2}}>
+              style={{padding:"10px 8px",borderRadius:10,borderTop:"none",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
               {tile.n==null
-                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:42,padding:"4px 0"}}><SkeletonBar width={56} height={34}/></span>
-                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
-              <span style={{fontSize:13,lineHeight:1.4,color:T.ink3}}>{tile.label}</span>
-              <span data-testid={"rail-def-"+tile.key} style={{fontSize:11.5,lineHeight:1.45,color:T.ink3,opacity:0.85}}>{tile.definition}</span>
+                ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:34,padding:"2px 0"}}><SkeletonBar width={40} height={28}/></span>
+                :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
+              <span style={{fontSize:12,lineHeight:1.35,color:T.ink3}}>
+                {tile.short||tile.label}
+                <span tabIndex={0} title={tile.definition} aria-label={tile.definition} data-testid={"rail-def-"+tile.key}
+                  onClick={e=>e.stopPropagation()}
+                  style={{marginLeft:4,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,width:13,height:13,
+                          display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>
+              </span>
             </div>
           ))}
         </div>
@@ -2790,7 +2804,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         )}
         {/* PARITY-1 Part C — the thank-you calls owed, and the annual goal under them. */}
-        <CallsToMake isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
+        <CallsToMake limit={3} isAdmin={isAdmin} isReadOnly={isReadOnly} onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
       </div>
     );
   })();
@@ -3030,8 +3044,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {/* BUILD-34 edit affordance — a quiet on-palette text button by the
             greeting, not a floating pencil. Done saves optimistically
             (rollback on error); Esc cancels; Reset restores the default. */}
+        {/* HOME-TIDY — Why and What sit by the greeting, the place you ask
+            from, instead of in the middle of the Thread. */}
+        {surface==="home"&&!editMode&&(
+          <div style={{marginLeft:"auto",flexShrink:0,alignSelf:"center"}}>
+            <AskButtons compact isReadOnly={isReadOnly} onStepTaken={()=>loadThreads(threadScope)}/>
+          </div>
+        )}
         {layout!==undefined&&(
-          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1}}>
+          <div style={{marginLeft:surface==="home"&&!editMode?16:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1}}>
             {editMode?(
               <>
                 <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>

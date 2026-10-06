@@ -98,11 +98,18 @@ function readAs(a) {
 
 // ── THE TWO BUTTONS ────────────────────────────────────────────────────────
 // `scope` is { donor: { id, name } } on a profile; nothing on Home.
-export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-buttons" }) {
+export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-buttons", compact = false }) {
   const [open, setOpen] = useState(null);       // { mode, replay? }
   const [kept, setKept] = useState(() => (scope ? null : readKept()));
   const donor = scope && scope.donor;
-  const btn = mode => (
+  // HOME-TIDY: in Home's header the two buttons are small pills.
+  const pill = mode => (
+    <button key={mode} type="button" className="ask-btn" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
+      aria-expanded={!!open && open.mode === mode} title={BLURB[mode]}
+      style={{ background: T.white, border: "1px solid " + T.greenDk, color: T.greenDk, borderRadius: 999, padding: "6px 16px",
+        fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "'Fraunces', Georgia, serif" }}>{MODES[mode]}</button>
+  );
+  const btn = mode => compact ? pill(mode) : (
     <button key={mode} type="button" className="ask-btn" data-testid={`ask-${mode}`} onClick={() => setOpen({ mode, n: Date.now() })}
       aria-expanded={!!open && open.mode === mode}
       style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 0, flex: "1 1 180px", maxWidth: 300,
@@ -112,7 +119,7 @@ export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-butto
     </button>
   );
   return (
-    <div data-testid={testid} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch", minWidth: 0 }}>
+    <div data-testid={testid} style={{ display: "flex", flexWrap: "wrap", gap: compact ? 8 : 10, alignItems: compact ? "center" : "stretch", minWidth: 0 }}>
       <style>{RAIL_CSS}</style>
       {btn("why")}{btn("what")}
       {kept && <button type="button" data-testid="ask-kept" onClick={() => setOpen({ mode: "thread", replay: kept.turns, n: Date.now() })}
@@ -243,17 +250,17 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
         )}
       </div>
 
-      {mode === "thread" && lastDone && (
+      {(mode !== "thread" ? !!lists && !busy : lastDone) && (
         <div style={{ borderTop: "1px solid " + T.bg2, padding: "12px 18px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
           {ai ? (
             <form data-testid="ask-chat" onSubmit={e => { e.preventDefault(); const v = text.trim(); if (v && !busy) { setText(""); ask({ text: v, go: { via: "ask", text: v, thread: true } }); } }}
               style={{ display: "flex", gap: 8 }}>
               <input aria-label="Ask a follow-up" data-testid="ask-chat-input" value={text} onChange={e => setText(e.target.value)}
-                placeholder="Ask about this in your own words" style={INPUT} />
+                placeholder={mode === "thread" ? "Ask about this in your own words" : mode === "why" ? "Or ask why in your own words" : "Or ask your own question"} style={INPUT} />
               <button type="submit" disabled={busy || !text.trim()} style={{ ...BTN, opacity: busy || !text.trim() ? 0.5 : 1 }}>Ask</button>
             </form>
-          ) : <div data-testid="ask-chat-off" style={{ fontSize: 13, color: T.ink3 }}>Follow-up questions return when AI is on.</div>}
-          {!scope && <div style={{ display: "flex", gap: 12 }}>
+          ) : <div data-testid="ask-chat-off" style={{ fontSize: 13, color: T.ink3 }}>{turns.length ? "Follow-up questions return when AI is on." : "Questions in your own words return when AI is on."}</div>}
+          {!scope && turns.length > 0 && mode === "thread" && <div style={{ display: "flex", gap: 12 }}>
             {kept && kept.turns[0].text === (turns[0] && turns[0].text)
               ? <button type="button" data-testid="ask-unkeep" onClick={unkeep} style={{ background: "none", border: "none", padding: 0, color: T.ink3, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Stop keeping this thread on Home</button>
               : <button type="button" data-testid="ask-keep" onClick={keep} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Keep this thread on Home</button>}
