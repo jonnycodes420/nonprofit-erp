@@ -166,6 +166,7 @@ CORE=(
   ask4-query-guard
   cal1-moves
   grants1-system
+  sheets1-import
   fix28-calendar-rule
   fix12-ai-switch
   parity4-started

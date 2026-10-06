@@ -17,6 +17,7 @@ import GrantLibrary from "./GrantLibrary";
 import { GrantReportsPanel } from "./GrantReports";
 import GrantOverview from "./GrantOverview";
 import GrantEmailPath from "./GrantEmailPath";
+import SheetImport from "./SheetImport";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -379,6 +380,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
   const [subTab,setSubTab]=useState(SUBTABS.some(([k])=>k===initialSection)?initialSection:"pipeline");
   const [openFunderId,setOpenFunderId]=useState("");
   const [boardKey,setBoardKey]=useState(0);
+  const [sheetOpen,setSheetOpen]=useState(false);
   const [openMiss,setOpenMiss]=useState("");
   const [selected,setSelectedRaw]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
   // FIX-14 Part 5: a grant is /app/grants?grant=<id> and a section is
@@ -478,7 +480,11 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     {subTab==="reports"&&<GrantOverview onOpenGrant={openGrant}/>}
     {subTab==="deadlines"&&<>{openMiss&&<div role="status" style={{fontSize:13,color:T.ink3}}>{openMiss}</div>}<DeadlinesView isReadOnly={isReadOnly} isAdmin={isAdmin} onOpenGrant={openGrant}/></>}
     {subTab==="pipeline"&&<>
-    <GrantEmailPath/>
+    <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{flex:"1 1 260px"}}><GrantEmailPath/></div>
+      {!isReadOnly&&<button onClick={()=>setSheetOpen(true)} data-testid="grants-bring-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,color:T.ink,cursor:"pointer"}}>Bring in a spreadsheet</button>}
+    </div>
+    {sheetOpen&&<SheetImport where="grants" onClose={()=>setSheetOpen(false)} onDone={()=>setBoardKey(k=>k+1)}/>}
     {showAdd&&(()=>{
       const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
       return <Card style={{display:"flex",flexDirection:"column",gap:12}}>

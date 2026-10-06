@@ -14299,6 +14299,15 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
   const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
   const byName = (u && u.name) || who.name;
   const created = [], written = [];
+  // SHEETS-1: a file brought in from Grants is kept with the import, and every
+  // column that is not a grant field is kept with it. The file is checked
+  // before anything is written, so a bad file writes nothing.
+  const SH = req.body && req.body.sheet ? require("./sheets") : null;
+  let sheetFile = null, keptSheet = null;
+  if (SH) {
+    sheetFile = await SH.prepareSheetFile(orgId, req.body.sheet);
+    if (sheetFile.error) return res.status(400).json(sheetFile);
+  }
 
   await withTransaction(async (client) => {
     const trun = (sql, args) => runTx(client, sql, args);
@@ -14367,6 +14376,13 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
       }
       written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
     }
+    if (SH) {
+      const placed = new Set(Object.values(plan.mapping || {}));
+      keptSheet = await SH.sheetRowTx(trun, { orgId, kind: "grant_import", title: String(req.body.sheet.fileName || "Grant tracker"),
+        file: sheetFile, sheetName: req.body.sheet.sheetName, headers: req.body.headers, rows: req.body.rows,
+        unplacedCols: (req.body.headers || []).map(h => String(h == null ? "" : h).trim()).filter(h => h && !placed.has(h)),
+        grantIds: written.map(w => w.id), who: { id: who.id, name: byName } });
+    }
   });
 
   const pipelineCents = plan.pipelineCents;
@@ -14379,6 +14395,7 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
       created: created.length, skipped: plan.counts.skipped, refused: plan.refused.length,
       pipelineCents }, money.formatCentsPlain),
     writes: plan.writes, doesNotWrite: plan.doesNotWrite,
+    ...(keptSheet ? { sheet: { id: keptSheet.id, unplacedColumns: keptSheet.unplaced.columns } } : {}),
     wrote: true,
   });
 }));

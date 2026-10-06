@@ -609,6 +609,14 @@ app.use((req, res, next) =>
   /^\/grants\/[^/]+\/documents$/.test(req.path)
     ? express.json({ limit: "30mb" })(req, res, next)
     : next());
+// SHEETS-1: a spreadsheet brought in arrives as its rows plus the original
+// file (10MB decoded, routes/sheets.js SHEET_MAX_BYTES), so the grant import
+// and the board-report store take 16mb. THIS LIMIT AND THAT CAP ARE ONE
+// DECISION: move both or neither.
+app.use((req, res, next) =>
+  req.method === "POST" && /^\/(sheets\/read|sheets\/board-reports|grants\/import(\/preview)?)$/.test(req.path)
+    ? express.json({ limit: "16mb" })(req, res, next)
+    : next());
 // PARITY-1 Part B — a file on a conversation or a note is capped at 10MB of
 // DECODED file (interactionFiles.FILE_MAX_BYTES), ~13.7MB of base64 plus the
 // JSON around it. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
@@ -3956,7 +3964,8 @@ app.use(require("./routes/prospect").routers.r0);      // PROSPECT-1
 app.use(require("./routes/grantSystem").routers.r0);   // GRANTS-1 funders, pipeline, checklist, renewals
 app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, documents, reports, drafting
 app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
-app.use(require("./routes/grantReports").routers.r0);  // GRANTS-1 the grants reports
+app.use(require("./routes/grantReports").routers.r0);
+app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
@@ -10785,6 +10794,7 @@ require("./routes/grantSystem").mount(GRANTS1_CTX);
 require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
 require("./routes/grantReports").mount(GRANTS1_CTX);
+require("./routes/sheets").mount(GRANTS1_CTX);
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

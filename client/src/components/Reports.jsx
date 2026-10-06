@@ -4,7 +4,8 @@ import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID } from "../lib/reportsRail";
+import StoredReports from "./StoredReports";
 import { displayDate } from "../../../shared/displayDate";
 import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
@@ -282,6 +283,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const onSavedDashboard = isSavedDashboard(active);
   const onBoardPack = active === BOARD_PACK_ID;
   const onNewDashboard = active === NEW_DASH_ID;
+  const onStored = active === STORED_REPORTS_ID;
   const fsm = fiscalStart || 7;
   const CUR_FY = fyOf(fsm);
   const PRESETS = presetsFor(CUR_FY, fsm);
@@ -706,7 +708,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {onBoardPack && <BoardPackPanel onNavigate={onNavigate}
           onOpenSettings={() => onNavigate && onNavigate("settings", { section: "org", focus: "board-pack" })} />}
 
-        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && active !== BUILD_ID
+        {onStored && <StoredReports />}
+
+        {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && active !== BUILD_ID
           && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
 
         {isTab && <Card style={{ padding: "18px 22px" }}>
