@@ -91,6 +91,18 @@ async function seedProspect1(q, ORG, { TODAY, gen = GEN, sch = SCH, who = ["u_b7
       [id, ORG, name, ein, ...who]);
     for (const [d, a, f] of gifts) await gift(id, d, a, f);
   }
+  // WIRE-1: this runs after the seed's main rollup, so these people's totals
+  // are recomputed here from their gifts, the same rollup seed-demo.js runs.
+  // Without it Rafael Quintero-Byrne read lifetime $0 beside two $100 gifts.
+  const ids = [...PEOPLE.map(p => pre + p[0]), ...FOUNDATIONS.map(f => pre + f[0]), `${pre}employer`];
+  await q(`
+    UPDATE donors d SET
+      total_giving = COALESCE(s.total,0), gift_count = COALESCE(s.n,0),
+      last_gift_date = s.last_date, last_gift_amount = COALESCE(s.last_amt,0), first_gift_date = s.first_date
+    FROM (SELECT g.donor_id, SUM(g.amount) total, COUNT(*) n, MAX(g.date) last_date, MIN(g.date) first_date,
+                 (ARRAY_AGG(g.amount ORDER BY g.date DESC))[1] last_amt
+            FROM gifts g WHERE g.org_id=$1 AND g.donor_id = ANY($2) GROUP BY g.donor_id) s
+    WHERE d.id = s.donor_id AND d.org_id = $1`, [ORG, ids]);
   console.log(`[seed] PROSPECT-1: ten prospects and two foundations with EINs`);
 }
 
