@@ -128,7 +128,7 @@ ok(has(appSrc, "initialReport={reportsIntent?.report}"), "Reports receives initi
 ok(has(reports, "initialReport, initialParams"), "Reports consumes initialReport/initialParams");
 ok(has(reports, 'initialParams?.from && initialParams?.to) ? "custom"'), "Reports maps a from/to intent onto the custom preset");
 
-// FIX-30 — App carries a Communications deep link as `subtab` (App.jsx
+// FIX-30: App carries a Communications deep link as `subtab` (App.jsx
 // navigateTo → setCommsInitialNav(opts.subtab)). The Dashboard's Sequences
 // "Open" sent `section`, which App drops, so it landed on Overview.
 // HOW IT WENT RED: on main, the Dashboard's call carried section:"sequences".

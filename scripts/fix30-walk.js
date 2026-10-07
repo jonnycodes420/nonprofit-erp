@@ -24,7 +24,7 @@ fs.mkdirSync(OUT, { recursive: true });
 
 let failures = 0;
 const ok = (label, cond, detail) => {
-  console.log((cond ? "  PASS  " : "  FAIL  ") + label + (cond ? "" : " — " + String(JSON.stringify(detail) ?? "").slice(0, 400)));
+  console.log((cond ? "  PASS  " : "  FAIL  ") + label + (cond ? "" : ": " + String(JSON.stringify(detail) ?? "").slice(0, 400)));
   if (!cond) failures++;
 };
 

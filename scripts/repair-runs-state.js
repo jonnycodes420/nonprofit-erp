@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// FIX-30 Part 1 — PUT BACK THE POSTAL STATES THE AGENT OVERWROTE WITH "runs".
+// FIX-30 Part 1 · PUT BACK THE POSTAL STATES THE AGENT OVERWROTE WITH "runs".
 //
 // Before HARDEN-1, an Agent contact update wrote the step's run state ("runs")
 // into the person's postal state. The code is fixed; the rows it wrote are not.

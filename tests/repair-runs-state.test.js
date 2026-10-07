@@ -1,4 +1,4 @@
-// FIX-30 Part 1 — the "runs" postal-state repair (scripts/repair-runs-state.js).
+// FIX-30 Part 1 · the "runs" postal-state repair (scripts/repair-runs-state.js).
 //
 // Before HARDEN-1, an Agent contact update wrote "runs" into a person's postal
 // state, and prod still holds those rows, including a real customer's. This
