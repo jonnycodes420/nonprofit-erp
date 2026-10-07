@@ -26,6 +26,7 @@ const auditMw = require("../middleware/auditTrail");
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
 // this router and routes/finance.js cannot disagree about any of them.
 const DEP = require("../depositsFile");
+const DTAGS = require("../donorTags");   // FIX-33: internal flags never reach a screen as tags
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
@@ -3679,7 +3680,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
     ...d,
-    tags: JSON.parse(d.tags || "[]"),
+    tags: DTAGS.visibleTags(d.tags),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
     drift: driftBadgeField(driftMap.get(d.id)),
@@ -3751,7 +3752,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
-    tags: JSON.parse(d.tags || "[]"),
+    tags: DTAGS.visibleTags(d.tags),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
     drift: driftBadgeField(driftMap.get(d.id)),
@@ -3869,7 +3870,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Assigned to", d => d.assigned_to_name || ""],
     ["Closeness", d => (d.closeness ? d.closeness.charAt(0).toUpperCase() + d.closeness.slice(1) : "")],
     ["City", d => d.city || ""], ["State", d => d.state || ""],
-    ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
+    ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
   // PROSPECT-1 — screening results are never in the default export. An admin
@@ -4011,7 +4012,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
 
   const d = rows[0];
-  d.tags = JSON.parse(d.tags || "[]");
+  d.tags = DTAGS.visibleTags(d.tags);
   d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
   // FIX-11 Part 1 — the gift carries its fund's NAME, not just its id. The
   // timeline line reads "$100,000.00 · General Operating · ACH", and a screen
@@ -5626,10 +5627,14 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     }
   }
 
+  // FIX-33: the client never sees an internal flag (donorTags.js), so the
+  // list it sends back is kept with the row's own flags, never erasing them.
+  const [tagRow] = await query("SELECT tags FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const keptTags = DTAGS.keepInternal(tagRow ? tagRow.tags : "[]", tags || []);
   const affected = await run(
     `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
-    [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(tags || []), notes || "",
+    [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(keptTags), notes || "",
      city || null, state || null, zip || null, employer || null,
      req.params.id, req.user.orgId]
   );
@@ -5677,7 +5682,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
-  d.tags = JSON.parse(d.tags || "[]");
+  d.tags = DTAGS.visibleTags(d.tags);
   d.matching_gift = lookupMatchingGift(d.employer);
   res.json(d);
 }));

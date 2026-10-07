@@ -38,7 +38,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
-import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
+import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance, ImportRefusalsLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
@@ -1975,6 +1975,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* BUILD-76 — the drift reason, inline on the record (hover-only
                 would hide the one sentence that explains the badge). */}
             {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
+            {/* FIX-33 — the rows an import could not read are their own plain
+                line (admins only, with the rows behind it), never a raw tag and
+                never folded into the drift sentence above. */}
+            <ImportRefusalsLine status={status}/>
             {/* BUILD-89S 89f — "Gives $50 monthly through PayPal" when the
                 provider named it; "Looks like $50 monthly through PayPal"
                 while it is still Steward's own reading of the pattern. One

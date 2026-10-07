@@ -1719,6 +1719,10 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
             reconciliation: R,
             // The FILE's own figures, from the rows that were submitted.
             moveFile: moveFileFactsFrom(donors, gifts),
+            // FIX-33 — the rows that could not be read, kept on the run so a
+            // person's profile can open theirs ("2 rows from your import
+            // couldn't be read. See them"), not only this one screen.
+            refusedRows: (totals.refusedRows || []).slice(0, 5000).map(r => ({ line: r.line ?? null, reason: r.reason || null, name: r.name || null, raw: r.raw || {} })),
           },
         })});
       } catch (e) {
