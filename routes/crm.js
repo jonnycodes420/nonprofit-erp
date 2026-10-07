@@ -94,6 +94,7 @@ const {
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
   sendDonorLifecycleEmail, fromWithDisplayName,
+  openAdminTask,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -19592,6 +19593,14 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
       [id, teamId, org.id]);
   }
   const pending = givingPage.p2p_requires_approval === true;
+  // WIRE-1: a page waiting for approval is a task for an admin, linked to the
+  // person, so it is somebody's job and not a row nobody opens.
+  if (pending && openAdminTask) {
+    await openAdminTask(org.id, {
+      title: `Approve ${name.trim()}'s fundraising page for ${givingPage.title || "a giving page"}`, priority: "high",
+      donorId: personId || null, actorId: "system:p2p-signup", actorName: "The fundraiser, from the sign-up page",
+    }).catch(e => console.error("[p2p] approval task:", e.message));
+  }
 
   const frontendUrl = publicAppUrl();
   const publicUrl = `${frontendUrl}/give/${req.params.orgSlug}/${req.params.pageSlug}/${slug}`;

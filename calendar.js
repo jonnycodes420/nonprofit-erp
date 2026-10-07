@@ -16,12 +16,13 @@
 //
 // FIX-28: THE ONE RULE. Every dated thing in Steward is on this calendar:
 // meetings, next steps and tasks, grant deadlines, shifts, events, journey
-// steps, campaign sends and pledge instalments (birthdays when asked). A new
+// steps, campaign sends and pledge instalments, memberships ending, auctions
+// closing, campaigns and giving pages ending (WIRE-1) (birthdays when asked). A new
 // kind of dated row joins TYPES here, or it is not on the calendar.
 const { query } = require("./db");
 
-const TYPES = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "birthday"];
-const DEFAULT_ON = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"];   // birthdays off by default
+const TYPES = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "birthday"];
+const DEFAULT_ON = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign"];   // birthdays off by default
 
 const pad = n => String(n).padStart(2, "0");
 // The labels shared/grantMilestones.js gives each kind (an ES module, so the
@@ -98,7 +99,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
     // Grant deadlines, open ones only, owned by the grant's officer. Moved here
     // through the deadline's own route, which moves its follow-up with it.
     jobs.push(query(
-      `SELECT m.id, m.kind, m.label, m.due_date, m.grant_id, g.program, g.officer_id, u.name AS officer_name,
+      `SELECT m.id, m.kind, m.label, m.due_date, m.grant_id, m.thread_id, g.program, g.officer_id, u.name AS officer_name,
               COALESCE(d.name, g.funder) AS funder_name, d.id AS donor_id
          FROM grant_milestones m JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
          LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
@@ -111,7 +112,26 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         const name = DEADLINE_LABEL[r.kind] && !(r.kind === "custom" && r.label) ? DEADLINE_LABEL[r.kind] : (r.label || "Deadline");
         out.push({ id: `deadline:${r.id}`, type: "deadline", title: `${name}: ${r.funder_name || "a grant"}`, start: day, end: day, allDay: true,
           ownerId: r.officer_id || null, ownerName: r.officer_name || "", donorId: r.donor_id || null, donorName: r.funder_name || null,
-          detail: r.program ? `Grant: ${r.program}` : "A grant deadline", editable: { move: true, resize: false }, ref: { milestoneId: r.id, grantId: r.grant_id } });
+          detail: r.program ? `Grant: ${r.program}` : "A grant deadline", editable: { move: true, resize: false }, ref: { milestoneId: r.id, grantId: r.grant_id },
+          ...(r.thread_id ? { opensThread: r.thread_id } : {}) });
+      })));
+    // WIRE-1: a grant report with its own due date and no deadline behind it
+    // (a report with a milestone is already on the calendar as that milestone).
+    jobs.push(query(
+      `SELECT r.id, r.title, r.due_date, r.grant_id, g.program, g.officer_id, u.name AS officer_name,
+              COALESCE(d.name, g.funder) AS funder_name, d.id AS donor_id
+         FROM grant_reports r JOIN grants g ON g.id = r.grant_id AND g.org_id = r.org_id
+         LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
+         LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+        WHERE r.org_id = ? AND r.milestone_id IS NULL AND r.submitted_on IS NULL AND COALESCE(r.status, '') <> 'submitted'
+          AND g.is_sample IS NOT TRUE AND r.due_date IS NOT NULL
+          AND LEFT(r.due_date, 10) >= ? AND LEFT(r.due_date, 10) <= ?
+          AND (?::text IS NULL OR g.officer_id = ?)`,
+      [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {
+        const day = String(r.due_date).slice(0, 10);
+        out.push({ id: `report:${r.id}`, type: "deadline", title: `Report due: ${r.funder_name || r.title || "a grant"}`, start: day, end: day, allDay: true,
+          ownerId: r.officer_id || null, ownerName: r.officer_name || "", donorId: r.donor_id || null, donorName: r.funder_name || null,
+          detail: r.title || (r.program ? `Grant: ${r.program}` : "A grant report"), editable: { move: false, resize: false }, ref: { reportId: r.id, grantId: r.grant_id } });
       })));
   }
   if (want.has("shift")) {
@@ -141,7 +161,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   }
   if (want.has("journey")) {
     jobs.push(query(
-      `SELECT st.id, st.label, st.due_date::text AS due, st.owner_id, st.owner_name, d.id AS donor_id, d.name AS donor_name
+      `SELECT st.id, st.label, st.due_date::text AS due, st.owner_id, st.owner_name, st.thread_id, d.id AS donor_id, d.name AS donor_name
          FROM cultivation_plan_steps st JOIN cultivation_plans p ON p.id = st.plan_id AND p.org_id = st.org_id
          JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id AND d.deleted_at IS NULL
         WHERE st.org_id = ? AND st.closed_at IS NULL AND COALESCE(st.status, 'open') NOT IN ('done','skipped')
@@ -150,7 +170,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       [orgId, from, to, owner, owner, owner]).then(rows => rows.forEach(r => {
         const day = String(r.due).slice(0, 10);
         out.push({ id: `journey:${r.id}`, type: "journey", title: `${r.label}: ${r.donor_name}`, start: day, end: day, allDay: true,
-          ownerId: r.owner_id, donorId: r.donor_id, donorName: r.donor_name, detail: "A journey step", editable: { move: false, resize: false }, ref: { stepId: r.id } });
+          ownerId: r.owner_id, ownerName: r.owner_name || "", donorId: r.donor_id, donorName: r.donor_name, detail: "A journey step", editable: { move: false, resize: false }, ref: { stepId: r.id },
+          ...(r.thread_id ? { opensThread: r.thread_id } : {}) });
       })).catch(() => {}));
   }
   if (want.has("send")) {
@@ -180,6 +201,56 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
           editable: { move: false, resize: false }, ref: { pledgeId: r.id } });
       })));
   }
+  // WIRE-1: memberships ending. Active and grace rows only; a lapsed or
+  // cancelled membership has already ended. Read only: the end date is set
+  // by the level and the renewal, on the membership itself.
+  if (want.has("membership")) {
+    jobs.push(query(
+      `SELECT m.id, m.expires_on, m.status, l.name AS level_name, d.id AS donor_id, d.name AS donor_name
+         FROM memberships m JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id AND d.deleted_at IS NULL
+         LEFT JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+        WHERE m.org_id = ? AND m.status IN ('active','grace') AND m.expires_on IS NOT NULL
+          AND LEFT(m.expires_on, 10) >= ? AND LEFT(m.expires_on, 10) <= ?`,
+      [orgId, from, to]).then(rows => rows.forEach(r => {
+        const day = String(r.expires_on).slice(0, 10);
+        out.push({ id: `membership:${r.id}`, type: "membership", title: `Membership ends: ${r.donor_name}`, start: day, end: day, allDay: true,
+          donorId: r.donor_id, donorName: r.donor_name, detail: [r.level_name, r.status === "grace" ? "in its grace period" : null].filter(Boolean).join(" · "),
+          editable: { move: false, resize: false }, ref: { membershipId: r.id } });
+      })));
+  }
+  // WIRE-1: an auction closing, at its own time in the org's timezone.
+  if (want.has("auction")) {
+    jobs.push(query(
+      `SELECT a.id, a.title, to_char(a.closes_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS at
+         FROM auctions a WHERE a.org_id = ? AND a.status = 'active'
+          AND (a.closes_at AT TIME ZONE ?)::date BETWEEN ?::date AND ?::date`,
+      [tz, orgId, tz, from, to]).then(rows => rows.forEach(r => out.push({
+        id: `auction:${r.id}`, type: "auction", title: `Auction closes: ${r.title}`, start: r.at, end: `${r.at.slice(0, 11)}${addMin(r.at.slice(11), 30)}`,
+        allDay: false, detail: "Bidding ends", editable: { move: false, resize: false }, ref: { auctionId: r.id },
+      }))));
+  }
+  // WIRE-1: a campaign's end date, and a giving page's (peer-to-peer pages
+  // are giving pages with the switch on, so they come with it).
+  if (want.has("campaign")) {
+    jobs.push(query(
+      `SELECT c.id, c.name, c.end_date::text AS day FROM campaigns c
+        WHERE c.org_id = ? AND c.end_date IS NOT NULL AND c.is_sample IS NOT TRUE
+          AND c.end_date >= ?::date AND c.end_date <= ?::date`,
+      [orgId, from, to]).then(rows => rows.forEach(r => {
+        const day = String(r.day).slice(0, 10);
+        out.push({ id: `campaign:${r.id}`, type: "campaign", title: `${r.name || "A campaign"} ends`, start: day, end: day, allDay: true,
+          detail: "The campaign's end date", editable: { move: false, resize: false }, ref: { campaignId: r.id } });
+      })));
+    jobs.push(query(
+      `SELECT p.id, p.title, p.ends_on::text AS day, p.p2p_enabled FROM giving_pages p
+        WHERE p.org_id = ? AND p.ends_on IS NOT NULL AND COALESCE(p.status, 'active') <> 'archived'
+          AND p.ends_on >= ?::date AND p.ends_on <= ?::date`,
+      [orgId, from, to]).then(rows => rows.forEach(r => {
+        const day = String(r.day).slice(0, 10);
+        out.push({ id: `page:${r.id}`, type: "campaign", title: `${r.title || "A giving page"} ends`, start: day, end: day, allDay: true,
+          detail: r.p2p_enabled ? "A peer-to-peer page" : "A giving page", editable: { move: false, resize: false }, ref: { givingPageId: r.id } });
+      })));
+  }
   if (want.has("birthday")) {
     jobs.push(query(
       `SELECT id, name, birth_month, birth_day FROM donors WHERE org_id = ? AND deleted_at IS NULL AND deceased IS NOT TRUE
@@ -193,9 +264,28 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       }));
   }
   await Promise.all(jobs);
-  markConflicts(out);
-  out.sort((a, b) => String(a.start).localeCompare(String(b.start)) || a.type.localeCompare(b.type));
-  return out;
+  const items = dedupeOpenedSteps(out);
+  markConflicts(items);
+  items.sort((a, b) => String(a.start).localeCompare(String(b.start)) || a.type.localeCompare(b.type));
+  return items;
+}
+
+// WIRE-1: ONE THING, ONCE. A journey step or a grant deadline that opened a
+// Thread step is the same commitment as that step. The journey or deadline
+// item is kept (it says what the step is for) and the step item for that
+// thread is dropped, so the day shows it once and Google or Outlook gets it
+// once. The kept item takes the step's owner when it has none of its own.
+function dedupeOpenedSteps(items) {
+  const byThread = new Map();
+  for (const i of items) if (i.opensThread) byThread.set(String(i.opensThread), i);
+  if (!byThread.size) return items;
+  return items.filter(i => {
+    if (i.type !== "step" || !i.ref || !i.ref.threadId) return true;
+    const keep = byThread.get(String(i.ref.threadId));
+    if (!keep) return true;
+    if (!keep.ownerId && i.ownerId) { keep.ownerId = i.ownerId; keep.ownerName = i.ownerName || ""; }
+    return false;
+  });
 }
 
 // Two of one person's meetings at once; an event and a shift on top of each

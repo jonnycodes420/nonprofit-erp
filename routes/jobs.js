@@ -15,7 +15,7 @@ const {
   deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
-  processMembershipRenewals, processNetworkGate, processPhotoQueue,
+  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
   processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
@@ -263,6 +263,13 @@ if (!backgroundTicksDisabled()) {
 if (!backgroundTicksDisabled()) {
   setTimeout(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 95000);
   setInterval(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 5 * 60 * 1000);
+}
+
+// WIRE-1: an auction item won and not paid for two days opens a step on the
+// winner's Thread. Hourly is plenty; the sweep is idempotent per item.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 100000);
+  setInterval(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 60 * 60 * 1000);
 }
 
 // BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is

@@ -129,7 +129,7 @@ const parseJson = (v, d) => { if (v && typeof v === "object") return v; try { re
 
 function mount(ctx) {
 const { backgroundTicksDisabled, checkWriteAccess, markDonorsForGeocoding, orgToday, orgTz, query, recalcDonorSummary,
-  recordTick, requireAuth, run, runTx, queryTx, uuid, withAdvisoryLock, withTransaction, wrap } = ctx;
+  recordTick, requireAuth, run, runTx, queryTx, uuid, withAdvisoryLock, withTransaction, wrap, openAdminTask } = ctx;
 const app = routers.r0;
 
 async function who(req) {
@@ -232,7 +232,16 @@ async function runDataHealth(orgId, { trigger, importId = null, actorId = "syste
   await run(`INSERT INTO data_health_runs (id, org_id, trigger, import_id, counts, new_duplicates, created_by, created_by_name)
              VALUES (?,?,?,?,?::jsonb,?,?,?)`,
     [id, orgId, trigger, importId, JSON.stringify(publicCounts(c)), fresh, actorId, actorName]);
-  return { id, counts: publicCounts(c), newDuplicates: fresh };
+  // WIRE-1: new duplicates from an import are a job for an admin, not a count
+  // nobody opens. One task per run (the open-task check stops a repeat).
+  let taskId = null;
+  if (importId && fresh > 0 && openAdminTask) {
+    taskId = await openAdminTask(orgId, {
+      title: `Review ${fresh} possible duplicate${fresh === 1 ? "" : "s"} from the import in Data health`,
+      actorId: `system:data-health/import/${importId}`, actorName,
+    }).catch(e => { console.error("[data-health] duplicates task:", e.message); return null; });
+  }
+  return { id, counts: publicCounts(c), newDuplicates: fresh, taskId };
 }
 // Called by every import path once its run is recorded. Never blocks the
 // import and never fails it: a health count is a read.

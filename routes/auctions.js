@@ -72,9 +72,15 @@ function mount(ctx) {
 const {
   actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
   portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
-  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
+  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap, processAuctionUnpaid, requireAdmin,
 } = ctx;
 const app = routers.r0;
+
+// WIRE-1: the ops/test door onto the won-but-unpaid sweep, this org only (the
+// /memberships/run-sweep shape). The hourly tick runs it for every org.
+app.post("/auctions/run-unpaid-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await processAuctionUnpaid(req.user.orgId));
+}));
 
 let PP = null;
 const PP_READY = import("../shared/publicPage.js").then(m => { PP = m; return m; });
