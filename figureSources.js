@@ -188,7 +188,7 @@ const CONTACT_ROWS_MAX = 50;
 // can have with the org, read from the table that holds it. Every part is
 // org-scoped and takes the person and a date range.
 const ACTIVITY_PART_WORDS = {
-  events: "Each event they registered for or came to, dated by the event",
+  events: "Each event they came to in the range, or registered for in the range, dated by the event",
   memberships: "Each membership they held at any point in the range",
   fundraising: "Each peer-to-peer page they ran, with the gifts given through it in the range",
   auction: "Each auction item they bid on, with their highest bid",
@@ -202,8 +202,9 @@ const ACTIVITY_SQL = {
                  CASE ea.status WHEN 'attended' THEN 'Came' WHEN 'no_show' THEN 'Registered, did not come' ELSE 'Registered' END AS detail
             FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
            WHERE ea.org_id = ? AND ea.donor_id = ? AND ea.status IN ('registered','confirmed','attended','no_show')
-             AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?`,
-    args: [orgId, p.donor, p.from, p.to] }),
+             AND ((LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?)
+                  OR (TO_CHAR(ea.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(ea.created_at, 'YYYY-MM-DD') <= ?))`,
+    args: [orgId, p.donor, p.from, p.to, p.from, p.to] }),
   memberships: (orgId, p) => ({
     sql: `SELECT m.id, 'membership' AS type, m.donor_id, COALESCE(l.name, 'Membership') AS name, LEFT(m.joined_on::text, 10) AS date,
                  NULL::numeric AS amount, INITCAP(m.status) || CASE WHEN m.expires_on IS NULL THEN '' ELSE ', runs to ' || LEFT(m.expires_on::text, 10) END AS detail
