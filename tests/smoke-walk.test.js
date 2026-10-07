@@ -404,6 +404,10 @@ async function groupsAreQuick() {
         r.merged && !r.oldTab && r.n === want && r.unique === r.n, r);
       await look(`communications · templates (${sub})`);
     }
+    // Let the tab's own reads finish before the walk leaves it: a read cut off
+    // by the next page.goto logs "Failed to fetch" on the NEXT page (CI's
+    // slower runner put it on the first donor profile).
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
   }
   trouble = [];
 
