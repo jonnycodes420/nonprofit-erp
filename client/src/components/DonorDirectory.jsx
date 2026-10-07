@@ -418,7 +418,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           <option value="">Any tag</option>
           <optgroup label="Giving level">{[["general","General"],["mid","Mid"],["major","Major"]].map(([k,l])=><option key={k} value={"level:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Lifecycle">{[["new","New"],["current","Current"],["recaptured","Recaptured"],["lapsed","Lapsed"]].map(([k,l])=><option key={k} value={"lifecycle:"+k}>{l}</option>)}<option value="retained:1">Retained</option></optgroup>
-          <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["cooling","Cooling"],["new","New"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
+          <optgroup label="Closeness">{[["close","Close"],["warm","Warm"],["on_track","On track"],["cooling","Cooling"],["new","New"]].map(([k,l])=><option key={k} value={"closeness:"+k}>{l}</option>)}</optgroup>
           <optgroup label="Giving"><option value="given:never">Has never given</option></optgroup>
         </select>}
         <select value={stageFilter} onChange={e=>setStageFilter(e.target.value)} style={filterSel}>
@@ -713,7 +713,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 </div>
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
                   {d.engagement!=null
-                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"?T.gold700:T.ink3}}>{d.closeness?d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1):(bandFor(d.engagement)||{}).label}</span></>
+                    ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
                     :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>—</span>}
                 </div>
                 <div style={{textAlign:"right"}}>

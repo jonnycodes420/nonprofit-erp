@@ -239,7 +239,7 @@ export function adaptDonor(d) {
     // ENGAGE-1 — the stored scores, when the list read carried them.
     engagement:     d.engagement_score == null ? null : Number(d.engagement_score),
     engagementBand: d.engagement_band || null,
-    // PARITY-1 — the closeness word (Close, Warm, Cooling, New), the band in words.
+    // PARITY-1 — the closeness word (Close, Warm, On track, Cooling, New), the band in words.
     closeness: d.closeness || null,
     generosity:     d.generosity_score == null ? null : Number(d.generosity_score),
     name:           d.name,

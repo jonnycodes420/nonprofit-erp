@@ -62,6 +62,7 @@ function count(schema) {
     { name: "cheque read", strict: true, schema: CQ.CHEQUE_READ_SCHEMA },
     { name: "outline (grant report)", strict: true, schema: O.OUTLINE_SCHEMA },
     { name: "plan (Agent)", strict: true, schema: A.PLAN_SCHEMA },
+    { name: "drafts (Agent, ten at a time)", strict: true, schema: A.DRAFTS_SCHEMA },
   ];
 
   for (const t of TOOLS) {
@@ -89,7 +90,7 @@ function count(schema) {
   // §3 THE INVENTORY IS WHOLE. Each file's input_schema count is what the
   // list above covers; a new one fails here until it is added.
   const EXPECTED = { "askQuery.js": 1, "shared/meetingNote.js": 2, "shared/askCatalog.js": 1, "shared/showMe.js": 1,
-    "routes/crm.js": 3, "routes/agent.js": 1, "scripts/build95-cheque-drill.js": 1 };
+    "routes/crm.js": 3, "routes/agent.js": 2, "scripts/build95-cheque-drill.js": 1 };
   const found = {};
   const scan = dir => {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {

@@ -27,12 +27,19 @@
 //   §7 Groups              a filter Group of the event's guests holds them
 //   §8 the merge           nothing lost, nothing doubled, no orphans
 //   §9 the funder          deadlines, an award paid in instalments, an email, the history
+//   §10 the Agent's drafts  WIRE-1-ADDENDUM: "thank everyone who gave this month"
+//                          drafts in batches of ten, and every draft is on its
+//                          person (profile next step, the Thread, the timeline)
+//                          and in Drafts to review; approving one clears "Not
+//                          thanked yet" on that gift, and Undo puts it back
 //
 // HOW IT WOULD GO RED: a route that creates a second person for an email on
 // file (§1); an act that writes no line (§2, e.g. a door check-in); a dated
 // kind left off the calendar (§4, memberships); a merge that leaves a pointer
 // behind (§8, calendar_events.person_ids); a grant stage change that never
-// reaches the funder (§9). Proven able to fail: see the build's report.
+// reaches the funder (§9); a draft that lives only in the queue (§10, the
+// 6 Oct Gervase walk), or one plan call for 12 drafts (§10, the 42-person
+// "too long to finish writing"). Proven able to fail: see the build's report.
 //
 // Standard scratch stack (tests/README.md); the Stripe mock and the Google
 // stand-in run on this shard's ports.
@@ -109,6 +116,134 @@ async function wipe() {
   for (const t of ["fin_transactions", "gifts", "pledges", "budgets", "accounts", "fin_funds", "donors", "user_sessions", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
+}
+
+
+// ── §10 THE AGENT'S DRAFTS LAND ON THE PERSON ──────────────────────────────
+// Its own org and its own server, pointed at a stand-in model that answers the
+// find (filter_spec), writes one draft per person it is shown (drafts), and
+// counts the one-big-plan calls it gets (plan), which must be none.
+const ORG2 = "org_wire1b", DANA2 = "dana@wire1b.local";
+async function wipe2() {
+  const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+  for (let pass = 0; pass < 6; pass++) {
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG2]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG2]).then(() => true).catch(() => false)) break;
+  }
+}
+async function agentDraftsLeg() {
+  console.log("\n§10 the Agent's drafts");
+  const path = require("path");
+  const { spawn } = require("child_process");
+  await wipe2();
+  const today = civilToday();
+  const monthStart = today.slice(0, 8) + "01";
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,ai_enabled)
+           VALUES ($1,'Wire One B Fixture','wire1b',1,'active','team','America/New_York',NOW(),true)`, [ORG2]);
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_wire1b',$1,$2,$3,'Dana Reyes','admin')`, [ORG2, DANA2, bcrypt.hashSync("loadtest1234", 4)]);
+  // Twelve people who gave this month (two batches: ten and two), each gift
+  // not yet thanked, and an older gift of the first one that IS thanked.
+  const P = Array.from({ length: 12 }, (_, i) => `d_wire1b_${String(i).padStart(2, "0")}`);
+  for (const [i, id] of P.entries()) {
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,last_gift_date,last_gift_amount,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,'steward',100,1,$5,100,'system:test','test')`, [id, ORG2, `Draftee ${String.fromCharCode(65 + i)} Wirefield`, `draftee${i}@wire1b.test`, today]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,acknowledgement_sent,created_by,created_by_name)
+             VALUES ($1,$2,$3,100,$4,'cash',false,'system:test','test')`, [`g_wire1b_${i}`, ORG2, id, today]);
+  }
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,acknowledgement_sent,created_by,created_by_name)
+           VALUES ('g_wire1b_old',$1,$2,80,'2024-10-03','cash',true,'system:test','test')`, [ORG2, P[0]]);
+  // The second person already has an open thank-you step: it is relabelled, not doubled.
+  await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
+           VALUES ('thr_wire1b_open',$1,$2,'thank_you_note','Send thank-you note',$3,$3,'system:test','test')`, [ORG2, P[1], today]);
+
+  const calls = { filter_spec: 0, drafts: 0, plan: 0, other: 0, draftPeople: [] };
+  const model = http.createServer((req, res) => {
+    let b = ""; req.on("data", c => b += c);
+    req.on("end", () => {
+      let j = {}; try { j = JSON.parse(b); } catch { j = {}; }
+      const tool = ((j.tools || [])[0] || {}).name || "";
+      const text = ((j.messages || [])[0] || {}).content || "";
+      let input = {};
+      if (tool === "filter_spec") { calls.filter_spec++; input = { filters: [{ field: "gaveFrom", value: monthStart }, { field: "gaveTo", value: today }], suggestAsk: false, unsupported: "" }; }
+      else if (tool === "drafts") {
+        calls.drafts++;
+        const ids = [...String(text).matchAll(/^\s{2}(d_wire1b_\d+) \| ([^|]+) \|/gm)].map(m => ({ id: m[1], name: m[2].trim() }));
+        calls.draftPeople.push(ids.length);
+        input = { drafts: ids.map(p => ({ donorId: p.id, subject: "Thank you", body: `Dear ${p.name}, thank you for your gift this month. With gratitude, Wire One B.` })) };
+      } else if (tool === "plan") { calls.plan++; input = { steps: [], sends: 0, headline: "", cannot: "" }; }
+      else calls.other++;
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ id: "msg_t", type: "message", role: "assistant", model: "x", stop_reason: "tool_use",
+        content: [{ type: "tool_use", id: "tu_1", name: tool || "x", input }], usage: { input_tokens: 1, output_tokens: 1 } }));
+    });
+  });
+  await new Promise(r => model.listen(0, r));
+  const port = await new Promise(r => { const t = http.createServer(); t.listen(0, () => { const p = t.address().port; t.close(() => r(p)); }); });
+  const child = spawn(process.execPath, ["server.js"], {
+    cwd: path.join(__dirname, ".."),
+    env: { ...process.env, PORT: String(port), ANTHROPIC_API_KEY: "sk-ant-test-dummy", ANTHROPIC_BASE_URL: `http://localhost:${model.address().port}`,
+           DISABLE_BACKGROUND_TICKS: "1", TEST_MODE: "1", SESSION_CACHE_TTL_MS: "0", JWT_SECRET: process.env.JWT_SECRET || "local-test-secret",
+           RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local", SENTRY_DSN: "" },
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  let errs = ""; child.stderr.on("data", d => { errs += d; });
+  const B2 = `http://localhost:${port}`;
+  let up = false;
+  for (let i = 0; i < 90 && !up; i++) { await new Promise(r => setTimeout(r, 1000)); up = await fetch(B2 + "/health").then(r => r.ok).catch(() => false); }
+  ok("§10 the Agent's server started", up, errs.slice(-300));
+  try {
+    const lg = await (await fetch(B2 + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: DANA2, password: "loadtest1234" }) })).json();
+    const H = { "Content-Type": "application/json", Authorization: "Bearer " + lg.token };
+    const call = async (m, u, body) => { const r = await fetch(B2 + u, { method: m, headers: H, body: body ? JSON.stringify(body) : undefined }); return { status: r.status, body: await r.json().catch(() => ({})) }; };
+
+    const p = await call("POST", "/agent/instructions", { text: "Draft a thank-you to every donor who gave this month" });
+    const steps = (p.body.plan && p.body.plan.steps) || [];
+    ok("§10 a plan of twelve thank-you drafts, one per giver", p.status === 201 && steps.length === 12 && steps.every(x => x.tool === "draft_note" && x.purpose === "thank_you")
+      && new Set(steps.map(x => x.donorId)).size === 12, { status: p.status, body: JSON.stringify(p.body).slice(0, 300) });
+    ok("§10 drafted in batches of ten (10 and 2), never one plan call", calls.drafts === 2 && JSON.stringify(calls.draftPeople.sort((a, b) => b - a)) === "[10,2]" && calls.plan === 0, calls);
+    ok("§10 each draft carries only its own gift", steps.every(x => JSON.stringify(x.giftIds) === JSON.stringify([`g_wire1b_${Number(x.donorId.slice(-2))}`])), steps.map(x => x.giftIds));
+
+    const run = await call("POST", `/agent/instructions/${p.body.id}/confirm`, {});
+    ok("§10 the run leaves every draft waiting for her", run.status === 200 && (run.body.steps || []).filter(x => x.outcome === "waiting").length === 12, run.body);
+
+    const W = (await call("GET", "/agent/waiting")).body;
+    const mine = (W.items || []).filter(i => i.kind === "agent_draft" && i.instructionId === p.body.id);
+    ok("§10 all twelve are in Drafts to review, under this plan", mine.length === 12, (W.items || []).length);
+
+    const g = P[0];
+    const th = (await call("GET", `/threads?donorId=${g}&scope=all`)).body;
+    const open = (th.list || []).find(t => t.donorId === g && t.kind === "thread");
+    ok("§10 the draft is the next step on their profile and the Thread", !!open && open.nextStep && /^thank-you draft ready, review and send$/i.test(open.nextStep.label), th);
+    const relabelled = await q(`SELECT next_step_label FROM threads WHERE id='thr_wire1b_open'`);
+    const second = await q(`SELECT COUNT(*)::int AS c FROM threads WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL`, [ORG2, P[1]]);
+    ok("§10 an open thank-you step is pointed at the draft, not doubled", /draft ready/i.test(relabelled[0].next_step_label) && second[0].c === 1, { relabelled, second });
+    const rec = (await call("GET", `/donors/${g}`)).body;
+    ok("§10 the draft is on their timeline", (rec.interactions || []).some(i => /thank-you drafted by steward/i.test(i.note || "")), (rec.interactions || []).map(i => i.note));
+
+    const plans = (await call("GET", "/agent/plans")).body.plans || [];
+    const pr = (plans.find(x => x.id === p.body.id) || {}).run || {};
+    ok("§10 the plan says Waiting for you, not Done", pr.progress && pr.progress.word === "Waiting for you · 1 of 13 done", pr.progress);
+
+    const draft = mine.find(i => i.donorId === g);
+    const ap = await call("POST", `/agent/waiting/agent_draft/${draft.id}/approve`, {});
+    const ack = async () => (await q(`SELECT id, acknowledgement_sent FROM gifts WHERE org_id=$1 AND donor_id=$2 ORDER BY id`, [ORG2, g]))
+      .reduce((m, r) => ({ ...m, [r.id]: r.acknowledgement_sent }), {});
+    const a1 = await ack();
+    ok("§10 approving it clears Not thanked yet on that gift", ap.status === 200 && a1.g_wire1b_0 === true && a1.g_wire1b_old === true, { ap: ap.body, a1 });
+    ok("§10 …and on nobody else's", (await q(`SELECT COUNT(*)::int AS c FROM gifts WHERE org_id=$1 AND acknowledgement_sent IS TRUE`, [ORG2]))[0].c === 2);
+    const closed = await q(`SELECT COUNT(*)::int AS c FROM threads WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL`, [ORG2, g]);
+    ok("§10 …its step on the Thread is closed", closed[0].c === 0, closed);
+    const pr2 = (((await call("GET", "/agent/plans")).body.plans || []).find(x => x.id === p.body.id) || {}).run || {};
+    ok("§10 the plan counts it done: 2 of 13", pr2.progress && pr2.progress.word === "Waiting for you · 2 of 13 done", pr2.progress);
+
+    const un = await call("POST", `/agent/waiting/agent_draft/${draft.id}/reopen`, {});
+    const a2 = await ack();
+    const back = await q(`SELECT status FROM agent_drafts WHERE id=$1`, [draft.id]);
+    ok("§10 Undo puts it back: the gift is not thanked, the old one still is, the draft waits", un.status === 200 && a2.g_wire1b_0 === false && a2.g_wire1b_old === true && back[0].status === "pending", { a2, back });
+  } finally {
+    child.kill("SIGTERM"); model.close();
+    await wipe2();
+  }
 }
 
 (async () => {
@@ -344,6 +479,8 @@ async function wipe() {
   const fa = (await api("POST", "/ask", dana, { text: "what has Lantern Trust done with us this year?" })).body;
   const fg = (fa.reasons || []).find(r => r.key === "gifts");
   ok("§9 Ask: the funder gave the first instalment this year", fg && fg.cents === inst[0].amountCents, { sentence: fa.sentence, fg });
+
+  await agentDraftsLeg();
 
   await wipe();
   stripeMock && stripeMock.close(); google.close();

@@ -387,7 +387,7 @@ function normalizeRules(raw) {
   if (rules.role && !PEOPLE_ROLES.includes(rules.role)) errors.push("A role is Donor, Volunteer, or Staff and board.");
   if (rules.level && !DS.LEVELS[rules.level]) errors.push("A giving level is General, Mid or Major.");
   if (rules.lifecycle && !DS.LIFECYCLES[rules.lifecycle]) errors.push("A lifecycle is New, Current, Recaptured or Lapsed.");
-  if (rules.closeness && !DS.CLOSENESS[rules.closeness]) errors.push("Closeness is Close, Warm, Cooling or New.");
+  if (rules.closeness && !DS.CLOSENESS[rules.closeness]) errors.push("Closeness is Close, Warm, On track, Cooling or New.");
   if (rules.retained !== undefined) {
     if (rules.retained === "true") rules.retained = "1";
     if (rules.retained !== "1") delete rules.retained;

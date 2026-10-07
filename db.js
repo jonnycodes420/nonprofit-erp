@@ -4983,6 +4983,13 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by_name TEXT`);
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS skip_reason TEXT`);
+  // WIRE-1-ADDENDUM: a draft knows the gifts it thanks (approving it marks them
+  // thanked), the thread it put on the person, and what it is for.
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS gift_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS thread_id TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS purpose TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS marked_gift_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS approved_line_id TEXT`);
 
   // ── FIX-12 Part 2 · STEWARD DRAFTS IT. YOU SEND IT. ─────────────────────
   // Workflow recipes used to email donors the moment they fired. Their words
@@ -6545,6 +6552,11 @@ async function runSchemaInit(pool) {
       PRIMARY KEY (org_id, donor_id)
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_scores_eng ON donor_scores(org_id, engagement DESC)`);
+  // WIRE-1 addendum: where their giving stands against their OWN rhythm
+  // (drift.js assessDrift): 'on_track', 'drifting', 'lapsed', or NULL with
+  // fewer than two gifts. The closeness word reads it, so a once-a-year donor
+  // who gave on time is On track, never Cooling.
+  await pool.query(`ALTER TABLE donor_scores ADD COLUMN IF NOT EXISTS pattern TEXT`);
   // APPEAL-WHY: the campaign a campaign is compared with, when the user chose one.
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS compare_campaign_id TEXT`);
 

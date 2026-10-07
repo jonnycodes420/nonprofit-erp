@@ -41,11 +41,11 @@ const weights = async () => (W = W || await import("../shared/engagementWeights.
 // the stored ENGAGE-1 band (closenessFor), the facts each from a source.
 async function closeness(orgId, d, today, w) {
   const Wt = await weights();
-  const [score] = await query(`SELECT engagement, band FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
+  const [score] = await query(`SELECT engagement, band, pattern FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
   // The same "first seen" the list column uses (donorStatus.firstSeenSql).
   const [fs] = await query(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [d.id, orgId]);
   const isNew = !!(fs && fs.first && fs.first >= w.newFrom);
-  const key = Wt.closenessFor(score ? score.band : "distant", { isNew });
+  const key = Wt.closenessFor(score ? score.band : "distant", { isNew, pattern: score ? score.pattern : null });
   const facts = [];
   const add = async (source, text) => {
     const v = await FS.figureValue(orgId, source);
@@ -56,6 +56,17 @@ async function closeness(orgId, d, today, w) {
   const [ytdRows] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`,
     [orgId, d.id, w.cyFrom, today]);
   if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this year`, source: ytd });
+  // WIRE-1 addendum: their own rhythm, said by drift.js's rule, so "gave once
+  // this year" reads as the pattern it is for a once-a-year donor.
+  if (key === "on_track") {
+    const gs = await query(`SELECT LEFT(date,10) AS date, amount::text AS amount FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) <= ?`,
+      [orgId, d.id, today]);
+    const a = drift.assessDrift(gs.map(g => ({ date: g.date, amount: Number(g.amount) })), today);
+    const rhythm = a.seasonal && a.seasonal.kind === "month" ? `every ${MONTHS[a.seasonal.month - 1]}` : drift.humanCadence(a.cadenceDays);
+    if (a.state === "ok" && rhythm && a.firstGiftDate) {
+      facts.unshift({ text: `gives ${rhythm}, latest gift on time`, source: { key: "donor-gifts-between", params: { donor: d.id, from: a.firstGiftDate, to: today } } });
+    }
+  }
   await add({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
     v => (v.value > 0 ? `${Number(v.value).toLocaleString("en-US")} volunteer hours in the last 12 months` : null));
   const evSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "events" } };
@@ -78,7 +89,8 @@ async function closeness(orgId, d, today, w) {
   const why = {
     close: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
     warm: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
-    cooling: "Their engagement score is 33 or below and their first gift, conversation or shift was more than 90 days ago.",
+    on_track: "Their engagement score is 33 or below, but their latest gift came inside their own usual gap between gifts, so their giving is on its own pattern.",
+    cooling: "Their engagement score is 33 or below, their first gift, conversation or shift was more than 90 days ago, and their giving is past their own usual gap (or they have given once and not since).",
     new: "Their engagement score is 33 or below, and their first gift, conversation or shift was in the last 90 days.",
   }[key];
   return { key, label, engagement: score ? Number(score.engagement) : null, sentence: why, facts };
@@ -178,11 +190,15 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   else { step = "get to know them"; why = "They have not given yet."; }
   // PROSPECT-1 — screening results move the ask only for a viewer who may see them.
   const P = require("../prospect");
+  // WIRE-1 addendum: the ask beside "ask about monthly giving" is a MONTHLY
+  // amount sized from their own year, and says "a month"; every other ask is
+  // one gift. Same function, one rule (engagement.suggestedAsk).
+  const monthly = step === "ask about monthly giving";
   const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id,
-    viewerMaySee ? { screening: (await P.latestScreening(orgId, [d.id])).get(d.id) || null } : {}) : null;
+    { monthly, ...(viewerMaySee ? { screening: (await P.latestScreening(orgId, [d.id])).get(d.id) || null } : {}) }) : null;
   const said = String(step).trim().replace(/[.!?]+$/, "");
-  const text = `Next: ${said}.` + (ask ? ` Suggested ask: ${DS.dollars(ask.askCents)}.` : "");
-  return { step, text, why, ask: ask ? { cents: ask.askCents, sentence: ask.sentence, screening: !!ask.screening } : null };
+  const text = `Next: ${said}.` + (ask ? ` Suggested ${ask.monthly ? "ask" : "one-time ask"}: ${DS.dollars(ask.askCents)}${ask.monthly ? " a month" : ""}.` : "");
+  return { step, text, why, ask: ask ? { cents: ask.askCents, monthly: !!ask.monthly, sentence: ask.sentence, screening: !!ask.screening } : null };
 }
 
 app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
