@@ -29,6 +29,8 @@ const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
+const TL = require("../timelineLine");
+const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
@@ -6642,6 +6644,12 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     count: req.body.installmentCount, firstDue: dueDate,
   }).catch(e => console.error("[pledge] instalments:", e.message));
 
+  // WIRE-1: the promise is on the person's timeline the day it is made.
+  { const who = await staffWho(req);
+    await TL.timelineLine({ orgId: req.user.orgId, donorId: req.params.id,
+      note: `Pledged ${TL.lineMoney(pledgeAmt)}${dueDate ? `, due ${String(dueDate).slice(0, 10)}` : ""}.`,
+      actorId: who.id, actorName: who.name, key: `pledge_created:${id}`, metadata: { via: "pledge", pledge_id: id } }); }
+
   const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
   const insts = await query("SELECT id, seq, due_date, amount::float AS amount FROM pledge_installments WHERE pledge_id=? ORDER BY seq", [id]);
   res.status(201).json({ ...rows[0], installments: insts });
@@ -9152,6 +9160,7 @@ app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false, actor(req).id, actor(req).name]);
     await runTx(client, "UPDATE donors SET household_id=? WHERE id = ANY(?) AND org_id=?", [id, v.ids, req.user.orgId]);
   });
+  await householdLines(req, hhName, id, v.ids, []);   // WIRE-1
   res.status(201).json(await householdView(id, req.user.orgId));
 }));
 
@@ -9174,6 +9183,7 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
     if (!m.length) return res.status(400).json({ error: "New primary must be a member of the household." });
     primary = primaryDonorId;
   }
+  const membersBefore = ids ? (await query("SELECT id FROM donors WHERE household_id=? AND org_id=?", [req.params.id, req.user.orgId])).map(r => r.id) : [];
   await withTransaction(async (client) => {
     if (ids) {
       // drop members no longer in the set, then (re)attach the set
@@ -9186,6 +9196,8 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
        jointAcknowledgment === undefined ? null : (jointAcknowledgment !== false), req.params.id, req.user.orgId]);
   });
   const [hhRow] = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (ids) await householdLines(req, hhRow?.name || "the household", req.params.id,
+    ids.filter(x => !membersBefore.includes(x)), membersBefore.filter(x => !ids.includes(x)));   // WIRE-1
   const hhAfter = await auditShape("households", hhRow, req.user.orgId);
   if (auditTrailMod.diffFields(hhBefore, hhAfter)) {
     await run("UPDATE households SET edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?",
@@ -9194,6 +9206,17 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
   if (req.audit) { req.audit.before(hhBefore); req.audit.after(hhAfter); }
   res.json(await householdView(req.params.id, req.user.orgId));
 }));
+
+// WIRE-1 · joining or leaving a household is a line on the person.
+async function householdLines(req, hhName, householdId, joined, left) {
+  const who = await staffWho(req);
+  for (const [list, word] of [[joined, "Joined"], [left, "Left"]]) {
+    for (const donorId of list || []) {
+      await TL.timelineLine({ orgId: req.user.orgId, donorId, note: `${word} ${hhName}.`,
+        actorId: who.id, actorName: who.name, metadata: { via: "household", household_id: householdId, change: word.toLowerCase() } });
+    }
+  }
+}
 
 // FIX-14 Part 2b: the household goes to the trash with its member list, and
 // Undo re-links every member who has not joined another household since.
@@ -13555,6 +13578,13 @@ app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess,
      req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
      g.id, orgId]);
 
+  // WIRE-1: the award is on the funder's timeline, once (the board drag that
+  // first awards it writes the same key).
+  { const who = await staffWho(req);
+    await TL.timelineLine({ orgId, donorId: g.funder_donor_id, actorId: who.id, actorName: who.name,
+      note: `Awarded ${TL.lineMoney(toDollars(awardedCents))} for ${g.program || g.funder || "grant"}.`,
+      key: `grant_awarded:${g.id}`, metadata: { via: "grant", grant_id: g.id, pledge_id: pledgeId } }); }
+
   const [row] = await query(
     `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
        JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
@@ -14873,7 +14903,7 @@ app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
 app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
   const { type, note, date } = req.body;
   if (!note || !note.trim()) return res.status(400).json({ error: "Note required" });
-  const rows = await query("SELECT id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const rows = await query("SELECT id, program, funder, funder_donor_id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
   const id = "gi_" + uuid().slice(0, 8);
   const giDate = date || orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
@@ -14881,6 +14911,16 @@ app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
     "INSERT INTO grant_interactions (id, org_id, grant_id, type, note, date) VALUES (?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type || "note", note.trim(), giDate]
   );
+  // WIRE-1: a grant note nobody read: it is also on the funder's timeline,
+  // as the conversation it was, so the funder record tells the whole story.
+  if (rows[0].funder_donor_id) {
+    const who = await staffWho(req);
+    await TL.timelineLine({ orgId: req.user.orgId, donorId: rows[0].funder_donor_id,
+      type: "note",
+      note: `${type && type !== "note" ? String(type).charAt(0).toUpperCase() + String(type).slice(1).replace(/_/g, " ") + " on" : "On"} the ${rows[0].program || rows[0].funder || "grant"} grant: ${note.trim()}`, date: giDate,
+      actorId: who.id, actorName: who.name, key: `grant_note:${id}`,
+      metadata: { via: "grant_interaction", grant_id: rows[0].id, grant_interaction_id: id } });
+  }
   res.status(201).json({ id, type: type || "note", note: note.trim(), date: giDate });
 }));
 
@@ -19502,6 +19542,11 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     }
   }
 
+  // WIRE-1: starting a page is a line on the fundraiser's own timeline.
+  await TL.timelineLine({ orgId: org.id, donorId: personId, note: `Started a fundraising page: ${givingPage.title}.`,
+    actorId: "system:p2p-signup", actorName: "The fundraiser, from the sign-up page", key: `p2p_page:${id}`,
+    metadata: { via: "peer_fundraiser", fundraiser_id: id, giving_page_id: givingPage.id } });
+
   // PARITY-2 Part 2: the person who starts a team is its captain. Staff can
   // change it from the P2P screen.
   if (startedTeam && teamId) {
@@ -19548,7 +19593,7 @@ app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteA
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ error: "That email does not look right." });
   if (String(name).trim().length > 200 || String(email).trim().length > 320) return res.status(400).json({ error: "The name or email is too long." });
   if (personalGoalAmount && (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "The goal must be a positive number." });
-  const [page] = await query("SELECT id, slug, p2p_enabled FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [req.params.id, orgId]);
+  const [page] = await query("SELECT id, slug, title, p2p_enabled FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [req.params.id, orgId]);
   if (!page) return res.status(404).json({ error: "That campaign could not be found." });
   if (page.p2p_enabled !== true) return res.status(400).json({ error: "Turn peer-to-peer on for this campaign first." });
   let teamId = null;
@@ -19577,6 +19622,10 @@ app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteA
       slug = await uniquePeerFundraiserSlug(page.id, `${base}-${Date.now().toString(36).slice(-4)}`);
     }
   }
+  { const who = await staffWho(req);   // WIRE-1: on the fundraiser's timeline
+    await TL.timelineLine({ orgId, donorId: personId, note: `Started a fundraising page: ${page.title}.`,
+      actorId: who.id, actorName: who.name, key: `p2p_page:${id}`,
+      metadata: { via: "peer_fundraiser", fundraiser_id: id, giving_page_id: page.id } }); }
   const frontendUrl = publicAppUrl();
   res.status(201).json({ id, slug, teamId, personId,
     publicUrl: `${frontendUrl}/give/${o?.org_slug || ""}/${page.slug}/${slug}`,
@@ -22910,10 +22959,8 @@ async function eventDonorFor(orgId, body, who) {
   const name = String(body?.name || "").trim().slice(0, 200);
   const email = String(body?.email || "").trim().toLowerCase().slice(0, 200);
   if (!name && !email) return null;
-  if (email) {
-    const found = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
-    if (found.length === 1) return found[0].id;
-  }
+  const known = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
+  if (known) return known;
   const id = "d_" + uuid().slice(0, 10);
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]',?,?)`,
     [id, orgId, name || email, email || null, who.id, who.name]);
@@ -23125,8 +23172,14 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
 // own act on the gift). Never write-gated: a lapsed org can always stop one.
 app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
   const r = await query(`UPDATE memberships SET status='cancelled', cancelled_at=NOW(), updated_at=NOW()
-                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
+                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id, donor_id, level_id`, [req.params.id, req.user.orgId]);
   if (!r.length) return res.status(404).json({ error: "Not found" });
+  // WIRE-1: the cancel is on the member's timeline.
+  const [lv] = await query("SELECT name FROM membership_levels WHERE id=? AND org_id=?", [r[0].level_id, req.user.orgId]);
+  const who = await staffWho(req);
+  await TL.timelineLine({ orgId: req.user.orgId, donorId: r[0].donor_id,
+    note: `${lv ? lv.name + " membership" : "Membership"} cancelled.`, actorId: who.id, actorName: who.name,
+    key: `membership_cancelled:${r[0].id}`, metadata: { via: "membership", membership_id: r[0].id } });
   res.json({ ok: true });
 }));
 
@@ -23644,24 +23697,51 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
   for (const a of rows) {
     const status = came.has(a.id) ? "attended" : "no_show";
     await run("UPDATE event_attendees SET status=? WHERE id=? AND org_id=?", [status, a.id, orgId]);
-    if (!a.donor_id) continue;
-    // Claim the timeline line first: a second save finds it taken.
-    const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND attendance_logged_at IS NULL RETURNING id", [a.id]);
-    if (!claimed.length) continue;
-    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,'event',?,?,?,?,?)`,
-      ["i_" + uuid().slice(0, 10), orgId, a.donor_id,
-       status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
-       day, who.id, u?.name || who.name, JSON.stringify({ via: "event_attendance", event_id: event.id, attendee_id: a.id, status })]);
-    // FIX-4 1c — coming to an event can start a journey. Fired from HERE, the
-    // one place a person is deliberately marked as having come, and only for
-    // "attended": a no-show is not a moment somebody stepped closer. It rides
-    // the `attendance_logged_at` claim above, so a second save of the same
-    // sheet cannot start the journey twice.
-    if (status === "attended") await maybeStartJourney(orgId, a.donor_id, "attended_event", {});
-    logged++;
+    if (await logEventAttendance(orgId, a, event, status, { id: who.id, name: u?.name || who.name }, day)) logged++;
   }
   res.json({ updated: rows.length, timelineLines: logged });
 }));
+
+// WIRE-1 · THE ONE ATTENDANCE LINE. Every door that marks a guest as having
+// come (the attendance list, the guest PATCH, the door check-in, the QR scan)
+// runs this: it claims `attendance_logged_at` first, so whichever door is
+// second finds the claim taken and writes nothing, then writes "Came to X."
+// and fires the attended_event journey keyed to THIS event (FIX-4 1c, and
+// journeyEventKey holds it to one start per event). A no-show writes its own
+// line and starts nothing: a no-show is not a moment somebody stepped closer.
+async function logEventAttendance(orgId, attendee, event, status, who, day) {
+  if (!attendee || !attendee.donor_id || !event) return false;
+  const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND org_id=? AND attendance_logged_at IS NULL RETURNING id", [attendee.id, orgId]);
+  if (!claimed.length) return false;
+  const date = day || String(event.date || "").slice(0, 10) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  await TL.writeTimelineLine({ orgId, donorId: attendee.donor_id, type: "event",
+    note: status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
+    date, actorId: who.id, actorName: who.name,
+    metadata: { via: "event_attendance", event_id: event.id, attendee_id: attendee.id, status } });
+  if (status === "attended") {
+    await maybeStartJourney(orgId, attendee.donor_id, "attended_event", { eventId: event.id })
+      .catch(e => console.error("[journey] attended_event:", e.message));
+  }
+  return true;
+}
+
+// The signed-in person as a timeline line names them: their id and their name.
+async function staffWho(req) {
+  const who = actor(req);
+  const [u] = who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, req.user.orgId]) : [];
+  return { id: who.id, name: (u && u.name) || who.name };
+}
+
+// WIRE-1 · A REGISTRATION WITH NO GIFT. A paid ticket already shows as its
+// gift; a free RSVP wrote nothing. One "Registered for X." line per attendee
+// row, keyed so a retried submit writes it once.
+async function logEventRegistered(orgId, attendee, event, who) {
+  if (!attendee || !attendee.donor_id || !event) return;
+  await TL.timelineLine({ orgId, donorId: attendee.donor_id, type: "event",
+    note: `Registered for ${event.name}.`, actorId: who.id, actorName: who.name,
+    key: `event_registered:${attendee.id}`,
+    metadata: { via: "event_registration", event_id: event.id, attendee_id: attendee.id } });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  EVENTS-1 item 3 · THE PUBLIC REGISTRATION PAGE
@@ -24124,9 +24204,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
   // ONE PERSON, ONE RECORD. Matched by email first, exactly as every other
   // way into this file works; a registrant who already gives is the person
   // they already are.
-  let donorId = null;
-  const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [e.org_id, email]);
-  if (m.length === 1) donorId = m[0].id;
+  let donorId = await PM.findPersonId(e.org_id, { email, name });   // WIRE-1 rule 1
   if (!donorId) {
     donorId = "d_" + uuid().slice(0, 10);
     await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
@@ -24146,6 +24224,10 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     [attId, e.id, e.org_id, donorId, name, email, level.id, level.kind === "ticket" ? qty : 1,
      String(req.body?.dietary || "").trim().slice(0, 200) || null,
      `From the registration page. ${level.name}.`]);
+  // WIRE-1: the request is on the person's timeline, once per registration.
+  const [attRow] = await query("SELECT id FROM event_attendees WHERE event_id=? AND donor_id=? AND org_id=?", [e.id, donorId, e.org_id]);
+  await logEventRegistered(e.org_id, { id: attRow?.id || attId, donor_id: donorId }, e,
+    { id: "system:event-registration", name: "The registration page" });
 
   // The other names on the ticket: each one is a person on the list with a
   // seat and a name tag, and NOT a second gift.
@@ -24358,9 +24440,12 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
     undo
       ? `UPDATE event_attendees SET checked_in_at=NULL WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
       : `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
-          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`,
+          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at, donor_id`,
     [String(req.body?.attendeeId || ""), event.id, orgId]);
   if (!rows.length) return res.status(404).json({ error: "Not found" });
+  // WIRE-1: through the door is "Came to X." on the person, once.
+  if (!undo) await logEventAttendance(orgId, rows[0], event, "attended", await staffWho(req));
+  delete rows[0].donor_id;
   res.json({ ok: true, attendee: rows[0],
     sentence: undo ? `${rows[0].name} is not checked in.` : `${rows[0].name} is in.` });
 }));
@@ -24397,7 +24482,7 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
     const rows = await query(
       `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
         WHERE id=? AND event_id=? AND org_id=? AND status <> 'cancelled'
-        RETURNING id, name, table_label, quantity, checked_in_at`,
+        RETURNING id, name, table_label, quantity, checked_in_at, donor_id`,
       [read.id, event.id, orgId]);
     if (!rows.length) {
       // A real, signed ticket for a DIFFERENT event: say which, rather than
@@ -24410,6 +24495,8 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
                         : "That ticket is not on this event's list." });
     }
     const a = rows[0];
+    await logEventAttendance(orgId, a, event, "attended", await staffWho(req));   // WIRE-1
+    delete a.donor_id;
     return res.json({ ok: true, kind: "ticket", attendee: a,
       sentence: `${a.name} is in${a.table_label ? `, ${a.table_label}` : ""}${Number(a.quantity) > 1 ? ` · ${a.quantity} places` : ""}.` });
   }
@@ -24739,11 +24826,19 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
   try {
     const orgId = req.user.orgId;
     const eventId = req.params.id;
-    const evts = await query("SELECT id FROM events WHERE id=$1 AND org_id=$2", [eventId, orgId]);
+    const evts = await query("SELECT id, name FROM events WHERE id=$1 AND org_id=$2", [eventId, orgId]);
     if (!evts.length) return res.status(404).json({ error: "Event not found" });
-    const { donorIds, name, email, notes } = req.body;
+    const { name, email, notes } = req.body;
+    let { donorIds } = req.body;
     const added = [];
     const ids = [];   // PARITY-4: the door checks a walk-in in by id the moment they are added
+    const who = await staffWho(req);
+    // WIRE-1 rule 1: a name typed with an email that is already on file is
+    // that person, not a stranger with no record.
+    if (!(donorIds && Array.isArray(donorIds)) && name && String(email || "").trim()) {
+      const known = await PM.findPersonId(orgId, { email });
+      if (known) donorIds = [known];
+    }
     if (donorIds && Array.isArray(donorIds)) {
       for (const donorId of donorIds) {
         const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
@@ -24756,7 +24851,13 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
              VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING RETURNING id`,
             [attId, eventId, orgId, donorId, d.name, d.email || ""]
           );
-          if (ins.length) ids.push(ins[0].id);
+          if (ins.length) {
+            ids.push(ins[0].id);
+            await logEventRegistered(orgId, { id: ins[0].id, donor_id: donorId }, evts[0], who);   // WIRE-1
+          } else {
+            const [had] = await query("SELECT id FROM event_attendees WHERE event_id=$1 AND donor_id=$2 AND org_id=$3", [eventId, donorId, orgId]);
+            if (had && !(req.body.donorIds && Array.isArray(req.body.donorIds))) ids.push(had.id);
+          }
           added.push(d.name);
         } catch { /* skip */ }
       }
@@ -24852,9 +24953,9 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       // BUILD-98 (switch) Part 4 — ONE attendance line per guest per event,
       // whichever door marked them: this PATCH and POST /events/:id/attendance
       // claim the same stamp, so saving the list twice writes one line.
-      const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=$1 AND attendance_logged_at IS NULL RETURNING id", [att.id]).catch(() => []);
-      if (claimed.length) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'event',$4,$5)",
-        ["i_"+uuid().slice(0,8), orgId, att.donor_id, `Came to ${evtName}.`, today]).catch(() => {});
+      // WIRE-1: the same one writer every door uses (stamped, journey fired).
+      await logEventAttendance(orgId, att, { id: att.event_id, name: evtName }, "attended", await staffWho(req), today)
+        .catch(e => console.error("[event] attendance line:", e.message));
       await run(`UPDATE donors SET stage = CASE WHEN stage='prospect' THEN 'qualify' WHEN stage='qualify' THEN 'cultivate' ELSE stage END WHERE id=$1 AND org_id=$2 AND stage IN ('prospect','qualify')`,
         [att.donor_id, orgId]).catch(() => {});
     }

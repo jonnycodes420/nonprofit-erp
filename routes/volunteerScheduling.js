@@ -29,6 +29,7 @@
 const SL = require("../surveyLinks");   // SURVEY-1: the volunteer follow-up link
 const orgTime = require("../orgTime");   // CAL-1: weekly repeat of a shift (civil days)
 const express = require("express");
+const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
@@ -494,12 +495,7 @@ app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wra
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!name && !email) return res.status(400).json({ error: "name_or_email_required" });
-    if (email) {
-      const hit = await query(
-        `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at LIMIT 2`,
-        [orgId, email]);
-      if (hit.length === 1) personId = hit[0].id;
-    }
+    personId = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
     if (!personId) {
       personId = "d_" + uuid().slice(0, 10);
       await run(
@@ -559,14 +555,9 @@ app.post("/volunteer-hub/groups/signup", requireAuth, checkWriteAccess, wrap(asy
 }));
 
 async function findOrCreatePerson(orgId, { name, email }, who, out) {
-  if (email) {
-    const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
-    if (m.length === 1) { await markVolunteer(orgId, m[0].id); return m[0].id; }
-  }
-  if (name) {
-    const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) LIMIT 2", [orgId, name]);
-    if (m.length === 1) { await markVolunteer(orgId, m[0].id); return m[0].id; }
-  }
+  // WIRE-1 rule 1: the one match every door uses (personMatch.js).
+  const known = await PM.findPersonId(orgId, { email, name });
+  if (known) { await markVolunteer(orgId, known); return known; }
   const pid = "d_" + uuid().slice(0, 10);
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
              VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,

@@ -82,6 +82,8 @@ async function seedProspect1(q, ORG, { TODAY, gen = GEN, sch = SCH, who = ["u_b7
     if (extra.hours) {
       await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'After-school tutoring',$6,$7)`,
         [`vsh_pr1_${ORG}_${key}`, ORG, id, ago(TODAY, 50), extra.hours, ...who]);
+      // WIRE-1: hours make a volunteer, as insertShift does (markVolunteer).
+      await q(`UPDATE donors SET person_types = person_types || '["volunteer"]'::jsonb WHERE id=$1 AND org_id=$2`, [id, ORG]);
     }
   }
   for (const [key, name, ein, gifts] of FOUNDATIONS) {

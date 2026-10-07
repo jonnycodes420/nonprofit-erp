@@ -18,6 +18,7 @@
 // Every write is recorded by the one audit write; nothing here writes one.
 "use strict";
 const express = require("express");
+const TL = require("../timelineLine");   // WIRE-1 rule 2: grant moves land on the funder
 
 const routers = { r0: express.Router() };
 const shapeMod = () => import("../shared/grantShape.js");
@@ -248,6 +249,18 @@ app.patch("/grants/:id/stage", requireAuth, checkWriteAccess, wrap(async (req, r
   req.audit = { ...(req.audit || {}), before: { status: prev }, after: { status } };
   await run(`UPDATE grants SET status=?, awarded_at=?, decline_reason=?, declined_on=?, closed_on=?, updated_at=NOW() WHERE id=? AND org_id=?`,
     [status, awardedAt, declineReason, declinedOn, closedOn, g.id, orgId]);
+  // WIRE-1: the move is on the funder's own timeline, when the grant has one.
+  if (g.funder_donor_id && status !== prev) {
+    const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]).catch(() => []);
+    const who = { id: actor(req).id, name: (u && u.name) || actor(req).name };
+    const program = g.program || g.funder || "grant";
+    const firstAward = G.AWARDED_STATUS_KEYS.includes(status) && !g.awarded_at;
+    const amt = Number(g.amount_awarded || g.amount_requested || g.amount || 0);
+    await TL.timelineLine({ orgId, donorId: g.funder_donor_id, actorId: who.id, actorName: who.name,
+      note: firstAward ? `Awarded ${amt > 0 ? TL.lineMoney(amt) + " " : ""}for ${program}.` : `Grant ${program} moved to ${G.statusLabel(status)}.`,
+      key: firstAward ? `grant_awarded:${g.id}` : null,
+      metadata: { via: "grant", grant_id: g.id, from: prev, to: status } });
+  }
   let renewal = null;
   if (status === "closed" && prev !== "closed" && req.body?.planRenewal !== false) {
     const R = require("./grantReports");

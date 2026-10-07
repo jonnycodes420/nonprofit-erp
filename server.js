@@ -193,6 +193,7 @@ const { PRODUCT_ID } = require("./product");
 // for the type discipline (instants vs civil dates) and why it exists.
 const geocode = require("./geocode"); // BUILD-84 P0-4 — the ONE seam an address becomes coordinates through; never called from a read path
 const orgTime = require("./orgTime");
+const TL = require("./timelineLine");   // WIRE-1 rule 2: every act lands on the timeline
 // BUILD-73 Part 2 — THE MONEY SEAM. Every money value that crosses into or out
 // of storage goes through here, and nothing else in this file converts between
 // dollars and cents. See money.js for why the eight Math.round() sites this
@@ -9482,6 +9483,11 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
      RETURNING *`,
     [id, event.id, orgId, donorId, donor.name, donor.email || "", level.id, split.qty, giftId, pledgeId, recognition, split.totalCents / 100]);
   const attendee = rows[0];
+  // WIRE-1: a registration with no money (an unpaid sponsorship) wrote no
+  // line; a paid one already shows as its gift.
+  if (!giftId) await TL.timelineLine({ orgId, donorId, type: "event", note: `Registered for ${event.name}.`,
+    actorId: who.id, actorName: who.name, key: `event_registered:${attendee.id}`,
+    metadata: { via: "event_registration", event_id: event.id, attendee_id: attendee.id } });
   if (dietary) await run(`UPDATE event_attendees SET dietary=? WHERE id=? AND org_id=?`, [dietary, attendee.id, orgId]).catch(() => {});
   // EVENTS-2 — the other names on the ticket. Each is a place and a name tag
   // and NOT a second gift: quantity 0, guest_of the buyer, exactly as the
@@ -9595,6 +9601,11 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
     await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
   }
   const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+  // WIRE-1: a paid join already shows as its gift ("Joined as a ... member");
+  // a complimentary one wrote nothing.
+  if (!giftId) await TL.timelineLine({ orgId, donorId, note: `Became a ${level.name} member${expires ? ", through " + expires : ""}.`,
+    date: start, actorId: who.id, actorName: who.name, key: `membership_joined:${id}`,
+    metadata: { via: "membership", membership_id: id, complimentary: true } });
   // FIX-4 1c — becoming a member can start a journey. Only a NEW membership,
   // never a renewal: a renewal is a person continuing, and greeting a
   // ten-year member with a welcome sequence is worse than saying nothing.
