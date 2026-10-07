@@ -3491,7 +3491,22 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   // rows it wrote.
   const [wrote] = await query(
     "SELECT COUNT(*)::int AS c FROM donors WHERE org_id=? AND is_sample=true", [orgId]);
-  res.json({ ok: true, donorCount: (wrote && wrote.c) || 0, tagged });
+
+  // FIX-32 · THE DEMO DOOR GOES TO HOME. "Explore the demo" is the first page
+  // after signup, before onboarding is complete, and it sent her to /dashboard,
+  // where RequireOnboarded bounced her straight back to /welcome: 25 sample
+  // donors loaded and a start page that never moved. Choosing the demo IS
+  // finishing onboarding (the same structural seed /onboarding/complete runs),
+  // and it happens here, server side, so no client can load the sample and
+  // forget the second half.
+  let onboarded = false;
+  const [o] = await query("SELECT onboarding_complete FROM orgs WHERE id=?", [orgId]);
+  if (o && !Number(o.onboarding_complete)) {
+    await seedOrgData(orgId);
+    await run("UPDATE orgs SET onboarding_complete = 1 WHERE id = ?", [orgId]);
+    onboarded = true;
+  }
+  res.json({ ok: true, donorCount: (wrote && wrote.c) || 0, tagged, onboarded });
 }));
 
 app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {

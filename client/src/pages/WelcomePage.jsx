@@ -132,6 +132,14 @@ export default function WelcomePage() {
   const [donorsSnapshot, setDonorsSnapshot] = useState([]);
   const [importSkipped, setImportSkipped] = useState(false);
   const [loadingDonors, setLoadingDonors] = useState(false);
+  // FIX-32 · sample donors are not an import. The count comes from the same
+  // route the in-app banner and the clear act on.
+  const [sampleStatus, setSampleStatus] = useState(null);
+  const [confirmClearSample, setConfirmClearSample] = useState(false);
+  const [clearingSample, setClearingSample] = useState(false);
+  const loadSampleStatus = () => apiFetch("/org/sample-data-status").then(setSampleStatus).catch(() => setSampleStatus(null));
+  const sampleCount = (sampleStatus && sampleStatus.hasSampleData && sampleStatus.sampleDonorCount) || 0;
+  const realDonorCount = Math.max(0, donorsSnapshot.length - sampleCount);
 
   // ── THREAD-2b 2 · the journey step's state ─────────────────────────────
   const [jPresets, setJPresets] = useState([]);
@@ -215,6 +223,7 @@ export default function WelcomePage() {
     // import from another tab) so the import step shows the imported state
     // instead of re-asking for a list that's already in.
     apiFetch("/donors/summaries").then(d => setDonorsSnapshot(d || [])).catch(() => {});
+    loadSampleStatus();
     // Plan tier → whether the Team "Invite your team" step is in the flow.
     apiFetch("/portfolio/officers").then(r => setIsTeam(r?.tier === "team")).catch(() => {});
 
@@ -301,7 +310,22 @@ export default function WelcomePage() {
       const donors = await apiFetch("/donors/summaries");
       setDonorsSnapshot(donors || []);
     } catch { setDonorsSnapshot([]); }
+    await loadSampleStatus();
     setLoadingDonors(false);
+  }
+  // A real file replaces the sample, and she says so first: the clear runs
+  // only after the confirm, and the import opens only after the clear.
+  async function clearSampleThenImport() {
+    setClearingSample(true); setError("");
+    try {
+      await apiFetch("/org/clear-sample-data", { method: "POST" });
+      const donors = await apiFetch("/donors/summaries");
+      setDonorsSnapshot(donors || []);
+      await loadSampleStatus();
+      setConfirmClearSample(false);
+      setShowImportModal(true);
+    } catch (e) { setError(errorMessage(e, "The sample data could not be cleared. Please try again.")); }
+    setClearingSample(false);
   }
   function skipImport() {
     setImportSkipped(true);
@@ -350,10 +374,21 @@ export default function WelcomePage() {
     setPhase("ready");
   }
 
+  // FIX-32 · the demo door. The server finishes onboarding when it loads the
+  // sample (an org that is not onboarded is bounced from /dashboard back to
+  // /welcome), and the auth context has to hear about it BEFORE the navigate,
+  // or RequireOnboarded reads the old flag and sends her straight back here.
+  // A failure is said, never swallowed into a navigation that cannot land.
   async function handleLoadSample() {
-    setLoadingSample(true);
-    try { await apiFetch("/org/load-sample-data", { method: "POST" }); } catch {}
-    navigate("/dashboard", { replace: true });
+    setLoadingSample(true); setError("");
+    try {
+      await apiFetch("/org/load-sample-data", { method: "POST" });
+      await refreshOrg();
+      navigate("/dashboard", { replace: true });
+    } catch (e) {
+      setError(errorMessage(e, "The sample data could not be loaded. Please try again."));
+      setLoadingSample(false);
+    }
   }
 
   // Steward brand system (BUILD-12 tokens) — cream / forest green / gold, no
@@ -452,6 +487,8 @@ export default function WelcomePage() {
                 </span>
               </button>
             </div>
+
+            {error && <div style={{ ...errBox, marginTop: 14 }}>{error}</div>}
 
             <div style={{ textAlign: "center", marginTop: 18, fontSize: 12.5, color: ink3 }}>
               Nothing is charged for thirty days, and cancelling takes two clicks.
@@ -564,7 +601,39 @@ export default function WelcomePage() {
               email, fund, payment method, gift date and amount) and asks you about the ones it does not.
             </p>
 
-            {donorsSnapshot.length > 0 ? (
+            {realDonorCount === 0 && sampleCount > 0 ? (
+              /* FIX-32 · sample donors are not an import. The step stays open,
+                 says what is loaded, and offers the real file, which replaces
+                 the sample only after she confirms it. */
+              <div data-testid="import-sample-loaded" style={{ background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+                <div style={{ fontSize: 14, color: ink, fontWeight: 700, marginBottom: 4 }}>
+                  Sample data is loaded: {sampleCount.toLocaleString()} sample donor{sampleCount === 1 ? "" : "s"}.
+                </div>
+                <div style={{ fontSize: 13, color: ink3, lineHeight: 1.55, marginBottom: 12 }}>
+                  They are there to show you around, and none of them is yours. Your own file is still to come.
+                </div>
+                {!confirmClearSample ? (
+                  <button data-testid="import-real-file" onClick={() => setConfirmClearSample(true)} style={primaryBtn(false)}>
+                    Import your real file →
+                  </button>
+                ) : (
+                  <div data-testid="confirm-clear-sample">
+                    <div style={{ fontSize: 13, color: ink, lineHeight: 1.55, marginBottom: 10 }}>
+                      Importing your file clears the {sampleCount.toLocaleString()} sample donors and everything attached to them first. Your file is not touched.
+                    </div>
+                    <button data-testid="confirm-clear-sample-yes" onClick={clearSampleThenImport} disabled={clearingSample} style={primaryBtn(clearingSample)}>
+                      {clearingSample ? "Clearing the sample…" : "Clear the sample and import"}
+                    </button>
+                    <div style={{ textAlign: "center", marginTop: 10 }}>
+                      <button onClick={() => setConfirmClearSample(false)} disabled={clearingSample}
+                        style={{ background: "none", border: "none", color: ink3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                        Keep the sample for now
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : realDonorCount > 0 ? (
               /* The import celebration — the product's one-gold-moment
                  pattern (see .gold-moment in shared.jsx GlobalStyles):
                  soft rise, one sheen on the accent bar, nothing louder. */
@@ -573,7 +642,7 @@ export default function WelcomePage() {
                 <style>{`@keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}@keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}.gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both}.gold-moment .gold-moment-bar{background:linear-gradient(100deg,${T.gold500} 40%,${T.gold300} 50%,${T.gold500} 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1}@media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none}}`}</style>
                 <div className="gold-moment-bar" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: T.gold500 }} />
                 <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 18, color: ink, marginBottom: 3 }}>
-                  {donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"}, safely home.
+                  {realDonorCount.toLocaleString()} donor{realDonorCount === 1 ? "" : "s"}, safely home.
                 </div>
                 <div style={{ fontSize: 12.5, color: ink3 }}>That was the hard part. You can import more anytime from Donors → Import.</div>
               </div>
@@ -585,7 +654,7 @@ export default function WelcomePage() {
 
             {error && <div style={{ ...errBox, marginBottom: 12 }}>{error}</div>}
 
-            {donorsSnapshot.length > 0 ? (
+            {realDonorCount > 0 ? (
               <button onClick={goNext} style={primaryBtn(false)}>Continue →</button>
             ) : (
               <div style={{ textAlign: "center" }}>
@@ -846,8 +915,8 @@ export default function WelcomePage() {
               <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, fontWeight: 400, color: ink, margin: "0 0 8px", letterSpacing: "-0.01em" }}>You're ready.</h1>
               <p style={{ fontSize: 14, fontStyle: "italic", color: T.gold600, margin: 0 }}>Every great organization starts here.</p>
               <div style={{ fontSize: 13, color: ink3, marginTop: 14, lineHeight: 1.7 }}>
-                {donorsSnapshot.length > 0
-                  ? <>{donorsSnapshot.length.toLocaleString()} donor{donorsSnapshot.length === 1 ? "" : "s"} imported · 1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>
+                {realDonorCount > 0
+                  ? <>{realDonorCount.toLocaleString()} donor{realDonorCount === 1 ? "" : "s"} imported · 1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>
                   : <>1 goal set · {showMetric2 ? "2 impact metrics" : "1 impact metric"} configured</>}
               </div>
             </div>
