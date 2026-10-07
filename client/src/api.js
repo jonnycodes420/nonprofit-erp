@@ -290,6 +290,9 @@ export function adaptDonor(d) {
     importedSustainer: d.imported_sustainer === true,   // BUILD-77 Part 5 — the third recurring state
     importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
     importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,
+    // FIX-33 — Room to give, server-set on list rows from prospect.roomToGive
+    // (the adaptDonor trap: a field this adapter drops renders as nothing).
+    room:          d.room ?? null,
     drift:         d.drift ?? null,              // BUILD-76 — the badge field, server-computed (one truth)
     // BUILD-89S 89f — the sentence for a donor giving monthly through a
     // connected source, built server-side from the ONE phrase builder so the

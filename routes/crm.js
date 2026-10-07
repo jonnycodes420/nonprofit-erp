@@ -3671,6 +3671,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  const PRm = require("../prospect");
+  const roomWord = a => (a ? { word: a.word, label: a.label, rank: a.rank } : { word: "unknown", label: "Not yet known", rank: 0 });
+  const mayRoom = await PRm.canSee(req.user.userId);
+  let roomMap = null;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
@@ -3686,6 +3690,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     // BUILD-94 Part 2 — normalised here so a NULL legacy column and an
     // explicit ["donor"] reach the client as the same thing.
     person_types: PT.typesOf(d),
+    // FIX-33 · Room to give rides on the row, from prospect.roomToGive, the
+    // one function the profile's block reads too. Only for someone who may
+    // see it (admin or the major gifts permission); null for anyone else.
+    room: roomMap ? roomWord(roomMap.get(d.id)) : null,
   });
 
   if (req.query.limit === undefined) {
@@ -3695,6 +3703,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
       computeDriftForDonors(req.user.orgId),
     ]);
     const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+    if (mayRoom) roomMap = await PRm.roomToGive(req.user.orgId);
     return res.json(donors.map(mapDonor(tpMap, driftMap)));
   }
 
@@ -3713,6 +3722,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"] }),
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
   res.json({ donors: donors.map(mapDonor(tpMap, driftMap)), total: parseInt(cnt[0].c, 10) });
 }));
 

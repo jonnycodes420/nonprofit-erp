@@ -248,15 +248,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   // screening results. Admins and the major gifts permission only; the
   // routes refuse anyone else.
   const canMajorGifts=useCanMajorGifts();
-  const [room,setRoom]=useState(null);           // {[donorId]:{word,label,rank}}
   // FIX-22: the server sorts by Room to give (?sort=room_to_give), across
   // the whole list, so page two continues page one.
   const roomSort=sortBy==="room_to_give";
   const [screenFor,setScreenFor]=useState(null); // {donorIds} for the file preview
   const [screenImport,setScreenImport]=useState(false);
   const [includeScreening,setIncludeScreening]=useState(false);
-  const loadRoom=()=>apiFetch("/prospects/room-to-give").then(r=>setRoom((r&&r.donors)||{})).catch(()=>setRoom({}));
-  useEffect(()=>{if(canMajorGifts)loadRoom();},[canMajorGifts]);
   // Persisted across the session, not just this mount — a compact preference
   // shouldn't reset every time you navigate away from Directory and back.
   const [density,setDensity]=useState(()=>localStorage.getItem("steward_dir_density")||"comfortable");
@@ -303,7 +300,6 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
   }
 
   const selFiltered=filtered.filter(d=>selIds.has(d.id));
-  const roomOf=id=>(room&&room[id])||null;
   const shownRows=filtered;
   const allChecked=filtered.length>0&&filtered.every(d=>selIds.has(d.id));
   const someChecked=!allChecked&&filtered.some(d=>selIds.has(d.id));
@@ -617,7 +613,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           cleared: the twenty you just planned are no longer the twenty you are
           about to act on, and leaving them checked invites a second plan. */}
       {screenFor&&<ScreeningFileModal who={screenFor} onClose={()=>setScreenFor(null)}/>}
-      {screenImport&&<ScreeningImportModal onClose={()=>setScreenImport(false)} onDone={()=>loadRoom()}/>}
+      {screenImport&&<ScreeningImportModal onClose={()=>setScreenImport(false)} onDone={()=>onBulkDone&&onBulkDone()}/>}
       {planSel&&<PlanFollowUpModal donors={planSel}
         onSaved={()=>{setSelIds(new Set());}} onClose={()=>setPlanSel(null)}/>}
 
@@ -720,8 +716,10 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
                     :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
-                {canMajorGifts&&<div data-testid="dir-room" data-room-word={(roomOf(d.id)||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
-                  {room?((roomOf(d.id)||{}).label||ROOM_LABEL.unknown):""}
+                {/* FIX-33: the word rides on the row (GET /donors), from the same
+                    prospect.roomToGive the profile reads; never a map loaded once. */}
+                {canMajorGifts&&<div data-testid="dir-room" data-room-word={(d.room||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
+                  {(d.room||{}).label||ROOM_LABEL.unknown}
                 </div>}
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
                   {/* Reassigning the owner is Team (server 403s for Core). */}

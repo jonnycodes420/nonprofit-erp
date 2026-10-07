@@ -112,6 +112,19 @@ const call = async (tok, method, p, body) => {
     ash.reasons.some(r => r.screening && r.text === "Capacity range from the screening file: $10,000 to $25,000; currently gives $150 a year"), ash.reasons.map(r => r.text));
   const keene = (await call(tok, "GET", `/donors/${PRE}keene/room-to-give`)).body;
   ok("§2 someone not in the file is untouched", keene.word === "unknown" && !keene.screening);
+  // FIX-33 · ONE SOURCE FOR THE LIST AND THE PROFILE. The Donors column read
+  // a whole-org map loaded once when the list mounted, so after an import it
+  // said Not yet known for a person whose profile said Strong. Each list row
+  // now carries the word from the same prospect.roomToGive the profile reads.
+  // HOW IT WENT RED before the fix: the list rows carried no word at all.
+  const listRows = (await call(tok, "GET", `/donors?limit=200`)).body.donors || [];
+  const disagree = [];
+  for (const p of SEED.PEOPLE) {
+    const row = listRows.find(d => d.id === PRE + p[0]);
+    const prof = (await call(tok, "GET", `/donors/${PRE + p[0]}/room-to-give`)).body;
+    if (!row || !row.room || row.room.word !== prof.word || row.room.label !== prof.label) disagree.push({ id: p[0], list: row && row.room, profile: prof.word });
+  }
+  ok("§2 the Donors list and the profile give every person the same Room to give word", disagree.length === 0, disagree);
 
   // §3 ─────────────────────────────────────────────────────────────────────
   const a = await call(tok, "POST", "/why/ask", { key: "more" });
