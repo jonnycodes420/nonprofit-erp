@@ -295,7 +295,7 @@ function AppShell() {
     // top of a tab with the card three scrolls down. Refusing an action and
     // then making the user hunt for the fix is half a fix.
     setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
-    setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
+    setTasksIntent((opts?.scope||opts?.view)&&t==="tasks"?{scope:opts.scope,view:opts.view}:null);
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
@@ -966,7 +966,7 @@ function AppShell() {
           its routes and its table are untouched, like Events and Volunteers. */}
       {tab==="finance"&&<Finance key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="calendar"&&<CalendarPage key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} isAdmin={auth?.user?.role==="admin"}/>}
-      {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
+      {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope} initialView={tasksIntent?.view}/>}
       {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}

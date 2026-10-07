@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { fmtDayLong, daysToDue } from "../lib/taskDue";
 import { apiFetch, adaptGrant } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
@@ -247,7 +248,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
-              <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"Not set"}</div>
+              <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?fmtDayLong(grant.deadline):"Not set"}</div>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Program Officer</div>
@@ -255,7 +256,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
             </div>
             {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
-              <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?T.terracotta:reportDays!==null&&reportDays<30?T.gold600:T.ink}}>{new Date(grant.reportDue).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}</div>
+              <div style={{fontSize:14,fontWeight:600,color:reportDays!==null&&reportDays<14?T.terracotta:reportDays!==null&&reportDays<30?T.gold600:T.ink}}>{fmtDayLong(grant.reportDue)}</div>
             </div>}
           </div>
 
@@ -366,7 +367,7 @@ async function resolveAwardAdoption(grantId, prevStatus, nextStatus) {
 // Deadline chip for a grant card/row: null when it shouldn't render.
 const deadlineMeta = g => {
   if (!g.deadline || !GRANT_ACTIONABLE.has(g.status)) return null;
-  const days = Math.round((new Date(g.deadline) - new Date()) / 86400000);
+  const days = daysToDue(g.deadline);
   if (days < 0) return { label: "Overdue", color: T.terracotta };
   if (days === 0) return { label: "Due today", color: T.terracotta };
   return { label: `${days}d`, color: days < 30 ? T.gold600 : T.ink3 };

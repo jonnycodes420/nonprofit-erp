@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, Component, createContext, useContext } from "react";
+import { daysToDue } from "../lib/taskDue";
 import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
@@ -172,7 +173,10 @@ export const daysDiff = d => (/^\d{4}-\d{2}-\d{2}$/.test(String(d||""))
 // everybody is on first-name terms, so that is what a row prints. The stored
 // full name is untouched — this is a rendering rule, not a data change.
 export const firstNameOf = n => String(n || "").trim().split(/\s+/)[0] || "";
-export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
+// TASKS-2 — a date-only value is a DAY: counted on the local calendar
+// (lib/taskDue.js), never as UTC midnight minus now, which put every deadline
+// a day early west of London for most of the day.
+export const daysUntil = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d||"")) ? daysToDue(d) : Math.floor((new Date(d)-new Date())/86400000);
 
 // ── Error boundary (BUILD-21 Part 2 — crash insurance) ──────────────────────
 // No component render crash should ever black-screen the app. This catches a

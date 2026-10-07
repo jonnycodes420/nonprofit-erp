@@ -7397,6 +7397,16 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS milestone_id TEXT`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS link_kind TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_thread ON tasks (thread_id) WHERE thread_id IS NOT NULL`);
+  // TASKS-2 · A TASK A DIRECTOR RUNS HER WEEK FROM. Its kind (call, email,
+  // meeting, thank-you, write, other; NULL = read from its words), a time of
+  // day, notes, a checklist, a repeat, the snooze and its reason, a household
+  // it is about, and who finished it when. shared/taskShape.js owns the rules.
+  for (const col of ["kind TEXT", "due_time TEXT", "notes TEXT", "checklist JSONB DEFAULT '[]'::jsonb", "recur JSONB",
+                     "recur_parent_id TEXT", "snooze_reason TEXT", "snoozed_from TEXT", "snoozed_at TIMESTAMPTZ",
+                     "household_id TEXT", "completed_at TIMESTAMPTZ", "completed_by_name TEXT", "reassign_note TEXT"]) {
+    await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS ${col}`);
+  }
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_org_assignee ON tasks (org_id, assigned_to) WHERE voided_at IS NULL`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_milestone ON tasks (milestone_id, link_kind) WHERE milestone_id IS NOT NULL`);
   // The heads-up before a proposal, LOI or report: days ahead, 0 = off.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_headsup_days INTEGER DEFAULT 14`);

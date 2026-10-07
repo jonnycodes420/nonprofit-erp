@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
+import { fmtDayLong } from "../lib/taskDue";
 import { PinnedAnswers } from "./AskPanel";
 import { SkeletonBar } from "./Skeleton";
 import { isBirthdayOn, MONTHS as BIRTH_MONTHS } from "../../../shared/birthday.js";
@@ -11,6 +12,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from 
 // which read like a log line ("Chen is at day 7.").
 import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { rowFigure } from "../../../shared/threadFigures";
+import { firstThingSentences } from "../../../shared/firstThing.js";
 import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
@@ -535,7 +537,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     onNavigate("agent",{agentText:text,autoAsk:true});
   }
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
-  const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));
+// TASKS-2 — Home's "Due today" is the Tasks Today count, from the one server
+  // rule (GET /tasks/counts), and reloads whenever the Thread does.
+  const [taskCounts,setTaskCounts]=useState(null);
+  const loadTaskCounts=()=>apiFetch("/tasks/counts?scope=mine").then(setTaskCounts).catch(()=>setTaskCounts(c=>c||{failed:true}));
+  useEffect(()=>{loadTaskCounts();},[]);
+  const loadThreads=(sc=threadScope)=>{loadTaskCounts();return apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>setThreadsData(d=>d||{failed:true,bands:[],list:[]}));};
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
@@ -1758,9 +1765,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                         Log the call
                       </button>
                       <button onClick={()=>openDriftLine(r.donorId)} disabled={isReadOnly}
-                        title="Not drifting? Say why and it stops asking"
+                        title="Say in one line why they are fine. They leave this list for 30 days, the line goes on their record, and they come back if they stay quiet."
                         style={{background:"transparent",border:"none",padding:"7px 4px",marginLeft:6,color:T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
-                        Not drifting
+                        They're fine, hide this
                       </button>
                     </div>
                   )}
@@ -1770,7 +1777,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div style={{display:"flex",gap:8,alignItems:"center"}}>
                     <input autoFocus value={driftLine} onChange={e=>{setDriftLine(e.target.value);proposeDriftStep(e.target.value);}}
                       onKeyDown={e=>{if(e.key==="Enter"&&driftLine.trim())submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")setDriftLineFor(null);}}
-                      placeholder="Why isn't this drifting? One line (Enter saves · Esc cancels)"
+                      placeholder="Why are they fine? One line. They leave this list for 30 days (Enter saves, Esc cancels)"
                       style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
                     <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy||!driftLine.trim()}
                       title={!driftLine.trim()?"A reason is what makes this a record instead of a disappearance":""}
@@ -1896,7 +1903,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // another typeface. The Dashboard keeps them: on the board the bands ARE
   // the shape of the answer.
   const homeCalm = surface==="home" && !threadAllOpen;
-  const rowSource = homeCalm ? threadList.slice(1).filter(t=>t.band!=="ahead") : threadList;
+  // TASKS-2 — the first row is ALSO a Thread row. First thing says it in a
+  // sentence; the Thread is the list, and a list missing its first item read
+  // as empty to the director whose one conversation was that item.
+  // A step logged today also shows, even when its day is next week: she
+  // just wrote it, and a Thread that hides what she just wrote reads as lost.
+  // Newest first among what she logged today, then threadRank's own order.
+  const rowSource = homeCalm
+    ? [...threadList.filter(t=>t.daysOpen===0),...threadList.filter(t=>t.daysOpen!==0&&t.band!=="ahead")]
+    : threadList;
   const threadRows=[];
   const homeRows=[];                       // {age, el} — so a stopped card can be placed by age
   let lastBand=null;
@@ -2146,7 +2161,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
           {/* ABOVE the Thread, not inside it. The Thread is the work; this is
               a note about whose work it is, and it outranks the first row. */}
-          {surface==="home"&&sampleStatus?.hasSampleData&&(
+          {surface==="home"&&sampleStatus?.hasSampleData&&!(sampleStatus.realDonorCount>0)&&(
             <div data-testid="home-sample-line"
               style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
               You're looking at sample data. Your own donors arrive when Jonathan loads your file.
@@ -2155,7 +2170,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           {/* TRANS-1 Part 5 — ONE line, and only while the move is running.
               Never alongside the sample-data line: they answer the same
               question and two answers is worse than either. */}
-          {surface==="home"&&!sampleStatus?.hasSampleData&&moveLine&&(
+          {surface==="home"&&!(sampleStatus?.hasSampleData&&!(sampleStatus.realDonorCount>0))&&moveLine&&(
             <div data-testid="home-move-line"
               style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
               {moveLine}
@@ -2278,15 +2293,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 morning's work. */}
             {homeCalm&&threadList.length>0&&(()=>{
               const bands=threadsData?.bands||[];
-              const first=threadList[0];
-              const ahead=(bands.find(x=>x.key==="ahead")?.count||0)-(first.band==="ahead"?1:0);
+              const ahead=(bands.find(x=>x.key==="ahead")?.count||0)-threadList.filter(t=>t.band==="ahead"&&t.daysOpen===0).length;
               if(ahead<=0)return null;
               return (
                 <div style={{...cPad,paddingTop:0,paddingBottom:12}}>
                   <button data-testid="home-fold" onClick={()=>setThreadAllOpen(true)}
                     style={{textAlign:"left",background:"none",border:"none",borderTop:"1px solid "+T.bg2,
                       width:"100%",padding:"11px 0 0",fontSize:12.5,color:T.ink2,cursor:"pointer",fontFamily:"inherit"}}>
-                    {ahead} {ahead===1?"is":"are"} coming up this week · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
+                    {ahead} {ahead===1?"is":"are"} coming up · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
                   </button>
                 </div>);
             })()}
@@ -2618,7 +2632,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const railFailedThisWeek=railFailedRows.length;
   // FIX-27 Part 3: a figure still loading is a skeleton, never a 0. null
   // means "not read yet"; a read that failed is a dash, not a zero either.
-  const railDueToday=!threadsData?null:threadsData.failed?"Not set":((threadsData.bands||[]).find(b=>b.key==="today")?.count||0);
+  const railDueToday=!taskCounts?null:taskCounts.failed?"Not set":(taskCounts.today||0);
   // A jump to a card on this page when the card is here, and the tab that owns
   // BUILD-89 — a tile no longer scrolls the page to a card; it opens the list
   // in the rail beside you (see THE RAIL HAS TWO STATES below).
@@ -2672,7 +2686,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     {key:"open",n:!threadsData?null:threadsData.failed?"Not set":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
-     definition:"Next steps whose date is today, in your organization's timezone."},
+     definition:"Your tasks and next steps due today, in your organization's timezone. The same count as Tasks, Today."},
     {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"Not set":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
@@ -2786,13 +2800,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 <a href={`/donors/${first.donorId}`}
                   onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button>0)return;e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
                   style={{display:"block",textDecoration:"none",color:"inherit"}}>
-                  <div style={{fontFamily:"'DM Serif Display',serif",fontSize:17,lineHeight:1.3,color:T.ink}}>
-                    {first.donorName} {threadClause(first).replace(/^./,c=>c.toLowerCase())}
+                  {/* TASKS-2 — one subject per sentence: "Christine asked for
+                      the impact report. Send it today." (shared/firstThing.js) */}
+                  {(()=>{const s=firstThingSentences(first,orgTodayPlus(0));return(<>
+                  <div data-testid="home-first-sentence" style={{fontFamily:"'DM Serif Display',serif",fontSize:17,lineHeight:1.3,color:T.ink}}>
+                    {s.happened}
                   </div>
-                  <div style={{fontSize:12.5,color:T.ink3,marginTop:4,lineHeight:1.45}}>
-                    Next: {String(first.nextStep?.label||"").replace(/^./,c=>c.toLowerCase())}
-                    {first.overdue?` · ${rowFigure(first)} day${rowFigure(first)===1?"":"s"} ${rowFigure(first)>(first.overdueDays||0)?"waiting":"overdue"}`:""}
-                  </div>
+                  <div data-testid="home-first-step" style={{fontSize:12.5,color:first.overdue?T.gold700:T.ink3,marginTop:4,lineHeight:1.45}}>
+                    {s.next}
+                  </div></>);})()}
                 </a>
                 <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
                   <DonorLink id={first.donorId} data-testid="home-first-open"
@@ -2814,7 +2830,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             label on the profile tiles' "?" (keyboard-reachable, BUILD-100). */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,margin:"0 -8px"}}>
           {railTiles.map(tile=>(
-            <div key={tile.key} {...interactive(()=>setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
+            <div key={tile.key} {...interactive(()=>tile.key==="today"?onNavigate&&onNavigate("tasks",{scope:"mine",view:"today"}):setRailView({kind:"list",key:tile.key}),{label:`${tile.n??"Loading"} ${tile.label}`})}
               className="home-rail-row" data-testid={"rail-tile-"+tile.key}
               style={{padding:"10px 8px",borderRadius:10,borderTop:"none",display:"flex",flexDirection:"column",gap:4,minWidth:0}}>
               {tile.n==null
@@ -3275,7 +3291,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         rows={(retentionBreakdown?.rows||[]).map(r=>({
           donorId:r.donorId,
           donorName:r.donorName,
-          detail:r.lastGiftDate?`Last gave ${new Date(r.lastGiftDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:"No gift date on file",
+          detail:r.lastGiftDate?`Last gave ${fmtDayLong(r.lastGiftDate)}`:"No gift date on file",
           value:fmtFull(r.lastGiftAmount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}
@@ -3293,7 +3309,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         rows={(impact?.atRiskDonors||[]).map(r=>({
           donorId:r.id,
           donorName:r.name,
-          detail:r.lastGiftDate?`Last gave ${new Date(r.lastGiftDate).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:"No gift date on file",
+          detail:r.lastGiftDate?`Last gave ${fmtDayLong(r.lastGiftDate)}`:"No gift date on file",
           value:fmtFull(r.amount),
         }))}
         onSelectDonor={goToDonorFromBreakdown}

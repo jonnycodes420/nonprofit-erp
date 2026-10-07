@@ -3209,8 +3209,15 @@ app.get("/org/sample-data-status", requireAuth, wrap(async (req, res) => {
   // banner driven by a different count from the one the clear acts on would
   // eventually outlive the rows it is about.
   const counts = await sampleDataMod.countSampleData(query, req.user.orgId);
+  // TASKS-2 — "your own donors arrive when your file is loaded" is only true
+  // while NOTHING real is here. An org that imported 1,000 donors and still
+  // carries the samples was told its file had not arrived.
+  const [real] = await query(
+    "SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL AND (is_sample IS NULL OR is_sample=false)",
+    [req.user.orgId]);
   res.json({
     hasSampleData: counts.people > 0 || counts.gifts > 0,
+    realDonorCount: real ? real.n : 0,
     sampleDonorCount: counts.people,
     counts,
   });
@@ -16507,23 +16514,139 @@ async function linkedTaskChange(req, taskId, { done, due }) {
 // optional donor; the linked donor is now RENDERED in the UI, so donorId must
 // be org-verified (orgOwns) — a foreign id would otherwise leak a donor
 // name/link across tenants (the §1 resurfacing threat model note).
-app.get("/tasks", requireAuth, wrap(async (req, res) => {
-  // scope=mine → only the caller's own tasks (assigned_to = me), matching Home's
-  // Tasks command-card count exactly so "Tasks: N" always lands on N (BUILD-30
-  // class audit: every stat card lands on a view showing its number). Default
-  // (no scope / scope=all) is the whole org, unchanged.
-  const mine = req.query.scope === "mine";
-  const tasks = await query(
-    `SELECT t.*, d.name AS donor_name
-       FROM tasks t
-       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-      WHERE t.org_id = ? AND t.voided_at IS NULL ${mine ? "AND t.assigned_to = ?" : ""}
+// ── TASKS-2 · ONE RULE FOR WHICH VIEW A TASK IS IN ───────────────────────
+// The list, the counts on every view, Home's numbers and the profile all read
+// taskViewSql. It is shared/taskShape.js viewOf, in SQL; the tasks2-thread
+// suite checks the two agree row by row. Done means done in the last 30 days.
+let _taskShape = null;
+const taskShapeMod = async () => _taskShape || (_taskShape = await import("../shared/taskShape.js"));
+const taskViewSql = `CASE
+    WHEN t.done = 1 THEN 'done'
+    WHEN COALESCE(t.due, '') !~ '^\\d{4}-\\d{2}-\\d{2}' THEN 'nodate'
+    WHEN LEFT(t.due, 10) < ? THEN 'overdue'
+    WHEN LEFT(t.due, 10) = ? THEN 'today'
+    WHEN LEFT(t.due, 10) <= ? THEN 'upcoming'
+    ELSE 'later' END`;
+const TASK_SELECT = `t.*, d.name AS donor_name, g.funder AS grant_funder, g.program AS grant_program,
+    ev.name AS event_name, cp.name AS campaign_name, hh.name AS household_name`;
+const TASK_JOINS = `LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+    LEFT JOIN grants g ON g.id = t.grant_id AND g.org_id = t.org_id
+    LEFT JOIN events ev ON ev.id = t.event_id AND ev.org_id = t.org_id
+    LEFT JOIN campaigns cp ON cp.id = t.campaign_id AND cp.org_id = t.org_id
+    LEFT JOIN households hh ON hh.id = t.household_id AND hh.org_id = t.org_id`;
+// Whose tasks. "mine" for an admin also holds the unowned ones, the Thread's
+// own rule (composeThreads), so Home's Thread and Home's numbers agree.
+async function taskScope(req) {
+  const { orgId, userId } = req.user;
+  const isAdmin = req.user.role === "admin";
+  const staff = req.query.staff ? String(req.query.staff) : null;
+  if (staff && isAdmin) {
+    if (!(await OU.orgUser(orgId, staff, { allowInactive: true })).ok) return { refused: true };
+    return { sql: "AND t.assigned_to = ?", params: [staff] };
+  }
+  if (req.query.scope === "all") return { sql: "", params: [] };
+  if (req.query.scope === "mine" || req.query.scope === undefined && req.query.view)
+    return isAdmin ? { sql: "AND (t.assigned_to = ? OR t.assigned_to IS NULL)", params: [userId] } : { sql: "AND t.assigned_to = ?", params: [userId] };
+  return { sql: "", params: [] };
+}
+async function taskDays(orgId) {
+  const today = orgToday(await orgTz(orgId));                        // ORG_TZ_SEAM_OK
+  const ts = await taskShapeMod();
+  return { today, week: ts.addDays(today, 7), monthAgo: ts.addDays(today, -30) };
+}
+// What a task is about, as one chip: the most specific record wins.
+function taskAbout(t) {
+  if (t.grant_id && (t.grant_funder || t.grant_program)) return { kind: "grant", id: t.grant_id, name: [t.grant_funder, t.grant_program].filter(Boolean).join(" · ") };
+  if (t.event_id && t.event_name) return { kind: "event", id: t.event_id, name: t.event_name };
+  if (t.campaign_id && t.campaign_name) return { kind: "campaign", id: t.campaign_id, name: t.campaign_name };
+  if (t.household_id && t.household_name) return { kind: "household", id: t.household_id, name: t.household_name };
+  if (t.donor_id && t.donor_name) return { kind: "person", id: t.donor_id, name: t.donor_name };
+  return null;
+}
+async function readTasks(orgId, { where = "", params = [], days }) {
+  const ts = await taskShapeMod();
+  const rows = await query(
+    `SELECT ${TASK_SELECT}, ${taskViewSql} AS view
+       FROM tasks t ${TASK_JOINS}
+      WHERE t.org_id = ? AND t.voided_at IS NULL
         -- WIRE-1: a deleted person's tasks go with them (and come back on Undo).
-        AND (t.donor_id IS NULL OR d.deleted_at IS NULL)
-      ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
-    mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
-  );
-  res.json(tasks);
+        AND (t.donor_id IS NULL OR d.deleted_at IS NULL) ${where}
+      ORDER BY CASE t.priority WHEN 'high' THEN 0 ELSE 1 END, t.due ASC NULLS LAST, t.due_time ASC NULLS LAST, t.created_at DESC`,
+    [days.today, days.today, days.week, orgId, ...params]);
+  return rows.map(t => ({ ...t, kind: ts.kindOf(t), kindChosen: t.kind || null, about: taskAbout(t) }));
+}
+const readTask = async (orgId, id) => {
+  const days = await taskDays(orgId);
+  const [row] = await readTasks(orgId, { where: "AND t.id = ?", params: [id], days });
+  return row || null;
+};
+
+app.get("/tasks", requireAuth, wrap(async (req, res) => {
+  // scope=mine → the caller's own; all (or none) → the whole org; staff=<id>
+  // (admins) → one person's. view=<today|upcoming|overdue|later|nodate|done>
+  // narrows to one view with the same rule the counts use.
+  const scope = await taskScope(req);
+  if (scope.refused) return OU.refuse(res, "staff");
+  const days = await taskDays(req.user.orgId);
+  const view = String(req.query.view || "");
+  const viewWhere = ["today", "upcoming", "overdue", "later", "nodate", "done"].includes(view) ? `AND ${taskViewSql} = ?` : "";
+  const viewParams = viewWhere ? [days.today, days.today, days.week, view] : [];
+  const doneWindow = view === "done" ? "AND COALESCE(t.completed_at, t.updated_at, t.created_at) >= ?::date" : "";
+  const rows = await readTasks(req.user.orgId, {
+    where: `${scope.sql} ${viewWhere} ${doneWindow}`,
+    params: [...scope.params, ...viewParams, ...(doneWindow ? [days.monthAgo] : [])], days });
+  res.json(rows);
+}));
+
+// The count on every view, from the same rule as the list. Home reads this.
+async function taskCounts(orgId, scope) {
+  const days = await taskDays(orgId);
+  const rows = await query(
+    `SELECT v, COUNT(*)::int AS n FROM (
+       SELECT ${taskViewSql} AS v, t.done, COALESCE(t.completed_at, t.updated_at, t.created_at) AS fin
+         FROM tasks t LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+        WHERE t.org_id = ? AND t.voided_at IS NULL AND (t.donor_id IS NULL OR d.deleted_at IS NULL) ${scope.sql}) x
+      WHERE v <> 'done' OR fin >= ?::date
+      GROUP BY v`,
+    [days.today, days.today, days.week, orgId, ...scope.params, days.monthAgo]);
+  const out = { today: 0, upcoming: 0, overdue: 0, later: 0, nodate: 0, done: 0 };
+  for (const r of rows) out[r.v] = r.n;
+  out.open = out.today + out.upcoming + out.overdue + out.later + out.nodate;
+  return { ...out, asOf: days.today };
+}
+app.get("/tasks/counts", requireAuth, wrap(async (req, res) => {
+  const scope = await taskScope({ ...req, query: { ...req.query, view: req.query.view || "count" } });
+  if (scope.refused) return OU.refuse(res, "staff");
+  res.json(await taskCounts(req.user.orgId, scope));
+}));
+
+// Quick add: read the words, find the person, change nothing. The person
+// confirms on the screen before anything is saved.
+app.post("/tasks/parse", requireAuth, wrap(async (req, res) => {
+  if (req.audit) req.audit.skip("reads a sentence and writes nothing");
+  const text = String((req.body && req.body.text) || "").slice(0, 300);
+  if (!text.trim()) return res.status(400).json({ error: "text_required", sentence: "Type what needs doing." });
+  const ts = await taskShapeMod();
+  const { today } = await taskDays(req.user.orgId);
+  const p = ts.parseQuickAdd(text, today);
+  let person = null, span = null, candidates = [];
+  // Each capitalised run, and its tail without a title ("Rev. Ana Ortiz").
+  const tries = [];
+  for (const sp of p.nameSpans) { const w = sp.split(" "); for (let i = 0; i < w.length && w.length - i >= 1; i++) tries.push([sp, w.slice(i).join(" ")]); }
+  for (const [sp, name] of tries) {
+    if (name.length < 3) continue;
+    const rows = await query(
+      `SELECT id, name FROM donors WHERE org_id = ? AND deleted_at IS NULL
+          AND (LOWER(name) = LOWER(?) OR LOWER(name) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?))
+        ORDER BY (LOWER(name) = LOWER(?)) DESC, name LIMIT 5`,
+      [req.user.orgId, name, name + " %", "% " + name, name]);
+    const exact = rows.filter(r => r.name.toLowerCase() === name.toLowerCase());
+    if (exact.length === 1 || rows.length === 1) { person = exact[0] || rows[0]; span = name; break; }
+    if (rows.length > 1 && !candidates.length) { candidates = rows; span = name; }
+  }
+  const title = ts.titleWithout(p.rest, person ? span : null);
+  res.json({ title, kind: p.kind, due: p.due, time: p.time, recur: p.recur, recurPhrase: ts.recurPhrase(p.recur),
+             priority: p.priority, person, candidates: person ? [] : candidates, heard: p.matched, today });
 }));
 
 // A donor's own open tasks — surfaced on the donor profile.
@@ -16571,21 +16694,191 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     return shape.nextStepLabelFor("follow_up") || "Follow up";
   })();
 
+  // TASKS-2 — the rest of a task: its kind, time, notes, checklist, repeat,
+  // and the record it is about (each checked to belong to this org).
+  const x = await taskExtras(req.user.orgId, req.body || {});
+  if (x.refused) return res.status(x.status || 400).json(x.refused);
+  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(String(due))) return res.status(400).json({ error: "bad_due_date", sentence: "The date must be a day." });
   const id = "t_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,?,?,NOW(),?,?)",
-    [id, req.user.orgId, taskTitle, due || "", priority || "medium", type || "donor",
-     donorId || null, ownerId, ownerName, actor(req).id, actor(req).name]
+    `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
+                        kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
+     VALUES (?,?,?,?,?,?,0,?,?,?,NOW(),?,?,?,?,?,?::jsonb,?::jsonb,?,?,?,?,?)`,
+    [id, req.user.orgId, taskTitle, due || "", priority === "high" ? "high" : "medium", type || "donor",
+     donorId || null, ownerId, ownerName, actor(req).id, actor(req).name,
+     x.fields.kind ?? null, x.fields.due_time ?? null, x.fields.notes ?? null, JSON.stringify(x.fields.checklist || []),
+     x.fields.recur ? JSON.stringify(x.fields.recur) : null, x.fields.household_id ?? null, x.fields.grant_id ?? null,
+     x.fields.event_id ?? null, x.fields.campaign_id ?? null, req.body.recurParentId && /^t_/.test(String(req.body.recurParentId)) ? String(req.body.recurParentId) : null]
   );
-  const rows = await query(
-    `SELECT t.*, d.name AS donor_name FROM tasks t
-       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [id]);
+  const rows = [await readTask(req.user.orgId, id)];
   // BUILD-36 A2: if this task was assigned to someone OTHER than the creator,
   // email the assignee (no email for a self-assigned task). Fire-and-forget.
   if (rows[0]?.assigned_to && rows[0].assigned_to !== req.user.userId) {
     queueTaskAssignmentEmail(rows[0], req.user.userId).catch(e => console.error("[task] assign email:", e.message));
   }
   res.status(201).json(rows[0]);
+}));
+
+// TASKS-2 — the optional fields of a task, validated once for create, edit
+// and bulk. Returns { fields } (only the keys that were sent) or { refused }.
+async function taskExtras(orgId, b) {
+  const ts = await taskShapeMod();
+  const f = {};
+  if (b.kind !== undefined) f.kind = b.kind ? ts.normalizeKind(b.kind) : null;
+  if (b.kind && !f.kind) return { refused: { error: "bad_kind", sentence: "That kind of task is not one Steward knows." } };
+  if (b.dueTime !== undefined) {
+    if (b.dueTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.dueTime))) return { refused: { error: "bad_time", sentence: "The time must be like 14:00." } };
+    f.due_time = b.dueTime || null;
+  }
+  if (b.notes !== undefined) f.notes = String(b.notes || "").slice(0, 8000) || null;
+  if (b.checklist !== undefined) {
+    if (!Array.isArray(b.checklist)) return { refused: { error: "bad_checklist", sentence: "A checklist is a list of items." } };
+    f.checklist = b.checklist.slice(0, 50).map(i => ({ text: String((i && i.text) || "").slice(0, 300), done: !!(i && i.done) })).filter(i => i.text.trim());
+  }
+  if (b.recur !== undefined) {
+    f.recur = b.recur ? ts.normalizeRecur(b.recur) : null;
+    if (b.recur && !f.recur) return { refused: { error: "bad_recur", sentence: "A repeat is weekly, monthly or quarterly." } };
+  }
+  for (const [key, table, col] of [["householdId", "households", "household_id"], ["grantId", "grants", "grant_id"],
+                                   ["eventId", "events", "event_id"], ["campaignId", "campaigns", "campaign_id"]]) {
+    if (b[key] === undefined) continue;
+    if (b[key] && !(await orgOwns(table, b[key], orgId))) return { refused: { error: "not_found", sentence: "That record is not in this organization." }, status: 404 };
+    f[col] = b[key] || null;
+  }
+  return { fields: f };
+}
+
+// TASKS-2 — change some of a task and leave the rest alone (the full PUT
+// replaces every column, which an inline edit must never do). A linked
+// task's day goes through its next step or deadline, like everywhere else.
+app.patch("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  const b = req.body || {};
+  const x = await taskExtras(orgId, b);
+  if (x.refused) return res.status(x.status || 400).json(x.refused);
+  const sets = [], params = [];
+  const add = (col, v, cast = "") => { sets.push(`${col}=?${cast}`); params.push(v); };
+  for (const [col, v] of Object.entries(x.fields)) add(col, col === "checklist" || col === "recur" ? (v == null ? null : JSON.stringify(v)) : v, col === "checklist" || col === "recur" ? "::jsonb" : "");
+  if (b.title !== undefined && !t.link_kind) { if (!String(b.title).trim()) return res.status(400).json({ error: "Title required" }); add("title", String(b.title).trim().slice(0, 300)); }
+  if (b.priority !== undefined) add("priority", b.priority === "high" ? "high" : "medium");
+  if (b.donorId !== undefined && !t.link_kind) {
+    if (!(await orgOwns("donors", b.donorId, orgId))) return res.status(404).json({ error: "Donor not found" });
+    add("donor_id", b.donorId || null);
+  }
+  let reassigned = null;
+  if (b.assignedTo !== undefined) {
+    if (b.assignedTo) {
+      const { ok, user: u } = await OU.orgUser(orgId, b.assignedTo);
+      if (!ok) return OU.refuse(res, "assignedTo");
+      add("assigned_to", u.id); add("assigned_to_name", u.name || "");
+      if (u.id !== t.assigned_to) reassigned = u.id;
+    } else { add("assigned_to", null); add("assigned_to_name", null); }
+    add("reassign_note", String(b.reassignNote || "").slice(0, 500) || null);
+  }
+  if (b.due !== undefined) {
+    const due = String(b.due || "");
+    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "bad_due_date", sentence: "The date must be a day." });
+    const linked = await linkedTaskChange(req, t.id, { due });
+    if (linked && linked.refused) return res.status(409).json(linked.refused);
+    if (!linked) add("due", due);
+  }
+  if (sets.length) {
+    sets.push("updated_at=NOW()");
+    await run(`UPDATE tasks SET ${sets.join(",")} WHERE id=? AND org_id=?`, [...params, t.id, orgId]);
+  }
+  // FIX-31: a next step's owner is the thread's; reassigning its task moves the thread.
+  if (reassigned && t.link_kind === "next_step" && t.thread_id) {
+    const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [reassigned, orgId]);
+    await run("UPDATE threads SET owner_id=?, owner_name=? WHERE id=? AND org_id=? AND closed_at IS NULL", [reassigned, u ? u.name : null, t.thread_id, orgId]);
+  }
+  const row = await readTask(orgId, t.id);
+  if (reassigned && reassigned !== req.user.userId) queueTaskAssignmentEmail(row, req.user.userId).catch(e => console.error("[task] reassign email:", e.message));
+  res.json(row);
+}));
+
+// TASKS-2 — Snooze: the task moves to a later day and remembers why and from
+// when. Undo is a PATCH of the day back (the screen holds `snoozedFrom`).
+app.post("/tasks/:id/snooze", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const until = String((req.body && req.body.until) || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) return res.status(400).json({ error: "bad_due_date", sentence: "Pick the day to bring it back." });
+  const { today } = await taskDays(orgId);
+  if (until <= today) return res.status(400).json({ error: "not_later", sentence: "Snooze to a day after today." });
+  const [t] = await query("SELECT id, due FROM tasks WHERE id=? AND org_id=? AND done=0", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  const linked = await linkedTaskChange(req, t.id, { due: until });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  await run(`UPDATE tasks SET ${linked ? "" : "due=?, "}snooze_reason=?, snoozed_from=?, snoozed_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
+    [...(linked ? [] : [until]), String((req.body && req.body.reason) || "").slice(0, 300) || null, t.due || "", t.id, orgId]);
+  res.json({ ...(await readTask(orgId, t.id)), previousDue: t.due || "" });
+}));
+
+// TASKS-2 — Bulk: reassign, move a day, mark done, or delete, many at once.
+// A next step or a grant deadline changes through its own record (FIX-31);
+// one that cannot is SKIPPED and named, never half-done. The answer carries
+// what each row was before, so the screen's Undo can put every one back.
+app.post("/tasks/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const b = req.body || {};
+  const ids = Array.isArray(b.ids) ? [...new Set(b.ids.map(String))].slice(0, 200) : [];
+  const action = String(b.action || "");
+  if (!ids.length || !["reassign", "move", "done", "undone", "delete", "restore"].includes(action))
+    return res.status(400).json({ error: "bad_bulk", sentence: "Pick some tasks and one thing to do to them." });
+  const rows = await query(`SELECT id, title, due, done, assigned_to, assigned_to_name, link_kind, thread_id FROM tasks WHERE org_id=? AND id IN (${ids.map(() => "?").join(",")})`, [orgId, ...ids]);
+  let owner = null;
+  if (action === "reassign") {
+    const { ok, user: u } = await OU.orgUser(orgId, b.assignedTo);
+    if (!ok || !b.assignedTo) return OU.refuse(res, "assignedTo");
+    owner = u;
+  }
+  if (action === "move" && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.due || ""))) return res.status(400).json({ error: "bad_due_date", sentence: "The date must be a day." });
+  const before = [], changed = [], skipped = [], undoIds = [];
+  for (const t of rows) {
+    const prior = { id: t.id, due: t.due || "", done: t.done, assignedTo: t.assigned_to || null };
+    if (action === "reassign") {
+      await run("UPDATE tasks SET assigned_to=?, assigned_to_name=?, reassign_note=?, updated_at=NOW() WHERE id=? AND org_id=?",
+        [owner.id, owner.name || "", String(b.note || "").slice(0, 500) || null, t.id, orgId]);
+      if (t.link_kind === "next_step" && t.thread_id)
+        await run("UPDATE threads SET owner_id=?, owner_name=? WHERE id=? AND org_id=? AND closed_at IS NULL", [owner.id, owner.name, t.thread_id, orgId]);
+    } else if (action === "move") {
+      const linked = await linkedTaskChange(req, t.id, { due: b.due });
+      if (linked && linked.refused) { skipped.push({ id: t.id, title: t.title, sentence: linked.refused.sentence }); continue; }
+      if (!linked) await run("UPDATE tasks SET due=?, updated_at=NOW() WHERE id=? AND org_id=?", [b.due, t.id, orgId]);
+    } else if (action === "done" || action === "undone") {
+      const done = action === "done" ? 1 : 0;
+      if (t.done === done) continue;
+      const linked = await linkedTaskChange(req, t.id, { done });
+      if (linked && linked.refused) { skipped.push({ id: t.id, title: t.title, sentence: linked.refused.sentence }); continue; }
+      if (!linked) await run(`UPDATE tasks SET done=?, completed_at=${done ? "NOW()" : "NULL"}, completed_by_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+        [done, done ? actor(req).name : null, t.id, orgId]);
+    } else if (action === "delete") {
+      if (t.link_kind === "next_step" || t.link_kind === "deadline") {
+        skipped.push({ id: t.id, title: t.title, sentence: t.link_kind === "deadline" ? "A grant deadline goes when it is taken off the grant." : "A next step goes when it is dismissed on the Thread." });
+        continue;
+      }
+      const undoId = await trashRow("tasks", t.id, req);
+      if (undoId) undoIds.push(undoId);
+    } else if (action === "restore") {
+      // Undo of a reassign or a move: each row back as it was.
+      const want = (Array.isArray(b.before) ? b.before : []).find(x => x && x.id === t.id);
+      if (!want) continue;
+      if (want.assignedTo !== undefined && want.assignedTo !== t.assigned_to) {
+        const [u] = want.assignedTo ? await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [want.assignedTo, orgId]) : [null];
+        await run("UPDATE tasks SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?", [u ? u.id : null, u ? u.name : null, t.id, orgId]);
+        if (t.link_kind === "next_step" && t.thread_id && u)
+          await run("UPDATE threads SET owner_id=?, owner_name=? WHERE id=? AND org_id=? AND closed_at IS NULL", [u.id, u.name, t.thread_id, orgId]);
+      }
+      if (want.due !== undefined && String(want.due) !== String(t.due || "")) {
+        const linked = await linkedTaskChange(req, t.id, { due: want.due });
+        if (!linked && /^(\d{4}-\d{2}-\d{2})?$/.test(String(want.due))) await run("UPDATE tasks SET due=?, updated_at=NOW() WHERE id=? AND org_id=?", [want.due, t.id, orgId]);
+      }
+    }
+    before.push(prior); changed.push(t.id);
+  }
+  if (req.audit) req.audit.after({ action, changed, skipped: skipped.map(x => x.id) });
+  res.json({ action, changed, skipped, before, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
 app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -16634,18 +16927,56 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // One-click complete/reopen — the primary Tasks action (write-gated).
 app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const done = req.body.done === false ? 0 : 1;
+  const orgId = req.user.orgId;
+  const ts = await taskShapeMod();
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  // TASKS-2 · DONE PROPERLY. A call or a meeting with a person is finished by
+  // saying how it went and what is next: the conversation is logged through
+  // POST /donors/:id/conversations (which requires a next step or an explicit
+  // "No next step") and its id comes here. A bare tick is refused, so the
+  // thread never ends without a decision.
+  let viaConversation = false;
+  if (done === 1 && !t.done && t.donor_id && !t.link_kind && ts.NEEDS_OUTCOME.has(ts.kindOf(t))) {
+    const iid = String(req.body.interactionId || "");
+    const [i] = iid ? await query(
+      `SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'next_step' IN ('set','skipped')`,
+      [iid, orgId, t.donor_id]) : [];
+    if (!i) return res.status(422).json({ error: "needs_outcome",
+      sentence: `Say how the ${ts.kindOf(t) === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
+    viaConversation = true;
+  }
   // FIX-31: a next step's or a deadline's task is ticked through that record,
-  // and the record's trigger ticks the task: one record, every view.
-  const linked = await linkedTaskChange(req, req.params.id, { done });
+  // and the record's trigger ticks the task: one record, every view. When the
+  // conversation already closed the next step, there is nothing left to tick.
+  const fresh = viaConversation ? (await query("SELECT done FROM tasks WHERE id=? AND org_id=?", [t.id, orgId]))[0] : null;
+  const linked = fresh && fresh.done === 1 ? { ok: true } : await linkedTaskChange(req, t.id, { done });
   if (linked && linked.refused) return res.status(409).json(linked.refused);
-  const affected = linked ? { changes: 1 } : await run(
-    "UPDATE tasks SET done=?, updated_at=NOW() WHERE id=? AND org_id=?",
-    [done, req.params.id, req.user.orgId]);
-  if (!affected.changes) return res.status(404).json({ error: "Task not found" });
-  const rows = await query(
-    `SELECT t.*, d.name AS donor_name FROM tasks t
-       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ?`, [req.params.id]);
-  res.json(rows[0]);
+  if (!linked) await run("UPDATE tasks SET done=?, updated_at=NOW() WHERE id=? AND org_id=?", [done, t.id, orgId]);
+  await run(`UPDATE tasks SET completed_at=${done ? "COALESCE(completed_at, NOW())" : "NULL"}, completed_by_name=? WHERE id=? AND org_id=?`,
+    [done ? actor(req).name : null, t.id, orgId]);
+  // TASKS-2 · A REPEAT. Finishing a repeating task makes the next one, once;
+  // taking the tick back takes the untouched next one away again.
+  let next = null;
+  const recur = ts.normalizeRecur(t.recur);
+  if (recur && done === 1) {
+    const [have] = await query("SELECT id FROM tasks WHERE recur_parent_id=? AND org_id=?", [t.id, orgId]);
+    if (!have) {
+      const { today } = await taskDays(orgId);
+      const nid = "t_" + uuid().slice(0, 8);
+      await run(
+        `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,
+                            kind,due_time,notes,checklist,recur,household_id,grant_id,event_id,campaign_id,recur_parent_id)
+         SELECT ?,org_id,title,?,priority,type,0,donor_id,assigned_to,assigned_to_name,NOW(),?,?,
+                kind,due_time,notes,(SELECT COALESCE(jsonb_agg(jsonb_set(e,'{done}','false'::jsonb)),'[]'::jsonb) FROM jsonb_array_elements(COALESCE(checklist,'[]'::jsonb)) e),
+                recur,household_id,grant_id,event_id,campaign_id,id
+           FROM tasks WHERE id=? AND org_id=?`,
+        [nid, ts.nextDue(recur, t.due, today), "system:task-repeat", "Steward", t.id, orgId]);
+      next = await readTask(orgId, nid);
+    }
+  }
+  if (recur && done === 0) await run("DELETE FROM tasks WHERE recur_parent_id=? AND org_id=? AND done=0 AND link_kind IS NULL", [t.id, orgId]);
+  res.json({ ...(await readTask(orgId, t.id)), next });
 }));
 
 // FIX-31: a task's day on its own (a Calendar drag, "Give it a day"). The full

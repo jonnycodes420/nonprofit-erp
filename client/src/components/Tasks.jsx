@@ -1,244 +1,521 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, interactive } from "./shared";
+import { useAuth } from "../main";
+import { T, PageTitle, EmptyState, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
+import { orgTodayPlus } from "../lib/orgToday";
+import { fmtDayShort } from "../lib/taskDue";
+import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 
-// BUILD-13 Part 1 — Tasks: the daily-driver follow-up surface.
-// Answers "what do I need to do" via three time buckets (Overdue / Due today /
-// Upcoming). One-click complete, create-task, and every donor-linked row deep-
-// links to that donor's profile (BUILD-12 clickability + keyboard-accessible
-// interactive() treatment). Local state is synced back into data.tasks via
-// setData so the sidebar badge stays live.
+// TASKS-2 — Tasks, the place a development director runs her week from.
+// Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
+// the server computed with the same rule as the list (GET /tasks/counts), and
+// Home's "Due today" is that same number. Every task says what it is about as
+// a chip that opens the record. Quick add reads a sentence and shows what it
+// understood; nothing saves until she says so. A call or a meeting with a
+// person is finished by saying how it went and what is next.
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const dueDays = due => Math.floor((new Date(due) - new Date(todayISO())) / 86400000);
-const fmtDue = due => new Date(due + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+// Shared styles, above every line that reads them (the TDZ rule).
+const inp = { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "9px 11px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "'DM Sans',sans-serif", width: "100%", boxSizing: "border-box" };
+const lbl = { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.04em" };
+const outlineBtn = { background: T.white, border: `1px solid ${T.ink}`, borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" };
+const textBtn = { background: "none", border: "none", padding: "5px 6px", fontSize: 12, fontWeight: 700, color: T.greenDk, cursor: "pointer", fontFamily: "inherit" };
+const barBtn = { background: T.white, border: "none", borderRadius: 7, padding: "6px 10px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" };
 
-// Bucket a task by its due date. No-date tasks are their own low-urgency group.
-function bucketOf(t) {
-  if (!t.due) return "someday";
-  const d = dueDays(t.due);
-  return d < 0 ? "overdue" : d === 0 ? "today" : "upcoming";
-}
+const KIND_LABEL = Object.fromEntries(TASK_KINDS.map(k => [k.key, k.label]));
+const VIEW_ORDER = ["today", "upcoming", "overdue", "later", "nodate", "done"];
+const fmtTime = t => {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(t || ""));
+  if (!m) return "";
+  const h = +m[1], ap = h >= 12 ? "PM" : "AM", h12 = h % 12 || 12;
+  return `${h12}:${m[2]} ${ap}`;
+};
+const nextMonday = today => addDays(today, ((8 - weekdayOf(today)) % 7) || 7);
 
-const BUCKETS = [
-  { key: "overdue",  label: "Overdue",   accent: T.terracotta, empty: "Nothing overdue, you're on top of it." },
-  { key: "today",    label: "Due today", accent: T.gold,       empty: "Nothing due today." },
-  { key: "upcoming", label: "Upcoming",  accent: T.greenMid,   empty: "No upcoming tasks scheduled." },
-  { key: "someday",  label: "No date",   accent: T.ink3,       empty: null },
-];
-
-export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
-  const [tasks, setTasks] = useState(() => data?.tasks ? null : []); // null = loading
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ title: "", due: "", priority: "medium", donorId: "" });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-  // Scope: "mine" (my own tasks) matches Home's Tasks command-card count exactly,
-  // so "Tasks: N" on Home lands on N here (BUILD-30 class audit). "all" = the whole
-  // org, one toggle away. Default "mine" — the daily-driver, and the Home default.
+export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, initialView }) {
+  const auth = useAuth();
+  const isAdmin = auth?.user?.role === "admin";
+  const today = orgTodayPlus(0);
+  const [view, setView] = useState(VIEW_ORDER.includes(initialView) ? initialView : "today");
   const [scope, setScope] = useState(initialScope === "all" ? "all" : "mine");
+  const [staff, setStaff] = useState("");
+  const [team, setTeam] = useState([]);
+  const [counts, setCounts] = useState(null);
+  const [rows, setRows] = useState(null);           // null = loading
+  const [err, setErr] = useState("");
+  const [selected, setSelected] = useState(() => new Set());
+  const [sheet, setSheet] = useState(null);         // a task open in the sheet
+  const [finish, setFinish] = useState(null);       // a call/meeting being finished
+  const [snoozeFor, setSnoozeFor] = useState(null);
 
-  // Fetch the authoritative list (includes donor_name join), re-fetch on scope.
-  useEffect(() => {
-    let alive = true;
-    apiFetch(`/tasks?scope=${scope}`).then(rows => {
-      if (!alive) return;
-      setTasks(rows);
-      if (scope === "mine") syncBadge(rows); // the sidebar badge = the user's own tasks
-    }).catch(() => { if (alive) setTasks([]); });
-    return () => { alive = false; };
-  }, [scope]);
+  useEffect(() => { apiFetch("/org/team").then(r => setTeam(Array.isArray(r) ? r : [])).catch(() => {}); }, []);
 
-  // Keep App.jsx's data.tasks (sidebar badge source) in sync with the truth.
-  const syncBadge = rows => setData(prev => prev ? { ...prev, tasks: rows.map(t => ({
-    id: t.id, title: t.title, due: t.due || "", priority: t.priority, type: t.type,
-    done: !!t.done, donorId: t.donor_id || null,
-  })) } : prev);
+  const q = `scope=${staff ? "all" : scope}${staff ? `&staff=${encodeURIComponent(staff)}` : ""}`;
+  const load = useCallback(async () => {
+    try {
+      const [c, list] = await Promise.all([apiFetch(`/tasks/counts?${q}`), apiFetch(`/tasks?view=${view}&${q}`)]);
+      setCounts(c); setRows(list); setErr("");
+    } catch (e) { setRows(r => r || []); setErr(errorMessage(e, "Tasks could not be loaded just now.")); }
+    // The sidebar badge is her own open tasks.
+    apiFetch("/tasks?scope=mine").then(all => setData && setData(prev => prev ? { ...prev, tasks: all.map(t => ({
+      id: t.id, title: t.title, due: t.due || "", priority: t.priority, type: t.type, done: !!t.done, donorId: t.donor_id || null,
+    })) } : prev)).catch(() => {});
+  }, [q, view, setData]);
+  useEffect(() => { setRows(null); setSelected(new Set()); load(); }, [load]);
 
-  const donors = data?.donors || [];
+  const say = e => setErr((e && e.sentence) || errorMessage(e, "That did not save."));
 
-  const open = useMemo(() => (tasks || []).filter(t => !t.done), [tasks]);
-  const doneTasks = useMemo(() => (tasks || []).filter(t => t.done), [tasks]);
-  const grouped = useMemo(() => {
-    const g = { overdue: [], today: [], upcoming: [], someday: [] };
-    for (const t of open) g[bucketOf(t)].push(t);
-    // Within a bucket, soonest-due first, then high-priority first.
-    const pr = { high: 0, medium: 1, low: 2 };
-    for (const k of Object.keys(g)) g[k].sort((a, b) =>
-      (a.due && b.due ? new Date(a.due) - new Date(b.due) : 0) || (pr[a.priority] - pr[b.priority]));
-    return g;
-  }, [open]);
-
-  const replace = row => setTasks(prev => { const next = (prev || []).map(t => t.id === row.id ? row : t); syncBadge(next); return next; });
-
-  // FIX-31: a tick here is the same tick as on the Thread, the Calendar and
-  // the grant (a next step's or deadline's task changes through its record),
-  // and the shared Undo toast takes it back everywhere.
-  const setDone = async (t, done) => {
-    const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done }) });
-    replace(row);
+  // ── Done ──────────────────────────────────────────────────────────────
+  const complete = async (t, done = true, extra = {}) => {
+    const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done, ...extra }) });
     return row;
   };
-  const toggle = async t => {
+  const tick = async t => {
     if (isReadOnly) return;
     setErr("");
-    replace({ ...t, done: !t.done });   // optimistic
+    if (!t.done && NEEDS_OUTCOME.has(t.kind) && t.donor_id) { setFinish(t); return; }
     try {
-      await setDone(t, !t.done);
-      if (!t.done) offerUndo({ message: `Done: ${t.title}.`, undoAction: () => setDone(t, false) }, t.title);
-    } catch (e) { replace(t); setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
+      const row = await complete(t, !t.done);
+      await load();
+      if (!t.done) offerUndo({ message: row.next ? `Done: ${t.title}. The next one is on ${fmtDayShort(row.next.due)}.` : `Done: ${t.title}.`,
+        undoAction: async () => { await complete(t, false); await load(); } }, t.title);
+    } catch (e) { say(e); }
   };
 
-  const add = async () => {
-    if (!form.title.trim() || saving) return;
-    setSaving(true); setErr("");
+  // ── Snooze ────────────────────────────────────────────────────────────
+  const snooze = async (t, until, reason) => {
     try {
-      const row = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({
-        title: form.title.trim(), due: form.due, priority: form.priority, donorId: form.donorId || undefined,
-      }) });
-      setTasks(prev => { const next = [...(prev || []), row]; syncBadge(next); return next; });
-      setForm({ title: "", due: "", priority: "medium", donorId: "" });
-      setShowAdd(false);
-    } catch (e) { setErr(errorMessage(e, "Could not save task")); }
-    setSaving(false);
+      const row = await apiFetch(`/tasks/${t.id}/snooze`, { method: "POST", body: JSON.stringify({ until, reason }) });
+      setSnoozeFor(null); await load();
+      offerUndo({ message: `Snoozed to ${fmtDayShort(until)}${reason ? `: ${reason}` : ""}.`,
+        undoAction: async () => { await apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify({ due: row.previousDue || "" }) }); await load(); } }, t.title);
+    } catch (e) { say(e); }
   };
 
-  const openCount = open.length;
-  const overdueCount = grouped.overdue.length + grouped.today.length;
+  // ── Bulk ──────────────────────────────────────────────────────────────
+  const bulk = async (action, extra = {}) => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    try {
+      const r = await apiFetch("/tasks/bulk", { method: "POST", body: JSON.stringify({ ids, action, ...extra }) });
+      setSelected(new Set()); await load();
+      const n = r.changed.length;
+      const skippedLine = r.skipped.length ? ` ${r.skipped.length} left as they were: ${r.skipped[0].sentence}` : "";
+      const word = { reassign: "Reassigned", move: "Moved", done: "Marked done", delete: "Deleted" }[action];
+      const undoAction = action === "delete"
+        ? async () => { for (const id of r.undoIds) await apiFetch(`/deleted-records/${id}/restore`, { method: "POST" }); await load(); }
+        : action === "done"
+          ? async () => { await apiFetch("/tasks/bulk", { method: "POST", body: JSON.stringify({ ids: r.changed, action: "undone" }) }); await load(); }
+          : async () => { await apiFetch("/tasks/bulk", { method: "POST", body: JSON.stringify({ ids: r.changed, action: "restore", before: r.before }) }); await load(); };
+      offerUndo({ message: `${word} ${n} task${n === 1 ? "" : "s"}.${skippedLine}`, undoAction }, `${n} tasks`);
+    } catch (e) { say(e); }
+  };
 
-  if (tasks === null) return <div style={{ padding: 40, color: T.ink3, fontSize: 13 }}>Loading tasks…</div>;
+  const openAbout = t => {
+    const a = t.about;
+    if (!a || !onNavigate) return null;
+    if (a.kind === "person") return () => onNavigate("donors", { selectDonorId: a.id });
+    if (a.kind === "household") return t.donor_id ? () => onNavigate("donors", { selectDonorId: t.donor_id }) : null;
+    if (a.kind === "grant") return () => onNavigate("grants", { grantId: a.id });
+    if (a.kind === "event") return () => onNavigate("fundraising", { frSection: "events", eventId: a.id });
+    if (a.kind === "campaign") return () => onNavigate("communications", { subtab: "campaigns", campaignId: a.id });
+    return null;
+  };
+  // One click does what the kind says.
+  const kindAction = t => {
+    if (isReadOnly || !onNavigate) return null;
+    if (t.kind === "call" || t.kind === "meeting") {
+      if (t.kind === "meeting" && !t.donor_id) return { label: "Book it", run: () => onNavigate("calendar") };
+      return { label: t.kind === "call" ? "Log the call" : "How did it go?", run: () => t.donor_id ? setFinish(t) : tick(t) };
+    }
+    if (t.kind === "email") return { label: "Draft the email", run: () => t.donor_id ? onNavigate("donors", { selectDonorId: t.donor_id }) : onNavigate("communications", { subtab: "templates" }) };
+    if (t.kind === "thank_you") return { label: "Draft the thank-you", run: () => t.donor_id ? onNavigate("donors", { selectDonorId: t.donor_id }) : onNavigate("communications", { subtab: "milestones" }) };
+    if (t.kind === "write") return { label: "Open Drafts", run: () => onNavigate("communications", { subtab: "milestones" }) };
+    return null;
+  };
+
+  const viewMeta = TASK_VIEWS.find(v => v.key === view);
+  const allIds = (rows || []).filter(t => !t.done).map(t => t.id);
+  const allPicked = allIds.length > 0 && allIds.every(id => selected.has(id));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
         <PageTitle main="Your" accent="tasks." />
-        <button onClick={() => setShowAdd(v => !v)} disabled={isReadOnly}
-          title={isReadOnly ? "Reactivate your subscription to make changes." : undefined}
-          style={{ background: T.greenMid, border: "none", borderRadius: 10, padding: "10px 16px", color: T.white,
-            fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.45 : 1 }}>
-          + New task
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: 16, fontSize: 12.5, color: T.ink3, marginTop: -6, alignItems: "center", flexWrap: "wrap" }}>
-        <span><strong style={{ color: overdueCount ? T.terracotta : T.ink }}>{overdueCount}</strong> need attention</span>
-        <span><strong style={{ color: T.ink }}>{openCount}</strong> open</span>
-        <span><strong style={{ color: T.ink }}>{doneTasks.length}</strong> done</span>
-        {/* Mine/All — "mine" is the default so the count matches Home's Tasks card. */}
-        <div style={{ display: "flex", background: T.bg2, borderRadius: 8, padding: 3, marginLeft: "auto" }}>
-          {[["mine", "Mine"], ["all", "All"]].map(([v, l]) => (
-            <button key={v} onClick={() => setScope(v)}
-              style={{ background: scope === v ? T.white : "transparent", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: scope === v ? T.ink : T.ink3, cursor: "pointer", boxShadow: scope === v ? T.shadow : "none" }}>{l}</button>
-          ))}
-        </div>
-      </div>
-
-      {showAdd && (
-        <div style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 14, padding: 16, display: "flex", flexDirection: "column", gap: 10, boxShadow: T.shadow }}>
-          <input autoFocus value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-            onKeyDown={e => { if (e.key === "Enter") add(); }} placeholder="What needs to happen? (e.g. Call Jane about the spring gala)"
-            style={inp} />
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <label style={lbl}>Due
-              <input type="date" value={form.due} onChange={e => setForm(f => ({ ...f, due: e.target.value }))} style={{ ...inp, padding: "8px 10px" }} />
-            </label>
-            <label style={lbl}>Priority
-              <select value={form.priority} onChange={e => setForm(f => ({ ...f, priority: e.target.value }))} style={{ ...inp, padding: "8px 10px" }}>
-                {["high", "medium", "low"].map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </label>
-            <label style={{ ...lbl, flex: 1, minWidth: 180 }}>Linked donor (optional)
-              <select value={form.donorId} onChange={e => setForm(f => ({ ...f, donorId: e.target.value }))} style={{ ...inp, padding: "8px 10px" }}>
-                <option value="">None</option>
-                {donors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </label>
-          </div>
-          {err && <div style={{ color: T.terracotta, fontSize: 12 }}>{err}</div>}
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={add} disabled={!form.title.trim() || saving}
-              style={{ background: T.greenMid, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!form.title.trim() || saving) ? 0.5 : 1 }}>
-              {saving ? "Saving…" : "Add task"}
-            </button>
-            <button onClick={() => { setShowAdd(false); setErr(""); }} style={{ background: T.bg2, border: "none", borderRadius: 8, padding: "9px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {err && !showAdd && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
-
-      {openCount === 0 && !showAdd && (
-        <EmptyState icon="✓" title="You're all caught up" message="No open tasks. Add a follow-up so nothing slips, every task can link to the donor it's about." action="+ New task" onAction={isReadOnly ? undefined : () => setShowAdd(true)} />
-      )}
-
-      {BUCKETS.map(b => {
-        const rows = grouped[b.key];
-        if (!rows.length) return null;
-        return (
-          <div key={b.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: b.accent, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink }}>{b.label}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{rows.length}</span>
-            </div>
-            {rows.map(t => <TaskRow key={t.id} t={t} accent={b.accent} onToggle={() => toggle(t)} isReadOnly={isReadOnly}
-              onDonor={t.donor_id && onNavigate ? () => onNavigate("donors", { selectDonorId: t.donor_id }) : null}
-              onEvent={t.event_id && onNavigate ? () => onNavigate("fundraising", { frSection: "events", eventId: t.event_id }) : null}
-              onDrafts={t.type === "event_no_show" && onNavigate ? () => onNavigate("communications", { subtab: "milestones" }) : null}
-              onGrant={t.grant_id && onNavigate ? () => onNavigate("grants", { grantId: t.grant_id }) : null} />)}
-          </div>
-        );
-      })}
-
-      {doneTasks.length > 0 && (
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, cursor: "pointer" }}>Completed · {doneTasks.length}</summary>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-            {doneTasks.map(t => (
-              <div key={t.id} onClick={() => toggle(t)} style={{ display: "flex", alignItems: "center", gap: 12, background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 10, padding: "9px 14px", opacity: 0.55, cursor: isReadOnly ? "default" : "pointer" }}>
-                <span style={{ width: 20, height: 20, borderRadius: 6, background: T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.white, fontSize: 11, fontWeight: 800 }}>✓</span>
-                <span style={{ fontSize: 13, color: T.ink3, textDecoration: "line-through", flex: 1 }}>{t.title}</span>
-              </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div role="group" aria-label="Whose tasks" style={{ display: "flex", background: T.bg2, borderRadius: 8, padding: 3 }}>
+            {[["mine", "Mine"], ["all", "Everyone"]].map(([v, l]) => (
+              <button key={v} aria-pressed={!staff && scope === v} onClick={() => { setStaff(""); setScope(v); }}
+                style={{ background: !staff && scope === v ? T.white : "transparent", border: "none", borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, color: !staff && scope === v ? T.ink : T.ink3, cursor: "pointer", boxShadow: !staff && scope === v ? T.shadow : "none" }}>{l}</button>
             ))}
           </div>
-        </details>
+          {isAdmin && team.length > 1 && (
+            <select aria-label="One person's tasks" data-testid="tasks-staff" value={staff} onChange={e => setStaff(e.target.value)} style={{ ...inp, width: "auto", padding: "6px 10px", fontSize: 12.5 }}>
+              <option value="">Any staff member</option>
+              {team.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {!isReadOnly && <QuickAdd onSaved={async (row) => { await load(); offerUndo({ message: `Added: ${row.title}${row.due ? `, ${fmtDayShort(row.due)}` : ""}.`,
+        undoAction: async () => { await apiFetch(`/tasks/${row.id}`, { method: "DELETE" }); await load(); } }, row.title); }} today={today} />}
+
+      <div role="tablist" aria-label="Task views" style={{ display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `1px solid ${T.bg2}` }}>
+        {VIEW_ORDER.map(k => {
+          const v = TASK_VIEWS.find(x => x.key === k);
+          const n = counts ? counts[k] : null;
+          const on = view === k;
+          return (
+            <button key={k} role="tab" aria-selected={on} data-testid={`tasks-view-${k}`} title={v.definition} onClick={() => setView(k)}
+              style={{ background: "none", border: "none", borderBottom: `2px solid ${on ? T.greenDk : "transparent"}`, padding: "8px 10px", marginBottom: -1,
+                fontSize: 13, fontWeight: on ? 800 : 600, color: on ? T.ink : T.ink3, cursor: "pointer", fontFamily: "inherit" }}>
+              {v.label} <span style={{ fontWeight: 700, color: k === "overdue" && n ? T.gold700 : T.ink3 }}>{n == null ? "" : n}</span>
+            </button>
+          );
+        })}
+      </div>
+      {viewMeta && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: -6 }}>{viewMeta.definition}</div>}
+
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
+
+
+      {rows === null ? <div style={{ padding: 30, color: T.ink3, fontSize: 13 }}>Loading tasks…</div>
+        : rows.length === 0
+          ? <EmptyState icon="✓" title={view === "today" ? "Nothing due today" : `Nothing in ${viewMeta?.label || "this view"}`}
+              message={view === "today" ? "Type a task above in plain words, like “Call Bill Harmon Friday 2pm about the gala”." : "Tasks land here by their day."} />
+          : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* The bulk bar takes the place of "Select all" and sticks to the
+                  top while she scrolls, so it never sits over a row she is
+                  about to pick (at 390 a bar pinned to the bottom did). */}
+              {view !== "done" && !isReadOnly && (selected.size > 0
+                ? <BulkBar n={selected.size} team={team} today={today} allPicked={allPicked}
+                    onAll={() => setSelected(allPicked ? new Set() : new Set(allIds))} onClear={() => setSelected(new Set())} onBulk={bulk} />
+                : <label style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 8, alignItems: "center", minHeight: 24 }}>
+                    <input type="checkbox" checked={false} onChange={() => setSelected(new Set(allIds))} /> Select all {allIds.length}
+                  </label>)}
+              {rows.map(t => (
+                <TaskRow key={t.id} t={t} today={today} isReadOnly={isReadOnly}
+                  picked={selected.has(t.id)} onPick={() => setSelected(s => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })}
+                  onTick={() => tick(t)} onOpen={() => setSheet(t)} onAbout={openAbout(t)} action={kindAction(t)}
+                  onSnooze={() => setSnoozeFor(t)} />
+              ))}
+            </div>
+          )}
+
+      {sheet && <TaskSheet t={sheet} team={team} isReadOnly={isReadOnly} onClose={() => setSheet(null)}
+        onChanged={async () => { await load(); }} onError={say} onFinish={t => { setSheet(null); if (NEEDS_OUTCOME.has(t.kind) && t.donor_id) setFinish(t); else tick(t); }} />}
+      {finish && <FinishSheet t={finish} today={today} onClose={() => setFinish(null)} onDone={async (row) => {
+        setFinish(null); await load();
+        const t = finish;
+        offerUndo({ message: `Done: ${t.title}. Logged how it went${row && row.next ? `; the next one is on ${fmtDayShort(row.next.due)}` : ""}.`,
+          undoAction: async () => { await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: false }) }); await load(); } }, t.title);
+      }} />}
+      {snoozeFor && <SnoozeSheet t={snoozeFor} today={today} onClose={() => setSnoozeFor(null)} onSnooze={snooze} />}
+    </div>
+  );
+}
+
+function TaskRow({ t, today, picked, onPick, onTick, onOpen, onAbout, action, onSnooze, isReadOnly }) {
+  const late = t.view === "overdue";
+  const dayLine = t.due ? (t.due.slice(0, 10) === today ? "Today" : `${late ? "Was due " : ""}${fmtDayShort(t.due)}`) : "";
+  return (
+    <div data-testid="task-row" data-task-id={t.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, background: T.white, border: `1px solid ${T.bg2}`,
+      borderLeft: `3px solid ${late ? T.gold500 : t.done ? T.bg3 : T.greenDk}`, borderRadius: 10, padding: "10px 12px", opacity: t.done ? 0.6 : 1 }}>
+      {!t.done && !isReadOnly && <input type="checkbox" aria-label={`Select ${t.title}`} checked={picked} onChange={onPick} style={{ marginTop: 5 }} />}
+      <button onClick={onTick} disabled={isReadOnly} aria-label={t.done ? "Reopen task" : "Complete task"} data-testid="task-tick"
+        title={isReadOnly ? "Reactivate your subscription to make changes." : t.done ? "Reopen" : "Mark complete"}
+        style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${late ? T.gold500 : T.greenDk}`, background: t.done ? T.greenDk : "transparent",
+          color: T.white, fontSize: 11, fontWeight: 800, flexShrink: 0, cursor: isReadOnly ? "not-allowed" : "pointer", padding: 0, marginTop: 1 }}>{t.done ? "✓" : ""}</button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <button onClick={onOpen} data-testid="task-open" style={{ background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+          fontSize: 14, color: T.ink, fontWeight: 600, lineHeight: 1.35, textDecoration: t.done ? "line-through" : "none" }}>{t.title}</button>
+        <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: T.ink3 }}>
+          <span style={{ fontWeight: 700, color: T.ink2 }}>{KIND_LABEL[t.kind] || "Other"}</span>
+          {dayLine && <span style={{ color: late ? T.gold700 : T.ink3, fontWeight: late ? 700 : 400 }}>{dayLine}{t.due_time ? ` · ${fmtTime(t.due_time)}` : ""}</span>}
+          {t.about && (onAbout
+            ? <DonorLink id={t.about.id} onOpen={onAbout} data-testid="task-about" style={{ fontSize: 12, color: T.greenDk, fontWeight: 700, background: T.bg, borderRadius: 99, padding: "1px 8px", border: `1px solid ${T.bg3}` }}>{t.about.name}</DonorLink>
+            : <span style={{ fontSize: 12, background: T.bg, borderRadius: 99, padding: "1px 8px" }}>{t.about.name}</span>)}
+          {t.assigned_to_name && <span>{t.assigned_to_name}</span>}
+          {t.recur && <span>{recurPhrase(t.recur)}</span>}
+          {t.link_kind === "next_step" && <span>A next step on the Thread</span>}
+          {t.snooze_reason && !t.done && <span>Snoozed: {t.snooze_reason}</span>}
+          {Array.isArray(t.checklist) && t.checklist.length > 0 && <span>{t.checklist.filter(i => i.done).length} of {t.checklist.length} done</span>}
+        </div>
+      </div>
+      {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.gold700, border: `1px solid ${T.gold500}`, borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}
+      {!t.done && !isReadOnly && (
+        <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {action && <button onClick={action.run} data-testid="task-kind-action" style={outlineBtn}>{action.label}</button>}
+          <button onClick={onSnooze} data-testid="task-snooze" style={textBtn}>Snooze</button>
+        </div>
       )}
     </div>
   );
 }
 
-function TaskRow({ t, accent, onToggle, onDonor, onEvent, onDrafts, onGrant, isReadOnly }) {
-  const overdue = t.due && dueDays(t.due) < 0;
+// ── Quick add ────────────────────────────────────────────────────────────
+function QuickAdd({ onSaved, today }) {
+  const [text, setText] = useState("");
+  const [p, setP] = useState(null);       // what Steward understood, editable
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const read = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await apiFetch("/tasks/parse", { method: "POST", body: JSON.stringify({ text }) });
+      setP({ ...r, donorId: r.person ? r.person.id : (r.candidates[0] ? "" : ""), donorName: r.person ? r.person.name : "" });
+    } catch (e) { setErr(errorMessage(e, "Steward could not read that.")); }
+    setBusy(false);
+  };
+  const save = async () => {
+    if (!p || !String(p.title || "").trim() || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const row = await apiFetch("/tasks", { method: "POST", body: JSON.stringify({
+        title: p.title.trim(), due: p.due || "", dueTime: p.time || null, kind: p.kind, priority: p.priority,
+        recur: p.recur || null, donorId: p.donorId || undefined }) });
+      setText(""); setP(null); await onSaved(row);
+    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
+    setBusy(false);
+  };
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 12, background: T.white, border: `1px solid ${T.bg2}`, borderLeft: `3px solid ${accent}`, borderRadius: 10, padding: "11px 14px" }}>
-      <button onClick={onToggle} disabled={isReadOnly} aria-label="Complete task"
-        title={isReadOnly ? "Reactivate your subscription to make changes." : "Mark complete"}
-        style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${accent}`, background: "transparent", flexShrink: 0, cursor: isReadOnly ? "not-allowed" : "pointer", padding: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500, lineHeight: 1.35 }}>{t.title}</div>
-        <div style={{ display: "flex", gap: 10, marginTop: 3, flexWrap: "wrap", alignItems: "center" }}>
-          {t.due && <span style={{ fontSize: 11.5, color: overdue ? T.terracotta : T.ink3, fontWeight: overdue ? 700 : 400 }}>{overdue ? "Was due " : "Due "}{fmtDue(t.due)}</span>}
-          {t.donor_name && (
-            onDonor
-              ? <DonorLink id={t.donor_id} onOpen={onDonor} style={{ fontSize: 11.5, color: T.greenMid, fontWeight: 600, borderRadius: 6, padding: "1px 6px" }}>♦ {t.donor_name}</DonorLink>
-              : <span style={{ fontSize: 11.5, color: T.ink3 }}>♦ {t.donor_name}</span>
-          )}
-          {t.assigned_to_name && <span style={{ fontSize: 11, color: T.ink3 }}>· {t.assigned_to_name}</span>}
-          {/* THREAD-3: an event's no-shows: the guest list, and the drafts waiting for her. */}
-          {onEvent && <button type="button" data-testid="task-open-event" onClick={onEvent} style={taskLink}>Open the event</button>}
-          {onDrafts && <button type="button" data-testid="task-open-drafts" onClick={onDrafts} style={taskLink}>Review the drafts</button>}
-          {onGrant && <button type="button" data-testid="task-open-grant" onClick={onGrant} style={taskLink}>Open the grant</button>}
-          {t.link_kind === "next_step" && <span style={{ fontSize: 11, color: T.ink3 }}>· A next step on the Thread</span>}
-        </div>
+    <div style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={text} onChange={e => { setText(e.target.value); setP(null); }} onKeyDown={e => { if (e.key === "Enter") (p ? save() : read()); }}
+          data-testid="quick-add" aria-label="Add a task in plain words" placeholder="Add a task: Call Bill Harmon Friday 2pm about the gala" style={{ ...inp, flex: 1 }} />
+        <button onClick={p ? save : read} disabled={!text.trim() || busy} data-testid="quick-add-go"
+          style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "0 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: !text.trim() || busy ? 0.5 : 1 }}>
+          {p ? "Save task" : "Add"}
+        </button>
       </div>
-      {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.terracotta, background: T.terra100, borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}
+      {p && (
+        <div data-testid="quick-add-confirm" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 12.5, color: T.ink3 }}>Here is what Steward read. Change anything, then Save task.</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ ...lbl, flex: "2 1 220px" }}>Task<input value={p.title} onChange={e => setP({ ...p, title: e.target.value })} data-testid="qa-title" style={inp} /></label>
+            <label style={{ ...lbl, flex: "1 1 140px" }}>About
+              {p.person || !p.candidates.length
+                ? <input value={p.donorName || "Nobody in particular"} readOnly data-testid="qa-person" style={{ ...inp, color: p.donorName ? T.ink : T.ink3 }} />
+                : <select value={p.donorId} onChange={e => { const c = p.candidates.find(x => x.id === e.target.value); setP({ ...p, donorId: e.target.value, donorName: c ? c.name : "" }); }} style={inp}>
+                    <option value="">Which one?</option>
+                    {p.candidates.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>}
+            </label>
+            <label style={{ ...lbl, flex: "1 1 130px" }}>Day<input type="date" value={p.due || ""} onChange={e => setP({ ...p, due: e.target.value })} data-testid="qa-due" style={inp} /></label>
+            <label style={{ ...lbl, flex: "1 1 100px" }}>Time<input type="time" value={p.time || ""} onChange={e => setP({ ...p, time: e.target.value })} data-testid="qa-time" style={inp} /></label>
+            <label style={{ ...lbl, flex: "1 1 110px" }}>Kind
+              <select value={p.kind} onChange={e => setP({ ...p, kind: e.target.value })} data-testid="qa-kind" style={inp}>
+                {TASK_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <div style={{ fontSize: 12.5, color: T.ink2 }}>
+            {p.recur ? `${recurPhrase(p.recur)}. ` : ""}{p.priority === "high" ? "High priority. " : ""}
+            {p.due === today ? "Due today." : ""}
+          </div>
+          {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
+          <div><button onClick={() => setP(null)} style={textBtn}>Cancel</button></div>
+        </div>
+      )}
+      {!p && err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
     </div>
   );
 }
 
-const taskLink = { background: "none", border: "none", padding: "1px 4px", fontSize: 11.5, fontWeight: 700, color: T.greenMid, cursor: "pointer", fontFamily: "inherit" };
-const inp = { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "10px 12px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "'DM Sans',sans-serif", width: "100%", boxSizing: "border-box" };
-const lbl = { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.04em" };
+// ── The task, opened ─────────────────────────────────────────────────────
+function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly }) {
+  const [f, setF] = useState({ title: t.title, due: (t.due || "").slice(0, 10), time: t.due_time || "", priority: t.priority === "high" ? "high" : "medium",
+    kind: t.kind, notes: t.notes || "", checklist: Array.isArray(t.checklist) ? t.checklist : [], recur: t.recur || null,
+    assignedTo: t.assigned_to || "", reassignNote: "" });
+  const [newItem, setNewItem] = useState("");
+  const [busy, setBusy] = useState(false);
+  const linked = !!t.link_kind;
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = { due: f.due, dueTime: f.time || null, priority: f.priority, kind: f.kind, notes: f.notes, checklist: f.checklist, recur: f.recur };
+      if (!linked) body.title = f.title;
+      if ((f.assignedTo || "") !== (t.assigned_to || "")) { body.assignedTo = f.assignedTo || null; body.reassignNote = f.reassignNote; }
+      await apiFetch(`/tasks/${t.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      await onChanged(); onClose();
+    } catch (e) { onError(e); }
+    setBusy(false);
+  };
+  const del = async () => {
+    try {
+      const r = await apiFetch(`/tasks/${t.id}`, { method: "DELETE" });
+      await onChanged(); onClose();
+      offerUndo({ ...r, message: `Deleted: ${t.title}.`, onRestored: onChanged }, t.title);
+    } catch (e) { onError(e); }
+  };
+  return (
+    <Modal onClose={onClose} title={linked ? t.title : "Task"} width={520}
+      footer={<div style={{ display: "flex", gap: 8, justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          {!isReadOnly && !t.done && <button onClick={() => onFinish(t)} style={outlineBtn} data-testid="sheet-done">Mark done</button>}
+          {!isReadOnly && !linked && <button onClick={del} style={textBtn}>Delete</button>}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={textBtn}>Cancel</button>
+          {!isReadOnly && <button onClick={save} disabled={busy} data-testid="sheet-save" style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{busy ? "Saving…" : "Save"}</button>}
+        </div>
+      </div>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {linked
+          ? <div style={{ fontSize: 12.5, color: T.ink3 }}>{t.link_kind === "next_step" ? "This is a next step on the Thread. Its day moves the step too." : "This is a grant deadline. Its day moves the deadline too."}</div>
+          : <label style={lbl}>Task<input value={f.title} onChange={e => setF({ ...f, title: e.target.value })} style={inp} /></label>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ ...lbl, flex: "1 1 140px" }}>Day<input type="date" value={f.due} onChange={e => setF({ ...f, due: e.target.value })} style={inp} /></label>
+          <label style={{ ...lbl, flex: "1 1 100px" }}>Time<input type="time" value={f.time} onChange={e => setF({ ...f, time: e.target.value })} style={inp} /></label>
+          <label style={{ ...lbl, flex: "1 1 110px" }}>Kind
+            <select value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })} style={inp}>{TASK_KINDS.map(k => <option key={k.key} value={k.key}>{k.label}</option>)}</select>
+          </label>
+          <label style={{ ...lbl, flex: "1 1 110px" }}>Priority
+            <select value={f.priority} onChange={e => setF({ ...f, priority: e.target.value })} style={inp}><option value="medium">Normal</option><option value="high">High</option></select>
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ ...lbl, flex: "1 1 180px" }}>Owner
+            <select value={f.assignedTo} onChange={e => setF({ ...f, assignedTo: e.target.value })} data-testid="sheet-owner" style={inp}>
+              <option value="">Nobody yet</option>
+              {team.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+            </select>
+          </label>
+          {!linked && <label style={{ ...lbl, flex: "1 1 180px" }}>Repeats
+            <select value={f.recur ? JSON.stringify(f.recur) : ""} onChange={e => setF({ ...f, recur: e.target.value ? JSON.parse(e.target.value) : null })} style={inp}>
+              <option value="">Does not repeat</option>
+              <option value={JSON.stringify({ every: "week" })}>Every week</option>
+              <option value={JSON.stringify({ every: "month" })}>Every month, same day</option>
+              <option value={JSON.stringify({ every: "month", nth: 1, weekday: 1 })}>Every month, first Monday</option>
+              <option value={JSON.stringify({ every: "quarter" })}>Every quarter</option>
+              {f.recur && ![`{"every":"week"}`, `{"every":"month"}`, `{"every":"month","nth":1,"weekday":1}`, `{"every":"quarter"}`].includes(JSON.stringify(f.recur)) && <option value={JSON.stringify(f.recur)}>{recurPhrase(f.recur)}</option>}
+            </select>
+          </label>}
+        </div>
+        {(f.assignedTo || "") !== (t.assigned_to || "") && (
+          <label style={lbl}>A note for them<input value={f.reassignNote} onChange={e => setF({ ...f, reassignNote: e.target.value })} placeholder="She asked for you by name." style={inp} /></label>
+        )}
+        {t.reassign_note && <div style={{ fontSize: 12.5, color: T.ink2 }}>Handed over with: {t.reassign_note}</div>}
+        <label style={lbl}>Notes<textarea value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></label>
+        <div style={lbl}>Checklist
+          {f.checklist.map((i, n) => (
+            <label key={n} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
+              <input type="checkbox" checked={!!i.done} onChange={() => setF({ ...f, checklist: f.checklist.map((x, m) => m === n ? { ...x, done: !x.done } : x) })} />
+              <span style={{ flex: 1, textDecoration: i.done ? "line-through" : "none" }}>{i.text}</span>
+              <button onClick={() => setF({ ...f, checklist: f.checklist.filter((_, m) => m !== n) })} aria-label={`Remove ${i.text}`} style={textBtn}>Remove</button>
+            </label>
+          ))}
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={newItem} onChange={e => setNewItem(e.target.value)} placeholder="Add an item"
+              onKeyDown={e => { if (e.key === "Enter" && newItem.trim()) { setF({ ...f, checklist: [...f.checklist, { text: newItem.trim(), done: false }] }); setNewItem(""); } }} style={inp} />
+            <button onClick={() => { if (newItem.trim()) { setF({ ...f, checklist: [...f.checklist, { text: newItem.trim(), done: false }] }); setNewItem(""); } }} style={outlineBtn}>Add</button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Done properly: how did it go, and what's next ────────────────────────
+function FinishSheet({ t, today, onClose, onDone }) {
+  const [line, setLine] = useState("");
+  const [reached, setReached] = useState(true);
+  const [next, setNext] = useState({ label: "", due: addDays(today, 7) });
+  const [none, setNone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const isCall = t.kind === "call";
+  const ready = line.trim() && (none || (next.label.trim() && next.due));
+  const save = async () => {
+    if (!ready || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const touch = isCall ? (reached ? "call_reached" : "call_no_answer") : "meeting";
+      const c = await apiFetch(`/donors/${t.donor_id}/conversations`, { method: "POST", body: JSON.stringify({
+        touch, line: line.trim(), nextStep: none ? { skipped: true } : { type: "follow_up", label: next.label.trim(), due: next.due } }) });
+      const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: true, interactionId: c.interactionId }) });
+      await onDone(row);
+    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
+    setBusy(false);
+  };
+  return (
+    <Modal onClose={onClose} title={`${isCall ? "The call" : "The meeting"} with ${t.donor_name || "them"}`} width={480}
+      footer={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={textBtn}>Cancel</button>
+        <button onClick={save} disabled={!ready || busy} data-testid="finish-save"
+          style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: !ready || busy ? 0.5 : 1 }}>Save and mark done</button>
+      </div>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {isCall && <div style={{ display: "flex", gap: 14, fontSize: 13 }}>
+          <label><input type="radio" checked={reached} onChange={() => setReached(true)} /> Reached them</label>
+          <label><input type="radio" checked={!reached} onChange={() => setReached(false)} /> No answer</label>
+        </div>}
+        <label style={lbl}>How did it go?
+          <textarea autoFocus value={line} onChange={e => setLine(e.target.value)} rows={2} data-testid="finish-line" placeholder="She will bring two tables to the gala." style={{ ...inp, resize: "vertical" }} />
+        </label>
+        <div style={lbl}>What's next?
+          {!none && <div style={{ display: "flex", gap: 8 }}>
+            <input value={next.label} onChange={e => setNext({ ...next, label: e.target.value })} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />
+            <input type="date" value={next.due} onChange={e => setNext({ ...next, due: e.target.value })} data-testid="finish-next-due" style={{ ...inp, flex: 1 }} />
+          </div>}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, textTransform: "none", letterSpacing: 0, fontWeight: 500 }}>
+            <input type="checkbox" checked={none} onChange={e => setNone(e.target.checked)} data-testid="finish-none" /> No next step
+          </label>
+        </div>
+        {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function SnoozeSheet({ t, today, onClose, onSnooze }) {
+  const [day, setDay] = useState(addDays(today, 1));
+  const [reason, setReason] = useState("");
+  return (
+    <Modal onClose={onClose} title={`Snooze: ${t.title}`} width={420}
+      footer={<div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={onClose} style={textBtn}>Cancel</button>
+        <button onClick={() => onSnooze(t, day, reason.trim())} data-testid="snooze-save" disabled={!day || day <= today}
+          style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Snooze to {fmtDayShort(day)}</button>
+      </div>}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => setDay(addDays(today, 1))} aria-pressed={day === addDays(today, 1)} style={outlineBtn}>Tomorrow</button>
+          <button onClick={() => setDay(nextMonday(today))} aria-pressed={day === nextMonday(today)} style={outlineBtn}>Next week</button>
+          <input type="date" value={day} min={addDays(today, 1)} onChange={e => setDay(e.target.value)} aria-label="Pick a day" style={{ ...inp, width: "auto" }} />
+        </div>
+        <label style={lbl}>Why (kept on the task)<input value={reason} onChange={e => setReason(e.target.value)} data-testid="snooze-reason" placeholder="She is travelling until Monday." style={inp} /></label>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkBar({ n, team, today, allPicked, onAll, onClear, onBulk }) {
+  const [who, setWho] = useState("");
+  const [note, setNote] = useState("");
+  const [day, setDay] = useState(addDays(today, 1));
+  return (
+    <div data-testid="tasks-bulk" style={{ position: "sticky", top: 0, zIndex: 20,
+      display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: T.ink, color: T.white, borderRadius: 10, padding: "10px 12px", boxShadow: T.shadow }}>
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 700 }}>
+        <input type="checkbox" checked={allPicked} onChange={onAll} aria-label="Select all" /> {n} selected
+      </label>
+      <select value={who} onChange={e => setWho(e.target.value)} aria-label="Reassign to" data-testid="bulk-who" style={{ ...inp, width: "auto", padding: "5px 8px" }}>
+        <option value="">Reassign to…</option>
+        {team.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
+      </select>
+      {who && <input value={note} onChange={e => setNote(e.target.value)} placeholder="A note (optional)" style={{ ...inp, width: 160, padding: "5px 8px" }} />}
+      {who && <button onClick={() => onBulk("reassign", { assignedTo: who, note })} data-testid="bulk-reassign" style={barBtn}>Reassign</button>}
+      <input type="date" value={day} onChange={e => setDay(e.target.value)} aria-label="Move to" style={{ ...inp, width: "auto", padding: "5px 8px" }} />
+      <button onClick={() => onBulk("move", { due: day })} data-testid="bulk-move" style={barBtn}>Move</button>
+      <button onClick={() => onBulk("done")} data-testid="bulk-done" style={barBtn}>Mark done</button>
+      <button onClick={() => onBulk("delete")} data-testid="bulk-delete" style={barBtn}>Delete</button>
+      <button onClick={onClear} style={{ ...barBtn, background: "transparent", border: "none", textDecoration: "underline" }}>Clear</button>
+    </div>
+  );
+}
