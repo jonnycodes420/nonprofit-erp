@@ -98,7 +98,7 @@ async function fire(evt) {
   return r.status;
 }
 
-const WIPE = ["merge_log", "data_health_merges", "calendar_events", "mailbox_connections", "calendar_pushes", "grant_milestones", "grant_sends", "grant_documents",
+const WIPE = ["donor_merges", "data_health_runs", "calendar_events", "mailbox_connections", "calendar_pushes", "grant_milestones", "grant_sends", "grant_documents",
   "volunteer_shifts", "event_attendees", "events", "peer_fundraisers", "giving_pages", "memberships", "membership_levels", "cultivation_plan_steps",
   "cultivation_plans", "cultivation_template_steps", "cultivation_templates", "audiences", "group_members", "tasks", "threads", "thank_you_drafts",
   "pledge_installments", "recurring_change_log", "recurring_subscriptions", "receipts", "interactions", "question_log", "grants", "donor_relationships"];
