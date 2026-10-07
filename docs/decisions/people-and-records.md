@@ -11,12 +11,19 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   calendar year and this one). The profile, the list filters, Groups, the dashboard's level chart and the
   `donors-by-status` source all read it. A refund comes off the 12-month total but never counts as "gave".
   `tests/parity1-donor-tags.test.js` pins the edges. (PARITY-1)
+- **A machine flag in `donors.tags` is never shown as a tag.** `donorTags.js` lists the internal flags
+  (`has-refused-rows:N`); every read the API returns (list, summaries, profile, CSV export) passes through
+  `visibleTags`, and `PUT /donors/:id` keeps the flags the client never saw (`keepInternal`). The unread
+  import rows are a plain line for admins ("2 rows from your import couldn't be read. See them"), opening
+  `GET /donors/:id/refused-rows`, which reads the rows the importer keeps on its run
+  (`imports.summary_json.refusedRows`). (FIX-33)
 - **The closeness word is ENGAGE-1's band in words.** Close and Warm are the bands; Distant reads New
   when the person's first gift, conversation or shift is in the last 90 days, On track when their giving
   is inside their OWN usual gap (drift.js `assessDrift`, stored as `donor_scores.pattern` by the score
   compute), otherwise Cooling (`closenessFor` in shared/engagementWeights.js; `closenessSql` in
   donorStatus.js for lists). Cooling is never judged against the calendar: a once-a-year donor who gave
-  on pattern is On track. Never a second score. (PARITY-1, WIRE-1 addendum)
+  on pattern is On track, and so is a person whose gifts in the last 365 days number at least their own usual year
+  (`drift.js aboveOwnPattern`): giving more than their pattern is never Cooling. Never a second score. (PARITY-1, WIRE-1 addendum, FIX-33)
 - **Engagement counts what a person does FOR the org,** not only what the org does to them: a
   peer-to-peer page they run (5), an event ticket (3), an auction they bid in (3) and a membership year
   (3) sit beside meetings, calls and shifts, each from its own table and each opening its rows through

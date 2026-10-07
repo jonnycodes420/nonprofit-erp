@@ -443,7 +443,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
     };
     setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===raw.id?adapted:d)}));
-    setDirRows(prev=>prev?prev.map(d=>d.id===raw.id?adapted:d):prev);
+    setDirRows(prev=>prev?prev.map(d=>d.id===raw.id?{...adapted,room:adapted.room||d.room}:d):prev);   // FIX-33: an edit's reply carries no Room to give
     if(selected?.id===raw.id)setSelected(adapted);
     setEditTarget(null);
   };
