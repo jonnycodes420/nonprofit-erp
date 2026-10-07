@@ -53,7 +53,9 @@ function personColumnsInDbJs() {
   // are pointers too. The old pattern saw neither, so a merge left meetings,
   // the Agent's undo ledger and custom field history on the merged-away id.
   const isPointer = (col, rest) => /REFERENCES donors\(id\)/i.test(rest) || /^(donor_id|person_id|donor_id_[ab]|match_employer_id|entity_id)$/.test(col)
-    || /_(donor|person)_id$/.test(col) || /^(donor|person)_ids$/.test(col) || /_(donor|person)_ids$/.test(col);
+    || /_(donor|person)_id$/.test(col) || /^(donor|person)_ids$/.test(col) || /_(donor|person)_ids$/.test(col)
+    // FIX-33: the people an unsure calendar event might be with.
+    || col === "candidate_ids";
   for (const line of src.split("\n")) {
     const m = line.match(/CREATE TABLE IF NOT EXISTS\s+(\w+)/i);
     if (m) cur = m[1];

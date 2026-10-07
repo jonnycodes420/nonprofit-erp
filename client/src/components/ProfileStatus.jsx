@@ -120,7 +120,10 @@ export function ImportRefusalsLine({ status }) {
 
 export function ClosenessLine({ status, onOpenDonor }) {
   const c = status && status.closeness;
-  if (!c) return null;
+  // FIX-33: a booked meeting shows even when there is no closeness word yet.
+  if (!c) return status && status.meetingSet
+    ? <div data-testid="dp-meeting-set" style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700, marginTop: 5 }}>{status.meetingSet.sentence}.</div>
+    : null;
   return (
     <div data-testid="dp-closeness" style={{ fontSize: 12.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
       <span title={c.sentence} style={{ fontWeight: 700, color: c.key === "cooling" ? T.gold700 : T.ink }}>{c.label}</span>

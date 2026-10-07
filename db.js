@@ -7328,7 +7328,7 @@ async function runSchemaInit(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mailbox_sync_runs (
       id TEXT PRIMARY KEY,
-      org_id TEXT NOT NULL REFERENCES orgs(id),
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
       user_id TEXT NOT NULL,
       provider TEXT NOT NULL,
       kind TEXT NOT NULL,
@@ -7365,7 +7365,7 @@ async function runSchemaInit(pool) {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS meeting_effects (
       id TEXT PRIMARY KEY,
-      org_id TEXT NOT NULL REFERENCES orgs(id),
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
       calendar_event_id TEXT NOT NULL,
       donor_id TEXT NOT NULL,
       day TEXT NOT NULL,
