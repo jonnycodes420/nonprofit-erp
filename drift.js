@@ -214,16 +214,15 @@ function assessDrift(gifts, today, opts = {}) {
   };
   out.reason = composeReason(out, events, today);
   if (refusedRows > 0) {
-    // "Gave every January since 2021. One row from this import could not be
-    // read. Nothing we can see since January 2025." — the gap claim is
-    // hedged and the reason for the hedge is stated, mid-sentence, where a
-    // fundraiser will actually read it.
-    const rowPhrase = refusedRows === 1
-      ? "One row from the last import could not be read."
-      : `${refusedRows} rows from the last import could not be read.`;
-    out.reason = String(out.reason || "")
-      .replace(/Nothing for ([^.]+)\./, `${rowPhrase} Nothing we can see for $1.`)
-      .replace(/^((?!.*could not be read).*)$/s, m => /could not be read/.test(m) ? m : `${m} ${rowPhrase}`.trim());
+    // The gap claim is hedged ("Nothing we can see for 6 months") because
+    // some of their rows could not be read. FIX-33: the reason for the hedge
+    // is its own line (`refusedNote`), never folded into this sentence: one
+    // line was saying two things. The profile shows the note to admins with
+    // a link to the rows (routes/profileStatus.js).
+    out.reason = String(out.reason || "").replace(/Nothing for ([^.]+)\./, "Nothing we can see for $1.");
+    out.refusedNote = refusedRows === 1
+      ? "One row from your import couldn't be read."
+      : `${refusedRows} rows from your import couldn't be read.`;
   }
   return out;
 }
