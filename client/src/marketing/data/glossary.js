@@ -692,7 +692,7 @@ export const GLOSSARY = [
     ],
     steward: [
       "Each profile shows an engagement score and a generosity score, both from 0 to 100 and measured against your own people. Engagement counts meetings, events attended, calls, email replies, survey answers, volunteer shifts and newsletter opens and clicks from the last 24 months, with recent touches counting most.",
-      "\"See why\" shows how each score was worked out, and every part opens the rows behind it. Under the name, a closeness word (Close, Warm, Cooling or New) says the same thing in plain language.",
+      "\"See why\" shows how each score was worked out, and every part opens the rows behind it. Under the name, a closeness word (Close, Warm, On track, Cooling or New) says the same thing in plain language.",
     ],
     related: ["affinity", "donor-journey", "drift"],
     see: ["/articles/read-retention", "/articles/second-gift"],

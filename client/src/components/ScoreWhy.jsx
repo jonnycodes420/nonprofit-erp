@@ -121,7 +121,7 @@ export function SuggestedAskLine({ ask, style }) {
   if (!ask) return null;
   return (
     <div data-testid="suggested-ask" style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, ...style }}>
-      <strong style={{ color: T.ink }}>Suggested ask:</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
+      <strong style={{ color: T.ink }}>{ask.monthly ? "Suggested monthly ask:" : "Suggested one-time ask:"}</strong> {ask.sentence} <span style={{ color: T.ink3 }}>{ask.screening ? "From their own gifts and the screening file." : "From their own gifts only."}</span>
     </div>
   );
 }

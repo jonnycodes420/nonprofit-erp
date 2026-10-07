@@ -6552,6 +6552,11 @@ async function runSchemaInit(pool) {
       PRIMARY KEY (org_id, donor_id)
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donor_scores_eng ON donor_scores(org_id, engagement DESC)`);
+  // WIRE-1 addendum: where their giving stands against their OWN rhythm
+  // (drift.js assessDrift): 'on_track', 'drifting', 'lapsed', or NULL with
+  // fewer than two gifts. The closeness word reads it, so a once-a-year donor
+  // who gave on time is On track, never Cooling.
+  await pool.query(`ALTER TABLE donor_scores ADD COLUMN IF NOT EXISTS pattern TEXT`);
   // APPEAL-WHY: the campaign a campaign is compared with, when the user chose one.
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS compare_campaign_id TEXT`);
 

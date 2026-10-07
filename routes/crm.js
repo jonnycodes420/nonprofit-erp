@@ -3563,7 +3563,7 @@ const { DONOR_SORTS, DONOR_SCORE_COLS } = require("../groups");
 // empty list at it, and turning any role on replaces it.
 const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
 const UNKNOWN_ROLE = { error: "unknown_role", sentence: "A role is Donor, Volunteer, or Staff and board." };
-const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, Mid, Major, New, Current, Recaptured, Lapsed or Retained, and closeness is Close, Warm, Cooling or New." };
+const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, Mid, Major, New, Current, Recaptured, Lapsed or Retained, and closeness is Close, Warm, On track, Cooling or New." };
 // PARITY-1 — the filters a Group rule can also use: giving level, lifecycle,
 // retained, closeness, and "has never given". Each is donorStatus.js's one
 // definition, so a list, a Group and a profile tag cannot disagree.

@@ -6,7 +6,7 @@
 //                 defaults $1,000 and $10,000).
 //   lifecycle     New, Current, Recaptured or Lapsed, from two 12-month windows.
 //   retained      gave last calendar year and again this calendar year.
-// Plus the closeness word (Close, Warm, Cooling, New), which is ENGAGE-1's band
+// Plus the closeness word (Close, Warm, On track, Cooling, New), which is ENGAGE-1's band
 // said in words (shared/engagementWeights.js closenessFor), so the word and the
 // score can never disagree.
 //
@@ -34,7 +34,7 @@ const LIFECYCLES = Object.freeze({
 });
 const RETAINED = Object.freeze({ label: "Retained", kind: "retained", sentence: "They gave last calendar year and have given again this calendar year." });
 const CLOSENESS = Object.freeze({
-  close: { label: "Close" }, warm: { label: "Warm" }, cooling: { label: "Cooling" }, new: { label: "New" },
+  close: { label: "Close" }, warm: { label: "Warm" }, on_track: { label: "On track" }, cooling: { label: "Cooling" }, new: { label: "New" },
 });
 const TAG_KEYS = [...Object.keys(LEVELS), ...Object.keys(LIFECYCLES), "retained"];
 
@@ -131,19 +131,21 @@ function tagCondition(key, orgId, today, cuts, alias = "") {
 
 // Closeness in SQL: the stored ENGAGE-1 band, said as a word. A person whose
 // band is Distant is New when they arrived (record or first gift) in the last
-// 90 days, and Cooling otherwise. The profile says the same through
+// 90 days, On track when their giving is inside their own usual gap (the
+// stored pattern, drift.js's rule), and Cooling otherwise. The profile says the same through
 // shared/engagementWeights.js closenessFor. One expression feeds the list
 // column and the filter, so a row and the filter that found it agree.
 function closenessSql(today, alias = "") {
   const a = alias ? alias + "." : "donors.";
   const w = windowsFor(today);
   const band = `COALESCE((SELECT ds.band FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id), 'distant')`;
+  const pattern = `(SELECT ds.pattern FROM donor_scores ds WHERE ds.org_id = ${a}org_id AND ds.donor_id = ${a}id)`;
   // "Arrived" is their first activity on file: a gift, a conversation or a
   // volunteer shift, and only for someone with none of those, the day their
   // record was made (an import made today is not a new relationship).
   const isNew = `(${firstSeenSql(a)} >= ?)`;
   return {
-    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' ELSE 'cooling' END)`,
+    sql: `(CASE WHEN ${band} IN ('close','warm') THEN ${band} WHEN ${isNew} THEN 'new' WHEN ${pattern} = 'on_track' THEN 'on_track' ELSE 'cooling' END)`,
     args: [w.newFrom],
   };
 }

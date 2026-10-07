@@ -103,6 +103,45 @@ const id = k => `d_par1t_${k}`;
   moved.refund[1] = "mid"; moved.nearMaj[1] = "major"; moved.midEdge[1] = "mid"; moved.under[1] = "mid";
   await check("moved cuts", moved);
 
+  // ── WIRE-1 addendum · THEIR OWN RHYTHM, AND ONE STORY FOR THE ASK ─────────
+  // Added after the tag checks so the exact tag sets above stay exact.
+  // HOW IT WENT RED before the fix: §5 the once-a-year donor read Cooling
+  // (closeness judged against the calendar, "gave once this year"); §6 the
+  // ask beside "ask about monthly giving" was a one-time $150; §7 a rising
+  // donor with Room to give Not yet known was stepped up to $75.
+  const R = {
+    yearly:  [[120, civilPlusDays(-1096)], [120, civilPlusDays(-731)], [120, civilPlusDays(-366)], [120, civilPlusDays(-1)]],
+    drifter: [[60, civilPlusDays(-700)], [60, civilPlusDays(-500)], [60, civilPlusDays(-300)]],
+    rising:  [[30, civilPlusDays(-200)], [40, civilPlusDays(-100)], [50, civilPlusDays(-10)]],
+  };
+  for (const [k, gifts] of Object.entries(R)) {
+    await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ($1,$2,$3,'cultivate','system:test','test')`, [id(k), ORG, `Fixture ${k}`]);
+    for (const [amount, date] of gifts)
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`,
+        [`g_par1t_${++n}`, ORG, id(k), amount, date]);
+  }
+  const rc = await api("POST", "/scores/recompute", tok, {});
+  ok("§5 the scores recompute", rc.status === 200, rc.status);
+  const st = {};
+  for (const k of Object.keys(R)) st[k] = (await api("GET", `/donors/${id(k)}/status`, tok)).body;
+  ok("§5 a once-a-year donor who gave on pattern is On track, not Cooling",
+    st.yearly.closeness && st.yearly.closeness.key === "on_track" && st.yearly.closeness.label === "On track", st.yearly.closeness);
+  ok("§5 the On track line says their own rhythm and opens their gifts",
+    (st.yearly.closeness.facts || []).some(f => /^gives (every \w+|about once a year), latest gift on time$/.test(f.text) && f.source && f.source.key === "donor-gifts-between"), st.yearly.closeness.facts);
+  ok("§5 a donor past their own usual gap is Cooling", st.drifter.closeness && st.drifter.closeness.key === "cooling", st.drifter.closeness);
+  const onTrack = await api("GET", `/donors?limit=200&closeness=on_track`, tok);
+  const otIds = ((onTrack.body && onTrack.body.donors) || []).map(d => d.id);
+  ok("§5 the list filter and column agree with the profile", otIds.includes(id("yearly")) && !otIds.includes(id("drifter"))
+    && ((onTrack.body.donors || []).find(d => d.id === id("yearly")) || {}).closeness === "on_track", otIds);
+  // §6 the monthly ask is sized from their own year: $120 once a year is $10 a month.
+  ok("§6 the next step is the monthly ask", st.yearly.next && st.yearly.next.step === "ask about monthly giving", st.yearly.next);
+  ok("§6 the monthly ask is their year over twelve and says a month",
+    st.yearly.next.ask && st.yearly.next.ask.monthly === true && st.yearly.next.ask.cents === 1000 && /Suggested ask: \$10 a month\.$/.test(st.yearly.next.text), st.yearly.next);
+  // §7 rising, but no Room to give signal: the ask stays at their own level.
+  const sc = (await api("GET", `/donors/${id("rising")}/scores`, tok)).body;
+  ok("§7 a rising donor with Room to give not yet known is not stepped up",
+    sc.suggestedAsk && sc.suggestedAsk.askCents === 5000 && /Room to give is not yet known/.test(sc.suggestedAsk.sentence), sc.suggestedAsk);
+
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); process.exitCode = 1; await closeDb().catch(() => {}); });

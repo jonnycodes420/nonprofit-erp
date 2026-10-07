@@ -16,6 +16,7 @@
 // the profile can show them without recomputing.
 
 const { meetingsSql } = require("./meetings");
+const driftEngine = require("./drift");
 
 let W = null;
 async function weights() { if (!W) W = await import("./shared/engagementWeights.js"); return W; }
@@ -99,6 +100,55 @@ async function touchRows(q, orgId, today, donorId = null) {
         AND (r.submitted_at AT TIME ZONE 'UTC')::date BETWEEN ?::date AND ?::date${dF}`, [orgId, from, today, ...dA]);
   for (const r of surveys) push("surveys", r, w.TOUCH_POINTS.surveys.points, `Answered ${r.title || "a survey"}`);
 
+  // WIRE-1 addendum · WHAT THEY DO FOR YOU. Each from its own table, org-scoped
+  // on both sides of every join, so a row can only be this org's.
+  // A peer-to-peer page they run: one row per page that is live or has raised
+  // money, dated by its latest gift (the page's creation when it has none yet).
+  const pages = await q(
+    `SELECT pf.id, pf.person_id AS donor_id, pf.name,
+            COALESCE((SELECT MAX(LEFT(g.date, 10)) FROM gifts g WHERE g.org_id = pf.org_id AND g.peer_fundraiser_id = pf.id AND g.amount > 0),
+                     (pf.created_at AT TIME ZONE 'UTC')::date::text) AS date,
+            (SELECT COALESCE(SUM(g.amount), 0)::text FROM gifts g WHERE g.org_id = pf.org_id AND g.peer_fundraiser_id = pf.id AND g.amount > 0) AS raised
+       FROM peer_fundraisers pf JOIN donors d ON d.id = pf.person_id AND d.org_id = pf.org_id
+      WHERE pf.org_id = ? AND d.deleted_at IS NULL${dF}
+        AND (pf.status = 'active' OR EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = pf.org_id AND g.peer_fundraiser_id = pf.id AND g.amount > 0))`,
+    [orgId, ...dA]);
+  for (const r of pages) {
+    if (!(r.date >= from)) continue;   // a page made "tomorrow" in UTC is today's: a negative age counts in full
+    const raised = cents(r.raised);
+    push("fundraising", r, w.TOUCH_POINTS.fundraising.points,
+      `Ran a peer-to-peer page${raised > 0 ? `, raised $${(raised / 100).toLocaleString("en-US", { minimumFractionDigits: raised % 100 ? 2 : 0, maximumFractionDigits: 2 })}` : ""}`);
+  }
+
+  // A ticket or registration for an event they have not (yet) been marked at.
+  // Bought on the day it was made, or the event day if that came first.
+  const tickets = await q(
+    `SELECT a.id, a.donor_id, LEAST(e.date::date, (a.created_at AT TIME ZONE 'UTC')::date, ?::date)::text AS date, e.name FROM event_attendees a
+       JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+      WHERE a.org_id = ? AND d.deleted_at IS NULL AND a.status IN ('registered','confirmed') AND a.checked_in_at IS NULL
+        AND LEAST(e.date::date, (a.created_at AT TIME ZONE 'UTC')::date, ?::date) >= ?::date${dF}`, [today, orgId, today, from, ...dA]);
+  for (const r of tickets) push("tickets", r, w.TOUCH_POINTS.tickets.points, `Ticket for ${r.name || "an event"}`);
+
+  // An auction they bid in: one row per auction, dated by their latest bid.
+  const bids = await q(
+    `SELECT b.id, b.donor_id, LEAST(MAX((x.created_at AT TIME ZONE 'UTC')::date), ?::date)::text AS date, COUNT(x.id)::int AS n, a.title
+       FROM auction_bidders b JOIN auction_bids x ON x.bidder_id = b.id AND x.org_id = b.org_id
+       JOIN auctions a ON a.id = b.auction_id AND a.org_id = b.org_id
+       JOIN donors d ON d.id = b.donor_id AND d.org_id = b.org_id
+      WHERE b.org_id = ? AND d.deleted_at IS NULL${dF}
+      GROUP BY b.id, b.donor_id, a.title
+     HAVING MAX((x.created_at AT TIME ZONE 'UTC')::date) >= ?::date`, [today, orgId, ...dA, from]);
+  for (const r of bids) push("auctions", r, w.TOUCH_POINTS.auctions.points, `${r.n} ${r.n === 1 ? "bid" : "bids"} in ${r.title || "an auction"}`);
+
+  // A membership year: each joining or renewal is its own row.
+  const members = await q(
+    `SELECT m.id, m.donor_id, LEFT(COALESCE(m.starts_on, m.joined_on), 10) AS date, l.name FROM memberships m
+       JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id
+       LEFT JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+      WHERE m.org_id = ? AND d.deleted_at IS NULL AND m.status <> 'cancelled'
+        AND LEFT(COALESCE(m.starts_on, m.joined_on), 10) BETWEEN ? AND ?${dF}`, [orgId, from, today, ...dA]);
+  for (const r of members) push("memberships", r, w.TOUCH_POINTS.memberships.points, `Membership${r.name ? `, ${r.name}` : ""}`);
+
   return out.sort((a, b) => (b.date || "").localeCompare(a.date || "") || a.id.localeCompare(b.id));
 }
 
@@ -176,7 +226,7 @@ function apportion(total, xs) {
 function reasonOf(w, byPart, lastDate, today) {
   const counted = w.ENGAGEMENT_PARTS.map(k => ({ k, n: byPart[k].count, pts: byPart[k].raw })).filter(x => x.n > 0)
     .sort((a, b) => b.pts - a.pts);
-  if (!counted.length) return "No meeting, call, reply, event or volunteer shift in the last 24 months.";
+  if (!counted.length) return "No meeting, call, reply, event, ticket, fundraising page, auction bid, membership or volunteer shift in the last 24 months.";
   const say = x => `${x.n} ${x.n === 1 ? w.TOUCH_POINTS[x.k].one : w.TOUCH_POINTS[x.k].many}`;
   const top = counted.slice(0, 2).map(say).join(" and ");
   return `${top.charAt(0).toUpperCase() + top.slice(1)} in the last 24 months${latestWords(lastDate, today)}.`;
@@ -195,6 +245,18 @@ function reasonFor(row, today) {
   if (!r) return null;
   const last = row.last_touch ? civil(row.last_touch) : null;
   return r.replace(/, the (?:latest|most recent touch) [^.,]*\.$/, `${latestWords(last, today)}.`);
+}
+
+// ── THEIR OWN RHYTHM (WIRE-1 addendum) ───────────────────────────────────────
+// Where their giving stands against their own usual gap, by drift.js's one
+// rule (assessDrift: their median gap, or their giving season). 'on_track' is
+// inside it, 'drifting' and 'lapsed' are past it, null is fewer than two gifts
+// (no rhythm to judge against). Refunds are not gifts here.
+function patternOf(gifts, today) {
+  const a = driftEngine.assessDrift(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
+  if (a.state === "ok") return "on_track";
+  if (a.state === "drifting" || a.state === "lapsed") return a.state;
+  return null;
 }
 
 // ── THE COMPUTE ─────────────────────────────────────────────────────────────
@@ -216,7 +278,7 @@ async function scoreOrg(q, orgId, today) {
     for (const t of ts) { byPart[t.part].raw = round2(byPart[t.part].raw + t.points); byPart[t.part].count++; }
     const engRaw = round2(ts.reduce((s, t) => s + t.points, 0));
     const gen = await generosityParts(today, gBy.get(id) || [], sBy.get(id) || []);
-    per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null });
+    per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null, pattern: patternOf(gBy.get(id) || [], today) });
   }
   const engPop = [...per.values()].map(p => p.engRaw).filter(v => v > 0).sort((a, b) => a - b);
   const givers = [...per.values()].filter(p => p.gen.lifetime.raw > 0);
@@ -233,7 +295,7 @@ async function scoreOrg(q, orgId, today) {
     const generosity = giver ? Math.max(1, Math.round(contrib.reduce((s, x) => s + x, 0))) : 0;
     const genPts = apportion(generosity, contrib);
     out.push({
-      donorId: id, engagement, generosity, band: w.bandFor(engagement).key,
+      donorId: id, engagement, generosity, band: w.bandFor(engagement).key, pattern: p.pattern,
       reason: reasonOf(w, p.byPart, p.lastTouch, today), lastTouch: p.lastTouch,
       parts: {
         engagement: w.ENGAGEMENT_PARTS.map((k, i) => ({ key: k, points: engPts[i], raw: p.byPart[k].raw, count: p.byPart[k].count })),
@@ -252,11 +314,11 @@ async function recomputeOrgScores(q, orgId, today) {
   for (let i = 0; i < scores.length; i += 500) {
     const chunk = scores.slice(i, i + 500);
     await q(
-      `INSERT INTO donor_scores (org_id, donor_id, engagement, generosity, band, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
-       SELECT ?, x.donor_id, x.engagement, x.generosity, x.band, x.reason, x.last_touch, x.parts::jsonb, ?, NOW(), 'system:engagement', 'Steward (scores)'
-         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, reason text, last_touch text, parts text)`,
+      `INSERT INTO donor_scores (org_id, donor_id, engagement, generosity, band, pattern, reason, last_touch, parts, computed_for, computed_at, created_by, created_by_name)
+       SELECT ?, x.donor_id, x.engagement, x.generosity, x.band, x.pattern, x.reason, x.last_touch, x.parts::jsonb, ?, NOW(), 'system:engagement', 'Steward (scores)'
+         FROM jsonb_to_recordset(?::jsonb) AS x(donor_id text, engagement int, generosity int, band text, pattern text, reason text, last_touch text, parts text)`,
       [orgId, today, JSON.stringify(chunk.map(s => ({ donor_id: s.donorId, engagement: s.engagement, generosity: s.generosity,
-        band: s.band, reason: s.reason, last_touch: s.lastTouch, parts: JSON.stringify(s.parts) })))]);
+        band: s.band, pattern: s.pattern, reason: s.reason, last_touch: s.lastTouch, parts: JSON.stringify(s.parts) })))]);
   }
   return scores.length;
 }
@@ -284,14 +346,42 @@ async function partRows(q, orgId, donorId, today, score, part) {
 // is at least five times their largest gift moves the ask one friendly step up,
 // and the sentence says so and names the file. Without screening the ask is
 // their own gifts' alone, exactly as before.
+//
+// WIRE-1 addendum, ONE STORY WITH ROOM TO GIVE. A rising donor's ask steps one
+// rung up only when Room to give has something to say (Some or Strong, from
+// their own file plus a screening file only when the caller may see it). When
+// Room to give is Not yet known the ask stays at their own level and the
+// sentence says so. `opts.monthly` sizes a MONTHLY ask instead, from their own
+// year (usual gift times their own rhythm, drift.js), never from a one-time
+// gift: the ask beside "ask about monthly giving".
 async function suggestedAsk(q, orgId, donorId, opts = {}) {
   const rows = await q(
-    `SELECT g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
+    `SELECT LEFT(g.date, 10) AS date, g.amount::text AS amount FROM gifts g WHERE g.org_id = ? AND g.donor_id = ? AND g.amount > 0
       ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, donorId]);
   if (!rows.length) return null;
   const all = rows.map(r => cents(r.amount));
   const SA = await import("./shared/smartAmounts.js");
-  const own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3) });
+  if (opts.monthly) {
+    const [{ timezone } = {}] = await q(`SELECT timezone FROM orgs WHERE id = ?`, [orgId]);
+    const today = require("./orgTime").orgToday({ timezone });
+    const a = driftEngine.assessDrift(rows.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date || "")).map(r => ({ date: r.date, amount: Number(r.amount) })), today);
+    if (a.cadenceDays > 0 && a.usualGift > 0) {
+      const m = SA.monthlyAskCents({ usualGiftCents: cents(a.usualGift), giftsPerYear: 365 / a.cadenceDays,
+        cadenceWords: a.seasonal && a.seasonal.kind === "month" ? "once a year" : driftEngine.humanCadence(a.cadenceDays) });
+      if (m) return { ...m, largestCents: Math.max(...all) };
+    }
+  }
+  let own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3) });
+  if (own && own.rising) {
+    const P = require("./prospect");
+    const RT = await import("./shared/roomToGive.js");
+    const f = (await P.loadFacts(orgId, [donorId], q)).get(donorId);
+    const word = f ? RT.assess({ ...f, screening: opts.screening || null }).word : "unknown";
+    if (word === "unknown") {
+      own = SA.suggestedAskCents({ largestCents: Math.max(...all), lastThreeCents: all.slice(0, 3), stepUp: false,
+        holdWords: "their own level, because Room to give is not yet known" });
+    }
+  }
   const s = opts.screening;
   if (!own || !s || s.capacityLowCents == null) return own;
   const RT = await import("./shared/roomToGive.js");
@@ -301,7 +391,7 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
   }
   const up = SA.nextFriendlyAbove ? SA.nextFriendlyAbove(own.askCents) : own.askCents;
   return { ...own, askCents: up, screening: true,
-    sentence: `${own.sentence.replace(/: ask \$[\d,.]+\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
+    sentence: `${own.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
-module.exports = { touchRows, givingRows, generosityParts, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };
+module.exports = { touchRows, givingRows, generosityParts, patternOf, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };

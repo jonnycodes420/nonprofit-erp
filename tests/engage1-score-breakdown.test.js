@@ -5,7 +5,11 @@
 // reads (a meeting, calls, an inbound reply, an outbound email that must NOT
 // count, a call older than 24 months that must NOT count, an event attended, a
 // volunteer shift, a newsletter click), plus gifts across five years and a
-// recurring gift. After POST /scores/recompute, for every person:
+// recurring gift. WIRE-1 addendum: F does things FOR the org and nothing else
+// (runs a peer-to-peer page that raised money, holds a ticket, bid in an
+// auction, joined as a member) and is not Distant-at-zero any more; E's
+// no-show ticket and cancelled membership count nothing. Planted before the
+// fix: F scored 0 with no rows, and the F checks went red. After POST /scores/recompute, for every person:
 //   1. the engagement parts add to the engagement score, and the generosity
 //      parts add to the generosity score;
 //   2. every part's rows (GET /figures/donor-*-part/rows, the screen's "See why")
@@ -29,7 +33,8 @@ const PW = bcrypt.hashSync("loadtest1234", 10);
 const P = ["d_e1_a", "d_e1_b", "d_e1_c", "d_e1_d", "d_e1_e", "d_e1_f", "d_e1_g"];
 
 async function clear() {
-  for (const t of ["donor_scores", "email_marketing_activity", "email_marketing_campaigns", "event_attendees", "events",
+  for (const t of ["donor_scores", "auction_bids", "auction_items", "auction_bidders", "auctions", "memberships", "membership_levels",
+                   "peer_fundraisers", "giving_pages", "email_marketing_activity", "email_marketing_campaigns", "event_attendees", "events",
                    "volunteer_shifts", "recurring_subscriptions", "gifts", "interactions", "threads", "donors", "users"]) {
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   }
@@ -92,12 +97,28 @@ async function reset() {
   await gift("g_e1_g2", P[6], 333.33, ago(20));
   await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status) VALUES ('rs_e1',$1,$2,'sub_e1_fixture',25,'month','active')`, [ORG, P[2]]);
 
+  // F: fundraising, a ticket, an auction bid, a membership. E: a no-show and a cancelled membership, which count nothing.
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,p2p_enabled) VALUES ('gp_e1',$1,'e1-page','Spring drive',true)`, [ORG]);
+  await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,status,person_id) VALUES ('pf_e1',$1,'gp_e1','Person F','p5@example.org','person-f','active',$2)`, [ORG, P[5]]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,peer_fundraiser_id,created_by,created_by_name) VALUES ('g_e1_pf1',$1,$2,75,$3,'cash','pf_e1','system:test','test')`, [ORG, P[4], ago(12)]);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date) VALUES ('ev_e1b',$1,'Gala','other',$2)`, [ORG, orgTime.addDays(today, 20)]);
+  await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ('ea_e1f','ev_e1b',$1,$2,'Person F','registered')`, [ORG, P[5]]);
+  await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ('ea_e1e','ev_e1',$1,$2,'Person E','no_show')`, [ORG, P[4]]);
+  await q(`INSERT INTO auctions (id,org_id,title,public_slug,opens_at,closes_at,created_by) VALUES ('au_e1',$1,'Spring auction','e1-auction',NOW() - INTERVAL '10 days',NOW() + INTERVAL '10 days','system:test')`, [ORG]);
+  await q(`INSERT INTO auction_items (id,org_id,auction_id,title,starting_bid,bid_increment,created_by) VALUES ('ai_e1',$1,'au_e1','Quilt',50,5,'system:test')`, [ORG]);
+  await q(`INSERT INTO auction_bidders (id,org_id,auction_id,donor_id,name,email,bidder_number,token_hash,created_by) VALUES ('ab_e1',$1,'au_e1',$2,'Person F','p5@example.org',1,'x','system:test')`, [ORG, P[5]]);
+  await q(`INSERT INTO auction_bids (id,org_id,auction_id,item_id,bidder_id,amount,created_by) VALUES ('abid_e1',$1,'au_e1','ai_e1','ab_e1',55,'system:test')`, [ORG]);
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,term) VALUES ('ml_e1',$1,'Friend',50,'12_months')`, [ORG]);
+  await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,status) VALUES ('m_e1f',$1,$2,'ml_e1',$3,$3,'active')`, [ORG, P[5], ago(100)]);
+  await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,status) VALUES ('m_e1e',$1,$2,'ml_e1',$3,$3,'cancelled')`, [ORG, P[4], ago(100)]);
+
   const rc = await api("POST", "/scores/recompute", tok, {});
   ok("the recompute ran for every person", rc.status === 200 && rc.body.people === P.length, rc.text.slice(0, 200));
 
   const expectTouches = { [P[0]]: { meetings: ["i_e1_m1"], calls: ["i_e1_c1", "i_e1_c2"], replies: ["i_e1_r1"] },
                           [P[1]]: { calls: ["i_e1_c3"] }, [P[2]]: { events: ["ea_e1"], volunteering: ["vs_e1"] }, [P[3]]: { email: ["ema_e1"] },
-                          [P[6]]: { calls: ["i_e1_c4"], replies: ["i_e1_r2"] } };
+                          [P[6]]: { calls: ["i_e1_c4"], replies: ["i_e1_r2"] },
+                          [P[5]]: { fundraising: ["pf_e1"], tickets: ["ea_e1f"], auctions: ["ab_e1"], memberships: ["m_e1f"] } };
   for (const id of P) {
     const s = (await api("GET", `/donors/${id}/scores`, tok)).body;
     const eSum = s.parts.engagement.reduce((a, p) => a + p.points, 0);
@@ -127,6 +148,18 @@ async function reset() {
       }
     }
   }
+  // WIRE-1 addendum: doing things for the org is engagement. F has no meeting,
+  // call or reply, and is not at zero; every new part opens its own rows.
+  const f = (await api("GET", `/donors/${P[5]}/scores`, tok)).body;
+  const fParts = Object.fromEntries(f.parts.engagement.map(p => [p.key, p.count]));
+  ok("a fundraiser with a ticket, a bid and a membership has engagement above zero", f.engagement > 0, f);
+  ok("each of the four new parts counted one row", ["fundraising", "tickets", "auctions", "memberships"].every(k => fParts[k] === 1), fParts);
+  const fr = (await api("GET", `/figures/donor-engagement-part/rows?donor=${P[5]}&part=fundraising&pageSize=20`, tok)).body;
+  ok("the fundraising row says what the page raised", fr.rows.length === 1 && /raised \$75\b/.test(fr.rows[0].detail), fr.rows);
+  ok("the score's explanation names fundraising", /peer-to-peer page/.test(((await api("GET", `/donors/${P[5]}/scores`, tok)).body.explanation || {}).engagement || ""));
+  const e = (await api("GET", `/donors/${P[4]}/scores`, tok)).body;
+  ok("a no-show ticket and a cancelled membership count nothing", e.engagement === 0, e.parts.engagement);
+
   // The old call and the outbound email counted nothing, anywhere.
   const aCalls = (await api("GET", `/figures/donor-engagement-part/rows?donor=${P[0]}&part=calls&pageSize=200`, tok)).body.rows.map(r => r.id);
   ok("a call older than 24 months is not counted", !aCalls.includes("i_e1_old"), aCalls);
