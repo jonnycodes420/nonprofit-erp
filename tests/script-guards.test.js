@@ -43,6 +43,9 @@ const GUARDED_WRITERS = [
   // refuse unconditionally, and the identity check (server's reported
   // database == the one being written) always applies.
   "seed-demo",
+  // FIX-30 — puts back the postal states the Agent overwrote with "runs".
+  // Dry run by default; --apply/--undo write through writerDbUrl.
+  "repair-runs-state",
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
   "build55-capture", "build57-capture", "build57-import-drill",

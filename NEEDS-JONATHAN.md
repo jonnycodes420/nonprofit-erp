@@ -21,9 +21,9 @@ source, tests and CI all name this file instead.
 
 ---
 
-## 0-HARDEN-1 · DONORS WHOSE STATE THE AGENT SET TO "runs" (2026-10-07)
+## 0-FIX-30 · PUT BACK THE POSTAL STATES THE AGENT SET TO "runs" (2026-10-07)
 
-- **Decide the prod repair.** Every Agent contact update before HARDEN-1 wrote "runs" into the person's postal state (fixed now). Read-only check: `SELECT id, org_id, name FROM donors WHERE state = 'runs';`. The true value is in the Agent's undo ledger: `SELECT entity_id, before_row->>'state' AS was FROM agent_writes WHERE tool='update_contact' AND after_row->>'state'='runs';`. Restoring it is a prod write, so it is yours to run (or press Undo on each write in the Agent's Activity within 30 days).
+- **Run the repair on prod, dry run first.** From `~/nonprofit-erp` after `git pull`: `railway run -- node scripts/repair-runs-state.js --i-know-this-is-prod`. It writes nothing. Read it: each org with a count, one line per person ("now runs, restore to X"), then LEFT ALONE (people whose state changed after the Agent's write, or who read runs with no Agent write; those are yours to fix by hand on the profile). Check the restore values look like real states. Then apply, in one transaction with an audit row on each person's History: `railway run -- node scripts/repair-runs-state.js --apply --i-know-this-is-prod`. A second dry run should print "Nothing to repair". If anything looks wrong afterwards, `--undo --i-know-this-is-prod` reverses exactly what --apply changed.
 
 ## 0-HARDEN-1 · THE NIGHTLY AI RUN NEEDS ITS OWN KEY (2026-10-07)
 
