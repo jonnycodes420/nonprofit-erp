@@ -353,6 +353,13 @@ jobs:
           echo "Prod may still be serving the previous deploy — check Railway deployments."
           exit 1
 
+      # HARDEN-1: AI is off in every test, so the only check that a model call
+      # works on prod is this one: one Ask and one Agent plan on the prod demo
+      # org through the read-only preview routes (nothing is saved). A red here
+      # means Ask or the Agent is broken on prod right now (FIX-29's class).
+      - name: Prod AI smoke (one Ask, one Agent plan, saves nothing)
+        run: node scripts/prod-ai-smoke.js
+
   # ── Deploy gate: Vercel frontend (same rules, DORMANT until activated) ────
   # No ignored-build-step (it evaluates while CI is pending and never retries).
   # Instead: this job deploys via Vercel CLI after green tests; once proven,

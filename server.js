@@ -10543,7 +10543,10 @@ app.use((err, req, res, next) => {
   // FIX-12 Part 3: a model call the org's AI switch refused is the org's
   // choice, not a crash. A route with a non-AI path catches it before here.
   if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : 503).json({ error: err.message, code: err.code, reason: err.reason });
-  console.error(err);
+  // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
+  // so scripts/error-digest.js can group a day of these by type and route.
+  const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
+  console.error(`[500] ${req.method} ${route}`, err);
   res.status(500).json({ error: "Internal server error" });
 });
 

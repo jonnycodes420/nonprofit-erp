@@ -31,7 +31,8 @@
 //                          drafts in batches of ten, and every draft is on its
 //                          person (profile next step, the Thread, the timeline)
 //                          and in Drafts to review; approving one clears "Not
-//                          thanked yet" on that gift, and Undo puts it back
+//                          thanked yet" on that gift, and Undo puts it back;
+//                          the prod AI smoke's previews save nothing (HARDEN-1)
 //
 // HOW IT WOULD GO RED: a route that creates a second person for an email on
 // file (§1); an act that writes no line (§2, e.g. a door check-in); a dated
@@ -223,6 +224,19 @@ async function agentDraftsLeg() {
     const plans = (await call("GET", "/agent/plans")).body.plans || [];
     const pr = (plans.find(x => x.id === p.body.id) || {}).run || {};
     ok("§10 the plan says Waiting for you, not Done", pr.progress && pr.progress.word === "Waiting for you · 1 of 13 done", pr.progress);
+
+    // HARDEN-1: the prod AI smoke's two routes build the same plan and answer
+    // the same question, and save nothing (no instruction, no ai_log, no
+    // question in the log, no draft).
+    const kept = async () => (await q(`SELECT (SELECT COUNT(*) FROM agent_instructions WHERE org_id=$1)::int AS i, (SELECT COUNT(*) FROM ai_log WHERE org_id=$1)::int AS l,
+      (SELECT COUNT(*) FROM question_log WHERE org_id=$1)::int AS q, (SELECT COUNT(*) FROM agent_drafts WHERE org_id=$1)::int AS d`, [ORG2]))[0];
+    const k0 = await kept();
+    const pv = await call("POST", "/agent/preview", { text: "Draft a thank-you to every donor who gave this month" });
+    const av = await call("POST", "/ask/preview", { text: "Who are our supporters who run a fundraising page?" });
+    const k1 = await kept();
+    ok("§10 the Agent preview builds the same plan (12 drafts)", pv.status === 200 && pv.body.preview === true && pv.body.tools && pv.body.tools.draft_note === 12, pv.body);
+    ok("§10 the Ask preview answers", av.status === 200, av.status);
+    ok("§10 …and neither saves anything", JSON.stringify(k0) === JSON.stringify(k1), { k0, k1 });
 
     const draft = mine.find(i => i.donorId === g);
     const ap = await call("POST", `/agent/waiting/agent_draft/${draft.id}/approve`, {});

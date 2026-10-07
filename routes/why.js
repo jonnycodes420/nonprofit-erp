@@ -39,7 +39,13 @@ const guide = async () => (AGm = AGm || await import("../shared/askGuide.js"));
 
 // ASK-2: the org is kept with the question, so the box's suggestions are the
 // org's own most-asked questions and never another organisation's.
+// HARDEN-1: POST /ask/preview answers exactly as /ask does and writes nothing.
+// The prod smoke after each deploy asks one real question through it, so the
+// one write the Ask path makes (this log) is skipped inside a preview.
+const { AsyncLocalStorage } = require("async_hooks");
+const ASK_PREVIEW = new AsyncLocalStorage();
 async function logQuestion(orgId, text, topic, answered) {
+  if (ASK_PREVIEW.getStore()) return;
   await run(`INSERT INTO question_log (surface, question, topic, answered, org_id) VALUES ('why', ?, ?, ?, ?)`,
     [String(text).slice(0, 1000), topic, !!answered, orgId || null]).catch(() => {});
 }
@@ -722,7 +728,9 @@ const NOT_YET = [
   [/\b(monthly|recurring)\b.*\b(drop|down|fell|fall|declin|lower|less)\w*|\bwhy\b.*\b(monthly|recurring) giving\b/i, "why monthly giving changed"],
 ];
 
-app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
+app.post("/ask", whyAskLimiter, requireAuth, wrap((req, res) => askHandler(req, res)));
+app.post("/ask/preview", whyAskLimiter, requireAuth, wrap((req, res) => ASK_PREVIEW.run(true, () => askHandler(req, res))));
+async function askHandler(req, res) {
   const C = await askCat();
   const Sx = await shape();
   const SM = await showMod();
@@ -855,7 +863,7 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   if (source !== "saved") await logQuestion(req.user.orgId, typed || "(plan)", `ask: ${plan.metric}${source === "follow-up" ? " (follow-up)" : ""}`, true);
   const out = { ...answer, question: { text: typed }, planSource: source, restatement, ...(person ? { person } : {}) };
   res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
-}));
+}
 
 // ── PINNED TO HOME ─────────────────────────────────────────────────────────
 // The plan is kept, never the answer: Home re-runs it every time it opens, so

@@ -969,7 +969,7 @@ async function agentDraftGifts(orgId, A, text, today, people) {
 // refuses the whole plan (PARITY-1 Part F: never a plan that stops at an
 // arbitrary person); a person the model skipped is simply not drafted for, and
 // the plan counts them as withheld like any other dropped step.
-async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people, gifts }) {
+async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people, gifts, dryRun = false }) {
   const thanks = A.isThankYouInstruction(instructionText);
   const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
   const orgName = (org && org.name) || "the organisation";
@@ -1016,7 +1016,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
       if (msg.stop_reason === "max_tokens") { cut = { batch: i }; break; }
       const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "drafts");
       out[i] = (block && block.input && Array.isArray(block.input.drafts) ? block.input.drafts : []);
-      await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
+      if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
                  VALUES (?,?,?,'agent_plan',?,?,?)`,
         ["log_" + uuid().slice(0, 8), orgId, userId || null, `${String(instructionText).slice(0, 80)} (drafts ${i + 1}/${batches.length})`,
          (system + "\n\n" + user).slice(0, 200000), JSON.stringify(out[i]).slice(0, 200000)]);
@@ -1041,7 +1041,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
   return { steps, sends: 0, headline: null, cannot: null };
 }
 
-async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null, persona = null }) {
+async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null, persona = null, dryRun = false }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
   // AGENTS-1 — THE PERSONA NARROWS; IT NEVER WIDENS. `getPersona` answers with
@@ -1169,7 +1169,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const draftGifts = drafting ? await agentDraftGifts(orgId, A, instructionText, today, reachable) : [];
   let raw, _truncated = false;
   if (drafting) {
-    raw = await agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people: reachable, gifts: draftGifts });
+    raw = await agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people: reachable, gifts: draftGifts, dryRun });
   } else {
   const msg = await client.messages.create({
     model: AGENT_MODEL,
@@ -1191,7 +1191,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // only warned about, so she could confirm a plan that stopped at an
   // arbitrary person and never learn who was left out.
   if (_truncated) throw Object.assign(new Error("plan truncated"), { truncated: true, stepsReturned: (raw.steps || []).length });
-  await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
+  if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
              VALUES (?,?,?,'agent_plan',?,?,?)`,
     ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
      (system + "\n\n" + user).slice(0, 200000), JSON.stringify(raw).slice(0, 200000)]);
@@ -1697,6 +1697,32 @@ app.get("/admin/questions", requireAuth, requireSuperAdmin, wrap(async (req, res
                                     FROM question_log WHERE created_at > NOW() - INTERVAL '12 months' AND answered = false
                                    GROUP BY 1,2 ORDER BY n DESC LIMIT 100`);
   res.json({ groups, unanswered, sentence: "The question text people typed into Ask Steward, Ask why, the Agent and the Analyst, grouped by topic, kept twelve months. Never answers, never donor data." });
+}));
+
+// HARDEN-1 · A PLAN THAT IS NEVER KEPT. The prod smoke after each deploy
+// builds one real plan through the same agentBuildPlan the instruction route
+// runs (the find, the model, the checks), and nothing is written: no
+// instruction row, no ai_log, no trial count. Declared read-only in
+// auditTrail.READ_ONLY_POSTS (/agent/preview). It answers what the plan would
+// do, in counts; the steps' words stay out of the response.
+app.post("/agent/preview", requireAuth, wrap(async (req, res) => {
+  const A = await agentShapeMod();
+  const text = String((req.body && req.body.text) || "").trim().slice(0, 2000);
+  if (text.length < 4) return res.status(400).json({ error: "text_required", sentence: "Say what to plan." });
+  const gate = await agentGate(req.user.orgId);
+  if (!gate.ok) return res.status(503).json({ error: gate.reason, sentence: "The Agent is not available for this organisation." });
+  let built;
+  try { built = await agentBuildPlan(req.user.orgId, text, { authorization: A.AUTH_DRAFT, userId: req.user.userId, dryRun: true }); }
+  catch (e) {
+    if (e && e.truncated) return res.status(422).json({ error: "plan_truncated", sentence: A.TRUNCATED_SENTENCE });
+    if (e && e.refuse) return res.status(e.refuse.error === "plan_failed" ? 503 : 400).json(e.refuse);
+    console.error("[agent] preview failed", e?.status || "", e?.message || e);
+    return res.status(503).json({ error: "plan_failed", sentence: AGENT_PLAN_FAILED });
+  }
+  const tools = {};
+  for (const st of built.steps) tools[st.tool] = (tools[st.tool] || 0) + 1;
+  res.json({ preview: true, steps: built.steps.length, tools, withheld: built.withheld, found: built.found ? built.found.ids.length : null,
+    words: built.found ? built.found.words : null, timing: built.timing ? { totalMs: built.timing.totalMs } : null });
 }));
 
 app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, res) => {

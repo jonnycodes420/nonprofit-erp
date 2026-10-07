@@ -1,4 +1,4 @@
-// tests/fix29-tool-schemas.test.js: FIX-29. EVERY TOOL SCHEMA FITS THE API.
+// tests/fix29-tool-schemas.test.js: FIX-29 and HARDEN-1. EVERY TOOL SCHEMA AND PROMPT FITS THE API.
 //
 //     A strict tool (structured outputs) may hold at most 16 union-typed
 //     parameters (a type array such as ["string","null"], or anyOf/oneOf) and
@@ -15,6 +15,9 @@
 //   §3 the inventory is whole: every input_schema in the server's code is in
 //      the list below, so a new tool cannot skip the count.
 //   §4 the counter itself: filter_spec as PARITY-4 wrote it counts 18.
+//   §5 HARDEN-1: names, required keys, closed strict objects, schema size.
+//   §6 HARDEN-1: every prompt builder at its largest input stays inside the
+//      context and prints nothing broken.
 //
 // HOW IT WOULD GO RED: give a SHOW_KEY back its own nullable field in
 // specTool, or add a strict tool in a new file without listing it here.
@@ -103,6 +106,54 @@ function count(schema) {
   };
   scan("");
   ok("§3 every input_schema in the code is in this suite's list", JSON.stringify(found, Object.keys(found).sort()) === JSON.stringify(EXPECTED, Object.keys(EXPECTED).sort()), found);
+
+  // §5 HARDEN-1 · THE REST OF THE API'S RULES, WITHOUT CALLING IT. A name the
+  // API accepts; every `required` key exists; a strict object closes itself
+  // (additionalProperties: false, which strict mode requires); the schema is
+  // a size the grammar compiles.
+  const objectsOf = (sch, out = []) => {
+    if (!sch || typeof sch !== "object") return out;
+    if (sch.type === "object" || (Array.isArray(sch.type) && sch.type.includes("object")) || sch.properties) out.push(sch);
+    for (const v of Object.values(sch.properties || {})) objectsOf(v, out);
+    if (sch.items) objectsOf(sch.items, out);
+    for (const v of [...(sch.anyOf || []), ...(sch.oneOf || [])]) objectsOf(v, out);
+    return out;
+  };
+  const NAMED = [
+    ["filter_spec", SM.specTool()], ["ask_plan", C.planTool({ ruleKeys: GR.RULE_KEYS })], ["query_plan", AQ.queryTool()],
+    ["suggest_chips", N.NOTE_CHIP_TOOL], ["suggest_conversation_chips", N.CONVERSATION_CHIP_TOOL],
+  ];
+  for (const [n, t] of NAMED) ok(`§5 ${n}: a tool name the API accepts, with a description`, /^[a-zA-Z0-9_-]{1,64}$/.test(t.name) && String(t.description || "").length > 0, t.name);
+  for (const t of TOOLS) {
+    const objs = objectsOf(t.schema);
+    const missing = objs.flatMap(o => (o.required || []).filter(k => !(o.properties || {})[k]));
+    ok(`§5 ${t.name}: every required key is a property`, missing.length === 0, missing);
+    if (t.strict) ok(`§5 ${t.name}: every object is closed (additionalProperties: false)`, objs.every(o => o.additionalProperties === false), objs.filter(o => o.additionalProperties !== false).map(o => Object.keys(o.properties || {}).slice(0, 4)));
+    const size = JSON.stringify(t.schema).length;
+    ok(`§5 ${t.name}: ${size.toLocaleString("en-US")} characters of schema (limit 60,000)`, size <= 60000, size);
+  }
+
+  // §6 HARDEN-1 · EVERY PROMPT, BUILT AT ITS LARGEST. Each prompt builder is
+  // fed the most its route can hand it (200 events, 200 campaigns, 60 funds,
+  // every help article, a long question), and must stay well inside the
+  // model's context and say nothing broken ("undefined", "[object Object]").
+  const big = n => Array.from({ length: n }, (_, i) => ({ id: `x_${i}`, name: `A rather long name for record number ${i} of the organisation`, date: "2026-10-06", startDate: "2026-01-01" }));
+  const Q = "Which donors gave to the spring appeal last year but nothing this year, and what should I ask them for? ".repeat(8);
+  const HS = await imp("shared/helpSearch.js"), HA = await imp("shared/helpArticles.js"), WS = await imp("shared/whyShape.js");
+  const facts = Array.from({ length: 40 }, (_, i) => ({ key: `f${i}`, sentence: `Fact ${i} says $${(i + 1) * 125} came from ${i + 2} gifts.` }));
+  const PROMPTS = [
+    ["filter_spec", SM.specPrompt(Q, { today: "2026-10-06", events: big(200), campaigns: big(200) })],
+    ["ask_plan", C.planPrompt(Q, { today: "2026-10-06", funds: big(60), campaigns: big(200), events: big(200) }, { kind: "metric", metric: "raised" })],
+    ["query_plan", AQ.queryPrompt(Q, { today: "2026-10-06", catalog: AQ.catalogText({}), previous: { entity: "people" } })],
+    ["meeting note chips", N.buildNoteChipPrompt(Q.repeat(4), { funds: big(60), openAsk: null }, "system")],
+    ["Ask Steward help", HS.buildHelpPrompt(Q, HA.HELP_ARTICLES)],
+    ["why sentence", WS.sentencePrompt(Q, facts)],
+  ];
+  for (const [n, p] of PROMPTS) {
+    const text = typeof p === "string" ? p : JSON.stringify(p);
+    ok(`§6 ${n}: the largest prompt is ${text.length.toLocaleString("en-US")} characters (limit 400,000, about 100k tokens)`, text.length > 50 && text.length <= 400000, text.length);
+    ok(`§6 ${n}: nothing broken in it`, !/\bundefined\b|\[object Object\]|\bNaN\b/.test(text), (text.match(/.{0,40}(undefined|\[object Object\]|NaN).{0,40}/) || [""])[0]);
+  }
 
   // §4 THE COUNTER COUNTS. filter_spec as PARITY-4 wrote it: 16 filters and
   // two more fields, each ["string","null"], all required.
