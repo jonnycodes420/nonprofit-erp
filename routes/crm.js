@@ -5759,11 +5759,24 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
-  const result = await run(
-    "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
-    [ids, req.user.orgId]
-  );
-  res.json({ deleted: result.changes });
+  // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
+  // so the shared Undo toast can bring the whole batch back.
+  const who = actor(req);
+  const { changes, undoIds } = await withTransaction(async (client) => {
+    const gone = await queryTx(client,
+      "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
+      [ids, req.user.orgId]);
+    const undoIds = [];
+    for (const g of gone) {
+      const undoId = "del_" + uuid().slice(0, 12);
+      await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+                 VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
+        [undoId, req.user.orgId, g.id, who.id, who.name]);
+      undoIds.push(undoId);
+    }
+    return { changes: gone.length, undoIds };
+  });
+  res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-
@@ -15746,6 +15759,8 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
        FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.voided_at IS NULL ${mine ? "AND t.assigned_to = ?" : ""}
+        -- WIRE-1: a deleted person's tasks go with them (and come back on Undo).
+        AND (t.donor_id IS NULL OR d.deleted_at IS NULL)
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
     mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
   );

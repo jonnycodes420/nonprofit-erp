@@ -16,6 +16,7 @@ import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
+import { offerUndo } from "./EditHistory";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -353,8 +354,17 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     setBusy(true);
     try{
       const r=await apiFetch("/donors/bulk-delete",{method:"POST",body:JSON.stringify({ids})});
-      flash(`${r.deleted} donor${r.deleted!==1?"s":""} moved to trash`);
       setSelIds(new Set());setDelModal(false);if(onBulkDone)onBulkDone();
+      // WIRE-1: the shared Undo toast brings the whole batch back, one trash row each.
+      const undoIds=Array.isArray(r.undoIds)?r.undoIds:[];
+      const n=r.deleted;
+      if(undoIds.length){
+        offerUndo({ undoSeconds:r.undoSeconds, message:`Moved ${n} ${n===1?"person":"people"} to trash.`, undoAction: async()=>{
+          for(let i=0;i<undoIds.length;i+=10) await Promise.all(undoIds.slice(i,i+10).map(id=>apiFetch(`/deleted-records/${id}/restore`,{method:"POST"})));
+          if(onBulkDone)onBulkDone();
+          return { restored: undoIds.length };
+        } }, "people");
+      } else flash(`${n} donor${n!==1?"s":""} moved to trash`);
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);
   }
