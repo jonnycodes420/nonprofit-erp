@@ -223,7 +223,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
             {[
               ["Amount Requested",fmtFull(grant.amount),T.ink],
-              ["Amount Awarded",fmtFull(grant.received||0),T.greenMid],
+              ["Received",fmtFull(grant.received||0),T.greenMid],
               ["% Funded",pct+"%",pct>75?T.greenMid:pct>40?T.gold600:T.ink3],
               ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"—",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
             ].map(([l,v,c])=>(
