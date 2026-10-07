@@ -255,6 +255,10 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§7 Next step becomes the meeting: 'Visit with Christine Stewart, <day>, Drinklings'",
     step && step.next_step_type === "meeting" && step.due_date === day && /^Visit with Christine Stewart, \w{3} \d{1,2} \w{3}, Drinklings$/.test(step.next_step_label),
     JSON.stringify(step && [step.next_step_type, step.next_step_label, step.due_date]));
+  const stamps = await q(`SELECT 'task' AS k, created_by AS id, created_by_name AS name FROM tasks WHERE org_id=$1 AND calendar_event_id=$2
+                          UNION ALL SELECT 'note', created_by, logged_by_name FROM interactions WHERE org_id=$1 AND metadata->>'calendar_event_id'=$2`, [ORG, book.body.id]);
+  ok("§7 what the booking wrote is stamped with Dana's id and NAME, never her email address (the 1440 walk caught the address)",
+    stamps.length === 3 && stamps.every(r => r.id === "u_fix33_dana" && r.name === "Dana Reyes"), JSON.stringify(stamps));
   const ME = require("../meetingEffects");
   const tks = await meetingTasks(evId);
   ok("§7 a prep task the business day before and an after task on the day",

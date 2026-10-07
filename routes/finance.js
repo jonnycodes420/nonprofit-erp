@@ -1712,7 +1712,9 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
      VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
     [id, orgId, req.user.userId, got.conn.provider, String(made.id), title, startsAt, endsAt, location, [d.id], who.id, who.name]);
   // FIX-33 Part 3: the booking reaches the whole record, not only Coming up.
-  await require("../meetingEffects").applyMeeting(id, { actorId: who.id, actorName: who.name });
+  // The step and tasks carry her NAME (the walk showed her email address there).
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(id, { actorId: who.id, actorName: me?.name || who.name });
   res.status(201).json({ ok: true, id, sentence: invite
     ? `On your calendar, and ${d.name} was sent the invitation from it.`
     : `On your calendar. ${d.name} was not invited; you can add them from your calendar if you want to.` });
@@ -1734,7 +1736,8 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   if (!r || !r.ok) return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the change. Nothing moved." });
   await run(`UPDATE calendar_events SET starts_at=?, ends_at=?, updated_at=NOW() WHERE id=?`, [startsAt, endsAt, c.id]);
   const whoM = actor(req);
-  await require("../meetingEffects").applyMeeting(c.id, { actorId: whoM.id, actorName: whoM.name });
+  const [meM] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(c.id, { actorId: whoM.id, actorName: meM?.name || whoM.name });
   res.json({ ok: true, sentence: "Moved on your calendar, and the prep, the follow-up and the next step moved with it." });
 }));
 
@@ -1752,7 +1755,8 @@ app.post("/calendar/events/:id/cancel", requireAuth, checkWriteAccess, wrap(asyn
   if (!r || !(r.ok || r.status === 404 || r.status === 410))
     return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the cancellation. Nothing changed." });
   const who = actor(req);
-  await require("../meetingEffects").revertMeeting(c.id, { actorId: who.id, actorName: who.name });
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").revertMeeting(c.id, { actorId: who.id, actorName: me?.name || who.name });
   await run(`DELETE FROM calendar_events WHERE id=? AND org_id=?`, [c.id, req.user.orgId]);
   res.json({ ok: true, sentence: "Cancelled on your calendar. The prep and follow-up are closed and the next step is back to what it was." });
 }));
@@ -1769,7 +1773,8 @@ app.post("/calendar/events/:id/people", requireAuth, checkWriteAccess, wrap(asyn
   await run(`UPDATE calendar_events SET person_ids=?, candidate_ids='{}', matched_by='person', updated_at=NOW() WHERE id=? AND org_id=?`,
     [ids, c.id, req.user.orgId]);
   const who = actor(req);
-  await require("../meetingEffects").applyMeeting(c.id, { actorId: who.id, actorName: who.name });
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(c.id, { actorId: who.id, actorName: me?.name || who.name });
   res.json({ ok: true, personIds: ids, sentence: `On ${d.name}'s record now, ready for notes.` });
 }));
 
