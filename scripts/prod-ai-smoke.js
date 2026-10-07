@@ -53,8 +53,15 @@ async function runAiSmoke({ backend = BACKEND, email = EMAIL, password = PASSWOR
   const t1 = Date.now();
   const p = await post(`${backend}/agent/preview`, tok, { text: INSTRUCTION });
   const drafts = (p.body && p.body.tools && p.body.tools.draft_note) || 0;
-  const planOk = p.status === 200 && p.body.preview === true && drafts > 0;
-  lines.push(`agent ${planOk ? "ok" : "FAILING"}: HTTP ${p.status} in ${((Date.now() - t1) / 1000).toFixed(1)}s` + (planOk ? ` · ${drafts} drafts for ${p.body.found ?? "?"} found` : ` · ${JSON.stringify(p.body).slice(0, 160)}`));
+  // A clean "nobody on file matches" is the find working through the model on
+  // data with no funders yet (the prod demo before its GRANTS-1 re-seed): the
+  // schema was accepted and the answer is true, so it passes and says so.
+  // Anything else that is not drafts (a 5xx, plan_failed, plan_truncated) fails.
+  const nobody = p.status === 400 && p.body && p.body.error === "nothing_to_do" && /matches/.test(String(p.body.sentence || ""));
+  const planOk = (p.status === 200 && p.body.preview === true && drafts > 0) || nobody;
+  const said = nobody ? " · the find ran and nobody matches, so nothing was drafted (re-seed the demo to exercise drafting)"
+    : planOk ? ` · ${drafts} drafts for ${p.body.found ?? "?"} found` : ` · ${JSON.stringify(p.body).slice(0, 160)}`;
+  lines.push(`agent ${planOk ? "ok" : "FAILING"}: HTTP ${p.status} in ${((Date.now() - t1) / 1000).toFixed(1)}s` + said);
   return { ok: askOk && planOk, lines };
 }
 
