@@ -144,3 +144,12 @@ monthly (an active recurring gift) → Monthly giver; lapsed (stage lapsed, or d
 same engine as question (e)) → Welcome back; first gift in the last 365 days → New donor, first year;
 generosity 80 or more → Major donor; a meeting logged in the last 30 days → Major donor. A finished journey is
 excluded from the next suggestion. Starting it is `POST /journeys/:id/apply`, by a person.
+- **"What has [name] done with us?" is one line per kind of involvement.** `personActivity` (routes/why.js),
+  intent `done` in `shared/askGuide.js`. Gifts open `donor-gifts-between`, hours open `volunteer-hours`, and
+  events, memberships, peer-to-peer pages, auction bids, pledges, conversations and journeys open
+  `donor-activity` with its `part`. The sentence is a template built from those same figures. "This year",
+  "last year", or their whole history when the question names neither. A new kind of involvement joins
+  `ACTIVITY_SQL` (figureSources.js) and `ACTIVITY_LINES`, or Ask cannot see it. (WIRE-1)
+- **The Ask query layer holds every object.** `askQuery.js ENTITIES` includes pledges, households, giving
+  pages, peer-to-peer pages, auction items, journeys and documents; people carry `kind` and roles. Each entity
+  is org-scoped by its `org` clause like the rest. (WIRE-1)
