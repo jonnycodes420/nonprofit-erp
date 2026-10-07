@@ -52,6 +52,14 @@ list is `docs/reports-4/figures.md`. The After section below is the state after 
 appeals, giving and peer-to-peer pages, auctions and bids, and pledges. The "Ask + Agent" column went from 9 wired, 13 partly,
 1 missing to 17 wired, 5 partly, 1 missing; all cells from 149 / 66 / 7 to 157 / 58 / 7. Recurring plans and
 documents were not in this build and wait for AGENT-4. The After section below is the state after AGENT-3.
+**THREAD-3 (7 Oct 2026)** wired the six cells where something that needs a person slipped: a donor's email with no reply
+after a business day becomes a Reply step (email × Home / Thread), an event's no-shows become one "Missed you at" task
+(event × Home / Thread), the next charge date is on the calendar as one line a day (recurring × Calendar), deleting a person
+with a live plan is refused and archive keeps the plan running (recurring × Merge / delete), and the Agent reads monthly plans
+and documents (recurring × Ask + Agent, document × Ask + Agent). Calendar went from 9 / 5 / 1 to 10 / 5 / 0, Ask + Agent from
+17 / 5 / 1 to 19 / 3 / 1, Home / Thread from 9 / 2 / 2 to 11 / 2 / 0, Merge from 20 / 2 / 0 to 21 / 1 / 0; all cells from
+157 / 58 / 7 to 163 / 55 / 4. Walked at 1440 and 390 on local Harborlight, 14 of 14 checks (`docs/thread-3/`). The After
+section below is the state after THREAD-3.
 After was re-walked on 6 Oct against the merged branch: the four builders' API checks on their own seeded
 Harborlight copies, `tests/wire-journey.test.js` (63 checks, one person and one funder through every
 column), and the Muse walk below. Every cell still partly or missing names its reason and the build it
@@ -77,13 +85,13 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | household | W | · | · | W | W | M | W | W | · | P | W |
 | organization / funder | W | W | · | W | W | P | P | W | · | W | W |
 | gift | W | W | · | W | W | W | W | W | P | W | W |
-| recurring plan | W | W | M | W | P | P | W | P | W | P | P |
+| recurring plan | W | W | W | W | P | P | W | W | W | P | W |
 | pledge | W | W | W | W | W | P | W | W | W | W | W |
 | campaign | W | W | P | W | W | W | W | W | · | W | W |
 | appeal | P | P | P | W | W | W | W | W | · | W | W |
 | giving page | P | P | W | W | W | P | W | W | · | W | W |
 | peer-to-peer page | W | W | W | W | W | P | W | W | W | W | W |
-| event and ticket | W | W | P | W | W | P | P | W | M | P | W |
+| event and ticket | W | W | P | W | W | P | P | W | W | P | W |
 | auction item | P | P | W | W | W | P | W | W | W | P | W |
 | membership | W | W | W | W | W | P | P | W | W | P | W |
 | grant | W | W | W | W | W | P | W | W | P | W | W |
@@ -91,9 +99,9 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | journey step | W | W | W | W | W | W | P | W | W | · | W |
 | task / next step | P | P | P | W | W | P | P | W | W | · | W |
 | meeting | W | W | W | W | P | · | W | P | · | P | W |
-| email | W | W | · | W | M | M | P | P | M | W | W |
+| email | W | W | · | W | M | M | P | P | W | W | W |
 | note | W | W | · | W | · | · | W | W | · | W | W |
-| document | P | W | · | W | · | · | · | P | · | P | P |
+| document | P | W | · | W | · | · | · | W | · | P | P |
 | import | P | P | · | W | W | P | P | M | W | W | W |
 | report | · | · | · | W | P | · | W | P | · | W | · |
 
@@ -103,16 +111,16 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 |---|--:|--:|--:|--:|
 | Timeline | 16 | 6 | 0 | 1 |
 | Org / funder record | 14 | 7 | 0 | 2 |
-| Calendar + sync | 9 | 5 | 1 | 8 |
+| Calendar + sync | 10 | 5 | 0 | 8 |
 | ⌘K | 22 | 1 | 0 | 0 |
 | Groups / Show me | 17 | 3 | 1 | 2 |
 | Journeys / Comms | 5 | 12 | 2 | 4 |
 | Reports, opens rows | 14 | 8 | 0 | 1 |
-| Ask + Agent | 17 | 5 | 1 | 0 |
-| Home / Thread | 9 | 2 | 2 | 10 |
+| Ask + Agent | 19 | 3 | 1 | 0 |
+| Home / Thread | 11 | 2 | 0 | 10 |
 | Import / export | 14 | 7 | 0 | 2 |
-| Merge / delete / undo | 20 | 2 | 0 | 1 |
-| **all** | **157** | **58** | **7** | **31** |
+| Merge / delete / undo | 21 | 1 | 0 | 1 |
+| **all** | **163** | **55** | **4** | **31** |
 
 **Every partly and missing cell, with what is wrong**
 
@@ -121,13 +129,10 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **household × Import / export** (partly): import stamps external_household_id but does not create households. Next: IMPORT-HOUSEHOLDS
 - **organization / funder × Journeys / Comms** (partly): a Group of organisations or funders can feed a Communication or Journey; no trigger of its own. Next: COMMS-3
 - **organization / funder × Reports, opens rows** (partly): funder grant figures only; no organisations figure. Next: REPORTS-4
-- **gift × Home / Thread** (partly): a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-3
-- **recurring plan × Calendar + sync** (missing): the next charge date is not on the calendar: 72 monthly plans would bury the month. Next: decide with Jonathan
+- **gift × Home / Thread** (partly): a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-4
 - **recurring plan × Groups / Show me** (partly): any-active recurring rule now, one shared status list; no failed-plan rule yet. Next: GROUPS-2
 - **recurring plan × Journeys / Comms** (partly): first_recurring triggers; a failed or cancelled plan does not. Next: JOURNEYS-3
-- **recurring plan × Ask + Agent** (partly): Ask sees plans; the Agent cannot. Next: AGENT-4
 - **recurring plan × Import / export** (partly): an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING
-- **recurring plan × Merge / delete / undo** (partly): soft-deleting a person does not stop their Stripe plan; it needs a human decision on what deleting a giver means. Next: RECURRING-DELETE
 - **pledge × Journeys / Comms** (partly): a Group with an open pledge feeds a Communication or Journey; no pledge trigger. Next: JOURNEYS-3
 - **campaign × Calendar + sync** (partly): end dates are on it; start dates are not. Next: CAL-2
 - **appeal × Timeline** (partly): attribution shows as text on the gift. Next: PROFILE-2
@@ -140,7 +145,6 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **event and ticket × Calendar + sync** (partly): on Steward's calendar; not pushed to Google or Outlook because an event has no owner (by design, FIX-28). Next: none planned
 - **event and ticket × Journeys / Comms** (partly): attended_event now fires from check-in and scan; there is still no this-event's-guests audience except a Group. Next: COMMS-3
 - **event and ticket × Reports, opens rows** (partly): event rows open through a private endpoint, not the figure registry. Next: REPORTS-4
-- **event and ticket × Home / Thread** (missing): an event no-show opens nothing; most no-shows need no call. Next: THREAD-3 if wanted
 - **event and ticket × Import / export** (partly): no attendee import and no guest CSV export. Next: EVENTS-3
 - **auction item × Timeline** (partly): donated items and paid wins show; bids write nothing (a bid war would flood the timeline). Next: none planned
 - **auction item × Org / funder record** (partly): as timeline
@@ -169,9 +173,7 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **email × Journeys / Comms** (missing): no email-opened trigger. Next: JOURNEYS-3
 - **email × Reports, opens rows** (partly): bulk email stats are computed in the browser. Next: REPORTS-4
 - **email × Ask + Agent** (partly): as conversations. Next: ASK-5
-- **email × Home / Thread** (missing): a donor's email that needs a reply opens no step: the mailbox reads only what matches a person, and deciding 'needs a reply' wants care. Next: MAIL-2
 - **document × Timeline** (partly): attachments show; grant documents only on the funder panel; receipt PDFs never. Next: PROFILE-2
-- **document × Ask + Agent** (partly): Ask has a documents entity; the Agent cannot see them. Next: AGENT-4
 - **document × Import / export** (partly): stored files are left out of the export (by design, the export is data)
 - **document × Merge / delete / undo** (partly): erase leaves interaction_attachments. Next: TRUST-3
 - **import × Timeline** (partly): imported rows show; the import itself is never an item. Next: PROFILE-2

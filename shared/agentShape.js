@@ -575,8 +575,30 @@ export function describeStep(step, byId = new Map()) {
     case "mark_gift_thanked": return `Mark ${who}'s gift${step.giftWords ? ` (${step.giftWords})` : ""} thanked.`;
     case "propose_merge": return `Propose that ${who} and ${nameInSentence(byId.get(step.otherDonorId))} are one person, for you to merge in Data health.`;
     case "note_volunteer": return `Note ${who}'s availability in Volunteers: ${step.availability || "as you said"}.`;
-    default: return `${step.tool}.`;
+    // THREAD-3: the two reading steps say what they read, so no step shows blank.
+    case "find_people": return step.label ? `${String(step.label).replace(/\.$/, "")}.` : `Find ${p ? who : "the people it names"}.`;
+    case "count": return step.label ? `${String(step.label).replace(/\.$/, "")}.` : "Count what that found.";
+    default: {
+      const t = TOOLS_BY_NAME[step.tool];
+      return step.label ? `${String(step.label).replace(/\.$/, "")}.` : `${String((t && t.what) || String(step.tool || "A step").replace(/_/g, " ")).replace(/\.$/, "")}.`;
+    }
   }
+}
+
+// THREAD-3 · A STEP IS NEVER BLANK. A plan read back from the database (a
+// seed, an older row, a hand-written fixture) may carry a step with no
+// `describes`; the plan sheet then drew an empty row. Every plan the server
+// hands out passes through this, so a missing sentence is written from the
+// step itself, and the stored row is not trusted to have one.
+export function describedPlan(plan) {
+  if (!plan || typeof plan !== "object" || !Array.isArray(plan.steps)) return plan;
+  let changed = false;
+  const steps = plan.steps.map(s => {
+    if (s && String(s.describes || "").trim().length >= 4) return s;
+    changed = true;
+    return { ...(s || {}), describes: describeStep(s || {}) };
+  });
+  return changed ? { ...plan, steps } : plan;
 }
 
 // The longest headline a person reads at a glance; past it, names give way to

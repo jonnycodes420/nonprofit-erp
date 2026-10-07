@@ -178,6 +178,7 @@ CORE=(
   golden-journeys
   repair-runs-state
   agent3-catalog
+  thread3-human
   search2-everything
   reports4-foot
   reports5-import

@@ -39,9 +39,10 @@ const TYPE_META = {
   membership:{ label: "Memberships ending", bg: "rgba(201,168,76,0.12)", bar: T.greenDk, ink: T.ink },
   auction: { label: "Auctions closing", bg: "rgba(15,26,18,0.10)", bar: T.gold, ink: T.ink },
   campaign:{ label: "Campaign and page end dates", bg: T.white, bar: T.greenDk, ink: T.ink, outline: true },
+  recurring:{ label: "Monthly gifts", bg: "rgba(13,92,58,0.06)", bar: T.gold, ink: T.ink, outline: true },
   birthday:{ label: "Birthdays", bg: T.bg, bar: T.bg3, ink: T.ink },
 };
-const TYPE_ORDER = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "birthday"];
+const TYPE_ORDER = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "recurring", "birthday"];
 const TYPES_KEY = "steward_calendar_types";
 const chip = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
@@ -470,6 +471,15 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
         <div style={{ fontSize: 18, fontWeight: 800, color: T.ink }}>{it.title}</div>
         <div style={{ fontSize: 13.5, color: T.ink2 }}>{when}</div>
         {it.detail && <div style={{ fontSize: 13.5, color: T.ink2 }}>{it.detail}</div>}
+        {/* THREAD-3: the day's monthly gifts, one row per plan, each opening the person. */}
+        {Array.isArray(it.rows) && it.rows.length > 0 && (
+          <div data-testid="cal-card-rows" style={{ display: "flex", flexDirection: "column", maxHeight: 260, overflowY: "auto", borderTop: "1px solid " + T.bg2 }}>
+            {it.rows.map(r => (
+              <div key={r.planId} data-testid="cal-card-row" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, padding: "6px 0", borderBottom: "1px solid " + T.bg2, fontSize: 13.5 }}>
+                <DonorLink id={r.donorId} onOpen={() => go("donors", { selectDonorId: r.donorId, anchor: "plan-" + r.planId })} style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donorName}</DonorLink>
+                <span style={{ color: T.ink2, fontVariantNumeric: "tabular-nums" }}>${Number(r.amount).toLocaleString("en-US", { minimumFractionDigits: r.amount % 1 ? 2 : 0, maximumFractionDigits: 2 })}</span>
+              </div>))}
+          </div>)}
         {it.donorId && it.type !== "birthday" && it.type !== "deadline" && <div style={{ fontSize: 13.5 }}>With <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ fontWeight: 700, textDecoration: "underline dotted" }}>{it.donorName}</DonorLink></div>}
         {it.conflict && <div data-testid="cal-card-conflict" style={{ fontSize: 13, color: T.ink, borderLeft: `3px solid ${T.gold}`, paddingLeft: 8 }}>{it.conflict}</div>}
         {it.ref && it.ref.synced && <div style={{ fontSize: 12.5, color: T.ink3 }}>Moving it here moves it on your connected calendar too.</div>}

@@ -3640,7 +3640,10 @@ async function buildDonorListFilter(req) {
       opts = { roomRanks };
     }
   }
-  return GR.buildDonorFilter(req.user.orgId, q, opts);
+  // THREAD-3: archived people leave the list; ?archived=1 shows only them.
+  if (String(q.archived || "") === "1") return GR.buildDonorFilter(req.user.orgId, q, opts)
+    .then(f => ({ ...f, whereSql: `${f.whereSql} AND archived_at IS NOT NULL` }));
+  return GR.buildDonorFilter(req.user.orgId, q, { ...opts, hideArchived: true });
 }
 
 // GET /donors — unpaginated legacy shape (plain array) when `limit` is
@@ -5692,7 +5695,32 @@ app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAcces
 // Soft delete — same trash model as POST /donors/bulk-delete. A hard DELETE
 // here threw FK violations for any donor with gifts/interactions/etc.;
 // permanent deletion is POST /donors/purge-trash's job (FK-safe child order).
+// THREAD-3 · A PERSON WITH A LIVE MONTHLY PLAN IS NOT DELETED.
+// Deleting the record would leave a card being charged every month for
+// somebody Steward no longer shows, and Steward never cancels a Stripe plan as
+// a side effect of anything. So delete is refused while a plan is live, with
+// the two ways out said plainly: cancel the plan first, or archive the person
+// (they leave the lists and the plan keeps running).
+const LIVE_PLAN_STATUSES = GR.ACTIVE_RECURRING_STATUSES.concat(["paused"]);
+async function livePlansFor(orgId, ids) {
+  return query(
+    `SELECT rs.id, rs.donor_id, rs.amount, rs.interval, d.name FROM recurring_subscriptions rs
+       JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id
+      WHERE rs.org_id = ? AND rs.donor_id = ANY(?::text[]) AND rs.status = ANY(?::text[])
+      ORDER BY d.name, rs.id`, [orgId, ids, LIVE_PLAN_STATUSES]);
+}
+function livePlanSentence(p) {
+  const amt = "$" + Number(p.amount || 0).toLocaleString("en-US", { minimumFractionDigits: Number(p.amount) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  const per = p.interval === "year" ? "yearly" : p.interval === "week" ? "weekly" : "monthly";
+  return `${p.name} has a ${amt} ${per} plan. Cancel it first, or archive them instead.`;
+}
+
 app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [plan] = await livePlansFor(req.user.orgId, [req.params.id]);
+  if (plan) {
+    req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+    return res.status(409).json({ error: "active_plan", sentence: livePlanSentence(plan), planId: plan.id, canArchive: true });
+  }
   const result = await run(
     "UPDATE donors SET deleted_at=NOW() WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
     [req.params.id, req.user.orgId]
@@ -5706,6 +5734,25 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
              VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
     [undoId, req.user.orgId, req.params.id, who.id, who.name]);
   res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
+}));
+
+// THREAD-3 · ARCHIVE. The person leaves the Donors list and every Group, and
+// nothing else changes: their monthly plan keeps charging, their gifts keep
+// counting, and the record opens from search or a link with an Archived mark.
+// Unarchive is the Undo.
+app.post("/donors/:id/archive", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const r = await query(`UPDATE donors SET archived_at=NOW(), archived_by=?, updated_at=NOW()
+                          WHERE id=? AND org_id=? AND deleted_at IS NULL AND archived_at IS NULL RETURNING id, name`,
+    [actor(req).id, req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found, or already archived" });
+  res.json({ archived: true, sentence: `${r[0].name} is archived. They are off your lists, and anything they give keeps arriving.` });
+}));
+app.post("/donors/:id/unarchive", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const r = await query(`UPDATE donors SET archived_at=NULL, archived_by=NULL, updated_at=NOW()
+                          WHERE id=? AND org_id=? AND deleted_at IS NULL AND archived_at IS NOT NULL RETURNING id, name`,
+    [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found, or not archived" });
+  res.json({ archived: false, sentence: `${r[0].name} is back on your lists.` });
 }));
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
@@ -5832,6 +5879,16 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
     [ids, req.user.orgId]
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
+  // THREAD-3: nobody with a live plan is deleted, in a batch either. The
+  // whole batch is refused so nothing half-happens; the sentence names them.
+  const plans = await livePlansFor(req.user.orgId, ids);
+  if (plans.length) {
+    req.audit && req.audit.skip && req.audit.skip("a refused delete changes nothing");
+    const people = [...new Set(plans.map(p => p.donor_id))];
+    return res.status(409).json({ error: "active_plan", donorIds: people,
+      sentence: people.length === 1 ? livePlanSentence(plans[0])
+        : `${people.length} of these people have a monthly plan (${livePlanSentence(plans[0]).replace(/\. Cancel.*$/, "")}, and others). Cancel their plans first, or archive them instead.` });
+  }
 
   // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
   // so the shared Undo toast can bring the whole batch back.
@@ -23988,8 +24045,55 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
     await run("UPDATE event_attendees SET status=? WHERE id=? AND org_id=?", [status, a.id, orgId]);
     if (await logEventAttendance(orgId, a, event, status, { id: who.id, name: u?.name || who.name }, day)) logged++;
   }
-  res.json({ updated: rows.length, timelineLines: logged });
+  // THREAD-3: the people who did not come are one task for this event.
+  const noShowTaskId = missed.size ? await openNoShowTask(orgId, event.id, { id: who.id, name: u?.name || who.name }) : null;
+  res.json({ updated: rows.length, timelineLines: logged, noShowTaskId });
 }));
+
+// THREAD-3 · AN EVENT'S NO-SHOWS ARE ONE TASK, WITH A DRAFT EACH.
+// Whichever door marked a guest as not having come, this keeps exactly one
+// "Missed you at" task per event (a unique index holds it) and its title
+// counting them, and puts one "Missed you" draft per person with an email in
+// Drafts, written from the template, for a person to read and send or leave.
+// A draft is never written twice for one person and event. Nothing is sent.
+async function openNoShowTask(orgId, eventId, who) {
+  const [event] = await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [eventId, orgId]);
+  if (!event) return null;
+  const missed = await query(
+    `SELECT ea.donor_id, d.name, d.email FROM event_attendees ea
+       JOIN donors d ON d.id = ea.donor_id AND d.org_id = ea.org_id
+      WHERE ea.event_id=? AND ea.org_id=? AND ea.status='no_show'
+        AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE
+      ORDER BY d.name`, [event.id, orgId]);
+  if (!missed.length) return null;
+  const BKit = await import("../shared/brandKit.js");
+  const [u] = who && who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]) : [];
+  const signature = (u && u.name) || (who && who.name) || "";
+  for (const m of missed) {
+    if (!m.email) continue;
+    const key = `event_missed:${event.id}`;
+    const [had] = await query("SELECT id FROM milestone_drafts WHERE org_id=? AND donor_id=? AND milestone_key=?", [orgId, m.donor_id, key]);
+    if (had) continue;
+    const values = { first_name: String(m.name || "").split(/\s+/)[0], event_name: event.name, signature };
+    await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,'pending_review','template',?,?)`,
+      ["md_" + uuid().slice(0, 12), orgId, m.donor_id, key,
+       BKit.renderTemplate(EV.MISSED_YOU.subject, values).text, BKit.renderTemplate(EV.MISSED_YOU.body, values).text,
+       who.id, who.name]);
+  }
+  const [drafted] = await query("SELECT COUNT(*)::int AS c FROM milestone_drafts WHERE org_id=? AND milestone_key=? AND status='pending_review'", [orgId, `event_missed:${event.id}`]);
+  const title = EV.missedYouTaskTitle(event.name, missed.length, drafted ? drafted.c : 0);
+  const [open] = await query("SELECT id FROM tasks WHERE org_id=? AND event_id=? AND type='event_no_show'", [orgId, event.id]);
+  if (open) { await run("UPDATE tasks SET title=?, updated_at=NOW() WHERE id=? AND org_id=?", [title, open.id, orgId]); return open.id; }
+  const owner = u ? { id: who.id, name: u.name } : (await query(
+    `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId]))[0];
+  const id = "t_" + uuid().slice(0, 8);
+  await run(`INSERT INTO tasks (id,org_id,title,due,priority,type,done,event_id,assigned_to,assigned_to_name,created_by,created_by_name)
+             VALUES (?,?,?,?,'medium','event_no_show',0,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+    [id, orgId, title, orgTime.addDays(orgToday(await orgTz(orgId)), 2), event.id,   // ORG_TZ_SEAM_OK
+     owner ? owner.id : null, owner ? (owner.name || owner.email || "") : null, who.id, who.name]);
+  return id;
+}
 
 // WIRE-1 · THE ONE ATTENDANCE LINE. Every door that marks a guest as having
 // come (the attendance list, the guest PATCH, the door check-in, the QR scan)
@@ -25247,6 +25351,11 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
         .catch(e => console.error("[event] attendance line:", e.message));
       await run(`UPDATE donors SET stage = CASE WHEN stage='prospect' THEN 'qualify' WHEN stage='qualify' THEN 'cultivate' ELSE stage END WHERE id=$1 AND org_id=$2 AND stage IN ('prospect','qualify')`,
         [att.donor_id, orgId]).catch(() => {});
+    }
+    // THREAD-3: a guest marked as not having come joins the event's one task.
+    if (newStatus === 'no_show' && att.status !== 'no_show' && att.donor_id) {
+      const w = await staffWho(req);
+      await openNoShowTask(orgId, att.event_id, w).catch(e => console.error("[event] no-show task:", e.message));
     }
     const updated = await query("SELECT ea.*, d.stage, d.total_giving FROM event_attendees ea LEFT JOIN donors d ON d.id=ea.donor_id WHERE ea.id=$1", [req.params.attendeeId]);
     res.json(updated[0]);

@@ -21,6 +21,12 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-THREAD-3 · RE-SEED THE PROD DEMO (2026-10-07)
+
+- **Re-seed Harborlight** so the six Agent plans waiting on the Agent page show their two steps in words (the seed wrote
+  them without a sentence; the server now fills one in, so this is cosmetic until the re-seed). Same command as the
+  earlier re-seeds.
+
 ## 0-FIX-30 · PUT BACK THE POSTAL STATES THE AGENT SET TO "runs" (2026-10-07)
 
 - **Run the repair on prod, dry run first.** From `~/nonprofit-erp` after `git pull`: `railway run -- node scripts/repair-runs-state.js --i-know-this-is-prod`. It writes nothing. Read it: each org with a count, one line per person ("now runs, restore to X"), then LEFT ALONE (people whose state changed after the Agent's write, or who read runs with no Agent write; those are yours to fix by hand on the profile). Check the restore values look like real states. Then apply, in one transaction with an audit row on each person's History: `railway run -- node scripts/repair-runs-state.js --apply --i-know-this-is-prod`. A second dry run should print "Nothing to repair". If anything looks wrong afterwards, `--undo --i-know-this-is-prod` reverses exactly what --apply changed.

@@ -55,6 +55,9 @@ const DONOR_SCORE_COLS = `,
 async function buildDonorFilter(orgId, q = {}, opts = {}) {
   const PT = await personTypeMod();
   const where = ["org_id = ?", "deleted_at IS NULL"];
+  // THREAD-3: an archived person is off the lists (the Donors list, a Group's
+  // members) and still counts wherever money is counted.
+  if (opts.hideArchived) where.push("archived_at IS NULL");
   const params = [orgId];
   const today = await DS.todayFor(orgId);
   const cl = DS.closenessSql(today);
@@ -557,12 +560,12 @@ async function memberSql(orgId, group, depth = 0) {
     return {
       sql: `SELECT gm.donor_id AS id FROM group_members gm
               JOIN donors gd ON gd.id = gm.donor_id AND gd.org_id = gm.org_id
-             WHERE gm.org_id = ? AND gm.group_id = ? AND gd.deleted_at IS NULL`,
+             WHERE gm.org_id = ? AND gm.group_id = ? AND gd.deleted_at IS NULL AND gd.archived_at IS NULL`,
       args: [orgId, group.id],
     };
   }
   if (group.kind !== "dynamic") return NOBODY;
-  const f = await buildDonorFilter(orgId, group.rules || {}, { depth });
+  const f = await buildDonorFilter(orgId, group.rules || {}, { depth, hideArchived: true });
   if (f.badRole || f.badStatus) return NOBODY;
   return { sql: `SELECT donors.id FROM donors WHERE ${f.whereSql}`, args: f.params };
 }
