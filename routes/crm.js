@@ -4772,7 +4772,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // $1,800 of new gifts landed $0. Matching a donor is not a reason to lose
   // their money; it is the reason to attach it to the right record.
   const existingEmailRows = await queryTx(txc,
-    "SELECT id, name, LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
+    "SELECT id, name, LOWER(email) AS e, external_donor_id FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
     [orgId]
   );
   const existingByEmail = new Map();
@@ -4787,7 +4787,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const existingHouseholds = new Map();   // email → [{ id, mk }]
   for (const r of existingEmailRows) {
     if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
-    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name) });
+    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name), extKey: donorIdKey(r.external_donor_id) });
   }
   // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
   // An import used to match a person by email and nothing else, while
@@ -4810,10 +4810,20 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
     }
   }
-  const existingMatch = (emailLower, name) => {
+  const existingMatch = (emailLower, name, extKey) => {
     const list = existingHouseholds.get(emailLower);
     if (!list || !list.length) return undefined;
-    if (list.length === 1) return list[0].id;
+    // FIX-33: two DIFFERENT ids from the old system are two records there.
+    // An email alone does not join them; only an email AND a compatible name
+    // does. Without this, which of a file's twins merged depended on whether
+    // they fell in the same 500-donor chunk: "Sam Sanchez" (D20001) was folded
+    // into "Samantha Sanchez" (D10610) only because chunk one had committed
+    // her first. The pair stays two records and waits in Data health.
+    if (list.length === 1) {
+      const only = list[0];
+      if (extKey && only.extKey && only.extKey !== extKey && !matchNamesCompatible(only.mk, matchNameKey(name))) return undefined;
+      return only.id;
+    }
     const mk = matchNameKey(name);
     const hit = list.find(x => matchNamesCompatible(x.mk, mk));
     return hit ? hit.id : undefined;   // a name nobody at that address answers to is a NEW member of the household
@@ -4871,7 +4881,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // 2. Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
-      const priorId = (identityResolved ? existingMatch(emailLower, d.name) : existingByEmail.get(emailLower))
+      const priorId = (identityResolved ? existingMatch(emailLower, d.name, extKey) : existingByEmail.get(emailLower))
         || (identityResolved ? undefined : seenEmails.get(emailLower));
       if (priorId) { claimMatch(idx, d, priorId, "email"); return; }
     }
