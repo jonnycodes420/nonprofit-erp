@@ -256,16 +256,31 @@ const KEY_HELP = {
   kind: "person or organization: the kind of record",
   noContactSince: "YYYY-MM-DD: nobody has logged a call, meeting, email or stewardship with them on or after this date ('a while' is six months before today)",
 };
+// FIX-29: ONE LIST OF CONDITIONS, NOT ONE FIELD PER FILTER. A strict tool may
+// carry at most 16 union-typed parameters ("string or null") and 24 optional
+// ones; past either the API refuses the whole request (400), and the catch
+// that should have fallen back to the templates hid it. One nullable field per
+// filter was 18 the day PARITY-4 wrote it and 36 by WIRE-1. Now every filter
+// is a { field, value } pair whose `field` is an enum of SHOW_KEYS: the same
+// filters, no unions, nothing optional. tests/fix29-tool-schemas.test.js holds
+// every strict tool to both limits.
 export function specTool() {
-  const props = {};
-  for (const k of SHOW_KEYS) props[k] = { type: ["string", "null"], description: KEY_HELP[k] };
-  props.suggestAsk = { type: ["string", "null"], description: "1 when the question asks what to ask them for (each person then shows their suggested ask). Not a filter." };
-  props.unsupported = { type: ["string", "null"], description: "Anything the question asks for that none of these filters can express, in a few words. Null when every part is covered." };
+  const help = SHOW_KEYS.map(k => `${k}: ${KEY_HELP[k]}`).join("\n");
   return {
     name: "filter_spec",
     description: "The donor list filters that answer the question. Use only these fields. Never guess a filter for something they cannot express; name it in unsupported.",
     strict: true,
-    input_schema: { type: "object", additionalProperties: false, properties: props, required: [...SHOW_KEYS, "suggestAsk", "unsupported"] },
+    input_schema: {
+      type: "object", additionalProperties: false,
+      properties: {
+        filters: { type: "array", description: `One entry per filter the question asks for, each field at most once. The fields and their values:\n${help}`,
+          items: { type: "object", additionalProperties: false,
+            properties: { field: { type: "string", enum: [...SHOW_KEYS] }, value: { type: "string" } }, required: ["field", "value"] } },
+        suggestAsk: { type: "boolean", description: "true when the question asks what to ask them for (each person then shows their suggested ask). Not a filter." },
+        unsupported: { type: "string", description: "Anything the question asks for that none of these filters can express, in a few words. Empty when every part is covered." },
+      },
+      required: ["filters", "suggestAsk", "unsupported"],
+    },
   };
 }
 export function specPrompt(question, ctx = {}) {
@@ -279,11 +294,16 @@ export function specPrompt(question, ctx = {}) {
 export function readToolSpec(content) {
   const b = (content || []).find(x => x && x.type === "tool_use" && x.name === "filter_spec");
   if (!b || !b.input || typeof b.input !== "object") return null;
-  const rules = {}; let unsupported = null, withAsk = false;
-  for (const [k, v] of Object.entries(b.input)) {
-    if (k === "unsupported") { unsupported = v ? String(v) : null; continue; }
-    if (k === "suggestAsk") { withAsk = String(v || "") === "1" || v === true; continue; }
+  const rules = {};
+  let unsupported = b.input.unsupported ? String(b.input.unsupported) : null;
+  const withAsk = b.input.suggestAsk === true || String(b.input.suggestAsk || "") === "1";
+  for (const f of Array.isArray(b.input.filters) ? b.input.filters : []) {
+    if (!f || typeof f !== "object" || !f.field) continue;
+    const k = String(f.field), v = f.value;
     if (v === null || v === undefined || v === "") continue;
+    // One field said twice with two values ("in NC or SC") is a filter the
+    // list cannot hold; refused, never the last one quietly kept.
+    if (rules[k] !== undefined && rules[k] !== String(v)) { unsupported = unsupported || `two values for one filter (${k})`; continue; }
     rules[k] = String(v);
   }
   // A state the model wrote out ("North Carolina") is filed by its code.

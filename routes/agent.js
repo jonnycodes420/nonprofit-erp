@@ -222,9 +222,19 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
 // templates leave something over), checked against the shared rules
 // (groups.js), and the people are the Donors list's own rows for that filter.
 // The model never writes the filter's SQL and never sees anyone else.
-const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan)\b\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
+// FIX-29: "a thank-you NOTE to…" takes the second noun too; it used to leave
+// "note to every grant funder", which no filter reads, and the plan was made
+// from everybody instead of the funders.
+const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan)\b(\s+(notes?|letters?|emails?|calls?|cards?|messages?)\b)?\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
 // AI-FIX: the words with "Steward," (or "Hey Steward") taken off the front.
 function agentUnaddressed(text) { return String(text || "").replace(/^\s*(hey |hi |ok |okay )?steward\s*[,:!-]?\s*/i, ""); }
+// FIX-29: when a model call fails, she reads one plain sentence and no plan;
+// the error itself goes to the log, never to her screen.
+const AGENT_PLAN_FAILED = "Steward couldn't build that plan just now, so nothing was planned. Please try again in a minute.";
+function agentPlanFailed(where, e) {
+  console.error(`[agent] ${where} failed`, e && e.status ? e.status : "", (e && e.message) || e);
+  return Object.assign(new Error("plan failed"), { refuse: { error: "plan_failed", sentence: AGENT_PLAN_FAILED } });
+}
 async function agentFindPeople(orgId, text, today, { client = null } = {}) {
   const SM = await import("../shared/showMe.js");
   const GR = require("../groups");
@@ -250,13 +260,20 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
       const out = await client.messages.create({ model: AGENT_MODEL, max_tokens: 600, tools: [SM.specTool()],
         tool_choice: { type: "tool", name: "filter_spec" }, messages: [{ role: "user", content: SM.specPrompt(who, ctx) }] });
       spec = SM.readToolSpec(out.content) || spec;
-    } catch { /* the template's reading stands, and is refused below if it is incomplete */ }
+    } catch (e) {
+      // AI off: the template's reading stands, and is refused below if it is
+      // incomplete. FIX-29: any other failure (the API refusing the request)
+      // is logged and stops the plan, because a find that quietly failed
+      // plans for everybody instead of the people she named.
+      if (!(e && e.code === "ai_off")) throw agentPlanFailed("find people", e);
+    }
   }
   const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
   if (!chk.ok) {
     // ASK-4: words the donor list's filters cannot express ("came to the gala
     // and volunteered over ten hours") go to the query layer, people only.
-    try { const q = await require("../askQuery").peopleForWords(orgId, who, client, AGENT_MODEL); if (q) return q; } catch (e) { console.error("[agent] query layer", e && e.message); }
+    try { const q = await require("../askQuery").peopleForWords(orgId, who, client, AGENT_MODEL); if (q) return q; }
+    catch (e) { if (!(e && e.code === "ai_off")) throw agentPlanFailed("query layer", e); }
     return null;
   }
   const f = await GR.buildDonorFilter(orgId, chk.rules);
@@ -1636,7 +1653,9 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
       if (read.kind === "find" && !(named.scope && named.scope.length)) {
         const g = await agentGate(req.user.orgId);
         const today = orgToday(await orgTz(req.user.orgId));
-        const found = await agentFindPeople(req.user.orgId, text, today, { client: g.ok ? anthropicFor(req.user.orgId) : null });
+        let found;
+        try { found = await agentFindPeople(req.user.orgId, text, today, { client: g.ok ? anthropicFor(req.user.orgId) : null }); }
+        catch (e) { if (e && e.refuse) return res.status(503).json(e.refuse); throw e; }
         if (found) {
           const n = found.ids.length > 1000 ? 1000 : found.ids.length;
           const people = n ? await agentReadPeople(req.user.orgId, { ids: found.ids.slice(0, 12) }) : [];
@@ -1690,8 +1709,9 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId, persona }); }
     catch (e) {
       if (e && e.truncated) return res.status(422).json({ error: "plan_truncated", sentence: A.TRUNCATED_SENTENCE });
-      if (e && e.refuse) return res.status(400).json(e.refuse);
-      console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" });
+      if (e && e.refuse) return res.status(e.refuse.error === "plan_failed" ? 503 : 400).json(e.refuse);
+      console.error("[agent] plan failed", e?.status || "", e?.message || e);
+      return res.status(503).json({ error: "plan_failed", sentence: AGENT_PLAN_FAILED });
     }
     const readNames = named.scope
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")

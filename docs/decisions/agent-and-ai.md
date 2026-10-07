@@ -150,6 +150,12 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   model exactly those people. (FIX-27)
 
 ## Gotchas
+- **A strict tool may hold at most 16 union-typed params and 24 optional ones**, or the API refuses the whole
+  request (400). One nullable field per filter is the shape that breaks it; use one array of `{ field, value }`
+  with an enum. `tests/fix29-tool-schemas.test.js` counts every tool, and a new `input_schema` must be listed
+  there. A non-strict tool has no such limit (FIX-29)
+- **A model call's catch that falls back silently hides a rejected request.** Log it; in the Agent, stop the plan
+  with one sentence, because a failed find plans for everybody. (FIX-29)
 - **An outcome-claim filter that only refused uncited lines had no teeth.** Prove a refusal fires on a line
   that DOES cite something. (BUILD-100)
 - **The donor profile auto-fires a "next move" stream on open.** Catch a failed stream in the panel; whether
