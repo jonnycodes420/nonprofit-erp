@@ -181,19 +181,22 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope, ini
 
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
 
-      {selected.size > 0 && <BulkBar n={selected.size} team={team} today={today} onClear={() => setSelected(new Set())} onBulk={bulk} />}
 
       {rows === null ? <div style={{ padding: 30, color: T.ink3, fontSize: 13 }}>Loading tasks…</div>
         : rows.length === 0
           ? <EmptyState icon="✓" title={view === "today" ? "Nothing due today" : `Nothing in ${viewMeta?.label || "this view"}`}
               message={view === "today" ? "Type a task above in plain words, like “Call Bill Harmon Friday 2pm about the gala”." : "Tasks land here by their day."} />
           : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingBottom: selected.size ? 260 : 0 }}>
-              {view !== "done" && !isReadOnly && (
-                <label style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 8, alignItems: "center" }}>
-                  <input type="checkbox" checked={allPicked} onChange={() => setSelected(allPicked ? new Set() : new Set(allIds))} /> Select all {allIds.length}
-                </label>
-              )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* The bulk bar takes the place of "Select all" and sticks to the
+                  top while she scrolls, so it never sits over a row she is
+                  about to pick (at 390 a bar pinned to the bottom did). */}
+              {view !== "done" && !isReadOnly && (selected.size > 0
+                ? <BulkBar n={selected.size} team={team} today={today} allPicked={allPicked}
+                    onAll={() => setSelected(allPicked ? new Set() : new Set(allIds))} onClear={() => setSelected(new Set())} onBulk={bulk} />
+                : <label style={{ fontSize: 12, color: T.ink3, display: "flex", gap: 8, alignItems: "center", minHeight: 24 }}>
+                    <input type="checkbox" checked={false} onChange={() => setSelected(new Set(allIds))} /> Select all {allIds.length}
+                  </label>)}
               {rows.map(t => (
                 <TaskRow key={t.id} t={t} today={today} isReadOnly={isReadOnly}
                   picked={selected.has(t.id)} onPick={() => setSelected(s => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })}
@@ -492,14 +495,16 @@ function SnoozeSheet({ t, today, onClose, onSnooze }) {
   );
 }
 
-function BulkBar({ n, team, today, onClear, onBulk }) {
+function BulkBar({ n, team, today, allPicked, onAll, onClear, onBulk }) {
   const [who, setWho] = useState("");
   const [note, setNote] = useState("");
   const [day, setDay] = useState(addDays(today, 1));
   return (
-    <div data-testid="tasks-bulk" style={{ position: "fixed", left: 16, right: 16, bottom: "calc(84px + env(safe-area-inset-bottom, 0px))", maxWidth: 900, margin: "0 auto", zIndex: 60,
+    <div data-testid="tasks-bulk" style={{ position: "sticky", top: 0, zIndex: 20,
       display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: T.ink, color: T.white, borderRadius: 10, padding: "10px 12px", boxShadow: T.shadow }}>
-      <strong style={{ fontSize: 13 }}>{n} selected</strong>
+      <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 700 }}>
+        <input type="checkbox" checked={allPicked} onChange={onAll} aria-label="Select all" /> {n} selected
+      </label>
       <select value={who} onChange={e => setWho(e.target.value)} aria-label="Reassign to" data-testid="bulk-who" style={{ ...inp, width: "auto", padding: "5px 8px" }}>
         <option value="">Reassign to…</option>
         {team.map(u => <option key={u.id} value={u.id}>{u.name || u.email}</option>)}
