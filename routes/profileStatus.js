@@ -197,7 +197,7 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id,
     { monthly, ...(viewerMaySee ? { screening: (await P.latestScreening(orgId, [d.id])).get(d.id) || null } : {}) }) : null;
   const said = String(step).trim().replace(/[.!?]+$/, "");
-  const text = `Next: ${said}.` + (ask ? ` Suggested ask: ${DS.dollars(ask.askCents)}${ask.monthly ? " a month" : ""}.` : "");
+  const text = `Next: ${said}.` + (ask ? ` Suggested ${ask.monthly ? "ask" : "one-time ask"}: ${DS.dollars(ask.askCents)}${ask.monthly ? " a month" : ""}.` : "");
   return { step, text, why, ask: ask ? { cents: ask.askCents, monthly: !!ask.monthly, sentence: ask.sentence, screening: !!ask.screening } : null };
 }
 
