@@ -16,6 +16,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "jspdf": "^4.2.1",
     "jsqr": "^1.4.0",
+    "jszip": "^3.10.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.49.0",
     "papaparse": "^5.5.3",

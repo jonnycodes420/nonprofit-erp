@@ -1,6 +1,7 @@
 import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
 import { useState, useEffect, useMemo, Component } from "react";
 import { GrantImport } from "./GrantImport";
+import OldReportsImport from "./OldReportsImport";
 import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -80,7 +81,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // their own map, keyed the same way, and the panel offers a retry.
   const[aiErr,setAiErr]=useState({});
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -511,6 +512,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
+      {/* REPORTS-5: the second door to the one old-reports wizard. */}
+      {showOldReports&&<OldReportsImport onClose={()=>setShowOldReports(false)}/>}
       {showHours&&<HoursImportModal onClose={()=>setShowHours(false)} onDone={reloadDonors} Modal={Modal} Papa={Papa} presets={HOURS_PRESETS_MOD}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
           MAGICAL import (DonorImport withHistory: shape detection + the
@@ -592,6 +595,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 {divider:true},
                 {label:"Import volunteer hours",hint:"A Wranglr or VolunteerHub hours export",act:()=>setShowHours(true)},
                 {label:"Import grants",hint:"A grants spreadsheet from another system, or your own",act:()=>setShowGrantImport(true)},
+                {label:"Import old reports",hint:"Reports from the system you used before, kept under Reports",act:()=>setShowOldReports(true)},
                 {label:"Data health",hint:"Duplicates, addresses, moves and emails to tidy",act:()=>setView("health")},
               ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:(
                 <button key={i} role="menuitem" onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>

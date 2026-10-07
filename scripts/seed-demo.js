@@ -3227,6 +3227,55 @@ async function main() {
     console.log("[seed] video thank-you: one draft for Margaret Chen, not sent");
   }
 
+  // ── REPORTS-5 · THE REPORTS HARBORLIGHT BROUGHT FROM DONORPERFECT AND BLOOMERANG
+  // Three files, exactly as in docs/reports-5/samples: the 2023 board report
+  // (a PDF, kept as a file), DonorPerfect's 2024 giving by fund and
+  // Bloomerang's 2024 LYBUNT list, both with their numbers pulled in as
+  // HISTORICAL TOTALS through the same reader the wizard uses (oldReports.js).
+  // Never gifts: Harborlight's own 2024 gifts are untouched, and the three-year
+  // comparison shows the old system's 2024 total beside them, labelled.
+  {
+    const crypto = require("crypto"), fs = require("fs"), path = require("path");
+    const O = require("../oldReports");
+    const dir = path.join(__dirname, "..", "docs", "reports-5", "samples");
+    const sha = b => crypto.createHash("sha256").update(b).digest("hex");
+    const BATCH = "orb_b72demo_old";
+    await q(`INSERT INTO old_report_batches (id,org_id,created_by,created_by_name,created_at) VALUES ($1,$2,'u_b72demo','Dana Reyes',NOW() - INTERVAL '20 days')`, [BATCH, ORG]);
+    const files = [
+      { id: "sht_b72demo_board23", name: "board-report-2023.pdf", type: "application/pdf", kind: "board_report", system: "donorperfect", title: "Board report, fiscal 2023", from: "2023-01-01", to: "2023-12-31", pull: null },
+      { id: "sht_b72demo_dpfund24", name: "donorperfect-giving-by-fund-2024.csv", type: "text/csv", kind: "by_fund", system: "donorperfect", title: "Giving by fund, 2024", from: "2024-01-01", to: "2024-12-31", pull: true },
+      { id: "sht_b72demo_lybunt24", name: "bloomerang-lybunt-2024.csv", type: "text/csv", kind: "lybunt", system: "bloomerang", title: "LYBUNT, 2024", from: "2024-01-01", to: "2024-12-31", pull: true },
+    ];
+    let pulled = 0;
+    for (const f of files) {
+      const buf = fs.readFileSync(path.join(dir, f.name));
+      const assetId = "pa_" + sha(ORG + "|sheetfile|" + f.type + "|").slice(0, 8) + sha(buf).slice(0, 16);
+      await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'sheetfile',$3,$4,'db',$5)
+               ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`, [assetId, ORG, f.type, buf.length, buf.toString("base64")]);
+      let table = null, scanned = false, pages = null;
+      if (f.type === "text/csv") table = O.parseCsv(buf.toString("utf8"));
+      else { const pdf = await O.readPdf(buf); table = O.tableFromLines(pdf.lines); scanned = pdf.scanned; pages = pdf.pages; }
+      const guess = O.guessReport({ fileName: f.name, headers: table ? table.headers : [], rows: table ? table.rows : [], text: "" });
+      await q(`INSERT INTO stored_sheets (id,org_id,kind,title,period_label,file_name,content_type,bytes,asset_id,headers,rows,batch_id,report_kind,source_system,period_from,period_to,guess_why,scanned,page_count,created_by,created_by_name,created_at)
+               VALUES ($1,$2,'old_report',$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,'u_b72demo','Dana Reyes',NOW() - INTERVAL '20 days')`,
+        [f.id, ORG, f.title, f.from.slice(0, 4), f.name, f.type, buf.length, assetId, JSON.stringify(table ? table.headers : []), JSON.stringify(table ? table.rows : []),
+         BATCH, f.kind, f.system, f.from, f.to, guess.why, scanned, pages]);
+      if (f.pull) {
+        const t = O.totalsFromTable(table, O.guessMapping(table.headers), { from: f.from, to: f.to });
+        if (!t.ok) throw new Error(`seed: ${f.name} did not map: ${t.error}`);
+        for (const [n, r] of t.rows.entries()) {
+          await q(`INSERT INTO historical_totals (id,org_id,batch_id,sheet_id,report_kind,counts_as_giving,period_from,period_to,label,amount,gift_count,donor_count,source_system,file_name,created_by,created_by_name)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'u_b72demo','Dana Reyes')`,
+            [`hst_b72demo_${f.id.slice(12)}_${n}`, ORG, BATCH, f.id, f.kind, !!O.KINDS[f.kind].giving, r.from, r.to, r.label, (r.cents / 100).toFixed(2), r.gifts, r.donors,
+             O.SYSTEMS[f.system].label, f.name]);
+          pulled++;
+        }
+        if (t.footsToFile === false) throw new Error(`seed: ${f.name} does not foot to its own Total line`);
+      }
+    }
+    console.log(`[seed] old reports: 3 files kept (2023 board report PDF, 2024 DonorPerfect by fund, 2024 Bloomerang LYBUNT), ${pulled} historical totals pulled in`);
+  }
+
   // ── WHY-1 · TOMORROW MORNING, AND THE JOURNEYS A RAIL CAN SUGGEST ──────
   // "Who should I call tomorrow?" is the demo's second question and it should
   // come back with five strong names for five different reasons. Four are

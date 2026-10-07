@@ -418,6 +418,10 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites)
            VALUES ($1,$2,$3,$4,$5,$6,$7,'[{"t":"note"}]'::jsonb)`,
     [`adr_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`, `${mark} subject`, `${mark} draft`]).catch(() => {});
+  // REPORTS-5: an old-reports import, so adding a file to it and undoing it
+  // are probed against org B's real batch (org A must get 404, never touch it).
+  await q(`INSERT INTO old_report_batches (id,org_id,created_by,created_by_name) VALUES ($1,$2,'system:test','test') ON CONFLICT (id) DO NOTHING`,
+    [`orb_${o}`, o]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -466,6 +470,7 @@ function bResolver(routePath, param) {
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;
   const bySeg = {
+    "old-reports": `orb_${B}`,
     donors: `d_${B}`, gifts: `g_${B}`, grants: `gr_${B}`, campaigns: `c_${B}`, tasks: `t_${B}`,
     events: `ev_${B}`, sequences: `sq_${B}`, programs: `prg_${B}`, households: `h_${B}`,
     "giving-pages": `gp_${B}`, pledges: `pl_${B}`, opportunities: `op_${B}`, "planned-gifts": `pgift_${B}`,

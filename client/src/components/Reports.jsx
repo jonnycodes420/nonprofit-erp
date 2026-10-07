@@ -6,6 +6,7 @@ import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID } from "../lib/reportsRail";
 import StoredReports from "./StoredReports";
+import OldReportsImport from "./OldReportsImport";
 import { displayDate } from "../../../shared/displayDate";
 import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
@@ -147,6 +148,9 @@ function Chevron({ open }) {
 }
 
 function ReportsRail({ groups, active, activeLabel, onPick }) {
+  // REPORTS-5: the first door to the one old-reports wizard (the second is
+  // the Import menu on Donors). Done lands on Past reports.
+  const [oldImport, setOldImport] = useState(false);
   const [key] = useState(() => collapseKey(viewerId()));
   const openGroup = groupOfReport(active);
   const [folded, setFolded] = useState(() => readFolded(key).filter(g => g !== openGroup));
@@ -183,6 +187,12 @@ function ReportsRail({ groups, active, activeLabel, onPick }) {
         fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
       Build a report
     </button>
+    <button type="button" data-testid="reports-import-old" onClick={() => setOldImport(true)}
+      style={{ width: "100%", background: T.white, color: T.greenDk, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "9px 14px",
+        fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
+      Import old reports
+    </button>
+    {oldImport && <OldReportsImport onClose={() => setOldImport(false)} onDone={() => onPick(STORED_REPORTS_ID)} />}
     <input type="text" data-testid="reports-search" className="reports-search" aria-label="Find a report by name" placeholder="Find a report"
       value={search} onChange={e => setSearch(e.target.value)}
       onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); } }}
@@ -440,10 +450,11 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       narrative = <span data-testid="gs-narrative">You've raised <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
           label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
         {c && c.value > 0 && <> — {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
-          label={c.label} definition={c.definition} source={c.source} /> at the same point last year</>}.
+          label={c.label} definition={c.definition} source={c.source} /> at the same point last year{c.imported ? " (from your old system)" : ""}</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
         {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
+        {d.importedThisPeriod && <> Your old system's report said <Figure variant="inline" kind="money" value={d.importedThisPeriod.value} label="This period, from your old system" definition={d.importedThisPeriod.note} source={d.importedThisPeriod.source} /> for this period{d.importedThisPeriod.system ? ` (${d.importedThisPeriod.system})` : ""}, kept beside Steward's number.</>}
         {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave (<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning); the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
@@ -536,6 +547,11 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</div>
             <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} donor{y.donors === 1 ? "" : "s"}</div>
+            {/* REPORTS-5: what an old system's report said for this year,
+                labelled, beside Steward's number and never added into it. */}
+            {y.imported && <div data-testid="three-year-imported" style={{ fontSize: 11.5, color: T.ink, marginTop: 6, lineHeight: 1.4 }}>
+              <Figure variant="inline" kind="money" value={y.imported.value} label={`${y.label}, from your old system`} definition={y.imported.note} source={y.imported.source} /> from your old system{y.imported.system ? ` (${y.imported.system})` : ""}
+            </div>}
           </div>)}
         </div>
         <ReportTable personOf={byId} onOpen={openPerson} cols={[

@@ -490,6 +490,32 @@ const SOURCES = {
       order: "amount DESC, id",
     }),
   },
+  // REPORTS-5 · NUMBERS FROM AN OLD SYSTEM. Each row is one historical total
+  // as the old report printed it, with the file and system it came from. A
+  // historical total is never a gift: it is not in `gifts`, not on anyone's
+  // record, and no other source adds it in. `sheet` narrows to one file.
+  "historical-totals": {
+    label: "From your old system",
+    measure: () => "sum",
+    params: { from: "date:required", to: "date:required", sheet: "id", giving: "bool" },
+    sentence: (p, dd) => `What your old system's reports said${p.giving ? " you raised" : ""} for ${dd(p.from)} to ${dd(p.to)}, as they were imported${p.sheet ? " from this file" : ""}. These are the old reports' own numbers, kept beside Steward's and never added into them.`,
+    sql: (orgId, p) => {
+      const args = [orgId, p.from, p.to];
+      let w = "";
+      if (p.sheet) { w += " AND h.sheet_id = ?"; args.push(p.sheet); }
+      if (p.giving === true) w += " AND h.counts_as_giving";
+      return {
+        sql: `SELECT h.id, 'imported_total' AS type, NULL::text AS donor_id,
+                     COALESCE(h.label, 'Total') AS name, h.period_from AS date, ROUND(h.amount::numeric, 2) AS amount,
+                     'Imported from ' || COALESCE(h.source_system, 'an old system') || ', ' || COALESCE(h.file_name, 'a file')
+                       || CASE WHEN h.period_from = h.period_to THEN '' ELSE ' (' || h.period_from || ' to ' || h.period_to || ')' END AS detail
+                FROM historical_totals h
+               WHERE h.org_id = ? AND h.period_from >= ? AND h.period_to <= ?${w}`,
+        args,
+        order: "amount DESC, id",
+      };
+    },
+  },
   // REPORTS-4 · What a giving page raised: every gift through it, less any
   // processing fee the donor chose to cover (the page's own progress bar).
   "page-raised": {
@@ -2248,6 +2274,29 @@ async function retentionBlank(orgId, r, dd) {
   return `Retention compares each year's givers with the year before, and it needs a full year of giving in Steward to mean anything. It appears on ${dd(when)}.${extra}`;
 }
 
+// ── REPORTS-5 · WHAT THE OLD SYSTEM SAID YOU RAISED ────────────────────────
+// For a period (a year, usually), the one imported file whose numbers stand
+// for total giving: a giving summary or a board report's total-raised row
+// before a by-fund breakdown (the same money, split), and the newest file of
+// that kind if there are several, so two files are never added together.
+// Returns null when no imported total covers the period. The value is the
+// `historical-totals` source's value for that one file, so it opens and foots.
+const GIVING_KIND_RANK = { giving_summary: 1, board_report: 1, by_fund: 2 };
+async function historicalGiving(orgId, from, to) {
+  const rows = await query(
+    `SELECT h.sheet_id, h.report_kind, MAX(h.created_at) AS at, MAX(h.source_system) AS system, MAX(h.file_name) AS file_name
+       FROM historical_totals h
+      WHERE h.org_id = ? AND h.counts_as_giving AND h.period_from >= ? AND h.period_to <= ?
+      GROUP BY h.sheet_id, h.report_kind`, [orgId, from, to]);
+  if (!rows.length) return null;
+  rows.sort((a, b) => (GIVING_KIND_RANK[a.report_kind] || 9) - (GIVING_KIND_RANK[b.report_kind] || 9) || new Date(b.at) - new Date(a.at));
+  const pick = rows[0];
+  const source = { key: "historical-totals", params: { from, to, sheet: pick.sheet_id, giving: true } };
+  const f = await figureValue(orgId, source);
+  return { value: f.value, cents: f.cents, source, system: pick.system || null, fileName: pick.file_name || null,
+    label: "From your old system", note: `From your old system: ${pick.system || "an old system"}, ${pick.file_name || "a file"}. Kept beside Steward's numbers, never added into them.` };
+}
+
 // ── THE ENGINE ─────────────────────────────────────────────────────────────
 function sourceDef(key) { return Object.prototype.hasOwnProperty.call(SOURCES, key) ? SOURCES[key] : null; }
 
@@ -2483,4 +2532,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { SOURCES, figure, figureValue, allRows, footCheck, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
+module.exports = { SOURCES, figure, figureValue, allRows, footCheck, historicalGiving, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };

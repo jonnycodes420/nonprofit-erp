@@ -3378,6 +3378,53 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_stored_sheets_org ON stored_sheets (org_id, kind)`);
 
+  // ── REPORTS-5 · OLD REPORTS, KEPT AND READ ───────────────────────────────
+  // An old system's report is a stored sheet of kind 'old_report' (the file
+  // itself, always kept), with what Steward guessed and the person confirmed:
+  // the kind of report, the system it came from, the period it covers, and
+  // whether its pages had text at all (a scan does not). One import is one
+  // BATCH, so the whole import, files and totals, undoes in one step.
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS batch_id TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS report_kind TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS source_system TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS period_from TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS period_to TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS guess_why TEXT`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS scanned BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS page_count INTEGER`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS old_report_batches (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      undone_at TIMESTAMPTZ,
+      undone_by TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // A HISTORICAL TOTAL is a number an old system printed for a period: never a
+  // gift, never a person, and never added into Steward's own figures. It sits
+  // beside them, and every screen that shows one says where it came from.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS historical_totals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      batch_id TEXT NOT NULL,
+      sheet_id TEXT NOT NULL,
+      report_kind TEXT NOT NULL,
+      counts_as_giving BOOLEAN NOT NULL DEFAULT false,
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      label TEXT,
+      amount NUMERIC(14,2) NOT NULL,
+      gift_count INTEGER,
+      donor_count INTEGER,
+      source_system TEXT,
+      file_name TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_historical_totals_org ON historical_totals (org_id, period_from, period_to)`);
+
   // ── EMAIL-1 · ONE EDITOR FOR PAGES AND EMAILS ────────────────────────────
   // The media library: every photo and video an org can put on a page or in
   // an email. A photo points at a JPEG in the asset store (inboxes such as

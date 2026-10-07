@@ -29,6 +29,7 @@
     "image-size": "^2.0.2",
     "jsonwebtoken": "^9.0.3",
     "parse-address": "^1.1.2",
+    "pdfjs-dist": "^4.10.38",
     "pdfkit": "^0.18.0",
     "pg": "^8.13.3",
     "qrcode": "^1.5.4",

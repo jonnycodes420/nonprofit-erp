@@ -1746,11 +1746,19 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
 
   // EVERY number leaves here WITH its definition and its source. One string,
   // from the registry, to the hover, the panel and the PDF footnote.
+  // REPORTS-5: the Board's "same point last year", when Steward has no gifts
+  // for it and an old system's report covers exactly that stretch: the old
+  // report's number stands in, and the label and sentence say where it is from.
+  if (key === "board" && !(values.revenueLastYear > 0) && lastYearSource) {
+    const h = await figureSources.historicalGiving(orgId, lastYearSource.params.from, lastYearSource.params.to);
+    if (h) { values.revenueLastYear = h.value; extra.revenueLastYear = { source: h.source, imported: h }; }
+  }
   const metrics = def.metrics
     .filter(m => !m.teamOnly || isTeam)
     // A.6 — an OPTIONAL metric with no value is ABSENT, not blank.
     .filter(m => !m.optional || values[m.key] !== undefined)
-    .map(m => ({ key: m.key, label: m.label, kind: m.kind, rowsAre: m.rowsAre || null, definition: m.definition,
+    .map(m => ({ key: m.key, label: extra[m.key] && extra[m.key].imported ? `${m.label}, from your old system` : m.label, kind: m.kind, rowsAre: m.rowsAre || null,
+                 definition: extra[m.key] && extra[m.key].imported ? extra[m.key].imported.note : m.definition,
                  value: values[m.key] === undefined ? null : values[m.key],
                  ...(extra[m.key] ? { source: extra[m.key].source, blank: extra[m.key].blank || null,
                                       blankShort: extra[m.key].blankShort || null } : {}),
@@ -2125,7 +2133,17 @@ async function composeBoardPack(orgId, opts = {}) {
     for (const s of B.PACK_SECTIONS) {
       if (s.kind === "figures") {
         const figures = [];
-        for (const def of s.figures) figures.push(await packFigure(orgId, def, def.source(window), deps, filters));
+        for (const def of s.figures) {
+          let f = await packFigure(orgId, def, def.source(window), deps, filters);
+          // REPORTS-5: last year's stretch with no gifts in Steward, and an old
+          // system's report that covers exactly it (and no filter it cannot
+          // honour): the old report's number, labelled, never added in.
+          if (f && def.key === "givingLastYear" && !(f.value > 0) && window.prev && !Object.values(filters || {}).some(Boolean)) {
+            const h = await figureSources.historicalGiving(orgId, window.prev.from, window.prev.to);
+            if (h) f = { ...f, label: `${f.label}, from your old system`, value: h.value, cents: h.cents, source: h.source, sentence: h.note, note: h.note, blank: null };
+          }
+          figures.push(f);
+        }
         sections.push({ key: s.key, kind: "figures", title: s.title, figures: figures.filter(Boolean) });
       } else if (s.kind === "list") {
         const source = s.source(window);
@@ -20468,6 +20486,15 @@ async function reportGivingSummary(orgId, p) {
     };
   }
 
+  // REPORTS-5: when Steward has no gifts for the comparison's stretch, an old
+  // system's report that covers exactly that stretch stands in, labelled; and
+  // the period itself says what the old system said for it, beside Steward's.
+  if (comparison && !(comparison.value > 0)) {
+    const h = await figureSources.historicalGiving(orgId, comparison.from, comparison.to);
+    if (h) comparison = { ...comparison, value: h.value, cents: h.cents, source: h.source, imported: true, label: `${comparison.label}, from your old system`, definition: h.note };
+  }
+  const importedThisPeriod = await figureSources.historicalGiving(orgId, p.from, p.to);
+
   // The whole period of equal length before this one. NOT the comparison the
   // screen states: kept for the low-volume default (Reports opens on last year
   // while this one is nearly empty), and named for what it is.
@@ -20495,6 +20522,7 @@ async function reportGivingSummary(orgId, p) {
   const fv = k => figures[k].value;
   return {
     figures,
+    importedThisPeriod,
     from: p.from, to: p.to,
     total: fv("total"),
     giftCount: fv("giftCount"),
@@ -20751,9 +20779,11 @@ async function reportThreeYear(orgId, p) {
     figures,
     yearMode: p.yearMode,
     // Each year's total and givers are the sources' values, and open them.
-    years: [{ year: p.year - 2, label: label(p.year - 2), total: figures.t2.value, donors: figures.d2.value, source: figures.t2.source, donorsSource: figures.d2.source },
-            { year: p.year - 1, label: label(p.year - 1), total: figures.t1.value, donors: figures.d1.value, source: figures.t1.source, donorsSource: figures.d1.source },
-            { year: p.year, label: label(p.year), total: figures.t0.value, donors: figures.d0.value, source: figures.t0.source, donorsSource: figures.d0.source }],
+    // REPORTS-5: and what an old system's report said for that year, when one
+    // was imported: beside Steward's total, never added into it.
+    years: await Promise.all([[p.year - 2, y2, "t2", "d2"], [p.year - 1, y1, "t1", "d1"], [p.year, y0, "t0", "d0"]].map(async ([yy, b, t, d]) => ({
+      year: yy, label: label(yy), total: figures[t].value, donors: figures[d].value, source: figures[t].source, donorsSource: figures[d].source,
+      imported: await figureSources.historicalGiving(orgId, b.from, b.to) }))),
     orgGrowthPct: figures.growth.value,
     labels: { y0: label(p.year), y1: label(p.year - 1), y2: label(p.year - 2) },
     rows: donors,

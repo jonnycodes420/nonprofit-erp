@@ -621,6 +621,13 @@ app.use((req, res, next) =>
   req.method === "POST" && /^\/(sheets\/read|sheets\/board-reports|grants\/import(\/preview)?)$/.test(req.path)
     ? express.json({ limit: "16mb" })(req, res, next)
     : next());
+// REPORTS-5: an old report is up to 25MB of DECODED file (oldReports.js
+// MAX_BYTES), ~33.4MB of base64, plus an Excel sheet's rows read in the
+// browser. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
+app.use((req, res, next) =>
+  req.method === "POST" && /^\/old-reports\/(read|preview|batches\/[^/]+\/files)$/.test(req.path)
+    ? express.json({ limit: "40mb" })(req, res, next)
+    : next());
 // PARITY-1 Part B — a file on a conversation or a note is capped at 10MB of
 // DECODED file (interactionFiles.FILE_MAX_BYTES), ~13.7MB of base64 plus the
 // JSON around it. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
@@ -3975,6 +3982,7 @@ app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, docu
 app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
 app.use(require("./routes/grantReports").routers.r0);
 app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
+app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
@@ -10954,6 +10962,7 @@ require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
 require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
+require("./routes/oldReports").mount(GRANTS1_CTX);
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
 const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,

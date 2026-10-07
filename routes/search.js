@@ -153,9 +153,13 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       sql: `SELECT id, name FROM saved_dashboards WHERE org_id = ? AND (shared = true OR owner_id = ?) AND name ILIKE ? ${E}
         ORDER BY lower(name), id LIMIT ${L}`, args: [orgId, userId, p] },
     boardFiles: {
-      sql: `SELECT id, title, file_name, period_label FROM stored_sheets
-        WHERE org_id = ? AND kind = 'board_report' AND removed_at IS NULL AND (title ILIKE ? ${E} OR file_name ILIKE ? ${E})
-        ORDER BY created_at DESC, id LIMIT ${L}`, args: [orgId, p, p] },
+      // REPORTS-5: an old system's report is a past report too, found by its
+      // title, its file name or the system it came from.
+      sql: `SELECT id, title, file_name, period_label, kind, report_kind, source_system FROM stored_sheets
+        WHERE org_id = ? AND kind IN ('board_report', 'old_report') AND removed_at IS NULL
+          AND (title ILIKE ? ${E} OR file_name ILIKE ? ${E} OR source_system ILIKE ? ${E}
+               OR regexp_replace(file_name, '[-_.]+', ' ', 'g') ILIKE ? ${E})
+        ORDER BY created_at DESC, id LIMIT ${L}`, args: [orgId, p, p, p, p] },
     // Documents by file name: a file kept on somebody's timeline, and a
     // grant's documents.
     files: {
@@ -302,7 +306,10 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
   for (const t of r.tasks) results.push({ kind: "task", id: t.id, title: t.title, due: t.due || null, donorId: t.donor_id || null, donorName: t.donor_name || "" });
   for (const s of r.reports) results.push({ kind: "report", id: s.id, title: s.name });
   for (const s of r.dashboards) results.push({ kind: "dashboard", id: s.id, title: s.name });
-  for (const s of r.boardFiles) results.push({ kind: "boardFile", id: s.id, title: s.title || s.file_name, fileName: s.file_name || "", period: s.period_label || "" });
+  const OR = require("../oldReports");
+  for (const s of r.boardFiles) results.push({ kind: "boardFile", id: s.id, title: s.title || s.file_name, fileName: s.file_name || "", period: s.period_label || "",
+    kindLabel: s.kind === "old_report" ? `Past report · ${(OR.KINDS[s.report_kind] || OR.KINDS.other).label}` : "Past board report",
+    system: s.source_system ? ((OR.SYSTEMS[s.source_system] || {}).label || null) : null });
   for (const f of r.files) results.push({ kind: "document", id: f.id, title: f.file_name, donorId: f.donor_id, donorName: f.donor_name || "" });
   for (const f of r.grantFiles) results.push({ kind: "grantDocument", id: f.id, title: f.file_name, grantId: f.grant_id, funder: f.funder || "" });
   for (const g of r.gifts) results.push({ kind: "gift", id: g.id, title: g.donor_name, amount: Number(g.amount) || 0, date: day10(g.date),
