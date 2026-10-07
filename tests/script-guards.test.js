@@ -207,6 +207,9 @@ const LOOPBACK_HARDCODED = [
   // NAV-1 — the grouped-sidebar walk. Loopback :5631/:4193 by default,
   // hardcoded; APP/API are the per-worktree port block, never a remote host.
   "nav1-walk",
+  // AGENT-3: the Agent walk. Loopback only (refuses anything else); it plans,
+  // runs and approves on the LOCAL scratch Harborlight it is pointed at.
+  "agent3-walk",
   // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
   // it drafts and saves on the LOCAL scratch database it is pointed at.
   "fix30-walk",

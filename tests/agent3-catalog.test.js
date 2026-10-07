@@ -131,7 +131,7 @@ function peopleIn(text) {
     const m = /^ {2}(d_[A-Za-z0-9_]+) \| ([^|]+) \|/.exec(line);
     if (m) { cur = { id: m[1], name: m[2].trim(), rows: [] }; out.push(cur); continue; }
     const r = /^ {6}(grant|membership|pledge|gift|peer-to-peer page|auction win) ([A-Za-z0-9_]+) \|/.exec(line);
-    if (r && cur) cur.rows.push({ kind: r[1], id: r[2] });
+    if (r && cur) cur.rows.push({ kind: r[1], id: r[2], line });
   }
   return out;
 }
@@ -171,7 +171,19 @@ const model = http.createServer((req, res) => {
     }
     if (tool === "drafts") {
       calls.drafts++;
-      const drafts = peopleIn(user).map(p => ({ donorId: p.id, subject: "A note from us", body: `Dear ${p.name}, thank you for being part of this. With gratitude, Agent Three Collective.` }));
+      // As the real model does: a renewal names the date the membership ends,
+      // and a pay-your-bid note names the auction, the item and the bid.
+      const M = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+      const words = ymd => { const m = /(\d{4})-(\d{2})-(\d{2})/.exec(ymd || ""); return m ? `${M[+m[2] - 1]} ${+m[3]}, ${m[1]}` : ""; };
+      const drafts = peopleIn(user).map(p => {
+        const mem = p.rows.find(r => r.kind === "membership"), win = p.rows.find(r => r.kind === "auction win");
+        const memEnd = mem && words((/ends (\d{4}-\d{2}-\d{2})/.exec(mem.line) || [])[1]);
+        const w = win && /\| (.+) in (.+) \| winning bid (\$[\d,]+)/.exec(win.line);
+        const body = /renewal/i.test(instruction) && memEnd ? `Dear ${p.name}, your membership ends ${memEnd}, and we would love you to renew. With gratitude, Agent Three Collective.`
+          : /pay-your-bid/i.test(instruction) && w ? `Dear ${p.name}, congratulations on the ${w[1]} at the ${w[2]}. Your winning bid was ${w[3]}, and a payment link will follow from us. With gratitude, Agent Three Collective.`
+          : `Dear ${p.name}, thank you for being part of this. With gratitude, Agent Three Collective.`;
+        return { donorId: p.id, subject: "A note from us", body };
+      });
       return reply([{ type: "tool_use", id: "tu", name: "drafts", input: { drafts } }]);
     }
     if (tool) { calls.filter_spec++; return reply([{ type: "tool_use", id: "tu", name: tool, input: { filters: [], suggestAsk: false, unsupported: "anything" } }]); }
@@ -190,12 +202,13 @@ const model = http.createServer((req, res) => {
     const base = REAL ? (process.env.PROXY || "http://localhost:6524") : `http://localhost:${model.address().port}`;
     child = spawn(process.execPath, ["server.js"], {
       cwd: path.join(__dirname, ".."),
-      env: { ...process.env, PORT: String(port), ANTHROPIC_API_KEY: REAL ? process.env.ANTHROPIC_API_KEY : "sk-ant-test-dummy", ANTHROPIC_BASE_URL: base,
+      env: { ...process.env, PORT: String(port), ANTHROPIC_API_KEY: "sk-ant-test-dummy", /* the real key lives only in the proxy */ ANTHROPIC_BASE_URL: base,
              DISABLE_BACKGROUND_TICKS: "1", TEST_MODE: "1", SESSION_CACHE_TTL_MS: "0", JWT_SECRET: process.env.JWT_SECRET || "local-test-secret",
              RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local", SENTRY_DSN: "" },
       stdio: ["ignore", "ignore", "pipe"],
     });
     let errs = ""; child.stderr.on("data", d => { errs += d; });
+    if (process.env.AGENT3_LOG) child.stderr.pipe(require("fs").createWriteStream(process.env.AGENT3_LOG));
     const B = `http://localhost:${port}`;
     let up = false;
     for (let i = 0; i < 120 && !up; i++) { await new Promise(r => setTimeout(r, 500)); up = await fetch(B + "/health").then(r => r.ok).catch(() => false); }
@@ -224,7 +237,8 @@ const model = http.createServer((req, res) => {
                  ORDER BY b.amount DESC, b.created_at, b.id LIMIT 1) tb ON true JOIN auction_bidders bw ON bw.id = tb.bidder_id WHERE ai.org_id = $1 AND ai.paid_at IS NULL`, args: [],
         drafts: true, purpose: "auction_pay" },
     ];
-    for (const c of cases) {
+    const only = (process.env.AGENT3_ONLY || "").split(",").filter(Boolean);
+    for (const c of cases.filter(x => !only.length || only.includes(x.key))) {
       console.log(`\n§ ${c.key}: "${c.text}"`);
       const want = (await q(c.truth, [ORG, ...c.args])).map(r => r.id);
       ok(`${c.key}: the truth set is not empty`, want.length > 0, want);

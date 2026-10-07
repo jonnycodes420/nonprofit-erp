@@ -995,7 +995,13 @@ async function agentContext(orgId, { today, scope, allowed }) {
 // step may cite, and every amount is a number a draft may use.
 async function agentObjects(orgId, ids, today) {
   const only = [...new Set((ids || []).map(String))].slice(0, 1000);
-  const out = { lines: new Map(), rows: new Map(), rowIds: [], values: [], grants: [] };
+  // facts: the amounts and dates under each person, and names: the auctions,
+  // pages, campaigns and grants they name, so a draft that says them is
+  // grounded (guardDraft) exactly as a gift's amount and date are.
+  const out = { lines: new Map(), rows: new Map(), facts: new Map(), names: new Map(), rowIds: [], values: [], grants: [] };
+  const fact = (donorId, amount, date) => { if (!out.facts.has(donorId)) out.facts.set(donorId, []);
+    out.facts.get(donorId).push({ amount: Number(amount) || 0, date: date ? String(date).slice(0, 10) : null }); };
+  const named = (donorId, ...ns) => { if (!out.names.has(donorId)) out.names.set(donorId, []); out.names.get(donorId).push(...ns.filter(Boolean)); };
   if (!only.length) return out;
   const safe = p => p.catch(e => { console.error("[agent] object read failed:", e.message); return []; });
   const money = v => A3money(Math.round(Number(v || 0) * 100));
@@ -1042,15 +1048,25 @@ async function agentObjects(orgId, ids, today) {
     const next = g.next_step && g.next_step.due ? `${String(g.next_step.label || g.next_step.kind || "step").replace(/_/g, " ")} due ${day(g.next_step.due)}`
       : g.report_due ? `report due ${day(g.report_due)}` : "nothing due";
     add(g.donor_id, `grant ${g.id} | ${g.program || g.funder || "grant"} | ${g.status || "open"} | ${amt ? money(amt) : "no amount"} | ${next}`, g.id, amt);
+    fact(g.donor_id, amt, (g.next_step && g.next_step.due) || g.report_due || g.deadline); named(g.donor_id, g.program, g.funder);
     if (g.next_step && g.next_step.id) out.rowIds.push(g.next_step.id);
     out.grants.push({ id: g.id, donorId: g.donor_id, name: g.program || g.funder || "grant", next });
   }
-  for (const m of members) add(m.donor_id, `membership ${m.id} | ${m.level || "member"} | ${m.status || ""} | ends ${day(m.expires_on)}${Number(m.price) ? ` | ${money(m.price)}` : ""}`, m.id, m.price);
-  for (const p of pledges) add(p.donor_id, `pledge ${p.id} | ${money(p.amount)} open | due ${day(p.due_date)}`, p.id, p.amount);
-  for (const g of campaignGifts) add(g.donor_id, `gift ${g.id} | to ${g.campaign} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount);
-  for (const g of pageGifts) add(g.donor_id, `gift ${g.id} | through the page ${g.page} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount);
-  for (const f of pages) add(f.donor_id, `peer-to-peer page ${f.id} | for ${f.page} | ${f.status === "pending" ? "waiting for approval" : f.status || "live"}${Number(f.raised) ? ` | raised ${money(f.raised)}` : ""}${Number(f.personal_goal_amount) ? ` | goal ${money(f.personal_goal_amount)}` : ""}`, f.id, f.raised, f.personal_goal_amount);
-  for (const w of wins) add(w.donor_id, `auction win ${w.id} | ${w.title} in ${w.auction} | winning bid ${money(w.amount)} | ${w.paid_at ? "paid" : "not paid yet"}`, w.id, w.amount);
+  for (const m of members) {
+    add(m.donor_id, `membership ${m.id} | ${m.level || "member"} | ${m.status || ""} | ends ${day(m.expires_on)}${Number(m.price) ? ` | ${money(m.price)}` : ""}`, m.id, m.price);
+    fact(m.donor_id, m.price, m.expires_on); fact(m.donor_id, 0, m.starts_on); named(m.donor_id, m.level);
+  }
+  for (const p of pledges) { add(p.donor_id, `pledge ${p.id} | ${money(p.amount)} open | due ${day(p.due_date)}`, p.id, p.amount); fact(p.donor_id, p.amount, p.due_date); }
+  for (const g of campaignGifts) { add(g.donor_id, `gift ${g.id} | to ${g.campaign} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount); fact(g.donor_id, g.amount, g.date); named(g.donor_id, g.campaign); }
+  for (const g of pageGifts) { add(g.donor_id, `gift ${g.id} | through the page ${g.page} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount); fact(g.donor_id, g.amount, g.date); named(g.donor_id, g.page); }
+  for (const f of pages) {
+    add(f.donor_id, `peer-to-peer page ${f.id} | for ${f.page} | ${f.status === "pending" ? "waiting for approval" : f.status || "live"}${Number(f.raised) ? ` | raised ${money(f.raised)}` : ""}${Number(f.personal_goal_amount) ? ` | goal ${money(f.personal_goal_amount)}` : ""}`, f.id, f.raised, f.personal_goal_amount);
+    fact(f.donor_id, f.raised, null); fact(f.donor_id, f.personal_goal_amount, null); named(f.donor_id, f.page);
+  }
+  for (const w of wins) {
+    add(w.donor_id, `auction win ${w.id} | ${w.title} in ${w.auction} | winning bid ${money(w.amount)} | ${w.paid_at ? "paid" : "not paid yet"}`, w.id, w.amount);
+    fact(w.donor_id, w.amount, null); named(w.donor_id, w.auction, w.title);
+  }
   void today;
   return out;
 }
@@ -1426,9 +1442,10 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     const v = dVideos.find(x => x.donor_id === st.donorId);
     // WIRE-1-ADDENDUM: the gifts a batched draft was shown are on its record.
     return SG.guardDraft(`${st.subject || ""}\n${st.body}`, { donor: byId.get(st.donorId) || {}, orgName: "",
-      rows: draftGifts.filter(g => g.donor_id === st.donorId).map(g => ({ amount: Number(g.amount), date: String(g.date).slice(0, 10) })),
+      rows: [...draftGifts.filter(g => g.donor_id === st.donorId).map(g => ({ amount: Number(g.amount), date: String(g.date).slice(0, 10) })),
+        ...(objs.facts.get(st.donorId) || [])],   // AGENT-3: their membership's end, their win, their grant's due date
       video: v ? { ready: true, url: `${publicAppUrl()}/v/${v.token}` } : null,
-      meetings: dMeets.filter(x => x.donor_id === st.donorId), events: dEvents.map(e => e.name) }).reasons;
+      meetings: dMeets.filter(x => x.donor_id === st.donorId), events: [...dEvents.map(e => e.name), ...(objs.names.get(st.donorId) || [])] }).reasons;
   };
   for (const s0 of Array.isArray(raw.steps) ? raw.steps : []) {
     let s = s0;
@@ -2493,7 +2510,8 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
     instructionId: a.instruction_id || null, purpose: a.purpose || null, subject: a.subject || "",
     giftCount: Array.isArray(a.gift_ids) ? a.gift_ids.length : 0,
     persona: a.persona || null, personaName: a.persona ? PSw.getPersona(a.persona).name : null,
-    title: `A note Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
+    // AGENT-3: the draft says what it is (a renewal, a funder update, a pay-your-bid note).
+    title: `${a.purpose && a.purpose !== "thank_you" && A.PURPOSE_LABEL[a.purpose] ? `A ${A.PURPOSE_LABEL[a.purpose].toLowerCase()}` : "A note"} Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
     body: G.plainText(a.body) });
   items.sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt));
   res.json({ count: items.length, items,
@@ -2605,7 +2623,7 @@ async function approveWaitingItem(req, kind, id) {
       await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [orgId, giftIds]).catch(() => {});
     }
     const line = await TLa.timelineLine({ orgId, donorId: d.donor_id, actorId: who.id, actorName, date: today, key: `agent_draft_approved:${d.id}`,
-      note: `${d.purpose === "thank_you" ? "Thank-you" : "Note"} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,
+      note: `${d.purpose === "thank_you" ? "Thank-you" : ((await agentShapeMod()).PURPOSE_LABEL[d.purpose] || "Note")} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,
       metadata: { agentDraftId: d.id, giftIds } });
     // A thread closes as an outcome only with the line that closed it (the
     // threads check constraint), so no line means it stays open.
@@ -2670,7 +2688,8 @@ app.post("/agent/waiting/agent_draft/:id/reopen", requireAuth, checkWriteAccess,
     `UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
       WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [orgId, d.donor_id, marked]);
   if (d.approved_line_id) await run("DELETE FROM interactions WHERE id=? AND org_id=?", [d.approved_line_id, orgId]);
-  const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : "Draft ready, review and send";
+  const PL = (await agentShapeMod()).PURPOSE_LABEL;
+  const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : PL[d.purpose] ? `${PL[d.purpose]} draft ready, review and send` : "Draft ready, review and send";
   if (d.thread_id) {
     // The thread comes back open unless the person has opened another since.
     const [other] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND id<>?", [orgId, d.donor_id, d.thread_id]);
