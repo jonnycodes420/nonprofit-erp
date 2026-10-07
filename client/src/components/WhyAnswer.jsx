@@ -237,16 +237,18 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
       </div>
 
       {answer.reasons.length > 0 && <div>
-        <div style={LABEL}>{money ? "Why, largest first" : "Why, most people first"}</div>
+        <div style={LABEL}>{answer.person && answer.person.intent === "done" ? "What they have done, each opens its rows" : money ? "Why, largest first" : "Why, most people first"}</div>
         {answer.reasons.map((r, i) => (
           <div key={r.key} data-why-reason={r.key} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "baseline", padding: "9px 2px", borderTop: i ? "1px solid " + T.bg2 : "none" }}>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{r.label}</div>
               <div style={{ fontSize: 12, color: T.ink3 }}>
-                <Figure value={r.count} kind="count" label={`${r.label}: people`} definition={r.definition} source={r.source} variant="inline" /> {r.count === 1 ? "person" : "people"}
+                <Figure value={r.count} kind="count" label={`${r.label}: ${r.unit || "people"}`} definition={r.definition} source={r.source} variant="inline" /> {r.unit || (r.count === 1 ? "person" : "people")}
               </div>
             </div>
-            {r.measure === "count"
+            {r.hours != null
+              ? <span style={{ fontSize: 14, color: T.ink }}><Figure value={r.hours} kind="count" label={`${r.label}: hours`} definition={r.definition} source={r.source} variant="inline" /> {r.hours === 1 ? "hour" : "hours"}</span>
+              : r.measure === "count"
               ? <span />
               : <Figure value={r.cents / 100} kind="money" label={r.label} definition={r.definition} source={r.source} variant="inline" />}
           </div>

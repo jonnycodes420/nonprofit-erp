@@ -184,6 +184,75 @@ const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewards
 // history behind it, and a record with hundreds of them does not need to send
 // them all to answer "when did we last speak".
 const CONTACT_ROWS_MAX = 50;
+// WIRE-1 · the parts of donor-activity: each kind of involvement one person
+// can have with the org, read from the table that holds it. Every part is
+// org-scoped and takes the person and a date range.
+const ACTIVITY_PART_WORDS = {
+  events: "Each event they registered for or came to, dated by the event",
+  memberships: "Each membership they held at any point in the range",
+  fundraising: "Each peer-to-peer page they ran, with the gifts given through it in the range",
+  auction: "Each auction item they bid on, with their highest bid",
+  pledges: "Each pledge they made, by the day it was made",
+  conversations: "Each call, meeting, email, ask, note and stewardship touch with them, and each calendar meeting they were in",
+  journeys: "Each journey they were started on",
+};
+const ACTIVITY_SQL = {
+  events: (orgId, p) => ({
+    sql: `SELECT ea.id, 'event' AS type, ea.donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
+                 CASE ea.status WHEN 'attended' THEN 'Came' WHEN 'no_show' THEN 'Registered, did not come' ELSE 'Registered' END AS detail
+            FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
+           WHERE ea.org_id = ? AND ea.donor_id = ? AND ea.status IN ('registered','confirmed','attended','no_show')
+             AND LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?`,
+    args: [orgId, p.donor, p.from, p.to] }),
+  memberships: (orgId, p) => ({
+    sql: `SELECT m.id, 'membership' AS type, m.donor_id, COALESCE(l.name, 'Membership') AS name, LEFT(m.joined_on::text, 10) AS date,
+                 NULL::numeric AS amount, INITCAP(m.status) || CASE WHEN m.expires_on IS NULL THEN '' ELSE ', runs to ' || LEFT(m.expires_on::text, 10) END AS detail
+            FROM memberships m LEFT JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+           WHERE m.org_id = ? AND m.donor_id = ? AND LEFT(COALESCE(m.joined_on, m.starts_on)::text, 10) <= ?
+             AND (m.expires_on IS NULL OR LEFT(m.expires_on::text, 10) >= ?)`,
+    args: [orgId, p.donor, p.to, p.from] }),
+  fundraising: (orgId, p) => ({
+    sql: `SELECT pf.id, 'fundraiser' AS type, pf.person_id AS donor_id, pf.name, TO_CHAR(pf.created_at, 'YYYY-MM-DD') AS date,
+                 ROUND(COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = pf.org_id AND g.peer_fundraiser_id = pf.id
+                                  AND g.date >= ? AND g.date <= ?), 0)::numeric, 2) AS amount,
+                 'Peer-to-peer page, ' || COALESCE(pf.status, 'open') AS detail
+            FROM peer_fundraisers pf WHERE pf.org_id = ? AND pf.person_id = ?
+             AND (TO_CHAR(pf.created_at, 'YYYY-MM-DD') <= ?)`,
+    args: [p.from, p.to, orgId, p.donor, p.to] }),
+  auction: (orgId, p) => ({
+    sql: `SELECT i.id, 'auction_item' AS type, bd.donor_id, i.title AS name, TO_CHAR(MAX(b.created_at), 'YYYY-MM-DD') AS date,
+                 NULL::numeric AS amount, 'Highest bid $' || TO_CHAR(MAX(b.amount), 'FM999,999,990.00') AS detail
+            FROM auction_bids b JOIN auction_bidders bd ON bd.id = b.bidder_id AND bd.org_id = b.org_id
+            JOIN auction_items i ON i.id = b.item_id AND i.org_id = b.org_id
+           WHERE b.org_id = ? AND bd.donor_id = ? AND TO_CHAR(b.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(b.created_at, 'YYYY-MM-DD') <= ?
+           GROUP BY i.id, bd.donor_id, i.title`,
+    args: [orgId, p.donor, p.from, p.to] }),
+  pledges: (orgId, p) => ({
+    sql: `SELECT pl.id, 'pledge' AS type, pl.donor_id, 'Pledge' AS name, TO_CHAR(pl.created_at, 'YYYY-MM-DD') AS date,
+                 ROUND(pl.amount::numeric, 2) AS amount, INITCAP(COALESCE(pl.status, 'open')) AS detail
+            FROM pledges pl WHERE pl.org_id = ? AND pl.donor_id = ? AND COALESCE(pl.is_shell, false) = false
+             AND TO_CHAR(pl.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(pl.created_at, 'YYYY-MM-DD') <= ?`,
+    args: [orgId, p.donor, p.from, p.to] }),
+  conversations: (orgId, p) => ({
+    sql: `SELECT i.id, i.type, i.donor_id, INITCAP(i.type) AS name, LEFT(i.date::text, 10) AS date, NULL::numeric AS amount,
+                 LEFT(COALESCE(i.note, ''), 140) AS detail
+            FROM interactions i WHERE i.org_id = ? AND i.donor_id = ? AND i.type = ANY(?)
+             AND LEFT(i.date::text, 10) >= ? AND LEFT(i.date::text, 10) <= ?
+          UNION ALL
+          SELECT ce.id, 'meeting' AS type, ?::text AS donor_id, COALESCE(ce.title, 'Meeting') AS name, TO_CHAR(ce.starts_at, 'YYYY-MM-DD') AS date,
+                 NULL::numeric AS amount, 'On the calendar' AS detail
+            FROM calendar_events ce WHERE ce.org_id = ? AND ? = ANY(ce.person_ids) AND ce.dismissed_at IS NULL
+             AND TO_CHAR(ce.starts_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(ce.starts_at, 'YYYY-MM-DD') <= ?
+             AND NOT EXISTS (SELECT 1 FROM interactions x WHERE x.org_id = ce.org_id AND x.donor_id = ? AND x.type = 'meeting'
+                              AND LEFT(x.date::text, 10) = TO_CHAR(ce.starts_at, 'YYYY-MM-DD'))`,
+    args: [orgId, p.donor, CONVERSATION_TYPES, p.from, p.to, p.donor, orgId, p.donor, p.from, p.to, p.donor] }),
+  journeys: (orgId, p) => ({
+    sql: `SELECT cp.id, 'journey' AS type, cp.donor_id, COALESCE(cp.template_name, 'A journey') AS name,
+                 LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) AS date, NULL::numeric AS amount, INITCAP(COALESCE(cp.status, 'active')) AS detail
+            FROM cultivation_plans cp WHERE cp.org_id = ? AND cp.donor_id = ?
+             AND LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) >= ? AND LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) <= ?`,
+    args: [orgId, p.donor, p.from, p.to] }),
+};
 
 // One gift, as a person's own record reads it: the fund it went to is the line
 // ("Unrestricted" when none was named, exactly as the `gifts` source says it),
@@ -1853,6 +1922,22 @@ const SOURCES = {
       args: [orgId, p.from, p.to, ...(p.donor ? [p.donor] : []), ...(p.opportunity ? [p.opportunity] : [])],
       order: "date DESC NULLS LAST, id DESC",
     }),
+  },
+  // WIRE-1 · WHAT ONE PERSON HAS DONE WITH US. "What has Rafael done with us
+  // this year?" answers with one line per kind of involvement, and each line
+  // is this source for its part, so the count on the line and its rows are
+  // the same read. Gifts and hours are not parts: the answer uses
+  // donor-gifts-between and volunteer-hours, the profile's own sources.
+  "donor-activity": {
+    label: "What they have done with us",
+    measure: p => (["pledges", "fundraising"].includes(p.part) ? "sum" : "count"),
+    params: { donor: "id:required", from: "date:required", to: "date:required", part: "word:required" },
+    sentence: (p, dd) => `${ACTIVITY_PART_WORDS[p.part] || "Their involvement"}, from ${dd(p.from)} to ${dd(p.to)}.`,
+    sql: (orgId, p) => {
+      const part = ACTIVITY_SQL[p.part];
+      if (!part) throw new FigureParamError("part is not a kind of involvement Steward knows.");
+      return { ...part(orgId, p), order: "date DESC NULLS LAST, id" };
+    },
   },
   "volunteers-served": {
     label: "People who volunteered",
