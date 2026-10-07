@@ -1301,6 +1301,10 @@ async function checkoutSigninLink(b) {
 const CHECKOUT_SIGNIN_BAD = { error: "signin_link_invalid",
   message: "This sign-in link has expired or was already used. We can email you a fresh one." };
 
+// GET /public/checkout-signin: the prod smoke's read-only proof that the
+// route Checkout depends on is deployed (scripts/status.js). Says nothing else.
+app.get("/public/checkout-signin", (req, res) => res.json({ ok: true, route: "checkout-signin" }));
+
 // POST /public/checkout-signin { sessionId, key }
 //   200 { token, user, org }       signed in, once
 //   202 { status:"pending", orgName }  Stripe has the card, the org is still being made

@@ -521,7 +521,7 @@ export const HELP_ARTICLES = [
         `Read the confirm and agree. They can no longer sign in, records they wrote keep their name, and their donors become unassigned.`,
       ]},
       { h: `Good to know`, p: [
-        `You cannot remove yourself. Every plan has unlimited users.`,
+        `You cannot remove yourself. Every plan lets you add as many people as you need.`,
       ]},
     ],
   },
