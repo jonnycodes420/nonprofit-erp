@@ -4983,6 +4983,13 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by_name TEXT`);
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS skip_reason TEXT`);
+  // WIRE-1-ADDENDUM: a draft knows the gifts it thanks (approving it marks them
+  // thanked), the thread it put on the person, and what it is for.
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS gift_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS thread_id TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS purpose TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS marked_gift_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS approved_line_id TEXT`);
 
   // ── FIX-12 Part 2 · STEWARD DRAFTS IT. YOU SEND IT. ─────────────────────
   // Workflow recipes used to email donors the moment they fired. Their words

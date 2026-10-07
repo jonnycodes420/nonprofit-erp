@@ -38,10 +38,11 @@ import { Workflows } from "./Workflows";
 import { errorMessage } from "../lib/domainError";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDateShort } from "../../../shared/displayDate";
-import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
+import { AGENT_TOOLS, runIsLive, runProgress, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
 import { DonorLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
+import { AgentDraftReview } from "./AgentDraftReview";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -153,13 +154,10 @@ function planState(p) {
   if (run) {
     // The sheet lists the read first, and it is always done: count it, so the
     // list and the sheet agree (FIX-2 handoff §6: "2 of 2" beside three rows).
-    const done = (run.steps || []).filter(s => s.outcome === OUTCOME_DONE || s.outcome === OUTCOME_WAITING).length + 1;
-    const of = (run.steps || []).length + 1;
-    // AGENT-2: a plan with a Failed step is never "Done" in the list, and one
-    // that did only part of the work says so.
-    if ((run.steps || []).some(s => s.outcome === OUTCOME_FAILED)) return { word: `Failed · ${done} of ${of} steps`, brass: true };
-    if (done < of) return { word: `Partly done · ${done} of ${of} steps`, brass: true };
-    return { word: `Done · ${done} of ${of} steps`, brass: false };
+    // WIRE-1-ADDENDUM: one rule (agentShape.runProgress), and a draft waiting
+    // for her is not done: "Waiting for you · 1 of 22 done", never "Done · 22 of 22".
+    const pr = runProgress(run.steps || []);
+    return { word: pr.word, brass: pr.brass };
   }
   return { word: "Done", brass: false };
 }
@@ -177,7 +175,7 @@ function check(on) {
 // ── THE OPEN PLAN ──────────────────────────────────────────────────────────
 // One plan, as a checklist a person could tick: what it read, each step, its
 // state; the one yes at the foot.
-function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
+function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, onReviewAll, err }) {
   const plan = item.plan || {};
   const steps = plan.steps || [];
   const run = item.run || null;
@@ -199,6 +197,7 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
     }),
   ];
   const canRun = item.status === "planned" && !run;
+  const draftsWaiting = run && !live ? (run.steps || []).filter(x => x.tool === "draft_note" && x.outcome === OUTCOME_WAITING).length : 0;
   const foot = prepared
     ? "The gift is recorded in your name when you press the button. The follow-up can be undone for thirty days."
     : plan.sends > 0
@@ -235,6 +234,13 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
         </div>
       )}
       {err && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginTop: 14 }}>{err}</div>}
+      {/* WIRE-1-ADDENDUM: the drafts this plan left waiting, read in a row. */}
+      {draftsWaiting > 0 && onReviewAll && (
+        <button data-testid="agent-review-all" onClick={onReviewAll} disabled={isReadOnly}
+          style={{ ...YES_BTN, marginTop: 18, width: wide ? "auto" : "100%" }}>
+          Review all {draftsWaiting}
+        </button>
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 22, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, color: T.ink3, maxWidth: "44ch", lineHeight: 1.5 }}>
           {item.status === "set_aside" ? "Set aside. Nothing ran and nothing was recorded."
@@ -410,6 +416,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   // FIX-6 item 1 — what the queue has decided this visit, and anything that
   // refused. Held by the room, because the view is drawn and never mounted.
   const [settled, setSettled] = useState({});
+  const [reviewFor, setReviewFor] = useState(null);   // WIRE-1-ADDENDUM: the plan whose drafts are being reviewed
   const [waitErr, setWaitErr] = useState("");
   const loadPlans = useCallback(() => apiFetch("/agent/plans").then(r => {
     setPlans(r.plans || []);
@@ -527,6 +534,12 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
       const r = await apiFetch(`/agent/waiting/${it.kind}/${it.id}/${action}`,
         { method: "POST", body: JSON.stringify(reason ? { reason } : {}) });
       setSettled(m => ({ ...m, [key]: { item: it, sentence: (r && r.sentence) || (action === "approve" ? "Approved." : "Skipped.") } }));
+      // WIRE-1-ADDENDUM: an Agent draft's review is undone by the shared toast.
+      if (it.kind === "agent_draft") offerUndo({ message: (r && r.sentence) || "Done.", undoAction: async () => {
+        const y = await apiFetch(`/agent/waiting/agent_draft/${it.id}/reopen`, { method: "POST", body: "{}" });
+        setSettled(m => { const n = { ...m }; delete n[key]; return n; });
+        loadWaiting(); loadPlans(); return y;
+      } }, "draft");
       loadWaiting();
     } catch (e) {
       setWaitErr(e && e.message ? e.message : "That did not go through. Nothing was changed.");
@@ -580,9 +593,14 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   ];
 
   const sheetFor = item => item ? (
-    sheet({ item, wide, isReadOnly, busy: busyId === item.id,
-      err: busyId === null && sheetErr ? sheetErr : "",
-      onConfirm: () => confirm(item.id), onDiscard: () => discard(item.id) })
+    <>
+      {sheet({ item, wide, isReadOnly, busy: busyId === item.id,
+        err: busyId === null && sheetErr ? sheetErr : "",
+        onConfirm: () => confirm(item.id), onDiscard: () => discard(item.id), onReviewAll: () => setReviewFor(item.id) })}
+      {reviewFor === item.id && (
+        <AgentDraftReview instructionId={item.id} onClose={() => setReviewFor(null)} onChanged={() => { loadPlans(); loadWaiting(); }} />
+      )}
+    </>
   ) : null;
   const readFor = () => read ? readPanel({ read, wide, onNavigate, onClose: () => setRead(null) }) : null;
   const whichFor = () => which ? whichPanel({ which, wide, busy: asking, isReadOnly,

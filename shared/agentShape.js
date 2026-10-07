@@ -308,6 +308,68 @@ export const PLAN_SCHEMA = {
 // A plan larger than this is not a plan a person reads before saying yes.
 export const MAX_PLAN_STEPS = 200;
 
+// ── WIRE-1-ADDENDUM · DRAFTS IN BATCHES ────────────────────────────────────
+// "Draft a thank-you to every donor who gave this month" found 42 people and
+// then failed as "too long to finish writing": PLAN_SCHEMA is strict, so every
+// step carries all 37 fields (about 170 tokens before a word of the note), and
+// 42 notes ran past the plan call's 8,000 tokens. A drafting instruction now
+// skips that call. The model writes the drafts ten people at a time, and each
+// draft carries only what a draft needs: who it is for, a subject, the words.
+// Steward builds the draft_note steps itself, and they meet the same checks as
+// any other step (citations, grounded numbers, guardDraft).
+export const DRAFT_BATCH_SIZE = 10;
+export const DRAFTS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["drafts"],
+  properties: {
+    drafts: { type: "array", description: "One draft for each person listed, in the order given.",
+      items: { type: "object", additionalProperties: false, required: ["donorId", "subject", "body"],
+        properties: {
+          donorId: { type: "string", description: "The id of the person this draft is for, from the list." },
+          subject: { type: "string", description: "A short subject line." },
+          body: { type: "string", description: "The note itself, in plain sentences, signed off as the organisation." },
+        } } },
+  },
+};
+// A drafting instruction: she asks for notes, letters or thank-yous to a set of
+// people, and nothing else. An instruction that also asks for a task, a stage,
+// a tag or a call goes through the whole plan, which can do those.
+const DRAFT_VERB = /\b(draft|write|compose|prepare|make)\b/i;
+const DRAFT_NOUN = /\b(thank[- ]?you( notes?| letters?| emails?| cards?)?s?|notes?|letters?|emails?|cards?|messages?)\b/i;
+const NOT_ONLY_DRAFTS = /\b(tasks?|stages?|tags?|calls?|visits?|meetings?|follow[- ]?ups?|volunteers?|shifts?|journeys?|sequences?|groups?|households?|owners?|merge|register|log|mark)\b/i;
+export function isDraftingInstruction(text) {
+  const t = String(text || "");
+  return DRAFT_VERB.test(t) && DRAFT_NOUN.test(t) && !NOT_ONLY_DRAFTS.test(t.replace(DRAFT_NOUN, " "));
+}
+export function isThankYouInstruction(text) {
+  return /\bthank/i.test(String(text || ""));
+}
+export function draftBatches(people, size = DRAFT_BATCH_SIZE) {
+  const out = [];
+  for (let i = 0; i < (people || []).length; i += size) out.push(people.slice(i, i + size));
+  return out;
+}
+
+// ── WHERE A RUN STANDS, IN ONE RULE ────────────────────────────────────────
+// A draft waiting for her is not done. The list said "Done · 22 of 22" while
+// the plan said 21 steps were waiting; the list counted "waiting" as done. One
+// count, used by the list and the sheet: the read is always done, a step is
+// done only when its outcome is done (a draft she approved or sent), and any
+// step still waiting makes the word "Waiting for you".
+export function runProgress(steps) {
+  const list = Array.isArray(steps) ? steps : [];
+  const done = list.filter(s => s && s.outcome === OUTCOME_DONE).length + 1;
+  const waiting = list.filter(s => s && s.outcome === OUTCOME_WAITING).length;
+  const failed = list.filter(s => s && s.outcome === OUTCOME_FAILED).length;
+  const of = list.length + 1;
+  const word = failed ? `Failed · ${done} of ${of} steps`
+    : waiting ? `Waiting for you · ${done} of ${of} done`
+    : done < of ? `Partly done · ${done} of ${of} steps`
+    : `Done · ${done} of ${of} steps`;
+  return { done, waiting, failed, of, word, brass: !!(failed || waiting || done < of) };
+}
+
 // A plan is REFUSED, not trimmed, when it names a tool that is not hers to
 // call. Trimming would run a plan she did not read.
 export function validatePlan(plan, { authorization = AUTH_DRAFT } = {}) {
@@ -432,7 +494,9 @@ export function describeStep(step, byId = new Map()) {
       : `Open a follow-up with ${who}`;
     case "draft_note": return step.purpose === "welcome"
       ? `Draft a welcome to ${who}, for you to read and send.`
-      : `Draft a note to ${who}${step.subject ? ` ("${step.subject}")` : ""}.`;
+      : step.purpose === "thank_you"
+        ? `Draft a thank-you to ${who}${step.subject ? ` ("${step.subject}")` : ""}, for you to read and send.`
+        : `Draft a note to ${who}${step.subject ? ` ("${step.subject}")` : ""}.`;
     // A title that already names the person (a task per gift) is not prefixed twice.
     case "create_task": return `Create a task${p && !(step.title && p.name && String(step.title).includes(p.name)) ? ` about ${who}` : ""}${step.title ? `: ${step.title}` : ""}.`;
     case "log_note": return `Log a note on ${who}'s record.`;

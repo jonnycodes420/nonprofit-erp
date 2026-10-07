@@ -18,6 +18,7 @@ import { errorMessage } from "../lib/domainError";
 import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord } from "../../../shared/campaignKind";
+import { AgentDraftReview, agentDraftsIn } from "./AgentDraftReview";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -1035,6 +1036,24 @@ function SequencesPanel({ data }) {
 // AI-drafted giving-milestone/anniversary emails, queued here for a human to
 // approve/edit/send rather than going out automatically — see
 // processSequences()'s 'milestone' branch in server.js for why.
+// WIRE-1-ADDENDUM: the Agent's drafts are drafts to review too. They keep
+// their own queue (approving one marks its gift thanked), so this is the door
+// to it: how many are waiting, and Review all, in a row.
+function AgentDraftsWaiting() {
+  const [n, setN] = useState(null);
+  const [open, setOpen] = useState(false);
+  const load = () => apiFetch("/agent/waiting").then(w => setN(agentDraftsIn(w).length)).catch(() => setN(0));
+  useEffect(() => { load(); }, []);
+  if (!n) return null;
+  return (
+    <div data-testid="agent-drafts-waiting" style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: T.bg2, borderRadius: 10, padding: "10px 14px" }}>
+      <span style={{ fontSize: 13.5, color: T.ink }}>{n === 1 ? "One note the Agent drafted is" : `${n} notes the Agent drafted are`} waiting for you.</span>
+      <button onClick={() => setOpen(true)} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Review all {n}</button>
+      {open && <AgentDraftReview onClose={() => { setOpen(false); load(); }} onChanged={load} />}
+    </div>
+  );
+}
+
 function MilestoneDraftsPanel({ highlightDraftId }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1138,6 +1157,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
         <p style={{ margin: "4px 0 0", fontSize: 13, color: T.ink3 }}>
           Emails Steward drafted for a milestone, an anniversary or a workflow you turned on. Steward drafts it. You send it. Nothing goes to a donor until somebody sends it from here.
         </p>
+        <AgentDraftsWaiting />
         {reviewedCount > 0 && (
           <button data-testid="drafts-send-reviewed" onClick={sendAllReviewed} disabled={busyId === "all"}
             style={{ marginTop: 12, background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>

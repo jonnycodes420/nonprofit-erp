@@ -206,7 +206,7 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
   return query(
     `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status, d.total_giving, d.gift_count,
             d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample, d.person_types,
-            d.first_gift_date, d.phone, d.household_id, d.assigned_to_name
+            d.first_gift_date, d.phone, d.household_id, d.assigned_to, d.assigned_to_name
        FROM donors d
       WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND (?::text[] IS NULL OR d.id = ANY(?::text[]))
@@ -416,6 +416,7 @@ async function agentWrite(ctx, { tool, table, entityId, before, after, cites }) 
 // shared/agentShape.js agree in both directions.
 // AGENT-2: the screens' own routes (agentCall.js), and a route's refusal as a reason.
 const AC = require("../agentCall");
+const TLa = require("../timelineLine");   // WIRE-1-ADDENDUM: an approved draft lands on the timeline
 function refusal(r) {
   const b = r.body || {};
   const said = b.sentence || b.message || (typeof b.error === "string" && b.error.length > 12 ? b.error : null);
@@ -426,14 +427,52 @@ const AGENT_EXECUTORS = {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
     const id = "adr_" + uuid().slice(0, 10);
+    const thanks = step.purpose === "thank_you";
+    const giftIds = Array.isArray(step.giftIds) ? step.giftIds.map(String) : [];
+    // WIRE-1-ADDENDUM rule 7: A DRAFT LIVES ON THE PERSON. It used to be a row
+    // in Drafts to review and nowhere else, so their profile said "Nothing is
+    // open" beside four gifts "Not thanked yet". Now the same run puts it on
+    // their Thread as the next step and on their timeline as a draft. One open
+    // thread per person (threads_one_open): an open thank-you step is
+    // relabelled to point at the draft; any other open step is left alone.
+    const label = thanks ? "Thank-you draft ready, review and send" : "Draft ready, review and send";
+    let threadId = null;
+    const [open] = await require("../db").queryTx(ctx.client,
+      "SELECT id, next_step_type, next_step_label FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
+    if (!open) {
+      threadId = "thr_" + uuid().slice(0, 10);
+      const r = await runTx(ctx.client,
+        `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+        [threadId, ctx.orgId, donor.id, donor.assigned_to || ctx.userId || null, thanks ? "thank_you_note" : "follow_up", label,
+         orgTime.addDays(ctx.today, 2), ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name]);
+      if (r && r.changes === 0) threadId = null;
+      else await agentWrite(ctx, { tool: "draft_note", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+    } else if (["thank", "thank_you_note"].includes(open.next_step_type)) {
+      threadId = open.id;
+      await runTx(ctx.client, "UPDATE threads SET next_step_label=? WHERE id=? AND org_id=?", [label, open.id, ctx.orgId]);
+      await agentWrite(ctx, { tool: "draft_note", table: "threads", entityId: open.id,
+        before: { next_step_label: open.next_step_label }, after: { next_step_label: label }, cites: step.citesRows });
+    }
     await runTx(ctx.client,
-      `INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites)
-       VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites,gift_ids,thread_id,purpose)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [id, ctx.orgId, ctx.runId, ctx.instructionId || null, donor.id,
        String(step.subject || "").slice(0, 300), String(step.body || "").slice(0, 8000),
-       JSON.stringify(step.citesRows || [])]);
+       JSON.stringify(step.citesRows || []), JSON.stringify(giftIds), threadId, thanks ? "thank_you" : null]);
     await agentWrite(ctx, { tool: "draft_note", table: "agent_drafts", entityId: id,
       before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+    // The timeline line (timelineLine.js's shape: type 'activity', keyed), in
+    // this run's transaction so an undone or failed run leaves no line.
+    const lineId = "i_" + uuid().slice(0, 10);
+    await runTx(ctx.client,
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+       VALUES (?,?,?,'activity',?,?,?,?,?)`,
+      [lineId, ctx.orgId, donor.id,
+       `${thanks ? "Thank-you drafted" : "Note drafted"} by Steward, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
+       ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name,
+       JSON.stringify({ line_key: `agent_draft:${id}`, agentDraftId: id, draft: true, giftIds })]);
+    await agentWrite(ctx, { tool: "draft_note", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     return { id, donorId: donor.id, drafted: true };
   },
 
@@ -912,6 +951,96 @@ function agentContextLines(c) {
   return out;
 }
 
+// ── WIRE-1-ADDENDUM · DRAFTS, TEN AT A TIME ───────────────────────────────
+// The gifts a draft may speak of: the ones in the window her words name ("who
+// gave this month"), or else each person's latest gift. Org-scoped, Steward's
+// own query; the model reads these rows and nothing else about money.
+async function agentDraftGifts(orgId, A, text, today, people) {
+  const ids = people.map(p => String(p.id));
+  if (!ids.length) return [];
+  const win = A.giftWindowFromInstruction(text, today);
+  if (win) return (await agentReadGifts(orgId, win, ids)).filter(g => !g.deceased && !g.do_not_contact && !g.is_sample);
+  return query(
+    `SELECT DISTINCT ON (g.donor_id) g.id, g.donor_id, g.amount, g.date
+       FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND COALESCE(g.is_sample, false) = false
+      ORDER BY g.donor_id, LEFT(g.date, 10) DESC, g.id`, [orgId, ids]);
+}
+// One lean call per batch of ten, three at a time. A batch the model cut short
+// refuses the whole plan (PARITY-1 Part F: never a plan that stops at an
+// arbitrary person); a person the model skipped is simply not drafted for, and
+// the plan counts them as withheld like any other dropped step.
+async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people, gifts }) {
+  const thanks = A.isThankYouInstruction(instructionText);
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const orgName = (org && org.name) || "the organisation";
+  // Money and days in the words a letter uses ("$4,722", "October 2, 2026"),
+  // so a draft never says "4722 on 2026-10-02".
+  const longDay = ymd => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || "")); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "never"; };
+  const giftsBy = new Map();
+  for (const g of gifts) { if (!giftsBy.has(g.donor_id)) giftsBy.set(g.donor_id, []); giftsBy.get(g.donor_id).push(g); }
+  const system = [
+    who.systemPrompt,
+    "",
+    "Write one draft for each person listed, using the drafts tool. Nothing is sent: each draft waits for a person to read it.",
+    "RULES, and they are not negotiable:",
+    "- Use NO number that is not in that person's lines. Never state a rule about how giving works.",
+    "- Call each person what their line calls them. An organisation is a foundation, church or business.",
+    `- Plain sentences. No markdown. No placeholders in brackets. Sign off as ${orgName}.`,
+    "- Write money and dates as they are given (\"$4,722\", \"October 2, 2026\").",
+    "- Never add up, average or compute an amount. Use only the amounts written in that person's lines.",
+    "- Keep each draft under 120 words, warm and specific to the person.",
+    `- Today is ${today} in this organisation's own calendar.`,
+  ].join("\n");
+  const batches = A.draftBatches(people);
+  const out = new Array(batches.length);
+  let next = 0, cut = null;
+  const one = async () => {
+    while (next < batches.length && !cut) {
+      const i = next++;
+      const batch = batches[i];
+      const user = [
+        `Her instruction, verbatim: "${String(instructionText).slice(0, 2000)}"`,
+        "",
+        `The ${batch.length} people to draft for:`,
+        ...batch.flatMap(p => [
+          `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${A.formatCents(Math.round(Number(p.total_giving || 0) * 100))} | ${p.gift_count || 0} gifts | first ${longDay(p.first_gift_date)} | last ${longDay(p.last_gift_date)}`,
+          ...(giftsBy.get(p.id) || []).map(g => `      gift ${g.id} | ${A.formatCents(Math.round(Number(g.amount) * 100))} | ${longDay(g.date)}`),
+        ]),
+      ].join("\n");
+      const msg = await client.messages.create({
+        model: AGENT_MODEL, max_tokens: 4000, system,
+        tools: [{ name: "drafts", description: "One draft for each person listed.", strict: true, input_schema: A.DRAFTS_SCHEMA }],
+        tool_choice: { type: "tool", name: "drafts" },
+        messages: [{ role: "user", content: user }],
+      });
+      if (msg.stop_reason === "max_tokens") { cut = { batch: i }; break; }
+      const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "drafts");
+      out[i] = (block && block.input && Array.isArray(block.input.drafts) ? block.input.drafts : []);
+      await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
+                 VALUES (?,?,?,'agent_plan',?,?,?)`,
+        ["log_" + uuid().slice(0, 8), orgId, userId || null, `${String(instructionText).slice(0, 80)} (drafts ${i + 1}/${batches.length})`,
+         (system + "\n\n" + user).slice(0, 200000), JSON.stringify(out[i]).slice(0, 200000)]);
+    }
+  };
+  await Promise.all([one(), one(), one()]);
+  if (cut) {
+    console.warn(`[agent] a draft batch hit max_tokens (batch ${cut.batch + 1} of ${batches.length})`);
+    throw Object.assign(new Error("plan truncated"), { truncated: true, stepsReturned: 0 });
+  }
+  const ids = new Set(people.map(p => p.id));
+  const seen = new Set();
+  const steps = [];
+  for (const d of out.flat()) {
+    const id = String((d && d.donorId) || "");
+    if (!ids.has(id) || seen.has(id) || !String(d.body || "").trim()) continue;
+    seen.add(id);
+    const giftIds = (giftsBy.get(id) || []).map(g => g.id);
+    steps.push({ tool: "draft_note", donorId: id, subject: String(d.subject || "").slice(0, 300), body: String(d.body),
+      citesRows: [id, ...giftIds], giftIds: thanks ? giftIds : [], purpose: thanks ? "thank_you" : null });
+  }
+  return { steps, sends: 0, headline: null, cannot: null };
+}
+
 async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null, persona = null }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
@@ -1033,6 +1162,15 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
       ...giftRows.map(g => `  ${g.id} | giver ${g.donor_id} | ${g.donor_name} | amount ${Number(g.amount)} | date ${String(g.date).slice(0, 10)}`)] : []),
   ].join("\n");
 
+  // WIRE-1-ADDENDUM: a drafting instruction over a known set of people is
+  // written in batches of ten with a lean schema (agentDraftInBatches), so a
+  // plan of any size finishes. Everything else is one plan call, as before.
+  const drafting = (found || scope) && allowed.has("draft_note") && A.isDraftingInstruction(instructionText) && reachable.length > 0;
+  const draftGifts = drafting ? await agentDraftGifts(orgId, A, instructionText, today, reachable) : [];
+  let raw, _truncated = false;
+  if (drafting) {
+    raw = await agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people: reachable, gifts: draftGifts });
+  } else {
   const msg = await client.messages.create({
     model: AGENT_MODEL,
     max_tokens: 8000,
@@ -1042,13 +1180,12 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     tool_choice: { type: "tool", name: "plan" },
     messages: [{ role: "user", content: user }],
   });
-  const _tModel = Date.now();
   const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "plan");
-  const raw = block && block.input ? block.input : { steps: [], sends: 0 };
+  raw = block && block.input ? block.input : { steps: [], sends: 0 };
   // A truncated tool_use block is a real failure mode here and it looks like a
   // bad plan rather than a full one: max_tokens is 8000, and one step per
   // person WITH a body is far past that for a few hundred people. Say so.
-  const _truncated = msg.stop_reason === "max_tokens";
+  _truncated = msg.stop_reason === "max_tokens";
   if (_truncated) console.warn(`[agent] the model hit max_tokens: the plan is TRUNCATED (${(raw.steps || []).length} steps returned)`);
   // PARITY-1 Part F: A TRUNCATED PLAN IS REFUSED, not run in part. It was
   // only warned about, so she could confirm a plan that stopped at an
@@ -1058,15 +1195,17 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
              VALUES (?,?,?,'agent_plan',?,?,?)`,
     ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
      (system + "\n\n" + user).slice(0, 200000), JSON.stringify(raw).slice(0, 200000)]);
+  }
+  const _tModel = Date.now();
 
   // A step that cannot be run as written is left out HERE, before she reads the
   // plan, and COUNTED on it; the run never meets a step she did not read. A
   // tool she has not signed for stays in, so validatePlan REFUSES the plan
   // rather than trimming it.
   const byId = new Map(reachable.map(p => [p.id, p]));
-  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id), ...(actx.gifts || []).map(g => g.id)];
+  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id), ...(actx.gifts || []).map(g => g.id), ...draftGifts.map(g => g.id)];
   const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
-    ...giftRows.map(g => g.amount)].map(Number).filter(Number.isFinite);
+    ...giftRows.map(g => g.amount), ...draftGifts.map(g => g.amount)].map(Number).filter(Number.isFinite);
   const steps = [];
   let withheld = 0;
   let outOfScope = 0;
@@ -1086,7 +1225,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const draftProblems = st => {
     if (!st.body || !st.donorId) return [];
     const v = dVideos.find(x => x.donor_id === st.donorId);
+    // WIRE-1-ADDENDUM: the gifts a batched draft was shown are on its record.
     return SG.guardDraft(`${st.subject || ""}\n${st.body}`, { donor: byId.get(st.donorId) || {}, orgName: "",
+      rows: draftGifts.filter(g => g.donor_id === st.donorId).map(g => ({ amount: Number(g.amount), date: String(g.date).slice(0, 10) })),
       video: v ? { ready: true, url: `${publicAppUrl()}/v/${v.token}` } : null,
       meetings: dMeets.filter(x => x.donor_id === st.donorId), events: dEvents.map(e => e.name) }).reasons;
   };
@@ -1923,12 +2064,31 @@ app.post("/agent/writes/:id/undo", requireAuth, checkWriteAccess, wrap(async (re
 // The screen asks HERE whether a run is still going. The walk's button sat on
 // "Running..." after the run had finished because it believed its own last
 // guess; a run with a finish time is over, whatever the screen thought.
-function agentRunOut(A, r) {
+function agentRunOut(A, r, drafts = new Map()) {
   let steps = r.actions;
   if (typeof steps === "string") { try { steps = JSON.parse(steps); } catch { steps = []; } }
-  steps = (Array.isArray(steps) ? steps : []).map(s => ({ ...s, label: A.outcomeLabel(s) }));
+  steps = (Array.isArray(steps) ? steps : []).map(s => {
+    // WIRE-1-ADDENDUM: a draft step reads its draft as it is NOW. Approved
+    // (or sent) is done; skipped is not done; pending is still waiting.
+    const d = s && s.outcome === A.OUTCOME_WAITING && s.entityId ? drafts.get(s.entityId) : null;
+    const t = !d ? s : ["approved", "sent"].includes(d) ? { ...s, outcome: A.OUTCOME_DONE, reason: null }
+      : d === "skipped" || d === "dismissed" ? { ...s, outcome: A.OUTCOME_NOT_DONE, reason: "you skipped the draft" } : s;
+    return { ...t, label: A.outcomeLabel(t) };
+  });
   const { actions: _a, ...rest } = r;
-  return { ...rest, steps, live: A.runIsLive(r) };
+  return { ...rest, steps, progress: A.runProgress(steps), live: A.runIsLive(r) };
+}
+// The live status of every draft the given runs made, in one read.
+async function agentDraftStates(orgId, runs) {
+  const ids = [];
+  for (const r of runs) {
+    let a = r && r.actions;
+    if (typeof a === "string") { try { a = JSON.parse(a); } catch { a = []; } }
+    for (const s of Array.isArray(a) ? a : []) if (s && s.entityId && String(s.entityId).startsWith("adr_")) ids.push(String(s.entityId));
+  }
+  if (!ids.length) return new Map();
+  const rows = await query("SELECT id, status FROM agent_drafts WHERE org_id=? AND id = ANY(?::text[])", [orgId, ids]);
+  return new Map(rows.map(x => [x.id, x.status]));
 }
 app.get("/agent/runs/:id", requireAuth, wrap(async (req, res) => {
   const A = await agentShapeMod();
@@ -1938,7 +2098,7 @@ app.get("/agent/runs/:id", requireAuth, wrap(async (req, res) => {
        FROM agent_runs r LEFT JOIN agent_instructions i ON i.id = r.instruction_id AND i.org_id = r.org_id
       WHERE r.id=? AND r.org_id=?`, [req.params.id, req.user.orgId]);
   if (!r) return res.status(404).json({ error: "Not found" });
-  res.json({ run: agentRunOut(A, r) });
+  res.json({ run: agentRunOut(A, r, await agentDraftStates(req.user.orgId, [r])) });
 }));
 
 // EVERY PLAN, WITH ITS RUN. The Plans view: her words, the plan she read, and
@@ -1958,6 +2118,7 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
        FROM agent_runs WHERE org_id=? AND instruction_id IS NOT NULL
       ORDER BY instruction_id, started_at DESC`, [req.user.orgId]);
   const byIns = new Map(runs.map(r => [r.instruction_id, r]));
+  const draftStates = await agentDraftStates(req.user.orgId, runs);
   const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [req.user.orgId]);
 
   // GTM-1b 2 — BEFORE THE IMPORT, THE AGENT SHOWS ITSELF ON HARBORLIGHT.
@@ -2015,7 +2176,7 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
       const plan = typeof p.plan === "string" ? JSON.parse(p.plan || "null") : p.plan;
       const r = byIns.get(p.id);
       return { ...p, plan: plan ? { ...plan, confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
-               run: r ? agentRunOut(A, r) : null };
+               run: r ? agentRunOut(A, r, draftStates) : null };
     }),
   });
 }));
@@ -2090,11 +2251,13 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
   // it came from. LEFT JOIN, because a draft from before this build (and one
   // written by the general agent) has no persona and shows no badge.
   const ad = await query(
-    `SELECT a.id, a.donor_id, a.subject, a.body, a.created_at, d.name, i.persona
+    `SELECT a.id, a.donor_id, a.subject, a.body, a.created_at, a.instruction_id, a.purpose, a.gift_ids, d.name, i.persona
        FROM agent_drafts a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
        LEFT JOIN agent_instructions i ON i.id = a.instruction_id AND i.org_id = a.org_id
       WHERE a.org_id=? AND a.status='pending' AND d.deleted_at IS NULL ORDER BY a.created_at ASC LIMIT 200`, [orgId]);
   for (const a of ad) items.push({ kind: "agent_draft", id: a.id, createdAt: a.created_at, donorId: a.donor_id,
+    instructionId: a.instruction_id || null, purpose: a.purpose || null, subject: a.subject || "",
+    giftCount: Array.isArray(a.gift_ids) ? a.gift_ids.length : 0,
     persona: a.persona || null, personaName: a.persona ? PSw.getPersona(a.persona).name : null,
     title: `A note Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
     body: G.plainText(a.body) });
@@ -2186,11 +2349,40 @@ async function approveWaitingItem(req, kind, id) {
   }
 
   if (kind === "agent_draft") {
-    const { changes } = await run(
+    const [d] = await query(
       `UPDATE agent_drafts SET status='approved', reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=?
-        WHERE id=? AND org_id=? AND status='pending'`, [who.id, actorName, id, orgId]);
-    if (!changes) return { status: 404, body: { error: "Not found" } };
-    return { status: 200, body: { ok: true, sentence: "Approved. It is yours to send, and Steward will not send it for you." } };
+        WHERE id=? AND org_id=? AND status='pending' RETURNING id, donor_id, subject, gift_ids, thread_id, purpose`, [who.id, actorName, id, orgId]);
+    if (!d) return { status: 404, body: { error: "Not found" } };
+    // WIRE-1-ADDENDUM: approving a thank-you is her saying it is right and
+    // hers to send, so the gifts it thanks are marked thanked ("Not thanked
+    // yet" clears), its step on the Thread closes, and the timeline says who
+    // approved it. Steward still sends nothing.
+    const giftIds = Array.isArray(d.gift_ids) ? d.gift_ids.map(String) : [];
+    // Only the gifts THIS approval marks are remembered, so Undo puts back
+    // exactly those and never un-thanks a gift somebody thanked another way.
+    const marked = giftIds.length ? (await query(
+      "SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND id = ANY(?) AND acknowledgement_sent IS NOT TRUE", [orgId, d.donor_id, giftIds])).map(g => g.id) : [];
+    if (giftIds.length) {
+      await run(
+        `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+                          acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
+                          acknowledged_via=COALESCE(acknowledged_via, 'email')
+          WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [who.id, actorName, orgId, d.donor_id, giftIds]);
+      await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [orgId, giftIds]).catch(() => {});
+    }
+    const line = await TLa.timelineLine({ orgId, donorId: d.donor_id, actorId: who.id, actorName, date: today, key: `agent_draft_approved:${d.id}`,
+      note: `${d.purpose === "thank_you" ? "Thank-you" : "Note"} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,
+      metadata: { agentDraftId: d.id, giftIds } });
+    // A thread closes as an outcome only with the line that closed it (the
+    // threads check constraint), so no line means it stays open.
+    if (d.thread_id && line && line.id) await run(
+      `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=? WHERE id=? AND org_id=? AND closed_at IS NULL`,
+      [line.id, d.thread_id, orgId]);
+    await run("UPDATE agent_drafts SET marked_gift_ids=?, approved_line_id=? WHERE id=? AND org_id=?",
+      [JSON.stringify(marked), line && line.id ? line.id : null, d.id, orgId]);
+    return { status: 200, body: { ok: true, giftsThanked: giftIds.length, undoable: true,
+      sentence: giftIds.length ? "Approved, and the gift is marked thanked. It is yours to send; Steward will not send it for you."
+        : "Approved. It is yours to send, and Steward will not send it for you." } };
   }
   return { status: 400, body: { error: "unknown_kind" } };
 }
@@ -2216,15 +2408,46 @@ async function skipWaitingItem(req, kind, id, reason) {
     return { status: 200, body: { ok: true,
       sentence: "The draft is gone. The follow-up itself is still open on their record." } };
   } else if (kind === "agent_draft") {
-    const { changes } = await run(
+    const [d] = await query(
       `UPDATE agent_drafts SET status='skipped', reviewed_at=NOW(), reviewed_by=?, skip_reason=?
-        WHERE id=? AND org_id=? AND status='pending'`, [who.id, why, id, orgId]);
-    if (!changes) return { status: 404, body: { error: "Not found" } };
+        WHERE id=? AND org_id=? AND status='pending' RETURNING id, donor_id, thread_id, purpose`, [who.id, why, id, orgId]);
+    if (!d) return { status: 404, body: { error: "Not found" } };
+    // The WORDS go; the thank-you itself is still owed, so its step stays open
+    // and stops pointing at a draft that is gone (the renewal_note rule).
+    if (d.thread_id) await run(
+      "UPDATE threads SET next_step_label=? WHERE id=? AND org_id=? AND closed_at IS NULL",
+      [d.purpose === "thank_you" ? "Send thank-you note" : "Follow up", d.thread_id, orgId]);
   } else {
     return { status: 400, body: { error: "unknown_kind" } };
   }
   return { status: 200, body: { ok: true, sentence: why ? `Skipped: ${why}` : "Skipped." } };
 }
+
+// WIRE-1-ADDENDUM · UNDO A REVIEW. The shared Undo toast calls this after an
+// Agent draft is approved or skipped: the draft is pending again, the gifts
+// that approval marked are not thanked again, its timeline line goes, and its
+// step on the Thread is open again and points at the draft.
+app.post("/agent/waiting/agent_draft/:id/reopen", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT * FROM agent_drafts WHERE id=? AND org_id=? AND status IN ('approved','skipped')", [String(req.params.id || ""), orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  const marked = Array.isArray(d.marked_gift_ids) ? d.marked_gift_ids.map(String) : [];
+  if (d.status === "approved" && marked.length) await run(
+    `UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
+      WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [orgId, d.donor_id, marked]);
+  if (d.approved_line_id) await run("DELETE FROM interactions WHERE id=? AND org_id=?", [d.approved_line_id, orgId]);
+  const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : "Draft ready, review and send";
+  if (d.thread_id) {
+    // The thread comes back open unless the person has opened another since.
+    const [other] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND id<>?", [orgId, d.donor_id, d.thread_id]);
+    if (!other) await run(
+      "UPDATE threads SET closed_at=NULL, close_kind=NULL, closing_interaction_id=NULL, next_step_label=? WHERE id=? AND org_id=?",
+      [label, d.thread_id, orgId]);
+  }
+  await run(`UPDATE agent_drafts SET status='pending', reviewed_at=NULL, reviewed_by=NULL, reviewed_by_name=NULL, skip_reason=NULL,
+              marked_gift_ids='[]'::jsonb, approved_line_id=NULL WHERE id=? AND org_id=?`, [d.id, orgId]);
+  res.json({ ok: true, sentence: "Put back. The draft is waiting for you again." });
+}));
 
 app.post("/agent/waiting/:kind/:id/approve", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const kind = String(req.params.kind || "");
