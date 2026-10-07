@@ -33,6 +33,9 @@ export const SHOW_KEYS = [
   "state", "noContactSince",
   // WIRE-1: every list can become a Group, and Show me reads the same rules.
   "attendedEvent", "registeredEvent", "member", "hasPledge", "recurring", "fundraiser", "funder", "openTask", "kind",
+  // AGENT-3: past their own pattern, a grant report due, a membership ending,
+  // an auction winner, a giving page, an auction's bidders.
+  "closeness", "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner", "gavePage", "auctionBidder",
 ];
 export const CANT_FILTER = "Steward can't filter by that yet";
 
@@ -94,6 +97,46 @@ export function templateSpec(text, ctx = {}) {
     (m, span, n, unit) => { const d = sinceFor(span && !n ? span : null, n, unit); if (d) rules.noContactSince = d; });
   take(/\bno (?:contact|outreach|calls?|conversations?)(?: logged)?(?: (?:in|for|since))? (?:the )?(?:last |past )?(a while|awhile|a long time|ages|a year|this year|(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve) (days?|weeks?|months?|years?))\b/g,
     (m, span, n, unit) => { const d = sinceFor(span && !n ? span : null, n, unit); if (d) rules.noContactSince = d; });
+  // AGENT-3 · GONE QUIET, IN EVERY COMMON PHRASING. Past their own giving
+  // pattern is the closeness word Cooling (donorStatus.closenessSql: outside
+  // their own usual gap). "Haven't heard from in six months" is still the
+  // contact rule above; with no span it means gone quiet.
+  take(/\b(?:who |that )?(?:have |has |who've |is |are |have been |has been )?(?:gone|went|going|got|gotten|grown|growing) quiet\b|\bstopped giving\b|\b(?:are |is )?slipping(?: away)?\b|\b(?:are |is )?drifting(?: away)?\b|\bdrifted(?: away)?\b|\b(?:we |i )?(?:haven't|have not|hasn't|has not)(?: we| i)? heard from(?: them| him| her)?(?: lately| recently)?\b|\bquiet lately\b/g,
+    () => { rules.closeness = "cooling"; });
+  take(/\b(?:past|beyond|outside|behind) (?:their|his|her) (?:own )?(?:usual )?(?:giving )?(?:pattern|rhythm|habit|gap|cadence)\b|\b(?:against|compared to|for) (?:their|his|her) own (?:pattern|rhythm)\b/g, () => { if (!rules.closeness) rules.closeness = "cooling"; });
+  // AGENT-3 · A GRANT REPORT DUE: "a grant report due in the next 30 days",
+  // "grant reports due this month", "due soon" (thirty days).
+  take(/\b(?:with |who (?:has|have) |has |have )?(?:a |any )?grant reports? (?:is |are )?due(?: (?:in|within) (?:the )?(?:next )?(\d{1,3}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirty|sixty|ninety) (days?|weeks?|months?)| (this|next) month| soon)?\b/g,
+    (m, n, unit, which) => {
+      const k = Number(n) || ({ thirty: 30, sixty: 60, ninety: 90 })[n] || NUM_WORDS[n] || 0;
+      let days = k ? k * (/^week/.test(unit) ? 7 : /^month/.test(unit) ? 30 : 1) : 30;
+      if (which) {
+        const [y, mo] = today.split("-").map(Number);
+        const end = which === "this" ? new Date(Date.UTC(y, mo, 0)) : new Date(Date.UTC(y, mo + 1, 0));
+        days = Math.max(1, Math.round((end - new Date(today + "T00:00:00Z")) / 86400000));
+      }
+      rules.grantReportDue = String(Math.min(366, days));
+    });
+  // AGENT-3 · A MEMBERSHIP ENDING: "members expiring next month", "whose
+  // membership ends in November", "up for renewal in the next 30 days".
+  const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+  take(new RegExp(`\\b(?:every |each |all )?(?:members?|memberships?)(?: whose (?:membership|memberships) )?(?: who are| that are| that is| who is)? ?(?:expiring|expire|expires|ending|ends|end|lapsing|lapse|lapses|due (?:for|to) renew|up for renewal|renewing)(?: (?:in|on|by|within))?(?: the)?(?: (next month|this month|${MONTHS.join("|")}|(?:next )?(\\d{1,3}) days?))?\\b`, "g"),
+    (m, when, n) => {
+      const [y, mo] = today.split("-").map(Number);
+      const monthRange = (yy, mm) => [ymd(yy, mm, 1), new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10)];
+      let r;
+      if (!when || when === "this month") r = when ? monthRange(y, mo) : [today, minusDays(today, -30)];
+      else if (when === "next month") r = mo === 12 ? monthRange(y + 1, 1) : monthRange(y, mo + 1);
+      else if (n) r = [today, minusDays(today, -Number(n))];
+      else { const k = MONTHS.indexOf(when) + 1; r = monthRange(k < mo ? y + 1 : y, k); }
+      rules.memberExpiresFrom = r[0]; rules.memberExpiresTo = r[1];
+    });
+  // AGENT-3 · AUCTION WINNERS, and the ones who have not paid.
+  take(/\b(?:every |each |all |our )?(?:auction )?winners?(?: of (?:an|the|our) (?:auction )?items?)?(?: (?:who|that) (haven't|have not|hasn't|has not|didn't|did not) (?:yet )?paid| (?:still )?unpaid)?\b|\b(?:who |that )?won (?:an |a |any )?(?:auction )?items?(?: (?:at|in) (?:the|our) auction)?(?: (?:but|and) (haven't|have not|hasn't|has not|didn't|did not) (?:yet )?paid)?\b/g,
+    (m, a, b) => { rules.auctionWinner = (a || b || /unpaid/.test(m)) ? "unpaid" : "any"; });
+  // AGENT-3 · A PEER-TO-PEER PAGE WAITING FOR APPROVAL.
+  take(/\b(?:whose |with (?:a |an )?)?(?:peer[- ]to[- ]peer |p2p |fundraising )?(?:pages?|fundraisers?) (?:is |are |still )?(?:waiting(?: for| on)?|pending|awaiting|needing|that need|needs)(?: (?:my |our |your )?approval)?\b|\bpending (?:peer[- ]to[- ]peer |p2p )?(?:pages?|fundraisers?)\b/g,
+    () => { rules.fundraiser = "pending"; });
   // AI-FIX · A STATE: "in North Carolina", "in the state of Maine", "in NC"
   // (a two-letter code only as she typed it, in capitals, so "in me" is not Maine).
   const raw = norm(text);
@@ -254,8 +297,15 @@ const KEY_HELP = {
   member: "current, active, grace, lapsed or any: holds a membership in that state (current is active or in grace)",
   hasPledge: "1: has an open pledge",
   recurring: "1: has a recurring gift running at any interval",
-  fundraiser: "1: runs a peer-to-peer fundraising page",
+  fundraiser: "1 or pending: runs a peer-to-peer fundraising page (pending: the page is waiting for approval)",
   funder: "1: funds a grant",
+  closeness: "close, warm, on_track, cooling or new: cooling is gone quiet past their own giving pattern (outside their usual gap)",
+  grantReportDue: "a number of days, 1 to 366: funds a grant with a report due between today and that many days from now",
+  memberExpiresFrom: "YYYY-MM-DD: a membership ends on or after this date (with memberExpiresTo)",
+  memberExpiresTo: "YYYY-MM-DD: a membership ends on or before this date (with memberExpiresFrom)",
+  auctionWinner: "any or unpaid: had the winning bid on a closed auction item (unpaid: has not paid for it)",
+  gavePage: "any: gave through a giving page",
+  auctionBidder: "any: registered to bid in an auction",
   openTask: "1: has an open task",
   kind: "person or organization: the kind of record",
   noContactSince: "YYYY-MM-DD: nobody has logged a call, meeting, email or stewardship with them on or after this date ('a while' is six months before today)",
@@ -330,6 +380,8 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaig
   }
   for (const k of ["gaveCampaign", "notGaveCampaign"])
     if (raw[k] && !campaigns.some(c => c.id === raw[k])) return { ok: false, refused: "a campaign Steward does not have" };
+  // AGENT-3: a page or an auction by kind only; the model is shown no list of them.
+  for (const k of ["gavePage", "auctionBidder"]) if (raw[k] && raw[k] !== "any") return { ok: false, refused: k };
   const meaningful = Object.keys(raw).filter(k => k !== "notDeceased");
   if (!meaningful.length && spec.withAsk) return { ok: false, refused: "who to ask" };
   if (!meaningful.length) return { ok: false, refused: "nothing Steward recognised" };
@@ -378,7 +430,13 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.member) w.push({ current: "a member now", active: "an active member", grace: "a member in grace", lapsed: "a lapsed member", any: "a member, now or before" }[rules.member] || "a member");
   if (rules.hasPledge) w.push("an open pledge");
   if (rules.recurring) w.push("a recurring gift running");
-  if (rules.fundraiser) w.push("runs a peer-to-peer page");
+  if (rules.fundraiser) w.push(rules.fundraiser === "pending" ? "a peer-to-peer page waiting for approval" : "runs a peer-to-peer page");
+  if (rules.closeness) w.push(rules.closeness === "cooling" ? "gone quiet past their own pattern" : `${rules.closeness.replace(/_/g, " ")} in closeness`);
+  if (rules.grantReportDue) w.push(`a grant report due in the next ${rules.grantReportDue} days`);
+  if (rules.memberExpiresFrom || rules.memberExpiresTo) w.push(`membership ends ${dayWords(rules.memberExpiresFrom || "")} to ${dayWords(rules.memberExpiresTo || "")}`);
+  if (rules.auctionWinner) w.push(rules.auctionWinner === "unpaid" ? "won an auction item, not yet paid" : "won an auction item");
+  if (rules.gavePage) w.push("gave through a giving page");
+  if (rules.auctionBidder) w.push("registered to bid in an auction");
   if (rules.funder) w.push("funds a grant");
   if (rules.openTask) w.push("an open task");
   if (rules.notDeceased) w.push("not deceased");

@@ -42,7 +42,7 @@ const lines = [
   "",
   "| Question | Route | What went wrong |",
   "|---|---|---|",
-  ...failed.map(r => `| ${r.id} · ${r.text.replace(/\|/g, "/")} | ${r.route === "agent" ? "POST /agent/instructions" : "POST /ask"} | ${r.why.map(w => w.replace(/\|/g, "/").replace(/\n/g, " ")).join("<br>")} |`),
+  ...failed.map(r => `| ${r.id} · ${r.text.replace(/\|/g, "/")} | ${r.route === "agent" ? "POST /agent/instructions" : r.route === "all" ? "every AI call (ai_fallbacks)" : "POST /ask"} | ${r.why.map(w => w.replace(/\|/g, "/").replace(/\n/g, " ")).join("<br>")} |`),
   "",
   "Each question is judged COMPLETE (a 2xx answer of the expected kind, no plan_failed or plan_truncated, no raw error text, no sentence cut off) and IN SCOPE (every person is a record of the org, and the people match a truth set computed straight from SQL).",
   "",

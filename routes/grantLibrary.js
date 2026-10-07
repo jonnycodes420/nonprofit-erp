@@ -31,7 +31,7 @@
 "use strict";
 const express = require("express");
 const money = require("../money");
-const { aiGate, anthropicFor } = require("../aiClient");
+const { aiGate, anthropicFor, recordAiFallback } = require("../aiClient");
 
 const routers = { r0: express.Router() };
 
@@ -607,19 +607,21 @@ app.post("/grants/:id/draft-section", requireAuth, checkWriteAccess, wrap(async 
         + pieces.map((p, i) => `[${i + 1}] ${p.title} (${kindLabel(p.kind)})\n${p.body}`).join("\n\n") }],
     });
     if (msg.stop_reason !== "end_turn") {
+      recordAiFallback(req.user.orgId, "grant.draft_section", "unfinished");
       return res.json({ text: template, source: "template", label: DRAFT_LABEL, sentence: templateSentence("The draft did not finish, so Steward did not show it.") });
     }
     let text = (msg.content || []).filter(c => c.type === "text").map(c => c.text).join("").trim();
     text = text.replace(/\s*\u2014\s*/g, ", ");
     const problems = text ? draftProblems(text, sourceText) : ["an empty reply"];
     if (problems.length) {
+      recordAiFallback(req.user.orgId, "grant.draft_section", "set aside");
       return res.json({ text: template, source: "template", label: DRAFT_LABEL,
         sentence: templateSentence(`Steward set the written draft aside because it had ${problems.join(" and ")}.`) });
     }
     return res.json({ text, source: "ai", label: DRAFT_LABEL,
       sentence: `Steward drafted this from ${pieces.length === 1 ? "one library piece" : `${pieces.length} library pieces`}${interests ? ` and ${funderName}'s stated interests` : ""}. ${DRAFT_LABEL}` });
   } catch (e) {
-    console.warn("[grant draft-section] fell back to the template:", e.message);
+    recordAiFallback(req.user.orgId, "grant.draft_section", e);
     return res.json({ text: template, source: "template", label: DRAFT_LABEL, sentence: templateSentence("Drafting could not be reached just now.") });
   }
 }));

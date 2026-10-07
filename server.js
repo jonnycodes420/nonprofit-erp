@@ -47,7 +47,7 @@ const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 // FIX-12 Part 3: every model call goes through aiClient.js, which asks the org's AI switch first.
-const { aiGate, anthropicFor, AiOffError } = require("./aiClient");
+const { aiGate, anthropicFor, AiOffError, recordAiFallback } = require("./aiClient");
 const { Resend } = require("resend");
 // 2026-09-24 — addresses Steward must never email, from any org (mailBlock.js).
 const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
@@ -6878,12 +6878,12 @@ Write the email now.`,
     // the draft is the template sentence instead.
     const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
     if (!chk.ok) {
-      console.warn(`[milestone] draft for ${donor.id} fell back to the template: ${chk.reasons.join(" · ")}`);
+      recordAiFallback(orgId, "milestone_draft", chk.reasons.join(" · "));
       return milestoneTemplate(firstName, orgName, meta);
     }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
-    console.error("[milestone] generateMilestoneDraft failed:", e.message);
+    recordAiFallback(orgId, "milestone_draft", e);
     return null;
   }
 }
@@ -6932,13 +6932,13 @@ Write the email now.`,
     if (!parsed.subject || !parsed.body) return null;
     const chk = await DRAFT_CHECK.checkDraft(`${parsed.subject}\n${parsed.body}`, await DRAFT_CHECK.draftRecord(orgId, donor.id));
     if (!chk.ok) {
-      console.warn(`[at-risk] draft for ${donor.id} fell back to the template: ${chk.reasons.join(" · ")}`);
+      recordAiFallback(orgId, "at_risk_draft", chk.reasons.join(" · "));
       return { subject: `Thinking of you, ${firstName}`,
         body: `Dear ${firstName},\n\nWe were thinking of you and wanted to say hello from ${orgName || "all of us"}. Thank you for everything you have given; it has mattered.\n\nWarmly,` };
     }
     return { subject: String(parsed.subject), body: String(parsed.body) };
   } catch (e) {
-    console.error("[at-risk] generateAtRiskDraft failed:", e.message);
+    recordAiFallback(orgId, "at_risk_draft", e);
     return null;
   }
 }

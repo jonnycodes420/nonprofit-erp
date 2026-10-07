@@ -434,7 +434,7 @@
    "home": "W",
    "mrg": "P soft-deleting a person does not stop their Stripe plan; it needs a human decision on what deleting a giver means. Next: RECURRING-DELETE",
    "rep": "W",
-   "ask": "P Ask sees plans; the Agent cannot. Next: AGENT-3",
+   "ask": "P Ask sees plans; the Agent cannot. Next: AGENT-4",
    "io": "P an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING"
   },
   "pledge": {
@@ -447,7 +447,7 @@
    "home": "W",
    "mrg": "W",
    "rep": "W",
-   "ask": "P Ask has a pledges entity; the Agent may not create one by design and cannot read them. Next: AGENT-3",
+   "ask": "W the Agent reads a person's open pledges (amount and due date) and cites them; it still never creates one",
    "io": "W"
   },
   "campaign": {
@@ -460,7 +460,7 @@
    "home": "-",
    "mrg": "W",
    "rep": "W",
-   "ask": "P Ask's campaign amount is the goal only; the Agent cannot see campaigns. Next: AGENT-3",
+   "ask": "W the Agent finds a campaign's givers (gave to the spring appeal) and reads each person's gifts to it",
    "io": "W"
   },
   "appeal": {
@@ -473,7 +473,7 @@
    "home": "-",
    "mrg": "W",
    "rep": "W",
-   "ask": "P as campaign. Next: AGENT-3",
+   "ask": "W as campaign",
    "io": "W"
   },
   "giving page": {
@@ -486,7 +486,7 @@
    "home": "-",
    "mrg": "W",
    "rep": "W raised on a page opens its gifts, net of covered fees (REPORTS-4)",
-   "ask": "P Ask has a giving pages entity; the Agent cannot see pages. Next: AGENT-3",
+   "ask": "W the Agent reads gifts through a giving page and finds who gave through one",
    "io": "W"
   },
   "peer-to-peer page": {
@@ -499,7 +499,7 @@
    "home": "W",
    "mrg": "W",
    "rep": "W",
-   "ask": "P Ask has a peer-to-peer pages entity; the Agent cannot see them. Next: AGENT-3",
+   "ask": "W the Agent reads each person's peer-to-peer page, its status and raised, and finds pages waiting for approval",
    "io": "W"
   },
   "event and ticket": {
@@ -525,7 +525,7 @@
    "home": "W",
    "mrg": "W",
    "rep": "W",
-   "ask": "P Ask has an auction items entity; the Agent cannot see auctions. Next: AGENT-3",
+   "ask": "W the Agent reads auction wins (item, winning bid, paid or not) and finds winners who have not paid",
    "io": "P no import; JSON export only. Next: EVENTS-3"
   },
   "membership": {
@@ -538,7 +538,7 @@
    "home": "W",
    "mrg": "W",
    "rep": "P member counts by status open (REPORTS-4); the member reports (directory, by level, expiring, revenue) still return no sources. Next: REPORTS-6",
-   "ask": "P Ask sees memberships (no money); the Agent cannot. Next: AGENT-3",
+   "ask": "W the Agent reads each membership (level, status, end date) and finds members ending in a window",
    "io": "P imported members carry no money, so they are missing from membership revenue (by design, no invented gifts)"
   },
   "grant": {
@@ -551,7 +551,7 @@
    "home": "P raised at lead time, but skipped when the grant has no funder record. Next: GRANTS-2",
    "mrg": "W",
    "rep": "W",
-   "ask": "P Ask sees grants; the Agent cannot. Next: AGENT-3",
+   "ask": "W the Agent reads each funder's grants and next milestone, finds reports due in N days, and makes a task on the grant",
    "io": "W"
   },
   "volunteer shift and hours": {
@@ -642,7 +642,7 @@
    "home": "-",
    "mrg": "P erase leaves interaction_attachments. Next: TRUST-3",
    "rep": "-",
-   "ask": "P Ask has a documents entity; the Agent cannot see them. Next: AGENT-3",
+   "ask": "P Ask has a documents entity; the Agent cannot see them. Next: AGENT-4",
    "io": "P stored files are left out of the export (by design, the export is data)"
   },
   "import": {

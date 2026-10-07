@@ -38,7 +38,7 @@ import { Workflows } from "./Workflows";
 import { errorMessage } from "../lib/domainError";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDateShort } from "../../../shared/displayDate";
-import { AGENT_TOOLS, runIsLive, runProgress, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
+import { AGENT_TOOLS, runIsLive, planListState, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING, OUTCOME_FAILED } from "../../../shared/agentShape";
 import { DonorLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
@@ -140,26 +140,9 @@ function useWide() {
 }
 
 // A plan's line in the list on the left: her words and where the run stands.
+// AGENT-3: one rule (agentShape.planListState), the one the server sends.
 function planState(p) {
-  const run = p.run;
-  if (run && runIsLive(run)) return { word: "Running", brass: true };
-  if (p.status === "set_aside") return { word: "Set aside", brass: false };
-  if (p.status === "paused") return { word: "Paused", brass: false };
-  if (p.status === "planned") {
-    const gift = ((p.plan && p.plan.steps) || []).some(s => s.state === STEP_CONFIRM);
-    return { word: gift ? "Waiting for you" : "Waiting for your yes", brass: true };
-  }
-  if (p.kind === "standing" && p.status === "active") return { word: "Standing · on", brass: false };
-  if (run && run.status === "failed") return { word: "Did not finish", brass: false };
-  if (run) {
-    // The sheet lists the read first, and it is always done: count it, so the
-    // list and the sheet agree (FIX-2 handoff §6: "2 of 2" beside three rows).
-    // WIRE-1-ADDENDUM: one rule (agentShape.runProgress), and a draft waiting
-    // for her is not done: "Waiting for you · 1 of 22 done", never "Done · 22 of 22".
-    const pr = runProgress(run.steps || []);
-    return { word: pr.word, brass: pr.brass };
-  }
-  return { word: "Done", brass: false };
+  return p.listState || planListState(p);
 }
 
 function pill(kind, children) {

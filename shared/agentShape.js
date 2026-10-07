@@ -262,7 +262,8 @@ export const PLAN_STEP_SCHEMA = {
   additionalProperties: false,
   required: ["tool", "donorId", "citesRows", "subject", "body", "title", "note", "stage", "tag", "label", "due", "dueDays", "priority",
     "email", "phone", "address", "city", "state", "zip", "ownerUserId", "groupId", "householdId", "otherDonorId", "kind", "date",
-    "hoursPerWeek", "hours", "availability", "roles", "slotId", "roleId", "opportunityId", "journeyId", "eventId", "giftId", "amount", "method"],
+    "hoursPerWeek", "hours", "availability", "roles", "slotId", "roleId", "opportunityId", "journeyId", "eventId", "giftId", "amount", "method",
+    "grantId", "purpose"],
   properties: {
     tool: { type: "string", description: "One of Steward's own tools." },
     donorId: { type: ["string", "null"], description: "The id of the person this step is about, from the rows given." },
@@ -292,6 +293,10 @@ export const PLAN_STEP_SCHEMA = {
     opportunityId: { type: "string" }, journeyId: { type: "string" },
     eventId: { type: "string" }, giftId: { type: "string" },
     amount: { type: "number" }, method: { type: "string" },
+    // AGENT-3: the grant a task belongs to (from GRANTS), and what a draft is
+    // for (one of DRAFT_PURPOSES). "" when the step does not use it.
+    grantId: { type: "string" },
+    purpose: { type: "string", description: "For draft_note: thank_you, membership_renewal, funder_update, auction_pay, p2p_approval or \"\"." },
   },
 };
 export const PLAN_SCHEMA = {
@@ -336,15 +341,39 @@ export const DRAFTS_SCHEMA = {
 // people, and nothing else. An instruction that also asks for a task, a stage,
 // a tag or a call goes through the whole plan, which can do those.
 const DRAFT_VERB = /\b(draft|write|compose|prepare|make)\b/i;
-const DRAFT_NOUN = /\b(thank[- ]?you( notes?| letters?| emails?| cards?)?s?|notes?|letters?|emails?|cards?|messages?)\b/i;
+// AGENT-3: a renewal, a funder update and a pay-your-bid note are drafts too.
+const DRAFT_NOUN = /\b(thank[- ]?you( notes?| letters?| emails?| cards?)?s?|notes?|letters?|emails?|cards?|messages?|renewals?( notes?| letters?| emails?| reminders?)?|(funder |grant )?updates?|pay[- ]your[- ]bid( notes?)?)\b/i;
+// "Thank everyone who gave to the spring appeal" is a thank-you to each of them.
+const THANK_LEAD = /^\s*(please\s+)?thank\s+(everyone|everybody|all|each|every|the|our|anyone)\b/i;
 const NOT_ONLY_DRAFTS = /\b(tasks?|stages?|tags?|calls?|visits?|meetings?|follow[- ]?ups?|volunteers?|shifts?|journeys?|sequences?|groups?|households?|owners?|merge|register|log|mark)\b/i;
 export function isDraftingInstruction(text) {
   const t = String(text || "");
+  if (THANK_LEAD.test(t) && !NOT_ONLY_DRAFTS.test(t.replace(THANK_LEAD, " "))) return true;
   return DRAFT_VERB.test(t) && DRAFT_NOUN.test(t) && !NOT_ONLY_DRAFTS.test(t.replace(DRAFT_NOUN, " "));
 }
+// AGENT-3 · WHAT A DRAFT IS FOR, read from her words. The purpose rides on the
+// draft (agent_drafts.purpose) so Drafts to review and the person's Thread say
+// what it is, and a thank-you still marks its gifts thanked on approval.
+export const DRAFT_PURPOSES = ["thank_you", "membership_renewal", "funder_update", "auction_pay", "p2p_approval"];
+export function draftPurposeFor(text) {
+  const t = String(text || "").toLowerCase();
+  if (/\bpay[- ]your[- ]bid\b|\b(pay|payment) (for|note)\b|\bauction winners?\b|\bwon\b.*\bauction\b/.test(t)) return "auction_pay";
+  if (/\brenewals?\b|\brenew\b/.test(t)) return "membership_renewal";
+  if (/\b(funder|grant) updates?\b|\bupdate\b.*\b(funders?|grant)\b/.test(t)) return "funder_update";
+  if (/\bapprov/.test(t) && /\b(peer[- ]to[- ]peer|p2p|fundraising pages?|pages?)\b/.test(t)) return "p2p_approval";
+  if (/\bthank/.test(t)) return "thank_you";
+  return null;
+}
+export const PURPOSE_LABEL = { thank_you: "Thank-you", membership_renewal: "Membership renewal", funder_update: "Funder update",
+  auction_pay: "Pay-your-bid note", p2p_approval: "Approval reminder" };
 export function isThankYouInstruction(text) {
   return /\bthank/i.test(String(text || ""));
 }
+// AGENT-3 · EVERY PLAN IN BATCHES. A plan of tasks, calls or tags for 150
+// people ran past the plan call's length limit just as 42 drafts did. Past
+// PLAN_BATCH_SIZE people the plan is asked for ten people at a time (three
+// calls at once), and the steps are joined in the order the people were found.
+export const PLAN_BATCH_SIZE = 10;
 export function draftBatches(people, size = DRAFT_BATCH_SIZE) {
   const out = [];
   for (let i = 0; i < (people || []).length; i += size) out.push(people.slice(i, i + size));
@@ -357,6 +386,30 @@ export function draftBatches(people, size = DRAFT_BATCH_SIZE) {
 // count, used by the list and the sheet: the read is always done, a step is
 // done only when its outcome is done (a draft she approved or sent), and any
 // step still waiting makes the word "Waiting for you".
+// AGENT-3 · ONE STATUS FOR A PLAN, read the same way by the list on the left,
+// the open plan and the server. It used to live in the screen, where a
+// standing plan read "Standing · on" with drafts from its last run still
+// waiting, and a run that stopped read "Did not finish" over steps that were
+// done. A run's steps decide it whenever there are any.
+export function planListState(p) {
+  const run = p && p.run;
+  if (run && runIsLive(run)) return { word: "Running", brass: true };
+  if (p.status === "set_aside") return { word: "Set aside", brass: false };
+  if (p.status === "paused") return { word: "Paused", brass: false };
+  if (p.status === "planned" && !run) {
+    const gift = ((p.plan && p.plan.steps) || []).some(s => s.state === STEP_CONFIRM);
+    return { word: gift ? "Waiting for you" : "Waiting for your yes", brass: true };
+  }
+  const steps = run && Array.isArray(run.steps) ? run.steps : [];
+  const pr = steps.length ? runProgress(steps) : null;
+  const standing = p.kind === KIND_STANDING && p.status === "active";
+  if (run && run.status === "failed" && !(pr && (pr.waiting || pr.done > 1)))
+    return { word: standing ? "Standing · on · last run did not finish" : "Did not finish", brass: !standing };
+  if (pr && run && run.status === "failed") return { word: `Did not finish · ${pr.done} of ${pr.of} steps${pr.waiting ? ` · ${pr.waiting} waiting for you` : ""}`, brass: true };
+  if (standing) return pr && pr.waiting ? { word: `Standing · on · ${pr.waiting} waiting for you`, brass: true } : { word: "Standing · on", brass: false };
+  if (pr) return { word: pr.word, brass: pr.brass };
+  return { word: "Done", brass: false };
+}
 export function runProgress(steps) {
   const list = Array.isArray(steps) ? steps : [];
   const done = list.filter(s => s && s.outcome === OUTCOME_DONE).length + 1;
@@ -939,6 +992,8 @@ export function readIntent(text) {
   if (rep && /\bhow many\b|\bcount\b|\bnumber of\b/.test(t)) return { kind: "count", ...pick(rep) };
   if (rep) return { kind: "report", ...pick(rep) };
   if (/^\s*(please\s+)?(find|show( me)?|open|look up|pull up|where is|go to)\b/.test(t)) return { kind: "find" };
+  // AGENT-3: "who has a grant report due in the next 30 days?" is a list.
+  if (/^\s*(who|whom|which)\b/.test(t)) return { kind: "find" };
   return null;
 }
 // A sentence that reads like a question but that Steward cannot route without

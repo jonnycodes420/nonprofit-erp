@@ -264,6 +264,9 @@ async function spend() {
     if (!token) { console.error(`Could not sign in to ${BASE} as ${EMAIL} (HTTP ${login.status}).`); process.exit(2); }
   }
   const startSpend = saved ? null : await spend();
+  // AGENT-3: every AI call that fell back to the non-AI path during the run is
+  // counted (ai_fallbacks); with AI on, any of them is a failure to look at.
+  const startedAt = (await db.query("SELECT NOW() AS t")).rows[0].t;
   const results = [];
   for (const q of qs) {
     let r;
@@ -287,9 +290,17 @@ async function spend() {
   }
   const endSpend = saved ? saved.spend : await spend();
   const usd = saved ? saved.usd : endSpend && startSpend ? Math.round((endSpend.usd - startSpend.usd) * 1e4) / 1e4 : (endSpend ? endSpend.usd : null);
+  const fallbacks = saved ? (saved.fallbacks || []) : (await db.query(
+    `SELECT surface, reason, COUNT(*)::int AS n FROM ai_fallbacks WHERE org_id = $1 AND created_at >= $2 AND reason <> 'ai_off'
+      GROUP BY surface, reason ORDER BY n DESC`, [ORG, startedAt]).catch(() => ({ rows: [] }))).rows;
+  if (fallbacks.length) {
+    results.push({ id: "fallbacks", route: "all", kind: "fallbacks", text: "No AI call fell back to the non-AI path", pass: false,
+      why: fallbacks.map(f => `${f.n} × ${f.surface}: ${f.reason}`) });
+    console.log(`FAIL  fallbacks  ${fallbacks.map(f => `${f.n} × ${f.surface} (${f.reason})`).join(", ")}`);
+  }
   const failed = results.filter(r => !r.pass);
   const summary = {
-    when: new Date().toISOString(), today, base: BASE, org: ORG,
+    when: new Date().toISOString(), today, base: BASE, org: ORG, fallbacks,
     passed: results.length - failed.length, failed: failed.length, total: results.length,
     usd, cap: endSpend ? endSpend.cap : null, capReached: !!(endSpend && endSpend.capReached),
     spend: endSpend, results,

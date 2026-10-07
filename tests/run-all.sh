@@ -177,6 +177,7 @@ CORE=(
   wire-journey
   golden-journeys
   repair-runs-state
+  agent3-catalog
   search2-everything
   reports4-foot
   reports5-import

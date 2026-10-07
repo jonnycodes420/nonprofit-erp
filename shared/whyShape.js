@@ -62,7 +62,8 @@ const MATCHERS = [
   // ASK-2: "what should I do about the donors who stopped giving" asks the
   // retention question for everyone, not the one-donor question.
   ["retention", /\bwhat (should|do|can|could) (i|we) do about\b.*\b(stopped|stop|quit|lapsed|leaving|left)\b/i],
-  ["lapse", /\b(about to|going to|at risk of|likely to|might|could|close to|will)\b.*\blapse|\bdrift|\bslipping\b|\bwho\b.*\blaps|\bat risk\b|\bgoing quiet\b|\boverdue (for|to) give\b/i],
+  ["lapse", /\b(about to|going to|at risk of|likely to|might|could|close to|will)\b.*\blapse|\bdrift|\bslipping\b|\bwho\b.*\blaps|\bat risk\b|\bgoing quiet\b|\boverdue (for|to) give\b|\b(gone|went|go|gotten|got|grown|growing) quiet\b|\bquiet lately\b|\b(haven't|have not|havent|hasn't|has not)( (we|i))? heard from\b|\bpast (their|his|her) (own )?(usual )?(giving )?(pattern|rhythm)\b/i],
+  // AGENT-3: every common way of saying gone quiet is the lapse question above.
   ["stopped", /\b(stop(ped)?|quit) (giving|donating|supporting)\b|\bwhy did .+ (stop|leave|lapse)\b|\b(hasn't|has not|hasnt)\b.*\b(given|donated)\b|\bno longer (gives?|giving|donat)/i],
   ["appeal", /\b(appeal|campaign|drive|mailing)\b|\bcome in (under|over|short|below|above)\b|\b(under|over|short of) last year\b|\b(underperform|fell short|fall short|miss(ed)? (its|the|our) goal)/i],
 ];

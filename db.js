@@ -4992,6 +4992,19 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_writes_org ON agent_writes (org_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_writes_run ON agent_writes (run_id)`);
+  // AGENT-3 · NO SILENT FALLBACKS. Every AI call that falls back to the
+  // non-AI path leaves one row here (aiClient.recordAiFallback), so the
+  // nightly real-AI run can count them. `reason` "ai_off" is the switch, not a
+  // failure; anything else is.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_fallbacks (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      surface TEXT NOT NULL,
+      reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ai_fallbacks_org ON ai_fallbacks (org_id, created_at DESC)`);
 
   // THE AGENT'S DRAFTS HAVE THEIR OWN HOME, and that is a decision.
   // `thank_you_drafts` is per-GIFT: its gift_id is NOT NULL and unique per org,
