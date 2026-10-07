@@ -1993,16 +1993,12 @@ async function sweepQuietConnections({ orgId = null, today = null, notify = true
       `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL
         ORDER BY created_at ASC LIMIT 1`, [s.org_id]);
     if (admin) {
-      const existing = await query(
-        `SELECT id FROM tasks WHERE org_id=? AND completed=false AND title=? LIMIT 1`, [s.org_id, line]);
-      if (!existing.length) {
-        await run(
-          `INSERT INTO tasks (id,org_id,title,due_date,priority,assigned_to,assigned_to_name,created_by,created_by_name)
-           VALUES (?,?,?,?,'high',?,?,?,?)`,
-          ["tsk_" + uuid().slice(0, 8), s.org_id, line, today || orgToday(org),
-           admin.id, admin.name || admin.email, SYS_SOURCE.id, SYS_SOURCE.name]).catch(() => {});
-        out.tasksOpened++;
-      }
+      // WIRE-1: this used to read tasks.completed and write tasks.due_date,
+      // columns the table does not have (it has done and due), and the catch
+      // swallowed the error, so the task was never made. One opener now.
+      const made = await openAdminTask(s.org_id, { title: line, due: today || orgToday(org), priority: "high",   // ORG_TZ_SEAM_OK
+        assignee: admin, actorId: SYS_SOURCE.id, actorName: SYS_SOURCE.name });
+      if (made) out.tasksOpened++;
       if (notify) {
         const r = await notifyUserOnce({
           org: { id: s.org_id }, userId: admin.id, email: admin.email,
@@ -4060,6 +4056,51 @@ async function openGiftThread(orgId, donorId, { giftId, giftDate, actorId, actor
       actorId, actorName,
     }));
   } catch (e) { console.error("[thread] gift thread:", e.message); return null; }
+}
+
+// WIRE-1 · AN ORG-LEVEL THING THAT NEEDS A HUMAN IS A TASK FOR AN ADMIN.
+// One open task per title (a second sweep finds the first and opens none),
+// assigned to the given user or the org's first admin, linked to a person when
+// there is one. It writes the task and nothing else. Returns the new task id,
+// or null when one is already open or there is nobody to give it to.
+async function openAdminTask(orgId, { title, due = null, priority = "medium", donorId = null, assignee = null, actorId, actorName }) {
+  const owner = assignee || (await query(
+    `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1`, [orgId]))[0];
+  if (!owner) return null;
+  const [open] = await query(
+    `SELECT id FROM tasks WHERE org_id=? AND title=? AND COALESCE(done::text, '0') NOT IN ('1','true') AND voided_at IS NULL LIMIT 1`, [orgId, title]);
+  if (open) return null;
+  const id = "t_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,0,?,?,?,?,?)`,
+    [id, orgId, title, due || orgToday(await orgTz(orgId)), priority, donorId ? "donor" : "admin", donorId,   // ORG_TZ_SEAM_OK
+     owner.id, owner.name || owner.email || "", actorId, actorName || "Steward (automatic)"]);
+  return id;
+}
+
+// WIRE-1 · A THING THAT NEEDS A HUMAN OPENS A STEP ON THE THREAD.
+// One opener for the automatic care steps (a membership that lapsed, a missed
+// shift, an auction item won and not paid). It writes a thread and nothing
+// else: no draft is sent, no mail goes out. The person's own owner holds it;
+// the actor is `system:<path>` so the row says which automation opened it.
+// Never for deleted, sample or deceased people. Returns the thread, or null
+// when the person already has an open step (that step waits its turn).
+async function openCareThread(orgId, donorId, { type = "follow_up", label, dueInDays = 2, path }) {
+  try {
+    const [d] = await query(
+      `SELECT id, assigned_to, assigned_to_name FROM donors
+        WHERE id = ? AND org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE AND deceased IS NOT TRUE`,
+      [donorId, orgId]);
+    if (!d) return null;
+    const today = orgToday(await orgTz(orgId));                    // ORG_TZ_SEAM_OK
+    const { sanitizeStepLabel } = await threadShapeMod();
+    return await withTransaction(client => openThreadTx(client, {
+      orgId, donorId, step: { type, label: sanitizeStepLabel(label) || "Follow up", due: orgTime.addDays(today, dueInDays) },
+      openedOn: today, ownerId: d.assigned_to || null, ownerName: d.assigned_to_name || null,
+      actorId: `system:${path}`, actorName: SYS_AUTO.name,
+    }));
+  } catch (e) { console.error(`[thread] ${path}:`, e.message); return null; }
 }
 
 // ── A SUSTAINER THE AUTOMATION COULD NOT SAVE BECOMES A PERSON'S JOB ───────
@@ -9731,6 +9772,44 @@ async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, ac
 //      against that expiry (`renewal_thread_for`), so a second sweep over the
 //      same date opens nothing; `threads_one_open` means a person with a thread
 //      already open is left alone and tried again next time. It sends nothing.
+// WIRE-1 · AN AUCTION ITEM WON AND NOT PAID FOR IS A PERSON TO CALL.
+// Two days after an item closed with a winning bid and no payment, one step
+// opens on the Thread for the winner's person record. The winner is decided
+// by auctionCore (the one place that says who won), never re-derived here.
+// Idempotent: the thread is remembered on the item, and an item whose winner
+// already holds an open step waits for the next pass. Sends nothing.
+async function processAuctionUnpaid(onlyOrgId = null) {
+  const AC = require("./auctionCore");
+  const out = { auctions: 0, opened: 0, waiting: 0 };
+  const auctions = await query(
+    `SELECT a.id, a.org_id, a.title, a.closes_at FROM auctions a
+      WHERE (?::text IS NULL OR a.org_id = ?)
+        AND a.closes_at > NOW() - INTERVAL '90 days'
+        AND (a.closes_at <= NOW() - INTERVAL '2 days'
+             OR EXISTS (SELECT 1 FROM auction_items i WHERE i.org_id = a.org_id AND i.auction_id = a.id AND i.closed_at <= NOW() - INTERVAL '2 days'))`,
+    [onlyOrgId, onlyOrgId]);
+  const cutoff = Date.now() - 2 * 86400000;
+  for (const a of auctions) {
+    out.auctions++;
+    const items = await AC.itemStates(query, a.org_id, a.id);
+    for (const it of items) {
+      if (!it.closed || !it.bid_id || it.paid_gift_id || it.paid_at || !it.bidder_donor_id) continue;
+      const closedAt = Math.min(new Date(a.closes_at).getTime(), it.closed_at ? new Date(it.closed_at).getTime() : Infinity);
+      if (closedAt > cutoff) continue;
+      const [row] = await query(`SELECT unpaid_thread_id FROM auction_items WHERE id=? AND org_id=?`, [it.id, a.org_id]);
+      if (!row || row.unpaid_thread_id) continue;
+      const amount = Number(it.high_amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+      const th = await openCareThread(a.org_id, it.bidder_donor_id, {
+        label: `Won ${it.title} for ${amount}, not paid yet: send the pay link`, dueInDays: 1, path: "auction-unpaid" });
+      if (!th) { out.waiting++; continue; }
+      await run(`UPDATE auction_items SET unpaid_thread_id=?, updated_at=NOW() WHERE id=? AND org_id=? AND unpaid_thread_id IS NULL`,
+        [th.id, it.id, a.org_id]);
+      out.opened++;
+    }
+  }
+  return out;
+}
+
 async function processMembershipRenewals(opts = {}) {
   await MB_READY;
   const out = { orgs: 0, toGrace: 0, toLapsed: 0, opened: 0, skipped: 0, rows: [] };
@@ -9748,6 +9827,28 @@ async function processMembershipRenewals(opts = {}) {
     const l = await query(`UPDATE memberships SET status='lapsed', status_changed_on=?, updated_at=NOW()
                             WHERE org_id=? AND status='grace' AND expires_on < ? RETURNING id`, [today, org.id, MB.addDaysCivil(today, -graceDays)]);
     out.toGrace += g.length; out.toLapsed += l.length;
+    // WIRE-1: a membership that lapsed opens one step for a person. The step
+    // is remembered on the membership (renewal_thread_for = 'lapsed'), so a
+    // re-run opens none, and a member who already holds an open step is tried
+    // again on the next pass for thirty days. Renewing closes it as an outcome,
+    // the way it closes a renewal step.
+    const lapsed = await query(
+      `SELECT m.id, m.donor_id, d.name AS donor_name, lv.name AS level_name
+         FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+         LEFT JOIN membership_levels lv ON lv.id=m.level_id AND lv.org_id=m.org_id
+        WHERE m.org_id=? AND m.status='lapsed' AND m.status_changed_on >= ?
+          AND m.renewal_thread_for IS DISTINCT FROM 'lapsed'
+          AND NOT EXISTS (SELECT 1 FROM memberships n WHERE n.org_id=m.org_id AND n.donor_id=m.donor_id AND n.status IN ('active','grace'))
+          AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE`, [org.id, MB.addDaysCivil(today, -30)]);
+    for (const m of lapsed) {
+      const th = await openCareThread(org.id, m.donor_id, {
+        label: `Membership lapsed: check in with ${m.donor_name}${m.level_name ? ` (${m.level_name})` : ""}`,
+        dueInDays: 3, path: "membership-lapsed" });
+      if (!th) continue;
+      await run(`UPDATE memberships SET renewal_thread_id=?, renewal_thread_for='lapsed', updated_at=NOW() WHERE id=? AND org_id=?`, [th.id, m.id, org.id]);
+      out.lapsedOpened = (out.lapsedOpened || 0) + 1;
+      out.rows.push({ orgId: org.id, membershipId: m.id, donorId: m.donor_id, threadId: th.id, lapsed: true });
+    }
     const due = await query(
       `SELECT m.id, m.donor_id, m.expires_on, l.name AS level_name, l.price, d.name AS donor_name, d.kind,
               d.assigned_to, d.assigned_to_name
@@ -10839,6 +10940,7 @@ require("./routes/groups").mount({
 require("./routes/dataHealth").mount({
   backgroundTicksDisabled, checkWriteAccess, orgToday, orgTz, query, queryTx, recalcDonorSummary, recordTick,
   requireAuth, run, runTx, uuid, withAdvisoryLock, withTransaction, wrap,
+  openAdminTask,   // WIRE-1: new duplicates from an import become one admin task
   markDonorsForGeocoding: (...a) => require("./routes/crm").giftHooks.markDonorsForGeocoding(...a),
 });
 require("./routes/profileStatus").mount({
@@ -10875,6 +10977,7 @@ async function storeAuctionPhoto(orgId, v) {
   return { url: asset.path };
 }
 require("./routes/auctions").mount({
+  processAuctionUnpaid, requireAdmin,   // WIRE-1: the won-but-unpaid sweep's ops door
   actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
   portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
   run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
@@ -10886,7 +10989,7 @@ require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
   insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, orgToday, orgTz,
   publicAppUrl, query, queryTx, requireAdmin, requireAuth, resend, resolveOrgBrandTheme, run, runTx, uuid,
-  volunteerSummary, withTransaction, wrap,
+  volunteerSummary, withTransaction, wrap, openCareThread,   // WIRE-1: a no-show opens a step
   // The reminder sweep registers itself here so the background tick can call
   // it without this file importing the router's internals.
   registerVolunteerReminders: fn => { _volunteerReminders = fn; },
@@ -10928,6 +11031,7 @@ require("./routes/give").mount({
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({
+  openAdminTask,   // WIRE-1: a peer-to-peer page waiting for approval is a task for an admin
   registerDraftSender: fn => { _sendDraft = fn; },
   // INT-5 — queueing a webhook. It never posts inline: a gift must not fail
   // because somebody's endpoint is down.
@@ -10983,7 +11087,7 @@ require("./routes/jobs").mount({
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
-  processMembershipRenewals, processNetworkGate, processPhotoQueue,
+  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
   processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
