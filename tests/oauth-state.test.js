@@ -45,6 +45,39 @@ const sign = raw => crypto.createHmac("sha256", process.env.JWT_SECRET || "local
   .update(String(raw)).digest("base64url");
 
 async function reset() {
+  // §8 FIX-33 · THE GOOGLE CALLBACK MUST NOT LOOP. Prod's APP_URL was the
+  // API's own Railway host, so /gmail/callback forwarded to the API's
+  // /oauth/google/callback, which forwarded to itself until Safari said "Too
+  // many redirects". A child server is booted with APP_URL set to ITS OWN
+  // origin, exactly as prod was, and both forwarders must land on the app.
+  // Proven red against main: both §8 checks fail with the hop returning to the
+  // child's own host.
+  {
+    const { spawn } = require("child_process");
+    const net = require("net");
+    const port = await new Promise(r => { const sv = net.createServer(); sv.listen(0, () => { const p = sv.address().port; sv.close(() => r(p)); }); });
+    const self = `http://localhost:${port}`;
+    const child = spawn(process.execPath, ["server.js"], {
+      cwd: require("path").join(__dirname, ".."),
+      env: { ...process.env, PORT: String(port), APP_URL: self, FRONTEND_URL: "", CORS_ORIGIN: "",
+             DISABLE_BACKGROUND_TICKS: "1", TEST_MODE: "1", SENTRY_DSN: "",
+             JWT_SECRET: process.env.JWT_SECRET || "local-test-secret",
+             RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local" },
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    let up = false;
+    for (let i = 0; i < 90 && !up; i++) { await new Promise(r => setTimeout(r, 1000)); up = await fetch(self + "/health").then(r => r.ok).catch(() => false); }
+    ok("§8 a server booted with APP_URL set to the API's own host started", up);
+    try {
+      for (const path of ["/gmail/callback", "/oauth/google/callback"]) {
+        const r = await fetch(`${self}${path}?code=abc&state=xyz`, { redirect: "manual" }).catch(e => ({ status: 0, headers: new Map(), e }));
+        const loc = (r.headers.get && r.headers.get("location")) || "";
+        ok(`§8 ${path} forwards to the app, never back to the API host`,
+          r.status === 302 && !loc.startsWith(self) && /\/oauth\/google\/callback\?code=abc&state=xyz$/.test(loc), `${r.status} ${loc}`);
+      }
+    } finally { child.kill(); }
+  }
+
   for (const o of [A, B]) {
     for (const t of ["oauth_states", "bookkeeping_deposits", "bookkeeping_connections", "giving_sources", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});

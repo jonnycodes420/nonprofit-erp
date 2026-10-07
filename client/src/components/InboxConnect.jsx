@@ -51,6 +51,57 @@ export async function startInboxConnect(provider) {
   }
 }
 
+// FIX-33 · THE HEALTH PANEL. Proof the connection is reading, not just
+// connected: when it last read mail and the calendar, what it logged, what it
+// found and pushed, and the last thing that went wrong with a way to retry.
+function ago(ts) {
+  if (!ts) return "never";
+  const mins = Math.floor((Date.now() - new Date(ts)) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+export function SyncHealth({ h, calendar, onRetry, busy }) {
+  const cell = (label, value, testid) => (
+    <div data-testid={testid} style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{value}</span>
+    </div>);
+  return (
+    <div data-testid="sync-health" title={h.definition} style={{ border: "1px solid " + T.bg2, borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10, background: T.white }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+        {cell("Mail read", ago(h.lastMailReadAt), "health-mail-read")}
+        {calendar && cell("Calendar read", ago(h.lastCalendarReadAt), "health-cal-read")}
+        {cell("Logged today", h.loggedToday, "health-today")}
+        {cell("This week", h.loggedWeek, "health-week")}
+        {calendar && cell("Meetings found", h.meetingsFound, "health-meetings")}
+        {calendar && cell("Dates on your calendar", h.eventsPushed, "health-pushed")}
+      </div>
+      {h.lastError && <div data-testid="health-error" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: T.gold700 }}>
+        <span>{h.lastError}</span>
+        <button type="button" onClick={onRetry} disabled={busy} style={quiet}>Try again</button>
+      </div>}
+    </div>
+  );
+}
+
+// The reconnect banner: shown wherever it is mounted (Home, and the top of the
+// Connections card) when a connection has not read in two hours or its
+// permission was refused.
+export function MailboxBanner({ onNavigate }) {
+  const [d] = useMailbox();
+  if (!d || !d.banner) return null;
+  const go = () => onNavigate && onNavigate("settings", { section: "connections", focus: "inbox" });
+  return (
+    <div data-testid="mailbox-banner" role="status" style={{ background: T.white, border: "1px solid " + T.gold, borderLeft: "4px solid " + T.gold, borderRadius: 10, padding: "10px 14px", fontSize: 14, color: T.ink, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      <span>{d.banner.replace(/\. Reconnect$/, ".")}</span>
+      {onNavigate && <button type="button" onClick={go} style={{ ...quiet, color: T.greenDk, fontSize: 14, fontWeight: 700 }}>Reconnect</button>}
+    </div>
+  );
+}
+
 // One read of /mailbox, shared by every door.
 export function useMailbox() {
   const [d, setD] = useState(null);
@@ -161,9 +212,9 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
                   ) : (
                     <div style={{ ...MAIN.big, cursor: "default", border: "1px solid " + T.bg2, background: T.bg, color: T.ink, flexWrap: "wrap" }}>
                       {primary ? ICON_MAIL : ICON_CAL}
-                      <span style={{ flexGrow: 1, fontWeight: 600 }}>{p.label}{p.calendarGranted ? " and calendar" : ""}<span style={{ display: "block", fontWeight: 400, fontSize: 13, color: T.ink3 }}>{p.paused ? "Paused" : "Connected"} as {p.address} · {syncedPhrase(p.lastSyncedAt)}{p.example ? " · an example" : ""}</span></span>
+                      <span style={{ flexGrow: 1, fontWeight: 600 }}>{p.label}{p.calendarGranted ? " and calendar" : ""}<span style={{ display: "block", fontWeight: 400, fontSize: 13, color: T.ink3 }}>{p.paused ? "Paused" : "Connected"} as {p.address} · {syncedPhrase(p.health ? p.health.lastMailReadAt : p.lastSyncedAt)}{p.example ? " · an example" : ""}</span></span>
                       {!p.example && <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                        <button type="button" onClick={() => act(p.key, `/mailbox/${p.key}/sync`, {}, "sync")} disabled={!!busy} style={quiet}>Sync now</button>
+                        <button type="button" data-testid={`inbox-read-now-${p.key}`} onClick={() => act(p.key, `/mailbox/${p.key}/sync`, {}, "sync")} disabled={!!busy} style={quiet}>{busy === "sync:" + p.key ? "Reading…" : "Read now"}</button>
                         <button type="button" onClick={() => act(p.key, `/mailbox/${p.key}/pause`, { paused: !p.paused }, "pause")} disabled={!!busy} style={quiet}>{p.paused ? "Turn back on" : "Pause"}</button>
                         <button type="button" onClick={() => disconnect(p, false)} disabled={!!busy} style={quiet}>Disconnect</button>
                         <button type="button" onClick={() => disconnect(p, true)} disabled={!!busy} style={quiet}>Disconnect and remove</button>
@@ -171,7 +222,8 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
                     </div>
                   )}
                   {needsCalendar && <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>Your mail is logging. Add your calendar and meetings with people in Steward show up too. {p.key === "google" ? "Google will ask you to approve the calendar." : "Microsoft will ask you to approve the calendar."}</div>}
-                  {p.lastError && <div style={{ fontSize: 13, color: T.gold700 }}>{p.lastError}</div>}
+                  {p.lastError && !p.health && <div style={{ fontSize: 13, color: T.gold700 }}>{p.lastError}</div>}
+                  {p.connected && p.health && <SyncHealth h={p.health} calendar={p.calendarGranted} onRetry={() => act(p.key, `/mailbox/${p.key}/sync`, {}, "sync")} busy={!!busy}/>}
                   {!p.connected && p.unverifiedNote && !d.demo && <div data-testid="inbox-unverified-note" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{p.unverifiedNote}</div>}
                 </div>
               );
@@ -184,7 +236,7 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
           <div style={{ background: T.bg, borderRadius: 16, padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ ...MAIN.label, color: T.greenDk, fontWeight: 600 }}>What Steward reads</div>
             <div style={{ fontSize: 15, lineHeight: 1.5 }}>Emails with people already in your Steward</div>
-            <div style={{ fontSize: 15, lineHeight: 1.5 }}>Meetings where one of them is invited</div>
+            <div style={{ fontSize: 15, lineHeight: 1.5 }}>Meetings where one of them is invited, or named in the title</div>
             <div style={{ fontSize: 15, lineHeight: 1.5 }}>Who, when, the subject and what was said</div>
           </div>
           <div style={{ background: T.bg, borderRadius: 16, padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>

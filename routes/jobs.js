@@ -12,7 +12,7 @@
 function mount(ctx) {
 const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
-  deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates,
+  deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
@@ -403,6 +403,8 @@ async function syncAllGmail() {
     await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
     await pushStewardDates(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-push]", e.message));
   }
+  // FIX-33: the /health count and one error line per stale connection.
+  await refreshMailboxSyncHealth({ log: true }).catch(e => console.error("[mailbox-stale] check failed:", e.message));
 }
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   setInterval(() => processNetworkGate().catch(console.error), 6 * 60 * 60 * 1000);

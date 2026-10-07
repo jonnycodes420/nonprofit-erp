@@ -69,6 +69,10 @@ export default function OAuthCallback() {
           setState({ phase: "choose", sentence: r.sentence });
         } else {
           setState({ phase: "done", sentence: r.sentence });
+          // FIX-33: a mailbox lands straight on Settings > Connections, where
+          // the card shows "Connected as ..." with its first read.
+          if (provider === "google" || provider === "microsoft")
+            setTimeout(() => nav(`/dashboard?tab=settings&sub=connections#inbox`, { replace: true }), 1200);
         }
       })
       .catch(e => setState({ phase: "failed",

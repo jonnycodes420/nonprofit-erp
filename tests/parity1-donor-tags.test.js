@@ -42,7 +42,7 @@ const F = {
 const id = k => `d_par1t_${k}`;
 
 (async () => {
-  for (const t of ["gifts", "donor_scores", "donors", "user_sessions", "users"])
+  for (const t of ["gifts", "donor_scores", "imports", "donors", "user_sessions", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Parity One Fixture','parity-one-t',1,'active','team','America/New_York')`, [ORG]);
@@ -165,6 +165,78 @@ const id = k => `d_par1t_${k}`;
   ok("§8 a person who gave every October is Current, not Recaptured", cur8.includes(id("everyOct")) && !rec8.includes(id("everyOct")), { cur8, rec8 });
   ok("§8 a person who missed a whole calendar year is Recaptured", rec8.includes(id("skipped")) && !cur8.includes(id("skipped")), { cur8, rec8 });
   ok("§8 a person back after two quiet years is Recaptured", rec8.includes(id("cameBack")), rec8);
+
+  // ── FIX-33 · GIVING MORE THAN THEIR PATTERN IS NOT COOLING ────────────────
+  // Twice a year for three years, then four gifts close together and a quiet
+  // stretch: the gap since the latest gift (230 days) is past their own
+  // median gap (180 days), but they have given more in the last year than
+  // their usual two. HOW IT WENT RED before the fix: the profile read
+  // "Cooling: gave 4 times this year" and the Cooling filter listed them.
+  const above = [-1460, -1280, -1095, -915, -730, -550, -365, -260, -250, -240, -230];
+  await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ($1,$2,'Fixture abovePattern','cultivate','system:test','test')`, [id("above"), ORG]);
+  for (const dd of above)
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,50,$4,'system:test','test')`,
+      [`g_par1t_${++n}`, ORG, id("above"), civilPlusDays(dd)]);
+  ok("§9 the scores recompute", (await api("POST", "/scores/recompute", tok, {})).status === 200);
+  const ab = (await api("GET", `/donors/${id("above")}/status`, tok)).body;
+  ok("§9 a person giving more often than their own pattern is not Cooling on the profile",
+    ab.closeness && ab.closeness.key !== "cooling", ab.closeness);
+  const cool9 = ((await api("GET", `/donors?limit=200&closeness=cooling`, tok)).body.donors || []).map(d => d.id);
+  ok("§9 nor in the Cooling list, while the donor past their own gap still is",
+    !cool9.includes(id("above")) && cool9.includes(id("drifter")), cool9);
+
+  // ── FIX-33 · AN INTERNAL FLAG IS NEVER A TAG ─────────────────────────────
+  // The import stamps has-refused-rows:N on a person whose rows it could not
+  // read. It showed under the name as "HAS-REFUSED-ROWS:2". It is said instead
+  // as a plain line to admins, opening the rows; a staff member sees neither.
+  // HOW IT WENT RED before the fix: every read returned the flag as a tag, the
+  // status carried no importRefusals, and there was no rows route (404).
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_par1t_staff',$1,'staff@par1t.local',$2,'Parity Staff','staff')`, [ORG, bcrypt.hashSync("loadtest1234", 10)]);
+  const staffTok = await login("staff@par1t.local");
+  await q(`DELETE FROM imports WHERE org_id=$1`, [ORG]).catch(() => {});
+  await q(`INSERT INTO donors (id,org_id,name,stage,tags,created_import_id,created_by,created_by_name) VALUES ($1,$2,'Fixture Refused','cultivate',$3,'imp_par1t_run','system:test','test')`,
+    [id("refused"), ORG, JSON.stringify(["Board", "has-refused-rows:2"])]);
+  await q(`INSERT INTO imports (id,org_id,name,summary_json) VALUES ('imp_par1t_run',$1,'donors.csv',$2::jsonb)`, [ORG, JSON.stringify({ refusedRows: [
+    { line: 14, reason: "unparseable_amount", name: "Fixture Refused", raw: { "Gift Amount": "two hundred" } },
+    { line: 15, reason: "unparseable_date", name: "fixture  refused", raw: { "Gift Date": "31/31/2026" } },
+    { line: 16, reason: "unparseable_date", name: "Somebody Else", raw: {} }] })]);
+  const flagged = t => (t || []).some(x => /has-refused-rows/i.test(String(x)));
+  const one = (await api("GET", `/donors/${id("refused")}`, tok)).body;
+  ok("§10 the profile's record carries the person's own tags and no internal flag", JSON.stringify(one.tags) === JSON.stringify(["Board"]), one.tags);
+  const lst = ((await api("GET", `/donors?limit=200`, tok)).body.donors || []).find(d => d.id === id("refused")) || {};
+  const sums = ((await api("GET", `/donors/summaries`, tok)).body || []).find(d => d.id === id("refused")) || {};
+  ok("§10 neither the Donors list nor the shared summaries return it as a tag", !flagged(lst.tags) && !flagged(sums.tags) && (lst.tags || []).includes("Board"), { lst: lst.tags, sums: sums.tags });
+  const adm = (await api("GET", `/donors/${id("refused")}/status`, tok)).body;
+  ok("§10 an admin reads the plain line", adm.importRefusals && adm.importRefusals.count === 2
+    && adm.importRefusals.line === "2 rows from your import couldn't be read." && adm.importRefusals.rowsPath === `/donors/${id("refused")}/refused-rows`, adm.importRefusals);
+  const stf = (await api("GET", `/donors/${id("refused")}/status`, staffTok)).body;
+  ok("§10 a staff member does not", stf && stf.closeness && stf.importRefusals == null, stf && stf.importRefusals);
+  const rr = await api("GET", `/donors/${id("refused")}/refused-rows`, tok);
+  ok("§10 See them opens exactly this person's refused rows", rr.status === 200 && rr.body.count === 2
+    && JSON.stringify((rr.body.rows || []).map(x => x.line)) === JSON.stringify([14, 15]) && rr.body.rows[0].raw["Gift Amount"] === "two hundred", rr.body);
+  ok("§10 and only for an admin", (await api("GET", `/donors/${id("refused")}/refused-rows`, staffTok)).status === 403);
+  const put10 = await api("PUT", `/donors/${id("refused")}`, tok, { name: "Fixture Refused", stage: "cultivate", tags: ["Board", "VIP"] });
+  const [kept] = await q(`SELECT tags FROM donors WHERE id=$1`, [id("refused")]);
+  const keptTags = typeof kept.tags === "string" ? JSON.parse(kept.tags) : kept.tags;
+  ok("§10 editing the tags keeps the flag the screen never showed", put10.status === 200 && !flagged(put10.body.tags)
+    && JSON.stringify(keptTags) === JSON.stringify(["Board", "VIP", "has-refused-rows:2"]), { status: put10.status, keptTags });
+  await q(`DELETE FROM imports WHERE org_id=$1`, [ORG]).catch(() => {});
+
+  // ── FIX-33 · AN IMPORTED PERSON WITH NO OWNER READS "No owner" ──────────
+  // Every imported donor showed "?" for an owner. The list row now carries
+  // the owner as words, and Assign goes through the one assign route, which
+  // the audit middleware records. HOW IT WENT RED before the fix: the row
+  // carried no owner_label at all.
+  const ownerOf = async () => ((await api("GET", `/donors?limit=200`, tok)).body.donors || []).find(d => d.id === id("refused")) || {};
+  const before11 = await ownerOf();
+  ok("§11 an unassigned person's owner reads No owner", before11.owner_label === "No owner", before11.owner_label);
+  const [aud11a] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]);
+  const as11 = await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_par1t_staff" });
+  const after11 = await ownerOf();
+  ok("§11 Assign sets the owner to a person in the org, by name", as11.status === 200 && after11.owner_label === "Parity Staff" && after11.assigned_to === "u_par1t_staff", { status: as11.status, label: after11.owner_label });
+  const [aud11] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]);
+  ok("§11 and the audit trail recorded it", aud11a.n >= 0 && aud11.n === aud11a.n + 1, { before: aud11a.n, after: aud11.n });
+  ok("§11 a user from no org of theirs is refused", (await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_nobody" })).status === 400);
 
   summary();
   await closeDb();

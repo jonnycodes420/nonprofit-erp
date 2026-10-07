@@ -25,11 +25,20 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+// FIX-33: a move reaches the calendar as wall-clock time in the org's zone
+// (it used to be a UTC instant). The same INSTANT is what must match.
+function sameInstant(block, isoUtc) {
+  if (!block || !block.dateTime) return false;
+  if (/Z$|[+-]\d\d:\d\d$/.test(block.dateTime)) return Date.parse(block.dateTime) === Date.parse(isoUtc);
+  const wall = new Intl.DateTimeFormat("en-CA", { timeZone: block.timeZone || "UTC", hourCycle: "h23", year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(isoUtc)).replace(", ", "T");
+  return block.dateTime === wall;
+}
 
 const ORG = "org_cal1mv", ORG2 = "org_cal1mv2";
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 5823);
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
-const TABLES = ["volunteer_signups", "volunteer_slot_roles", "volunteer_slots", "volunteer_opportunities", "calendar_events", "mailbox_connections", "threads", "donors", "users"];
+const TABLES = ["volunteer_signups", "volunteer_slot_roles", "volunteer_slots", "volunteer_opportunities", "meeting_effects", "calendar_events", "mailbox_connections", "tasks", "threads", "interactions", "donors", "users"];   // FIX-33: a moved meeting writes its effects
 
 let refuse = false;
 const patches = [];
@@ -97,7 +106,7 @@ async function reset() {
   const [m1] = await q(`SELECT starts_at, ends_at FROM calendar_events WHERE id='cal_cal1_m'`);
   ok("§1 the meeting is a day and half an hour later, still an hour long", new Date(m1.starts_at).toISOString() === new Date(Date.parse(`${MON}T14:00:00Z`) + (1440 + 30) * 60000).toISOString()
     && new Date(m1.ends_at) - new Date(m1.starts_at) === 3600000, m1);
-  ok("§1 …and it moved on Google first, to the same times", patches.length === 1 && /events\/gev_1/.test(patches[0].url) && patches[0].body.start.dateTime === mReq.body.startsAt && patches[0].body.end.dateTime === mReq.body.endsAt, patches);
+  ok("§1 …and it moved on Google first, to the same times", patches.length === 1 && /events\/gev_1/.test(patches[0].url) && sameInstant(patches[0].body.start, mReq.body.startsAt) && sameInstant(patches[0].body.end, mReq.body.endsAt), patches);
   const [t1] = await q(`SELECT due_date, due_time FROM threads WHERE id='th_cal1_s'`);
   ok("§1 the next step is two days on at 10:30", t1.due_date === plus(3) && t1.due_time === "10:30", t1);
   const [s1] = await q(`SELECT date, start_time, end_time FROM volunteer_slots WHERE id='vsl_cal1'`);
@@ -113,7 +122,7 @@ async function reset() {
   const [t2] = await q(`SELECT due_date, due_time FROM threads WHERE id='th_cal1_s'`);
   const [s2] = await q(`SELECT date, start_time, end_time FROM volunteer_slots WHERE id='vsl_cal1'`);
   ok("§2 the meeting is back to the minute, here and on Google", new Date(m2.starts_at).toISOString() === `${MON}T14:00:00.000Z` && new Date(m2.ends_at).toISOString() === `${MON}T15:00:00.000Z`
-    && patches.length === 2 && Date.parse(patches[1].body.start.dateTime) === Date.parse(`${MON}T14:00:00Z`), { m2, p: patches[1] });
+    && patches.length === 2 && sameInstant(patches[1].body.start, `${MON}T14:00:00Z`), { m2, p: patches[1] });
   ok("§2 the next step is back exactly", t2.due_date === plus(1) && t2.due_time === "09:30", t2);
   ok("§2 the shift is back exactly", s2.date === plus(2) && s2.start_time === "09:00" && s2.end_time === "12:00", s2);
   ok("§2 …and each Undo is its own audit row", (await audits(mReq.path)) === before.m + 2 && (await audits(sReq.path)) === before.s + 2 && (await audits(hReq.path)) === before.h + 2);

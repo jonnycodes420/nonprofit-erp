@@ -1,0 +1,40 @@
+== planted: mail-sent
+  FAIL  §2 Outlook's Sent Items is asked, by recipient on file — "/v1.0/me/messages"
+  FAIL  §2 the email Dana SENT Christine is on her timeline as outbound — "[{\"dir\":\"inbound\",\"mid\":\"in_c1\"}]"
+  FAIL  §1 Last email: the profile's email thread shows both messages — "[[\"Lunch next week?\",1]]"
+  FAIL  §3 Dana's reply from Outlook closed it — "{\"id\":\"th_89bb1106\",\"org_id\":\"org_fix33sp\",\"donor_id\":\"d_fix33_margaret\",\"next_step_type\":\"reply\",\"next_step_label\":\"Reply to Margaret Chen: \\\"A question about my gift\\\"\",\"due_date\":\"2026-10-07\",\"opened_on\":\"2026-10-07\",\"opening_interaction_id\":null,\"opening_gift_id\":null,\"owner_id\":null,\"owner_name\":null,\"created_by\":\"system:mailbox/needs-reply\",\"crea
+  FAIL  §7 the calendar event leaving took Christine's meeting step with it — "{\"id\":\"th_ce093e1b\",\"org_id\":\"org_fix33sp\",\"donor_id\":\"d_fix33_christine\",\"next_step_type\":\"reply\",\"next_step_label\":\"Reply to Christine Stewart: \\\"Lunch next week?\\\"\",\"due_date\":\"2026-10-07\",\"opened_on\":\"2026-10-07\",\"opening_interaction_id\":null,\"opening_gift_id\":null,\"owner_id\":null,\"owner_name\":null,\"created_by\":\"system:mailbox/needs-reply\",\"created
+== planted: privacy
+  FAIL  §5 the calendar read ran — "{\"kept\":0}"
+  FAIL  §7 the calendar event leaving took Christine's meeting step with it — "{\"id\":\"th_mt_0eabd739b592\",\"org_id\":\"org_fix33sp\",\"donor_id\":\"d_fix33_christine\",\"next_step_type\":\"meeting\",\"next_step_label\":\"Visit with Christine, Tue 13 Oct, Drinklings\",\"due_date\":\"2026-10-13\",\"opened_on\":\"2026-10-07\",\"opening_interaction_id\":null,\"opening_gift_id\":null,\"owner_id\":\"u_fix33_dana\",\"owner_name\":\"Dana Reyes\",\"created_by\":\"system:calendar
+== planted: title-rule
+  FAIL  §5 the calendar read ran — "{\"kept\":1}"
+  FAIL  §5 'Visit with Christine' with no guest email links to Christine Stewart — "{}"
+  FAIL  §5 'Lunch with David' could be two people: it asks, nobody is linked — "{}"
+  FAIL  §5 the unsure event is on Steward's Calendar asking who, with both Davids offered
+== planted: booking-utc
+  FAIL  §6 Outlook gets the event in the organisation's time zone, at its wall-clock time — "{\"dateTime\":\"2026-10-16T18:00:00\",\"timeZone\":\"UTC\"} want 2026-10-16T14:00"
+  FAIL  §6 Google Calendar gets the event in the org's zone too — "{\"dateTime\":\"2026-10-16T18:00:00\",\"timeZone\":\"UTC\"}"
+48 passed, 2 failed
+== planted: effects
+  FAIL  §7 Next step becomes the meeting: 'Visit with Christine Stewart, <day>, Drinklings' — "[\"follow_up\",\"Send the scholarship report\",\"2026-10-09\"]"
+  FAIL  §7 a prep task the business day before and an after task on the day — "[]"
+  FAIL  §7 the timeline says 'Meeting booked for <day>'
+  FAIL  §7 engagement counts the booked meeting — "[[\"replies\",\"Email reply\"]]"
+  FAIL  §7 the status line carries 'Meeting set for <d Mon>' — "null"
+  FAIL  §7 the Thread shows the meeting and both tasks, each pointing at the meeting — "[\"follow_up\"]"
+  FAIL  §7 …and the timeline says it moved
+43 passed, 7 failed
+== planted: cancel
+  FAIL  §7 …the step goes back to 'Send the scholarship report' on its own day — "[\"meeting\",\"Visit with Christine Stewart, Fri 16 Oct, Drinklings\",\"2026-10-16\"]"
+  FAIL  §7 …the tasks are voided and the booking stops counting as engagement
+48 passed, 2 failed
+== planted: push
+  FAIL  §8 …and a meeting step is never pushed as a second entry — "[\"Send the scholarship report: Christine Stewart\",\"Call about the gala table: David Ortiz\",\"Prep for David: read the brief\",\"How did it go with David?\",\"Lunch with David, Wed 14 Oct: David Lee\"]"
+49 passed, 1 failed
+== planted: watch
+  FAIL  §9 a refused token is a failed read, said in one sentence — "{\"ok\":true,\"error\":null,\"mail\":{\"logged\":0},\"calendar\":null,\"health\":{\"lastMailReadAt\":\"2026-10-07T17:37:09.249Z\",\"lastCalendarReadAt\":null,\"loggedToday\":0,\"loggedWeek\":0,\"meetingsFound\":0,\"eventsPushed\":0,\"lastError\":\"That mailbox needs connecting again. Steward's permission was withdrawn or expired.\",\"lastErrorAt\":\"2026-10-07T17:37:09.248Z\",\"stale\":true,\"ban
+  FAIL  §9 the failed read left its own run row — "{\"ok\":true,\"error\":null}"
+48 passed, 2 failed
+== restored
+50 passed, 0 failed

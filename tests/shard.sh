@@ -99,7 +99,7 @@ start_server() {
   INBOUND_EMAIL_SECRET=local-inbound-secret \
   RESEND_RECEIVING_BASE_URL="http://localhost:$recv" \
   GOOGLE_CALENDAR_API_BASE="http://localhost:$cal" \
-  GMAIL_API_BASE="http://localhost:$cal" \
+  GMAIL_API_BASE="http://localhost:$cal" GRAPH_API_BASE="http://localhost:$cal" \
   node server.js >"$SERVER_LOG" 2>&1 &
   echo $!
 }

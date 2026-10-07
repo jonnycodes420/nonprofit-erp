@@ -80,6 +80,9 @@ export const NEXT_STEP_TYPES = [
   { type: "membership_renewal", label: "Renew membership" },
   // THREAD-3: a donor's email that has waited a business day for an answer.
   { type: "reply",              label: "Reply" },
+  // FIX-33: a booked meeting IS the next step. Opened and closed only by
+  // meetingEffects.js; its label names the meeting, the day and the place.
+  { type: "meeting",            label: "Meeting" },
 ];
 
 // Pure civil-date addition (YYYY-MM-DD + n days), no Date-object timezone

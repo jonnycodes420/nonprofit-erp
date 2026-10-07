@@ -34,7 +34,7 @@
 #        INBOUND_EMAIL_SECRET=local-inbound-secret \
 #        RESEND_RECEIVING_BASE_URL=http://localhost:5612 \
 #        GOOGLE_CALENDAR_API_BASE=http://localhost:5618 \
-#        GMAIL_API_BASE=http://localhost:5618 \
+#        GMAIL_API_BASE=http://localhost:5618 GRAPH_API_BASE=http://localhost:5618 \
 #        node server.js
 #      (FIX-11 Part 5: the three INBOUND_EMAIL_* values turn the BCC webhook on;
 #      without them fix11-inbound-resend SKIPS, and a suite that skips is
@@ -140,6 +140,7 @@ CORE=(
   int3-optout
   int4-mailbox
   intb1-calendar-store
+  fix33-sync-proof
   fix14-meeting-counts
   engage1-score-breakdown
   survey1-anonymous

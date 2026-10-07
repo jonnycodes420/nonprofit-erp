@@ -158,6 +158,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   Undo is the same route with the old values through `offerUndo({ undoAction, message })`. Add a type to the
   calendar by adding its read to `calendar.js` and, if it can move, its route to `moveRequest`. (CAL-1)
 
+- **A booked meeting changes the record, through `meetingEffects.js` only (FIX-33).** Next step = the meeting
+  (an open step is taken over and given back on cancel or after the meeting is logged), a prep task the business
+  day before, an after task on the day, timeline lines for booked / moved / cancelled, journey steps within three
+  days moved to the business day after, and "Meeting set for 16 Oct" on the status line and drift rows. Moving or
+  cancelling on either side (Steward or the synced calendar) goes through `applyMeeting` / `revertMeeting`.
+  `meeting_effects` is the receipt and is in the merge's MERGE_REFS.
+
 ## Gotchas
 - **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
   figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)

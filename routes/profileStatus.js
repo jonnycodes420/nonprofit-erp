@@ -14,6 +14,8 @@ const DS = require("../donorStatus");
 const FS = require("../figureSources");
 const drift = require("../drift");
 const E = require("../engagement");
+const DT = require("../donorTags");
+const refusedLine = n => (n === 1 ? "One row from your import couldn't be read." : `${n} rows from your import couldn't be read.`);
 
 const routers = { r0: express.Router() };
 
@@ -235,7 +237,48 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
       sentence: "Every volunteer shift logged for this person, added up. Each shift also counts toward their engagement score.",
       source: { key: "volunteer-hours", params: { from: "1900-01-01", to: "2999-12-31", donor: d.id } } };
   }
-  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer });
+  // FIX-33 · rows of theirs an import could not read: a plain line for an
+  // admin, never a tag ("HAS-REFUSED-ROWS:2" under the name), opening the rows.
+  let importRefusals = null;
+  const [me] = await query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
+  if (me && me.role === "admin") {
+    const [t] = await query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
+    const n = DT.refusedRowsOf(t && t.tags);
+    if (n > 0) importRefusals = { count: n, line: refusedLine(n), rowsPath: `/donors/${d.id}/refused-rows` };
+  }
+  // FIX-33 · a booked meeting answers "Cooling" and "Drifting" on the same
+  // line, so nobody calls her twice.
+  const meetingSet = (await require("../meetingEffects").meetingSetFor(orgId, [d.id])).get(d.id) || null;
+  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals, meetingSet });
+}));
+
+// FIX-33 · the rows behind that line. The importer keeps each refused row
+// (line, reason, the cells as read) on the run it recorded (imports.summary_json
+// .refusedRows); this reads the runs that made or fed this person and returns
+// their rows. A run recorded before the importer kept them says so plainly.
+app.get("/donors/:id/refused-rows", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, name, tags, created_import_id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const count = DT.refusedRowsOf(d.tags);
+  const runIds = (await query(`SELECT DISTINCT import_id AS id FROM gifts WHERE org_id = ? AND donor_id = ? AND import_id IS NOT NULL`, [orgId, d.id])).map(r => r.id);
+  if (d.created_import_id) runIds.push(d.created_import_id);
+  const runs = runIds.length
+    ? await query(`SELECT id, name, committed_at, summary_json FROM imports WHERE org_id = ? AND id = ANY(?) ORDER BY committed_at DESC`, [orgId, [...new Set(runIds)]])
+    : [];
+  const norm = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const rows = [];
+  let kept = false;
+  for (const r of runs) {
+    const sum = typeof r.summary_json === "string" ? JSON.parse(r.summary_json || "{}") : (r.summary_json || {});
+    if (!Array.isArray(sum.refusedRows)) continue;
+    kept = true;
+    for (const x of sum.refusedRows) {
+      if (norm(x.name) === norm(d.name)) rows.push({ importId: r.id, importName: r.name, line: x.line ?? null, reason: x.reason || null, raw: x.raw || {} });
+    }
+  }
+  res.json({ donorId: d.id, count, line: count ? refusedLine(count) : null, rows,
+    unavailable: kept ? null : "The import that read this person ran before Steward kept the rows it could not read. Run the file again to see them." });
 }));
 
 app.get("/settings/giving-levels", requireAuth, wrap(async (req, res) => {

@@ -21,7 +21,7 @@ import { renderCustomValue } from "../../../shared/customFieldShape";
 import { InboxNudge, useMailbox } from "./InboxConnect";
 import { RecordLink } from "./RecordLink";
 import { householdHref } from "../lib/appUrls";
-import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
+import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline } from "./ProfileTimeline";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
@@ -38,7 +38,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
-import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
+import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance, ImportRefusalsLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
@@ -1975,6 +1975,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* BUILD-76 — the drift reason, inline on the record (hover-only
                 would hide the one sentence that explains the badge). */}
             {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
+            {/* FIX-33: the rows an import could not read are their own plain
+                line (admins only, with the rows behind it), never a raw tag and
+                never folded into the drift sentence above. */}
+            <ImportRefusalsLine status={status}/>
             {/* BUILD-89S 89f — "Gives $50 monthly through PayPal" when the
                 provider named it; "Looks like $50 monthly through PayPal"
                 while it is still Steward's own reading of the pattern. One
@@ -2254,7 +2258,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
             {/* INT-BUILD-1 Part 3 — the next meeting with its brief, then one
                 timeline of every email thread, meeting and gift. */}
-            {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={loadRel}/>}
+            {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={()=>{loadRel();loadDpThread();}}/>}
             {/* FIX-14 Part 1 — what Steward heard in the newest conversation
                 logged by hand: a next step with its date, the spouse named,
                 a planned gift mentioned. Each is a chip; nothing changes until
@@ -2277,9 +2281,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   onInteractionAdded&&onInteractionAdded();}}/>
               </section>;
             })()}
+            {/* FIX-33 · once the meeting time has passed, the profile asks. */}
+            {(()=>{
+              const due=(rel?.past||[]).find(m=>!m.loggedAt&&m.startsAt&&Date.now()-new Date(m.endsAt||m.startsAt).getTime()<7*864e5);
+              if(!due||isReadOnly)return null;
+              return <section data-testid="dp-how-did-it-go" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"space-between"}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>How did it go? {due.title}, {displayDateShort(String(due.date||due.startsAt).slice(0,10),new Date())}</div>
+                <button type="button" onClick={()=>setLogMeeting(due)} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>Write it down</button>
+              </section>;
+            })()}
             {rel&&<ProfileTimeline canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
-              <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();onInteractionAdded&&onInteractionAdded();}}/>
+              <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
             {/* FIX-14 Part 3 — ONE OF EVERYTHING. One timeline (above), then the
                 ask, the giving, the household, planned giving, membership and
@@ -3352,6 +3365,21 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             {it.overdue?"Overdue":"Due"} {displayDateShort(it.nextStep.due,new Date())}
                           </span>
                         </div>
+                        {/* FIX-33 · a booked meeting IS the next step, with its two moves;
+                            its prep and after tasks open the brief and the note. */}
+                        {(()=>{
+                          const ev=it.calendarEventId;
+                          if(!ev||isReadOnly)return null;
+                          const fire=action=>window.dispatchEvent(new CustomEvent(MEETING_ACTION,{detail:{action,eventId:ev}}));
+                          const findMeeting=()=>[...(rel?.upcoming||[]),...(rel?.past||[])].find(m=>m.id===ev);
+                          const link={background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"6px 12px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",fontFamily:"inherit"};
+                          return <div data-testid="dp-meeting-step-actions" style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                            {it.nextStep.type==="meeting"&&<><button type="button" data-testid="dp-meeting-prep" onClick={()=>fire("prep")} style={link}>Prep</button>
+                              <button type="button" data-testid="dp-meeting-reschedule" onClick={()=>fire("reschedule")} style={link}>Reschedule</button></>}
+                            {it.nextStep.type==="meeting_prep"&&<button type="button" onClick={()=>fire("prep")} style={link}>Open the brief</button>}
+                            {it.nextStep.type==="meeting_after"&&<button type="button" data-testid="dp-meeting-howdid" onClick={()=>{const m=findMeeting();if(m)setLogMeeting(m);}} style={link}>How did it go?</button>}
+                          </div>;
+                        })()}
                         {stepEdit&&stepEdit.id===it.id&&(
                           <div data-testid="dp-step-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                             <input aria-label="Next step" value={stepEdit.label} onChange={e=>setStepEdit({...stepEdit,label:e.target.value})} style={{flex:"1 1 160px",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 9px",fontSize:13,fontFamily:"inherit"}}/>

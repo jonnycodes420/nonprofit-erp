@@ -11,7 +11,7 @@
 // every number and tag carries the source its rows come from.
 import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate } from "../../../shared/displayDate";
@@ -68,9 +68,62 @@ export function StatusTags({ status, onOpenDonor }) {
   );
 }
 
+// FIX-33 · "2 rows from your import couldn't be read. See them". Admins only
+// (the server sends `importRefusals` to an admin and to nobody else); the link
+// opens the rows themselves, with the line number and why each was refused.
+const REASON_WORDS = {
+  unparseable_amount: "the amount could not be read",
+  unparseable_date: "the date could not be read",
+  future_date: "the date is in the future",
+  no_amount: "no amount",
+  zero_amount: "the amount is zero",
+};
+export function ImportRefusalsLine({ status }) {
+  const r = status && status.importRefusals;
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  if (!r) return null;
+  const show = () => {
+    setOpen(true);
+    if (!rows) apiFetch(r.rowsPath).then(setRows).catch(() => setRows({ rows: [], unavailable: "The rows could not be loaded just now." }));
+  };
+  return (
+    <div data-testid="dp-import-refusals" style={{ fontSize: 12, color: T.ink3, marginTop: 3, lineHeight: 1.45 }}>
+      {r.line}{" "}
+      <button type="button" data-testid="dp-import-refusals-open" onClick={show}
+        style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", font: "inherit", color: T.greenDk, fontWeight: 700, textDecoration: "underline" }}>
+        See them
+      </button>
+      {open && (
+        <Modal onClose={() => setOpen(false)} width={620} title="Rows that couldn't be read" subtitle={r.line}>
+          {!rows && <div style={{ fontSize: 13, color: T.ink3 }}>Loading the rows.</div>}
+          {rows && rows.unavailable && <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.5 }}>{rows.unavailable}</div>}
+          {rows && !rows.unavailable && !rows.rows.length && <div style={{ fontSize: 13, color: T.ink2 }}>None of the kept rows carry this person's name.</div>}
+          {rows && rows.rows && rows.rows.length > 0 && (
+            <div data-testid="dp-import-refusals-rows" style={{ display: "grid", gap: 8, maxHeight: 420, overflowY: "auto" }}>
+              {rows.rows.map((x, i) => (
+                <div key={i} style={{ border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "8px 10px", fontSize: 12.5, lineHeight: 1.5 }}>
+                  <div style={{ fontWeight: 700, color: T.ink }}>Line {x.line ?? "?"}: {REASON_WORDS[x.reason] || (x.reason || "could not be read").replace(/_/g, " ")}</div>
+                  <div style={{ color: T.ink3 }}>{x.importName}</div>
+                  <div style={{ color: T.ink2, wordBreak: "break-word" }}>
+                    {Object.entries(x.raw || {}).filter(([, v]) => String(v ?? "").trim() !== "").map(([k, v]) => `${k.trim()}: ${v}`).join(" · ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export function ClosenessLine({ status, onOpenDonor }) {
   const c = status && status.closeness;
-  if (!c) return null;
+  // FIX-33: a booked meeting shows even when there is no closeness word yet.
+  if (!c) return status && status.meetingSet
+    ? <div data-testid="dp-meeting-set" style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700, marginTop: 5 }}>{status.meetingSet.sentence}.</div>
+    : null;
   return (
     <div data-testid="dp-closeness" style={{ fontSize: 12.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
       <span title={c.sentence} style={{ fontWeight: 700, color: c.key === "cooling" ? T.gold700 : T.ink }}>{c.label}</span>
@@ -83,6 +136,7 @@ export function ClosenessLine({ status, onOpenDonor }) {
         </span>
       ))}
       {c.facts.length ? "." : ""}
+      {status.meetingSet && <span data-testid="dp-meeting-set" style={{ fontWeight: 700, color: T.greenDk }}> {status.meetingSet.sentence}.</span>}
     </div>
   );
 }

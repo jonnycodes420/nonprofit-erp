@@ -41,6 +41,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   if (want.has("meeting")) {
     jobs.push(query(
       `SELECT ce.id, ce.title, ce.provider, ce.booked_in_steward, ce.owner_user_id, u.name AS owner_name, ce.location, ce.person_ids,
+              (SELECT COALESCE(json_agg(json_build_object('id', cd.id, 'name', cd.name)), '[]'::json) FROM donors cd
+                WHERE cd.org_id = ce.org_id AND cd.id = ANY(ce.candidate_ids) AND cd.deleted_at IS NULL) AS candidates,
               to_char(ce.starts_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS s, to_char(ce.ends_at AT TIME ZONE ?, 'YYYY-MM-DD"T"HH24:MI') AS e,
               to_char(ce.starts_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS si, to_char(ce.ends_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS ei,
               d.id AS donor_id, d.name AS donor_name, d.last_gift_date, d.last_gift_amount
@@ -56,6 +58,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         donorId: r.donor_id || null, donorName: r.donor_name || null,
         lastGift: r.donor_id && r.last_gift_date ? { date: String(r.last_gift_date).slice(0, 10), amount: Number(r.last_gift_amount) || 0 } : null,
         detail: [r.location, r.provider && r.provider !== "steward" ? `on your ${r.provider === "microsoft" ? "Outlook" : "Google"} calendar` : null].filter(Boolean).join(" · "),
+        // FIX-33 Part 3b: an event Steward is not sure about asks who it is with.
+        unsure: !r.donor_id, candidates: Array.isArray(r.candidates) ? r.candidates : [],
         editable: { move: true, resize: true }, ref: { calendarEventId: r.id, startsAt: r.si, endsAt: r.ei, provider: r.provider || null, synced: !!(r.provider && r.provider !== "steward" && !r.booked_in_steward) },
       }))));
     // A meeting logged on the timeline (a conversation that happened) shows on its day.
@@ -72,7 +76,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   }
   if (want.has("step")) {
     jobs.push(query(
-      `SELECT t.id, t.next_step_label, t.due_date, t.due_time, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name
+      `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name
          FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id AND d.deleted_at IS NULL
         WHERE t.org_id = ? AND t.closed_at IS NULL AND t.due_date IS NOT NULL AND LEFT(t.due_date::text, 10) >= ? AND LEFT(t.due_date::text, 10) <= ?
           AND (t.snoozed_until IS NULL OR t.snoozed_until::date <= t.due_date::date)
@@ -82,7 +86,9 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         out.push({ id: `step:${r.id}`, type: "step", title: `${r.next_step_label || "Next step"}: ${r.donor_name}`,
           start: time ? `${day}T${time}` : day, end: time ? `${day}T${addMin(time, 30)}` : day, allDay: !time,
           ownerId: r.owner_id, ownerName: r.owner_name || "", donorId: r.donor_id, donorName: r.donor_name, detail: r.next_step_label || "",
-          editable: { move: true, resize: false }, ref: { threadId: r.id } });
+          // FIX-33: a meeting step moves by moving the meeting, never on its own.
+          stepType: r.next_step_type || null,
+          editable: { move: r.next_step_type !== "meeting", resize: false }, ref: { threadId: r.id } });
       })));
     jobs.push(query(
       `SELECT t.id, t.title, t.due, t.assigned_to, t.assigned_to_name, d.id AS donor_id, d.name AS donor_name

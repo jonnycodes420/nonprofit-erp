@@ -214,16 +214,15 @@ function assessDrift(gifts, today, opts = {}) {
   };
   out.reason = composeReason(out, events, today);
   if (refusedRows > 0) {
-    // "Gave every January since 2021. One row from this import could not be
-    // read. Nothing we can see since January 2025." — the gap claim is
-    // hedged and the reason for the hedge is stated, mid-sentence, where a
-    // fundraiser will actually read it.
-    const rowPhrase = refusedRows === 1
-      ? "One row from the last import could not be read."
-      : `${refusedRows} rows from the last import could not be read.`;
-    out.reason = String(out.reason || "")
-      .replace(/Nothing for ([^.]+)\./, `${rowPhrase} Nothing we can see for $1.`)
-      .replace(/^((?!.*could not be read).*)$/s, m => /could not be read/.test(m) ? m : `${m} ${rowPhrase}`.trim());
+    // The gap claim is hedged ("Nothing we can see for 6 months") because
+    // some of their rows could not be read. FIX-33: the reason for the hedge
+    // is its own line (`refusedNote`), never folded into this sentence: one
+    // line was saying two things. The profile shows the note to admins with
+    // a link to the rows (routes/profileStatus.js).
+    out.reason = String(out.reason || "").replace(/Nothing for ([^.]+)\./, "Nothing we can see for $1.");
+    out.refusedNote = refusedRows === 1
+      ? "One row from your import couldn't be read."
+      : `${refusedRows} rows from your import couldn't be read.`;
   }
   return out;
 }
@@ -319,4 +318,25 @@ function composeReason(a, events, today) {
   return `Gave ${humanCadence(a.cadenceDays)}${spanPhrase}, usually around ${fmtAmt(typical)}. ${gapPhrase}`;
 }
 
-module.exports = { DRIFT, assessDrift, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
+// FIX-33 · GIVING MORE THAN THEIR PATTERN IS NOT COOLING. A person who
+// usually gives twice a year and has given four times in the last twelve
+// months can still be past their own median gap (four gifts in February, then
+// a quiet summer). The gap is not the story: they have already given their
+// usual year, and more. True when the giving events (same-day gifts are one)
+// in the 365 days up to today number at least their usual count for a year
+// (365 days over their own cadence, at least one; a seasonal giver's year is
+// one gift). `a` is assessDrift's answer for the same gifts.
+function aboveOwnPattern(gifts, today, a) {
+  if (!a || !a.cadenceDays || a.cadenceDays <= 0) return false;
+  const from = orgTime.addDays(today, -365);
+  const days = new Set();
+  for (const g of gifts || []) {
+    if (!(Number(g.amount) > 0) || !orgTime.parseCivil(g.date)) continue;
+    const d = String(g.date).slice(0, 10);
+    if (orgTime.compareCivil(d, from) >= 0 && orgTime.compareCivil(d, today) <= 0) days.add(d);
+  }
+  const usual = Math.max(1, Math.round(365.25 / a.cadenceDays));
+  return days.size >= usual;
+}
+
+module.exports = { DRIFT, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };

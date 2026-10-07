@@ -52,6 +52,16 @@ async function touchRows(q, orgId, today, donorId = null) {
     `SELECT m.id, m.donor_id, m.date, m.kind, m.title FROM (${m.sql}) m JOIN donors d ON d.id = m.donor_id AND d.org_id = ?
       WHERE d.deleted_at IS NULL${dF}`, [...m.args, orgId, ...dA]);
   for (const r of mRows) push("meetings", r, w.TOUCH_POINTS.meetings.points, r.kind === "calendar" ? `Calendar: ${r.title || "Meeting"}` : "Meeting, logged");
+  // FIX-33: a meeting BOOKED is staff reaching out and the person saying yes,
+  // dated the day it was booked. It counts as a meeting at BOOKED_POINTS until
+  // it happens (then the meeting itself counts too), and stops counting if it
+  // is cancelled (meetingEffects.js marks the booking line cancelled).
+  const booked = await q(
+    `SELECT i.id, i.donor_id, LEFT(i.date, 10) AS date FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'note' AND i.metadata->>'kind' = 'meeting_booked'
+        AND COALESCE(i.metadata->>'cancelled', 'false') <> 'true' AND LEFT(i.date, 10) BETWEEN ? AND ?${dF}`,
+    [orgId, from, today, ...dA]);
+  for (const r of booked) push("meetings", r, w.BOOKED_POINTS, "Meeting booked");
 
   const calls = await q(
     `SELECT i.id, i.donor_id, LEFT(i.date, 10) AS date FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
@@ -253,8 +263,12 @@ function reasonFor(row, today) {
 // inside it, 'drifting' and 'lapsed' are past it, null is fewer than two gifts
 // (no rhythm to judge against). Refunds are not gifts here.
 function patternOf(gifts, today) {
-  const a = driftEngine.assessDrift(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
+  const gs = gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 }));
+  const a = driftEngine.assessDrift(gs, today);
   if (a.state === "ok") return "on_track";
+  // FIX-33: more gifts in the last year than their own usual year is not
+  // cooling, however long the gap since the latest one.
+  if (driftEngine.aboveOwnPattern(gs, today, a)) return "on_track";
   if (a.state === "drifting" || a.state === "lapsed") return a.state;
   return null;
 }

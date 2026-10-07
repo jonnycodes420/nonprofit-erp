@@ -631,9 +631,7 @@ app.get("/oauth/:provider/callback", wrap(async (req, res) => {
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
-  const app_ = (process.env.APP_URL || "https://www.stewardapp.dev").replace(/\/$/, "");
-  const qs = new URLSearchParams(req.query || {}).toString();
-  res.redirect(302, `${app_}/oauth/${key}/callback${qs ? "?" + qs : ""}`);
+  res.redirect(302, require("../publicUrl").oauthLandingUrl(key, req.query));
 }));
 
 // COMPLETE. The app sends the code and the state back here, signed in.
@@ -1064,6 +1062,48 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdminUnlessMailbox, 
 // WHAT IS NEVER HERE: a send. There is no route below that writes a message,
 // and the scopes in shared/oauth.js could not authorise one if there were.
 
+// FIX-33 · ONE CONNECTION'S HEALTH, from its own run rows. Every number here
+// is one person's own mailbox; nothing about a colleague's is ever read.
+const STALE_MS = 2 * 3600e3;
+const clock = (ts, tz) => new Date(ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz || "America/New_York" });
+async function mailboxHealth(conn) {
+  const label = conn.provider === "google" ? "Gmail" : "Outlook";
+  const tz = (await orgTz(conn.org_id)).timezone || "America/New_York";
+  const one = async (sql, args) => (await query(sql, args))[0] || {};
+  const mailOk = (await one(`SELECT MAX(finished_at) AS t FROM mailbox_sync_runs WHERE user_id=? AND provider=? AND kind='mail' AND ok`, [conn.user_id, conn.provider])).t || null;
+  const calOk = (await one(`SELECT MAX(finished_at) AS t FROM mailbox_sync_runs WHERE user_id=? AND provider=? AND kind='calendar' AND ok`, [conn.user_id, conn.provider])).t || null;
+  const lastFail = await one(`SELECT error, finished_at FROM mailbox_sync_runs WHERE user_id=? AND provider=? AND ok=false
+                                 ORDER BY started_at DESC LIMIT 1`, [conn.user_id, conn.provider]);
+  const actorId = `system:mailbox/${conn.provider}/${conn.user_id}`;
+  const today = orgToday(await orgTz(conn.org_id));   // ORG_TZ_SEAM_OK
+  const counts = await one(
+    `SELECT COUNT(*) FILTER (WHERE LEFT(i.date,10) = ?)::int AS today,
+            COUNT(*) FILTER (WHERE i.created_at >= NOW() - INTERVAL '7 days')::int AS week
+       FROM interactions i WHERE i.org_id=? AND i.type='email' AND i.created_by=?`, [today, conn.org_id, actorId]);
+  const meetings = await one(`SELECT COUNT(*)::int AS n FROM calendar_events WHERE org_id=? AND owner_user_id=? AND provider=?`,
+    [conn.org_id, conn.user_id, conn.provider]);
+  const pushed = await one(`SELECT COUNT(*)::int AS n FROM calendar_pushes WHERE org_id=? AND user_id=? AND provider=?`,
+    [conn.org_id, conn.user_id, conn.provider]);
+  const refused = conn.status === "error";
+  // The newest failure counts only if nothing has succeeded since.
+  const failNewer = lastFail.finished_at && (!mailOk || new Date(lastFail.finished_at) > new Date(mailOk));
+  const lastError = refused ? (conn.last_error || `${label} refused Steward's permission. Reconnect to keep it working.`)
+    : failNewer ? lastFail.error : (conn.calendar_granted && conn.calendar_error) || null;
+  const since = new Date(conn.created_at || Date.now()).getTime();
+  const stale = !conn.paused && (refused || (mailOk ? Date.now() - new Date(mailOk).getTime() > STALE_MS : Date.now() - since > STALE_MS));
+  const banner = !stale ? null : mailOk
+    ? `Steward hasn't read your ${label} since ${clock(mailOk, tz)}. Reconnect`
+    : `Steward hasn't been able to read your ${label} yet. Reconnect`;
+  return {
+    lastMailReadAt: mailOk, lastCalendarReadAt: conn.calendar_granted ? calOk : null,
+    loggedToday: counts.today || 0, loggedWeek: counts.week || 0,
+    meetingsFound: meetings.n || 0, eventsPushed: pushed.n || 0,
+    lastError, lastErrorAt: refused ? conn.last_error_at : failNewer ? lastFail.finished_at : null,
+    stale, banner,
+    definition: "From Steward's own record of every read. Messages logged counts emails with people on file that this connection added to their records; meetings found counts calendar events with someone on file.",
+  };
+}
+
 // WHAT IS CONNECTED, FOR ME. Never another person's row.
 app.get("/mailbox", requireAuth, wrap(async (req, res) => {
   const O = await oauthMod();
@@ -1082,6 +1122,10 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
     last_synced_at: exampleSync.toISOString(), last_logged_count: null, example: true } : null;
   const byProvider = Object.fromEntries(mine.map(r => [r.provider, r]));
   if (example && !byProvider.google) byProvider.google = example;
+  // FIX-33 · THE HEALTH PANEL. "Connected" is never shown without when it
+  // last read, from the run rows themselves (mailbox_sync_runs).
+  const health = {};
+  for (const r of mine) if (!demo) health[r.provider] = await mailboxHealth(r);
   const providers = O.PROVIDER_KEYS.filter(k => O.PROVIDERS[k].kind === "mailbox").map(k => {
     const p = O.PROVIDERS[k];
     const row0 = byProvider[k] || null;
@@ -1095,6 +1139,7 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
       connected: !!row, address: row?.address || null, paused: row?.paused === true,
       lastSyncedAt: row?.last_synced_at || null, lastLoggedCount: row?.last_logged_count ?? null,
       lastError: row?.last_error || null,
+      health: health[k] || null,
       reviewNote: p.reviewNote || null, example: row?.example === true,
       // INT-BUILD-1 — mail can be connected without the calendar (every INT-4
       // connection, or somebody who unticked it). That is a prompt, not an error.
@@ -1134,6 +1179,7 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
   }
   res.json({
     providers, neverLog: never, demo, demoSentence: demo ? ML.DEMO_CONNECT_SENTENCE : null,
+    banner: Object.values(health).map(h => h && h.banner).find(Boolean) || null,
     connected: providers.some(p => p.connected),
     team: [...teamBy.values()],
     teamDefinition: "Everyone on your team, and whether their own inbox is connected. Each person connects their own; nobody can connect a colleague's.",
@@ -1223,9 +1269,15 @@ app.post("/mailbox/:provider/sync", requireAuth, checkWriteAccess, wrap(async (r
   const key = String(req.params.provider || "");
   if (!O.isProvider(key) || O.PROVIDERS[key].kind !== "mailbox") return res.status(404).json({ error: "unknown_provider" });
   const what = ["mail", "calendar"].includes(req.body?.what) ? req.body.what : "both";
-  const mail = what !== "calendar" ? await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => ({ logged: 0 })) : null;
-  const calendar = what !== "mail" ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => ({ kept: 0 })) : null;
-  res.json({ ok: true, mail: mail ? { logged: mail.logged || 0 } : null, calendar: calendar ? { kept: calendar.kept || 0 } : null });
+  // FIX-33: "Read now" on the card. Same runs as the tick, recorded as hers.
+  const mail = what !== "calendar" ? await syncMailbox(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ logged: 0 })) : null;
+  const calendar = what !== "mail" ? await syncCalendar(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ kept: 0 })) : null;
+  const error = (mail && mail.error) || (calendar && calendar.error) || null;
+  const [conn] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status <> 'disconnected'`,
+    [req.user.userId, req.user.orgId, key]);
+  res.json({ ok: !error, error, mail: mail ? { logged: mail.logged || 0 } : null, calendar: calendar ? { kept: calendar.kept || 0 } : null,
+    health: conn ? await mailboxHealth(conn) : null,
+    sentence: error || `Read just now. ${mail ? `${mail.logged || 0} new ${mail.logged === 1 ? "message" : "messages"} logged` : ""}${mail && calendar ? ", " : ""}${calendar ? `${calendar.kept || 0} ${calendar.kept === 1 ? "meeting" : "meetings"} on your calendar with people on file` : ""}.` });
 }));
 
 const meetingTz = async orgId => { const org = await orgTz(orgId); return { org, tz: org.timezone || "America/New_York", today: orgToday(org) }; };   // ORG_TZ_SEAM_OK
@@ -1284,6 +1336,7 @@ const eventOut = (c, extra = {}) => ({
   id: c.id, title: c.title, startsAt: c.starts_at, endsAt: c.ends_at, location: c.location || null,
   personIds: c.person_ids || [], ownerUserId: c.owner_user_id, ownerName: c.owner_name || null, provider: c.provider,
   note: c.note || null, nextStep: c.next_step || null, loggedAt: c.logged_at || null, bookedInSteward: c.booked_in_steward === true,
+  candidateIds: c.candidate_ids || [],
   ...extra,
 });
 
@@ -1304,7 +1357,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const civilOf = e => orgToday(tzOrg, new Date(e.starts_at));   // ORG_TZ_SEAM_OK
   const calUpcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
   const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
-  const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 7 * 864e5) || null;
+  const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 30 * 864e5) || null;   // FIX-33: a booked visit shows its card from the day it is booked
 
   // THE ONE SOURCE (meetings.js): every meeting with this person, calendar
   // and logged by hand. The timeline's Meetings chip counts `meetings` (held
@@ -1432,12 +1485,13 @@ async function composeTodayMeetings(orgId, userId, { withLogged = false } = {}) 
     const fromCal = new Set(rows.map(r => r.interaction_id).filter(Boolean));
     logged = (await query(`SELECT * FROM (${sql}) m WHERE m.kind = 'logged' ORDER BY m.id`, args)).filter(m => !fromCal.has(m.id));
   }
-  const ids = [...new Set([...rows.flatMap(r => r.person_ids || []), ...logged.map(m => m.donor_id)])];
+  const ids = [...new Set([...rows.flatMap(r => [...(r.person_ids || []), ...(r.candidate_ids || [])]), ...logged.map(m => m.donor_id)])];
   const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
   const out = [];
   for (const r of rows) {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
-    out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
+    const candidates = (r.candidate_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
+    out.push(eventOut(r, { people, candidates, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
   }
   for (const m of logged) {
     const people = names[m.donor_id] ? [{ id: m.donor_id, name: names[m.donor_id] }] : [];
@@ -1521,8 +1575,20 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting already has a note." });
   const note = String(req.body?.note || "").trim().slice(0, 8000);
   const nextStep = String(req.body?.nextStep || "").trim().slice(0, 300) || null;
+  // FIX-33 Part 3b: the meeting card's fields. Each is optional; what she
+  // filled in rides on the conversation, and the date, place and who
+  // attended come from the meeting itself.
+  const B = req.body || {};
+  const txt = (v, n) => String(v || "").trim().slice(0, n) || null;
+  const nextStepDate = /^\d{4}-\d{2}-\d{2}$/.test(String(B.nextStepDate || "")) ? String(B.nextStepDate) : null;
+  const askAmount = B.askAmount != null && B.askAmount !== "" && Number.isFinite(Number(B.askAmount)) && Number(B.askAmount) >= 0 ? Math.round(Number(B.askAmount) * 100) / 100 : null;
+  const ASK_OUTCOMES = ["yes", "no", "thinking", "not_asked"];
+  const askOutcome = ASK_OUTCOMES.includes(B.askOutcome) ? B.askOutcome : null;
+  const card = { takeaways: txt(B.takeaways, 2000), cares: txt(B.cares, 1000), ask_amount: askAmount, ask_outcome: askOutcome,
+                 next_step_date: nextStepDate };
   const who = actor(req);
   const [u] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  const attendees = (await query(`SELECT name FROM donors WHERE org_id=? AND id = ANY(?)`, [req.user.orgId, c.person_ids || []])).map(r => r.name);
   // FIX-14 Part 1 — the meeting's day in the ORG's zone. toISOString gave its
   // UTC day, so a 9pm meeting in New York was logged as the next day.
   const date = orgToday(await orgTz(req.user.orgId), new Date(c.starts_at));   // ORG_TZ_SEAM_OK
@@ -1535,12 +1601,27 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
        VALUES (?,?,?,'meeting',?,?,?,?,?)`,
       [intId, req.user.orgId, donorId, [c.title, note].filter(Boolean).join("\n\n"), date, who.id, u?.name || null,
        JSON.stringify({ calendar_event_id: c.id, provider: c.provider, location: c.location || null,
-                        minutes: Math.round((new Date(c.ends_at) - new Date(c.starts_at)) / 60000), next_step: nextStep })]);
+                        minutes: Math.round((new Date(c.ends_at) - new Date(c.starts_at)) / 60000), next_step: nextStep,
+                        attendees, staff: u?.name || null, ...card })]);
     await closeThreadStepForContact(req.user.orgId, donorId, date, intId).catch(() => {});
     i++;
   }
   await run(`UPDATE calendar_events SET note=?, next_step=?, logged_at=NOW(), logged_by=?, interaction_id=?, updated_at=NOW() WHERE id=?`,
     [note || null, nextStep, who.id, firstId, c.id]);
+  // FIX-33 Part 3: the prep and after tasks are done and the meeting step is
+  // answered. A next step with a date becomes the person's open step.
+  await require("../meetingEffects").meetingLogged(c.id, firstId);
+  if (nextStep && nextStepDate) {
+    const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+    for (const donorId of c.person_ids || []) {
+      const open = await query(`SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL`, [req.user.orgId, donorId]);
+      if (open.length) continue;
+      await run(
+        `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,opening_interaction_id,owner_id,owner_name,created_by,created_by_name)
+         VALUES (?,?,?,'follow_up',?,?,?,?,?,?,?,?)`,
+        ["th_" + uuid().slice(0, 10), req.user.orgId, donorId, nextStep, nextStepDate, today, firstId, who.id, u?.name || null, who.id, who.name]);
+    }
+  }
   req.audit && (req.audit.detail = { meeting: c.id, people: (c.person_ids || []).length });
   res.json({ ok: true, interactionId: firstId, sentence: "Saved to the meeting and to the record." });
 }));
@@ -1616,7 +1697,8 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   const CL = await calendarMod();
   const title = String(req.body?.title || `Visit with ${d.name}`).trim().slice(0, 200);
   const location = String(req.body?.location || "").trim().slice(0, 200) || null;
-  const body = CL.bookingBody(got.conn.provider, { title, startsAt, endsAt, location, inviteEmail: invite ? d.email : null });
+  const timeZone = (await orgTz(orgId)).timezone || "America/New_York";
+  const body = CL.bookingBody(got.conn.provider, { title, startsAt, endsAt, location, inviteEmail: invite ? d.email : null, timeZone });
   const url = got.conn.provider === "google"
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?sendUpdates=${CL.googleSendUpdates(invite)}`
     : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events`;
@@ -1629,6 +1711,10 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
     `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,booked_in_steward,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
     [id, orgId, req.user.userId, got.conn.provider, String(made.id), title, startsAt, endsAt, location, [d.id], who.id, who.name]);
+  // FIX-33 Part 3: the booking reaches the whole record, not only Coming up.
+  // The step and tasks carry her NAME (the walk showed her email address there).
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(id, { actorId: who.id, actorName: me?.name || who.name });
   res.status(201).json({ ok: true, id, sentence: invite
     ? `On your calendar, and ${d.name} was sent the invitation from it.`
     : `On your calendar. ${d.name} was not invited; you can add them from your calendar if you want to.` });
@@ -1644,12 +1730,52 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   const url = google
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
     : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events/${encodeURIComponent(c.provider_event_id)}`;
-  const body = google ? { start: { dateTime: startsAt }, end: { dateTime: endsAt } }
-    : { start: { dateTime: startsAt.replace(/Z$/, ""), timeZone: "UTC" }, end: { dateTime: endsAt.replace(/Z$/, ""), timeZone: "UTC" } };
+  const CLm = await calendarMod();
+  const body = CLm.timeBlock(c.provider, startsAt, endsAt, (await orgTz(req.user.orgId)).timezone || "America/New_York");
   const r = await fetch(url, { method: "PATCH", headers: { Authorization: "Bearer " + got.token, "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
   if (!r || !r.ok) return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the change. Nothing moved." });
   await run(`UPDATE calendar_events SET starts_at=?, ends_at=?, updated_at=NOW() WHERE id=?`, [startsAt, endsAt, c.id]);
-  res.json({ ok: true, sentence: "Moved on your calendar. Anyone already invited was told by your calendar." });
+  const whoM = actor(req);
+  const [meM] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(c.id, { actorId: whoM.id, actorName: meM?.name || whoM.name });
+  res.json({ ok: true, sentence: "Moved on your calendar, and the prep, the follow-up and the next step moved with it." });
+}));
+
+// FIX-33 · CANCEL. Off her calendar, and everything the booking changed on the
+// record comes off with it: the tasks close, the step goes back to what it was.
+app.post("/calendar/events/:id/cancel", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can cancel it." });
+  if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting has a note, so it happened. It stays on the record." });
+  const got = await myCalendarConn(req, res); if (!got) return;
+  const url = c.provider === "google"
+    ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
+    : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events/${encodeURIComponent(c.provider_event_id)}`;
+  const r = await fetch(url, { method: "DELETE", headers: { Authorization: "Bearer " + got.token } }).catch(() => null);
+  if (!r || !(r.ok || r.status === 404 || r.status === 410))
+    return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the cancellation. Nothing changed." });
+  const who = actor(req);
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").revertMeeting(c.id, { actorId: who.id, actorName: me?.name || who.name });
+  await run(`DELETE FROM calendar_events WHERE id=? AND org_id=?`, [c.id, req.user.orgId]);
+  res.json({ ok: true, sentence: "Cancelled on your calendar. The prep and follow-up are closed and the next step is back to what it was." });
+}));
+
+// FIX-33 Part 3b · ADD TO A DONOR'S RECORD. One click from Steward's
+// Calendar, Home's today list or the event itself: the person she picks is
+// linked, the candidates are cleared, and the booking takes effect.
+app.post("/calendar/events/:id/people", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  const donorId = String(req.body?.donorId || "");
+  const [d] = await query(`SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const ids = [...new Set([...(c.person_ids || []), d.id])];
+  await run(`UPDATE calendar_events SET person_ids=?, candidate_ids='{}', matched_by='person', updated_at=NOW() WHERE id=? AND org_id=?`,
+    [ids, c.id, req.user.orgId]);
+  const who = actor(req);
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  await require("../meetingEffects").applyMeeting(c.id, { actorId: who.id, actorName: me?.name || who.name });
+  res.json({ ok: true, personIds: ids, sentence: `On ${d.name}'s record now, ready for notes.` });
 }));
 
 // ── CAL-1 · ONE CALENDAR FOR EVERYTHING ─────────────────────────────────────

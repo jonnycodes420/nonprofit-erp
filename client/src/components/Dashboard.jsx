@@ -24,6 +24,7 @@ import { SuggestedAskLine } from "./ScoreWhy";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { MorningBrief } from "./MeetingPanels";
+import { MailboxBanner } from "./InboxConnect";
 import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
@@ -1731,6 +1732,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
                       {/* ENGAGE-1 — engagement on the row; an early sign says when they have gone quiet too. */}
                       {r.engagement!=null&&<div style={{fontSize:11.5,color:r.earlySign?T.gold700:T.ink3,marginTop:2}}>{r.earlySign||`Engagement ${r.engagement}`}</div>}
+                      {r.meetingSet&&<div data-testid="drift-meeting-set" style={{fontSize:11.5,color:T.greenDk,fontWeight:700,marginTop:2}}>{r.meetingSet}</div>}
                     </div>
                     {/* BUILD-83 Part 4 — the figure is the donor's USUAL gift, the
                         amount their own sentence names, and it carries its label.
@@ -2774,6 +2776,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             work: "how did the meeting go?" when one just ended, then the
             Thread's first thing (threadList[0], threadRank's own answer). */}
         {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
+          <MailboxBanner onNavigate={onNavigate}/>
           <MorningBrief compact onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
           {threadList.length>0&&(()=>{
             const first=threadList[0];

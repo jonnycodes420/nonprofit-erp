@@ -200,7 +200,9 @@ export function classifyMailboxMessage(msg, ctx) {
 
   // DIRECTION IS ABOUT HER, not about the donor: she wrote it, or she received
   // it. It decides how the line reads on the record and nothing else.
-  const direction = from && mine && from === mine ? "outbound" : "inbound";
+  // FIX-33: a message from her Sent Items (or Gmail's SENT label) is hers
+  // even when it went out from an alias that is not the connected address.
+  const direction = m.sent === true || (from && mine && from === mine) ? "outbound" : "inbound";
 
   return {
     action: "log",

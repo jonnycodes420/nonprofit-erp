@@ -26,6 +26,7 @@ const auditMw = require("../middleware/auditTrail");
 // column sets each tool wants (bookkeeper.js), declared once so the screen,
 // this router and routes/finance.js cannot disagree about any of them.
 const DEP = require("../depositsFile");
+const DTAGS = require("../donorTags");   // FIX-33: internal flags never reach a screen as tags
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
@@ -3671,11 +3672,15 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
   const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  const PRm = require("../prospect");
+  const roomWord = a => (a ? { word: a.word, label: a.label, rank: a.rank } : { word: "unknown", label: "Not yet known", rank: 0 });
+  const mayRoom = await PRm.canSee(req.user.userId);
+  let roomMap = null;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
     ...d,
-    tags: JSON.parse(d.tags || "[]"),
+    tags: DTAGS.visibleTags(d.tags),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
     drift: driftBadgeField(driftMap.get(d.id)),
@@ -3686,6 +3691,14 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     // BUILD-94 Part 2 — normalised here so a NULL legacy column and an
     // explicit ["donor"] reach the client as the same thing.
     person_types: PT.typesOf(d),
+    // FIX-33 · Room to give rides on the row, from prospect.roomToGive, the
+    // one function the profile's block reads too. Only for someone who may
+    // see it (admin or the major gifts permission); null for anyone else.
+    room: roomMap ? roomWord(roomMap.get(d.id)) : null,
+    // FIX-33 · the owner in words. An imported person with nobody assigned
+    // read "?"; they read "No owner", beside an Assign that uses the one
+    // assign route (PATCH /donors/:id/assign).
+    owner_label: d.assigned_to_name || d.pending_assignee_name || "No owner",
   });
 
   if (req.query.limit === undefined) {
@@ -3695,6 +3708,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
       computeDriftForDonors(req.user.orgId),
     ]);
     const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+    if (mayRoom) roomMap = await PRm.roomToGive(req.user.orgId);
     return res.json(donors.map(mapDonor(tpMap, driftMap)));
   }
 
@@ -3713,6 +3727,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     computeDriftForDonors(req.user.orgId, { donorIds: ids.length ? ids : ["_none_"] }),
   ]);
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
+  if (mayRoom && ids.length) roomMap = await PRm.roomToGive(req.user.orgId, ids);
   res.json({ donors: donors.map(mapDonor(tpMap, driftMap)), total: parseInt(cnt[0].c, 10) });
 }));
 
@@ -3741,7 +3756,7 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
   const tpMap = Object.fromEntries(touchpoints.map(r => [r.donor_id, r.last_touchpoint]));
   res.json(donors.map(d => ({
     ...d,
-    tags: JSON.parse(d.tags || "[]"),
+    tags: DTAGS.visibleTags(d.tags),
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
     drift: driftBadgeField(driftMap.get(d.id)),
@@ -3859,7 +3874,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Assigned to", d => d.assigned_to_name || ""],
     ["Closeness", d => (d.closeness ? d.closeness.charAt(0).toUpperCase() + d.closeness.slice(1) : "")],
     ["City", d => d.city || ""], ["State", d => d.state || ""],
-    ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
+    ["Tags", d => DTAGS.visibleTags(d.tags).join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),
   ];
   // PROSPECT-1 — screening results are never in the default export. An admin
@@ -4001,7 +4016,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: "Donor not found" });
 
   const d = rows[0];
-  d.tags = JSON.parse(d.tags || "[]");
+  d.tags = DTAGS.visibleTags(d.tags);
   d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
   // FIX-11 Part 1 — the gift carries its fund's NAME, not just its id. The
   // timeline line reads "$100,000.00 · General Operating · ACH", and a screen
@@ -4757,7 +4772,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // $1,800 of new gifts landed $0. Matching a donor is not a reason to lose
   // their money; it is the reason to attach it to the right record.
   const existingEmailRows = await queryTx(txc,
-    "SELECT id, name, LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
+    "SELECT id, name, LOWER(email) AS e, external_donor_id FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
     [orgId]
   );
   const existingByEmail = new Map();
@@ -4772,7 +4787,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const existingHouseholds = new Map();   // email → [{ id, mk }]
   for (const r of existingEmailRows) {
     if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
-    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name) });
+    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name), extKey: donorIdKey(r.external_donor_id) });
   }
   // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
   // An import used to match a person by email and nothing else, while
@@ -4795,10 +4810,20 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
     }
   }
-  const existingMatch = (emailLower, name) => {
+  const existingMatch = (emailLower, name, extKey) => {
     const list = existingHouseholds.get(emailLower);
     if (!list || !list.length) return undefined;
-    if (list.length === 1) return list[0].id;
+    // FIX-33: two DIFFERENT ids from the old system are two records there.
+    // An email alone does not join them; only an email AND a compatible name
+    // does. Without this, which of a file's twins merged depended on whether
+    // they fell in the same 500-donor chunk: "Sam Sanchez" (D20001) was folded
+    // into "Samantha Sanchez" (D10610) only because chunk one had committed
+    // her first. The pair stays two records and waits in Data health.
+    if (list.length === 1) {
+      const only = list[0];
+      if (extKey && only.extKey && only.extKey !== extKey && !matchNamesCompatible(only.mk, matchNameKey(name))) return undefined;
+      return only.id;
+    }
     const mk = matchNameKey(name);
     const hit = list.find(x => matchNamesCompatible(x.mk, mk));
     return hit ? hit.id : undefined;   // a name nobody at that address answers to is a NEW member of the household
@@ -4856,7 +4881,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // 2. Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
-      const priorId = (identityResolved ? existingMatch(emailLower, d.name) : existingByEmail.get(emailLower))
+      const priorId = (identityResolved ? existingMatch(emailLower, d.name, extKey) : existingByEmail.get(emailLower))
         || (identityResolved ? undefined : seenEmails.get(emailLower));
       if (priorId) { claimMatch(idx, d, priorId, "email"); return; }
     }
@@ -5616,10 +5641,14 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     }
   }
 
+  // FIX-33: the client never sees an internal flag (donorTags.js), so the
+  // list it sends back is kept with the row's own flags, never erasing them.
+  const [tagRow] = await query("SELECT tags FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const keptTags = DTAGS.keepInternal(tagRow ? tagRow.tags : "[]", tags || []);
   const affected = await run(
     `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
      WHERE id=? AND org_id=?`,
-    [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(tags || []), notes || "",
+    [name, email || "", phone || "", status, stage || "cultivate", JSON.stringify(keptTags), notes || "",
      city || null, state || null, zip || null, employer || null,
      req.params.id, req.user.orgId]
   );
@@ -5667,7 +5696,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
-  d.tags = JSON.parse(d.tags || "[]");
+  d.tags = DTAGS.visibleTags(d.tags);
   d.matching_gift = lookupMatchingGift(d.employer);
   res.json(d);
 }));
@@ -5974,7 +6003,7 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
     // Another donor's pledge marked paid by one of these gifts stays a pledge.
     await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
     // 2. Meetings: a meeting only these people were on goes; the rest drop them.
-    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND person_ids <@ ?::text[]`, [orgId, ids]);
+    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND cardinality(person_ids) > 0 AND person_ids <@ ?::text[]`, [orgId, ids]);
     if (gone.changes) children.calendar_events = gone.changes;
     const left = await runTx(client,
       `UPDATE calendar_events SET person_ids = ARRAY(SELECT p FROM unnest(person_ids) WITH ORDINALITY u(p, n) WHERE p <> ALL(?::text[]) ORDER BY n)
@@ -17409,7 +17438,10 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
       ? (x, y) => ((engMap.get(y.donorId) || {}).engagement || 0) - ((engMap.get(x.donorId) || {}).engagement || 0) || (y.usualGift || 0) - (x.usualGift || 0)
       : (x, y) => (y.usualGift || 0) - (x.usualGift || 0));
   const cap = driftEngine.DRIFT.HOME_LIST_CAP;
+  // FIX-33 · "Meeting set for 16 Oct" on a drifting row, so nobody calls her twice.
+  const meetingSet = await require("../meetingEffects").meetingSetFor(orgId, drifting.map(a => a.donorId)).catch(() => new Map());
   const row = a => ({
+    meetingSet: meetingSet.get(a.donorId)?.sentence || null,
     donorId: a.donorId, donorName: a.donorName, reason: a.reason,
     confidence: a.confidence, valueAtRisk: a.valueAtRisk,
     usualGift: a.usualGift || 0,          // the labelled "at risk" figure on the row
@@ -17602,7 +17634,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // Only a task ATTACHED TO A DONOR joins: an org to-do ("renew the insurance")
   // is not a follow-up and does not belong on a donor's record.
   const taskRows = await query(
-    `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name,
+    `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name, k.calendar_event_id,
             k.created_at, d.name AS donor_name, d.total_giving, d.gift_count
        FROM tasks k
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
@@ -17668,6 +17700,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       // FIX-14: the rail's next step shows "Edited" from these.
       edited_at: t.edited_at || null, edited_by_name: t.edited_by_name || null,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
+      calendarEventId: t.calendar_event_id || null,   // FIX-33: a meeting step opens its meeting
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
       // The rank inputs ride ALONG so the client can explain a row without a
@@ -17702,6 +17735,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     list.push({
       id: k.id, kind: "task", donorId: k.donor_id, donorName: k.donor_name,
       nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
+      // FIX-33: a meeting's prep and after tasks open the meeting they belong to.
+      calendarEventId: k.calendar_event_id || null,
       overdue: due < today,
       overdueDays: due < today ? (orgTime.daysBetween(due, today) ?? 0) : 0,
       daysOpen: Math.max(0, daysOpen), openedOn,
@@ -23641,9 +23676,7 @@ const PLAN_MONTHLY_COST = {
 // provider. The token exchange replays the same redirect_uri that was stored
 // when the flow started, so the value Google sees never disagrees with itself.
 app.get("/gmail/callback", wrap(async (req, res) => {
-  const app_ = (process.env.APP_URL || "https://www.stewardapp.dev").replace(/\/$/, "");
-  const qs = new URLSearchParams(req.query || {}).toString();
-  res.redirect(302, `${app_}/oauth/google/callback${qs ? "?" + qs : ""}`);
+  res.redirect(302, require("../publicUrl").oauthLandingUrl("google", req.query));
 }));
 
 app.get("/gmail/status", requireAuth, wrap(async (req, res) => {

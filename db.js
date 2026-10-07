@@ -7319,6 +7319,73 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS source_file TEXT`);
   await pool.query(`ALTER TABLE public_filings ADD COLUMN IF NOT EXISTS source_date DATE`);
 
+  // ── FIX-33 · EVERY SYNC RUN IS A ROW ──────────────────────────────────────
+  // "Connected" said nothing about whether Steward had read anything. Each
+  // mail read, calendar read and calendar push writes one row here, ok or not,
+  // with what it found and the one plain sentence of what went wrong. The
+  // health panel, the reconnect banner, the error digest and the prod smoke
+  // all read this table, so they cannot disagree.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_sync_runs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      ok BOOLEAN,
+      found INTEGER,
+      logged INTEGER,
+      error TEXT,
+      trigger TEXT,
+      CONSTRAINT mailbox_sync_runs_kind CHECK (kind IN ('mail','calendar','push'))
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_sync_runs_user ON mailbox_sync_runs (user_id, provider, kind, started_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_sync_runs_org ON mailbox_sync_runs (org_id, started_at DESC)`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_error TEXT`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_tried_at TIMESTAMPTZ`);
+
+  // ── FIX-33 · A CALENDAR EVENT STEWARD IS NOT SURE ABOUT ───────────────────
+  // A title that names somebody on file ("Visit with Christine") with two
+  // Christines on file is kept with both as CANDIDATES and nobody linked, so
+  // a person picks. An event with neither a linked person nor a candidate is
+  // still never stored.
+  await pool.query(`ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS candidate_ids TEXT[] NOT NULL DEFAULT '{}'`);
+  await pool.query(`ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS matched_by TEXT`);
+  await pool.query(`ALTER TABLE calendar_events DROP CONSTRAINT IF EXISTS calendar_events_has_person`);
+  await pool.query(`ALTER TABLE calendar_events ADD CONSTRAINT calendar_events_has_person
+                    CHECK (cardinality(person_ids) > 0 OR cardinality(candidate_ids) > 0)`);
+
+  // ── FIX-33 · WHAT A BOOKED MEETING DID TO THE RECORD ──────────────────────
+  // One row per (meeting, person): the step it took over (and what that step
+  // was before, so a cancel can put it back), the prep task, the after task,
+  // and the journey steps it pushed past the meeting. meetingEffects.js is
+  // the only writer.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS meeting_effects (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      calendar_event_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      day TEXT NOT NULL,
+      thread_id TEXT,
+      thread_created BOOLEAN NOT NULL DEFAULT false,
+      prev_step JSONB,
+      prep_task_id TEXT,
+      after_task_id TEXT,
+      moved_steps JSONB NOT NULL DEFAULT '[]',
+      booked_interaction_id TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS meeting_effects_once ON meeting_effects (calendar_event_id, donor_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_meeting_effects_donor ON meeting_effects (org_id, donor_id)`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS calendar_event_id TEXT`);
+  await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS calendar_event_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
