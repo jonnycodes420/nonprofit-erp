@@ -20,7 +20,173 @@ when the place does not apply (a note has no date, a report has no merge).
   writes their gifts without recomputing the person. This is a seed defect, not a product one.
 - Two Harborlight people with logged shifts are not typed as volunteers (`person_types` lacks it).
 
-The map is generated from `map.json` (`before` now; `after` in Part 3), so the counts are counted, not typed.
+## Before and after, in one line per column
+
+| column | wired before | wired after | partly before | partly after | missing before | missing after |
+|---|--:|--:|--:|--:|--:|--:|
+| Timeline | 8 | 16 | 12 | 6 | 2 | 0 |
+| Org / funder record | 8 | 14 | 12 | 7 | 1 | 0 |
+| Calendar + sync | 3 | 9 | 7 | 5 | 5 | 1 |
+| ⌘K | 2 | 14 | 6 | 1 | 15 | 8 |
+| Groups / Show me | 6 | 17 | 4 | 3 | 11 | 1 |
+| Journeys / Comms | 2 | 5 | 7 | 12 | 10 | 2 |
+| Reports, opens rows | 11 | 11 | 9 | 9 | 2 | 2 |
+| Ask + Agent | 5 | 9 | 13 | 13 | 5 | 1 |
+| Home / Thread | 4 | 9 | 4 | 2 | 5 | 2 |
+| Import / export | 10 | 14 | 11 | 7 | 0 | 0 |
+| Merge / delete / undo | 8 | 20 | 13 | 2 | 1 | 0 |
+| **all 253 cells (31 n/a)** | **67** | **138** | **98** | **67** | **57** | **17** |
+
+The map is generated from `map.json` (`before` and `after`), so the counts are counted, not typed.
+After was re-walked on 6 Oct against the merged branch: the four builders' API checks on their own seeded
+Harborlight copies, `tests/wire-journey.test.js` (63 checks, one person and one funder through every
+column), and the Muse walk below. Every cell still partly or missing names its reason and the build it
+belongs in. Nothing is hidden.
+
+## The Muse walk (local Harborlight, 1440 and 390)
+
+Rafael Quintero-Byrne gives, volunteers and (after this build's seed fix) came to the Harbor Lights Gala.
+`1-timeline` his record says "came to Harbor Lights Gala 2026" and 20 hours, lifetime $200 (it read $0
+before the seed fix). `2-search` ⌘K finds him. `3-calendar` the calendar with the new kinds in its legend
+(memberships ending, auctions closing, campaign and page end dates); Rafael has no dated item of his own
+in October, so the walk shows the org's week. `4-ask` "what has Rafael Quintero-Byrne done with us this
+year?" answers "gave $100 in one gift, volunteered 20 hours over one shift and was at or registered for
+one event", each line opening its rows. `5-group` a Group by rule, "came to the gala", holds him.
+`6-number` a money figure on that Group opens rows that include his gift. 11 of 13 checks passed; the two
+failures are the same environment error at both widths (`/ai/stream` 503, no local AI key).
+
+## After
+
+| object | Timeline | Org / funder record | Calendar + sync | ⌘K | Groups / Show me | Journeys / Comms | Reports, opens rows | Ask + Agent | Home / Thread | Import / export | Merge / delete / undo |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| person | W | P | W | W | W | W | W | W | · | W | W |
+| household | W | · | · | W | W | M | M | W | · | P | W |
+| organization / funder | W | W | · | W | W | P | P | W | · | W | W |
+| gift | W | W | · | M | W | W | W | W | P | W | W |
+| recurring plan | W | W | M | M | P | P | W | P | W | P | P |
+| pledge | W | W | W | M | W | P | W | P | W | W | W |
+| campaign | W | W | P | W | W | W | W | P | · | W | W |
+| appeal | P | P | P | W | W | W | W | P | · | W | W |
+| giving page | P | P | W | W | W | P | M | P | · | W | W |
+| peer-to-peer page | W | W | W | W | W | P | W | P | W | W | W |
+| event and ticket | W | W | P | W | W | P | P | W | M | P | W |
+| auction item | P | P | W | W | W | P | W | P | W | P | W |
+| membership | W | W | W | W | W | P | P | P | W | P | W |
+| grant | W | W | W | W | W | P | W | P | P | W | W |
+| volunteer shift and hours | W | P | P | P | W | P | P | W | W | W | W |
+| journey step | W | W | W | M | W | W | P | W | W | · | W |
+| task / next step | P | P | P | W | W | P | P | W | W | · | W |
+| meeting | W | W | W | M | P | · | W | P | · | P | W |
+| email | W | W | · | M | M | M | P | P | M | W | W |
+| note | W | W | · | M | · | · | W | W | · | W | W |
+| document | P | W | · | W | · | · | · | P | · | P | P |
+| import | P | P | · | M | W | P | P | M | W | W | W |
+| report | · | · | · | W | P | · | P | P | · | W | · |
+
+**Counts per column** (W wired · P partly · M missing · n/a)
+
+| column | W | P | M | n/a |
+|---|--:|--:|--:|--:|
+| Timeline | 16 | 6 | 0 | 1 |
+| Org / funder record | 14 | 7 | 0 | 2 |
+| Calendar + sync | 9 | 5 | 1 | 8 |
+| ⌘K | 14 | 1 | 8 | 0 |
+| Groups / Show me | 17 | 3 | 1 | 2 |
+| Journeys / Comms | 5 | 12 | 2 | 4 |
+| Reports, opens rows | 11 | 9 | 2 | 1 |
+| Ask + Agent | 9 | 13 | 1 | 0 |
+| Home / Thread | 9 | 2 | 2 | 10 |
+| Import / export | 14 | 7 | 0 | 2 |
+| Merge / delete / undo | 20 | 2 | 0 | 1 |
+| **all** | **138** | **67** | **17** | **31** |
+
+**Every partly and missing cell, with what is wrong**
+
+- **person × Org / funder record** (partly): an organisation lists its contacts but does not roll up their gifts, meetings and hours. Next: ORG-ROLLUP
+- **household × Journeys / Comms** (missing): no household audience or trigger; a Group with the household rule is the way in today. Next: COMMS-3
+- **household × Reports, opens rows** (missing): the household total on the profile has no figure source. Next: REPORTS-4
+- **household × Import / export** (partly): import stamps external_household_id but does not create households. Next: IMPORT-HOUSEHOLDS
+- **organization / funder × Journeys / Comms** (partly): a Group of organisations or funders can feed a Communication or Journey; no trigger of its own. Next: COMMS-3
+- **organization / funder × Reports, opens rows** (partly): funder grant figures only; no organisations figure. Next: REPORTS-4
+- **gift × ⌘K** (missing): gifts are not searched by text (amount, cheque number); the donor is. Next: SEARCH-2
+- **gift × Home / Thread** (partly): a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-3
+- **recurring plan × Calendar + sync** (missing): the next charge date is not on the calendar: 72 monthly plans would bury the month. Next: decide with Jonathan
+- **recurring plan × ⌘K** (missing): plans are not searched; the person is. Next: SEARCH-2
+- **recurring plan × Groups / Show me** (partly): any-active recurring rule now, one shared status list; no failed-plan rule yet. Next: GROUPS-2
+- **recurring plan × Journeys / Comms** (partly): first_recurring triggers; a failed or cancelled plan does not. Next: JOURNEYS-3
+- **recurring plan × Ask + Agent** (partly): Ask sees plans; the Agent cannot. Next: AGENT-3
+- **recurring plan × Import / export** (partly): an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING
+- **recurring plan × Merge / delete / undo** (partly): soft-deleting a person does not stop their Stripe plan; it needs a human decision on what deleting a giver means. Next: RECURRING-DELETE
+- **pledge × ⌘K** (missing): pledges are not searched; the person is. Next: SEARCH-2
+- **pledge × Journeys / Comms** (partly): a Group with an open pledge feeds a Communication or Journey; no pledge trigger. Next: JOURNEYS-3
+- **pledge × Ask + Agent** (partly): Ask has a pledges entity; the Agent may not create one by design and cannot read them. Next: AGENT-3
+- **campaign × Calendar + sync** (partly): end dates are on it; start dates are not. Next: CAL-2
+- **campaign × Ask + Agent** (partly): Ask's campaign amount is the goal only; the Agent cannot see campaigns. Next: AGENT-3
+- **appeal × Timeline** (partly): attribution shows as text on the gift. Next: PROFILE-2
+- **appeal × Org / funder record** (partly): as timeline. Next: PROFILE-2
+- **appeal × Calendar + sync** (partly): as campaign. Next: CAL-2
+- **appeal × Ask + Agent** (partly): as campaign. Next: AGENT-3
+- **giving page × Timeline** (partly): the gift shows; nothing page-specific (views, abandoned starts are on Gifts not finished). Next: PROFILE-2
+- **giving page × Org / funder record** (partly): as timeline. Next: PROFILE-2
+- **giving page × Journeys / Comms** (partly): a Group of page givers feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
+- **giving page × Reports, opens rows** (missing): raised on a giving page has no figure source. Next: REPORTS-4
+- **giving page × Ask + Agent** (partly): Ask has a giving pages entity; the Agent cannot see pages. Next: AGENT-3
+- **peer-to-peer page × Journeys / Comms** (partly): a Group of fundraisers feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
+- **peer-to-peer page × Ask + Agent** (partly): Ask has a peer-to-peer pages entity; the Agent cannot see them. Next: AGENT-3
+- **event and ticket × Calendar + sync** (partly): on Steward's calendar; not pushed to Google or Outlook because an event has no owner (by design, FIX-28). Next: none planned
+- **event and ticket × Journeys / Comms** (partly): attended_event now fires from check-in and scan; there is still no this-event's-guests audience except a Group. Next: COMMS-3
+- **event and ticket × Reports, opens rows** (partly): event rows open through a private endpoint, not the figure registry. Next: REPORTS-4
+- **event and ticket × Home / Thread** (missing): an event no-show opens nothing; most no-shows need no call. Next: THREAD-3 if wanted
+- **event and ticket × Import / export** (partly): no attendee import and no guest CSV export. Next: EVENTS-3
+- **auction item × Timeline** (partly): donated items and paid wins show; bids write nothing (a bid war would flood the timeline). Next: none planned
+- **auction item × Org / funder record** (partly): as timeline
+- **auction item × Journeys / Comms** (partly): a Group of bidders feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
+- **auction item × Ask + Agent** (partly): Ask has an auction items entity; the Agent cannot see auctions. Next: AGENT-3
+- **auction item × Import / export** (partly): no import; JSON export only. Next: EVENTS-3
+- **membership × Journeys / Comms** (partly): became_member triggers; a lapse does not. Next: JOURNEYS-3
+- **membership × Reports, opens rows** (partly): member status counts render bare; member reports return no sources. Next: REPORTS-4
+- **membership × Ask + Agent** (partly): Ask sees memberships (no money); the Agent cannot. Next: AGENT-3
+- **membership × Import / export** (partly): imported members carry no money, so they are missing from membership revenue (by design, no invented gifts)
+- **grant × Journeys / Comms** (partly): a Group of funders feeds a Communication or Journey; no grant trigger. Next: JOURNEYS-3
+- **grant × Ask + Agent** (partly): Ask sees grants; the Agent cannot. Next: AGENT-3
+- **grant × Home / Thread** (partly): raised at lead time, but skipped when the grant has no funder record. Next: GRANTS-2
+- **volunteer shift and hours × Calendar + sync** (partly): shifts on Steward's calendar; not pushed (no owner, by design)
+- **volunteer shift and hours × ⌘K** (partly): volunteers are found as people; shifts are not. Next: SEARCH-2
+- **volunteer shift and hours × Journeys / Comms** (partly): new_volunteer triggers; an hours milestone does not. Next: JOURNEYS-3
+- **volunteer shift and hours × Reports, opens rows** (partly): a volunteer coordinator gets 403 on /figures, so their hour figures do not open. Next: VOL-3
+- **journey step × ⌘K** (missing): journeys are not searched. Next: SEARCH-2
+- **journey step × Reports, opens rows** (partly): journey rows open through a private endpoint. Next: REPORTS-4
+- **task / next step × Timeline** (partly): tasks show; an open Thread step does not, and a dismissal writes nothing. Next: PROFILE-2
+- **task / next step × Org / funder record** (partly): as timeline
+- **task / next step × Calendar + sync** (partly): on it; pushed only when someone owns it. Next: CAL-2
+- **task / next step × Journeys / Comms** (partly): a Group with open tasks feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
+- **task / next step × Reports, opens rows** (partly): tasks have no figure source. Next: REPORTS-4
+- **meeting × ⌘K** (missing): meetings are not searched. Next: SEARCH-2
+- **meeting × Groups / Show me** (partly): counts toward no-contact-since only. Next: GROUPS-2
+- **meeting × Ask + Agent** (partly): Ask's conversations leave out calendar meetings (the person answer counts them). Next: ASK-5
+- **meeting × Import / export** (partly): calendar_events is not in the CSV export. Next: EXPORT-2
+- **email × ⌘K** (missing): emails are not searched. Next: SEARCH-2
+- **email × Groups / Show me** (missing): no opened or clicked rule. Next: GROUPS-2
+- **email × Journeys / Comms** (missing): no email-opened trigger. Next: JOURNEYS-3
+- **email × Reports, opens rows** (partly): bulk email stats are computed in the browser. Next: REPORTS-4
+- **email × Ask + Agent** (partly): as conversations. Next: ASK-5
+- **email × Home / Thread** (missing): a donor's email that needs a reply opens no step: the mailbox reads only what matches a person, and deciding 'needs a reply' wants care. Next: MAIL-2
+- **note × ⌘K** (missing): notes are not searched. Next: SEARCH-2
+- **document × Timeline** (partly): attachments show; grant documents only on the funder panel; receipt PDFs never. Next: PROFILE-2
+- **document × Ask + Agent** (partly): Ask has a documents entity; the Agent cannot see them. Next: AGENT-3
+- **document × Import / export** (partly): stored files are left out of the export (by design, the export is data)
+- **document × Merge / delete / undo** (partly): erase leaves interaction_attachments. Next: TRUST-3
+- **import × Timeline** (partly): imported rows show; the import itself is never an item. Next: PROFILE-2
+- **import × Org / funder record** (partly): as timeline
+- **import × ⌘K** (missing): imports are not searched; they are on Settings > Imports. Next: SEARCH-2
+- **import × Journeys / Comms** (partly): a Group from an import feeds a Communication or Journey. Next: none needed
+- **import × Reports, opens rows** (partly): import health and the move report are bespoke, no figure sources. Next: REPORTS-4
+- **import × Ask + Agent** (missing): Ask cannot see imports. Next: ASK-5
+- **report × Groups / Show me** (partly): a dashboard takes a Group; report rows cannot become one. Next: GROUPS-2
+- **report × Reports, opens rows** (partly): the giving summary's total and gift count open now; retention, top donors, LYBUNT/SYBUNT and three-year numbers still render bare beside their own rows. Next: REPORTS-4
+- **report × Ask + Agent** (partly): Ask answers open; stored board reports never reach Ask. Next: ASK-5
+
+## Before (Part 0, committed at 5e72a53)
 
 | object | Timeline | Org / funder record | Calendar + sync | ⌘K | Groups / Show me | Journeys / Comms | Reports, opens rows | Ask + Agent | Home / Thread | Import / export | Merge / delete / undo |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
