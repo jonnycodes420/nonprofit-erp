@@ -88,6 +88,15 @@ const STAMP = "fix10gdt";
   ok("the hand-written task carries NO source gift, which is what protects it",
     (await q(`SELECT source_gift_id FROM tasks WHERE id=$1`, [handId]))[0]?.source_gift_id == null);
 
+  // FIX-31: the thank-you next step the gift opens is its task too, and it can
+  // land a beat after the first one. Read the gift's tasks again once they stop
+  // changing, so "exactly the gift's own" means all of them at delete time.
+  for (let i = 0, prev = -1; i < 20; i++) {
+    const r = await q(`SELECT id, title FROM tasks WHERE org_id=$1 AND source_gift_id=$2`, [orgId, giftId]);
+    if (r.length === prev) { own.splice(0, own.length, ...r); break; }
+    prev = r.length; await new Promise(res => setTimeout(res, 300));
+  }
+
   // ── the delete ────────────────────────────────────────────────────────────
   const del = await api("DELETE", `/gifts/${giftId}`, tok);
   ok(`the delete succeeded and reports what it voided (${del.body?.voidedTasks})`,
