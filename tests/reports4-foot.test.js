@@ -178,6 +178,13 @@ const same = (a, b) => a === b || (a !== null && b !== null && a !== undefined &
   }
   ok(`walked at least 40 figures (${figures})`, figures >= 40, figures);
 
+  // The line under a percentage names its halves the way they are counted: a
+  // dollar half as dollars and cents (the walk found "1,623,328 of 1,593,572.75").
+  const { ratioFootLine } = await import("../client/src/lib/figureFoot.js");
+  ok("a dollar percentage's halves read as money", ratioFootLine("share", { measure: "sum", value: 1623328 }, { measure: "sum", value: 1593572.75 }) === "$1,623,328 of $1,593,572.75",
+    ratioFootLine("share", { measure: "sum", value: 1623328 }, { measure: "sum", value: 1593572.75 }));
+  ok("a people percentage's halves read as counts", ratioFootLine("share", { measure: "count", value: 1204 }, { measure: "count", value: 2410 }) === "1,204 of 2,410");
+
   if (own) {
     // The wrong figure: a deleted spouse's giving was in the household total.
     const rel = await api("GET", "/donors/d_r4_ada/relationships", tok);

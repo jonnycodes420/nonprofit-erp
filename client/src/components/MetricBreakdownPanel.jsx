@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { T, Spin, Modal, fmtFull } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { offerUndo } from "./EditHistory";
+import { ratioFootLine } from "../lib/figureFoot";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 
@@ -150,9 +151,7 @@ export function Foot({ data, figure }) {
     return (
       <div style={box} data-figure-total data-value={String(data.value)}>
         <span style={{ fontSize: 13, color: T.ink3 }}>
-          {data.formula === "change"
-            ? `(${n.measure === "sum" ? fmtFull(n.value) : n.value} − ${d.measure === "sum" ? fmtFull(d.value) : d.value}) ÷ ${d.measure === "sum" ? fmtFull(d.value) : d.value}`
-            : `${n.measure === "sum" ? fmtFull(n.value) : Number(n.value).toLocaleString("en-US")} of ${d.measure === "sum" ? fmtFull(d.value) : Number(d.value).toLocaleString("en-US")}`}
+          {ratioFootLine(data.formula, n, d)}
         </span>
         <strong style={{ fontSize: 18, color: T.ink }}>{`${data.value}%`}</strong>
       </div>
