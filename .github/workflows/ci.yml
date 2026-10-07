@@ -95,6 +95,12 @@ jobs:
       - name: TDZ self-reference guard
         run: node scripts/tdz-scan.js
 
+      # HARDEN-1 · the daily error digest's parser, against a fixture log. No
+      # server, no database: a parser that stops grouping by type and route
+      # fails here, not on the morning the digest is wrong.
+      - name: Error digest parser self-test
+        run: node scripts/error-digest.js --self-test
+
       # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
       # A new high/critical advisory fails the build unless it is listed in
       # audit/npm-audit-allowlist.json with a reason and a review-by date

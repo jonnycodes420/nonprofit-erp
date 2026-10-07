@@ -38,6 +38,27 @@ ten at about 65ms a round trip on prod. Indexes added: `idx_gifts_org_amount`, `
 (partial), `idx_interactions_org_type_date`. Local p95 on Harborlight: 12ms. Gifts, notes and emails are
 hard-deleted; a soft-deleted person takes theirs out of search through the donor join. The coordinator is
 still refused the route entirely. Test: `search2-everything` (30 checks, three planted defects went red).
+## HARDEN-1 · Make it hard to break (2026-10-07)
+
+FIX-29 reached prod because every test runs with AI off and nothing checked the whole product after a merge.
+- **The rule** (CLAUDE.md): no fix merges without a test that fails before it and passes after.
+- **Golden journeys** (`tests/golden-journeys.test.js`, in CORE so every PR runs it): ten journeys through real
+  routes on a Harborlight-shaped `org_golden` (the demo seed has hundreds of hard-coded keys, and no suite may log in
+  to `org_b72demo`): import, gift, thank, Agent drafts, Ask why, grant + instalment, email template, calendar,
+  figure rows, merge. About 2s locally. Found: a grant's received amount ignored paid instalments (fixed).
+- **Guards**: fix29-tool-schemas also checks names, required keys, closed strict objects, schema size and every
+  prompt builder at its largest input.
+- **Nightly real-AI run** (`nightly-ai.yml`): 20 fixed questions against the real API on a seeded throwaway DB, a
+  counting proxy capped at $2, an issue on failure. $1.32 a run. Needs `ANTHROPIC_EVAL_KEY` (NEEDS-JONATHAN).
+- **Prod AI smoke**: `/agent/preview` and `/ask/preview` (read-only, nothing saved) run once after every deploy
+  (`scripts/prod-ai-smoke.js`, also in `npm run status`), about $0.04.
+- **Error digest** (`error-digest.yml`): a day of Railway error lines grouped by type and route into
+  `docs/errors/`, committed with `[skip ci]`. The 500 handler now logs `[500] METHOD /route`.
+- **Found by the nightly run and the prod logs, all fixed with a red-first test:** the Agent's update_contact wrote
+  the step's run state "runs" into the donor's postal state (compilePlan's two meanings of `state`; prod repair is
+  Jonathan's); the scores job raced the schema migration on boot; Show me's amount-and-year rule dropped every word
+  before the year ("in Marblehead"); `/ask` answered a who question with gifts.
+
 ## WIRE-1-ADDENDUM · Templates, Agent drafts and Gervase (2026-10-06)
 
 Found on Harborlight after WIRE-1 shipped. Three parts, built in parallel worktrees (templates, profile) with the
