@@ -19,10 +19,12 @@ const WHY = require("../why");
 const AW = require("../appealWhy");
 const P = require("../prospect");
 const GR = require("../groups");
+const FS = require("../figureSources");
 
 const routers = { r0: express.Router() };
 // ASK-3: money and small numbers in the words of a list answer.
 const fmtUsd = c => "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
+const firstName = n => String(n || "").trim().split(/\s+/)[0] || "them";
 const spellN = n => (["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"][n] || String(n));
 
 
@@ -530,6 +532,7 @@ async function personAnswer(req, res, { donor, intent, campaign, typed }) {
   const G = await guide();
   const orgId = req.user.orgId;
   if (intent === "stopped") { req.body = { key: "stopped", donor, ...(typed ? { text: typed } : {}) }; return whyAskHandler(req, res); }
+  if (intent === "done") return personActivity(req, res, { donor, typed });
   const a = await WHY.answer(orgId, "person", { donor, intent, campaign, user: req.user.userId }, { computeDriftForDonors });
   if (!a) return res.status(404).json({ error: "Donor not found" });
   a.key = "person";
@@ -549,6 +552,71 @@ async function personAnswer(req, res, { donor, intent, campaign, typed }) {
     step: a.step ? { ...a.step, due: orgTime.addDays(today, a.step.dueIn || 1) } : null,
     alsoSteps: (a.alsoSteps || []).map(x => ({ ...x, due: orgTime.addDays(today, x.dueIn || 7),
       ...(x.fallback ? { fallback: { ...x.fallback, due: orgTime.addDays(today, x.fallback.dueIn || 7) } } : {}) })),
+  };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+}
+
+// WIRE-1 · "What has Rafael done with us this year?" One line per kind of
+// involvement, each a figure that opens its rows: gifts and hours through the
+// profile's own sources, everything else through donor-activity. The period is
+// this year, last year, or (when the question names neither) their whole
+// history. The sentence is a template built from the same numbers, so there is
+// nothing for a model to get wrong and nothing to check.
+const ACTIVITY_LINES = [
+  // [key, label, source key, measure, singular, plural]
+  ["gifts", "Gave", "donor-gifts-between", "sum", "gift", "gifts"],
+  ["hours", "Volunteered", "volunteer-hours", "hours", "shift", "shifts"],
+  ["events", "Events", "donor-activity", "count", "event", "events"],
+  ["memberships", "Membership", "donor-activity", "count", "membership", "memberships"],
+  ["fundraising", "Raised on their peer-to-peer page", "donor-activity", "sum", "page", "pages"],
+  ["auction", "Bid at an auction", "donor-activity", "count", "item", "items"],
+  ["pledges", "Pledged", "donor-activity", "sum", "pledge", "pledges"],
+  ["conversations", "Conversations and meetings", "donor-activity", "count", "conversation", "conversations"],
+  ["journeys", "Journeys", "donor-activity", "count", "journey", "journeys"],
+];
+async function personActivity(req, res, { donor, typed }) {
+  const G = await guide();
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [donor, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = orgToday(await orgTz(orgId));
+  const y = today.slice(0, 4);
+  const t = String(typed || "");
+  const period = /\blast year\b/i.test(t) ? { from: `${+y - 1}-01-01`, to: `${+y - 1}-12-31`, words: "last year" }
+    : /\b(ever|all time|always|history)\b/i.test(t) || !/\bthis year\b|\byear\b/i.test(t) && typed ? { from: "1900-01-01", to: today, words: "in all their history with you" }
+    : { from: `${y}-01-01`, to: today, words: "this year" };
+  const lines = [];
+  for (const [key, label, src, measure, one, many] of ACTIVITY_LINES) {
+    const params = { donor: d.id, from: period.from, to: period.to, ...(src === "donor-activity" ? { part: key } : {}) };
+    const f = await FS.figure(orgId, { key: src, params }, {}, { rows: false });
+    if (!f || !f.totalRows) continue;
+    const def = await FS.figureSentence({ key: src, params });
+    const amount = measure === "sum" ? f.cents : measure === "hours" ? Number(f.value) || 0 : null;
+    lines.push({ key, label, count: f.totalRows, cents: measure === "sum" ? f.cents : 0, hours: measure === "hours" ? amount : null,
+      measure: measure === "sum" ? "sum" : "count", unit: f.totalRows === 1 ? one : many, definition: def, source: { key: src, params } });
+  }
+  const f = firstName(d.name);
+  const bits = lines.slice(0, 4).map(l => l.key === "gifts" ? `gave ${fmtUsd(l.cents)} in ${spellN(l.count)} ${l.unit}`
+    : l.key === "hours" ? `volunteered ${l.hours} ${l.hours === 1 ? "hour" : "hours"} over ${spellN(l.count)} ${l.unit}`
+    : l.key === "events" ? `was at or registered for ${spellN(l.count)} ${l.unit}`
+    : l.key === "memberships" ? "held a membership"
+    : l.key === "fundraising" ? `raised ${fmtUsd(l.cents)} on a peer-to-peer page`
+    : l.key === "auction" ? `bid on ${spellN(l.count)} auction ${l.unit}`
+    : l.key === "pledges" ? `pledged ${fmtUsd(l.cents)}`
+    : l.key === "conversations" ? `had ${spellN(l.count)} ${l.unit} with you`
+    : `was on ${spellN(l.count)} ${l.unit}`);
+  const sentence = lines.length
+    ? `${period.words === "this year" ? "This year" : period.words === "last year" ? "Last year" : "Over all their history with you"}, ${d.name} ${bits.length > 1 ? bits.slice(0, -1).join(", ") + " and " + bits[bits.length - 1] : bits[0]}${lines.length > 4 ? ", and more below" : ""}.`
+    : `${d.name} has nothing on their record ${period.words} yet: no gifts, hours, events, memberships or conversations.`;
+  await logQuestion(orgId, typed || "What has this person done with us?", "person: done", true);
+  const out = {
+    answered: true, question: { key: "person", text: typed || `What has ${d.name} done with us ${period.words}?` }, donor: { id: d.id, name: d.name },
+    campaign: null, compare: null, person: { id: d.id, name: d.name, intent: "done" },
+    readAs: `${d.name} · everything they have done with you, ${period.words}`,
+    sentence, sentenceSource: "template", template: sentence, aiOff: false,
+    reasons: lines, who: [{ donorId: d.id, name: d.name, cents: null, reason: `Open ${f}'s record for the whole timeline.` }],
+    cantSee: "This reads what is on their record in Steward. Time they gave that nobody logged is not here.",
+    step: null, alsoSteps: [],
   };
   res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
 }
@@ -644,9 +712,9 @@ async function resolvePerson(orgId, text, context, G) {
 // ASK-3: questions Steward has no computation for yet, refused by name and
 // logged, never answered with a neighbouring question. They go to the next build.
 const NOT_YET = [
-  [/(behind|short of|under|below|off) (its |the |our )?(goal|target)|miss(ed|ing)? (its |the |our )?goal/i, "why a campaign is behind its goal"],
-  [/why did.*(event|gala|dinner|run|auction|supper|lunch|breakfast).*raise|why did.*(event|gala)/i, "why an event raised what it did"],
-  [/(monthly|recurring).*(drop|down|fell|fall|declin|lower|less)\w*|why.*(monthly|recurring) giving/i, "why monthly giving changed"],
+  [/\b(behind|short of|under|below|off) (its |the |our )?(goal|target)\b|\bmiss(ed|ing)? (its |the |our )?goal\b/i, "why a campaign is behind its goal"],
+  [/\bwhy did\b.*\b(event|gala|dinner|run|auction|supper|lunch|breakfast)\b.*\braise\b|\bwhy did\b.*\b(event|gala)\b/i, "why an event raised what it did"],
+  [/\b(monthly|recurring)\b.*\b(drop|down|fell|fall|declin|lower|less)\w*|\bwhy\b.*\b(monthly|recurring) giving\b/i, "why monthly giving changed"],
 ];
 
 app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
@@ -669,7 +737,7 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
     if (!d) return res.status(404).json({ error: "Donor not found" });
     const intent = String(body.person.intent || "");
     const campaign = body.person.campaign ? String(body.person.campaign) : null;
-    if (["ask", "next", "changed", "stopped"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
+    if (["ask", "next", "changed", "stopped", "done"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
     if (intent !== "given") return askRefuse(req, res, typed || "(person)", "that question about one person", C);
     raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: d.id } };
     source = "guided"; person = { id: d.id, name: d.name, intent };

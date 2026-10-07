@@ -75,13 +75,21 @@ async function seedProspect1(q, ORG, { TODAY, gen = GEN, sch = SCH, who = ["u_b7
       }
     }
     if (extra.event) {
-      const [ev] = await q(`SELECT id FROM events WHERE org_id=$1 ORDER BY date DESC NULLS LAST LIMIT 1`, [ORG]);
-      if (ev) await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [`ea_pr1_${ORG}_${key}`, ev.id, ORG, id, name, email]);
+      // WIRE-1: they came to the org's most recent past event, so the demo has
+      // a person who gives, volunteers and attended (the whole-person walk).
+      const [ev] = await q(`SELECT id, name FROM events WHERE org_id=$1 AND date::text <= $2 ORDER BY date DESC NULLS LAST LIMIT 1`, [ORG, TODAY]);
+      if (ev) {
+        await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,attendance_logged_at) VALUES ($1,$2,$3,$4,$5,$6,'attended',NOW())`,
+          [`ea_pr1_${ORG}_${key}`, ev.id, ORG, id, name, email]);
+        await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name) VALUES ($1,$2,$3,'event',(SELECT date::text FROM events WHERE id=$4),$5,$6,$7)`,
+          [`int_pr1_${ORG}_${key}_came`, ORG, id, ev.id, `Came to ${ev.name}.`, ...who]);
+      }
     }
     if (extra.hours) {
       await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'After-school tutoring',$6,$7)`,
         [`vsh_pr1_${ORG}_${key}`, ORG, id, ago(TODAY, 50), extra.hours, ...who]);
+      // WIRE-1: hours make a volunteer, as insertShift does (markVolunteer).
+      await q(`UPDATE donors SET person_types = person_types || '["volunteer"]'::jsonb WHERE id=$1 AND org_id=$2`, [id, ORG]);
     }
   }
   for (const [key, name, ein, gifts] of FOUNDATIONS) {
@@ -91,6 +99,18 @@ async function seedProspect1(q, ORG, { TODAY, gen = GEN, sch = SCH, who = ["u_b7
       [id, ORG, name, ein, ...who]);
     for (const [d, a, f] of gifts) await gift(id, d, a, f);
   }
+  // WIRE-1: this runs after the seed's main rollup, so these people's totals
+  // are recomputed here from their gifts, the same rollup seed-demo.js runs.
+  // Without it Rafael Quintero-Byrne read lifetime $0 beside two $100 gifts.
+  const ids = [...PEOPLE.map(p => pre + p[0]), ...FOUNDATIONS.map(f => pre + f[0]), `${pre}employer`];
+  await q(`
+    UPDATE donors d SET
+      total_giving = COALESCE(s.total,0), gift_count = COALESCE(s.n,0),
+      last_gift_date = s.last_date, last_gift_amount = COALESCE(s.last_amt,0), first_gift_date = s.first_date
+    FROM (SELECT g.donor_id, SUM(g.amount) total, COUNT(*) n, MAX(g.date) last_date, MIN(g.date) first_date,
+                 (ARRAY_AGG(g.amount ORDER BY g.date DESC))[1] last_amt
+            FROM gifts g WHERE g.org_id=$1 AND g.donor_id = ANY($2) GROUP BY g.donor_id) s
+    WHERE d.id = s.donor_id AND d.org_id = $1`, [ORG, ids]);
   console.log(`[seed] PROSPECT-1: ten prospects and two foundations with EINs`);
 }
 

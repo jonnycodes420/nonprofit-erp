@@ -173,6 +173,7 @@ CORE=(
   parity4-started
   fix12-recipe-drafts
   fix11-inbound-resend
+  wire-journey
   int5-api-keys
   script-guards
   fix15-two-worktrees

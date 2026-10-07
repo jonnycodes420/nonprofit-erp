@@ -18,6 +18,9 @@ import { T } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { SkeletonCards, SkeletonPage } from "./Skeleton";
+import { urlParam, tabHref } from "../lib/appUrls";
+import { RecordLink } from "./RecordLink";
+import { offerUndo } from "./EditHistory";
 
 const ACTION = T.greenDk;
 const card = { background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px" };
@@ -34,6 +37,40 @@ const RULE_FIELDS = [
   { key: "given", label: "Has given", options: [["", "Either"], ["ever", "Has given"], ["never", "Has never given"]] },
   { key: "stage", label: "Stage", options: [["", "Any stage"], ["prospect", "Prospect"], ["qualify", "Qualify"], ["cultivate", "Cultivate"], ["solicit", "Solicit"], ["steward", "Steward"], ["lapsed", "Lapsed"]] },
 ];
+
+// WIRE-1 · every list can become a Group. Each picker is fed by the list
+// endpoint the rest of the app already reads; "any" is any of them.
+const KIND_FIELD = { key: "kind", label: "Kind", options: [["", "People and organizations"], ["person", "People"], ["organization", "Organizations"]] };
+const MEMBER_FIELD = { key: "member", label: "Membership", options: [["", "Any or none"], ["current", "Members now"], ["active", "Active members"], ["grace", "In their grace period"], ["lapsed", "Lapsed members"], ["any", "Ever a member"]] };
+const PICK_FIELDS = [
+  { key: "registeredEvent", label: "Registered for", list: "events" },
+  { key: "attendedEvent", label: "Came to", list: "events" },
+  { key: "gaveCampaign", label: "Gave to campaign", list: "campaigns", noAny: true },
+  { key: "gavePage", label: "Gave through page", list: "pages" },
+  { key: "auctionBidder", label: "Bidder in", list: "auctions" },
+  { key: "inJourney", label: "In journey", list: "journeys" },
+  { key: "memberLevel", label: "Member level", list: "levels", noAny: true },
+  { key: "groupId", label: "Also in group", list: "groups", noAny: true },
+];
+const YES_FIELDS = [
+  ["hasPledge", "Has an open pledge"], ["recurring", "Has a recurring gift running"], ["fundraiser", "Runs a peer-to-peer page"],
+  ["funder", "Funds a grant"], ["openTask", "Has an open task"],
+];
+// The lists the pickers read, each as [id, name] pairs. A list that does not
+// load is an empty picker, never a broken form.
+function loadPickLists() {
+  const pairs = (rows, name) => (Array.isArray(rows) ? rows : []).map(r => [r.id, name(r)]).filter(p => p[0] && p[1]);
+  const safe = (path, pick) => apiFetch(path).then(pick).catch(() => []);
+  return Promise.all([
+    safe("/events", r => pairs(r, e => `${e.name}${e.date ? ` (${String(e.date).slice(0, 10)})` : ""}`)),
+    safe("/fundraising/campaigns", r => pairs(r, c => c.name)),
+    safe("/giving-pages", r => pairs(r, g => g.title || g.slug)),
+    safe("/auctions", r => pairs(r && r.auctions, a => a.title)),
+    safe("/journeys", r => pairs(r && r.journeys, j => j.name)),
+    safe("/membership-levels", r => pairs(r && r.levels, l => l.name)),
+    safe("/groups", r => pairs(r && r.groups, g => g.name)),
+  ]).then(([events, campaigns, pages, auctions, journeys, levels, groups]) => ({ events, campaigns, pages, auctions, journeys, levels, groups }));
+}
 
 export function LightningMark({ size = 14 }) {
   return (
@@ -52,6 +89,8 @@ function NewGroup({ onMade, onCancel }) {
   const [retained, setRetained] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [lists, setLists] = useState(null);
+  useEffect(() => { if (kind === "dynamic" && !lists) loadPickLists().then(setLists); }, [kind, lists]);
   const save = () => {
     setBusy(true); setErr("");
     const r = { ...rules };
@@ -84,6 +123,27 @@ function NewGroup({ onMade, onCancel }) {
           <label style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
             <input type="checkbox" checked={retained} onChange={e => setRetained(e.target.checked)} /> Retained only
           </label>
+          {[KIND_FIELD, MEMBER_FIELD].map(f => (
+            <select key={f.key} aria-label={f.label} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={field}>
+              {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
+            </select>
+          ))}
+          {PICK_FIELDS.map(f => {
+            const items = (lists && lists[f.list]) || [];
+            if (!items.length && !rules[f.key]) return null;
+            return (
+              <select key={f.key} aria-label={f.label} data-testid={`group-rule-${f.key}`} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={{ ...field, maxWidth: 260 }}>
+                <option value="">{`${f.label}: anyone`}</option>
+                {!f.noAny && <option value="any">{`${f.label}: any of them`}</option>}
+                {items.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+              </select>
+            );
+          })}
+          {YES_FIELDS.map(([k, l]) => (
+            <label key={k} style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={rules[k] === "1"} onChange={e => setRules({ ...rules, [k]: e.target.checked ? "1" : "" })} /> {l}
+            </label>
+          ))}
         </div>
       )}
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
@@ -100,7 +160,7 @@ function NewGroup({ onMade, onCancel }) {
   );
 }
 
-export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly }) {
+export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigate }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [level, setLevel] = useState("all");
@@ -128,7 +188,15 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly }) {
           {g.name}{g.kind === "dynamic" && <LightningMark size={16} />}
         </h2>
         {g.description && <p style={{ fontSize: 14, color: T.ink2, margin: "0 0 4px" }}>{g.description}</p>}
-        <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 16px", lineHeight: 1.55 }}>{g.sentence}</p>
+        <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px", lineHeight: 1.55 }}>{g.sentence}</p>
+        {/* WIRE-1: every Group can feed a Communication and a Journey. Both
+            open a draft that arrives off; nothing is sent or started here. */}
+        {!isReadOnly && onNavigate && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "0 0 16px" }}>
+            <button type="button" data-testid="group-email" style={primary} onClick={() => onNavigate("communications", { audienceId: g.id })}>Email this group</button>
+            <button type="button" data-testid="group-journey" style={quiet} onClick={() => onNavigate("journeys", { groupId: g.id })}>Start a journey</button>
+          </div>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
           {data.figures.map(f => (
             <Figure key={f.label} label={f.label} value={f.value} kind={f.kind} definition={f.sentence} source={f.source} figureKey={`group-${f.label}`} />
@@ -184,13 +252,15 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   const [list, setList] = useState(null);
   const [err, setErr] = useState("");
   const [making, setMaking] = useState(false);
-  const [open, setOpen] = useState(initialGroupId || null);
+  // WIRE-1: /app/groups?group=<id> opens that group (a group just saved from
+  // a guest list, a campaign or the donor list lands on its own page).
+  const [open, setOpen] = useState(() => initialGroupId || urlParam("groups", "group") || null);
   const load = useCallback(() => {
     apiFetch("/groups").then(r => { setList(r); setErr(""); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
   useEffect(() => { load(); }, [load]);
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
-  if (open) return <GroupPage groupId={open} isReadOnly={isReadOnly} onBack={() => { setOpen(null); load(); }} onOpenPerson={openPerson} />;
+  if (open) return <GroupPage groupId={open} isReadOnly={isReadOnly} onNavigate={onNavigate} onBack={() => { setOpen(null); load(); }} onOpenPerson={openPerson} />;
   return (
     <FigureContext.Provider value={{ openPerson }}>
       <div data-testid="groups-page">
@@ -295,6 +365,45 @@ export function AddToGroup({ donorIds, onDone }) {
       </select>
       {pick && <button type="button" style={{ ...quiet, padding: "5px 10px" }} onClick={add}>Add {donorIds.length}</button>}
       {msg && <span style={{ fontSize: 12, color: T.ink3 }}>{msg}</span>}
+    </span>
+  );
+}
+
+// WIRE-1 · EVERY LIST CAN BECOME A GROUP. A guest list, a campaign's donors,
+// the Donors list's filters: one press saves them as a group by rule, so the
+// people in it keep up with the list by themselves. The shared Undo toast
+// takes it back. A name already used gets the date added, never a refusal.
+export function SaveAsGroup({ name, rules, label = "Save as a group", testid = "save-as-group", style }) {
+  const [saved, setSaved] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true); setErr("");
+    const post = n => apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n.slice(0, 60), kind: "dynamic", rules }) });
+    try {
+      let g;
+      try { g = await post(name); }
+      catch (e) {
+        if (e?.status !== 409) throw e;
+        g = await post(`${name.slice(0, 47)} ${new Date().toISOString().slice(0, 10)}`);
+      }
+      setSaved(g);
+      offerUndo({ message: `Saved as the group ${g.name}. It keeps up with the list by itself.`,
+        undoAction: async () => { const r = await apiFetch(`/groups/${g.id}`, { method: "DELETE" }); setSaved(null); return r; } }, "group");
+    } catch (e) { setErr(e?.error || errorMessage(e, "That group did not save.")); }
+    setBusy(false);
+  };
+  if (saved) return (
+    <span data-testid={testid + "-done"} style={{ fontSize: 12.5, color: (style && style.color) || T.ink2 }}>
+      Saved as a group. <RecordLink to={tabHref("groups", { groupId: saved.id })} style={{ color: (style && style.color) || ACTION, fontWeight: 600, textDecoration: "underline" }}>Open {saved.name}</RecordLink>
+    </span>
+  );
+  return (
+    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+      <button type="button" data-testid={testid} disabled={busy} onClick={save} style={{ ...quiet, padding: "5px 10px", fontSize: 12.5, ...(style || {}) }}>
+        {busy ? "Saving…" : label}
+      </button>
+      {err && <span role="alert" style={{ fontSize: 12, color: T.ink }}>{err}</span>}
     </span>
   );
 }

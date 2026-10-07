@@ -29,6 +29,8 @@ const DEP = require("../depositsFile");
 const BK = require("../bookkeeper");
 // PARITY-1 Part B — a file on a conversation or a note (types, bytes, signed door).
 const IXF = require("../interactionFiles");
+const TL = require("../timelineLine");
+const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person   // WIRE-1 rule 2: every act lands on the timeline
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
@@ -94,6 +96,7 @@ const {
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
   sendDonorLifecycleEmail, fromWithDisplayName,
+  openAdminTask,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -125,6 +128,20 @@ let app = routers.r0;
 // lost its rows (the BUILD-54 finding, hit live in a pre-push run). Width,
 // not retry: 2^128 puts the class out of reach on every import mint site.
 const importId = prefix => prefix + uuid().replace(/-/g, "");
+// WIRE-1: an imported gift names its campaign; Reports filtered by campaign
+// match on campaign_id. One org-scoped lookup, exact and case-insensitive. A
+// name two campaigns share is left unresolved rather than guessed.
+async function campaignIdResolver(orgId) {
+  const rows = await query("SELECT id, name FROM campaigns WHERE org_id=?", [orgId]);
+  const byName = new Map();
+  for (const r of rows) {
+    const k = String(r.name || "").trim().toLowerCase();
+    if (!k) continue;
+    byName.set(k, byName.has(k) ? null : r.id);
+  }
+  return name => byName.get(String(name || "").trim().toLowerCase()) || null;
+}
+const IMPORT_RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
 
 // BUILD-72 Part 1 — an import that does not reconcile is not a 500. The
@@ -4520,7 +4537,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // A chunked import passes the SAME id for every chunk, which is what makes
   // the report whole rather than per-chunk. An absent or malformed id leaves
   // the column NULL and behaves exactly as before.
-  const runId = /^imp_[A-Za-z0-9_-]{4,40}$/.test(String(req.body.importId || ""))
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || ""))
     ? String(req.body.importId) : null;
 
   // Plan limit check (same as /donors/import)
@@ -5132,7 +5149,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // (13 before A.7 added payment_method), interactions 8, so 2,000 rows/batch
   // is 28,000 and 16,000 — comfortably
   // inside it — and takes the trip count from ~1,800 to ~185.
-  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 14 params/row → 28,000 of the 65,535 cap
+  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 16 params/row (WIRE-1 added campaign_id) → 32,000 of the 65,535 cap
+  const campaignIdOf = await campaignIdResolver(orgId);
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -5141,13 +5159,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign,
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign),
         // A.7 — was a hardcoded NULL. The fund the row named, resolved above.
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
         g.paymentMethod || null, runId);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -5161,7 +5179,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -5759,52 +5777,97 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
-  const result = await run(
-    "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
-    [ids, req.user.orgId]
-  );
-  res.json({ deleted: result.changes });
+  // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
+  // so the shared Undo toast can bring the whole batch back.
+  const who = actor(req);
+  const { changes, undoIds } = await withTransaction(async (client) => {
+    const gone = await queryTx(client,
+      "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
+      [ids, req.user.orgId]);
+    const undoIds = [];
+    for (const g of gone) {
+      const undoId = "del_" + uuid().slice(0, 12);
+      await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+                 VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
+        [undoId, req.user.orgId, g.id, who.id, who.name]);
+      undoIds.push(undoId);
+    }
+    return { changes: gone.length, undoIds };
+  });
+  res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-
 // deletes every trashed (deleted_at IS NOT NULL) donor in the org, plus all
-// rows that exist only because those donors did — child tables first, in
-// FK-safe order (same convention as DELETE /admin/orgs/:id). Volunteers are
-// deliberately NOT deleted: a volunteer who was linked to a purged donor
-// keeps their own row, just unlinked. event_attendees keep the attendance
-// record with the donor link nulled (ON DELETE SET NULL); donor_relationships
-// and campaign_recipients clean themselves up (ON DELETE CASCADE). One
-// transaction — a mid-purge failure leaves nothing half-deleted. Admin-only;
-// like all DELETE-shaped routes, never checkWriteAccess-gated (a lapsed org
-// can still empty its trash).
+// rows that exist only because those donors did. WIRE-1: it walks EVERY person
+// pointer in Data health's MERGE_REFS, so a column added for the merge is
+// covered here in the same commit and nothing is left pointing at a person
+// who is gone:
+//   · the person's own records (gifts, receipts, pledges, notes, tasks,
+//     memberships and the rest) are deleted, child rows first in FK-safe order
+//   · a money, ledger or history row that is not theirs to take with them
+//     (a bookkeeping line, a POS sale, an auction item, another donor's gift
+//     in their honour, a household they headed, the portal log) keeps the row
+//     and loses the pointer
+//   · a meeting drops them from its people, and goes only if nobody is left
+// One transaction: a mid-purge failure leaves nothing half-deleted.
+// Admin-only; like all DELETE-shaped routes, never checkWriteAccess-gated (a
+// lapsed org can still empty its trash).
+const PURGE_KEEP_ROW = new Set([
+  "fin_transactions.donor_id", "pos_sales.person_id", "households.primary_donor_id", "grants.funder_donor_id",
+  "grant_sends.funder_donor_id", "gifts.tribute_donor_id", "gifts.match_employer_id", "auction_items.donor_id",
+  "auction_refund_flags.donor_id", "peer_fundraisers.person_id", "recurring_change_log.donor_id",
+  "portal_audit_log.donor_id", "custom_field_events.entity_id", "volunteers.donor_id", "event_attendees.donor_id",
+  "survey_responses.donor_id", "volunteer_applications.person_id", "volunteer_groups.contact_person_id",
+]);
+// The person's own rows with a plain FK to donors (or to their gifts), in the
+// order they must go: receipts and pledges point at gifts, gifts last.
+const PURGE_CHILD_TABLES = [
+  "receipts", "pledges", "memberships", "milestone_drafts", "note_reminders", "donor_materials",
+  "planned_gifts", "custom_field_values", "sequence_enrollments",
+  "payment_recovery_events", "recurring_subscriptions",
+  "tasks", "interaction_attachments", "interactions", "gifts",
+];
 app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
   const ids = trashed.map(r => r.id);
-  if (!ids.length) return res.json({ purged: 0, children: {} });
-
-  // receipts/pledges first (they FK both donors AND gifts), then the rest of
-  // the donor-scoped children, then gifts, then the donors themselves.
-  // fin_transactions is deliberately absent: it has no donor_id column (only
-  // a vendor_donor text name — the CLAUDE.md claim of a donor_id there was
-  // stale), and it's org bookkeeping history either way.
-  const CHILD_TABLES = [
-    "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials",
-    "planned_gifts", "custom_field_values", "sequence_enrollments",
-    "payment_recovery_events", "recurring_subscriptions",
-    "tasks", "interaction_attachments", "interactions", "gifts",
-  ];
-  const { purged, children } = await withTransaction(async (client) => {
-    await runTx(client, "UPDATE volunteers SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)", [orgId, ids]);
-    const children = {};
-    for (const t of CHILD_TABLES) {
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {} });
+  const { MERGE_REFS, REF_SHAPE } = require("./dataHealth");
+  const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
+  const { purged, children, unlinked } = await withTransaction(async (client) => {
+    const children = {}, unlinked = {};
+    // 1. Rows that stay, unlinked.
+    for (const [t, c] of MERGE_REFS) {
+      if (!PURGE_KEEP_ROW.has(`${t}.${c}`)) continue;
+      const r = await runTx(client, `UPDATE ${t} SET ${c}=NULL WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) unlinked[`${t}.${c}`] = r.changes;
+    }
+    // Another donor's pledge marked paid by one of these gifts stays a pledge.
+    await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
+    // 2. Meetings: a meeting only these people were on goes; the rest drop them.
+    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND person_ids <@ ?::text[]`, [orgId, ids]);
+    if (gone.changes) children.calendar_events = gone.changes;
+    const left = await runTx(client,
+      `UPDATE calendar_events SET person_ids = ARRAY(SELECT p FROM unnest(person_ids) WITH ORDINALITY u(p, n) WHERE p <> ALL(?::text[]) ORDER BY n)
+        WHERE org_id=? AND person_ids && ?::text[]`, [ids, orgId, ids]);
+    if (left.changes) unlinked["calendar_events.person_ids"] = left.changes;
+    // 3. The person's own rows, FK-safe order.
+    for (const t of PURGE_CHILD_TABLES) {
       const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id = ANY(?)`, [orgId, ids]);
       if (r.changes) children[t] = r.changes;
     }
+    // 4. Every other pointer: a row that exists only because the person did.
+    for (const [t, c] of MERGE_REFS) {
+      const k = `${t}.${c}`;
+      if (PURGE_KEEP_ROW.has(k) || (REF_SHAPE[k] || {}).array || (c === "donor_id" && PURGE_CHILD_TABLES.includes(t))) continue;
+      const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) children[t] = (children[t] || 0) + r.changes;
+    }
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
-    return { purged: d.changes, children };
+    return { purged: d.changes, children, unlinked };
   });
-  res.json({ purged, children });
+  res.json({ purged, children, unlinked });
 }));
 
 // ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
@@ -6641,6 +6704,12 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     schedule: req.body.installments, frequency: req.body.frequency,
     count: req.body.installmentCount, firstDue: dueDate,
   }).catch(e => console.error("[pledge] instalments:", e.message));
+
+  // WIRE-1: the promise is on the person's timeline the day it is made.
+  { const who = await staffWho(req);
+    await TL.timelineLine({ orgId: req.user.orgId, donorId: req.params.id,
+      note: `Pledged ${TL.lineMoney(pledgeAmt)}${dueDate ? `, due ${String(dueDate).slice(0, 10)}` : ""}.`,
+      actorId: who.id, actorName: who.name, key: `pledge_created:${id}`, metadata: { via: "pledge", pledge_id: id } }); }
 
   const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
   const insts = await query("SELECT id, seq, due_date, amount::float AS amount FROM pledge_installments WHERE pledge_id=? ORDER BY seq", [id]);
@@ -8500,8 +8569,10 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // people only where `created_import_id` is this run AND they have no other
 // gift and no other interaction. A person who has acquired any history since
 // stays, and so do their gifts.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7 };
+// WIRE-1: "gifts" is the gift-history file matched to people already on file;
+// its gifts carry the run id, so it reverses as a whole like the others.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -8700,7 +8771,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
       }
       fileFpCounts.set(rowKey, (fileFpCounts.get(rowKey) || 0) + 1);
     }
-    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey });
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey,
+      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null });
   }
   const duplicateCandidates = {
     withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
@@ -8737,6 +8809,10 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // BUILD-83 FIX — same round-trip budget as /donors/import-combined: batches
   // are trips to the database, and 200 was costing four trips per 200 gifts.
   const BATCH = IMPORT_GIFT_BATCH;
+  // WIRE-1: the run id the client minted (as /donors/import-combined takes
+  // it), so Undo import reaches these gifts, and the campaign by id.
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
+  const campaignIdOf = await campaignIdResolver(orgId);
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
@@ -8758,9 +8834,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
           const kept = await queryTx(client,
-            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,payment_method,import_id,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
-            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null, actor(req).id, actor(req).name]
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign), g.fund_id, g.notes, g.externalId || null,
+             g.paymentMethod, runId, actor(req).id, actor(req).name]
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
@@ -9152,6 +9230,7 @@ app.post("/households", requireAuth, checkWriteAccess, wrap(async (req, res) => 
       [id, req.user.orgId, hhName, v.primary, jointAcknowledgment !== false, actor(req).id, actor(req).name]);
     await runTx(client, "UPDATE donors SET household_id=? WHERE id = ANY(?) AND org_id=?", [id, v.ids, req.user.orgId]);
   });
+  await householdLines(req, hhName, id, v.ids, []);   // WIRE-1
   res.status(201).json(await householdView(id, req.user.orgId));
 }));
 
@@ -9174,6 +9253,7 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
     if (!m.length) return res.status(400).json({ error: "New primary must be a member of the household." });
     primary = primaryDonorId;
   }
+  const membersBefore = ids ? (await query("SELECT id FROM donors WHERE household_id=? AND org_id=?", [req.params.id, req.user.orgId])).map(r => r.id) : [];
   await withTransaction(async (client) => {
     if (ids) {
       // drop members no longer in the set, then (re)attach the set
@@ -9186,6 +9266,8 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
        jointAcknowledgment === undefined ? null : (jointAcknowledgment !== false), req.params.id, req.user.orgId]);
   });
   const [hhRow] = await query("SELECT * FROM households WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (ids) await householdLines(req, hhRow?.name || "the household", req.params.id,
+    ids.filter(x => !membersBefore.includes(x)), membersBefore.filter(x => !ids.includes(x)));   // WIRE-1
   const hhAfter = await auditShape("households", hhRow, req.user.orgId);
   if (auditTrailMod.diffFields(hhBefore, hhAfter)) {
     await run("UPDATE households SET edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?",
@@ -9194,6 +9276,17 @@ app.put("/households/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
   if (req.audit) { req.audit.before(hhBefore); req.audit.after(hhAfter); }
   res.json(await householdView(req.params.id, req.user.orgId));
 }));
+
+// WIRE-1 · joining or leaving a household is a line on the person.
+async function householdLines(req, hhName, householdId, joined, left) {
+  const who = await staffWho(req);
+  for (const [list, word] of [[joined, "Joined"], [left, "Left"]]) {
+    for (const donorId of list || []) {
+      await TL.timelineLine({ orgId: req.user.orgId, donorId, note: `${word} ${hhName}.`,
+        actorId: who.id, actorName: who.name, metadata: { via: "household", household_id: householdId, change: word.toLowerCase() } });
+    }
+  }
+}
 
 // FIX-14 Part 2b: the household goes to the trash with its member list, and
 // Undo re-links every member who has not joined another household since.
@@ -11978,8 +12071,10 @@ function audienceClauses(audience = {}, alias = "d") {
                         AND m.status IN ('active','grace'))`);
   }
   if (audience.recurring) {
+    // WIRE-1: the same running states the Group rules read (groups.js).
     sql.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rs WHERE rs.donor_id=${alias}.id AND rs.org_id=${alias}.org_id
-                        AND rs.status IN ('active','past_due'))`);
+                        AND rs.status = ANY(?::text[]))`);
+    params.push(GR.ACTIVE_RECURRING_STATUSES);
   }
   if (audience.stage) {
     sql.push(`lower(coalesce(${alias}.stage,'')) = lower(?)`);
@@ -13555,6 +13650,13 @@ app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess,
      req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
      g.id, orgId]);
 
+  // WIRE-1: the award is on the funder's timeline, once (the board drag that
+  // first awards it writes the same key).
+  { const who = await staffWho(req);
+    await TL.timelineLine({ orgId, donorId: g.funder_donor_id, actorId: who.id, actorName: who.name,
+      note: `Awarded ${TL.lineMoney(toDollars(awardedCents))} for ${g.program || g.funder || "grant"}.`,
+      key: `grant_awarded:${g.id}`, metadata: { via: "grant", grant_id: g.id, pledge_id: pledgeId } }); }
+
   const [row] = await query(
     `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
        JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
@@ -14419,6 +14521,7 @@ async function planGrantImport(orgId, body) {
 // transaction, so a file that fails halfway leaves no half-imported pipeline.
 app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const I = await grantImportMod();
+  const GS = await grantShapeMod();
   const orgId = req.user.orgId;
   const plan = await planGrantImport(orgId, req.body || {});
   if (plan.error) return res.status(400).json(plan);
@@ -14499,8 +14602,19 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
       // in a spreadsheet already had its cheques, and minting instalments for it
       // would put money on the books twice — once as the file's history and once
       // as a promise nobody is waiting for.
-      if (g.status === "awarded") {
-        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, NOW()) WHERE id=? AND org_id=?", [id, orgId]);
+      // WIRE-1: every status that holds an award (awarded, reporting, closed)
+      // is stamped, and from the file's decision date when it has one, so a
+      // 2019 award does not count as this year's. No date: today, as before.
+      if (GS.AWARDED_STATUS_KEYS.includes(g.status)) {
+        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, ?::date::timestamptz, NOW()) WHERE id=? AND org_id=?",
+          [g.decidedOn || null, id, orgId]);
+      }
+      // The report the file says is due becomes the grant's report_due
+      // deadline, so it reaches Home, the calendar and the grant's timeline.
+      if (g.reportDue) {
+        await trun(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
+                    VALUES (?,?,?,'report_due',NULL,?,'pending','',?,?)`,
+          ["gms_" + uuid().slice(0, 10), orgId, id, g.reportDue, who.id, byName]);
       }
       written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
     }
@@ -14873,7 +14987,7 @@ app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
 app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
   const { type, note, date } = req.body;
   if (!note || !note.trim()) return res.status(400).json({ error: "Note required" });
-  const rows = await query("SELECT id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const rows = await query("SELECT id, program, funder, funder_donor_id FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
   const id = "gi_" + uuid().slice(0, 8);
   const giDate = date || orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
@@ -14881,6 +14995,16 @@ app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
     "INSERT INTO grant_interactions (id, org_id, grant_id, type, note, date) VALUES (?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, type || "note", note.trim(), giDate]
   );
+  // WIRE-1: a grant note nobody read: it is also on the funder's timeline,
+  // as the conversation it was, so the funder record tells the whole story.
+  if (rows[0].funder_donor_id) {
+    const who = await staffWho(req);
+    await TL.timelineLine({ orgId: req.user.orgId, donorId: rows[0].funder_donor_id,
+      type: "note",
+      note: `${type && type !== "note" ? String(type).charAt(0).toUpperCase() + String(type).slice(1).replace(/_/g, " ") + " on" : "On"} the ${rows[0].program || rows[0].funder || "grant"} grant: ${note.trim()}`, date: giDate,
+      actorId: who.id, actorName: who.name, key: `grant_note:${id}`,
+      metadata: { via: "grant_interaction", grant_id: rows[0].id, grant_interaction_id: id } });
+  }
   res.status(201).json({ id, type: type || "note", note: note.trim(), date: giDate });
 }));
 
@@ -15714,6 +15838,8 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
        FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.voided_at IS NULL ${mine ? "AND t.assigned_to = ?" : ""}
+        -- WIRE-1: a deleted person's tasks go with them (and come back on Undo).
+        AND (t.donor_id IS NULL OR d.deleted_at IS NULL)
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
     mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
   );
@@ -19502,6 +19628,11 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
     }
   }
 
+  // WIRE-1: starting a page is a line on the fundraiser's own timeline.
+  await TL.timelineLine({ orgId: org.id, donorId: personId, note: `Started a fundraising page: ${givingPage.title}.`,
+    actorId: "system:p2p-signup", actorName: "The fundraiser, from the sign-up page", key: `p2p_page:${id}`,
+    metadata: { via: "peer_fundraiser", fundraiser_id: id, giving_page_id: givingPage.id } });
+
   // PARITY-2 Part 2: the person who starts a team is its captain. Staff can
   // change it from the P2P screen.
   if (startedTeam && teamId) {
@@ -19509,6 +19640,14 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
       [id, teamId, org.id]);
   }
   const pending = givingPage.p2p_requires_approval === true;
+  // WIRE-1: a page waiting for approval is a task for an admin, linked to the
+  // person, so it is somebody's job and not a row nobody opens.
+  if (pending && openAdminTask) {
+    await openAdminTask(org.id, {
+      title: `Approve ${name.trim()}'s fundraising page for ${givingPage.title || "a giving page"}`, priority: "high",
+      donorId: personId || null, actorId: "system:p2p-signup", actorName: "The fundraiser, from the sign-up page",
+    }).catch(e => console.error("[p2p] approval task:", e.message));
+  }
 
   const frontendUrl = publicAppUrl();
   const publicUrl = `${frontendUrl}/give/${req.params.orgSlug}/${req.params.pageSlug}/${slug}`;
@@ -19548,7 +19687,7 @@ app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteA
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ error: "That email does not look right." });
   if (String(name).trim().length > 200 || String(email).trim().length > 320) return res.status(400).json({ error: "The name or email is too long." });
   if (personalGoalAmount && (!Number.isFinite(parseFloat(personalGoalAmount)) || parseFloat(personalGoalAmount) <= 0)) return res.status(400).json({ error: "The goal must be a positive number." });
-  const [page] = await query("SELECT id, slug, p2p_enabled FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [req.params.id, orgId]);
+  const [page] = await query("SELECT id, slug, title, p2p_enabled FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [req.params.id, orgId]);
   if (!page) return res.status(404).json({ error: "That campaign could not be found." });
   if (page.p2p_enabled !== true) return res.status(400).json({ error: "Turn peer-to-peer on for this campaign first." });
   let teamId = null;
@@ -19577,6 +19716,10 @@ app.post("/giving-pages/:id/fundraisers", requireAuth, requireAdmin, checkWriteA
       slug = await uniquePeerFundraiserSlug(page.id, `${base}-${Date.now().toString(36).slice(-4)}`);
     }
   }
+  { const who = await staffWho(req);   // WIRE-1: on the fundraiser's timeline
+    await TL.timelineLine({ orgId, donorId: personId, note: `Started a fundraising page: ${page.title}.`,
+      actorId: who.id, actorName: who.name, key: `p2p_page:${id}`,
+      metadata: { via: "peer_fundraiser", fundraiser_id: id, giving_page_id: page.id } }); }
   const frontendUrl = publicAppUrl();
   res.status(201).json({ id, slug, teamId, personId,
     publicUrl: `${frontendUrl}/give/${o?.org_slug || ""}/${page.slug}/${slug}`,
@@ -22910,10 +23053,8 @@ async function eventDonorFor(orgId, body, who) {
   const name = String(body?.name || "").trim().slice(0, 200);
   const email = String(body?.email || "").trim().toLowerCase().slice(0, 200);
   if (!name && !email) return null;
-  if (email) {
-    const found = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
-    if (found.length === 1) return found[0].id;
-  }
+  const known = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
+  if (known) return known;
   const id = "d_" + uuid().slice(0, 10);
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]',?,?)`,
     [id, orgId, name || email, email || null, who.id, who.name]);
@@ -23125,8 +23266,14 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
 // own act on the gift). Never write-gated: a lapsed org can always stop one.
 app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
   const r = await query(`UPDATE memberships SET status='cancelled', cancelled_at=NOW(), updated_at=NOW()
-                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
+                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id, donor_id, level_id`, [req.params.id, req.user.orgId]);
   if (!r.length) return res.status(404).json({ error: "Not found" });
+  // WIRE-1: the cancel is on the member's timeline.
+  const [lv] = await query("SELECT name FROM membership_levels WHERE id=? AND org_id=?", [r[0].level_id, req.user.orgId]);
+  const who = await staffWho(req);
+  await TL.timelineLine({ orgId: req.user.orgId, donorId: r[0].donor_id,
+    note: `${lv ? lv.name + " membership" : "Membership"} cancelled.`, actorId: who.id, actorName: who.name,
+    key: `membership_cancelled:${r[0].id}`, metadata: { via: "membership", membership_id: r[0].id } });
   res.json({ ok: true });
 }));
 
@@ -23644,24 +23791,51 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
   for (const a of rows) {
     const status = came.has(a.id) ? "attended" : "no_show";
     await run("UPDATE event_attendees SET status=? WHERE id=? AND org_id=?", [status, a.id, orgId]);
-    if (!a.donor_id) continue;
-    // Claim the timeline line first: a second save finds it taken.
-    const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND attendance_logged_at IS NULL RETURNING id", [a.id]);
-    if (!claimed.length) continue;
-    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,'event',?,?,?,?,?)`,
-      ["i_" + uuid().slice(0, 10), orgId, a.donor_id,
-       status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
-       day, who.id, u?.name || who.name, JSON.stringify({ via: "event_attendance", event_id: event.id, attendee_id: a.id, status })]);
-    // FIX-4 1c — coming to an event can start a journey. Fired from HERE, the
-    // one place a person is deliberately marked as having come, and only for
-    // "attended": a no-show is not a moment somebody stepped closer. It rides
-    // the `attendance_logged_at` claim above, so a second save of the same
-    // sheet cannot start the journey twice.
-    if (status === "attended") await maybeStartJourney(orgId, a.donor_id, "attended_event", {});
-    logged++;
+    if (await logEventAttendance(orgId, a, event, status, { id: who.id, name: u?.name || who.name }, day)) logged++;
   }
   res.json({ updated: rows.length, timelineLines: logged });
 }));
+
+// WIRE-1 · THE ONE ATTENDANCE LINE. Every door that marks a guest as having
+// come (the attendance list, the guest PATCH, the door check-in, the QR scan)
+// runs this: it claims `attendance_logged_at` first, so whichever door is
+// second finds the claim taken and writes nothing, then writes "Came to X."
+// and fires the attended_event journey keyed to THIS event (FIX-4 1c, and
+// journeyEventKey holds it to one start per event). A no-show writes its own
+// line and starts nothing: a no-show is not a moment somebody stepped closer.
+async function logEventAttendance(orgId, attendee, event, status, who, day) {
+  if (!attendee || !attendee.donor_id || !event) return false;
+  const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND org_id=? AND attendance_logged_at IS NULL RETURNING id", [attendee.id, orgId]);
+  if (!claimed.length) return false;
+  const date = day || String(event.date || "").slice(0, 10) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  await TL.writeTimelineLine({ orgId, donorId: attendee.donor_id, type: "event",
+    note: status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
+    date, actorId: who.id, actorName: who.name,
+    metadata: { via: "event_attendance", event_id: event.id, attendee_id: attendee.id, status } });
+  if (status === "attended") {
+    await maybeStartJourney(orgId, attendee.donor_id, "attended_event", { eventId: event.id })
+      .catch(e => console.error("[journey] attended_event:", e.message));
+  }
+  return true;
+}
+
+// The signed-in person as a timeline line names them: their id and their name.
+async function staffWho(req) {
+  const who = actor(req);
+  const [u] = who.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, req.user.orgId]) : [];
+  return { id: who.id, name: (u && u.name) || who.name };
+}
+
+// WIRE-1 · A REGISTRATION WITH NO GIFT. A paid ticket already shows as its
+// gift; a free RSVP wrote nothing. One "Registered for X." line per attendee
+// row, keyed so a retried submit writes it once.
+async function logEventRegistered(orgId, attendee, event, who) {
+  if (!attendee || !attendee.donor_id || !event) return;
+  await TL.timelineLine({ orgId, donorId: attendee.donor_id, type: "event",
+    note: `Registered for ${event.name}.`, actorId: who.id, actorName: who.name,
+    key: `event_registered:${attendee.id}`,
+    metadata: { via: "event_registration", event_id: event.id, attendee_id: attendee.id } });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  EVENTS-1 item 3 · THE PUBLIC REGISTRATION PAGE
@@ -24124,9 +24298,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
   // ONE PERSON, ONE RECORD. Matched by email first, exactly as every other
   // way into this file works; a registrant who already gives is the person
   // they already are.
-  let donorId = null;
-  const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [e.org_id, email]);
-  if (m.length === 1) donorId = m[0].id;
+  let donorId = await PM.findPersonId(e.org_id, { email, name });   // WIRE-1 rule 1
   if (!donorId) {
     donorId = "d_" + uuid().slice(0, 10);
     await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
@@ -24146,6 +24318,10 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     [attId, e.id, e.org_id, donorId, name, email, level.id, level.kind === "ticket" ? qty : 1,
      String(req.body?.dietary || "").trim().slice(0, 200) || null,
      `From the registration page. ${level.name}.`]);
+  // WIRE-1: the request is on the person's timeline, once per registration.
+  const [attRow] = await query("SELECT id FROM event_attendees WHERE event_id=? AND donor_id=? AND org_id=?", [e.id, donorId, e.org_id]);
+  await logEventRegistered(e.org_id, { id: attRow?.id || attId, donor_id: donorId }, e,
+    { id: "system:event-registration", name: "The registration page" });
 
   // The other names on the ticket: each one is a person on the list with a
   // seat and a name tag, and NOT a second gift.
@@ -24358,9 +24534,12 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
     undo
       ? `UPDATE event_attendees SET checked_in_at=NULL WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
       : `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
-          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`,
+          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at, donor_id`,
     [String(req.body?.attendeeId || ""), event.id, orgId]);
   if (!rows.length) return res.status(404).json({ error: "Not found" });
+  // WIRE-1: through the door is "Came to X." on the person, once.
+  if (!undo) await logEventAttendance(orgId, rows[0], event, "attended", await staffWho(req));
+  delete rows[0].donor_id;
   res.json({ ok: true, attendee: rows[0],
     sentence: undo ? `${rows[0].name} is not checked in.` : `${rows[0].name} is in.` });
 }));
@@ -24397,7 +24576,7 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
     const rows = await query(
       `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
         WHERE id=? AND event_id=? AND org_id=? AND status <> 'cancelled'
-        RETURNING id, name, table_label, quantity, checked_in_at`,
+        RETURNING id, name, table_label, quantity, checked_in_at, donor_id`,
       [read.id, event.id, orgId]);
     if (!rows.length) {
       // A real, signed ticket for a DIFFERENT event: say which, rather than
@@ -24410,6 +24589,8 @@ app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res
                         : "That ticket is not on this event's list." });
     }
     const a = rows[0];
+    await logEventAttendance(orgId, a, event, "attended", await staffWho(req));   // WIRE-1
+    delete a.donor_id;
     return res.json({ ok: true, kind: "ticket", attendee: a,
       sentence: `${a.name} is in${a.table_label ? `, ${a.table_label}` : ""}${Number(a.quantity) > 1 ? ` · ${a.quantity} places` : ""}.` });
   }
@@ -24739,11 +24920,19 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
   try {
     const orgId = req.user.orgId;
     const eventId = req.params.id;
-    const evts = await query("SELECT id FROM events WHERE id=$1 AND org_id=$2", [eventId, orgId]);
+    const evts = await query("SELECT id, name FROM events WHERE id=$1 AND org_id=$2", [eventId, orgId]);
     if (!evts.length) return res.status(404).json({ error: "Event not found" });
-    const { donorIds, name, email, notes } = req.body;
+    const { name, email, notes } = req.body;
+    let { donorIds } = req.body;
     const added = [];
     const ids = [];   // PARITY-4: the door checks a walk-in in by id the moment they are added
+    const who = await staffWho(req);
+    // WIRE-1 rule 1: a name typed with an email that is already on file is
+    // that person, not a stranger with no record.
+    if (!(donorIds && Array.isArray(donorIds)) && name && String(email || "").trim()) {
+      const known = await PM.findPersonId(orgId, { email });
+      if (known) donorIds = [known];
+    }
     if (donorIds && Array.isArray(donorIds)) {
       for (const donorId of donorIds) {
         const dr = await query("SELECT id, name, email FROM donors WHERE id=$1 AND org_id=$2", [donorId, orgId]);
@@ -24756,7 +24945,13 @@ app.post("/events/:id/attendees", requireAuth, checkWriteAccess, async (req, res
              VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (event_id, donor_id) DO NOTHING RETURNING id`,
             [attId, eventId, orgId, donorId, d.name, d.email || ""]
           );
-          if (ins.length) ids.push(ins[0].id);
+          if (ins.length) {
+            ids.push(ins[0].id);
+            await logEventRegistered(orgId, { id: ins[0].id, donor_id: donorId }, evts[0], who);   // WIRE-1
+          } else {
+            const [had] = await query("SELECT id FROM event_attendees WHERE event_id=$1 AND donor_id=$2 AND org_id=$3", [eventId, donorId, orgId]);
+            if (had && !(req.body.donorIds && Array.isArray(req.body.donorIds))) ids.push(had.id);
+          }
           added.push(d.name);
         } catch { /* skip */ }
       }
@@ -24852,9 +25047,9 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       // BUILD-98 (switch) Part 4 — ONE attendance line per guest per event,
       // whichever door marked them: this PATCH and POST /events/:id/attendance
       // claim the same stamp, so saving the list twice writes one line.
-      const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=$1 AND attendance_logged_at IS NULL RETURNING id", [att.id]).catch(() => []);
-      if (claimed.length) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'event',$4,$5)",
-        ["i_"+uuid().slice(0,8), orgId, att.donor_id, `Came to ${evtName}.`, today]).catch(() => {});
+      // WIRE-1: the same one writer every door uses (stamped, journey fired).
+      await logEventAttendance(orgId, att, { id: att.event_id, name: evtName }, "attended", await staffWho(req), today)
+        .catch(e => console.error("[event] attendance line:", e.message));
       await run(`UPDATE donors SET stage = CASE WHEN stage='prospect' THEN 'qualify' WHEN stage='qualify' THEN 'cultivate' ELSE stage END WHERE id=$1 AND org_id=$2 AND stage IN ('prospect','qualify')`,
         [att.donor_id, orgId]).catch(() => {});
     }

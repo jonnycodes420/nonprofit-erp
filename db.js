@@ -6833,6 +6833,9 @@ async function runSchemaInit(pool) {
   // second checkout for the same item expires the first one before it opens.
   await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS paid_payment_id TEXT`);
   await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS checkout_session_id TEXT`);
+  // WIRE-1: the Thread step a won-but-unpaid item opened, so the sweep opens
+  // one per item and never a second.
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS unpaid_thread_id TEXT`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auction_refund_flags (
       id TEXT PRIMARY KEY,

@@ -436,7 +436,9 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {" "}<strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave ({d.newDonors} new, {d.returningDonors} returning); the median gift was <strong>{fmtFull(d.medianGift)}</strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
-          {[["Total raised", fmtFull(d.total)], ["Gifts", d.giftCount], ["Unique donors", d.uniqueDonors],
+          {/* WIRE-1: the two cards that are the period's gifts open them. */}
+          {[["Total raised", d.totalSource ? <Figure variant="inline" kind="money" value={d.total} label="Total raised" definition="Every gift dated in the period you picked." source={d.totalSource} /> : fmtFull(d.total)],
+            ["Gifts", d.totalSource ? <Figure variant="inline" kind="count" value={d.giftCount} label="Gifts" definition="Every gift dated in the period you picked, one row each." source={d.totalSource} /> : d.giftCount], ["Unique donors", d.uniqueDonors],
             ["Average gift", fmtFull(Math.round(d.avgGift))], ["Median gift", fmtFull(d.medianGift)],
             ["New donors", d.newDonors], ["Returning donors", d.returningDonors],
             ["Online", `${fmtFull(d.onlineTotal)} (${d.onlineCount})`], ["Offline", `${fmtFull(d.offlineTotal)} (${d.offlineCount})`],

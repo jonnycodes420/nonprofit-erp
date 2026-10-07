@@ -338,3 +338,18 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
 - `event_attendees` — id, event_id (FK→events CASCADE), org_id, donor_id (FK→donors SET NULL), name, email, status (invited/confirmed/attended/no_show/cancelled), gift_amount NUMERIC, notes, UNIQUE(event_id, donor_id). PATCH to 'attended' + gift_amount > 0 auto-logs gift to donors/gifts/fin_transactions.
 - Event type colors: gala=#8b5cf6, cultivation=#10b981, site_visit=#3b82f6, board_meeting=#0d5c3a, volunteer=#f59e0b, webinar=#ec4899, other=#6b7280
 - Routes: GET/POST /events, PUT/DELETE/GET /events/:id, POST /events/:id/attendees, PATCH/DELETE /events/:id/attendees/:attendeeId, POST /events/:id/follow-up, GET /donors/:id/events
+- **A line on the timeline is written by `timelineLine.js`, once.** Every system act that lands on a person
+  (came to, registered for, became a member, pledged, started giving, started a fundraising page, a grant's
+  stage or award on the funder, joined or left a household) writes one `interactions` row through it, keyed
+  by `metadata.line_key` so the same act never writes two. System lines use type `activity`, which is not
+  a contact type: a line Steward wrote never counts as somebody talking to the donor. (WIRE-1)
+- **A person arriving by any door is matched by `personMatch.js findPersonId`.** Email first (lower-cased,
+  the oldest record when two share it), then a name only when exactly one person has it and no other email.
+  Event registration, staff add-attendee, and the volunteer doors use it; the donation webhook, mailbox,
+  auctions and peer-to-peer already matched by exact email. Never `LIMIT 2 ... length === 1` then create:
+  two records sharing an email made a third. (WIRE-1)
+- **Merge and purge follow `MERGE_REFS`, and so does nothing else.** `REF_SHAPE` covers array pointers
+  (`calendar_events.person_ids`: swap, or drop when the kept id is already there; undo restores the array
+  exactly) and entity pointers (`agent_writes`, `custom_field_events` when the entity is a donor). Purge
+  walks the same list: the person's own rows go, money, ledger and history rows keep the row and lose the
+  pointer. A new person pointer joins MERGE_REFS or `tests/clean1-merge.test.js` fails. (WIRE-1)

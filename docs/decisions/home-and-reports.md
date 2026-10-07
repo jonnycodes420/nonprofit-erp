@@ -289,3 +289,9 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   counted (`donor-engagement-part`, `donor-generosity-part`). Change a weight and its sentence together.
 - Never from wealth or capacity data. No "hot" labels: a number, Close / Warm / Distant, and the reason.
 - "Asked this year" means an `ask`/`solicitation` interaction, or a proposal opened or moved, since 1 January.
+- **Things that need a person open a step through two seams.** `openCareThread(orgId, donorId, {label,
+  dueInDays, path})` for a person (a lapsed membership, a missed shift, a won auction item not paid after
+  two days), owned by the person's owner; `openAdminTask(orgId, {title})` for the office (a peer-to-peer
+  page awaiting approval, an import's new duplicates, a giving source gone quiet), one open task per title.
+  Both only write a row. The calendar shows memberships ending, auctions closing and campaign and page end
+  dates, and a journey step or deadline that opened a Thread step shows once, not twice. (WIRE-1)

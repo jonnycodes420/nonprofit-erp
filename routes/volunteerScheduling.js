@@ -29,6 +29,7 @@
 const SL = require("../surveyLinks");   // SURVEY-1: the volunteer follow-up link
 const orgTime = require("../orgTime");   // CAL-1: weekly repeat of a shift (civil days)
 const express = require("express");
+const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 const routers = { r0: express.Router() };
 
 function mount(ctx) {
@@ -36,7 +37,7 @@ const {
   actor, checkWriteAccess, crypto, donateLimiter, escapeHtml, insertShift, markVolunteer, requireAdmin,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, run, uuid,
   volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, donorMailDecision, resend,
-  displayNameCase, donorFacingOrgName, supporterSession, sendDraft,
+  displayNameCase, donorFacingOrgName, supporterSession, sendDraft, openCareThread,
 } = ctx;
 
 let app = routers.r0;
@@ -494,12 +495,7 @@ app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wra
     const name = String(req.body?.name || "").trim();
     const email = String(req.body?.email || "").trim().toLowerCase();
     if (!name && !email) return res.status(400).json({ error: "name_or_email_required" });
-    if (email) {
-      const hit = await query(
-        `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at LIMIT 2`,
-        [orgId, email]);
-      if (hit.length === 1) personId = hit[0].id;
-    }
+    personId = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
     if (!personId) {
       personId = "d_" + uuid().slice(0, 10);
       await run(
@@ -559,14 +555,9 @@ app.post("/volunteer-hub/groups/signup", requireAuth, checkWriteAccess, wrap(asy
 }));
 
 async function findOrCreatePerson(orgId, { name, email }, who, out) {
-  if (email) {
-    const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
-    if (m.length === 1) { await markVolunteer(orgId, m[0].id); return m[0].id; }
-  }
-  if (name) {
-    const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) LIMIT 2", [orgId, name]);
-    if (m.length === 1) { await markVolunteer(orgId, m[0].id); return m[0].id; }
-  }
+  // WIRE-1 rule 1: the one match every door uses (personMatch.js).
+  const known = await PM.findPersonId(orgId, { email, name });
+  if (known) { await markVolunteer(orgId, known); return known; }
   const pid = "d_" + uuid().slice(0, 10);
   await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
              VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
@@ -1224,11 +1215,17 @@ app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (re
 }));
 
 app.post("/volunteer-hub/signups/:id/no-show", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { changes } = await run(
-    "UPDATE volunteer_signups SET status='no_show', updated_at=NOW() WHERE id=? AND org_id=? AND status IN ('confirmed','waitlisted')",
+  const [su] = await query(
+    "UPDATE volunteer_signups SET status='no_show', updated_at=NOW() WHERE id=? AND org_id=? AND status IN ('confirmed','waitlisted') RETURNING person_id",
     [req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" });
-  res.json({ ok: true, message: "Marked as not having come. No hours were written, because none were given." });
+  if (!su) return res.status(404).json({ error: "Not found" });
+  // WIRE-1: a missed shift is a person to check in with, as a step on the
+  // Thread. It opens the step and sends nothing.
+  const thread = su.person_id && openCareThread
+    ? await openCareThread(req.user.orgId, su.person_id, { label: "Check in after a missed shift", dueInDays: 2, path: "volunteer-no-show" })
+    : null;
+  res.json({ ok: true, threadId: thread ? thread.id : null,
+    message: `Marked as not having come. No hours were written, because none were given.${thread ? " A check-in step is on the Thread." : ""}` });
 }));
 
 // Staff sign somebody up, and staff cancel. The same two functions the public

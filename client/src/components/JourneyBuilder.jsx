@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
-import { tabHref } from "../lib/appUrls";
+import { tabHref, urlParam } from "../lib/appUrls";
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -533,6 +533,10 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   // tab the address bar names the one that is open (replaced, not pushed:
   // opening a row is choosing, not going somewhere).
   const goUrl = useUrlWriter();
+  // WIRE-1: /app/journeys?group=<id> (a Group page's "Start a journey")
+  // opens Create a journey with that group as what starts it. It arrives off;
+  // nothing starts until somebody turns it on.
+  const [wantGroup] = useState(() => urlParam("journeys", "group"));
   const onJourneysTab = () => /^\/app\/journeys\/?$/.test(window.location.pathname);
   useEffect(() => {
     if (openId && onJourneysTab()) goUrl(tabHref("journeys", { journeyId: openId }), true);
@@ -572,6 +576,13 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   useEffect(() => {
     if (openedInitial.current || !data) return;
     openedInitial.current = true;
+    if (wantGroup && editable) {
+      const g = (data.groups || []).find(x => x.id === wantGroup);
+      setCreateDraft({ name: g ? `${g.name}: welcome` : "", description: "", trigger: "joined_group",
+                       triggerFilters: { groupId: wantGroup }, amountCents: null, priority: 50, audience: {},
+                       steps: [{ ...NEW_STEP, label: "Say hello", type: "thank", offsetDays: 2,
+                                 timing: { from: "trigger", value: 2, unit: "days" } }] });
+    }
     const list = data.journeys || [];
     if (!list.length) return;
     if (initialJourneyId) {
@@ -1095,7 +1106,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 presetKey: createDraft.fromPreset || undefined,
                 name: createDraft.name, description: createDraft.description, trigger: createDraft.trigger,
                 amountCents: createDraft.amountCents, priority: createDraft.priority,
-                audience: createDraft.audience, steps: createDraft.steps })}>
+                audience: createDraft.audience, triggerFilters: createDraft.triggerFilters || undefined, steps: createDraft.steps })}>
               Create it
             </button>
             <button style={BTN} onClick={() => setCreateDraft(null)}>Not now</button>

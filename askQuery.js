@@ -46,6 +46,9 @@ const ENTITIES = {
       deceased: f("d.deceased", T.bool, "deceased"), do_not_contact: f("d.do_not_contact", T.bool, "do not contact"),
       do_not_solicit: f("d.do_not_solicit", T.bool, "do not solicit"), do_not_email: f("d.do_not_email", T.bool, "do not email"),
       do_not_mail: f("d.do_not_mail", T.bool, "do not mail"), planned_giving: f("d.planned_giving", T.bool, "planned giving"),
+      // WIRE-1: an organisation or funder is a person row; these say which.
+      kind: f("COALESCE(d.kind,'person')", T.text, "kind (person or organisation)"),
+      person_types: f("COALESCE(d.person_types::text,'')", T.text, "roles (donor, volunteer, staff)"),
     },
   },
   gifts: {
@@ -189,6 +192,71 @@ const ENTITIES = {
       status: f("COALESCE(m.status,'')", T.text, "status"), joined: f("LEFT(m.joined_on,10)", T.date, "joined"),
       expires: f("LEFT(m.expires_on,10)", T.date, "expires"), member: f("d.name", T.text, "member"),
     },
+  },
+  // WIRE-1 · every object in the catalog. Each is org-scoped by `org` and
+  // reads only the org's own rows, like the entities above.
+  pledges: {
+    label: "pledge", plural: "pledges",
+    from: "pledges pl JOIN donors d ON d.id = pl.donor_id AND d.org_id = pl.org_id",
+    org: "pl.org_id = ?", base: "d.deleted_at IS NULL AND COALESCE(pl.is_shell, false) = false", person: "pl.donor_id", amount: "pl.amount",
+    row: { id: "pl.id", name: "d.name", date: "pl.created_at::date::text", amount: "pl.amount", detail: "COALESCE(pl.status,'')" },
+    fields: {
+      status: f("COALESCE(pl.status,'')", T.text, "status"), amount: f("pl.amount", T.money, "amount pledged"),
+      made: f("pl.created_at::date::text", T.date, "made on"), due: f("LEFT(pl.due_date::text,10)", T.date, "due"),
+      pledger: f("d.name", T.text, "pledger"),
+    },
+  },
+  households: {
+    label: "household", plural: "households",
+    from: "households h", org: "h.org_id = ?", base: "COALESCE(h.is_sample, false) = false", person: null, amount: null,
+    row: { id: "h.id", name: "h.name", date: "h.created_at::date::text", amount: "NULL::numeric", detail: "''" },
+    fields: { name: f("h.name", T.text, "name"), added_on: f("h.created_at::date::text", T.date, "date added") },
+  },
+  giving_pages: {
+    label: "giving page", plural: "giving pages",
+    from: "giving_pages gp", org: "gp.org_id = ?", base: "true", person: null, amount: "gp.goal_amount",
+    row: { id: "gp.id", name: "gp.title", date: "gp.created_at::date::text", amount: "gp.goal_amount", detail: "COALESCE(gp.status,'')" },
+    fields: {
+      title: f("gp.title", T.text, "title"), status: f("COALESCE(gp.status,'')", T.text, "status"), goal: f("gp.goal_amount", T.money, "goal"),
+      peer_to_peer: f("COALESCE(gp.p2p_enabled, false)", T.bool, "peer-to-peer"), ends: f("LEFT(gp.ends_on::text,10)", T.date, "ends"),
+    },
+  },
+  fundraisers: {
+    label: "peer-to-peer page", plural: "peer-to-peer pages",
+    from: "peer_fundraisers pf JOIN donors d ON d.id = pf.person_id AND d.org_id = pf.org_id",
+    org: "pf.org_id = ?", base: "d.deleted_at IS NULL", person: "pf.person_id", amount: "pf.personal_goal_amount",
+    row: { id: "pf.id", name: "d.name", date: "pf.created_at::date::text", amount: "pf.personal_goal_amount", detail: "pf.name" },
+    fields: {
+      page: f("pf.name", T.text, "page name"), status: f("COALESCE(pf.status,'')", T.text, "status"),
+      goal: f("pf.personal_goal_amount", T.money, "goal"), started: f("pf.created_at::date::text", T.date, "started"), fundraiser: f("d.name", T.text, "fundraiser"),
+    },
+  },
+  auction_items: {
+    label: "auction item", plural: "auction items",
+    from: "auction_items ai JOIN auctions au ON au.id = ai.auction_id AND au.org_id = ai.org_id",
+    org: "ai.org_id = ?", base: "true", person: null, amount: "ai.fmv",
+    row: { id: "ai.id", name: "ai.title", date: "LEFT(au.closes_at::text,10)", amount: "ai.fmv", detail: "au.title" },
+    fields: {
+      title: f("ai.title", T.text, "item"), auction: f("au.title", T.text, "auction"), value: f("ai.fmv", T.money, "fair market value"),
+      paid: f("(ai.paid_gift_id IS NOT NULL)", T.bool, "paid"), closes: f("LEFT(au.closes_at::text,10)", T.date, "auction closes"),
+    },
+  },
+  journeys: {
+    label: "journey", plural: "journeys",
+    from: "cultivation_plans cp JOIN donors d ON d.id = cp.donor_id AND d.org_id = cp.org_id",
+    org: "cp.org_id = ?", base: "d.deleted_at IS NULL", person: "cp.donor_id", amount: null,
+    row: { id: "cp.id", name: "d.name", date: "LEFT(COALESCE(cp.applied_on::text, cp.created_at::text),10)", amount: "NULL::numeric", detail: "COALESCE(cp.template_name,'')" },
+    fields: {
+      journey: f("COALESCE(cp.template_name,'')", T.text, "journey"), status: f("COALESCE(cp.status,'')", T.text, "status"),
+      started: f("LEFT(COALESCE(cp.applied_on::text, cp.created_at::text),10)", T.date, "started"), person: f("d.name", T.text, "person"),
+    },
+  },
+  documents: {
+    label: "document", plural: "documents",
+    from: "interaction_attachments ia JOIN donors d ON d.id = ia.donor_id AND d.org_id = ia.org_id",
+    org: "ia.org_id = ?", base: "d.deleted_at IS NULL AND ia.deleted_at IS NULL", person: "ia.donor_id", amount: null,
+    row: { id: "ia.id", name: "d.name", date: "ia.created_at::date::text", amount: "NULL::numeric", detail: "ia.filename" },
+    fields: { file: f("ia.filename", T.text, "file name"), added_on: f("ia.created_at::date::text", T.date, "added on"), person: f("d.name", T.text, "person") },
   },
 };
 const ENTITY_KEYS = Object.keys(ENTITIES);

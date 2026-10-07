@@ -24,7 +24,10 @@
 // (§3). Restore one of the donor rows from a JS Date instead of the stored
 // text, or forget a set-aside row (§4: microseconds and the row differ).
 // Planted: removing "volunteer_magic_links" from MERGE_REFS turned §1
-// red; skipping the set-aside re-insert turned §4 red.
+// red; skipping the set-aside re-insert turned §4 red. WIRE-1: removing
+// "calendar_events.person_ids" from MERGE_REFS turned §1 red (the widened
+// pattern now sees TEXT[] person_ids and entity_id) and §2's two-person
+// meeting red; restored, green.
 //
 // Standard scratch stack (tests/README.md). It plants rows with foreign-key
 // checks off in ITS OWN session only (session_replication_role), so a table's
@@ -35,7 +38,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const { Pool } = require("pg");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
-const { MERGE_REFS, NOT_MOVED, KEY_COLS } = require("../routes/dataHealth");
+const { MERGE_REFS, NOT_MOVED, KEY_COLS, refMatch } = require("../routes/dataHealth");
 
 const ORG = "org_clean1m";
 const A = "dn_c1m_kept", B = "dn_c1m_gone", C = "dn_c1m_other", D = "dn_c1m_d", E = "dn_c1m_e";
@@ -46,7 +49,11 @@ function personColumnsInDbJs() {
   const src = fs.readFileSync(path.join(__dirname, "..", "db.js"), "utf8");
   const out = new Set();
   let cur = null;
-  const isPointer = (col, rest) => /REFERENCES donors\(id\)/i.test(rest) || /^(donor_id|person_id|donor_id_[ab]|match_employer_id)$/.test(col) || /_(donor|person)_id$/.test(col);
+  // WIRE-1: an array of people (person_ids TEXT[]) and a generic entity_id
+  // are pointers too. The old pattern saw neither, so a merge left meetings,
+  // the Agent's undo ledger and custom field history on the merged-away id.
+  const isPointer = (col, rest) => /REFERENCES donors\(id\)/i.test(rest) || /^(donor_id|person_id|donor_id_[ab]|match_employer_id|entity_id)$/.test(col)
+    || /_(donor|person)_id$/.test(col) || /^(donor|person)_ids$/.test(col) || /_(donor|person)_ids$/.test(col);
   for (const line of src.split("\n")) {
     const m = line.match(/CREATE TABLE IF NOT EXISTS\s+(\w+)/i);
     if (m) cur = m[1];
@@ -60,6 +67,9 @@ function personColumnsInDbJs() {
   }
   return [...out].sort();
 }
+
+// A pointer that means a person only on one kind of row is planted as that kind.
+const PLANT_AS = { "agent_writes.entity_id": { entity_table: "donors" }, "custom_field_events.entity_id": { entity: "donor" } };
 
 // A dedicated connection for planting, with FK checks off for this session.
 const planter = new Pool({ connectionString: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest", ssl: false, max: 1 });
@@ -90,7 +100,7 @@ async function plant(client, table, col, n, overrides = {}) {
   const row = {};
   for (const c of cols) {
     if (c.is_generated === "ALWAYS") continue;
-    if (c.column_name === col) row[c.column_name] = B;
+    if (c.column_name === col) row[c.column_name] = c.udt_name.startsWith("_") ? [B] : B;
     else if (c.column_name === "org_id") row.org_id = ORG;
     else if (PERSON_COL(c.column_name) && c.is_nullable === "NO") row[c.column_name] = C;
     else if (c.column_name === "id" || (c.is_nullable === "NO" && c.column_default == null)) row[c.column_name] = placeholder(c, n);
@@ -188,7 +198,7 @@ async function reset() {
     let n = 0;
     for (const [t, col] of MERGE_REFS) {
       if (t === "gifts" && col === "donor_id") continue;      // real gifts below
-      await plant(c, t, col, ++n); planted++;
+      await plant(c, t, col, ++n, PLANT_AS[`${t}.${col}`] || {}); planted++;
     }
     await c.query("COMMIT");
   } catch (e) { await c.query("ROLLBACK"); ok("every table takes a planted row", false, e.message); }
@@ -203,6 +213,11 @@ async function reset() {
   await q(`INSERT INTO group_members (group_id,org_id,donor_id,added_by) VALUES ('aud_c1m',$1,$2,'u_c1m'),('aud_c1m',$1,$3,'u_c1m')`, [ORG, A, B]).catch(e => ok("both in one group", false, e.message));
   await q(`INSERT INTO donor_relationships (id,org_id,donor_id_a,donor_id_b,relationship_type) VALUES ('rel_c1m',$1,$2,$3,'spouse')`, [ORG, B, A]).catch(e => ok("a relationship between the two", false, e.message));
   await q(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount) VALUES ('sc_c1m',$1,'g_c1m_a1',$2,100.10)`, [ORG, B]).catch(e => ok("a soft credit for B on A's gift", false, e.message));
+  // A meeting with both people on it: after the merge the kept person is on it
+  // once, and undo puts the array back exactly, order and all.
+  await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by)
+           VALUES ('ce_c1m_both',$1,'u_c1m','google','ev_c1m_both','Coffee','2026-03-02T15:00:00Z','2026-03-02T16:00:00Z',$2,'u_c1m')`, [ORG, [B, C, A]])
+    .catch(e => ok("a meeting with both people", false, e.message));
   for (const id of [A, B]) await q(`UPDATE donors SET total_giving=(SELECT COALESCE(SUM(amount),0) FROM gifts WHERE org_id=$1 AND donor_id=$2) WHERE id=$2`, [ORG, id]);
   ok(`a row is planted in every one of the ${MERGE_REFS.length - 1} other pointer columns`, planted === MERGE_REFS.length - 1, planted);
 
@@ -218,16 +233,19 @@ async function reset() {
 
   const stillB = [];
   for (const [t, col] of MERGE_REFS) {
-    const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=$1 AND ${col}=$2`, [ORG, B]);
+    const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=$1 AND ${refMatch(t, col).sql.replace("?", "$2")}`, [ORG, B]);
     if (n) stillB.push(`${t}.${col}=${n}`);
   }
   ok("no row in any table still points at the merged person", stillB.length === 0, stillB.join(", "));
   const notMoved = [];
   for (const [t, col] of MERGE_REFS) {
-    const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=$1 AND ${col}=$2`, [ORG, A]);
+    const [{ n }] = await q(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=$1 AND ${refMatch(t, col).sql.replace("?", "$2")}`, [ORG, A]);
     if (!n) notMoved.push(`${t}.${col}`);
   }
   ok("every table now has a row pointing at the kept person", notMoved.length === 0, notMoved.join(", "));
+  const [both] = await q(`SELECT person_ids FROM calendar_events WHERE id='ce_c1m_both'`);
+  ok("a meeting with both people names the kept person once, the merged one not at all",
+    JSON.stringify(both?.person_ids) === JSON.stringify([C, A]), JSON.stringify(both?.person_ids));
   const m = (await q(`SELECT * FROM donor_merges WHERE org_id=$1`, [ORG]))[0];
   const asideTables = (m?.set_aside || []).map(s => s.table).sort();
   ok("the twins are set aside, not lost: the group row, the self-relationship and the self-credit",

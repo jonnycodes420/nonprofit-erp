@@ -85,6 +85,7 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
     const p = { donorId: one.id }, f = firstName(one.name), i = one.intent;
     if (i !== "ask") person(p, "ask", `What should I ask ${f} for?`);
     if (i !== "next") person(p, "next", `What's the next step with ${f}?`);
+    if (i !== "done") person(p, "done", `What has ${f} done with us this year?`);
     if (i !== "stopped" && one.lapsed) person(p, "stopped", `Why did ${f} stop giving?`);
     if (i !== "given") person(p, "given", `What has ${f} given to?`);
     return out.slice(0, 3);
@@ -146,6 +147,8 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
 // person at all (the catalog and the eight questions take it).
 const INTENTS = [
   ["stopped", /\bwhy (did|has|have|is)\b.*\b(stop(ped)?|quit|laps(e|ed)|leave|left|go(ne)? quiet)\b|\bwhy (hasn't|has not|hasnt|haven't|didn't|did not)\b.*\b(give|given|giving|donat)/i],
+  // WIRE-1: everything one person has done with the org, not only their gifts.
+  ["done", /\bwhat (has|have|did)\b.*\b(done|been doing|been up to|been involved)\b|\b(involvement|activity|everything)\b.*\bwith us\b|\bdone with us\b|\bhow (has|is)\b.*\binvolved\b/i],
   ["changed", /\b(giving|gifts?)\b.*\bchang|\bchang\w*\b.*\bgiving\b|\bwhy did\b.*\bgive (less|more)\b|\bgiv(e|ing) less\b/i],
   ["next", /\bnext (step|move)\b|\bwhat (should|do|can|could) (i|we) do (with|about|for) (?!.*\bgive more\b)|\bwhen should (i|we)\b|\bfollow up with\b|\bwhat'?s planned\b/i],
   ["given", /\bgiven to\b|\bwhat (has|did|have)\b.*\bgive to\b|\bgiving history\b|\bgift history\b|\bhow much has\b.*\bgiven\b/i],
@@ -172,7 +175,8 @@ const STOP = new Set(("a an and the of to for in on at by with about from what w
   + "more less again ask asked asking next step steps call plan now same last this that these those year years month months week today tomorrow yet still "
   + "stop stopped quit lapse lapsed leave left change changed changes much many any some all every donor donors person people tell know thing things "
   + "good best way bigger larger money dollars please just only also very really there here make made help want need think say said much go going not "
-  + "no yes ok okay thanks thank top three five ten one two follow up history record come came where went fail failed lately ever").split(/\s+/));
+  + "no yes ok okay thanks thank top three five ten one two follow up history record come came where went fail failed lately ever "
+  + "done doing been involved involvement activity everything").split(/\s+/));
 // The words in a question that could be someone's name: not a common word,
 // and not a word of a campaign, fund or event the org has (passed in).
 export function nameTokens(text, orgWords = new Set()) {

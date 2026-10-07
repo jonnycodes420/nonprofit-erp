@@ -36,9 +36,12 @@ const TYPE_META = {
   journey: { label: "Journey steps", bg: T.white, bar: T.gold, ink: T.ink, outline: true },
   send:    { label: "Campaign sends", bg: T.white, bar: T.ink, ink: T.ink, outline: true },
   pledge:  { label: "Pledge instalments", bg: "rgba(201,168,76,0.12)", bar: T.gold, ink: T.ink },
+  membership:{ label: "Memberships ending", bg: "rgba(201,168,76,0.12)", bar: T.greenDk, ink: T.ink },
+  auction: { label: "Auctions closing", bg: "rgba(15,26,18,0.10)", bar: T.gold, ink: T.ink },
+  campaign:{ label: "Campaign and page end dates", bg: T.white, bar: T.greenDk, ink: T.ink, outline: true },
   birthday:{ label: "Birthdays", bg: T.bg, bar: T.bg3, ink: T.ink },
 };
-const TYPE_ORDER = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "birthday"];
+const TYPE_ORDER = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "birthday"];
 const TYPES_KEY = "steward_calendar_types";
 const chip = { background: T.white, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 999, padding: "6px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
 const btn = { background: T.greenDk, color: T.white, border: "none", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };

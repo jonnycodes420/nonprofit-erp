@@ -40,6 +40,10 @@ export const TIMELINE_FILTERS = [
   // FIX-24 2a: a stage change is its own kind, never a Meeting. A chip only
   // on a record that has one.
   ["stage", "Stage changes"],
+  // WIRE-1: an act that is not a conversation (registered, pledged, started
+  // a plan or a page, a membership, a household, a grant moving). A chip only
+  // on a record that has one.
+  ["activity", "Activity"],
 ];
 
 // FIX-24 2a: A STAGE CHANGE, READ. Every writer stores "Moved <from> →
@@ -101,6 +105,7 @@ export function interactionBucket(i) {
   if (t === "email") return "email";
   if (t === "note") return "note";
   if (t === "gift") return "gift";
+  if (t === "activity") return "activity";   // WIRE-1: nobody spoke, so never a conversation
   return "conversation";
 }
 

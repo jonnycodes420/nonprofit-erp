@@ -17,10 +17,9 @@ import { donorHref, tabHref, isPlainLeftClick } from "../lib/appUrls";
 // bar stays visible over DonorProfile/GrantProfile. Hidden ≤768px by
 // GlobalStyles; mobile keeps its own header.
 
-// V1 search scope: donors (name/email via GET /donors?search=&limit=),
-// grants (funder/program via GET /grants?search=&limit=), plus static
-// quick-nav actions. All matching against donor/grant data happens
-// server-side, org-scoped — nothing is fuzzy-matched over client caches.
+// WIRE-1 search scope: every kind of record, by GET /search?q= (routes/
+// search.js), plus static quick-nav actions. All matching happens
+// server-side, org-scoped; nothing is fuzzy-matched over client caches.
 const QUICK_NAV = [
   { id:"nav_reports", label:"Reports", hint:"Open the Reports tab",
     keywords:"reports report giving summary lybunt sybunt retention top donors",
@@ -43,11 +42,41 @@ const QUICK_NAV = [
 
 const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();
 
+// WIRE-1 · WHAT EACH KIND OF RESULT SAYS AND WHERE IT OPENS. The group name,
+// the second line, and the screen (a tab and its options, the same ones the
+// rest of the app navigates with). Order here is the order on screen.
+const SEARCH_KINDS = [
+  { kind:"person", group:"People", row:d=>({
+      sub:[d.organization?"Organization":typeLabels(d).join(" · "), d.contactName?"Contact "+d.contactName:null,
+           d.email||d.phone||(personIsDonor(d)?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
+      personId:d.id, personName:d.title, personKind:d.personKind||null,
+      tab:"donors", opts:{selectDonorId:d.id} }) },
+  { kind:"household", group:"Households", row:h=>({
+      sub:`${h.members} ${h.members===1?"person":"people"}`,
+      tab:"donors", opts:h.openDonorId?{selectDonorId:h.openDonorId}:{}, link:!!h.openDonorId }) },
+  { kind:"campaign", group:"Campaigns and appeals", row:c=>({
+      sub:[c.type?c.type.charAt(0).toUpperCase()+c.type.slice(1):null, c.status].filter(Boolean).join(" · "),
+      ...(c.fundraising ? { tab:"fundraising", opts:{frSection:"campaigns",campaignId:c.id} } : { tab:"communications", opts:{campaignId:c.id} }) }) },
+  { kind:"event", group:"Events", row:e=>({ sub:[e.date,e.location].filter(Boolean).join(" · "), tab:"events", opts:{eventId:e.id} }) },
+  { kind:"page", group:"Giving pages", row:g=>({ sub:g.slug?"/"+g.slug:"", tab:"fundraising", opts:{frSection:"pages"} }) },
+  { kind:"p2p", group:"Peer-to-peer pages", row:f=>({ sub:f.pageTitle, tab:"fundraising", opts:{frSection:"p2p"} }) },
+  { kind:"grant", group:"Grants", row:g=>({ sub:[g.program,g.amount?fmtMoney(g.amount):null].filter(Boolean).join(" · "), tab:"grants", opts:{grantId:g.id} }) },
+  { kind:"auction", group:"Auctions", row:a=>({ sub:[a.status, a.itemHits?`${a.itemHits} matching ${a.itemHits===1?"item":"items"}`:null].filter(Boolean).join(" · "), tab:"fundraising", opts:{frSection:"auctions"} }) },
+  { kind:"level", group:"Membership levels", row:l=>({ sub:l.price?fmtMoney(l.price):"", tab:"fundraising", opts:{frSection:"members"} }) },
+  { kind:"task", group:"Open tasks", row:t=>({ sub:[t.donorName,t.due?"due "+t.due:null].filter(Boolean).join(" · "),
+      ...(t.donorId ? { tab:"donors", opts:{selectDonorId:t.donorId} } : { tab:"tasks", opts:{} }) }) },
+  { kind:"report", group:"Saved reports", row:r=>({ sub:"Saved report", tab:"reports", opts:{savedReport:r.id} }) },
+  { kind:"dashboard", group:"Saved reports", row:r=>({ sub:"Dashboard", tab:"reports", opts:{report:"sdash:"+r.id} }) },
+  { kind:"boardFile", group:"Saved reports", row:b=>({ sub:["Past board report",b.period].filter(Boolean).join(" · "), tab:"reports", opts:{report:"board-files"} }) },
+  { kind:"document", group:"Documents", row:f=>({ sub:f.donorName, tab:"donors", opts:{selectDonorId:f.donorId} }) },
+  { kind:"grantDocument", group:"Documents", row:f=>({ sub:f.funder, tab:"grants", opts:{grantId:f.grantId} }) },
+];
+
 // FIX-26: THE ONE SEARCH, for the desktop bar and the phone header alike. It
 // was written inside TopBar, which a phone never shows, so on a phone nothing
 // could be searched for and Auctions, Peer-to-peer and Memberships could not
 // be found. Same server search, same quick-nav list, same rows.
-function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search donors, grants… ⌘K" }) {
+function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search people, events, grants… ⌘K" }) {
   const [q,setQ] = useState("");
   const [results,setResults] = useState(null);   // {donors:[], grants:[]} | null
   const [open,setOpen] = useState(false);
@@ -61,21 +90,19 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     return ()=>document.removeEventListener("mousedown",onDown);
   },[]);
 
-  // Debounced org-scoped server search (donors + grants in parallel)
+  // WIRE-1: ONE server search (GET /search), org-scoped, every kind of
+  // record by its name, five of each. Debounced; a stale answer is dropped.
   useEffect(()=>{
     const term = q.trim();
     if (term.length < 2) { setResults(null); return; }
     const seq = ++seqRef.current;
     const t = setTimeout(async ()=>{
       try {
-        const [d,g] = await Promise.all([
-          apiFetch(`/donors?search=${encodeURIComponent(term)}&limit=5`),
-          apiFetch(`/grants?search=${encodeURIComponent(term)}&limit=5`),
-        ]);
+        const r = await apiFetch(`/search?q=${encodeURIComponent(term)}`);
         if (seq !== seqRef.current) return; // stale response — a newer query is in flight
-        setResults({ donors:d.donors||[], grants:Array.isArray(g)?g:[] });
+        setResults(Array.isArray(r?.results) ? r.results : []);
         setSel(0);
-      } catch { if (seq === seqRef.current) setResults({donors:[],grants:[]}); }
+      } catch { if (seq === seqRef.current) setResults([]); }
     }, 220);
     return ()=>clearTimeout(t);
   },[q]);
@@ -97,19 +124,17 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   // concern only.
   const flat = useMemo(()=>{
     const out = [];
-    // FIX-1 D — search finds ANYONE (donor, volunteer, staff and board, or
-    // not yet known), so the group is People and each row says what they are.
-    (results?.donors||[]).forEach(d=>out.push({
-      group:"People", key:"d_"+d.id, title:d.name,
-      sub:[typeLabels(d).join(" · "), d.email||(personIsDonor(d)?fmtMoney(d.total_giving)+" lifetime":null)].filter(Boolean).join(" · "),
-      drift:d.drift||null,   // BUILD-76 — server-computed badge field rides the search payload
-      personId:d.id, personName:d.name, personKind:d.kind||null,  // BUILD-94 Part 1 — the face on the row
-      onSelect:()=>onNavigate("donors",{selectDonorId:d.id}), href:donorHref(d.id),
-    }));
-    (results?.grants||[]).forEach(g=>out.push({
-      group:"Grants", key:"g_"+g.id, title:g.funder, sub:[g.program,g.amount?fmtMoney(g.amount):null].filter(Boolean).join(" · "),
-      onSelect:()=>onNavigate("grants",{grantId:g.id}), href:tabHref("grants",{grantId:g.id}),
-    }));
+    // WIRE-1: each result is a row in its kind's group, in SEARCH_KINDS
+    // order, and opens the screen that kind lives on.
+    const byKind = {};
+    (results||[]).forEach(r=>{ (byKind[r.kind] = byKind[r.kind] || []).push(r); });
+    SEARCH_KINDS.forEach(k=>{
+      (byKind[k.kind]||[]).forEach(r=>{
+        const row = k.row(r);
+        out.push({ group:k.group, key:k.kind+"_"+r.id, title:r.title, ...row,
+          onSelect:()=>onNavigate(row.tab,row.opts), href:row.link===false?undefined:tabHref(row.tab,row.opts) });
+      });
+    });
     navMatches.forEach(a=>out.push({
       group:"Go to", key:a.id, title:a.label, sub:a.hint,
       onSelect:()=>a.go(onNavigate),

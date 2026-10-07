@@ -9,13 +9,14 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
-import { AddToGroup } from "./Groups";
+import { AddToGroup, SaveAsGroup } from "./Groups";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
+import { offerUndo } from "./EditHistory";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -231,6 +232,9 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
   );
 }
 function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
+  // WIRE-1: the server-side filters on screen, as a Group rule, offered once
+  // a filter beyond "donors" is set. The sort is not a filter.
+  const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).length>1?r:null;})();
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
@@ -353,8 +357,17 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
     setBusy(true);
     try{
       const r=await apiFetch("/donors/bulk-delete",{method:"POST",body:JSON.stringify({ids})});
-      flash(`${r.deleted} donor${r.deleted!==1?"s":""} moved to trash`);
       setSelIds(new Set());setDelModal(false);if(onBulkDone)onBulkDone();
+      // WIRE-1: the shared Undo toast brings the whole batch back, one trash row each.
+      const undoIds=Array.isArray(r.undoIds)?r.undoIds:[];
+      const n=r.deleted;
+      if(undoIds.length){
+        offerUndo({ undoSeconds:r.undoSeconds, message:`Moved ${n} ${n===1?"person":"people"} to trash.`, undoAction: async()=>{
+          for(let i=0;i<undoIds.length;i+=10) await Promise.all(undoIds.slice(i,i+10).map(id=>apiFetch(`/deleted-records/${id}/restore`,{method:"POST"})));
+          if(onBulkDone)onBulkDone();
+          return { restored: undoIds.length };
+        } }, "people");
+      } else flash(`${n} donor${n!==1?"s":""} moved to trash`);
     }catch(e){flash("Error: "+e.message);}
     setBusy(false);
   }
@@ -450,6 +463,10 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           filtering current page
         </span>}
         <div style={{flex:1}}/>
+        {/* WIRE-1: the list's own filters, saved as a group by rule. Only the
+            filters the server runs go in; a filter on this page only does not. */}
+        {!isReadOnly&&groupRules&&<SaveAsGroup name={`Donor list ${new Date().toISOString().slice(0,10)}`} rules={groupRules}
+          label="Save these filters as a group" testid="directory-save-group"/>}
         <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle" aria-pressed={selectMode}
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
           {selectMode?"Done":"Select"}

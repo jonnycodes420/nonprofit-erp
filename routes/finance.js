@@ -1399,8 +1399,15 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
 
   const [thread] = await query(
     `SELECT id, next_step_label, due_date FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL LIMIT 1`, [orgId, donorId]);
+  // WIRE-1: AN EMPLOYER SEES THE GIFTS IT MATCHED. The employee's gift names
+  // the employer (gifts.match_employer_id); on the employer's record each one
+  // is a timeline line labelled as matched, opening the employee.
+  const matchedGifts = await query(
+    `SELECT g.id, g.amount::float AS amount, LEFT(g.date::text,10) AS date, g.donor_id, d.name AS donor_name, g.match_pledge_id
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND g.match_employer_id=? ORDER BY g.date DESC LIMIT 200`, [orgId, donorId]).catch(() => []);
   res.json({
-    today, upcoming, past, meetings, nextMeeting, rhythm, thisYear,
+    today, upcoming, past, meetings, nextMeeting, rhythm, thisYear, matchedGifts,
     emailThreads: [...threads.values()],
     nextStep: thread ? { id: thread.id, label: thread.next_step_label, due: thread.due_date } : null,
     rhythmSentence: "Each cell is a calendar month, this one last. Brass means at least one meeting with them that month; a dashed cell is a meeting still to come.",
