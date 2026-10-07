@@ -178,6 +178,7 @@ CORE=(
   golden-journeys
   search2-everything
   reports4-foot
+  reports5-import
   int5-api-keys
   script-guards
   fix15-two-worktrees

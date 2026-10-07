@@ -216,6 +216,13 @@ export function AskAnswer({ answer, isReadOnly, onAsk, onStepTaken, compact = fa
         </div>
       )}
 
+      {/* REPORTS-5: what an old system's report said for a stretch Steward has
+          no gifts for, cited with where it came from, never added in. */}
+      {(answer.oldSystem || []).map(o => (
+        <div key={o.label} data-testid="ask-old-system" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>
+          Steward has no gifts for that stretch. Your old system's report said <F fig={o} /> ({o.note.replace(/^From your old system: /, "").replace(/\. Kept beside.*$/, "")}), kept beside Steward's numbers and never added into them.
+        </div>
+      ))}
       <div data-testid="ask-counted" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Counted: {answer.counted}</div>
       {!inRail && <div>
         <button type="button" data-testid="ask-show-plan" onClick={() => setShowPlan(v => !v)}

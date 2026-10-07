@@ -254,6 +254,19 @@ async function runPlan(orgId, plan, ctx, deps = {}) {
   }
   if (plan.metric === "event_revenue") out.eventName = ((ctx.events || []).find(e => e.id === (plan.filters || {}).event) || {}).name;
   out.counted = countedLine(plan, cur, ctx, C);
+  // REPORTS-5: a stretch with no gifts in Steward that an old system's report
+  // covers: the answer cites it, says where it came from, and keeps it beside
+  // Steward's number (it is never added into the value above).
+  if (plan.metric === "raised") {
+    const FS = require("./figureSources");
+    out.oldSystem = [];
+    for (const [per, n] of [[cur, rows.length], ...(out.comparePeriod ? [[out.comparePeriod, null]] : [])]) {
+      const none = n === 0 || (n === null && !(Number(out.compare && out.compare.value) > 0));
+      const h = none ? await FS.historicalGiving(orgId, per.from, per.to) : null;
+      if (h) out.oldSystem.push({ label: `${per.label}, from your old system`, value: h.value, cents: h.cents, kind: "money", source: h.source, definition: h.note, note: h.note });
+    }
+    if (!out.oldSystem.length) delete out.oldSystem;
+  }
   return out;
 }
 

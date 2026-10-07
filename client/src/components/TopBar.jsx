@@ -75,7 +75,7 @@ const SEARCH_KINDS = [
       ...(t.donorId ? { tab:"donors", opts:{selectDonorId:t.donorId} } : { tab:"tasks", opts:{} }) }) },
   { kind:"report", group:"Saved reports", row:r=>({ sub:"Saved report", tab:"reports", opts:{savedReport:r.id} }) },
   { kind:"dashboard", group:"Saved reports", row:r=>({ sub:"Dashboard", tab:"reports", opts:{report:"sdash:"+r.id} }) },
-  { kind:"boardFile", group:"Saved reports", row:b=>({ sub:["Past board report",b.period].filter(Boolean).join(" · "), tab:"reports", opts:{report:"board-files"} }) },
+  { kind:"boardFile", group:"Past reports", row:b=>({ sub:[b.kindLabel||"Past board report",b.system?"from "+b.system:null,b.period].filter(Boolean).join(" · "), tab:"reports", opts:{report:"board-files"} }) },
   { kind:"document", group:"Documents", row:f=>({ sub:f.donorName, tab:"donors", opts:{selectDonorId:f.donorId} }) },
   { kind:"grantDocument", group:"Documents", row:f=>({ sub:f.funder, tab:"grants", opts:{grantId:f.grantId} }) },
   // SEARCH-2: the records that hang off a person open on that person's
