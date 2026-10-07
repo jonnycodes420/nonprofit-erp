@@ -60,7 +60,7 @@ export default function PlanPicker({ open, onClose }) {
             Choose your plan
           </div>
           <div style={{ fontSize:14,color:T.ink3,maxWidth:440,margin:"0 auto",lineHeight:1.5 }}>
-            Pick a plan to reactivate your workspace — your donors, gifts, and history are exactly as you left them.
+            Pick a plan to reactivate your workspace, your donors, gifts, and history are exactly as you left them.
           </div>
         </div>
 

@@ -66,17 +66,17 @@ export default function JoinNetwork() {
         <h1 style={S.h1}>Give your donors a portal.</h1>
         <p style={S.muted}>
           A white-label donor portal: giving history, receipts, recurring
-          self-service, and your impact updates — under your name, into your
+          self-service, and your impact updates, under your name, into your
           own Stripe account. Not the full CRM; upgrade anytime, your data
           comes with you.
         </p>
         {done ? (
           <div style={S.card}>
             <h2 style={{ ...S.h1, fontSize: 20, marginTop: 0 }}>Application received.</h2>
-            <p style={S.muted}>Before donors can see or give to {done.org.name}, three things happen — in order:</p>
+            <p style={S.muted}>Before donors can see or give to {done.org.name}, three things happen, in order:</p>
             <div style={S.step}><span>1.</span><span>We verify your EIN against the IRS tax-exempt list.</span></div>
-            <div style={S.step}><span>2.</span><span>You complete Stripe onboarding (Settings → Giving after signing in) — gifts settle only into your own verified Stripe account.</span></div>
-            <div style={S.step}><span>3.</span><span>A human reviews and approves your listing. No exceptions, no auto-approval — that review is what donors trust.</span></div>
+            <div style={S.step}><span>2.</span><span>You complete Stripe onboarding (Settings → Giving after signing in), gifts settle only into your own verified Stripe account.</span></div>
+            <div style={S.step}><span>3.</span><span>A human reviews and approves your listing. No exceptions, no auto-approval, that review is what donors trust.</span></div>
             <p style={S.muted}><a href="/dashboard" style={{ color: T.greenDk }}>Continue to your workspace →</a></p>
           </div>
         ) : (
@@ -99,7 +99,7 @@ export default function JoinNetwork() {
             {err && <p style={S.err}>{err}</p>}
             <p style={{ ...S.muted, fontSize: 13, marginTop: 12 }}>
               Your listing goes live only after EIN verification, Stripe
-              onboarding, and human review — donors never see an unverified
+              onboarding, and human review, donors never see an unverified
               organization.
             </p>
           </div>

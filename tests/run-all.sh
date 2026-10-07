@@ -203,6 +203,7 @@ CORE=(
   gtm1a-internal-price
   gtm1b-band-notice
   thread2a-no-send
+  journeys3-triggers
   fix6-approval
   import-reconciliation
   trans1-reimport

@@ -106,7 +106,7 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
           {w.suggestedThreshold != null && w.suggestedThreshold !== (w.config?.threshold ?? 1000) && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>
               In your own file, the top 5% of last year's gifts start at <strong style={{ color: T.ink }}>${w.suggestedThreshold.toLocaleString()}</strong>
-              {!isReadOnly && <> — <button onClick={() => onConfig({ threshold: w.suggestedThreshold })}
+              {!isReadOnly && <> Not set <button onClick={() => onConfig({ threshold: w.suggestedThreshold })}
                 style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>use that</button></>}
             </div>
           )}

@@ -112,7 +112,7 @@ export const BILLING_PLANS = [
     name: "Seed",
     price: 99,
     tagline: "For solo founders and tiny teams.",
-    features: ["1 user seat", "Up to 1,000 donor records", "Full platform — CRM, grants, finance, AI", "Email support"],
+    features: ["1 user seat", "Up to 1,000 donor records", "Full platform, CRM, grants, finance, AI", "Email support"],
     highlight: false,
   },
   {
@@ -120,7 +120,7 @@ export const BILLING_PLANS = [
     name: "Growth",
     price: 249,
     tagline: "For teams ready to grow.",
-    features: ["Up to 5 user seats", "Up to 10,000 donor records", "Everything in the platform — nothing locked", "Priority support"],
+    features: ["Up to 5 user seats", "Up to 10,000 donor records", "Everything in the platform, nothing locked", "Priority support"],
     highlight: true,
   },
   {
@@ -173,7 +173,7 @@ export default function Pricing() {
       const r = await apiFetch("/billing/create-checkout", {
         method: "POST", body: JSON.stringify({ plan: `${tierId}_${interval}` }),
       });
-      if (!r?.url) throw new Error("Checkout is not available yet — please contact us.");
+      if (!r?.url) throw new Error("Checkout is not available yet, please contact us.");
       window.location.href = r.url;
     } catch (e) {
       const code = e?.error || "";
@@ -181,7 +181,7 @@ export default function Pricing() {
       const isConfig = code === "plan_mode_mismatch" || code === "plan_not_configured"
         || /plan_mode_mismatch|plan_not_configured|No Stripe price/i.test(raw);
       const msg = isConfig
-        ? (raw || "Billing isn't configured correctly yet — reach out and we'll get you set up.")
+        ? (raw || "Billing isn't configured correctly yet, reach out and we'll get you set up.")
         : (e?.status === 403 || /admin/i.test(raw))
         ? "Only an admin can change the plan. Ask your workspace admin to upgrade."
         : /internal server error/i.test(raw)

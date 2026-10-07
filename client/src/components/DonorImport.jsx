@@ -220,11 +220,11 @@ const IMPORT_REASON_LABELS = {
   already_on_file: "already in Steward before this import", // legacy key from older servers
   duplicate_within_this_import: "duplicate rows within this file (collapsed)",
   // BUILD-80 Part 5 — rows that are not gifts, routed to their own surfaces
-  soft_credit: "soft credits — a link to the real gift, never money",
-  pledge_commitment: "pledge commitments — on the record, never in totals",
-  pledge_scheduled: "future pledge installments — the schedule, not failed rows",
-  in_kind: "in-kind gifts — recorded at fair market value, never cash",
-  positive_reversal: "reversals with a POSITIVE amount — a human must decide",
+  soft_credit: "soft credits, a link to the real gift, never money",
+  pledge_commitment: "pledge commitments, on the record, never in totals",
+  pledge_scheduled: "future pledge installments, the schedule, not failed rows",
+  in_kind: "in-kind gifts, recorded at fair market value, never cash",
+  positive_reversal: "reversals with a POSITIVE amount, a human must decide",
   unrecognized_exclusion_value: "unrecognised value in an exclusion column",
   // BUILD-84 P0-2 — the set-aside vocabulary, matching NAMEABILITY_REASON so
   // the receipt, the pre-write line and the downloadable file all say the
@@ -356,7 +356,7 @@ function buildDonorRows(parsed, mapping, rowLines, basis, people) {
       // BUILD-79 Part 5 — a display name never falls back to email/phone.
       d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`;
       d.tags = ["needs-name"];
-      warnings.push(`${rowLabel}: no name — flagged as unnamed for review`);
+      warnings.push(`${rowLabel}: no name, flagged as unnamed for review`);
     } else {
       d.name = normalizeName(ident.displayName); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
       if (ident.contactName) d.contactName = normalizeName(ident.contactName);
@@ -428,7 +428,7 @@ function buildCombinedRows(parsed, donorMapping, yearCols, rowLines) {
     const ident = resolveDonorIdentity({ name: d.name, organization: d.organization, email: d.email });
     delete d.organization;
     if (!ident.nameable) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true, skipReason: NAMEABILITY_REASON }); return; }
-    if (!ident.hasName) { d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`; d.tags = ["needs-name"]; warnings.push(`${rowLabel}: no name — flagged as unnamed for review`); }
+    if (!ident.hasName) { d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`; d.tags = ["needs-name"]; warnings.push(`${rowLabel}: no name, flagged as unnamed for review`); }
     else {
       d.name = normalizeName(ident.displayName); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
       if (ident.contactName) d.contactName = normalizeName(ident.contactName);
@@ -982,7 +982,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         setShape("transaction");
         setShapeDetail({
           ...det, shape: "transaction", presetOverride: true,
-          reason: `${mig.label}'s own export columns — one row per gift`,
+          reason: `${mig.label}'s own export columns, one row per gift`,
         });
       }
     }
@@ -1043,7 +1043,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         setMapping(merged);
         if (dropped.length) {
           setMapRefusal({ header: dropped[0][0], field: dropped[0][1],
-            summary: `a contents guess can't take a field another column already has — ${dropped.length} guess${dropped.length === 1 ? "" : "es"} left for you to place` });
+            summary: `a contents guess can't take a field another column already has, ${dropped.length} guess${dropped.length === 1 ? "" : "es"} left for you to place` });
         }
       }
     } catch { /* keep existing mapping on AI failure */ }
@@ -1277,20 +1277,20 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   // ── Submit import (chunked, with progress — the hang fix) ──
   const doImport = async () => {
     // BUILD-79 Part 2 — shape is a decision with evidence, or a question.
-    if (effectiveShape === "unknown") { setErr("Choose how this file is shaped before importing — we couldn't tell from the columns."); return; }
+    if (effectiveShape === "unknown") { setErr("Choose how this file is shaped before importing, we couldn't tell from the columns."); return; }
     // FIX (2026-09-09) item 2 — two columns mapped to one field is a refusal by
     // name, never a silent last-one-wins. (Auto-mapping put contact_name AND
     // contact_confidence on `name` and nothing objected.)
     if (duplicateDonorTargets.length) {
       const d = duplicateDonorTargets[0];
       const label = (CSV_STANDARD_FIELDS.find(f => f.key === d.field) || {}).label || plainFieldLabel(d.field);
-      setErr(`Two columns are mapped to ${label.toLowerCase()} — “${d.headers.join("” and “")}”. Pick one, or send the other somewhere else.`);
+      setErr(`Two columns are mapped to ${label.toLowerCase()} “${d.headers.join("” and “")}”. Pick one, or send the other somewhere else.`);
       return;
     }
-    if (aggregateCollapse?.refuse) { setErr(`${aggregateCollapse.collapsed.toLocaleString()} of ${aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto the same donors — this file is one row per gift. Switch the shape to individual gifts.`); return; }
+    if (aggregateCollapse?.refuse) { setErr(`${aggregateCollapse.collapsed.toLocaleString()} of ${aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto the same donors, this file is one row per gift. Switch the shape to individual gifts.`); return; }
     // BUILD-80 Part 2.2 — a MIXED date column is a question, never a guess.
     if (dateConvEvidence?.convention === "mixed" && !dateConventionChoice) {
-      setErr("This file's date column mixes day-first and month-first dates — choose which convention to apply (above the mapping) before importing.");
+      setErr("This file's date column mixes day-first and month-first dates, choose which convention to apply (above the mapping) before importing.");
       return;
     }
     let activePayload = payload;
@@ -1384,9 +1384,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
       };
     }
     const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = activePayload;
-    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); setLoading(false); return; }
+    if (error) { setErr("Failed to prepare import data, " + error + ". Check the browser console."); setLoading(false); return; }
     if (!rawDonors.length) {
-      setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import — map a name or email column.");
+      setErr(skippedCount ? `All ${skippedCount} rows skipped, no usable name or email.` : "Nothing to import, map a name or email column.");
       setLoading(false); return;
     }
     // BUILD-101 Part 6 — memberships named on these rows, read from what the
@@ -1573,7 +1573,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         if (dollarsIn <= 0 && R.dollars.scanColumn && R.dollars.inFile > 0)
           missing.push(`$0 was imported, but the file's “${R.dollars.scanColumn}” column carries ${money$(R.dollars.inFile)} of currency-shaped values`);
         else if (dollarsIn <= 0 && cur.length)
-          missing.push(`${cur.length} column${cur.length===1?"":"s"} in this file read${cur.length===1?"s":""} as currency — ${curList} — and none was mapped as a gift amount, so there is nothing to reconcile against`);
+          missing.push(`${cur.length} column${cur.length===1?"":"s"} in this file read${cur.length===1?"s":""} as currency, ${curList} and none was mapped as a gift amount, so there is nothing to reconcile against`);
         else if (dollarsIn <= 0)
           missing.push("no unmapped column reads as currency either, so there is nothing to reconcile against");
         if (!R.rows.balanced) missing.push("the row equation does not balance");
@@ -1583,7 +1583,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         if (!R.dollars.balanced) missing.push(
           R.dollars.inFile == null
             ? (cur.length
-                 ? "so the dollar equation has no left-hand side to check — that is why it does not balance, not a lost figure"
+                 ? "so the dollar equation has no left-hand side to check, that is why it does not balance, not a lost figure"
                  : "the file's dollars are unknown (no column in it reads as currency)")
             : "the dollar equation does not balance");
         totals.summaryHealth = {
@@ -1715,8 +1715,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   const doImportBoth = async () => {
     if (!bothPayload) return;
     const { donors: rawDonors, gifts, error } = bothPayload;
-    if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); return; }
-    if (!rawDonors.length) { setErr("Nothing to import — no usable donor rows."); return; }
+    if (error) { setErr("Failed to prepare import data, " + error + ". Check the browser console."); return; }
+    if (!rawDonors.length) { setErr("Nothing to import, no usable donor rows."); return; }
     const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setLoading(true); setErr(""); setProgress({ done:0, total:donors.length });
     try {
@@ -1849,7 +1849,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
 
   // Label for an officer <option> — pending invitees are clearly marked so an
   // admin knows the assignment is held until acceptance.
-  const officerOptionLabel = (u) => u.pending ? `${u.name} (invited — pending)` : `${u.name}${u.email?` (${u.email})`:""}`;
+  const officerOptionLabel = (u) => u.pending ? `${u.name} (invited, pending)` : `${u.name}${u.email?` (${u.email})`:""}`;
   // Re-point every spelling in a collapsed group at once (still overridable).
   const setGroupOwner = (g, id) => setOwnerMap(p => { const n={...p}; g.values.forEach(v => { n[v.value] = id; }); return n; });
 
@@ -1868,7 +1868,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         <div style={panel}>
           <div style={eyebrow}>Route donors to officers</div>
           <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>
-            We found an <strong style={{color:T.ink}}>{effectiveOwnerCol}</strong> column — confirm who each value is. Spelling variants are grouped onto one person; matched donors land in that officer's portfolio.
+            We found an <strong style={{color:T.ink}}>{effectiveOwnerCol}</strong> column, confirm who each value is. Spelling variants are grouped onto one person; matched donors land in that officer's portfolio.
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:7}}>
             {groups.map(g => {
@@ -1941,7 +1941,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           style={{background:T.white,border:`1px solid ${bulkAssign?T.green600:T.bg3}`,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:13,outline:"none",cursor:"pointer",width:"100%"}}>
           <option value="">Leave unassigned (assign later from the Directory)</option>
           {myId && <option value="__me__">Assign all to me</option>}
-          {orgUsers.filter(u=>u.id!==myId).map(u => <option key={u.id} value={u.id}>Assign all to {u.name}{u.pending?" (invited — pending)":""}</option>)}
+          {orgUsers.filter(u=>u.id!==myId).map(u => <option key={u.id} value={u.id}>Assign all to {u.name}{u.pending?" (invited, pending)":""}</option>)}
         </select>
       </div>
     );
@@ -1964,7 +1964,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             {hasBatchErrors?"✕":(result.summaryHealth&&!result.summaryHealth.greenEarned)?"◑":"✓"}
           </div>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
-            {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported — with gaps you should read." : "Import complete."}
+            {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported, with gaps you should read." : "Import complete."}
           </div>
           {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
@@ -2010,7 +2010,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             );
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?T.gold700:T.ink3,marginBottom:6}}>
-                {(result.summaryHealth&&!result.summaryHealth.greenEarned) ? "The arithmetic — read the gaps above before trusting it" : "Every row and every dollar accounted for"}
+                {(result.summaryHealth&&!result.summaryHealth.greenEarned) ? "The arithmetic, read the gaps above before trusting it" : "Every row and every dollar accounted for"}
               </div>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
                 <span>In your file</span>
@@ -2019,12 +2019,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       whenever currency columns existed and none was MAPPED, which
                       is the common case for a file that carries no gifts. */}
                   {R.rows.inFile.toLocaleString()} · {R.dollars.inFile == null
-                    ? ((R.dollars.currencyColumns || []).length ? "unknown — no column is mapped as the gift amount" : "unknown — no column in this file reads as currency")
+                    ? ((R.dollars.currencyColumns || []).length ? "unknown, no column is mapped as the gift amount" : "unknown, no column in this file reads as currency")
                     : money(R.dollars.inFile)}
                 </span>
               </div>
               {R.dollars.scanColumn && R.dollars.inFile != null && (
-                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>dollars scanned independently from your “{R.dollars.scanColumn}” column — not from the mapping</div>
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>dollars scanned independently from your “{R.dollars.scanColumn}” column, not from the mapping</div>
               )}
               {/* BUILD-80 Part 1.2 — the number-format conventions the parser
                   actually applied, shown so a $2,000 gift can never silently
@@ -2033,7 +2033,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.commaDecimal.toLocaleString()} amount{result.amountConventions.commaDecimal===1?"":"s"} used a comma decimal (European format) and {result.amountConventions.commaDecimal===1?"was":"were"} read as such</div>
               )}
               {result.dateConvention?.applied === "dmy" && (
-                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.dateConvention.slashCells.toLocaleString()} dates use day/month/year — {result.dateConvention.dayFirstEvidence.toLocaleString()} would have been impossible the other way</div>
+                <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.dateConvention.slashCells.toLocaleString()} dates use day/month/year, {result.dateConvention.dayFirstEvidence.toLocaleString()} would have been impossible the other way</div>
               )}
               {result.amountConventions?.spaceThousands > 0 && (
                 <div style={{paddingLeft:12,color:T.ink3,fontSize:11}}>{result.amountConventions.spaceThousands.toLocaleString()} amount{result.amountConventions.spaceThousands===1?"":"s"} used a space between thousands and {result.amountConventions.spaceThousands===1?"was":"were"} read as such</div>
@@ -2078,7 +2078,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       // refusals from rows routed to their own surfaces.
                       const refusedN = result.refusedRows.filter(r2=>r2.disposition==="errored"||["no_amount","zero_amount"].includes(r2.reason)).length;
                       const routedN = result.refusedRows.length - refusedN;
-                      return <>↓ Download the {result.refusedRows.length} rows that are not gift rows ({refusedN} refused · {routedN} routed to pledge/soft-credit/in-kind surfaces) — line numbers + reasons</>;
+                      return <>↓ Download the {result.refusedRows.length} rows that are not gift rows ({refusedN} refused · {routedN} routed to pledge/soft-credit/in-kind surfaces), line numbers + reasons</>;
                     })()}
                   </button>
                 </div>
@@ -2094,7 +2094,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       manufacturing a cause. */}
                   {result.fileTotalRow.difference < 0 && (
                     <div style={{color:T.terracotta,fontSize:11}}>
-                      We cannot explain importing more than the report's own total — that usually means an amount was misread
+                      We cannot explain importing more than the report's own total, that usually means an amount was misread
                       (a European decimal, a shifted column) or the report's total excludes rows we counted. Check the largest
                       gifts below before trusting these numbers.
                     </div>
@@ -2103,7 +2103,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     <div style={{color:T.ink3,fontSize:11}}>
                       of which: skipped rows {money(result.fileTotalRow.explained.skipped)} · errored rows {money(result.fileTotalRow.explained.errored)}
                       {Math.abs(result.fileTotalRow.difference) - result.fileTotalRow.explained.skipped - result.fileTotalRow.explained.errored > 0.005 &&
-                        <> · the rest is how the report itself counted (its total may exclude soft credits, pledges or duplicates — compare before trusting either number)</>}
+                        <> · the rest is how the report itself counted (its total may exclude soft credits, pledges or duplicates, compare before trusting either number)</>}
                     </div>
                   )}
                 </div>
@@ -2127,8 +2127,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <div style={{marginTop:8,paddingTop:8,borderTop:`1px solid ${T.bg3}`,color:T.ink2}}>
                   <strong style={{color:T.ink}}>{result.matchesExistingCount}</strong>{" "}
                   {result.matchesExistingCount === 1 ? "gift matches one" : "gifts match ones"} already on file
-                  (same donor, date and amount). {result.matchesExistingCount === 1 ? "It was" : "They were"} imported —
-                  review and delete any that are genuine duplicates.
+                  (same donor, date and amount). {result.matchesExistingCount === 1 ? "It was" : "They were"} imported, review and delete any that are genuine duplicates.
                 </div>
               )}
               {/* BUILD-73 Part 2 — this used to read "Amounts are stored in whole
@@ -2141,7 +2140,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   the user should be told, so the surfacing stays. */}
               {Math.abs(result.roundingAdjustment || 0) >= 0.005 && (
                 <div style={{marginTop:6,color:T.terra700,fontSize:11}}>
-                  {money(Math.abs(result.roundingAdjustment))} of cents could not be stored — please report this.
+                  {money(Math.abs(result.roundingAdjustment))} of cents could not be stored, please report this.
                 </div>
               )}
             </div>;
@@ -2154,7 +2153,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 Frequency flags the gifts contradict
               </div>
               {result.frequencyConflicts.slice(0,10).map((c,i)=>(
-                <div key={i} style={{color:T.ink2}}><strong style={{color:T.ink}}>{c.name}</strong> — {c.message}. The pattern wins; no monthly expectations were set.</div>
+                <div key={i} style={{color:T.ink2}}><strong style={{color:T.ink}}>{c.name}</strong> Not set {c.message}. The pattern wins; no monthly expectations were set.</div>
               ))}
             </div>
           )}
@@ -2165,7 +2164,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             const merges = result.mergeRows?.length ? result.mergeRows : (result.identity.mergeReview || []).map(m => ({ ...m, id: null }));
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                Rows we merged into one donor — review these
+                Rows we merged into one donor, review these
               </div>
               {merges.slice(0,25).map((m,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"baseline"}}>
@@ -2185,15 +2184,15 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   )}
                 </div>
               ))}
-              {merges.length > 25 && <div style={{color:T.ink3}}>+{merges.length-25} more merges recorded — every one is undoable.</div>}
+              {merges.length > 25 && <div style={{color:T.ink3}}>+{merges.length-25} more merges recorded, every one is undoable.</div>}
               {result.identity?.householdCandidates?.length > 0 && (
                 <div style={{marginTop:6,paddingTop:6,borderTop:`1px solid ${T.bg3}`,color:T.ink3,fontSize:11}}>
-                  {result.identity.householdCandidates.length} email{result.identity.householdCandidates.length===1?"":"s"} sit behind more than one person (e.g. {result.identity.householdCandidates[0].names.join(" + ")}) — kept as separate people, household candidates for you to join.
+                  {result.identity.householdCandidates.length} email{result.identity.householdCandidates.length===1?"":"s"} sit behind more than one person (e.g. {result.identity.householdCandidates[0].names.join(" + ")}), kept as separate people, household candidates for you to join.
                 </div>
               )}
               {result.identity?.conflictedIds?.length > 0 && (
                 <div style={{marginTop:4,color:T.ink3,fontSize:11}}>
-                  {result.identity.conflictedIds.length} donor ID{result.identity.conflictedIds.length===1?"":"s"} shared by different people (legacy merge damage) — never merged on, both sides flagged.
+                  {result.identity.conflictedIds.length} donor ID{result.identity.conflictedIds.length===1?"":"s"} shared by different people (legacy merge damage), never merged on, both sides flagged.
                 </div>
               )}
             </div>;
@@ -2204,17 +2203,17 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             const t = result.semantics.tally;
             const money = n => "$" + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
             const rows = [
-              ["Soft credits", t.softCredits, "a link to the real gift — no money on the credited person"],
+              ["Soft credits", t.softCredits, "a link to the real gift, no money on the credited person"],
               ["Pledge commitments", t.pledges, "on the donor's record, never in totals"],
-              ["Future pledge installments", t.pledgeScheduled, "the schedule — money that hasn't arrived yet"],
+              ["Future pledge installments", t.pledgeScheduled, "the schedule, money that hasn't arrived yet"],
               ["In-kind gifts", t.inKind, "recorded at fair market value, never cash"],
               ["Corporate matching gifts", t.matching, "counted as cash on the CORPORATION; the person gets the relationship"],
-              ["Anonymous gifts", t.anonymous, "one holding record — different people, never a cadence, never on a list"],
+              ["Anonymous gifts", t.anonymous, "one holding record, different people, never a cadence, never on a list"],
             ].filter(([, v]) => v && v.rows > 0);
             if (!rows.length) return null;
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                Rows that are not gifts — tracked on their own surfaces
+                Rows that are not gifts, tracked on their own surfaces
               </div>
               {rows.map(([label, v, hint]) => (
                 <div key={label}>
@@ -2234,7 +2233,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <div style={{marginTop:6,color:T.terracotta,fontSize:11}}>These rows could not be recorded: {result.semanticsError}</div>
               )}
               {result.semantics.reviewTwins?.length > 0 && (
-                <div style={{marginTop:4,color:T.ink3,fontSize:11}}>{result.semantics.reviewTwins.length} rows say "migrated from legacy ID … may duplicate" — imported and flagged for a human, never decided by the machine.</div>
+                <div style={{marginTop:4,color:T.ink3,fontSize:11}}>{result.semantics.reviewTwins.length} rows say "migrated from legacy ID … may duplicate", imported and flagged for a human, never decided by the machine.</div>
               )}
             </div>;
           })()}
@@ -2245,12 +2244,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {result.largestGifts?.length > 0 && (
             <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                The five largest gifts we imported — check these first
+                The five largest gifts we imported, check these first
               </div>
               {result.largestGifts.map((g,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${displayDate(g.date)||g.date}` : ""}
+                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` Not set ${displayDate(g.date)||g.date}` : ""}
                   </span>
                   <span style={{color:T.ink,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>
                     {"$" + Number(g.dollars).toLocaleString(undefined,{maximumFractionDigits:2})}<span style={{color:T.ink3}}> · line {g.line}</span>
@@ -2286,12 +2285,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             const shown = byDonor.slice(0, flaggedPage * 50);
             return <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
-                We flagged these — {byDonor.length.toLocaleString()} {byDonor.length===1?"person":"people"} from the notes column, please confirm
+                We flagged these, {byDonor.length.toLocaleString()} {byDonor.length===1?"person":"people"} from the notes column, please confirm
               </div>
               {shown.map((f,i)=>(
                 <div key={i} data-flagged-donor={f.name} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{f.name}</strong>{" — "}
+                    <strong style={{color:T.ink}}>{f.name}</strong>{" Not set "}
                     {[f.flags.deceased&&"deceased",f.flags.doNotSolicit&&"do-not-solicit",f.flags.doNotContact&&"do-not-contact",f.flags.doNotMail&&"do-not-mail",f.flags.doNotEmail&&"do-not-email"].filter(Boolean).join(", ")}
                     {f.rows>1 && <span style={{color:T.ink3}}>{` (${f.rows.toLocaleString()} rows)`}</span>}
                   </span>
@@ -2301,7 +2300,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {byDonor.length > shown.length && (
                 <button onClick={()=>setFlaggedPage(p2=>p2+1)}
                   style={{background:"none",border:"none",padding:0,marginTop:6,color:T.greenDk,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>
-                  Show {Math.min(50, byDonor.length - shown.length).toLocaleString()} more of {byDonor.length.toLocaleString()} — every one is on the donor's record with its flag set
+                  Show {Math.min(50, byDonor.length - shown.length).toLocaleString()} more of {byDonor.length.toLocaleString()} every one is on the donor's record with its flag set
                 </button>
               )}
             </div>;
@@ -2312,11 +2311,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {result.exclusionConflicts?.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
-                Columns that disagree — we kept the most restrictive
+                Columns that disagree, we kept the most restrictive
               </div>
               {result.exclusionConflicts.slice(0,20).map((c,i)=>(
                 <div key={i} style={{color:T.ink2}}>
-                  <strong style={{color:T.ink}}>{c.name}</strong> — {c.message}
+                  <strong style={{color:T.ink}}>{c.name}</strong> Not set {c.message}
                 </div>
               ))}
               {result.exclusionConflicts.length > 20 && <div style={{color:T.ink3}}>+{result.exclusionConflicts.length-20} more, each set on the donor's record.</div>}
@@ -2361,7 +2360,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     : e.disposition === "custom-existing" ? "→ existing custom field"
                     : e.disposition === "flag" ? `→ ${String(e.flag||"").replace(/([A-Z])/g," $1").toLowerCase()} flag`
                     : e.disposition === "discarded" ? "discarded (acknowledged)"
-                    : `not importable — ${e.reason || "refused"}`;
+                    : `not importable, ${e.reason || "refused"}`;
                   return <div key={e.index}>{String(e.header).trim() || `(column ${e.index+1}, no header)`} {what}</div>;
                 })}
               </div>
@@ -2376,7 +2375,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               : [["Your file", result.columnReport]];
             const rr = result.rowReport;
             const rowNotes = rr ? [
-              rr.negativeRows > 0 && `${rr.negativeRows} negative-amount row${rr.negativeRows === 1 ? "" : "s"} not imported (refunds/adjustments — Steward has no negative-gift model)`,
+              rr.negativeRows > 0 && `${rr.negativeRows} negative-amount row${rr.negativeRows === 1 ? "" : "s"} not imported (refunds/adjustments, Steward has no negative-gift model)`,
               rr.unparsableAmountRows > 0 && `${rr.unparsableAmountRows} row${rr.unparsableAmountRows === 1 ? "" : "s"} with unreadable amounts not imported`,
               rr.zeroAmountRows > 0 && `${rr.zeroAmountRows} zero-amount row${rr.zeroAmountRows === 1 ? "" : "s"} not imported`,
             ].filter(Boolean) : [];
@@ -2386,14 +2385,14 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <strong style={{color:T.ink}}>{label}:</strong>{" "}
                 <span style={{color:T.ink2}}>{c.mapped.map(m => `${m.header} → ${anyFieldLabel(m.field)}`).join(" · ") || "no columns mapped"}</span>
                 {c.ignored.length > 0 && <div style={{color:T.ink3}}>Not imported (by design): {c.ignored.join(" · ")}</div>}
-                {c.unrecognized.length > 0 && <div style={{color:T.terracotta,fontWeight:600}}>Not imported — unrecognized: {c.unrecognized.join(" · ")}</div>}
+                {c.unrecognized.length > 0 && <div style={{color:T.terracotta,fontWeight:600}}>Not imported, unrecognized: {c.unrecognized.join(" · ")}</div>}
               </div>)}
               {rowNotes.length > 0 && <div style={{borderTop:`1px solid ${T.bg3}`,paddingTop:6,marginTop:6,color:T.ink2}}>{rowNotes.map((n,i) => <div key={i}>{n}</div>)}</div>}
             </div>;
           })()}
           {hasBatchErrors && (
             <div style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:T.terra700}}>
-              <strong>Batch errors — some rows may not have been inserted:</strong>
+              <strong>Batch errors, some rows may not have been inserted:</strong>
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
@@ -2544,11 +2543,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.green600,marginBottom:4}}>Donors + gift history detected</div>
               <div style={{fontSize:13.5,color:T.ink,lineHeight:1.5,marginBottom:10}}>
                 <strong>{workbookRoles.donorSheet.name}</strong> ({workbookRoles.donorSheet.rowCount.toLocaleString()} donors) and{" "}
-                <strong>{workbookRoles.giftSheet.name}</strong> ({workbookRoles.giftSheet.rowCount.toLocaleString()} gifts) — we can link the gifts to their donors in one pass.
+                <strong>{workbookRoles.giftSheet.name}</strong> ({workbookRoles.giftSheet.rowCount.toLocaleString()} gifts), we can link the gifts to their donors in one pass.
               </div>
               <button onClick={startImportBoth}
                 style={{width:"100%",background:T.green600,border:"none",borderRadius:10,padding:"12px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-                Import both — donors + their gift history →
+                Import both, donors + their gift history →
               </button>
             </div>
           )}
@@ -2577,7 +2576,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         {bothMode && bothPayload && (<>
           <div style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"11px 14px",marginBottom:14}}>
             <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
-              <span style={{fontWeight:700}}>Importing both sheets:</span> donors from <strong>{bothMode.donorSheet.name}</strong>, giving history from <strong>{bothMode.giftSheet.name}</strong> — each gift attached to its donor.
+              <span style={{fontWeight:700}}>Importing both sheets:</span> donors from <strong>{bothMode.donorSheet.name}</strong>, giving history from <strong>{bothMode.giftSheet.name}</strong> each gift attached to its donor.
             </div>
           </div>
 
@@ -2595,7 +2594,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             <div style={{fontSize:11,color:T.ink3,marginTop:6}}>
               Matched on{" "}
               <strong>{matchKey === "email" ? (bothMode.matchInfo.giftEmailCol || "email") : matchKey === "donorId" ? (bothMode.matchInfo.giftIdCol || "donor id") : (bothMode.matchInfo.giftNameCol || "name")}</strong>.
-              {" "}Unmatched gifts become new donor records — never dropped.
+              {" "}Unmatched gifts become new donor records, never dropped.
             </div>
           </div>
 
@@ -2658,7 +2657,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               windows-1252 repair. */}
           {parseReport && (parseReport.chromeAbove?.length > 0 || parseReport.chromeRows?.length > 0 || parseReport.cp1252Lines?.length > 0) && (
             <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"11px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>This looks like a report export — here's what we set aside</div>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>This looks like a report export, here's what we set aside</div>
               {parseReport.chromeAbove?.length > 0 && (
                 <div>We skipped {parseReport.chromeAbove.length} line{parseReport.chromeAbove.length===1?"":"s"} above your column headers (found on line {parseReport.headerLine?.line}):{" "}
                   {parseReport.chromeAbove.map(c => c.text ? `“${c.text}”` : "(blank)").join(", ")}.</div>
@@ -2672,7 +2671,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 }).join(" · ")}.</div>
               )}
               {parseReport.totalRow && (
-                <div>Your file's own total row says <strong>{fmtFull(parseReport.totalRow.amount)}</strong> — we'll reconcile against it after the import.</div>
+                <div>Your file's own total row says <strong>{fmtFull(parseReport.totalRow.amount)}</strong> we'll reconcile against it after the import.</div>
               )}
               {parseReport.cp1252Lines?.length > 0 && (() => {
                 const affected = cp1252RowNames(parseReport, parsed);
@@ -2723,7 +2722,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {aggregateCollapse?.refuse && (
             <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12.5,color:T.terra700,lineHeight:1.6}}>
               <strong>{aggregateCollapse.collapsed.toLocaleString()} of {aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto a donor already in this file.</strong>{" "}
-              One row per donor would silently merge them — this file looks like one row per <em>gift</em>. Import as totals is disabled.
+              One row per donor would silently merge them, this file looks like one row per <em>gift</em>. Import as totals is disabled.
               <button onClick={()=>setShapeOverride("transaction")}
                 style={{display:"block",marginTop:8,background:T.green600,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
                 Treat as individual gifts →
@@ -2743,7 +2742,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     <span style={{fontSize:12,color:txMap[role]?T.ink:T.ink3,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</span>
                     <select value={txMap[role]||""} onChange={e=>setTxMap(p=>({...p,[role]:e.target.value}))}
                       style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0,maxWidth:150}}>
-                      <option value="">— none —</option>
+                      <option value="">None</option>
                       {parsed.headers.map(h=><option key={h} value={h}>{h||"(blank)"}</option>)}
                     </select>
                   </div>
@@ -2754,14 +2753,14 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   at the column level and SAID here before the write. */}
               {dateConvEvidence && dateConvEvidence.slashCells > 0 && dateConvEvidence.convention === "dmy" && (
                 <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
-                  {dateConvEvidence.slashCells.toLocaleString()} dates use <strong>day/month/year</strong>. {dateConvEvidence.dayFirstEvidence.toLocaleString()} would have been impossible the other way (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}) — every slash date in this column will be read day-first.
+                  {dateConvEvidence.slashCells.toLocaleString()} dates use <strong>day/month/year</strong>. {dateConvEvidence.dayFirstEvidence.toLocaleString()} would have been impossible the other way (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}), every slash date in this column will be read day-first.
                 </div>
               )}
               {dateConvEvidence && dateConvEvidence.slashCells > 0 && (dateConvEvidence.convention === "mdy" || dateConvEvidence.convention === "default-mdy") && (
                 <div style={{fontSize:11,color:T.ink3,marginTop:8}}>
                   {dateConvEvidence.convention === "mdy"
-                    ? `${dateConvEvidence.slashCells.toLocaleString()} dates use month/day/year — ${dateConvEvidence.monthFirstEvidence.toLocaleString()} would have been impossible the other way.`
-                    : `${dateConvEvidence.slashCells.toLocaleString()} slash dates are all ambiguous — read as US month/day/year by default.`}
+                    ? `${dateConvEvidence.slashCells.toLocaleString()} dates use month/day/year, ${dateConvEvidence.monthFirstEvidence.toLocaleString()} would have been impossible the other way.`
+                    : `${dateConvEvidence.slashCells.toLocaleString()} slash dates are all ambiguous, read as US month/day/year by default.`}
                 </div>
               )}
               {/* BUILD-80 Part 5 — unrecognised gift types, shown before the
@@ -2770,12 +2769,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   <strong>Gift types we don't recognise:</strong>{" "}
                   {payload.semantics.unrecognizedTypes.map(u => `“${u.type}” (${u.count}${u.examples?.[0] ? `, e.g. line ${u.examples[0].line}` : ""})`).join(" · ")}
-                  {" — "}these rows import as ordinary gifts with the type kept as written.
+                  {" Not set "}these rows import as ordinary gifts with the type kept as written.
                 </div>
               )}
               {dateConvEvidence?.convention === "mixed" && (
                 <div style={{background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.6}}>
-                  <div style={{fontWeight:700,marginBottom:4}}>This date column mixes conventions — we won't guess.</div>
+                  <div style={{fontWeight:700,marginBottom:4}}>This date column mixes conventions, we won't guess.</div>
                   <div style={{color:T.ink2}}>
                     {dateConvEvidence.dayFirstEvidence.toLocaleString()} dates only work day-first (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}) and {dateConvEvidence.monthFirstEvidence.toLocaleString()} only work month-first (e.g. {dateConvEvidence.monthFirstExamples.join(", ")}). Choose which to apply; impossible dates under your choice will be refused with their line numbers.
                   </div>
@@ -2801,7 +2800,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               </div>
               {headersUnrecognized && (
                 <div style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
-                  Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                  Most of these column headers aren't ones Steward recognises, one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
                 </div>
               )}
               {/* BUILD-101 Part 6 — a membership file, and whose. */}
@@ -2815,7 +2814,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     <div style={{color:T.ink2}}>
                       Each level is matched to your own levels; a level you do not have is held and listed by line, never created.
                       These are imported as history: no payment is posted, and a date already past opens no renewal.
-                      {pz.confidence==="documented-not-walked"?` Mapped from ${pz.label}'s documented export, not yet from a real file — check the columns below.`:""}
+                      {pz.confidence==="documented-not-walked"?` Mapped from ${pz.label}'s documented export, not yet from a real file, check the columns below.`:""}
                       {pz.note?` ${pz.note}`:""}
                     </div>
                   </div>);
@@ -2846,7 +2845,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {npspIs && (
                 <div data-testid="npsp-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
                   <div style={{fontWeight:800,marginBottom:5}}>
-                    This looks like a Salesforce export{npsp.object===NPSP_OBJECT_OPPORTUNITY?" — the gift report":" — the contact report"}.
+                    This looks like a Salesforce export{npsp.object===NPSP_OBJECT_OPPORTUNITY?" the gift report":" the contact report"}.
                   </div>
                   <div style={{marginBottom:npsp.warnings.length||npsp.ignored.length?8:0,color:T.ink2}}>
                     The columns are mapped.{" "}
@@ -2870,7 +2869,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       <ul style={{margin:"6px 0 0 0",paddingLeft:18,color:T.ink2}}>
                         {npsp.ignored.map(ig=>(
                           <li key={ig.header} style={{marginBottom:3}}>
-                            <strong>{ig.header}</strong> — {ig.reason}
+                            <strong>{ig.header}</strong> Not set {ig.reason}
                           </li>
                         ))}
                       </ul>
@@ -2883,7 +2882,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 <div data-testid="mailchimp-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
                   <div style={{fontWeight:800,marginBottom:5}}>This looks like a Mailchimp audience export.</div>
                   <div style={{marginBottom:8,color:T.ink2}}>
-                    The columns are mapped. Everyone on it comes in as <strong>Other</strong> — a Mailchimp
+                    The columns are mapped. Everyone on it comes in as <strong>Other</strong> a Mailchimp
                     contact is not a donor, and nothing they do here touches a giving total until they give.
                   </div>
                   <label style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,cursor:"pointer"}}>
@@ -2892,8 +2891,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       onChange={e=>setMcFileStatus(e.target.checked?"unsubscribed":"subscribed")}
                       style={{accentColor:T.greenDk,marginTop:2}}/>
                     <span>
-                      <strong>This is the unsubscribed file.</strong> Mailchimp exports one file per status —
-                      everyone in this one comes in unreachable, and no campaign or sequence will ever mail them.
+                      <strong>This is the unsubscribed file.</strong> Mailchimp exports one file per status, everyone in this one comes in unreachable, and no campaign or sequence will ever mail them.
                     </span>
                   </label>
                   {mcDetect.hasTags && (
@@ -3015,8 +3013,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       </>;
                     })()}</>
                 : payload.error
-                  ? <span style={{color:T.terracotta}}>Steward could not read this file — {payload.error}. Nothing has been imported, and this is not a problem with your spreadsheet.</span>
-                  : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em>, <em>email</em>, or <em>organization</em>.</span>}
+                  ? <span style={{color:T.terracotta}}>Steward could not read this file, {payload.error}. Nothing has been imported, and this is not a problem with your spreadsheet.</span>
+                  : <span style={{color:T.ink3}}>No rows ready, map at least one column to <em>name</em>, <em>email</em>, or <em>organization</em>.</span>}
             </div>
           </div>
 
@@ -3081,12 +3079,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   {flagCols.map(c=>{
                     const discarded = cfDecisions[c.index]?.action==="discard";
                     return <div key={c.index} style={{marginBottom:6}}>
-                      <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>{" looks like "}<strong>{FLAG_LABEL[c.flag]||c.flag}</strong>{" state — it will set the flag, never a custom field. "}
+                      <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>{" looks like "}<strong>{FLAG_LABEL[c.flag]||c.flag}</strong>{" state, it will set the flag, never a custom field. "}
                       {c.matchedValues?.length>0 && <span style={{color:T.ink3}}>Values we matched: {c.matchedValues.join(", ")} ({c.matchedCount} of {c.nonblankCount}).</span>}
                       <div>
                         <label style={{display:"inline-flex",alignItems:"center",gap:6,cursor:"pointer",color:T.ink2}}>
                           <input type="checkbox" checked={!discarded} onChange={e=>e.target.checked?clearDecision(c.index):setDecision(c.index,{action:"discard"})}/>
-                          Set these flags{discarded?" (currently OFF — this column will be dropped, acknowledged)":""}
+                          Set these flags{discarded?" (currently OFF, this column will be dropped, acknowledged)":""}
                         </label>
                       </div>
                     </div>;
@@ -3096,7 +3094,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {(existingCols.length>0||proposedCols.length>0) && (
                 <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                    Columns without a standard home{cfUndecided>0?` — ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
+                    Columns without a standard home{cfUndecided>0?` Not set ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
                   </div>
                   {existingCols.map(c=>{
                     const discarded = cfDecisions[c.index]?.action==="discard";
@@ -3215,7 +3213,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               )}
               {refusedCols.length>0 && (
                 <div style={{fontSize:11.5,color:T.ink3,marginBottom:4}}>
-                  {refusedCols.map(c=><div key={c.index}>Column {c.index+1}: not importable — {c.reason}.</div>)}
+                  {refusedCols.map(c=><div key={c.index}>Column {c.index+1}: not importable, {c.reason}.</div>)}
                 </div>
               )}
             </div>;
@@ -3517,7 +3515,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
       }
     }
     setDateRefused(refusedDates);
-    if (!gifts.length) { setErr(refusedDates.length ? `All ${refusedDates.length} gift rows had unparseable dates — nothing was stamped with today. Fix the date column and re-upload.` : "No valid gift rows found. Check your column mapping."); return; }
+    if (!gifts.length) { setErr(refusedDates.length ? `All ${refusedDates.length} gift rows had unparseable dates, nothing was stamped with today. Fix the date column and re-upload.` : "No valid gift rows found. Check your column mapping."); return; }
     setMatchedGifts(gifts); setOverrides({}); setPickingIdx(null);
     setStep("preview");
   };
@@ -3712,7 +3710,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           {result.duplicateCandidates && result.duplicateCandidates.withinFile > 0 && (
             <div style={{fontSize:12,color:T.ink3,marginBottom:12}}>
               {result.duplicateCandidates.withinFile} same-day/same-amount twin{result.duplicateCandidates.withinFile===1?" was":"s were"} imported
-              from within this file (they are treated as real, separate gifts — map a Gift/Transaction ID column for exact dedup).
+              from within this file (they are treated as real, separate gifts, map a Gift/Transaction ID column for exact dedup).
             </div>
           )}
           <div style={{fontSize:12,color:T.ink3,marginBottom:28}}>Donor giving totals have been recalculated from the gifts table.</div>
@@ -3769,7 +3767,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
               label="Drop your spreadsheet here, or browse"
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift) — auto-detected.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift), auto-detected.</div>
 
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
@@ -3839,7 +3837,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                   <button key={v} onClick={()=>onConventionChange(v)}
                     style={{flex:1,background:yearConvention===v?T.bg2:"transparent",border:`1px solid ${yearConvention===v?T.greenDk:T.bg3}`,borderRadius:8,padding:"8px 12px",color:yearConvention===v?T.greenDk:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>
                     {l}
-                    {v==="dec31"&&<span style={{fontSize:10,color:T.ink3,display:"block",fontWeight:400,marginTop:1}}>Default — treats each gift as end-of-year</span>}
+                    {v==="dec31"&&<span style={{fontSize:10,color:T.ink3,display:"block",fontWeight:400,marginTop:1}}>Default, treats each gift as end-of-year</span>}
                   </button>
                 ))}
               </div>
@@ -3849,7 +3847,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                 <div key={label}>
                   <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:5}}>{label}</div>
                   <select value={val} onChange={e=>setter(e.target.value)} style={{...inp,cursor:"pointer"}}>
-                    <option value="">— not in file —</option>
+                    <option value="">Not in file</option>
                     {parsed.headers.filter(h=>!YEAR_HDR_PAT.test(h)).map(h=><option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
@@ -3857,7 +3855,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
             </div>
             <div style={{marginBottom:14}}>
               <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
-                Gift Year Columns — {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
+                Gift Year Columns, {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
               </div>
               {yearCols.length===0&&(
                 <div style={{color:T.gold600,fontSize:13,background:T.gold100,borderRadius:8,padding:"10px 12px"}}>
@@ -3899,7 +3897,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                     </div>
                     <select value={txMap[key]||""} onChange={e=>setTxMap(m=>({...m,[key]:e.target.value}))}
                       style={{...inp,cursor:"pointer",fontSize:12}}>
-                      <option value="">— skip —</option>
+                      <option value="">Skip</option>
                       {parsed.headers.map(h=><option key={h} value={h}>{h}</option>)}
                     </select>
                   </div>
@@ -3988,7 +3986,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                         <div style={{fontSize:12,color:T.ink3,marginBottom:5}}>
                           Suggested: <strong style={{color:T.ink}}>{g.suggestedDonor.name}</strong>
                           {g.suggestedDonor.email&&<span> ({g.suggestedDonor.email})</span>}
-                          <span style={{color:T.gold600,marginLeft:4}}>— partial match</span>
+                          <span style={{color:T.gold600,marginLeft:4}}>partial match</span>
                         </div>
                       )}
                       {(ov?.action==="confirm"||ov?.action==="pick")&&(
@@ -4010,7 +4008,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                                 return hits.length ? hits.map(d=>(
                                   <div key={d.id} onClick={()=>{setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}));setPickingIdx(null);setPickSearch("");}}
                                     style={{padding:"7px 12px",cursor:"pointer",fontSize:12,color:T.ink,borderBottom:"1px solid "+T.bg2}}>
-                                    <strong>{d.name}</strong>{d.email?` — ${d.email}`:""}
+                                    <strong>{d.name}</strong>{d.email?` Not set ${d.email}`:""}
                                   </div>
                                 )) : <div style={{padding:"10px 12px",fontSize:12,color:T.ink3}}>No donors found</div>;
                               })()}
@@ -4151,11 +4149,11 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
 
   const fmtMoney=n=>"$"+(parseFloat(n)||0).toLocaleString();
   const ROWS=[
-    ["Email",d=>d.email||"—"],["Phone",d=>d.phone||"—"],
+    ["Email",d=>d.email||"Not set"],["Phone",d=>d.phone||"Not set"],
     ["Total giving",d=>fmtMoney(d.total_giving)],["Gifts",d=>d.gift_count||0],
-    ["Last gift",d=>d.last_gift_date||"—"],["Stage",d=>d.stage||"—"],
-    ["Location",d=>[d.city,d.state].filter(Boolean).join(", ")||"—"],
-    ["Added",d=>(d.created_at||"").split("T")[0]||"—"],
+    ["Last gift",d=>d.last_gift_date||"Not set"],["Stage",d=>d.stage||"Not set"],
+    ["Location",d=>[d.city,d.state].filter(Boolean).join(", ")||"Not set"],
+    ["Added",d=>(d.created_at||"").split("T")[0]||"Not set"],
   ];
 
   return(
@@ -4165,7 +4163,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Merge Duplicates</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>Same email, or names close enough to be the same person — pick the record to keep.</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>Same email, or names close enough to be the same person, pick the record to keep.</div>
           </div>
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
@@ -4179,7 +4177,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
           <div style={{textAlign:"center",padding:"36px 0",color:T.ink3}}>
             <div style={{fontSize:26,marginBottom:10,opacity:0.35}}>✓</div>
             <div style={{fontSize:14,fontWeight:600,color:T.ink2,marginBottom:4}}>Your donor list looks clean.</div>
-            <div style={{fontSize:13}}>No shared emails, no near-identical names — nothing that needs merging today.</div>
+            <div style={{fontSize:13}}>No shared emails, no near-identical names, nothing that needs merging today.</div>
           </div>
         )}
 
@@ -4225,7 +4223,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
                     </table>
                   </div>
                   <div style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:10,marginTop:12}}>
-                    <span style={{fontSize:12,color:T.ink3}}>Nothing is lost — gifts, notes, and history all move to the kept record.</span>
+                    <span style={{fontSize:12,color:T.ink3}}>Nothing is lost, gifts, notes, and history all move to the kept record.</span>
                     <button onClick={()=>doMerge(g)} disabled={!primaryId||busy||isReadOnly}
                       title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                       style={{background:(!primaryId||busy||isReadOnly)?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:(!primaryId||busy||isReadOnly)?T.ink3:T.white,fontSize:13,fontWeight:700,cursor:(!primaryId||busy||isReadOnly)?"not-allowed":"pointer"}}>

@@ -352,7 +352,7 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
               <thead><tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
                 <th style={{ padding: "6px 8px" }}>Member</th><th style={{ padding: "6px 8px" }}>Level</th>
                 <th style={{ padding: "6px 8px" }}>Status</th><th style={{ padding: "6px 8px" }}>Joined</th><th style={{ padding: "6px 8px" }}>Expires</th>
-                <th style={{ padding: "6px 8px" }} title="Whether this member has opened their own page — the page with their card, their renewal and their receipts on it.">Their page</th>
+                <th style={{ padding: "6px 8px" }} title="Whether this member has opened their own page, the page with their card, their renewal and their receipts on it.">Their page</th>
               </tr></thead>
               <tbody>{list.members.map(m => (
                 <tr key={m.id} data-testid="member-row" style={{ borderTop: "1px solid " + T.bg3 }}>

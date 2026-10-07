@@ -99,7 +99,7 @@ export default function TermsPage() {
         <p style={S.p}>You must be at least 18 years old to use the Service. Accounts may not be shared between organizations.</p>
 
         <h2 style={S.h2}>4. Payment and Billing</h2>
-        <p style={S.p}><strong>Free Trial.</strong> Your first thirty days are free. The first charge is made thirty days after you sign up, on the date shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and you will pay nothing. Nothing that happens inside those thirty days &mdash; importing your data, importing it again, or rescheduling onboarding &mdash; changes the date.</p>
+        <p style={S.p}><strong>Free Trial.</strong> Your first thirty days are free. The first charge is made thirty days after you sign up, on the date shown to you at checkout and in Settings &rarr; Billing. You may cancel at any time before that date and you will pay nothing. Nothing that happens inside those thirty days, importing your data, importing it again, or rescheduling onboarding, changes the date.</p>
         <p style={S.p}><strong>Reminder before the first charge.</strong> Seven days before the first charge we email your account administrator the date, the amount, the last four digits of the card on file, and a link that cancels the subscription in one click.</p>
         <p style={S.p}><strong>Subscription Plans.</strong> After your trial, continued use requires a paid subscription. Current plans and pricing are displayed at <a href="/pricing" style={S.a}>stewardapp.dev/pricing</a>. Prices are in USD and billed monthly.</p>
         <p style={S.p}><strong>Billing.</strong> Subscriptions are billed in advance on a monthly basis. You authorize us to charge your payment method for all fees incurred. All fees are non-refundable except as required by law or expressly stated herein.</p>
@@ -164,8 +164,8 @@ export default function TermsPage() {
         {/* INTERIM — attorney replacement pending per NEEDS-JONATHAN.md §7.
             Scoped to the donor-account + network-signup surfaces. */}
         <h2 style={S.h2}>15. Donor Accounts &amp; the Nonprofit Network</h2>
-        <p style={S.p}><strong>Donor accounts</strong> are personal, free, and optional. You agree to register only email addresses you control. You may delete your account at any time; deletion removes your account and its links but does not alter any nonprofit's own records of its donors. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>
-        <p style={S.p}><strong>Nonprofit network signup (Portal tier):</strong> by applying you represent that the information you provide — organization name, EIN, website, contact email — is truthful and that you are authorized to act for the organization. Listings are granted only after EIN verification against the IRS tax-exempt list, completed Stripe onboarding (donations settle only into your organization's own Stripe account — Steward never holds funds), and human review. We may decline, hold, or remove a listing at any time, and listings are automatically suspended if an EIN leaves the IRS list or a Stripe account is disconnected or restricted. Content you publish to donor-facing surfaces (impact updates, branding) must be truthful and yours to publish. The Portal tier covers the donor portal, gift recording, receipts, and impact updates; it does not include the Steward CRM.</p>
+        <p style={S.p}><strong>Donor accounts</strong> are personal, free, and optional. You agree to register only email addresses you control. You may delete your account at any time; deletion removes your account and its links but does not alter any nonprofit's own records of its donors. Each nonprofit sees only its own relationship with you, we never share your giving at one organization with another.</p>
+        <p style={S.p}><strong>Nonprofit network signup (Portal tier):</strong> by applying you represent that the information you provide, organization name, EIN, website, contact email, is truthful and that you are authorized to act for the organization. Listings are granted only after EIN verification against the IRS tax-exempt list, completed Stripe onboarding (donations settle only into your organization's own Stripe account, Steward never holds funds), and human review. We may decline, hold, or remove a listing at any time, and listings are automatically suspended if an EIN leaves the IRS list or a Stripe account is disconnected or restricted. Content you publish to donor-facing surfaces (impact updates, branding) must be truthful and yours to publish. The Portal tier covers the donor portal, gift recording, receipts, and impact updates; it does not include the Steward CRM.</p>
 
         {/* BUILD-96 Part 3 — THE SUBPROCESSOR TABLE.
             There was no such table until now, which was the gap: Resend has
@@ -184,7 +184,7 @@ export default function TermsPage() {
           <tbody>
             <tr>
               <td style={S.td}><strong>Resend</strong></td>
-              <td style={S.td}>sending email on your behalf — appeals, receipts, statements, reminders, sequences</td>
+              <td style={S.td}>sending email on your behalf, appeals, receipts, statements, reminders, sequences</td>
               <td style={S.td}>the recipient&apos;s email address, the subject and the message body, which for a receipt includes a donor&apos;s name, gift amount and date</td>
               <td style={S.td}>United States</td>
             </tr>
@@ -203,7 +203,7 @@ export default function TermsPage() {
             <tr>
               <td style={S.td}><strong>Stripe</strong></td>
               <td style={S.td}>your own giving account, and separately Steward&apos;s own subscription billing</td>
-              <td style={S.td}>for giving, what a donor enters at checkout — Steward never holds the funds; for billing, your organization&apos;s own payment details</td>
+              <td style={S.td}>for giving, what a donor enters at checkout, Steward never holds the funds; for billing, your organization&apos;s own payment details</td>
               <td style={S.td}>United States</td>
             </tr>
             <tr>

@@ -198,7 +198,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated, initi
         <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={{ ...inp, marginBottom: 12 }} required />
 
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Your email</div>
-        <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>We'll send your "manage fundraiser" link here — keep it, there's no password.</div>
+        <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>We'll send your "manage fundraiser" link here, keep it, there's no password.</div>
         <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} style={{ ...inp, marginBottom: 12 }} required />
 
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>A team (optional)</div>
@@ -1139,7 +1139,7 @@ export default function Donate() {
             Your gift to <strong>{org.name}</strong> has been received.
           </div>
           <div className="thanks-fallback" style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
-            A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
+            A receipt will be sent to your email. Thank you for your generosity, it makes a real difference.
           </div>
         </>
       )}
@@ -1181,7 +1181,7 @@ export default function Donate() {
       {org.givingAccount && (
         <div style={{ marginTop: 28, padding: "16px 22px", background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 12, maxWidth: 400 }}>
           <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>
-            Want your giving history, receipts, and recurring gifts in one place — for
+            Want your giving history, receipts, and recurring gifts in one place, for
             every organization you support?
           </div>
           <a href={`/giving#signup&from=${org.slug}`}
@@ -1200,7 +1200,7 @@ export default function Donate() {
         <span style={{ fontSize: 28, color: th.primaryFg }}>✓</span>
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color: T.ink, marginBottom: 10, fontFamily: th.serif }}>
-        Card updated — thank you!
+        Card updated, thank you!
       </div>
       <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
         Your recurring gift to <strong>{org.name}</strong> will continue as scheduled. We're grateful for your ongoing support.
@@ -1589,11 +1589,11 @@ export default function Donate() {
           </div>
           {returning ? (
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-              Welcome back — we've set this to your current gift to {org.name}. Change anything you like.
+              Welcome back, we've set this to your current gift to {org.name}. Change anything you like.
             </div>
           ) : frequency === "monthly" && (
             <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink2, lineHeight: 1.5 }}>
-              Monthly giving is the steadiest way to support {org.name} — and you can change or stop it anytime.
+              Monthly giving is the steadiest way to support {org.name} and you can change or stop it anytime.
             </div>
           )}
         </div>
@@ -1710,7 +1710,7 @@ export default function Donate() {
         {isRecurring && effectiveAmount > 0 && (
           <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, textAlign: "center", marginTop: -6 }}>
             {frequency === "monthly"
-              ? <><strong>{fmtAmt(chargedAmount)} every month until you cancel — {fmtAmt(annualTotal)} a year.</strong> Cancel anytime from your donor account.</>
+              ? <><strong>{fmtAmt(chargedAmount)} every month until you cancel, {fmtAmt(annualTotal)} a year.</strong> Cancel anytime from your donor account.</>
               : <><strong>{fmtAmt(chargedAmount)} every year until you cancel.</strong> Cancel anytime from your donor account.</>}
           </div>
         )}

@@ -26,7 +26,7 @@
 //   §2  the shape module holds the line in code, not in prose
 //   §3  the whole path fires and the mail sink stays EMPTY
 //   §4  a step closes only on a human action, with a line
-//   §5  at most one journey, and the replacement reason is written down
+//   §5  two journeys at once (JOURNEYS-3), spaced, and still nothing is sent
 //
 // Run on the scratch stack: BASE, DATABASE_URL, SINK_PORT (tests/run-all.sh).
 
@@ -80,8 +80,10 @@ async function reset() {
 
   console.log("— §1 · the catalogue: every step requires confirmation, no step can send —");
   const steps = J.allPresetSteps();
-  ok("five presets, and they are the brief's five",
-     J.PRESET_KEYS.join(",") === "new_donor_first_year,major_donor,welcome_back,monthly_giver,new_volunteer",
+  // JOURNEYS-3 added nine ready-made journeys after the brief's five.
+  ok("the brief's five presets come first, then JOURNEYS-3's nine",
+     J.PRESET_KEYS.join(",") === "new_donor_first_year,major_donor,welcome_back,monthly_giver,new_volunteer,"
+       + "membership_ending,membership_lapsed,recurring_failed,recurring_cancelled,card_expiring,volunteer_hours,first_event,grant_awarded,p2p_goal",
      J.PRESET_KEYS);
   // FIX-4 1a — SEVEN TOUCHES OVER TWELVE MONTHS. This pinned seven months,
   // which was THREAD-2a's timing: all seven touches inside the first seven
@@ -216,7 +218,13 @@ async function reset() {
     admin, { reason: "She asked us not to post anything." });
   ok("skip keeps the reason", sk.status === 200 && /not to post/.test(sk.body.reason || ""), sk.status + " " + JSON.stringify(sk.body).slice(0, 120));
 
-  console.log("\n— §5 · at most one journey, and the reason is written down —");
+  // JOURNEYS-3 changed this rule on purpose: a person can be in several
+  // journeys at once, with touches spaced a week apart, and only journeys
+  // marked "only one of these at a time" still replace each other (that is
+  // pinned in tests/journeys3-triggers.test.js §2). So a $25,000 gift puts
+  // her in Major donor AS WELL AS the first-year journey, and Major donor's
+  // sooner step takes her one open thread.
+  console.log("\n— §5 · two journeys at once, spaced, and the sooner one on her Thread —");
   const g2 = await api("POST", `/donors/${donorId}/gifts`, admin, { amount: 25000, date: new Date().toISOString().slice(0, 10) });
   ok("a $25,000 gift was recorded", g2.status === 201 || g2.status === 200, g2.status);
   await new Promise(r => setTimeout(r, 1200));
@@ -225,17 +233,20 @@ async function reset() {
     `SELECT id, template_name, priority, status, replaced_plan_id, replaced_reason
        FROM cultivation_plans WHERE org_id=$1 AND donor_id=$2 ORDER BY created_at`, [ORG, donorId]);
   const live = active.filter(p => p.status === "active");
-  ok("§5 the donor is in AT MOST ONE journey", live.length === 1, active);
-  ok("…and it is the major-donor one, because a $25,000 gift is a major gift "
-     + "before it is anything else",
-     live[0].template_name === "Major donor", live[0].template_name);
-  const replaced = active.find(p => p.status === "abandoned");
-  ok("…the one it replaced is stopped, not deleted", !!replaced, active.map(p => p.status).join(","));
-  ok("…and the REASON is written down, in the words the screen shows",
-     /takes priority/.test((live[0].replaced_reason || "") + (replaced?.replaced_reason || "")),
-     { onNew: live[0].replaced_reason, onOld: replaced?.replaced_reason });
+  ok("§5 she is in BOTH journeys, neither replaced",
+     live.length === 2 && live.some(p => p.template_name === "Major donor") && !active.some(p => p.status === "abandoned"), active);
+  const both = await q(
+    `SELECT st.label, st.due_date, st.status, st.plan_id, p.template_name FROM cultivation_plan_steps st
+       JOIN cultivation_plans p ON p.id=st.plan_id
+      WHERE p.org_id=$1 AND p.donor_id=$2 AND p.status='active' AND st.status IN ('open','pending')`, [ORG, donorId]);
+  const dayN = d => Math.round(Date.parse(String(d).slice(0, 10) + "T00:00:00Z") / 86400000);
+  const close = both.filter(a => both.some(b => b.plan_id !== a.plan_id && Math.abs(dayN(a.due_date) - dayN(b.due_date)) < 7));
+  ok("§5 …and no two of her touches from the two journeys land in the same week", close.length === 0, close);
+  const opened = both.filter(x => x.status === "open");
+  ok("§5 …and her one open step is Major donor's, the sooner one",
+     opened.length === 1 && opened[0].template_name === "Major donor", opened);
 
-  ok("§5 …and STILL nothing was sent, through a replacement as well as a start",
+  ok("§5 …and STILL nothing was sent, through a second journey as well as the first",
      captured.length === before,
      `sink captured ${captured.length - before}: ` + JSON.stringify(captured.slice(before)).slice(0, 400));
 

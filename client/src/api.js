@@ -51,12 +51,12 @@ export const getToken = () => localStorage.getItem("npe_token");
 // The codes below no longer decide WHETHER it is an auth failure. They decide
 // only the WORDING, and an unknown one falls through to the general sentence.
 const AUTH_MESSAGES = {
-  token_expired:       "Your session expired — please log in again.",
+  token_expired:       "Your session expired, please log in again.",
   no_token:            "Please log in again.",
   account_deactivated: "This account has been removed from the organization. Ask an admin to add you back.",
   user_not_found:      "That account no longer exists. Please log in again.",
 };
-const AUTH_FALLBACK_MESSAGE = "Your session is no longer valid — please log in again.";
+const AUTH_FALLBACK_MESSAGE = "Your session is no longer valid, please log in again.";
 
 // Human, admin-facing copy for a failed billing call (create-checkout /
 // create-portal). The server returns TYPED billing-config errors

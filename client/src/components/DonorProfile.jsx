@@ -1533,15 +1533,25 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     apiFetch(`/donors/${donor.id}/plan`).then(r=>{ if(live)setJourney(r.plan||null); }).catch(()=>{});
     return ()=>{live=false;};
   },[donor?.id]);
-  // The list is only needed when they are NOT in one, so it is fetched then.
+  // JOURNEYS-3 — every journey they are in, with the next step from each.
+  // Re-read whenever the one in the card changes (a step done, a stop, an add).
+  const [allJourneys,setAllJourneys]=useState([]);
+  const [touchGap,setTouchGap]=useState(7);
   useEffect(()=>{
     let live=true;
-    if(!donor?.id||journey?.status==="active")return undefined;
+    if(!donor?.id)return undefined;
+    apiFetch(`/donors/${donor.id}/journeys`).then(r=>{ if(live){ setAllJourneys(r?.journeys||[]); setTouchGap(r?.touchGapDays||7); } }).catch(()=>{ if(live)setAllJourneys([]); });
+    return ()=>{live=false;};
+  },[donor?.id,journey]);
+  // The list: a person can be in several journeys, so it is always offered.
+  useEffect(()=>{
+    let live=true;
+    if(!donor?.id)return undefined;
     apiFetch("/journeys").then(d=>{ if(live)setJourneyList(d?.journeys||[]); }).catch(()=>{ if(live)setJourneyList([]); });
     const ex=journey&&journey.status==="done"?`?exclude=${encodeURIComponent(journey.templateId||"")}`:"";
     apiFetch(`/donors/${donor.id}/journey-suggestion${ex}`).then(d=>{ if(live)setJourneySuggest(d?.suggestion||null); }).catch(()=>{ if(live)setJourneySuggest(null); });
     return ()=>{live=false;};
-  },[donor?.id,journey?.status]);
+  },[donor?.id,journey?.status]);   // eslint-disable-line react-hooks/exhaustive-deps
   // Picking one asks the server what it would actually do to THIS person on
   // THIS day. Never computed in the browser: the dates are the org's civil
   // dates and the browser does not know the org's timezone.
@@ -3615,6 +3625,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               monthly, lapsed, first year, major prospect, recently met) with
               its first three steps, the picker as the panel's one action,
               and a quiet link to every journey. */}
+          {/* JOURNEYS-3 — every journey they are in, the next step from each,
+              and why a step moved when it did. */}
+          {allJourneys.length>1&&(
+            <div data-testid="dp-journeys-all" style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{fontSize:11.5,color:RAIL.dim}}>In {allJourneys.length} journeys. Their steps are at least {touchGap} days apart: a step already on the Thread keeps its day, then the higher-ranked journey goes first.</div>
+              {allJourneys.map(j=>(
+                <div key={j.planId} data-testid="dp-journeys-row" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"9px 12px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.white}}>{j.name}</div>
+                  {j.next?(
+                    <div style={{fontSize:12.5,color:RAIL.text,marginTop:2,lineHeight:1.45}}>
+                      Next: {j.next.label}{j.next.dueDate?`, ${new Date(j.next.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}`:""}
+                      {j.next.movedReason&&<div style={{fontSize:11.5,color:RAIL.dim,marginTop:2}}>{j.next.movedReason}</div>}
+                    </div>
+                  ):<div style={{fontSize:12.5,color:RAIL.dim,marginTop:2}}>Every step is done.</div>}
+                </div>
+              ))}
+            </div>
+          )}
           {journey&&journey.status==="done"&&(()=>{
             const ends=(journey.steps||[]).map(x=>x.closedAt).filter(Boolean).sort();
             const on=ends.length?String(ends[ends.length-1]).slice(0,10):journey.appliedOn;
@@ -3622,12 +3650,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               Finished {journey.templateName} on {new Date(String(on).slice(0,10)+"T12:00:00Z").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric",timeZone:"UTC"})}.
             </div>;
           })()}
-          {!isReadOnly&&!(journey&&journey.status==="active")&&Array.isArray(journeyList)&&(
+          {!isReadOnly&&Array.isArray(journeyList)&&(
             <div data-testid="dp-rail-add-journey">
-              <div data-testid="dp-journey-pitch" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55,marginBottom:10}}>
+              {!(journey&&journey.status==="active")&&<div data-testid="dp-journey-pitch" style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55,marginBottom:10}}>
                 Plan the next few touches so this donor never drifts. Steward puts each step on your Thread the day it's due. Nothing is sent.
-              </div>
-              {journeySuggest&&(
+              </div>}
+              {journeySuggest&&!(journey&&journey.status==="active")&&(
                 <div data-testid="dp-journey-suggest" style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px",marginBottom:10}}>
                   <div style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>Suggested</div>
                   <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{journeySuggest.name}</div>
@@ -3672,7 +3700,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             backgroundImage:"linear-gradient(45deg, transparent 50%, #FFFFFF 50%), linear-gradient(135deg, #FFFFFF 50%, transparent 50%)",
                             backgroundPosition:"calc(100% - 16px) 55%, calc(100% - 11px) 55%",backgroundSize:"5px 5px, 5px 5px",backgroundRepeat:"no-repeat"}}>
                     <option value="">Start a journey</option>
-                    {journeyList.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+                    {journeyList.filter(j=>!allJourneys.some(a=>a.journeyId===j.id)).map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
                   </select>
                   {addPreview&&(
                     <div data-testid="dp-journey-preview"

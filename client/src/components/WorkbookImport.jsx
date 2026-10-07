@@ -43,14 +43,14 @@ function downloadCsv(name, rows, cols) {
 // ONE reason vocabulary, used by the pre-write summary AND the receipt — the
 // two screens must name the same refusal the same way.
 const REASON_LABEL_RESULT = {
-  no_donor_match: "no donor match — the ID matches nothing on any sheet",
+  no_donor_match: "no donor match, the ID matches nothing on any sheet",
   unreadable_amount: "unreadable amount", unreadable_date: "unreadable date",
-  formula_no_value: "formula without a computed value (shown with its formula — never imported as $0)",
+  formula_no_value: "formula without a computed value (shown with its formula, never imported as $0)",
   zero_amount: "amount is $0", no_amount: "no amount",
-  same_gift_listed_twice: "the same gift listed twice in the file — imported once",
+  same_gift_listed_twice: "the same gift listed twice in the file, imported once",
   subtotal_row: "subtotal row", decoy_duplicate: "superseded-copy duplicate",
-  hidden_row_skipped_by_choice: "hidden row — skipped by your choice",
-  highlighted_row_skipped_by_choice: "highlighted row — skipped by your choice",
+  hidden_row_skipped_by_choice: "hidden row, skipped by your choice",
+  highlighted_row_skipped_by_choice: "highlighted row, skipped by your choice",
   excel_error: "spreadsheet error cell (#N/A, #REF!)", boolean: "TRUE/FALSE in the amount column",
 };
 const _REASON_LABELS_MOVED_TO_MODULE_SCOPE = true;
@@ -347,7 +347,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         setResult({ ...res, giftAlone: true });
         await recordRun(res, null, runId);
       } else {
-        setProgressText(`Writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts — one transaction, all or nothing…`);
+        setProgressText(`Writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts, one transaction, all or nothing…`);
         const donors = submission.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
         const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({
           donors, gifts: submission.gifts, identityResolved: true, importId: runId,
@@ -372,7 +372,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     } catch (e) {
       rethrowProgrammerError(e);
       console.error("workbook import failed:", e);
-      setErr(errorMessage(e, "Import failed — nothing was written."));
+      setErr(errorMessage(e, "Import failed, nothing was written."));
     }
     setBuilding(false); setProgressText("");
   };
@@ -396,12 +396,12 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       <div data-testid="wb-sheet-roles">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 4 }}>This workbook is one import.</div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14 }}>
-          {fmtN(workbook.roled.length)} sheets — each with a role and the reason. Roles are editable; nothing marked “not data” or “superseded” imports without your say-so.
+          {fmtN(workbook.roled.length)} sheets, each with a role and the reason. Roles are editable; nothing marked “not data” or “superseded” imports without your say-so.
         </div>
         {legend.length > 0 && (
           <div style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.gold600, marginBottom: 4 }}>The file's own legend</div>
-            {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>— {l.sheet}</span></div>)}
+            {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>Not set {l.sheet}</span></div>)}
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -409,7 +409,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             <div key={s.name} data-testid={`wb-sheet-${s.name}`} style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 14px", opacity: ["chrome", "empty", "decoy"].includes(s.role) && !(s.role === "decoy" && includeDecoy) ? 0.75 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{s.name}
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink3, marginLeft: 8 }}>{s.rowCount ? fmtN(s.rowCount) + " rows" : "—"}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: T.ink3, marginLeft: 8 }}>{s.rowCount ? fmtN(s.rowCount) + " rows" : "Not set"}</span>
                 </div>
                 <select value={s.role} onChange={e => setRoleOverrides(p => ({ ...p, [s.name]: e.target.value }))}
                   data-testid={`wb-role-${s.name}`}
@@ -426,7 +426,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
               {s.role === "decoy" && (
                 <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 12, color: T.terracotta, cursor: "pointer" }}>
                   <input type="checkbox" checked={includeDecoy} onChange={e => setIncludeDecoy(e.target.checked)} style={{ marginTop: 2 }} />
-                  <span>Import it anyway — this would add <strong>{fmt$(s.decoyDollars)}</strong> of gifts that look already-imported; anything duplicating a real sheet (same donor, date, amount) will be excluded and shown.</span>
+                  <span>Import it anyway, this would add <strong>{fmt$(s.decoyDollars)}</strong> of gifts that look already-imported; anything duplicating a real sheet (same donor, date, amount) will be excluded and shown.</span>
                 </label>
               )}
             </div>
@@ -434,8 +434,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 16, alignItems: "center" }}>
           {btn(giftAlone
-            ? `Continue — link ${fmtN(giftsN)} gifts to your existing records →`
-            : `Continue — one import: ${fmtN(donorsN)} donors + ${fmtN(giftsN)} gift rows${pledgeSheet ? ` + ${fmtN(pledgeSheet.rowCount)} pledges` : ""}${recurringSheet ? ` + ${fmtN(recurringSheet.rowCount)} recurring` : ""} →`,
+            ? `Continue, link ${fmtN(giftsN)} gifts to your existing records →`
+            : `Continue, one import: ${fmtN(donorsN)} donors + ${fmtN(giftsN)} gift rows${pledgeSheet ? ` + ${fmtN(pledgeSheet.rowCount)} pledges` : ""}${recurringSheet ? ` + ${fmtN(recurringSheet.rowCount)} recurring` : ""} →`,
             () => setStep(answerable.length ? "signals" : "mapper"), { disabled: !importables.length, testid: "wb-continue" })}
           {btn("← Back", onClose, { secondary: true })}
         </div>
@@ -447,7 +447,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     return (
       <div data-testid="wb-signals">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 4 }}>What the sheet knows that the cells don't.</div>
-        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14 }}>Hidden rows, highlights and comments were detected on your data rows — never on titles, headers or subtotal rows, and never silently included or excluded. The file's legend is quoted where it speaks.</div>
+        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14 }}>Hidden rows, highlights and comments were detected on your data rows, never on titles, headers or subtotal rows, and never silently included or excluded. The file's legend is quoted where it speaks.</div>
         {signals.map(sig => {
           const chosen = signalAnswers[sig.id] !== undefined ? signalAnswers[sig.id] : (sig.defaultAnswer || null);
           return (
@@ -498,13 +498,13 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           const stdList = ms.entity === "donor" ? STANDARD_DONOR_FIELDS : STANDARD_GIFT_FIELDS;
           const takenStd = new Set(ms.columns.map(c => { const t = targetOf(ms.name, c); return t.startsWith("std:") ? t.slice(4) : null; }).filter(Boolean));
           const conv = ms.convention && ms.convention.convention === "dmy"
-            ? `${fmtN(ms.convention.slashCells)} dates on this sheet use day/month/year — ${fmtN(ms.convention.dayFirstEvidence)} would be impossible the other way (e.g. ${(ms.convention.dayFirstExamples || []).join(", ")}). Every slash date here reads day-first.`
+            ? `${fmtN(ms.convention.slashCells)} dates on this sheet use day/month/year, ${fmtN(ms.convention.dayFirstEvidence)} would be impossible the other way (e.g. ${(ms.convention.dayFirstExamples || []).join(", ")}). Every slash date here reads day-first.`
             : ms.convention && ms.convention.convention === "mdy"
             ? `Dates on this sheet read month/day/year (${fmtN(ms.convention.monthFirstEvidence)} cases would be impossible day-first).`
             : null;
           return (
             <div key={ms.name} style={{ marginBottom: 10 }}>
-              <SectionHead>{ms.name} — {ms.entity === "donor" ? "one row per person" : "one row per gift"}</SectionHead>
+              <SectionHead>{ms.name} Not set {ms.entity === "donor" ? "one row per person" : "one row per gift"}</SectionHead>
               {conv && (
                 <div style={{ fontSize: 12, color: T.ink, background: T.bg, borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>{conv}</div>
               )}
@@ -515,7 +515,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
                         {col.header}
-                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.terracotta, marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column — not auto-mapped</span>}
+                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.terracotta, marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column, not auto-mapped</span>}
                         <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 8 }}>e.g. “{String(col.sample ?? "").slice(0, 28)}”</span>
                       </div>
                       {/* FIX (2026-09-09) — the ONE column-target dropdown. This
@@ -531,7 +531,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                         value={t === "flag" ? "ignore" : t}
                         takenStd={takenStd}
                         locked={col.excl ? col.excl.flag : null}
-                        evidence={col.excl ? `Values match the exclusion family — routed to ${col.excl.flag}; never a custom field.`
+                        evidence={col.excl ? `Values match the exclusion family, routed to ${col.excl.flag}; never a custom field.`
                           : t.startsWith("std:") ? (col.evidence || `mapped to ${t.slice(4)}`)
                           : t.startsWith("cf:") || t.startsWith("new:") ? `→ custom field “${(cfChoices[ms.name] || {})[col.header]?.label}”`
                           : proposalEvidenceText(col.proposal.type, col.proposal.evidence)}
@@ -575,14 +575,14 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     const FLAG_LABEL = {
       percent_format: "amounts stored as a percentage, read as dollars",
       computed_formula: "amounts written as a formula, computed",
-      gift_id_collision: "rows sharing a gift id with a different donor or amount — both imported",
+      gift_id_collision: "rows sharing a gift id with a different donor or amount, both imported",
       id_note: "identifiers the spreadsheet reformatted",
     };
     const REASON_LABEL = REASON_LABEL_RESULT;
     void _REASON_LABELS_MOVED_TO_MODULE_SCOPE;
     return (
       <div data-testid="wb-summary">
-        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 10 }}>One import, fully accounted — before anything is written.</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 10 }}>One import, fully accounted, before anything is written.</div>
 
         {/* BUILD-87 Part 1 — name this run. It is what the Imports list will
             call it in six months, so the file's own name is the default. */}
@@ -608,17 +608,17 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
           {s.exclusionSummary && s.exclusionSummary.total > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
-              <strong>{fmtN(s.exclusionSummary.total)}</strong> people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface — from {fmtN(s.exclusionSummary.rowsFound || s.exclusionSummary.total)} rows{(s.exclusionSummary.foldedIntoSurvivors || 0) > 0 ? ` (${fmtN(s.exclusionSummary.foldedIntoSurvivors)} of them fold into a duplicate)` : ""}, including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
+              <strong>{fmtN(s.exclusionSummary.total)}</strong> people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface, from {fmtN(s.exclusionSummary.rowsFound || s.exclusionSummary.total)} rows{(s.exclusionSummary.foldedIntoSurvivors || 0) > 0 ? ` (${fmtN(s.exclusionSummary.foldedIntoSurvivors)} of them fold into a duplicate)` : ""}, including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
             </div>
           )}
         </div>
 
         {linkPreview && (
           <div data-testid="wb-link-preview" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
-            <strong>{fmtN(linkPreview.linkable)}</strong> of these gifts link to donors already in Steward — {fmtN(linkPreview.byKey?.donorId || 0)} by Donor ID, {fmtN(linkPreview.byKey?.email || 0)} by email, {fmtN(linkPreview.byKey?.name || 0)} by name. {fmtN(linkPreview.refusedCount)} match nothing and will be refused with their rows — never invented as new donors.
+            <strong>{fmtN(linkPreview.linkable)}</strong> of these gifts link to donors already in Steward, {fmtN(linkPreview.byKey?.donorId || 0)} by Donor ID, {fmtN(linkPreview.byKey?.email || 0)} by email, {fmtN(linkPreview.byKey?.name || 0)} by name. {fmtN(linkPreview.refusedCount)} match nothing and will be refused with their rows, never invented as new donors.
           </div>
         )}
-        <SectionHead>Every row, one disposition — per sheet and for the workbook</SectionHead>
+        <SectionHead>Every row, one disposition, per sheet and for the workbook</SectionHead>
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
           {s.reconciliation.perSheet.map(ps => (
             <div key={ps.sheet} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
@@ -633,12 +633,12 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         </div>
 
         {Object.keys(flagGroups).length > 0 && (<>
-          <SectionHead>Imported with a flag — review later</SectionHead>
+          <SectionHead>Imported with a flag, review later</SectionHead>
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>These rows LANDED. They're listed because the cell said something worth a second look.</div>
             {Object.entries(flagGroups).sort((a, b) => b[1].length - a[1].length).map(([kind, rows]) => (
               <div key={kind} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-                <span>{FLAG_LABEL[kind] || kind} — <strong>{fmtN(rows.length)}</strong> <span style={{ color: T.ink3 }}>e.g. “{String(rows[0].text).slice(0, 70)}”</span></span>
+                <span>{FLAG_LABEL[kind] || kind} Not set <strong>{fmtN(rows.length)}</strong> <span style={{ color: T.ink3 }}>e.g. “{String(rows[0].text).slice(0, 70)}”</span></span>
                 <button onClick={() => downloadCsv(`flagged-${kind}.csv`, rows, ["sheet", "line", "kind", "text", "dollars"])}
                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
               </div>
@@ -646,11 +646,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
         </>)}
 
-        <SectionHead>Set aside, by reason — every row has its sheet, row number and reason</SectionHead>
+        <SectionHead>Set aside, by reason, every row has its sheet, row number and reason</SectionHead>
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
           {Object.entries(reasonRows).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
             <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-              <span>{REASON_LABEL[reason] || reason} — <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
+              <span>{REASON_LABEL[reason] || reason} Not set <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
               <button onClick={() => downloadCsv(`refused-${reason}.csv`, rows, ["sheet", "line", "id", "reason", "detail", "dollars", "formula"])}
                 style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
             </div>
@@ -699,11 +699,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         </div>
 
         {s.merges.length > 0 && (<>
-          <SectionHead>Duplicate people folded — review list ({fmtN(s.merges.length)}, undo after import)</SectionHead>
+          <SectionHead>Duplicate people folded, review list ({fmtN(s.merges.length)}, undo after import)</SectionHead>
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, maxHeight: 140, overflowY: "auto" }}>
             {s.merges.slice(0, 300).flatMap((m, i) => (m.folded || []).map((f, j) => (
               <div key={`${i}-${j}`} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}>
-                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> — {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
+                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> Not set {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
               </div>
             )))}
           </div>
@@ -716,7 +716,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {btn("← Back", () => setStep("mapper"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
-        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>One transaction: if anything fails mid-way, nothing lands — never a half-imported org.</div>
+        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>One transaction: if anything fails mid-way, nothing lands, never a half-imported org.</div>
         {err && <div style={{ color: T.terracotta, fontSize: 12.5, marginTop: 8 }}>{err}</div>}
       </div>
     );
@@ -792,15 +792,15 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {savedRecord && (
           <div data-testid="wb-import-recorded" style={{ fontSize: 12.5, color: savedRecord.error ? T.terra700 : T.ink3, marginBottom: 10 }}>
             {savedRecord.error
-              ? `Recorded on this screen only — ${savedRecord.error}`
-              : <>Saved as <strong style={{ color: T.ink }}>{savedRecord.name}</strong> — find it again under Settings → Imports.</>}
+              ? `Recorded on this screen only, ${savedRecord.error}`
+              : <>Saved as <strong style={{ color: T.ink }}>{savedRecord.name}</strong> find it again under Settings → Imports.</>}
           </div>
         )}
         {checks.length > 0 && (
           <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? T.terra100 : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? T.terra200 : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? T.terra700 : T.ink3, marginBottom: 6 }}>
               {mismatches.length ? "What we showed you does NOT match what was written"
-                : notReadBack.length ? "Checked against the database — some figures could not be read back"
+                : notReadBack.length ? "Checked against the database, some figures could not be read back"
                 : "Checked against the database after writing"}
             </div>
             {checks.map(c2 => {
@@ -823,10 +823,10 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             chase. */}
         {Object.keys(refusalsByReason).length > 0 && (
           <div data-testid="wb-result-refusals" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 6 }}>Set aside, by reason — every row has its sheet, row number and reason</div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 6 }}>Set aside, by reason, every row has its sheet, row number and reason</div>
             {Object.entries(refusalsByReason).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
               <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-                <span>{REASON_LABEL_RESULT[reason] || reason} — <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
+                <span>{REASON_LABEL_RESULT[reason] || reason} Not set <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
                 <button onClick={() => downloadCsv(`refused-${reason}.csv`, rows, ["sheet", "line", "id", "reason", "detail", "dollars", "formula"])}
                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
               </div>

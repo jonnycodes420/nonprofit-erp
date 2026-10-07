@@ -94,7 +94,7 @@ const SCOPED_SECTION_IDS = ["commandCenter", "retention", "work"];
 // rather than five near-identical state+fetch+JSX blocks.
 const PORTFOLIO_BREAKDOWNS = {
   visits: { endpoint: "/dashboard/my-stats/visits/breakdown", title: "Visits YTD", explanation: "Meetings you've logged this fiscal year, most recent first." },
-  moves: { endpoint: "/dashboard/my-stats/moves/breakdown", title: "Moves Made", explanation: "Every meaningful contact you've logged this fiscal year — calls, meetings, emails, and stewardship touches (visits are the meeting subset of this list)." },
+  moves: { endpoint: "/dashboard/my-stats/moves/breakdown", title: "Moves Made", explanation: "Every meaningful contact you've logged this fiscal year, calls, meetings, emails, and stewardship touches (visits are the meeting subset of this list)." },
   gifts: { endpoint: "/dashboard/my-stats/gifts/breakdown", title: "Gifts YTD", explanation: "Gifts received this fiscal year from donors assigned to you, largest first." },
   pipeline: { endpoint: "/dashboard/my-stats/pipeline/breakdown", title: "Pipeline", explanation: "Your assigned donors still in an active stage, ranked by lifetime giving." },
   lapsed: { endpoint: "/dashboard/my-stats/lapsed/breakdown", title: "Lapsed", explanation: "Donors assigned to you who've lapsed, ranked by lifetime giving." },
@@ -137,7 +137,7 @@ function ImpactLine({ impact }) {
   if (!hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
 
   const head = watching > 0
-      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — no platform fee, no donor tip, gifts settle in your own Stripe.</>
+      ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards, no platform fee, no donor tip, gifts settle in your own Stripe.</>
       : <>No platform fee, no donor tip. <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
 
   const row = (label, value, note) => (
@@ -168,17 +168,17 @@ function ImpactLine({ impact }) {
           {returned > 0 && row(
             "Gifts after a year-long gap",
             fmt(returned),
-            `${fmt(returned)} from ${returnedDonors} donor${returnedDonors === 1 ? "" : "s"} who gave again after a 365-day gap. A fact about your file's history — counted separately from the failed-card retries, never merged into them.`
+            `${fmt(returned)} from ${returnedDonors} donor${returnedDonors === 1 ? "" : "s"} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries, never merged into them.`
           )}
           {row(
             "Platform fees you paid Steward",
             "$0",
-            "You process donations on your own Stripe — no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)"
+            "You process donations on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)"
           )}
           {online > 0 && row(
             <>What you'd likely have paid elsewhere <span style={{ fontSize: 10, fontWeight: 700, color: T.gold600, textTransform: "uppercase", letterSpacing: "0.05em" }}>· estimate</span></>,
             "~" + fmt(impact.estimatedFeesElsewhere),
-            `Estimate — assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`
+            `Estimate, assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`
           )}
         </div>
       )}
@@ -593,7 +593,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     if(next===layout)return;
     setLayout(next);
     const vis=next.filter(r=>r.visible);
-    setLayoutLiveMsg(`${sectionMeta(id)?.label||id} moved to top — position ${vis.findIndex(r=>r.id===id)+1} of ${vis.length}`);
+    setLayoutLiveMsg(`${sectionMeta(id)?.label||id} moved to top, position ${vis.findIndex(r=>r.id===id)+1} of ${vis.length}`);
   };
 
   const enterEdit=()=>{setPreEditLayout(layout);setEditMode(true);};
@@ -611,7 +611,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       else await apiFetch("/me/home-layout",{method:"PUT",body:JSON.stringify({layout:next})});
     }catch(e){
       if(prev)setLayout(prev);
-      setLayoutError(errorMessage(e, "Couldn't save your Home layout — your changes were undone."));
+      setLayoutError(errorMessage(e, "Couldn't save your Home layout, your changes were undone."));
       setTimeout(()=>setLayoutError(""),6000);
     }
   };
@@ -786,7 +786,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       :"";
     await askClaude(
       `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them — omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
+      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them, omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
       chunk=>setBriefing(chunk)
     );
     setBriefLoading(false);
@@ -1142,7 +1142,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     : driftData&&driftData.counts.driftingHigh>0
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
-      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?` — ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?` Not set ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
       // FIX-10 Part A — a medium flag still means someone is drifting. This
       // chip said "No donors drifting" on a file where five donors were
       // drifting at medium confidence, which is the one sentence a customer
@@ -1205,7 +1205,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{many?"Fundraising, All Active Goals":"Fundraising Goal"}</div>
                 <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
@@ -1272,7 +1272,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
                 <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
-                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="left to reach this goal"/>
+                <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"Not set"} sub="left to reach this goal"/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
               </div>
@@ -1462,7 +1462,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Donor Retention Rate</div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                   <div style={{fontSize:retentionThin?17:heroIsDrift?22:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:retentionColor,lineHeight:1.2}}>
-                    {retentionTooEarly?"—":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
+                    {retentionTooEarly?"Not set":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
                   </div>
                   {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
                     <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?T.greenDk:T.terracotta}}>
@@ -1480,13 +1480,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       the below-sector-average verdict (QA_FRESH_ORG R2) —
                       mirrors First-Touch Delay's day-one handling below. */}
                   {retentionThin
-                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history — this file has ${stewardMetrics.retentionRate.prevYearCount} prior-year donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} month${Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44)===1?"":"s"} so far. The number will appear when it can mean something.`
+                    ?`A real rate needs about ${stewardMetrics.retentionRate.floor?.minPriorYearDonors??20} donors from last year and ${Math.round((stewardMetrics.retentionRate.floor?.minHistoryDays??548)/30.44)} months of history, this file has ${stewardMetrics.retentionRate.prevYearCount} prior-year donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} and ${Math.max(1,Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44))} month${Math.round((stewardMetrics.retentionRate.historyDays||0)/30.44)===1?"":"s"} so far. The number will appear when it can mean something.`
                     :retentionTooEarly
                     ?!myStats?.orgHasGiftHistory
-                      ?`Too early to measure — import your donors to start tracking.`
+                      ?`Too early to measure, import your donors to start tracking.`
                       :stewardMetrics.retentionRate.prevYearCount>0
-                        ?`Too early to measure — as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
-                        :`Too early to measure — you'll see this once there's a prior year of giving to compare against.`
+                        ?`Too early to measure, as this year's gifts land, you'll see how many of last year's ${stewardMetrics.retentionRate.prevYearCount} donor${stewardMetrics.retentionRate.prevYearCount===1?"":"s"} stick with you.`
+                        :`Too early to measure, you'll see this once there's a prior year of giving to compare against.`
                     :(()=>{
                       // BUILD-77 Part 4 — STATE THE WINDOW AND DENOMINATOR, and
                       // remove the congratulation. Steward reports numbers; it
@@ -1532,7 +1532,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               aria-expanded={firstTouchOpen} aria-label="First-touch delay detail"
               style={{display:"flex",alignItems:"baseline",gap:7,background:firstTouchOpen?T.bg2:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"7px 14px",cursor:"pointer"}}>
               <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>First-touch delay</span>
-              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"—"}</span>
+              <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current}d`:"Not set"}</span>
               <span style={{fontSize:11,color:T.ink3}}>{firstTouchOpen?"▲":"▼"}</span>
             </button>
             <button onClick={openDebtBreakdown}
@@ -1555,8 +1555,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{borderTop:"1px dashed "+T.bg3,paddingTop:14}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink2,lineHeight:1.4,maxWidth:420}}>
                 {stewardMetrics.firstTouchDelay.current==null && myStats?.orgHasGiftHistory && !myStats?.orgHasInteractions
-                  ? "No outreach logged yet — that's normal right after import. Log your first call from a donor's profile to start tracking this."
-                  : <>New donors wait <b>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current} days`:"—"}</b> on average before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` — based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
+                  ? "No outreach logged yet, that's normal right after import. Log your first call from a donor's profile to start tracking this."
+                  : <>New donors wait <b>{stewardMetrics.firstTouchDelay.current!=null?`${stewardMetrics.firstTouchDelay.current} days`:"Not set"}</b> on average before hearing from you personally{stewardMetrics.firstTouchDelay.sampleSize?` based on ${stewardMetrics.firstTouchDelay.sampleSize} donors`:""}.</>}
               </div>
               {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
@@ -1632,15 +1632,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     ].filter(Boolean);
     if(driftData.evaluated>0&&(driftData.giftedDonorCount??0)===0)return{
       head:"No giving history on file yet, so nothing to check.",
-      body:`${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"} are on file with zero gifts between them — a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
+      body:`${driftData.evaluated.toLocaleString()} donor${driftData.evaluated===1?"":"s"} are on file with zero gifts between them, a giving pattern needs gifts. If your import should have carried giving history, re-run it with the gift columns mapped; drift starts watching the moment real gifts exist.`,
     };
     if(driftData.evaluated===0)return{
       head:"No donors to evaluate yet.",
-      body:"Steward watches every donor's own giving pattern here. Once donors and their gift history are in, anyone quietly past their pattern surfaces on this list — if you just imported and this still reads zero donors, the import didn't land.",
+      body:"Steward watches every donor's own giving pattern here. Once donors and their gift history are in, anyone quietly past their pattern surfaces on this list, if you just imported and this still reads zero donors, the import didn't land.",
     };
     if(driftData.counts.driftingHigh>0&&driftRows.length===0)return{
       head:"Everyone drifting has been contacted.",
-      body:`All ${driftData.counts.driftingHigh} drifting donor${driftData.counts.driftingHigh===1?"":"s"} had outreach logged in the last 30 days — they stay off this list while the conversation is fresh, and come back if no gift follows.`,
+      body:`All ${driftData.counts.driftingHigh} drifting donor${driftData.counts.driftingHigh===1?"":"s"} had outreach logged in the last 30 days, they stay off this list while the conversation is fresh, and come back if no gift follows.`,
     };
     // FIX-10 Part A — THE SENTENCE A CUSTOMER BELIEVED. This read "No donors
     // drifting." on a file with five donors drifting at medium confidence.
@@ -1794,7 +1794,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   )}
                   {driftStep?.source&&!driftStepDirty&&(
                     <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
-                      {driftStep.source.why}{driftStep.source.matched?<span style={{fontStyle:"italic"}}>{" \u2014 \u201c"+driftStep.source.matched+"\u201d"}</span>:null}
+                      {driftStep.source.why}{driftStep.source.matched?<span style={{fontStyle:"italic"}}>{", \u201c"+driftStep.source.matched+"\u201d"}</span>:null}
                     </div>
                   )}
                   </div>
@@ -2060,7 +2060,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
             <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
               <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
-                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":"—"}
+                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":"Not set"}
               </div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
                 stopped
@@ -2616,7 +2616,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const railFailedThisWeek=railFailedRows.length;
   // FIX-27 Part 3: a figure still loading is a skeleton, never a 0. null
   // means "not read yet"; a read that failed is a dash, not a zero either.
-  const railDueToday=!threadsData?null:threadsData.failed?"—":((threadsData.bands||[]).find(b=>b.key==="today")?.count||0);
+  const railDueToday=!threadsData?null:threadsData.failed?"Not set":((threadsData.bands||[]).find(b=>b.key==="today")?.count||0);
   // A jump to a card on this page when the card is here, and the tab that owns
   // BUILD-89 — a tile no longer scrolls the page to a card; it opens the list
   // in the rail beside you (see THE RAIL HAS TWO STATES below).
@@ -2667,11 +2667,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // a definition is what it counted. Each is one line of warm grey under the
   // label, saying exactly which rows the tile would show if you pressed it.
   const railTiles=[
-    {key:"open",n:!threadsData?null:threadsData.failed?"—":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
+    {key:"open",n:!threadsData?null:threadsData.failed?"Not set":(threadStat?.open||0),label:"Open follow-ups",short:"Follow-ups",
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
-    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"—":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
+    {key:"failed",n:!recurringHealth?null:recurringHealth.failed?"Not set":railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,short:"Cards failed this week",
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
@@ -2868,7 +2868,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           if(setupStatus.complete){
             if(!setupCelebrate)return null;
             return <GoldMoment moment="setup_complete" title="Steward is set up."
-              line="Donors in, giving connected, automations watching. This card retires itself — everything it linked to lives in Settings."/>;
+              line="Donors in, giving connected, automations watching. This card retires itself, everything it linked to lives in Settings."/>;
           }
           return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
         })();
@@ -2943,7 +2943,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       else if(e.key==="ArrowDown"){e.preventDefault();moveSection(row.id,1);}
                       else if(e.key==="Enter"){e.preventDefault();saveEdit();}
                     }}
-                    aria-label={`Reorder ${meta?.label||row.id} — position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
+                    aria-label={`Reorder ${meta?.label||row.id} position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
                     title="Drag, or focus and use arrow keys, to reorder"
                     style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
                     <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
@@ -2976,7 +2976,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
           {editMode&&hiddenRows.length>0&&(
             <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden — not shown on your Home</div>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden, not shown on your Home</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
                 {hiddenRows.map(r=>{
                   const m=sectionMeta(r.id);
@@ -3064,7 +3064,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 <button onClick={saveEdit} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:800,cursor:"pointer"}}>Done</button>
               </>
             ):(
-              <button onClick={enterEdit} aria-label="Edit Home layout — reorder or hide sections"
+              <button onClick={enterEdit} aria-label="Edit Home layout, reorder or hide sections"
                 style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
             )}
           </div>
@@ -3146,13 +3146,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           goal reaching 100% next quarter gets its own single moment. */}
       {goal&&goal.percent>=100&&(
         <GoldMoment moment={`goal100_${goal.id||goal.periodEnd||"current"}`}
-          title={`You did it — ${goal.label}.`}
+          title={`You did it, ${goal.label}.`}
           line={`${fmtFull(goal.currentAmount)} raised against ${fmtFull(goal.goalAmount)}. Worth a minute of feeling good before the next one.`}/>
       )}
       {recurringHealth&&recurringHealth.recoveredThisMonth>0&&(
         <GoldMoment moment="first_recovery"
           title="A failed card was fixed."
-          line="The gift resumed — money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
+          line="The gift resumed, money that, at most organizations, would have quietly disappeared. Steward will keep watching."/>
       )}
 
       {/* ── The section stack (BUILD-34) ─────────────────────────────────
@@ -3264,9 +3264,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         open={retentionBreakdownOpen}
         onClose={()=>setRetentionBreakdownOpen(false)}
         title="Donor Retention Rate"
-        explanation={`Donors who gave in ${retentionBreakdown?.prevYear??"the prior year"} but haven't given again in ${retentionBreakdown?.year??"the current year"} — the specific list dragging the rate down, not just the percentage.`}
+        explanation={`Donors who gave in ${retentionBreakdown?.prevYear??"the prior year"} but haven't given again in ${retentionBreakdown?.year??"the current year"} the specific list dragging the rate down, not just the percentage.`}
         loading={retentionBreakdownLoading}
-        total={retentionBreakdown?.thinData?"Not enough history yet":retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"—"}
+        total={retentionBreakdown?.thinData?"Not enough history yet":retentionBreakdown?.retentionRate!=null?`${retentionBreakdown.retentionRate}%`:"Not set"}
         totalLabel="Retention rate"
         totalCount={retentionBreakdown?.nonRetainedCount}
         rows={(retentionBreakdown?.rows||[]).map(r=>({
@@ -3282,9 +3282,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         open={reengBreakdownOpen}
         onClose={()=>setReengBreakdownOpen(false)}
         title="Money at risk"
-        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)} — the same going-quiet threshold the pipeline's move suggestions use. These donors are drifting, not yet lapsed, which is exactly when there is still something to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
+        explanation={`The lifetime giving of donors with no gift in over ${quietPhrase(impact?.quietSinceDays)} the same going-quiet threshold the pipeline's move suggestions use. These donors are drifting, not yet lapsed, which is exactly when there is still something to do about it. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`}
         loading={false}
-        total={impact?.atRiskAmount!=null?fmtFull(impact.atRiskAmount):"—"}
+        total={impact?.atRiskAmount!=null?fmtFull(impact.atRiskAmount):"Not set"}
         totalLabel="At risk"
         totalCount={impact?.quietDonorCount}
         rows={(impact?.atRiskDonors||[]).map(r=>({

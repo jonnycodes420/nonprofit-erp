@@ -406,7 +406,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
       {/* Goal-reached celebration — fires once per goal reaching 100% */}
       {topGoals.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
         <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal."
-          line={`${g.name} — ${fmtFull(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
+          line={`${g.name} Not set ${fmtFull(g.isOverarching ? g.rolledRaised : g.raised)} raised.`} />
       ))}
 
       {/* Roll-up header: total raised across active goals + combined pace.
@@ -494,7 +494,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 14 }}>Recent gifts</div>
           {overview.recentGifts.length === 0 ? (
-            <div style={{ fontSize: 13, color: T.ink3, padding: "12px 0" }}>Gifts will appear here as they come in — from your giving pages, campaigns, and offline entries.</div>
+            <div style={{ fontSize: 13, color: T.ink3, padding: "12px 0" }}>Gifts will appear here as they come in, from your giving pages, campaigns, and offline entries.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {overview.recentGifts.map((g, i) => {
@@ -899,7 +899,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
           <div style={{ marginBottom: 16 }}>
             <label style={lbl}>Rolls up under <span style={{ color: T.ink3, fontWeight: 400 }}>(optional overarching goal)</span></label>
             <select value={parentId} onChange={e => setParentId(e.target.value)} style={field}>
-              <option value="">— None (stands alone) —</option>
+              <option value="">None (stands alone)</option>
               {parentOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
@@ -1035,7 +1035,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
     return (
       <>
         <OrgDonationShare orgSlug={orgSlug} />
-        <StartHere line="Giving pages are your public, shareable donate pages — one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
+        <StartHere line="Giving pages are your public, shareable donate pages, one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
         <div style={{ marginTop: 20 }}>
           <EmptyState title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
         </div>
@@ -1098,7 +1098,7 @@ function FundsView({ data, onNavigate }) {
     <div>
       <div style={{ background: T.gold50, border: "1px solid "+T.gold500+"55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 260px" }}>
-          <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>Funds live in <strong>Finance</strong> — they're the accounting home for restricted and unrestricted money. Manage balances, targets, and restrictions there so there's one source of truth.</div>
+          <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>Funds live in <strong>Finance</strong> they're the accounting home for restricted and unrestricted money. Manage balances, targets, and restrictions there so there's one source of truth.</div>
         </div>
         <button onClick={() => onNavigate && onNavigate("finance")} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>Open Finance → Funds</button>
       </div>
@@ -1164,9 +1164,9 @@ function DepositsView({ isReadOnly, roTip }) {
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} data-testid="deposit-row">
-                  <td style={td}>{r.name}{r.reconciled === false && <div style={{ fontSize: 11.5, color: T.terra700, marginTop: 2 }}>Does not reconcile — open it on the Imports page.</div>}</td>
+                  <td style={td}>{r.name}{r.reconciled === false && <div style={{ fontSize: 11.5, color: T.terra700, marginTop: 2 }}>Does not reconcile, open it on the Imports page.</div>}</td>
                   <td style={td}>{r.committedOn || ""}</td>
-                  <td style={td}>{r.by || "—"}</td>
+                  <td style={td}>{r.by || "Not set"}</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.rowsIn}</td>
                   <td style={{ ...td, textAlign: "right" }}>{r.giftsCreated}</td>
                   <td style={{ ...td, textAlign: "right" }}>{fmtFull(r.dollarsCreated)}</td>

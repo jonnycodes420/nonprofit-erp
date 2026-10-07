@@ -93,8 +93,8 @@ function FormFunnelBlock({pageId}){
     ["views",f.views],
     ["starts",f.starts],
     ["completions",f.completions],
-    ["completionRate",f.completionRate==null?"—":f.completionRate+"%"],
-    ["averageGift",f.averageGiftCents==null?"—":"$"+Math.round(f.averageGiftCents/100).toLocaleString()],
+    ["completionRate",f.completionRate==null?"Not set":f.completionRate+"%"],
+    ["averageGift",f.averageGiftCents==null?"Not set":"$"+Math.round(f.averageGiftCents/100).toLocaleString()],
   ];
   const label=k=>((d.metrics||[]).find(m=>m.key===k)||{}).label||k;
   return(
@@ -114,7 +114,7 @@ function FormFunnelBlock({pageId}){
         {fig.map(([k,v])=>(
           <div key={k} title={(d.definitions||{})[k]||""}
             style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px"}}>
-            <div style={{fontSize:20,fontWeight:700,color:T.ink}}>{v==null?"—":v}</div>
+            <div style={{fontSize:20,fontWeight:700,color:T.ink}}>{v==null?"Not set":v}</div>
             <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{label(k)}</div>
           </div>
         ))}
@@ -179,7 +179,7 @@ function FormEmbedBlock({pageId,status}){
           If your site will not allow a script tag
         </summary>
         <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"6px 0 6px"}}>
-          This works everywhere, but it cannot resize itself — change the height if the
+          This works everywhere, but it cannot resize itself, change the height if the
           form is cut off or floating in space.
         </div>
         <textarea className="embed-iframe-snippet" readOnly rows={2} value={snip.iframe} style={box}
@@ -190,7 +190,7 @@ function FormEmbedBlock({pageId,status}){
       </details>
       <div>
         <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>
-          What a visitor sees{status!=="active"?" — this form is archived, so it shows a closed line":""}
+          What a visitor sees{status!=="active"?" this form is archived, so it shows a closed line":""}
         </div>
         <iframe className="embed-live-preview" src={snip.previewUrl} title="Donation form preview"
           style={{width:"100%",maxWidth:480,height:560,border:"1px solid "+T.bg3,borderRadius:10,background:T.white}}/>
@@ -362,8 +362,8 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       </div>
       <div style={{fontSize:13,color:T.ink3,marginBottom:pages.length?14:0,lineHeight:1.6}}>
         {pages.length===0
-          ?"Build a titled, storied donation page for a specific campaign, gala, or appeal — with its own goal and progress bar, separate from your main donation page."
-          :"Each page has its own shareable link, goal, and progress — computed live from actual gifts, never a manually-set number."}
+          ?"Build a titled, storied donation page for a specific campaign, gala, or appeal, with its own goal and progress bar, separate from your main donation page."
+          :"Each page has its own shareable link, goal, and progress, computed live from actual gifts, never a manually-set number."}
       </div>
       {!loaded&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
 
@@ -390,7 +390,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   {p.campaign_name&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300}}>Counts toward {p.campaign_name}</span>}
                 </div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                  {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` — ${pct}%`:""}
+                  {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` Not set ${pct}%`:""}
                 </div>
                 {goal>0&&(
                   <div style={{background:T.bg,borderRadius:99,height:6,overflow:"hidden",marginTop:6,maxWidth:320}}>
@@ -450,8 +450,8 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                     {list===undefined
                       ?"Loading…"
                       :list.length===0
-                        ?"Nobody has started a personal fundraiser under this page yet. Anyone can, once you've shared the link above — this list is your safety valve to take one down if needed."
-                        :"Anyone can start a public page under your org's name from the link above — archive one immediately if it needs to come down."}
+                        ?"Nobody has started a personal fundraiser under this page yet. Anyone can, once you've shared the link above, this list is your safety valve to take one down if needed."
+                        :"Anyone can start a public page under your org's name from the link above, archive one immediately if it needs to come down."}
                   </div>
                   {list&&list.length>0&&list.map((f,fi)=>{
                     const fRaised=parseFloat(f.raised_amount)||0;
@@ -540,11 +540,11 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 
             <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Gifts through this page count toward (optional)</div>
             <select value={form.campaignId} onChange={e=>setForm(f=>({...f,campaignId:e.target.value}))} style={{...inp,marginBottom:4,cursor:"pointer"}}>
-              <option value="">No campaign — a general page</option>
+              <option value="">No campaign, a general page</option>
               {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <div style={{fontSize:11,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
-              Online gifts through this page attribute to the chosen campaign automatically — its thermometer moves with no manual step, and this page tracks the campaign's goal instead of keeping a separate one.
+              Online gifts through this page attribute to the chosen campaign automatically, its thermometer moves with no manual step, and this page tracks the campaign's goal instead of keeping a separate one.
             </div>
 
             {editing&&(
@@ -600,7 +600,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
       const res=await apiFetch("/orgs/branding",{method:"PUT",body:JSON.stringify(body)});
       setAccent(res.brand_accent||"");
       setDirty(false);
-      setMsg(res.adjusted?"Saved — your color was deepened slightly so text stays readable.":"Branding saved.");
+      setMsg(res.adjusted?"Saved, your color was deepened slightly so text stays readable.":"Branding saved.");
       onSaved&&onSaved();
     }catch(e){setErr(errorMessage(e, "Could not save branding."));}
     setSaving(false);
@@ -610,7 +610,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
       <SectionLabel>Brand Identity</SectionLabel>
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:20,maxWidth:560}}>
-        Add your logo and one accent color. Steward keeps its calm layout as the frame — your color lands on the moments that matter: your dashboard welcome, primary buttons, and the header of every receipt and email your donors receive. We keep it readable automatically.
+        Add your logo and one accent color. Steward keeps its calm layout as the frame, your color lands on the moments that matter: your dashboard welcome, primary buttons, and the header of every receipt and email your donors receive. We keep it readable automatically.
       </div>
       <div style={{display:"flex",gap:28,flexWrap:"wrap"}}>
         {/* Controls */}
@@ -712,7 +712,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
               boxShadow:ring?`0 0 0 3px ${T.green600}33`:"none",transition:"box-shadow 0.4s, border-color 0.4s"}}>
       <SectionLabel>Time Zone</SectionLabel>
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:14}}>
-        Every date in Steward is calculated in your organization&rsquo;s time zone — what counts as
+        Every date in Steward is calculated in your organization&rsquo;s time zone, what counts as
         &ldquo;this week&rdquo;, when a task becomes overdue, when a next step you gave a <em>time</em> emails you,
         and where a gift falls in your fiscal year.
         A gift you enter on Sunday evening belongs to that Sunday.
@@ -725,7 +725,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",
                   color:T.ink,fontSize:13,fontFamily:"inherit",minWidth:260,
                   cursor:(!isAdmin||isReadOnly)?"not-allowed":"pointer"}}>
-          {ZONES.map(([z,label])=><option key={z} value={z}>{label} — {z}</option>)}
+          {ZONES.map(([z,label])=><option key={z} value={z}>{label} Not set {z}</option>)}
           {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
         </select>
         {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
@@ -1274,7 +1274,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
           </span>
         </div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6}}>
-          US donors need a written acknowledgment for any single gift of $250+ to claim the deduction (IRC §170(f)(8)). Fill in your organization's legal details below, then online gifts get an automatic, branded receipt — offline gifts are one click from a donor's Gifts &amp; Pledges tab.
+          US donors need a written acknowledgment for any single gift of $250+ to claim the deduction (IRC §170(f)(8)). Fill in your organization's legal details below, then online gifts get an automatic, branded receipt, offline gifts are one click from a donor's Gifts &amp; Pledges tab.
         </div>
 
         <div style={lbl}>Legal name</div>
@@ -1327,7 +1327,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
         <div style={{borderTop:"1px solid "+T.bg3,paddingTop:20}}>
           <SectionLabel>Year-End Giving Statements</SectionLabel>
           <div style={{fontSize:12,color:T.ink3,marginBottom:12,lineHeight:1.6}}>
-            Generate a consolidated statement for every donor with a gift in the selected tax year. No automatic January run — trigger this deliberately each year.
+            Generate a consolidated statement for every donor with a gift in the selected tax year. No automatic January run, trigger this deliberately each year.
           </div>
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
             <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em"}}>Tax year</span>
@@ -1384,7 +1384,7 @@ export function PortalWebsiteSnippet({ps}){
   const base=(ps.portal_url||"").replace(/\/portal\/.*$/,"")||"https://www.stewardapp.dev";
   const givingUrl=`${base}/giving#from=${ps.org_slug}`;
   const orgName=ps.display_name||"our organization";
-  const linkHtml=`<a href="${givingUrl}">See your giving with ${orgName} — receipts, recurring gifts, and history</a>`;
+  const linkHtml=`<a href="${givingUrl}">See your giving with ${orgName} receipts, recurring gifts, and history</a>`;
   const buttonHtml=`<a href="${givingUrl}" style="display:inline-block;background:${T.ink};color:${T.inkInverse};padding:10px 22px;border-radius:8px;font-family:sans-serif;font-size:14px;font-weight:600;text-decoration:none;">Your giving account</a>`;
   const copy=async(label,text)=>{
     try{await navigator.clipboard.writeText(text);setCopied(label);setTimeout(()=>setCopied(""),2000);}
@@ -1400,7 +1400,7 @@ export function PortalWebsiteSnippet({ps}){
     <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",marginBottom:16}}>
       <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:4}}>Put it on your website</div>
       <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:10,maxWidth:560}}>
-        Give your donors a way to reach their giving account from your own site — history, receipts,
+        Give your donors a way to reach their giving account from your own site, history, receipts,
         and recurring gifts. The link carries your organization's name so the sign-up page greets
         them with it; it never carries any donor information.
       </div>
@@ -1413,7 +1413,7 @@ export function PortalWebsiteSnippet({ps}){
       <div style={{...lblCopy,marginTop:14}}>Preview</div>
       <div style={{background:T.white,border:"1px dashed "+T.bg3,borderRadius:8,padding:"14px 16px",margin:"6px 0 2px"}}>
         <div style={{marginBottom:10}}>
-          <a href={givingUrl} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontSize:13}}>See your giving with {orgName} — receipts, recurring gifts, and history</a>
+          <a href={givingUrl} target="_blank" rel="noreferrer" style={{color:T.greenDk,fontSize:13}}>See your giving with {orgName} receipts, recurring gifts, and history</a>
         </div>
         <a href={givingUrl} target="_blank" rel="noreferrer" style={{display:"inline-block",background:T.ink,color:T.bg,padding:"10px 22px",borderRadius:8,fontSize:14,fontWeight:600,textDecoration:"none"}}>Your giving account</a>
       </div>
@@ -1481,7 +1481,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:14,maxWidth:600}}>
         Short updates donors see in their portal. Attach one to a fund or campaign and it shows to donors
         who gave there in the last two years; org-wide updates show to everyone. A donor who gave to the
-        food bank fund sees food bank updates — that's the whole feature.
+        food bank fund sees food bank updates, that's the whole feature.
       </div>
       {form&&(
         <div style={{border:"1px solid "+T.bg3,borderRadius:12,padding:16,marginBottom:16}}>
@@ -1513,7 +1513,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
                 </div>
               )}
             </Uploader>
-            {(form.photos||[]).length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>Tap a photo to crop it — this preview is exactly what donors see.</div>}
+            {(form.photos||[]).length>0&&<div style={{fontSize:11,color:T.ink3,marginTop:6}}>Tap a photo to crop it, this preview is exactly what donors see.</div>}
           </div>
           {/* The crop editor for the selected photo — same PortalBannerCrop the
               banner uses, at the impact ratio, so preview == render. */}
@@ -1548,7 +1548,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           </div>
         </div>
       )}
-      {rows.length===0&&!form&&<div style={{fontSize:13,color:T.ink3}}>No impact updates yet — the first one you publish shows up in your donors' portals.</div>}
+      {rows.length===0&&!form&&<div style={{fontSize:13,color:T.ink3}}>No impact updates yet, the first one you publish shows up in your donors' portals.</div>}
       {rows.map(u=>(
         <div key={u.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid "+T.bg2}}>
           <div>
@@ -1675,7 +1675,7 @@ function AddPhotos({isReadOnly}){
       <SectionLabel>Add photos</SectionLabel>
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
         Drop a folder of headshots from your old system. Steward matches each file to a person by
-        the email address, the old system&apos;s ID, or the full name in the file name — and hands
+        the email address, the old system&apos;s ID, or the full name in the file name, and hands
         back anything it is not certain about, rather than guessing.
       </div>
       <label data-testid="add-photos-input"
@@ -1715,7 +1715,7 @@ function AddPhotos({isReadOnly}){
                               borderRadius:7,background:T.bgCard,color:T.ink,maxWidth:260}}>
                       <option value="">Who is this?</option>
                       {(n.candidates&&n.candidates.length?n.candidates:people).map(p=>(
-                        <option key={p.id} value={p.id}>{p.name}{p.email?` — ${p.email}`:""}</option>
+                        <option key={p.id} value={p.id}>{p.name}{p.email?` Not set ${p.email}`:""}</option>
                       ))}
                     </select>
                   )}
@@ -1769,7 +1769,7 @@ function ImportsHistory(){
       <SectionLabel>Imports</SectionLabel>
       {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
-        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback — undoing an import is not part of this release.
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback, undoing an import is not part of this release.
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
@@ -1791,7 +1791,7 @@ function ImportsHistory(){
                       style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.green,cursor:"pointer",textAlign:"left"}}>
                       {r.name}
                     </button>
-                    {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile — open for the finding.</div>}
+                    {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile, open for the finding.</div>}
                     {/* BUILD-88a A.7 — a run made before funds and payment
                         methods were written says so, and says what to do. */}
                     {(r.notices||[]).map((n,i)=>(
@@ -1813,7 +1813,7 @@ function ImportsHistory(){
                     )}
                   </td>
                   <td style={td}>{r.committedOn||""}</td>
-                  <td style={td}>{r.by||"—"}</td>
+                  <td style={td}>{r.by||"Not set"}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.rowsIn)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
                   <td style={{...td,textAlign:"right"}}>{fmtMoney(r.dollarsIn)}</td>
@@ -1846,7 +1846,7 @@ function ImportsHistory(){
               {open.summary&&open.summary.leadSentence&&(
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
-              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed — this screen never recomputes it.</div>
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed, this screen never recomputes it.</div>
             </div>
           )}
         </Modal>
@@ -3430,7 +3430,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
           <SectionLabel>Donor Portal</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:16,maxWidth:560}}>
-            The Donor Portal has its own home now — portal status, theme, impact updates, and
+            The Donor Portal has its own home now, portal status, theme, impact updates, and
             engagement all live under <strong style={{color:T.ink2}}>Donor Portal</strong> in the left navigation.
           </div>
           <button onClick={()=>onNavigate&&onNavigate("portal")}
@@ -3469,7 +3469,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{background:T.white,border:"1px solid "+T.gold500+"55",borderRadius:16,padding:"24px 28px",marginBottom:16}}>
           <SectionLabel>Values that don't match their field's type</SectionLabel>
           <div style={{fontSize:12.5,color:T.ink3,margin:"10px 0 12px",lineHeight:1.6}}>
-            These came in through the one-time migration and were kept as written. Fix each in place — the corrected value is validated against the field's type before it's stored.
+            These came in through the one-time migration and were kept as written. Fix each in place, the corrected value is validated against the field's type before it's stored.
           </div>
           {keptRaw.slice(0,30).map(row=>(
             <div key={row.donorId+row.key} style={{display:"flex",gap:8,alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12.5}}>
@@ -3477,7 +3477,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <strong style={{color:T.ink}}>{row.donorName}</strong>
                 <span style={{color:T.ink3}}> · {row.label}{row.type?` (${row.type})`:""} · </span>
                 <span style={{color:T.terracotta}}>"{String(row.value).slice(0,40)}"</span>
-                <span style={{color:T.ink3}}> — {row.problem}</span>
+                <span style={{color:T.ink3}}> Not set {row.problem}</span>
               </span>
               <input defaultValue={String(row.value)} onChange={e=>setKeptRawEdits(p=>({...p,[`${row.donorId}|${row.key}`]:e.target.value}))}
                 style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12,color:T.ink,width:140}}/>
@@ -3495,7 +3495,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
-          Extra data specific to your org — e.g. <strong style={{color:T.ink2}}>Board Connection</strong>, <strong style={{color:T.ink2}}>Matching Employer</strong>, or a gift's <strong style={{color:T.ink2}}>Appeal Code</strong>. Fields show on <strong style={{color:T.ink2}}>each record</strong>, can be filled by <strong style={{color:T.ink2}}>imports</strong>, and each is a column in your <strong style={{color:T.ink2}}>CSV export</strong>.
+          Extra data specific to your org, e.g. <strong style={{color:T.ink2}}>Board Connection</strong>, <strong style={{color:T.ink2}}>Matching Employer</strong>, or a gift's <strong style={{color:T.ink2}}>Appeal Code</strong>. Fields show on <strong style={{color:T.ink2}}>each record</strong>, can be filled by <strong style={{color:T.ink2}}>imports</strong>, and each is a column in your <strong style={{color:T.ink2}}>CSV export</strong>.
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12}}>
           {["donor","gift"].map(en=>(
@@ -3517,7 +3517,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}</div>
-                  <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type}{(f.type==="select"||f.type==="multi_select")&&f.options?.length?` — ${f.options.slice(0,8).join(", ")}${f.options.length>8?` (+${f.options.length-8} more)`:""}`:""}
+                  <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type}{(f.type==="select"||f.type==="multi_select")&&f.options?.length?` Not set ${f.options.slice(0,8).join(", ")}${f.options.length>8?` (+${f.options.length-8} more)`:""}`:""}
                     {f.createdSource&&f.createdSource!=="legacy-migration"?` · created during ${f.createdSource}${f.createdByName?` by ${f.createdByName}`:""}`:""}
                   </div>
                 </div>
@@ -3539,7 +3539,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <div key={f.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 0 9px 10px",marginLeft:-10,borderLeft:"3px solid "+T.bg3,opacity:0.7}}>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:T.ink2}}>{f.label}</div>
-                      <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type} · archived — values kept</div>
+                      <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type} · archived, values kept</div>
                     </div>
                     {isAdmin&&<button onClick={()=>restoreCfField(f)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",flexShrink:0}}>Restore</button>}
                   </div>
@@ -3558,7 +3558,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
-          Turn a donor's cumulative giving into a concrete outcome — e.g. <strong style={{color:T.ink2}}>"$100 = 40 meals served"</strong> or <strong style={{color:T.ink2}}>"$250 = a week of after-school tutoring"</strong>. These appear in <strong style={{color:T.ink2}}>milestone thank-you emails</strong> and each donor's <strong style={{color:T.ink2}}>Impact Summary PDF</strong>, so a major donor sees exactly what their giving funded.{impactMetrics.length===0?" Add your first below.":""}
+          Turn a donor's cumulative giving into a concrete outcome, e.g. <strong style={{color:T.ink2}}>"$100 = 40 meals served"</strong> or <strong style={{color:T.ink2}}>"$250 = a week of after-school tutoring"</strong>. These appear in <strong style={{color:T.ink2}}>milestone thank-you emails</strong> and each donor's <strong style={{color:T.ink2}}>Impact Summary PDF</strong>, so a major donor sees exactly what their giving funded.{impactMetrics.length===0?" Add your first below.":""}
         </div>
         {impactMetrics.map((m,i)=>(
           <div key={m.id}
@@ -3567,7 +3567,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.active===false&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>inactive</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()} — {m.outcome_template}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()} Not set {m.outcome_template}</div>
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
@@ -3605,7 +3605,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <SectionLabel>Export your data</SectionLabel>
         <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:6,lineHeight:1.6,maxWidth:520}}>
-          Export everything as CSV anytime — including if you cancel. One zip of spreadsheet-ready files: donors (with your custom fields), gifts, interactions, grants, pledges, recurring gifts, giving pages, receipts, and more.
+          Export everything as CSV anytime, including if you cancel. One zip of spreadsheet-ready files: donors (with your custom fields), gifts, interactions, grants, pledges, recurring gifts, giving pages, receipts, and more.
         </div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{isAdmin?"CSV opens anywhere; JSON is the machine-readable copy of the same data.":"The full CSV export is available to your organization's admins. You can still download the JSON export below."}</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
@@ -3692,7 +3692,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"20px 24px"}}>
           <SectionLabel>Demo Data</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
-            Instantly populate this workspace with a realistic sample dataset — 25 donors across every stage, gifts, grants, events, campaigns, and tasks — so you can explore every feature without entering real data first.
+            Instantly populate this workspace with a realistic sample dataset, 25 donors across every stage, gifts, grants, events, campaigns, and tasks, so you can explore every feature without entering real data first.
           </div>
           {sampleStatus.hasSampleData?(
             <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
@@ -3787,8 +3787,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               const head=(atRisk>0&&quiet>0)
                 ? <><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}{cost!=null&&<> · your plan is <strong style={{color:T.ink}}>${cost}/mo</strong></>}. No platform fee, no donor tip.</>
                 : watching>0
-                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards — money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
-                  : <>No platform fee, no donor tip — <strong style={{color:T.green600}}>$0</strong> to Steward on every gift{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
+                  ? <>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring donor{watching===1?"":"s"} for failed cards, money most orgs lose silently{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}. No platform fee, no donor tip.</>
+                  : <>No platform fee, no donor tip, <strong style={{color:T.green600}}>$0</strong> to Steward on every gift{cost!=null&&<>, on a <strong style={{color:T.ink}}>${cost}/mo</strong> plan</>}.</>;
               const brow=(label,value,note)=>(
                 <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:12,padding:"7px 0",borderTop:"1px solid "+T.bg3}}>
                   <div style={{flex:1}}>
@@ -3809,17 +3809,17 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   {impactOpen&&(
                     <div style={{padding:"2px 16px 12px",background:T.green100}}>
                       {atRisk>0&&brow("At risk right now",fmt(atRisk),
-                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} — drifting, not yet lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
+                        `Lifetime giving of ${quiet.toLocaleString()} donor${quiet===1?"":"s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} drifting, not yet lapsed. Your file's own history: the size of the problem, measured, not anything Steward did.`)}
                       {retried>0&&brow("Failed cards, retried automatically",fmt(retried),
                         `${impact.recoveredCount} gift${impact.recoveredCount===1?"":"s"} whose card failed and which the dunning workflow retried. Tracked per gift, attributable to a retry Steward actually ran.`)}
                       {returned>0&&brow("Gifts after a year-long gap",fmt(returned),
                         `${fmt(returned)} from ${returnedDonors} donor${returnedDonors===1?"":"s"} who gave again after a 365-day gap. A fact about your file's history, counted separately from the failed-card retries.`)}
                       {brow("Platform fees you paid Steward","$0",
-                        "Donations run on your own Stripe — no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
+                        "Donations run on your own Stripe, no platform fee, no donor tip. (Stripe's standard card fee still applies, and goes to Stripe, not to us.)")}
                       {online>0&&brow(
                         <>What you'd likely have paid elsewhere <span style={{fontSize:10,fontWeight:700,color:T.gold600,textTransform:"uppercase",letterSpacing:"0.05em"}}>· estimate</span></>,
                         "~"+fmt(impact.estimatedFeesElsewhere),
-                        `Estimate — assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`)}
+                        `Estimate, assumes ~${impact.feeAssumptionPct}% in platform/processing fees a typical platform charges, on the ${fmt(online)} in online giving you processed through Steward.`)}
                     </div>
                   )}
                 </div>
@@ -3840,10 +3840,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>
                   {isSubscriber&&hasSub
-                    ? "Change your plan, update your payment method, download invoices, or cancel — all in Stripe's secure billing portal. Opens in a new tab; plan changes are prorated automatically."
+                    ? "Change your plan, update your payment method, download invoices, or cancel, all in Stripe's secure billing portal. Opens in a new tab; plan changes are prorated automatically."
                     : isSubscriber&&!hasSub
-                      ? <>You're on <strong style={{color:T.ink}}>{planLabel}</strong> via a manual grant from Steward — there's <strong style={{color:T.ink}}>no active subscription</strong> to manage, and nothing to pay. To move to self-serve billing, choose a plan.</>
-                      : "Start a subscription any time — opens Stripe's secure checkout."}
+                      ? <>You're on <strong style={{color:T.ink}}>{planLabel}</strong> via a manual grant from Steward, there's <strong style={{color:T.ink}}>no active subscription</strong> to manage, and nothing to pay. To move to self-serve billing, choose a plan.</>
+                      : "Start a subscription any time, opens Stripe's secure checkout."}
                 </div>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                   {isSubscriber&&hasSub&&(
@@ -3892,7 +3892,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <SectionLabel>Email notifications</SectionLabel>
         <div style={{fontSize:12.5,color:T.ink3,marginTop:-4,marginBottom:14}}>Email me about:</div>
         {[
-          {key:"portfolioGifts",label:"Gifts to my donors",hint:"A gift lands for a donor you own — or anywhere in your org."},
+          {key:"portfolioGifts",label:"Gifts to my donors",hint:"A gift lands for a donor you own, or anywhere in your org."},
           {key:"taskAssignments",label:"Task assignments",hint:"Someone assigns you a task (or an automation does)."},
           {key:"dailyTasks",label:"Daily task reminder",hint:"A morning summary of tasks due today and overdue."},
           {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
@@ -3921,7 +3921,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Send the Thread email on weekends too</div>
               {/* BUILD-84 — the weekend rule INVERTS for a timed step, and
                   that is said next to the toggle rather than discovered. */}
-              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday — setting one is a commitment to a moment.</div>
+              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday, setting one is a commitment to a moment.</div>
             </div>
           </label>
         )}
@@ -4032,7 +4032,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
               <div>
                 <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Show other income on the board dashboard</div>
-                <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Steward counts gifts. Earned income — a store, tickets, programme fees — is not tracked here, so this is one figure you type. It appears on its own line under giving and is never added to it.</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Steward counts gifts. Earned income, a store, tickets, programme fees, is not tracked here, so this is one figure you type. It appears on its own line under giving and is never added to it.</div>
               </div>
             </label>
             {otherIncomeOn&&(
@@ -4092,7 +4092,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <option value="checkbox">Yes/No (Checkbox)</option>
             </select>
             {editingField&&<div style={{fontSize:11.5,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
-              A field's type can't change after creation — changing it would silently rewrite every saved value. Archive this field and add a new one instead.
+              A field's type can't change after creation, changing it would silently rewrite every saved value. Archive this field and add a new one instead.
             </div>}
             {(cfForm.type==="select"||cfForm.type==="multi_select")&&(
               <div style={{marginBottom:14}}>
@@ -4151,7 +4151,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:6,fontFamily:"inherit",resize:"vertical"}}
             />
             <div style={{fontSize:11,color:T.ink3,marginBottom:20,lineHeight:1.5}}>
-              Use <code>{"{amount}"}</code> for the donor's cumulative giving and <code>{"{n}"}</code> for how many times this threshold has been covered. Used to draft warm, specific milestone emails — not shown to donors verbatim.
+              Use <code>{"{amount}"}</code> for the donor's cumulative giving and <code>{"{n}"}</code> for how many times this threshold has been covered. Used to draft warm, specific milestone emails, not shown to donors verbatim.
             </div>
             <div style={{display:"flex",gap:10}}>
               <button onClick={closeImModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
@@ -4205,7 +4205,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <div style={{fontSize:12,color:T.greenDk,wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
                 </div>
                 {!inviteResult.emailSent&&<div style={{fontSize:12,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
-                  SMTP not configured — copy and share this link directly. It expires in 7 days.
+                  SMTP not configured, copy and share this link directly. It expires in 7 days.
                 </div>}
                 <div style={{display:"flex",gap:10}}>
                   <button onClick={copyLink} style={{flex:1,background:copied?T.green:T.bg,border:"1px solid "+(copied?T.green:T.bg3),borderRadius:10,padding:"10px",color:copied?T.white:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>

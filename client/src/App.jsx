@@ -848,7 +848,7 @@ function AppShell() {
       <div data-testid="band-notice" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
         <span style={{flex:1,minWidth:240}}>
           <strong style={{color:T.gold50}}>You have {Number(donorBand.notice.count||0).toLocaleString()} active donors</strong>
-          {" — more than your current plan's band. "}
+          {" more than your current plan's band. "}
           {donorBand.notice.nextMonthlyUsd
             ? <>The next plan, {donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}), is ${donorBand.notice.nextMonthlyUsd} a month. </>
             : <>{donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}) is a conversation rather than a price. </>}
@@ -892,11 +892,11 @@ function AppShell() {
           because for it choosing a plan really is the next thing. */}
       {billing.firstChargeAt
         ? <>
-            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""} —</span>
+            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""} Not set</span>
             <button onClick={()=>navigateTo("settings",{section:"account"})} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>See billing →</button>
           </>
         : <>
-            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
+            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> left in your trial,</span>
             <button onClick={goToPricing} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Choose a plan →</button>
           </>}
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.sage600,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
@@ -909,9 +909,9 @@ function AppShell() {
         {networkApp.status==="pending"?"Application under review":networkApp.status==="held"?"Application on hold":networkApp.status==="dispute"?"EIN under review":"Application not approved"}
       </span>
       <span style={{color:T.ink2}}>
-        {networkApp.status==="pending"&&"We verify your EIN and Stripe setup, then a human approves your listing. Meanwhile you can import donors, record gifts, and design your portal — it stays private until approval."}
-        {networkApp.status==="held"&&"A reviewer needs more information — check your email, or reply to jonathan@stewardapp.dev."}
-        {networkApp.status==="dispute"&&"Your EIN is already claimed by another Steward organization — a human is reviewing both applications."}
+        {networkApp.status==="pending"&&"We verify your EIN and Stripe setup, then a human approves your listing. Meanwhile you can import donors, record gifts, and design your portal, it stays private until approval."}
+        {networkApp.status==="held"&&"A reviewer needs more information, check your email, or reply to jonathan@stewardapp.dev."}
+        {networkApp.status==="dispute"&&"Your EIN is already claimed by another Steward organization, a human is reviewing both applications."}
         {networkApp.status==="rejected"&&"Your application wasn't approved. If you think that's wrong, write to jonathan@stewardapp.dev."}
       </span>
     </div>}
@@ -995,7 +995,7 @@ function AppShell() {
     </div>}
     {subscribedToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:T.white,borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <div>
-        <div style={{fontWeight:700,marginBottom:2}}>Payment received — thank you!</div>
+        <div style={{fontWeight:700,marginBottom:2}}>Payment received, thank you!</div>
         <div style={{fontWeight:400,opacity:0.85}}>Finishing up… your new plan will be active in a moment.</div>
       </div>
       <button onClick={()=>setSubscribedToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:T.white,cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>

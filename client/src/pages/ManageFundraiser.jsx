@@ -259,7 +259,7 @@ export default function ManageFundraiser() {
       </div>
 
       <div style={{ textAlign: "center", fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
-        Bookmark this page — this link is how you manage your fundraiser, there's no password to reset it with.
+        Bookmark this page, this link is how you manage your fundraiser, there's no password to reset it with.
         <br />Powered by <span style={{ fontWeight: 700, color: T.greenDk }}>Steward</span>
       </div>
     </div>

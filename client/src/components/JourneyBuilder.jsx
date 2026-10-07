@@ -3,6 +3,7 @@ import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
+import { offerUndo } from "./EditHistory";
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
 //
@@ -214,6 +215,57 @@ function ChainList({ steps, sel, onSelect, preview }) {
 // ── THE TRIGGER AND ITS CONDITIONS ────────────────────────────────────────
 // One block, used by the create dialog AND by the open card, so what you set
 // when you make a journey is edited in exactly the same controls afterwards.
+// JOURNEYS-3 · JOURNEY SETTINGS. One number: no two steps from different
+// journeys land within this many days for one person.
+function TouchGap({ data, editable, onSaved }) {
+  const [days, setDays] = useState(data.touchGapDays || 7);
+  const [note, setNote] = useState("");
+  useEffect(() => { setDays(data.touchGapDays || 7); }, [data.touchGapDays]);
+  const lim = data.touchGap || { min: 1, max: 60 };
+  return (
+    <div data-testid="jb-settings" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12,
+                                             padding: "12px 15px", margin: "0 0 18px" }}>
+      <div style={{ ...CAP, marginBottom: 6 }}>Journey settings</div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13.5, color: T.ink }}>
+        <span>No more than one touch every</span>
+        <input data-testid="jb-gap" type="number" min={lim.min} max={lim.max} step="1" disabled={!editable}
+          value={days} onChange={e => setDays(parseInt(e.target.value, 10) || "")}
+          style={{ ...INP, width: 70, display: "inline-block" }} />
+        <span>days for anyone, across all their journeys.</span>
+        {editable && Number(days) !== Number(data.touchGapDays) && (
+          <button data-testid="jb-gap-save" style={BTN} onClick={async () => {
+            try { const r = await apiFetch("/journeys/settings", { method: "PUT", body: JSON.stringify({ touchGapDays: Number(days) }) });
+                  setNote(r.sentence || ""); onSaved && onSaved(); }
+            catch (e) { setNote(e?.message || "Could not save that."); }
+          }}>Save</button>
+        )}
+      </div>
+      <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, marginTop: 6 }}>
+        {note || "When two steps land in the same stretch, a step already on their Thread keeps its day, then the higher-ranked journey goes first. The other step moves to the next open week, with a line saying why."}
+      </div>
+    </div>
+  );
+}
+
+// JOURNEYS-3 · one group of names in the apply dialog. Each name opens the
+// person; their other journeys are said beside them.
+function ApplyGroup({ rows, title, testid }) {
+  if (!rows || !rows.length) return null;
+  return (
+    <div data-testid={testid} style={{ margin: "10px 0" }}>
+      <div style={{ ...CAP, marginBottom: 6 }}>{title}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 13, lineHeight: 1.6 }}>
+        {rows.map(r => (
+          <span key={r.id}>
+            <DonorLink id={r.id} style={{ color: T.greenDk, fontWeight: 600 }}>{r.name}</DonorLink>
+            {r.journeys && r.journeys.length > 0 && <span style={{ color: T.ink3 }}> ({r.journeys.join(", ")})</span>}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, tid = "jb" }) {
   const trigger = (data.triggers || []).find(t => t.key === value.trigger) || null;
   const aud = value.audience || {};
@@ -276,14 +328,25 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
               onChange({ priority: Number.isInteger(d) ? Math.min(1000, Math.max(0, d)) : null });
             }} />
           <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
-            The higher number wins when somebody qualifies for two.
+            The higher number goes first when somebody is in two.
           </div>
         </label>
       </div>
+      {/* JOURNEYS-3 — a person can be in several journeys; some pairs should not overlap. */}
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, fontSize: 13, color: T.ink, cursor: "pointer" }}>
+        <input data-testid={tid + "-exclusive"} type="checkbox" checked={!!value.exclusive}
+          onChange={e => onChange({ exclusive: e.target.checked })} style={{ marginTop: 3 }} />
+        <span>
+          Only one of these at a time
+          <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.5 }}>
+            Someone in another journey with this ticked stays in whichever ranks higher. Without it, they can be in this one too, with touches spaced out.
+          </span>
+        </span>
+      </label>
 
       {/* PARITY-1 Part D — what narrows the trigger: a floor on any gift
           trigger, a fund or a campaign, and the group "joins a group" watches. */}
-      {trigger && (trigger.gift || trigger.needsGroup) && (
+      {trigger && (trigger.gift || trigger.needsGroup || trigger.needsHours) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, marginTop: 12 }}>
           {trigger.gift && !trigger.needsAmount && (
             <label style={{ display: "block" }}>
@@ -311,6 +374,15 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
               <select data-testid={tid + "-campaign"} value={tf.campaignId || ""} style={INP} onChange={e => setTf("campaignId", e.target.value)}>
                 <option value="">Any campaign</option>
                 {(data.campaigns || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          )}
+          {trigger.needsHours && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>The milestone</span>
+              <select data-testid={tid + "-hours"} value={tf.hours || ""} style={INP} onChange={e => setTf("hours", e.target.value ? Number(e.target.value) : "")}>
+                <option value="">Any of them</option>
+                {(data.hourMilestones || []).map(h => <option key={h} value={h}>{h} hours</option>)}
               </select>
             </label>
           )}
@@ -521,6 +593,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
   const [rowsPanel, setRowsPanel] = useState(null);
   const [applyPanel, setApplyPanel] = useState(null);
   const [audience, setAudience] = useState({});
+  const [joinOthers, setJoinOthers] = useState(true);    // JOURNEYS-3: people already in another journey
   const [counting, setCounting] = useState(false);
   const [dragFrom, setDragFrom] = useState(null);
   // FIX-5 — the new dialogs.
@@ -562,7 +635,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
     setDraft((j.steps || []).map(s => ({ ...s })));
     setMeta({ name: j.name || "", description: j.description || "", trigger: j.trigger || "",
               amountCents: j.amountCents ?? null, priority: j.priority ?? 50,
-              audience: j.audience || {}, triggerFilters: j.triggerFilters || {}, enabled: !!j.enabled });
+              audience: j.audience || {}, triggerFilters: j.triggerFilters || {}, enabled: !!j.enabled,
+              exclusive: !!j.exclusive });
     setPreview(null); setStats(null); setErr("");
     try { setPreview(await apiFetch(`/journeys/${j.id}/preview`)); } catch { setPreview({ unavailable: true }); }
     try { setStats(await apiFetch(`/journeys/${j.id}/stats`)); } catch { setStats(null); }
@@ -614,7 +688,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
         method: "PATCH",
         body: JSON.stringify({ name: meta.name, description: meta.description, trigger: meta.trigger,
                                amountCents: meta.amountCents, priority: meta.priority,
-                               audience: meta.audience, triggerFilters: meta.triggerFilters || {}, enabled: meta.enabled, steps: draft, retimeExisting }),
+                               audience: meta.audience, triggerFilters: meta.triggerFilters || {}, enabled: meta.enabled,
+                               exclusive: !!meta.exclusive, steps: draft, retimeExisting }),
       });
       setAffects(null);
       await load();
@@ -744,10 +819,11 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
 
   // ONE PLACE THE APPLY COUNT COMES FROM, so the number on the button is never
   // a stale one from a previous set of filters.
-  async function recount(journeyId, next) {
+  async function recount(journeyId, next, others = joinOthers) {
     setCounting(true);
     try {
-      const q = Object.keys(next).length ? `&audience=${encodeURIComponent(JSON.stringify(next))}` : "";
+      const q = (Object.keys(next).length ? `&audience=${encodeURIComponent(JSON.stringify(next))}` : "")
+        + (others ? "" : "&joinOthers=false");
       setApplyPanel(await apiFetch(`/journeys/${journeyId}/qualifying?days=90${q}`));
       setErr("");
     } catch (e) { setErr(e?.message || "Could not count who qualifies."); setApplyPanel(null); }
@@ -974,7 +1050,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                       {current.enabled ? "Turn it off" : "Turn it on"}
                     </button>
                     <button data-testid="jb-apply-open" style={BTN}
-                      onClick={async () => { setAudience(meta.audience || {}); await recount(current.id, meta.audience || {}); }}>
+                      onClick={async () => { setAudience(meta.audience || {}); setJoinOthers(true); await recount(current.id, meta.audience || {}, true); }}>
                       Apply to people who already qualify
                     </button>
                     <button data-testid="jb-duplicate" style={BTN} onClick={() => duplicateJourney(current.id)}>
@@ -1015,6 +1091,9 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
           </div>
         ))}
       </div>
+
+      {/* ── JOURNEYS-3 · Journey settings: the touch gap ───────────────── */}
+      <TouchGap data={data} editable={editable} onSaved={() => load()} />
 
       {/* ── start from a preset ───────────────────────────────────────── */}
       {editable && (
@@ -1106,7 +1185,8 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                 presetKey: createDraft.fromPreset || undefined,
                 name: createDraft.name, description: createDraft.description, trigger: createDraft.trigger,
                 amountCents: createDraft.amountCents, priority: createDraft.priority,
-                audience: createDraft.audience, triggerFilters: createDraft.triggerFilters || undefined, steps: createDraft.steps })}>
+                audience: createDraft.audience, triggerFilters: createDraft.triggerFilters || undefined,
+                exclusive: createDraft.exclusive === undefined ? undefined : !!createDraft.exclusive, steps: createDraft.steps })}>
               Create it
             </button>
             <button style={BTN} onClick={() => setCreateDraft(null)}>Not now</button>
@@ -1235,25 +1315,57 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
             </p>
           </div>
 
+          {/* JOURNEYS-3 · COUNTED HONESTLY BEFORE THE CLICK: who joins, who is
+              already in it, who stays in a journey that ranks higher, and who is
+              in another journey, each name opening their record. */}
+          <ApplyGroup testid="jb-apply-blocked" rows={applyPanel.blocked}
+            title={`${(applyPanel.blocked || []).length} already in a journey that ranks higher`} />
+          <ApplyGroup testid="jb-apply-already" rows={applyPanel.alreadyIn}
+            title={`${(applyPanel.alreadyIn || []).length} already in this one`} />
+          {(applyPanel.inOthers || []).length > 0 && (
+            <div data-testid="jb-apply-others" style={{ margin: "10px 0" }}>
+              <ApplyGroup rows={applyPanel.inOthers}
+                title={`${applyPanel.inOthers.length} in another journey`} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                {[[true, "Add them too (touches will be spaced out)"], [false, "Leave them where they are"]].map(([v, label]) => (
+                  <label key={String(v)} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, cursor: "pointer" }}>
+                    <input type="radio" name="jb-join-others" data-testid={v ? "jb-join-others-yes" : "jb-join-others-no"}
+                      checked={joinOthers === v} disabled={counting}
+                      onChange={() => { setJoinOthers(v); recount(current.id, audience, v); }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55 }}>
-            Each of them gets the journey&apos;s steps from today. Nothing is sent, and every step waits for you.
-            Anyone already in a journey that outranks this one is left where they are.
+            {applyPanel.window} Each person who joins gets the journey&apos;s steps from today. Nothing is sent, and every step waits for you.
           </p>
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-            <button data-testid="jb-apply-confirm" disabled={!applyPanel.count || counting}
+            <button data-testid="jb-apply-confirm" disabled={!applyPanel.willJoin || counting}
               onClick={async () => {
                 try {
                   const r = await apiFetch(`/journeys/${current.id}/apply`,
-                    { method: "POST", body: JSON.stringify({ allQualifying: true, days: applyPanel.days, audience }) });
+                    { method: "POST", body: JSON.stringify({ allQualifying: true, days: applyPanel.days, audience, joinOthers }) });
                   setApplyPanel(null); setErr("");
+                  // The counts are fetched BEFORE the toast, so How it is going
+                  // already shows the people who just joined.
+                  const jid = current.id;
                   await load();
-                  setStats(await apiFetch(`/journeys/${current.id}/stats`).catch(() => null));
-                  window.alert(`${r.started} put into ${r.name}. ${r.skipped} left where they were.`);
+                  setStats(await apiFetch(`/journeys/${jid}/stats`).catch(() => null));
+                  offerUndo({ message: r.sentence || `${r.started} joined ${r.name}.`,
+                    undoAction: async () => {
+                      const x = await apiFetch(`/journeys/${jid}/apply/undo`, { method: "POST", body: JSON.stringify({ planIds: r.planIds || [] }) });
+                      await load();
+                      setStats(await apiFetch(`/journeys/${jid}/stats`).catch(() => null));
+                      return x;
+                    } }, "journey");
                 } catch (e) { setErr(e?.message || "Could not apply it."); setApplyPanel(null); }
               }}
-              style={{ ...BTN, background: applyPanel.count ? T.greenDk : T.bg3, borderColor: applyPanel.count ? T.greenDk : T.bg3,
-                       color: applyPanel.count ? T.white : T.ink3, fontWeight: 700 }}>
-              Put {applyPanel.count} {applyPanel.count === 1 ? "person" : "people"} in it
+              style={{ ...BTN, background: applyPanel.willJoin ? T.greenDk : T.bg3, borderColor: applyPanel.willJoin ? T.greenDk : T.bg3,
+                       color: applyPanel.willJoin ? T.white : T.ink3, fontWeight: 700 }}>
+              Put {applyPanel.willJoin || 0} {applyPanel.willJoin === 1 ? "person" : "people"} in it
             </button>
             <button onClick={() => setApplyPanel(null)} style={BTN}>Not now</button>
           </div>

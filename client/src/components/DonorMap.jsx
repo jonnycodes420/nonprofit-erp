@@ -151,7 +151,7 @@ export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
             {unconfigured
               ? <>No donor is on the map yet because no geocoding provider is set up for Steward. Addresses are never sent anywhere until one is. <span style={{ color: T.ink3 }}>{provider.reason}</span></>
               : buckets.pending.length > 0
-                ? <>No donor is on the map yet. {buckets.pending.length.toLocaleString()} {buckets.pending.length === 1 ? "address is" : "addresses are"} still processing — this runs in the background and the pins appear on their own.</>
+                ? <>No donor is on the map yet. {buckets.pending.length.toLocaleString()} {buckets.pending.length === 1 ? "address is" : "addresses are"} still processing, this runs in the background and the pins appear on their own.</>
                 : <>No donor is on the map. {line}.</>}
           </div>
         )}

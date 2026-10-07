@@ -44,6 +44,11 @@ const VIDEO_ID = { youtube: /^[A-Za-z0-9_-]{6,20}$/, vimeo: /^\d{6,12}$/ };
 const clip = (v, n) => String(v == null ? "" : v).slice(0, n);
 const firstName = name => String(name || "").trim().split(/\s+/)[0] || "";
 
+// JOURNEYS-3 · set when the routes mount (it needs their helpers).
+let starterTemplateImpl = null;
+async function ensureStarterTemplate(orgId, starterKey, who) {
+  return starterTemplateImpl ? starterTemplateImpl(orgId, starterKey, who) : null;
+}
 let C = null;   // the mounted context; buildEmailContext needs query and the brand resolver
 
 // The URL an email's video links to: Steward's own page for it, on the app
@@ -214,6 +219,26 @@ app.get("/email-templates", requireAuth, wrap(async (req, res) => {
     blockTypes: PW.widgetsForSurface("email").map(w => ({ key: w.key, label: w.label, hint: w.hint, defaults: w.defaults })),
   });
 }));
+
+// JOURNEYS-3 · A ready-made journey's step names an email by its starter
+// (`failed_card`, `membership_renewal`). The org's own saved copy is used when
+// it has one; otherwise one is saved from the starter, signed by whoever made
+// the journey. It writes a template and nothing else: no draft, no send.
+starterTemplateImpl = async function (orgId, starterKey, who = {}) {
+  await READY;
+  const s = LIB.starterByKey(String(starterKey || ""));
+  if (!s) return null;
+  const [had] = await query(`SELECT id FROM email_templates WHERE org_id=? AND starter_key=? AND archived_at IS NULL ORDER BY created_at LIMIT 1`,
+    [orgId, s.key]);
+  if (had) return had.id;
+  const ectx = await buildEmailContext(orgId);
+  const id = "et_" + uuid().replace(/-/g, "").slice(0, 12);
+  await run(`INSERT INTO email_templates (id, org_id, starter_key, name, purpose, subject, preheader, blocks, created_by, created_by_name)
+             VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+    [id, orgId, s.key, s.name, s.purpose, s.subject || "", s.preheader || "",
+     JSON.stringify(fillStarterLinks(LIB.signStarterBlocks(s.blocks, { name: who.name || "" }), ectx)), who.id || null, who.name || null]);
+  return id;
+};
 
 app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await READY;
@@ -514,4 +539,4 @@ app.get("/watch/:orgSlug/:provider/:videoId", videoLimiter, wrap(async (req, res
 }));
 }
 
-module.exports = { routers, mount, buildEmailContext, videoPageUrl };
+module.exports = { routers, mount, buildEmailContext, videoPageUrl, ensureStarterTemplate };

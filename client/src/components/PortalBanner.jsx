@@ -149,7 +149,7 @@ export function PortalBannerPreview({ url, focal, onFocalChange, bandColor, rati
       <div
         role="button"
         tabIndex={0}
-        aria-label="Set the focal point — click the most important part of the image"
+        aria-label="Set the focal point, click the most important part of the image"
         onClick={setFromEvent}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onFocalChange && onFocalChange(fx, fy); } }}
         style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, "+PAL.portalGreen+")", overflow: "hidden", borderRadius: radius, cursor: "crosshair" }}
@@ -160,7 +160,7 @@ export function PortalBannerPreview({ url, focal, onFocalChange, bandColor, rati
         <div aria-hidden="true" style={{ position: "absolute", left: `${fx * 100}%`, top: `${fy * 100}%`, width: 18, height: 18, marginLeft: -9, marginTop: -9, borderRadius: "50%", border: "2px solid "+PAL.white, boxShadow: "0 0 0 2px rgba(0,0,0,0.45)", pointerEvents: "none" }} />
       </div>
       <div style={{ fontSize: 11, color: PAL.muted, marginTop: 4, lineHeight: 1.4 }}>
-        Click the most important part of the image — the banner keeps it in view as it crops.
+        Click the most important part of the image, the banner keeps it in view as it crops.
       </div>
     </div>
   );

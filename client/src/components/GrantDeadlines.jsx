@@ -20,7 +20,7 @@ import { grantDeadlineSentence } from "../../../shared/homeNote";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const civil = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || "")); return m ? { y: +m[1], mo: +m[2], d: +m[3] } : null; };
-const dayLabel = iso => { const c = civil(iso); return c ? `${c.d} ${MONTHS[c.mo - 1]}` : "—"; };
+const dayLabel = iso => { const c = civil(iso); return c ? `${c.d} ${MONTHS[c.mo - 1]}` : "Not set"; };
 const monthLabel = ym => { const c = civil(ym + "-01"); return c ? `${MONTHS[c.mo - 1]} ${c.y}` : ym; };
 const BAND_COLOR = { overdue: T.gold500, soon: T.greenDk, later: T.bg3 };
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box" };

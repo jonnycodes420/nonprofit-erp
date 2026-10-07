@@ -98,7 +98,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
     );
   }
 
-  const text = isBlank ? "—"
+  const text = isBlank ? "Not set"
     : kind === "money" ? fmtFull(shown)
     : kind === "percent" ? `${shown}%`
     : Number(shown).toLocaleString("en-US") + suffix;

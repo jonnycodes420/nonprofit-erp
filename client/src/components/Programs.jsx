@@ -41,8 +41,8 @@ export function Programs({data}) {
     const metrics=typeof p.metrics==="string"?JSON.parse(p.metrics||"{}"):p.metrics||{};
     const sys=`You are a nonprofit program evaluation expert. Impact-focused, specific. Max 250 words.`;
     const prompt=type==="impact"
-      ?`Write an impact narrative for a grant report.\n\nProgram: ${p.name}\nDesc: ${p.description}\nBudget: ${fmtFull(p.budget)} | Spent: ${fmtFull(p.spent)} | Participants: ${p.participant_count}\nStaff: ${staff.join(", ")}\nDates: ${p.start_date} — ${p.end_date}\nOutcomes: ${p.outcomes}\nMetrics: ${JSON.stringify(metrics)}\nOrg: ${data.org.name} — ${data.org.mission}\n\nLead with the most powerful outcome. Include specific numbers and connect to org mission.`
-      :`Write a theory of change for this program.\n\nProgram: ${p.name}\nDesc: ${p.description}\nOutcomes: ${p.outcomes}\nOrg: ${data.org.name} — ${data.org.mission}\n\nFormat: Activities → Outputs → Outcomes → Long-term Impact. Be specific and measurable.`;
+      ?`Write an impact narrative for a grant report.\n\nProgram: ${p.name}\nDesc: ${p.description}\nBudget: ${fmtFull(p.budget)} | Spent: ${fmtFull(p.spent)} | Participants: ${p.participant_count}\nStaff: ${staff.join(", ")}\nDates: ${p.start_date} Not set ${p.end_date}\nOutcomes: ${p.outcomes}\nMetrics: ${JSON.stringify(metrics)}\nOrg: ${data.org.name} Not set ${data.org.mission}\n\nLead with the most powerful outcome. Include specific numbers and connect to org mission.`
+      :`Write a theory of change for this program.\n\nProgram: ${p.name}\nDesc: ${p.description}\nOutcomes: ${p.outcomes}\nOrg: ${data.org.name} Not set ${data.org.mission}\n\nFormat: Activities → Outputs → Outcomes → Long-term Impact. Be specific and measurable.`;
     await askClaude(sys,prompt,chunk=>setAiMap(m=>({...m,[key]:chunk})));
     setAiLoading(null);
   };
@@ -141,7 +141,7 @@ export function Programs({data}) {
             <div style={{marginBottom:12}}>
               <div style={{fontSize:10,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>Grant Funding</div>
               {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12}}>
-                <span style={{color:T.ink}}>{g.funder} — {g.program_name}</span>
+                <span style={{color:T.ink}}>{g.funder} Not set {g.program_name}</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
                   <span style={{color:T.ink,fontWeight:600}}>{fmt(g.allocated)}</span>
                   {isAdmin&&<button onClick={e=>{e.stopPropagation();removeGrantLink(p.id,g.grant_id);}} style={{background:"transparent",border:"none",color:T.terracotta,cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
@@ -153,7 +153,7 @@ export function Programs({data}) {
                 <select value={linkGrant.grantId} onChange={e=>setLinkGrant(l=>({...l,grantId:e.target.value}))}
                   style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12}}>
                   <option value="">Select grant…</option>
-                  {data.grants.map(g=><option key={g.id} value={g.id}>{g.funder} — {g.program}</option>)}
+                  {data.grants.map(g=><option key={g.id} value={g.id}>{g.funder} Not set {g.program}</option>)}
                 </select>
                 <input type="number" placeholder="Allocated $" value={linkGrant.allocated} onChange={e=>setLinkGrant(l=>({...l,allocated:e.target.value}))}
                   style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none"}}/>

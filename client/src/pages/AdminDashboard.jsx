@@ -116,11 +116,11 @@ const SCROLLBAR_CSS = `
 
 function fmt$(n) { return "$" + Number(n || 0).toLocaleString(); }
 function fmtDate(s) {
-  if (!s) return "—";
+  if (!s) return "Not set";
   return new Date(s).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 function daysAgo(s) {
-  if (!s) return "—";
+  if (!s) return "Not set";
   const d = Math.floor((Date.now() - new Date(s)) / 86400000);
   if (d === 0) return "Today";
   if (d === 1) return "Yesterday";
@@ -371,7 +371,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
           {/* Metrics chips */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 16 }}>
             {[["Donors", org.donor_count], ["Grants", org.grant_count], ["Users", org.user_count],
-              ["Sequences", detail?.sequence_count ?? "—"], ["Enrollments", detail?.enrollment_count ?? "—"], ["MRR", fmt$(org.monthly_revenue)]].map(([k, v]) => (
+              ["Sequences", detail?.sequence_count ?? "Not set"], ["Enrollments", detail?.enrollment_count ?? "Not set"], ["MRR", fmt$(org.monthly_revenue)]].map(([k, v]) => (
               <div key={k} style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 8, padding: "12px 14px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: A.muted, marginBottom: 4 }}>{k}</div>
                 <div style={{ fontSize: 18, fontWeight: 700, color: A.green, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{v}</div>
@@ -944,7 +944,7 @@ function NetworkReview() {
               )}
               {decisions.length > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11, color: A.muted }}>
-                  {decisions.map((d, i) => <div key={i}>{String(d.at).slice(0, 16)} · {d.by} · {d.action}{d.reason ? ` — ${d.reason}` : ""}</div>)}
+                  {decisions.map((d, i) => <div key={i}>{String(d.at).slice(0, 16)} · {d.by} · {d.action}{d.reason ? ` Not set ${d.reason}` : ""}</div>)}
                 </div>
               )}
             </div>

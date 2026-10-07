@@ -50,10 +50,10 @@ function MoveModal({ card, onClose, onMoved }) {
         <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>Move to stage</label>
         <select value={toStage} onChange={e => setToStage(e.target.value)} style={{ ...inp, marginTop: 6, marginBottom: 14 }}>
           <option value="">Choose a stage…</option>
-          {STAGE_META.filter(s => s.id !== card.stage).map(s => <option key={s.id} value={s.id}>{s.label} — {s.hint}</option>)}
+          {STAGE_META.filter(s => s.id !== card.stage).map(s => <option key={s.id} value={s.id}>{s.label} Not set {s.hint}</option>)}
         </select>
         <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>What happened <span style={{ color: T.terracotta }}>*</span></label>
-        <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="e.g. Coffee with the board chair — ready to talk about a leadership gift." style={{ ...inp, marginTop: 6, resize: "vertical" }} />
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="e.g. Coffee with the board chair, ready to talk about a leadership gift." style={{ ...inp, marginTop: 6, resize: "vertical" }} />
         {err && <div style={{ color: T.terracotta, fontSize: 13, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <button onClick={onClose} style={{ background: "none", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: T.ink }}>Cancel</button>
@@ -75,7 +75,7 @@ function DropNotePrompt({ card, fromStage, toStage, onSave, onCancel }) {
   const fromL = STAGE_META.find(s => s.id === fromStage)?.label || fromStage;
   const toL = STAGE_META.find(s => s.id === toStage)?.label || toStage;
   const submit = () => {
-    if (!desc.trim()) { setErr("Add a one-line note — every move is logged."); return; }
+    if (!desc.trim()) { setErr("Add a one-line note, every move is logged."); return; }
     setBusy(true); setErr("");
     onSave(desc.trim()); // parent owns the request + closes / rolls back
   };
@@ -293,7 +293,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
                 <Stat label="Closed this FY" value={fmtFull(f.wonThisPeriod)} sub={`${f.wonCount} won`} color={T.greenDk} empty={noWon}
                       def={censusById("pipeline.closed").sentence} testid="pipe-def-closed" />
               </div>
-              {allEmpty && <div style={{ fontSize: 12, color: T.ink3, textAlign: "right", maxWidth: 360 }}>No asks recorded — the board tracks people, asks track money.</div>}
+              {allEmpty && <div style={{ fontSize: 12, color: T.ink3, textAlign: "right", maxWidth: 360 }}>No asks recorded, the board tracks people, asks track money.</div>}
             </div>
           );
         })()}
@@ -337,10 +337,10 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
       </div>
 
       {totalCards === 0 ? (
-        <EmptyState           title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty — and that's the point" : "No prospects on the board yet")}
+        <EmptyState           title={anyFilter ? "No prospects match these filters" : (scope === "mine" ? "Your pipeline is empty, and that's the point" : "No prospects on the board yet")}
           message={anyFilter
             ? (canViewAll ? "Clear a filter, or switch to All portfolios." : "Clear a filter to see your whole portfolio.")
-            : "The pipeline holds the prospects you're actively working — not your whole donor list. Open your Donors directory, pick the major-gift prospects worth cultivating, and add them here."}
+            : "The pipeline holds the prospects you're actively working, not your whole donor list. Open your Donors directory, pick the major-gift prospects worth cultivating, and add them here."}
           action={anyFilter ? undefined : "Go to Donors →"} onAction={goAddProspects} />
       ) : (
         <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
@@ -364,7 +364,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
                 <div style={{ fontSize: 11, color: T.ink3, marginBottom: 8 }}>{s.hint}{colAsk > 0 ? ` · ${fmt(colAsk)} asks` : ""}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {showCards.map(c => <ProspectCard key={c.donorId} card={c} colorMap={colorMap} onOpen={openDonor} onMove={setMoving} isReadOnly={isReadOnly} dndEnabled={dndEnabled} dragging={drag?.donorId === c.donorId} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
-                  {cards.length === 0 && <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "12px 0" }}>{isDropTarget ? "Drop here" : "—"}</div>}
+                  {cards.length === 0 && <div style={{ fontSize: 12, color: T.ink3, textAlign: "center", padding: "12px 0" }}>{isDropTarget ? "Drop here" : "Not set"}</div>}
                   {cards.length > visible && (
                     <button onClick={() => setShown(p => ({ ...p, [s.id]: visible + COL_PAGE }))}
                       style={{ background: "none", border: `1px dashed ${T.bg3}`, borderRadius: 6, padding: "6px 0", fontSize: 12, fontWeight: 700, color: T.greenMid, cursor: "pointer" }}>
@@ -372,7 +372,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
                     </button>
                   )}
                   {trueCount > cards.length && cards.length <= visible && (
-                    <div style={{ fontSize: 11, color: T.ink3, textAlign: "center", paddingTop: 4 }}>Showing top {cards.length} of {trueCount} — narrow with search or value.</div>
+                    <div style={{ fontSize: 11, color: T.ink3, textAlign: "center", paddingTop: 4 }}>Showing top {cards.length} of {trueCount} narrow with search or value.</div>
                   )}
                 </div>
               </div>
@@ -392,7 +392,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
         {!embedded && <PageTitle main="Prospect" accent="Pipeline" />}
         <LockedFeature
           title="Manage a major-gifts pipeline"
-          blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors — unlock the board to work it."
+          blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors, unlock the board to work it."
           onCta={goToPricing}
         >
           {board}
@@ -419,7 +419,7 @@ function Stat({ label, value, sub, color, empty, def, testid }) {
                    borderRadius: 99, width: 13, height: 13, display: "inline-flex", alignItems: "center",
                    justifyContent: "center", cursor: "help", verticalAlign: "middle" }}>?</span>}
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: empty ? T.ink3 : color, lineHeight: 1.1 }}>{empty ? "—" : value}</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: empty ? T.ink3 : color, lineHeight: 1.1 }}>{empty ? "Not set" : value}</div>
       <div style={{ fontSize: 11, color: T.ink3 }}>{empty ? "No asks logged yet" : sub}</div>
     </div>
   );

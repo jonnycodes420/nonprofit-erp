@@ -37,9 +37,9 @@ function EngagementCard() {
   ];
   return (
     <div style={card}>
-      <SectionLabel>Engagement — last 30 days</SectionLabel>
+      <SectionLabel>Engagement, last 30 days</SectionLabel>
       <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6, marginBottom: 14, lineHeight: 1.5 }}>
-        The portal's quiet signals — who's signing in and what they look at. Individual visits also land
+        The portal's quiet signals, who's signing in and what they look at. Individual visits also land
         on each donor's timeline; nothing here is new tracking.
       </div>
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
@@ -73,7 +73,7 @@ function CampaignContentCard({ onNavigate }) {
     <div style={card}>
       <SectionLabel>Campaign stories</SectionLabel>
       <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6, marginBottom: 14, lineHeight: 1.5, maxWidth: 560 }}>
-        A gift attributed to a campaign shows that campaign's name in the donor's history — and its story,
+        A gift attributed to a campaign shows that campaign's name in the donor's history, and its story,
         photo, and updates when you've written them. {rows.length === 0
           ? "Create a campaign in Fundraising to get started."
           : `${withContent.length} of ${rows.length} campaign${rows.length === 1 ? "" : "s"} ${withContent.length === 1 ? "has" : "have"} donor-facing content.`}
@@ -150,7 +150,7 @@ export function DonorPortalHub({ auth, isReadOnly, onNavigate }) {
               {ps && <Pill label={ps.enabled ? "Live" : "Off"} color={ps.enabled ? T.greenDk : T.ink3} />}
             </div>
             {ps && !ps.enabled && (
-              <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>Turn it on — donors sign in by email link, no password to manage.</div>
+              <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>Turn it on, donors sign in by email link, no password to manage.</div>
             )}
             {ps?.enabled && (
               <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>The page, theme, and details are all edited inside the portal itself.</div>
@@ -189,7 +189,7 @@ export function DonorPortalHub({ auth, isReadOnly, onNavigate }) {
                 <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Your directory listing</div>
                 <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginBottom: 10 }}>
                   Donors can find you by name, city, or EIN and add you to their dashboard. This card shows only
-                  what you enter below — never anything about any donor. Changes save automatically.
+                  what you enter below, never anything about any donor. Changes save automatically.
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 12 }}>
                   <div style={{ gridColumn: "1 / -1" }}><div style={lbl}>One-line description</div>

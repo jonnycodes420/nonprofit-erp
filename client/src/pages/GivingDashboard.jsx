@@ -128,7 +128,7 @@ function GivingStyles() {
     @media (min-width: 2100px) {
       .gd-wrap, .gd-headwrap { max-width: 1440px; }
     }
-    /* 2026-08-15 wide-width pass — the signed-in shell USES the width:
+    /* 2026-08-15 wide-width pass, the signed-in shell USES the width:
        org + followed cards go 2-up at >=1200px (the wrapper is the grid;
        card internals unchanged), and the impact grid takes a third column
        at >=1600px. Single column at phone widths is untouched. */
@@ -146,7 +146,7 @@ function GivingStyles() {
       .gd-orgnums { text-align: left !important; width: 100%; margin-top: 6px; padding-left: 58px; }
       .gd-sechead { flex-wrap: wrap; gap: 10px; }
     }
-    /* BUILD-49/50 — the signed-out landing */
+    /* BUILD-49/50, the signed-out landing */
     .gd-landwrap { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
     @media (min-width: 1600px) { .gd-landwrap { max-width: 1460px; } }
     @media (min-width: 2100px) { .gd-landwrap { max-width: 1640px; } }
@@ -165,7 +165,7 @@ function GivingStyles() {
     @media (max-width: 720px) {
       .gd-trio { grid-template-columns: 1fr; }
     }
-    /* BUILD-50 — the takeover banner + impact grid */
+    /* BUILD-50, the takeover banner + impact grid */
     .gd-tkbanner { height: 250px; overflow: hidden; }
     .gd-tkplaque { margin-top: -52px; position: relative; }
     @media (min-width: 1600px) { .gd-tkbanner { height: 300px; } }
@@ -278,7 +278,7 @@ function AuthCard({ onSignedIn, mode, setMode }) {
           {mode === "signup"
             ? "One sign-in for your giving history, receipts, and recurring gifts across every organization you support."
             : mode === "reset" ? "We'll email you a one-time link."
-            : "We'll email you a one-time sign-in link — no password to type."}
+            : "We'll email you a one-time sign-in link, no password to type."}
         </p>
       )}
       {mode === "signup" && (
@@ -342,11 +342,11 @@ function GivingLanding({ onSignedIn }) {
   const trio = [
     {
       title: "Every organization, together",
-      body: "Your giving history with each nonprofit you support, side by side — the gifts, the years, the receipts.",
+      body: "Your giving history with each nonprofit you support, side by side, the gifts, the years, the receipts.",
     },
     {
       title: "Recurring gifts, under control",
-      body: "Change an amount, pause, or cancel a monthly gift yourself, on each organization's own page — no email chains.",
+      body: "Change an amount, pause, or cancel a monthly gift yourself, on each organization's own page, no email chains.",
     },
     {
       title: "Tax time, already done",
@@ -365,7 +365,7 @@ function GivingLanding({ onSignedIn }) {
             </h1>
             <p className="gd-landsub" style={{ color: G.sage, lineHeight: 1.65, maxWidth: 540, margin: 0 }}>
               A free account for donors. Your giving history, tax receipts, and
-              recurring gifts — across every organization you support — under one
+              recurring gifts, across every organization you support, under one
               sign-in, without waiting for anyone to send you a link.
             </p>
             <div style={{ display: "flex", gap: 14, marginTop: 32, flexWrap: "wrap" }}>
@@ -376,7 +376,7 @@ function GivingLanding({ onSignedIn }) {
             <div style={{ height: 3, width: 64, background: G.brass, borderRadius: 2, marginTop: 40 }} />
             <p style={{ color: G.sage, fontSize: 13, marginTop: 16, marginBottom: 0 }}>
               Already gave to an organization on Steward? Verify the email you gave
-              under and your history connects automatically — nothing to import.
+              under and your history connects automatically, nothing to import.
             </p>
           </div>
           <div className="gd-landcard" ref={cardRef}>
@@ -409,7 +409,7 @@ function GivingLanding({ onSignedIn }) {
           </div>
           <p style={{ color: G.sage, fontSize: 15.5, lineHeight: 1.7, margin: "0 auto", maxWidth: 660 }}>
             Each nonprofit sees only its own relationship with you. We never share
-            your giving at one organization with another — and no organization ever
+            your giving at one organization with another, and no organization ever
             learns what you give anywhere else. Creating an account changes nothing
             about what any nonprofit knows.
           </p>
@@ -438,7 +438,7 @@ function TokenLanding({ kind, onDone }) {
     else setErr(r.body?.message || "That link has expired or was already used.");
   };
   useEffect(() => { if (!needPw && token) submit(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  if (!token) return <div style={S.card}><p style={S.muted}>This link is incomplete — request a fresh one.</p></div>;
+  if (!token) return <div style={S.card}><p style={S.muted}>This link is incomplete, request a fresh one.</p></div>;
   return (
     <div style={{ ...S.card, maxWidth: 440 }}>
       {err ? (<><h2 style={{ ...S.h2, marginBottom: 8 }}>Link expired</h2><p style={S.muted}>{err}</p></>)
@@ -657,7 +657,7 @@ function FollowStateBar({ org, t, onConnect, onUnfollow }) {
           <div style={{ fontFamily: t.serif, fontSize: 18, margin: "4px 0 6px" }}>You follow this organization.</div>
           <p style={{ ...S.muted, fontSize: 13, margin: 0 }}>
             If you've given here before, add the email you used and we'll connect
-            your history — gifts, receipts, and year-end totals.
+            your history, gifts, receipts, and year-end totals.
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flexShrink: 0 }}>
@@ -763,7 +763,7 @@ function DirectorySearch({ autoFocus, onChanged, btnBg, btnFg }) {
     if (r.status === 200) { setAdded(a => ({ ...a, [row.orgSlug]: true })); onChanged && onChanged(); }
   };
   const mailBody = encodeURIComponent(
-    "I use Steward to keep my giving in one place — history, receipts, and recurring gifts.\n\n" +
+    "I use Steward to keep my giving in one place, history, receipts, and recurring gifts.\n\n" +
     "It looks like your organization isn't on it yet. If you're curious: https://www.stewardapp.dev\n\n" +
     "Thanks for everything you do.");
   return (
@@ -807,7 +807,7 @@ function DirectorySearch({ autoFocus, onChanged, btnBg, btnFg }) {
             <a href={`mailto:?subject=${encodeURIComponent("Have you seen Steward?")}&body=${mailBody}`} style={{ color: G.emerald, fontWeight: 600 }}>
               Tell them about Steward
             </a>
-            {" "}— it's a note you send; we never contact anyone for you.
+            {" "}it's a note you send; we never contact anyone for you.
           </p>
         </div>
       )}
@@ -860,7 +860,7 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
           <p style={{ ...S.muted, fontSize: 13, marginTop: 16 }}>
             Gave under this email before? When an organization you support is on
             Steward under an email you've verified, your giving history connects
-            automatically — nothing to search for. Give under a different email?
+            automatically, nothing to search for. Give under a different email?
             Add it under Account.
           </p>
         </div>
@@ -933,7 +933,7 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
                 ))}
               </div>
             ))}
-          <p style={{ ...S.muted, fontSize: 13, marginTop: 10 }}>To change an amount, pause, or cancel, open that organization from Home — changes happen on its own page.</p>
+          <p style={{ ...S.muted, fontSize: 13, marginTop: 10 }}>To change an amount, pause, or cancel, open that organization from Home, changes happen on its own page.</p>
         </div>
       )}
       {tab === "tax" && (
@@ -979,11 +979,11 @@ function AccountPanel({ me, connectFor, onOrgsChanged, accent }) {
   return (
     <div style={S.card}>
       <h2 style={{ ...S.h2, marginBottom: 10 }}>Account</h2>
-      <p style={S.muted}>Signed in as <b>{info.email}</b>{info.hasPassword ? "" : " (no password set — use Reset password to add one)"}.</p>
+      <p style={S.muted}>Signed in as <b>{info.email}</b>{info.hasPassword ? "" : " (no password set, use Reset password to add one)"}.</p>
       <div style={S.label}>Linked email addresses</div>
       {connectFor && (
         <p style={{ ...S.muted, fontSize: 13, background: G.cream, border: `1px solid ${G.hair}`, borderRadius: 8, padding: "10px 12px" }}>
-          Add the email you used when giving to <b>{connectFor}</b> — once you
+          Add the email you used when giving to <b>{connectFor}</b> once you
           confirm it's yours, your history there connects automatically.
         </p>
       )}
@@ -1013,7 +1013,7 @@ function AccountPanel({ me, connectFor, onOrgsChanged, accent }) {
       ))}
       <p style={{ ...S.muted, fontSize: 13 }}>
         Hiding an organization removes it from your dashboard. It never deletes
-        that organization's own records of your giving — their records are theirs.
+        that organization's own records of your giving, their records are theirs.
       </p>
       {msg && <p style={{ ...S.muted, marginTop: 8 }}>{msg}</p>}
     </div>
@@ -1051,7 +1051,7 @@ export default function GivingDashboard({ landing }) {
   // right when this page is reached client-side too (BUILD-49 SEO pass).
   useEffect(() => {
     const prev = document.title;
-    document.title = "Your Giving — Steward";
+    document.title = "Your Giving, Steward";
     return () => { document.title = prev; };
   }, []);
   if (!flags || !checked) return <div style={S.page}><GivingStyles /><Header /><div style={S.wrap}><p style={{ ...S.muted, marginTop: 20 }}>Loading…</p></div></div>;

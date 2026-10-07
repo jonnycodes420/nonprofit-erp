@@ -109,7 +109,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     setAiLoading(false);
   };
 
-  if(!lapsed.length)return<EmptyState title="No lapsed donors" message="All your donors are active — great work!"/>;
+  if(!lapsed.length)return<EmptyState title="No lapsed donors" message="All your donors are active, great work!"/>;
 
   const fmtGiftDate=s=>{
     if(!s)return null;
@@ -180,7 +180,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               <div className="re-col-score" style={{textAlign:"right"}}>
                 {sc!=null
                   ?<span style={{fontSize:13,fontWeight:800,color:scColor,background:scColor+"18",borderRadius:7,padding:"3px 9px",display:"inline-block"}}>{sc}</span>
-                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>—</span>}
+                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
@@ -218,7 +218,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:4}}>Assign Relationship Owner</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <select value={selectedId} onChange={e=>setSelectedId(e.target.value)} style={{...inp,marginBottom:16}}>
-          <option value="">— unassigned —</option>
+          <option value="">Unassigned</option>
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
         </select>
         <div style={{display:"flex",gap:8}}>
@@ -458,7 +458,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
             ? `${serverTotal} donor${serverTotal!==1?"s":""}`
             : `${serverTotal} ${serverTotal!==1?"people":"person"}`}
         </span>
-        {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only — server-side filtering for these is not available yet."
+        {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only, server-side filtering for these is not available yet."
           style={{fontSize:11,color:T.terracotta,fontWeight:700,background:T.terracotta+"14",border:"1px solid "+T.terracotta+"40",borderRadius:99,padding:"3px 10px"}}>
           filtering current page
         </span>}
@@ -596,7 +596,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   {pendingInvites.map(u=>(
                     <button key={u.id} onClick={()=>bulkAssign(u.id,u.name)} style={{...dropItem,color:T.gold700}}
                       onMouseEnter={e=>e.target.style.background=T.bg2} onMouseLeave={e=>e.target.style.background="none"}>
-                      {u.name} — invited
+                      {u.name} invited
                     </button>
                   ))}
                 </div>
@@ -701,7 +701,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     const oc=officerColorMap[d.assignedTo];
                     return(<>
                       <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
-                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"—"}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
+                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"Not set"}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
                     </>);
                   })()}
                 </div>
@@ -714,12 +714,12 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 <div data-testid="dir-engagement" style={{textAlign:"right",fontSize:12}}>
                   {d.engagement!=null
                     ?<><span style={{fontWeight:800,color:T.ink}}>{d.engagement}</span> <span data-testid="dir-closeness" style={{color:d.engagementBand==="close"?T.greenDk:d.engagementBand==="distant"&&d.closeness!=="on_track"?T.gold700:T.ink3}}>{d.closeness?(d.closeness==="on_track"?"On track":d.closeness.charAt(0).toUpperCase()+d.closeness.slice(1)):(bandFor(d.engagement)||{}).label}</span></>
-                    :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>—</span>}
+                    :<span title="not worked out yet" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
                 <div style={{textAlign:"right"}}>
                   {sc!=null
                     ?<span style={{background:scColor+"18",color:scColor,borderRadius:7,padding:"3px 8px",fontSize:12,fontWeight:800}}>{sc}</span>
-                    :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>—</span>}
+                    :<span title="no gifts on file" style={{color:T.ink3,fontSize:11}}>Not set</span>}
                 </div>
                 {canMajorGifts&&<div data-testid="dir-room" data-room-word={(roomOf(d.id)||{}).word||""} style={{textAlign:"right",fontSize:12,fontWeight:700,color:T.ink}}>
                   {room?((roomOf(d.id)||{}).label||ROOM_LABEL.unknown):""}
@@ -754,7 +754,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 </div>
                 {sc!=null
                   ?<span style={{background:scColor+"18",color:scColor,borderRadius:8,padding:"5px 10px",fontSize:13,fontWeight:800,flexShrink:0}}>{sc}</span>
-                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>—</span>}
+                  :<span title="no gifts on file" style={{color:T.ink3,fontSize:11,flexShrink:0}}>Not set</span>}
               </div>
             ];
           })}
@@ -857,7 +857,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
   return(
     <div className="filter-bar" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
       <div className="filter-bar-row" style={row}>
-        <span style={lbl} title={"Grouped by the largest and most consistent giving this donor has actually done \u2014 from your own records only. No external wealth screening."}>Proven capacity</span>
+        <span style={lbl} title={"Grouped by the largest and most consistent giving this donor has actually done, from your own records only. No external wealth screening."}>Proven capacity</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {TIER_META.map(t=>{const a=filters.tiers.includes(t.id);return(
             <button key={t.id} onClick={()=>tog("tiers",t.id)} style={{background:a?t.color+"22":T.bg,border:`1px solid ${a?t.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?t.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{t.label}</button>

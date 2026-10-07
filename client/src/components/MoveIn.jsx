@@ -175,7 +175,7 @@ export function MoveHowTo({ howTo, printable = true }) {
       <div class="sub">${howTo.files === 2 ? "This takes two files, exported one after the other." : "One file is all it takes."}</div>
       <h2>What to do</h2><ol>${howTo.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
       ${(howTo.columnGroups || []).length
-        ? (howTo.columnGroups || []).map(g => `<h2>Columns to include — ${esc(g.file)}</h2><div class="cols">${g.columns.map(esc).join(" · ")}</div>`).join("")
+        ? (howTo.columnGroups || []).map(g => `<h2>Columns to include, ${esc(g.file)}</h2><div class="cols">${g.columns.map(esc).join(" · ")}</div>`).join("")
         : (howTo.includeColumns || []).length
           ? `<h2>Columns to include</h2><div class="cols">${howTo.includeColumns.map(esc).join(" · ")}</div>` : ""}
       <h2>What will not come across</h2><ul>${(howTo.loses || []).map(s => `<li>${esc(s)}</li>`).join("")}</ul>
@@ -207,7 +207,7 @@ export function MoveHowTo({ howTo, printable = true }) {
 
       {(howTo.columnGroups || []).length > 0
         ? (howTo.columnGroups || []).map(g => (
-            <Section key={g.file} label={`Columns to include — ${g.file}`}>
+            <Section key={g.file} label={`Columns to include, ${g.file}`}>
               <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.7 }}>{g.columns.join(" · ")}</div>
             </Section>
           ))
@@ -536,7 +536,7 @@ export function MoveCard({ isReadOnly = false }) {
         <button data-testid="move-undo" onClick={() => act("/move/undo")} disabled={busy}
           style={{ marginTop: 11, background: "none", border: `1px solid ${T.bg3}`, borderRadius: 8,
                    padding: "8px 13px", fontSize: 12.5, color: T.ink2, cursor: "pointer" }}>
-          Undo — we are still moving
+          Undo, we are still moving
         </button>
       )}
     </div>

@@ -39,7 +39,7 @@ const SAMPLE_ME = {
 };
 const SAMPLE_IMPACT = [{
   id: "sample_imp", title: "Sample impact update",
-  body: "Publish an impact update and it appears here — donors it matches see it on their own page.",
+  body: "Publish an impact update and it appears here, donors it matches see it on their own page.",
   photos: [], date: new Date().toISOString(),
 }];
 
@@ -97,7 +97,7 @@ function SampleMyGiving() {
         <div><div style={lbl}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>$2,900</div></div>
       </div>
       <div style={{ fontSize: 12, color: E.muted, marginTop: 10 }}>
-        Signed-in donors see their own history, recurring gifts, and receipts here — this is Sam Sample, a fictional donor.
+        Signed-in donors see their own history, recurring gifts, and receipts here, this is Sam Sample, a fictional donor.
       </div>
     </div>
   );
@@ -395,7 +395,7 @@ export default function PortalEditor() {
   const pageBody = widgets.length === 0 ? (
     <div style={{ padding: "10px 0 30px" }}>
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Start with a layout</div>
-      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point — everything stays editable, and nothing is visible to donors until you publish.</div>
+      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point, everything stays editable, and nothing is visible to donors until you publish.</div>
       {(meta?.starters || []).map(s => (
         <button key={s.key} onClick={() => applyStarter(s.key)}
           style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.hair, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
@@ -491,7 +491,7 @@ export default function PortalEditor() {
               </button>
             ))}
             <div style={{ fontSize: 12, color: E.muted, marginTop: 12, lineHeight: 1.5 }}>
-              The new widget lands at the end of the page, already selected — its options open beside the preview.
+              The new widget lands at the end of the page, already selected, its options open beside the preview.
             </div>
           </div>
         )}
@@ -510,7 +510,7 @@ export default function PortalEditor() {
                   </div>
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px — how donors arriving from email see it</div>
+              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px, how donors arriving from email see it</div>
             </div>
           </div>
         ) : (
@@ -567,8 +567,7 @@ function DesignRail({ ps, onSet, note }) {
     <>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Design</div>
       <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
-        Your portal's look and page details. Changes autosave and show in the preview immediately —
-        colors may be adjusted slightly on save so text stays readable.
+        Your portal's look and page details. Changes autosave and show in the preview immediately, colors may be adjusted slightly on save so text stays readable.
       </div>
       {note && <div style={{ fontSize: 12, color: E.green, fontWeight: 600, marginTop: 8, lineHeight: 1.4 }}>{note}</div>}
 
@@ -594,7 +593,7 @@ function DesignRail({ ps, onSet, note }) {
           // portrait drop is explained BEFORE the round trip. UI courtesy
           // only — the server re-validates identically.
           const img = new Image();
-          img.onload = () => resolve(img.height >= img.width ? "Header images render as a wide banner — use a landscape image (at least 1200×300 works well)." : (img.width < 600 ? "Header images need to be at least 600px wide." : null));
+          img.onload = () => resolve(img.height >= img.width ? "Header images render as a wide banner, use a landscape image (at least 1200×300 works well)." : (img.width < 600 ? "Header images need to be at least 600px wide." : null));
           img.onerror = () => resolve("That file doesn't parse as an image.");
           img.src = dataUrl;
         })}
@@ -629,7 +628,7 @@ function DesignRail({ ps, onSet, note }) {
       <select style={inp} value={ps.type_pairing || "dm"} onChange={e => onSet("type_pairing", e.target.value)}>
         {Object.entries(TYPE_PAIRINGS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
       </select>
-      <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>A curated set — every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
+      <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>A curated set, every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
       <div style={lbl}>Card style</div>
       <select style={inp} value={ps.card_style || "rounded"} onChange={e => onSet("card_style", e.target.value)}>
         {Object.entries(CARD_STYLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -649,7 +648,7 @@ function DesignRail({ ps, onSet, note }) {
       {group("Footer")}
       <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: E.body, cursor: "pointer", marginTop: 8, lineHeight: 1.5 }}>
         <input type="checkbox" checked={ps.powered_by === true} onChange={e => onSet("powered_by", e.target.checked)} style={{ marginTop: 2 }} />
-        Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)
+        Show a small "Powered by Steward" line in the footer (off by default, the portal is yours)
       </label>
     </>
   );
@@ -682,7 +681,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <div style={lbl}>{label}</div>
       <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
         shape="wide" preview={value ? (String(value).startsWith("data:") ? value : resolveAssetUrl(value)) : null}
-        label={value ? "Replace" : "Drag a photo here, or browse — or drop one straight onto the widget"}
+        label={value ? "Replace" : "Drag a photo here, or browse, or drop one straight onto the widget"}
         onFile={({ dataUrl }) => set(dataUrl)}
         onRemove={() => set(null)} />
       {libraryBtn("photo", item => (onPickItem ? onPickItem(item) : set(item.url)))}
@@ -744,7 +743,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       </Uploader>
       {(w.images || []).length < 8 && libraryBtn("photo", item => onChange({ images: [...(w.images || []), item.url].slice(0, 8) }))}</>;
     case "stats": return <>{head}
-      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words — nothing is computed or invented for you.</div>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words, nothing is computed or invented for you.</div>
       {(w.items || []).map((it, i) => (
         <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <input style={{ ...inp, width: 90 }} placeholder="1,200" value={it.value} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} />
@@ -768,7 +767,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       };
       return <>{head}
         <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
-        <div style={lbl}>Funds — in display order</div>
+        <div style={lbl}>Funds, in display order</div>
         {chosen.map((f, i) => (
           <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 6, background: E.white, border: "1px solid "+E.editLine, borderRadius: 8, padding: "6px 8px", marginBottom: 4 }}>
             <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
@@ -777,7 +776,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
             <button aria-label={`Remove ${f.name}`} onClick={() => onChange({ fundIds: (w.fundIds || []).filter(x => x !== f.id) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer" }}>✕</button>
           </div>
         ))}
-        {!chosen.length && <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Nothing selected yet — the first fund you add leads the section.</div>}
+        {!chosen.length && <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Nothing selected yet, the first fund you add leads the section.</div>}
         {chosen.length >= 6 && <div style={{ fontSize: 11.5, color: E.muted, marginBottom: 4 }}>Up to 6 funds show here.</div>}
         {unchosen.length > 0 && chosen.length < 6 && <>
           <div style={lbl}>Add a fund</div>
@@ -788,7 +787,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
             </button>
           ))}
         </>}
-        {!funds.length && <div style={{ fontSize: 12, color: E.muted }}>No funds yet — create them in Finance.</div>}
+        {!funds.length && <div style={{ fontSize: 12, color: E.muted }}>No funds yet, create them in Finance.</div>}
         <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
           Each card's Give button carries that fund as the gift's designation.
         </div>
@@ -797,11 +796,11 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
     case "campaign": return <>{head}
       <div style={lbl}>Campaign</div>
       <select style={inp} value={w.campaignId || ""} onChange={e => onChange({ campaignId: e.target.value })}>
-        <option value="">— pick a campaign —</option>
+        <option value="">Pick a campaign</option>
         {camps.map(c => <option key={c.id} value={c.id}>{c.donorFacingName || c.name}</option>)}
       </select>
       <div style={{ fontSize: 12, color: E.muted, marginTop: 8, lineHeight: 1.5 }}>
-        The story, photo, and goal come from the campaign itself — edit them in Fundraising. A campaign with no donor-facing content shows nothing here.
+        The story, photo, and goal come from the campaign itself, edit them in Fundraising. A campaign with no donor-facing content shows nothing here.
       </div></>;
     case "impact": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} /></>;
@@ -833,7 +832,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <input style={inp} placeholder="https://youtu.be/…" value={w.url || (w.videoId ? `(saved ${w.provider} video)` : "")}
         onChange={e => onChange({ url: e.target.value, provider: undefined, videoId: undefined })} />
       {libraryBtn("video", item => onChange({ url: item.url, provider: undefined, videoId: undefined, caption: w.caption || item.title || "" }))}
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work — the video ID is stored, never pasted embed code.</div>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work, the video ID is stored, never pasted embed code.</div>
       <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
     case "give": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />

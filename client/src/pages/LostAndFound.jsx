@@ -35,7 +35,7 @@ const EMERALD = "#0d5c3a", BRASS = "#c9a84c";
 const WASH = "#f3e9cc", WASH_INK = "#5c4710";
 const SERIF = "'DM Serif Display',Georgia,serif";
 
-const fmtPct = v => (v === null || v === undefined ? "—" : v + "%");
+const fmtPct = v => (v === null || v === undefined ? "Not set" : v + "%");
 
 export default function LostAndFound() {
   // The page owns its ground: index.html paints `body` ink, and an

@@ -119,11 +119,11 @@ export default function Uploader({
     setReading(true);
     for (const file of files) {
       if (!fileMatchesAccept(file, accept)) {
-        fail(`That file type isn't accepted here${acceptLabel ? ` — use ${acceptLabel}` : ""}.`);
+        fail(`That file type isn't accepted here${acceptLabel ? ` use ${acceptLabel}` : ""}.`);
         continue;
       }
       if (maxBytes && file.size > maxBytes) {
-        fail(`"${file.name}" is too large — keep it under ${Math.round(maxBytes / 1024)}KB.`);
+        fail(`"${file.name}" is too large, keep it under ${Math.round(maxBytes / 1024)}KB.`);
         continue;
       }
       let dataUrl = null;
@@ -134,7 +134,7 @@ export default function Uploader({
           r.onerror = () => resolve(null);
           r.readAsDataURL(file);
         });
-        if (!dataUrl) { fail(`Couldn't read "${file.name}" — try again.`); continue; }
+        if (!dataUrl) { fail(`Couldn't read "${file.name}", try again.`); continue; }
       }
       if (validate) {
         const msg = await validate({ file, dataUrl });
