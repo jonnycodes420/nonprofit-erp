@@ -20,6 +20,7 @@ import { apiFetch } from "../api";
 import { T, Card } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
+import { askConfirm } from "./ConfirmDialog";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -60,6 +61,8 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState("");
   const can = !isReadOnly && isAdmin;
+  // INT-PROD-1 · what Steward can see in the connected company: read only.
+  const [seen, setSeen] = useState(null);
 
   const load = () => {
     apiFetch("/qbo").then(r => { setD(r); setDraft(null); }).catch(() => setD({ enabled: false }));
@@ -73,6 +76,25 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
   const m = draft || d.mapping;
   const setMap = patch => setDraft({ ...m, ...patch });
   const setPart = (part, id, patch) => setMap({ [part]: { ...(m[part] || {}), [id]: { ...((m[part] || {})[id] || {}), ...patch } } });
+
+  const readCompany = async () => {
+    setBusy("preview");
+    try { setSeen(await apiFetch("/qbo/preview", { method: "POST" })); }
+    catch (e) { setSeen({ ok: false, sentence: said(e) }); }
+    finally { setBusy(""); }
+  };
+  // INT-PROD-1: there was no way to disconnect QuickBooks from Steward.
+  // Revokes at Intuit, drops the tokens, keeps every gift's QuickBooks id.
+  const disconnect = async () => {
+    if (!(await askConfirm({ title: "Disconnect QuickBooks?",
+      body: "Steward stops reading and sending, and Intuit is told to revoke its access. Nothing in QuickBooks or in Steward is deleted.",
+      yes: "Disconnect" }))) return;
+    setBusy("disconnect");
+    try { const r = await apiFetch("/oauth/intuit/disconnect", { method: "POST" }); setMsg(r.sentence); setSeen(null); load(); }
+    catch (e) { setMsg(said(e)); }
+    finally { setBusy(""); }
+  };
+  const money = n => n == null ? "" : "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const openMapping = async () => {
     setMapOpen(o => !o);
@@ -150,6 +172,8 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
           textTransform: "uppercase", color: T.gold700 }}>Intuit sandbox</span>}
         {can && <button type="button" data-testid="qbo-auto" disabled={busy === "auto" || d.demo} onClick={toggleAuto}
           style={{ ...btn(false), marginLeft: "auto" }}>{d.autoSync ? "Turn auto-sync off" : "Turn auto-sync on"}</button>}
+        {can && !d.demo && <button type="button" data-testid="qbo-disconnect" disabled={busy === "disconnect"} onClick={disconnect}
+          style={btn(false)}>Disconnect</button>}
       </div>
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.definition}</div>
       <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 4 }}>
@@ -160,6 +184,34 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         The mapping below was chosen in a different QuickBooks company, so nothing is sent until this company's accounts are chosen.</div>}
       {d.demoSentence && <div data-testid="qbo-demo" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.demoSentence}</div>}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8, lineHeight: 1.5 }}>{msg}</div>}
+
+      {/* WHAT STEWARD CAN SEE · read from QuickBooks, nothing sent */}
+      {can && d.connection && !d.demo && (
+        <div data-testid="qbo-preview" style={{ marginTop: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+            <div style={h}>What Steward can see</div>
+            <button type="button" data-testid="qbo-preview-read" disabled={busy === "preview"} onClick={readCompany}
+              style={{ ...btn(false), marginLeft: "auto" }}>{busy === "preview" ? "Reading" : seen ? "Read again" : "Read from QuickBooks"}</button>
+          </div>
+          {!seen && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
+            Reads the company's name and its latest customers and payments, to show this is the right company. It sends nothing.</div>}
+          {seen && <div data-testid="qbo-preview-sentence" style={{ fontSize: 12.5, color: seen.ok === false ? T.gold700 : T.ink, lineHeight: 1.5, marginTop: 4 }}>{seen.sentence}</div>}
+          {seen && seen.ok && !seen.demo && (
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginTop: 6 }}>
+              <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Latest customers</div>
+                {(seen.customers || []).length ? seen.customers.map(x => <div key={x.id} style={row}>{x.name || "(no name)"}</div>)
+                  : <div style={{ fontSize: 12.5, color: T.ink3 }}>None in this company yet.</div>}
+              </div>
+              <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3 }}>Latest payments</div>
+                {(seen.payments || []).length ? seen.payments.map(x => <div key={x.id} style={row}>
+                  <span style={{ flex: "1 1 auto", minWidth: 0 }}>{x.customer || "(no customer)"}</span>
+                  <span style={{ color: T.ink3 }}>{x.date || ""}</span><span>{money(x.amount)}</span></div>)
+                  : <div style={{ fontSize: 12.5, color: T.ink3 }}>None in this company yet.</div>}
+              </div>
+            </div>)}
+        </div>)}
 
       {/* 1 · WHERE EACH GIFT LANDS */}
       <div style={{ marginTop: 12 }}>

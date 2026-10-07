@@ -244,6 +244,8 @@ const PROD_READONLY = [
   "mail-preflight",
   "attribution-chips-capture", "build12-ui-capture", "build49-capture", "build57-prod-capture",
   "build61-prod-verify", "check-webhook-subscriptions",
+  // INT-PROD-1: one PayPal token POST, then GET-only Transaction Search; counts and totals only.
+  "verify-paypal",
   "consistency-audit", "finance-overview-capture",
   // BUILD-73 Part 4 — the landing page was rebuilt, and FIVE scripts that
   // policed the old one were consolidated into this one:

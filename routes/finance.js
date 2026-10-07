@@ -521,7 +521,10 @@ app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
       label: O.PROVIDERS[key].label, kind: O.PROVIDERS[key].kind,
       ready: missing.length === 0, missing,
       scopes: O.PROVIDERS[key].scopes,
-      note: O.PROVIDERS[key].sandboxNote || null,
+      // INT-PROD-1: Intuit approved the app, so its "Sandbox until Intuit's
+      // review is finished" note is only true while INTUIT_API_BASE points at
+      // the sandbox.
+      note: key === "intuit" && qboSyncMod().environment() === "production" ? null : (O.PROVIDERS[key].sandboxNote || null),
       // FIX-10 D — `missing` still carries the variable NAMES, because the
       // admin check and the ops report are what that list is for. The
       // SENTENCE is what a customer reads on Connections, and it names
@@ -3051,6 +3054,30 @@ app.post("/qbo/lists", requireAuth, requireAdmin, wrap(async (req, res) => {
   const out = await QS.fetchLists({ orgId, realmId: String(c.realm_id), token: c.credentials_sealed ? qboTokenFor(orgId).bind(null, c) : null });
   if (!out.ok) return res.status(502).json({ error: "lists_failed", fallback: true, sentence: out.sentence });
   res.json({ ok: true, ...out, sentence: `${out.accounts.length} accounts and ${out.classes.length} classes from your QuickBooks company.` });
+}));
+
+// INT-PROD-1 · WHAT STEWARD CAN SEE. The company's name and its latest
+// customers and payments, read from QuickBooks to prove the connection is the
+// right company. Reads only: nothing is sent to QuickBooks and nothing is
+// stored. A POST because asking may renew the token, and a GET never changes state.
+app.post("/qbo/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
+  const c = await qboConnection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first, and its company appears here." });
+  if (org.is_demo_org === true || QS.readMapping(c).demo)
+    return res.json({ ok: true, demo: true, sentence: "The demonstration file has no QuickBooks company to read." });
+  if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
+    return res.status(409).json({ error: "not_signed_in", sentence: "QuickBooks is not signed in yet, so Steward cannot read it. Connect it again." });
+  const out = await QS.fetchPreview({ orgId, realmId: String(c.realm_id), token: c.credentials_sealed ? qboTokenFor(orgId).bind(null, c) : null });
+  if (!out.ok) return res.status(502).json({ error: "preview_failed", sentence: out.sentence });
+  const n = (k, one, many) => k == null ? null : `${k} ${k === 1 ? one : many}`;
+  res.json({ ...out, environment: QS.environment(),
+    sentence: [`Steward can read ${out.company.name || "this QuickBooks company"}`,
+      [n(out.customerCount, "customer", "customers"), n(out.paymentCount, "payment", "payments")].filter(Boolean).join(" and ")]
+      .filter(Boolean).join(": ") + ". It only read them; nothing was sent to QuickBooks." });
 }));
 
 // SYNC, SYNC ALL AND RETRY are this one route: Retry is Sync on a gift whose

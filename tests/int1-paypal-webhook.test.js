@@ -21,6 +21,11 @@
 //       certificate can sign whatever they like
 //   §5  an algorithm Steward does not use
 //   §6  a signature that is simply wrong
+//   §7  INT-PROD-1: a genuinely signed event for a DIFFERENT webhook (another
+//       app's, or a sandbox one replayed at live). PayPal puts the webhook id
+//       in the signed string, so Steward must verify against PAYPAL_WEBHOOK_ID
+//       and nothing else. Planted 2026-10-07: taking the webhook id from a
+//       request header before PAYPAL_WEBHOOK_ID turned §7 red.
 //
 // AND ONE THAT PASSES (§1), because a suite that can only produce invalid
 // requests proves everything is refused, which is not the same thing at all.
@@ -165,6 +170,13 @@ async function reset() {
   // ── §6 · A SIGNATURE THAT IS SIMPLY WRONG ───────────────────────────────
   const junk = await post(raw, headersFor(raw, { forgedSig: Buffer.from("not a signature").toString("base64") }));
   ok("§6 a junk signature is refused", junk.status === 400 && junk.body?.error === "bad_signature", junk);
+
+  // ── §7 · SIGNED, BUT FOR SOMEBODY ELSE'S WEBHOOK ────────────────────────
+  // The forger also names their webhook in a header, as anybody can.
+  const otherHook = await post(raw, { ...headersFor(raw, { webhookId: "WH-SOMEONE-ELSES-WEBHOOK" }),
+    "paypal-webhook-id": "WH-SOMEONE-ELSES-WEBHOOK" });
+  ok("§7 a real signature made for a different webhook id is refused",
+     otherHook.status === 400 && otherHook.body?.error === "bad_signature", otherHook);
 
   // ── THE POINT OF ALL OF IT ──────────────────────────────────────────────
   const after = await snapshot();
