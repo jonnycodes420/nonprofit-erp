@@ -315,6 +315,8 @@ const LOOPBACK_CAPTURES = [
 
 // Out of scope for BASE/DB guarding, each for a stated reason.
 const EXEMPT = {
+  "prod-ai-smoke": "HARDEN-1 — signs in to the prod demo and POSTs ONLY to /ask/preview and /agent/preview, both declared read-only in auditTrail.READ_ONLY_POSTS (nothing saved); checked below",
+  "error-digest": "HARDEN-1 — reads Railway log lines (stdin or a file) and writes one markdown file under docs/errors/; no BASE, no DB, no app write",
   "local-preview": "serves client/dist and proxies vercel.json's rewrites to a LOOPBACK-ONLY API; refuses any non-loopback API and writes nothing",
   "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
   "build28-prepare-images": "local image generation, no network writes",
@@ -377,6 +379,16 @@ for (const s of PROD_READONLY) {
     ok(/auth\/login|\/login/.test(ctx), `${s} POSTs to something other than /auth/login — move it to GUARDED_WRITERS`);
   }
   ok(!/INSERT INTO|UPDATE .* SET|DELETE FROM/.test(src), `${s} contains direct SQL writes`);
+}
+
+// HARDEN-1 · the prod AI smoke posts to sign-in and the two read-only previews, nothing else.
+{
+  const src = read("prod-ai-smoke");
+  const posts = [...src.matchAll(/post\(`\$\{backend\}(\/[^`]+)`/g)].map(m => m[1]);
+  ok(posts.length === 3 && posts.every(p => ["/auth/login", "/ask/preview", "/agent/preview"].includes(p)),
+    `prod-ai-smoke posts only to /auth/login and the two read-only previews (found ${posts.join(", ")})`);
+  const AT = require(path.join(root, "auditTrail.js"));
+  ok(["/ask/preview", "/agent/preview"].every(p => AT.READ_ONLY_POSTS.some(re => re.test(p))), "both previews are declared read-only in auditTrail.READ_ONLY_POSTS");
 }
 
 // ── 6. Loopback captures default to loopback ────────────────────────────────
