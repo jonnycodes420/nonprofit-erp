@@ -1,0 +1,374 @@
+{
+ "objects": [
+  "person",
+  "household",
+  "organization / funder",
+  "gift",
+  "recurring plan",
+  "pledge",
+  "campaign",
+  "appeal",
+  "giving page",
+  "peer-to-peer page",
+  "event and ticket",
+  "auction item",
+  "membership",
+  "grant",
+  "volunteer shift and hours",
+  "journey step",
+  "task / next step",
+  "meeting",
+  "email",
+  "note",
+  "document",
+  "import",
+  "report"
+ ],
+ "columns": [
+  {
+   "key": "tl",
+   "label": "Timeline"
+  },
+  {
+   "key": "org",
+   "label": "Org / funder record"
+  },
+  {
+   "key": "cal",
+   "label": "Calendar + sync"
+  },
+  {
+   "key": "srch",
+   "label": "⌘K"
+  },
+  {
+   "key": "grp",
+   "label": "Groups / Show me"
+  },
+  {
+   "key": "jc",
+   "label": "Journeys / Comms"
+  },
+  {
+   "key": "rep",
+   "label": "Reports, opens rows"
+  },
+  {
+   "key": "ask",
+   "label": "Ask + Agent"
+  },
+  {
+   "key": "home",
+   "label": "Home / Thread"
+  },
+  {
+   "key": "io",
+   "label": "Import / export"
+  },
+  {
+   "key": "mrg",
+   "label": "Merge / delete / undo"
+  }
+ ],
+ "before": {
+  "person": {
+   "tl": "W",
+   "org": "P contacts are listed on the org, but their gifts, meetings and hours do not roll up to it",
+   "cal": "W birthdays (off by default)",
+   "srch": "P name and email only; phone, contact name and household are not searched",
+   "grp": "W",
+   "jc": "P a Group can feed a Journey, but the Communications builder has no way to pick a Group (SEG_MODES has no audience mode and openBuilder drops audienceId)",
+   "home": "-",
+   "mrg": "P merge leaves calendar meetings (calendar_events.person_ids), agent_writes and custom_field_events on the merged-away id; bulk delete writes no Undo row; /tasks still lists a deleted person's tasks",
+   "rep": "W",
+   "ask": "P Ask refuses 'what has [name] done with us this year?' (no activity answer about one person); people entity has no kind or person_types",
+   "io": "W"
+  },
+  "household": {
+   "tl": "M joining or leaving a household writes nothing on the timeline",
+   "org": "-",
+   "cal": "-",
+   "srch": "M household names are not searched",
+   "grp": "W",
+   "jc": "M no household audience or trigger",
+   "home": "-",
+   "mrg": "P purge-trash leaves households.primary_donor_id dangling",
+   "rep": "M household total renders bare on the profile, no figure source",
+   "ask": "P the Agent can add to a household; Ask has no household entity",
+   "io": "P import stamps external_household_id but never creates a households row"
+  },
+  "organization / funder": {
+   "tl": "P the funder record shows its own rows and the grants panel, never its contacts' activity or the gifts it matched",
+   "org": "W",
+   "cal": "-",
+   "srch": "W",
+   "grp": "M no rule for kind = organization or funder of a grant",
+   "jc": "M no audience for organizations or funders",
+   "home": "-",
+   "mrg": "P purge-trash leaves grant_sends.funder_donor_id dangling",
+   "rep": "P funder grant figures only; no organisations figure",
+   "ask": "P Ask cannot tell an organisation from a person",
+   "io": "W"
+  },
+  "gift": {
+   "tl": "W",
+   "org": "P an employer never sees the gifts it matched (gifts.match_employer_id)",
+   "cal": "-",
+   "srch": "M",
+   "grp": "W",
+   "jc": "W",
+   "home": "P a Thank step opens for manual and Stripe gifts only, not for tickets, auction payments or synced sources; the giving-source 'gone quiet' task never opens (queries tasks.completed/due_date, columns that do not exist)",
+   "mrg": "P purge-trash leaves fin_transactions and other donors' tribute/match pointers",
+   "rep": "W",
+   "ask": "W",
+   "io": "P /gifts/import-history writes no import_id or payment_method, so Undo import cannot reach those gifts and the bookkeeper file's method is blank"
+  },
+  "recurring plan": {
+   "tl": "P starting a plan writes no line; each charge shows as a gift",
+   "org": "P",
+   "cal": "M next charge date is not on the calendar",
+   "srch": "M",
+   "grp": "P only 'monthly'; no any-interval or failed rule; two definitions of 'has recurring' (groups.js vs journey audience)",
+   "jc": "P first_recurring triggers; failed or cancelled does not",
+   "home": "W",
+   "mrg": "P soft delete does not stop the Stripe plan; purge leaves recurring_proposals and recurring_change_log",
+   "rep": "W",
+   "ask": "P Ask yes; the Agent cannot see plans",
+   "io": "P an imported sustainer is a flag, not a plan, so it is missing from recurring figures and Ask"
+  },
+  "pledge": {
+   "tl": "P creating a pledge writes no line; only reminders do",
+   "org": "P",
+   "cal": "W",
+   "srch": "M",
+   "grp": "M no has-pledge rule",
+   "jc": "M no trigger or audience",
+   "home": "W",
+   "mrg": "W",
+   "rep": "W",
+   "ask": "P only the outstanding metric; no pledges entity; the Agent cannot see pledges",
+   "io": "W"
+  },
+  "campaign": {
+   "tl": "W",
+   "org": "W",
+   "cal": "P sends are on it; campaign start and end dates are not",
+   "srch": "M",
+   "grp": "W",
+   "jc": "P only as a gift-trigger filter; a campaign's donors are not an audience",
+   "home": "-",
+   "mrg": "P purge leaves sequence_sends and reconnect_sends",
+   "rep": "W",
+   "ask": "P entity amount is the goal only; the Agent cannot see campaigns",
+   "io": "P imported gifts carry the campaign name only, so Reports filtered by campaign (id match) miss them"
+  },
+  "appeal": {
+   "tl": "P attribution shows only as text on the gift",
+   "org": "P",
+   "cal": "P as campaign",
+   "srch": "M",
+   "grp": "W",
+   "jc": "P as campaign",
+   "home": "-",
+   "mrg": "P as campaign",
+   "rep": "W",
+   "ask": "P as campaign",
+   "io": "P as campaign"
+  },
+  "giving page": {
+   "tl": "P the gift shows; nothing page-specific",
+   "org": "P",
+   "cal": "M giving_pages.ends_on is not on the calendar",
+   "srch": "M",
+   "grp": "M no gave-through-this-page rule",
+   "jc": "M",
+   "home": "-",
+   "mrg": "W",
+   "rep": "M raised on a giving page has no figure source",
+   "ask": "M neither Ask nor the Agent can see giving pages",
+   "io": "W"
+  },
+  "peer-to-peer page": {
+   "tl": "M creating a fundraiser page writes nothing on the fundraiser's timeline",
+   "org": "M",
+   "cal": "M page end date not on the calendar",
+   "srch": "P a 'Go to' shortcut only; pages are not searchable",
+   "grp": "M no is-a-fundraiser rule",
+   "jc": "M",
+   "home": "M a page waiting for approval opens no step",
+   "mrg": "P purge leaves peer_fundraisers.person_id",
+   "rep": "W",
+   "ask": "M neither Ask nor the Agent can see peer-to-peer pages",
+   "io": "W"
+  },
+  "event and ticket": {
+   "tl": "P paid tickets show; a free RSVP writes nothing and door check-in writes no 'Came to' line",
+   "org": "P",
+   "cal": "P on Steward's calendar; never pushed to Google or Outlook (no owner)",
+   "srch": "M",
+   "grp": "P gaveEvent counts ticket gifts; no attended or registered rule; guests cannot be saved as a Group",
+   "jc": "P attended_event fires from the attendance list only, not from check-in or scan; no event's-guests audience",
+   "home": "M a no-show opens nothing",
+   "mrg": "W",
+   "rep": "P event rows open through a private endpoint, not the figure registry",
+   "ask": "W",
+   "io": "P no attendee import and no guest CSV export"
+  },
+  "auction item": {
+   "tl": "P donated items and paid wins show; bids write nothing",
+   "org": "P",
+   "cal": "M auction close is not on the calendar",
+   "srch": "P a 'Go to' shortcut only",
+   "grp": "M no bidder rule",
+   "jc": "M",
+   "home": "M won but not paid opens no step",
+   "mrg": "P purge leaves auction_bidders, auction_items, auction_refund_flags",
+   "rep": "W",
+   "ask": "M neither Ask nor the Agent can see auctions",
+   "io": "P no import; JSON export only"
+  },
+  "membership": {
+   "tl": "P shows only when paid; a comp join or a cancel writes nothing",
+   "org": "P",
+   "cal": "M memberships expiring are not on the calendar",
+   "srch": "P a 'Go to' shortcut only",
+   "grp": "M no member-level or member-status rule",
+   "jc": "P became_member triggers; lapsed does not; no Communications audience",
+   "home": "P expiring opens a renewal step; lapsed does not",
+   "mrg": "P a member blocks purge-trash (FK with no cascade, not in CHILD_TABLES)",
+   "rep": "P status counts render bare; member reports return no sources",
+   "ask": "P Ask yes (no money); the Agent cannot see memberships",
+   "io": "P imported members carry no money, so they are absent from membership revenue"
+  },
+  "grant": {
+   "tl": "P only grant emails reach the funder; stage changes, the award and grant notes (grant_interactions) do not",
+   "org": "W",
+   "cal": "P milestones are on it; a report with its own due date and no milestone is not",
+   "srch": "W",
+   "grp": "M no funder-of-a-grant rule",
+   "jc": "M",
+   "home": "P raised at lead time, but skipped when the grant has no funder record and for reports with no milestone",
+   "mrg": "W",
+   "rep": "W",
+   "ask": "P Ask yes; the Agent cannot see grants",
+   "io": "P grant import drops decision date and report due, and stamps awarded_at = now, so old awards count as this year's"
+  },
+  "volunteer shift and hours": {
+   "tl": "W",
+   "org": "P",
+   "cal": "P shifts on Steward's calendar; never pushed (no owner)",
+   "srch": "P volunteers are found as people; shifts are not",
+   "grp": "W",
+   "jc": "P new_volunteer triggers; an hours milestone does not",
+   "home": "P 20 hours opens a task; a no-show opens nothing",
+   "mrg": "W",
+   "rep": "P a coordinator gets 403 on /figures, so their hour figures cannot open",
+   "ask": "W",
+   "io": "W"
+  },
+  "journey step": {
+   "tl": "W",
+   "org": "W",
+   "cal": "P each open journey step shows twice (journey + the Thread step it opened), and is pushed twice",
+   "srch": "M",
+   "grp": "M no in-a-journey rule",
+   "jc": "W",
+   "home": "W",
+   "mrg": "P purge leaves workflow_runs",
+   "rep": "P journey rows open through a private endpoint",
+   "ask": "P the Agent can start or stop one; Ask has no journey entity",
+   "io": "-"
+  },
+  "task / next step": {
+   "tl": "P tasks show; an open Thread step does not, and a dismissal writes nothing",
+   "org": "P",
+   "cal": "P on it; pushed only when assigned, and auto steps often have no owner",
+   "srch": "M",
+   "grp": "M no has-an-open-task rule",
+   "jc": "M",
+   "home": "W",
+   "mrg": "P /tasks still lists a deleted person's tasks",
+   "rep": "P next steps closed has a source; tasks have none",
+   "ask": "W",
+   "io": "-"
+  },
+  "meeting": {
+   "tl": "W",
+   "org": "W",
+   "cal": "W",
+   "srch": "M",
+   "grp": "P counts toward no-contact-since only",
+   "jc": "-",
+   "home": "-",
+   "mrg": "M merge does not move calendar_events.person_ids, so the meetings vanish from the kept person",
+   "rep": "W",
+   "ask": "P Ask conversations leave out calendar meetings, which the meetings figure counts",
+   "io": "P calendar_events is not in the CSV export"
+  },
+  "email": {
+   "tl": "W",
+   "org": "W",
+   "cal": "-",
+   "srch": "M",
+   "grp": "M no opened or clicked rule",
+   "jc": "M",
+   "home": "M a donor's email that needs a reply opens no step",
+   "mrg": "W",
+   "rep": "P bulk email stats are computed in the browser or bare",
+   "ask": "P as conversations",
+   "io": "W"
+  },
+  "note": {
+   "tl": "W",
+   "org": "W",
+   "cal": "-",
+   "srch": "M",
+   "grp": "-",
+   "jc": "-",
+   "home": "-",
+   "mrg": "W",
+   "rep": "W",
+   "ask": "W",
+   "io": "W"
+  },
+  "document": {
+   "tl": "P attachments show; grant documents only on the funder panel; receipt PDFs never",
+   "org": "W",
+   "cal": "-",
+   "srch": "M",
+   "grp": "-",
+   "jc": "-",
+   "home": "-",
+   "mrg": "P erase leaves interaction_attachments",
+   "rep": "-",
+   "ask": "M",
+   "io": "P stored files are left out of the export (by design, the export is data)"
+  },
+  "import": {
+   "tl": "P imported rows show; the import itself is never an item",
+   "org": "P",
+   "cal": "-",
+   "srch": "M",
+   "grp": "M no came-from-this-import rule",
+   "jc": "M",
+   "home": "M new duplicates from an import open no step (counted, never shown)",
+   "mrg": "W",
+   "rep": "P import health and the move report are bespoke, no figure sources",
+   "ask": "M",
+   "io": "W"
+  },
+  "report": {
+   "tl": "-",
+   "org": "-",
+   "cal": "-",
+   "srch": "P one 'Reports' shortcut; saved reports, dashboards and board files are not searchable",
+   "grp": "P a dashboard takes a Group; report rows cannot become one",
+   "jc": "-",
+   "home": "-",
+   "mrg": "-",
+   "rep": "P Reports tab: retention, top donors, LYBUNT/SYBUNT and three-year numbers render bare",
+   "ask": "P Ask answers open; stored board reports never reach Ask",
+   "io": "W"
+  }
+ }
+}
