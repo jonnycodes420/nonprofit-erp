@@ -1,4 +1,4 @@
-// INT-PROD-1 — guardsOk counts failed S3 puts, not the rows Steward keeps in
+// INT-PROD-1 · guardsOk counts failed S3 puts, not the rows Steward keeps in
 // Postgres on purpose, and /health names the guard that failed.
 //
 // On prod (7 Oct 2026) /health read guardsOk:false with every guard clean but
@@ -37,7 +37,7 @@ const ORG = "org_intprod1g";
 async function clear() { await q(`DELETE FROM portal_assets WHERE org_id=$1`, [ORG]); }
 
 (async () => {
-  console.log("INT-PROD-1 — guardsOk counts failed S3 puts only, and /health names the failing guard\n");
+  console.log("INT-PROD-1 · guardsOk counts failed S3 puts only, and /health names the failing guard\n");
   await clear();
 
   // ── §1 · A ROW IN POSTGRES BY DESIGN DOES NOT COUNT ─────────────────────

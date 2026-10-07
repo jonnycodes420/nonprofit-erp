@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// INT-PROD-1 — verify-paypal (READ-ONLY, prod-flagged).
+// INT-PROD-1 · verify-paypal (READ-ONLY, prod-flagged).
 //
 // Proves the live "Steward" PayPal REST app on Railway can do the two things
 // Steward needs of it: get a client-credentials token from the LIVE base, and
