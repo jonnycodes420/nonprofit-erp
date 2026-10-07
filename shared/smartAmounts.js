@@ -181,7 +181,11 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
 // PROSPECT-1 — the next friendly amount above this one (the ask, one step up).
 export function nextFriendlyAbove(cents) { return rungAbove(toFriendlyCents(cents), 1) ?? cents; }
 
-export function suggestedAskCents({ largestCents = 0, lastThreeCents = [] } = {}) {
+// WIRE-1 addendum: `stepUp` false holds a rising donor at their own level (the
+// friendly rung at or above what they have given). The caller passes false when
+// Room to give is Not yet known, so the ask never claims more room than the
+// record shows, and `holdWords` says why in the same sentence.
+export function suggestedAskCents({ largestCents = 0, lastThreeCents = [], stepUp = true, holdWords = "" } = {}) {
   const three = (lastThreeCents || []).map(c => Math.round(Number(c) || 0)).filter(c => c > 0).slice(0, 3);
   const largest = Math.max(0, Math.round(Number(largestCents) || 0));
   if (!largest && !three.length) return null;
@@ -193,7 +197,8 @@ export function suggestedAskCents({ largestCents = 0, lastThreeCents = [] } = {}
   const anchor = Math.max(largest, avgThree);
   const base = toFriendlyCents(anchor);
   if (!base) return null;
-  const ask = rising ? (rungAbove(base, 1) ?? base) : base;
+  const held = rising && !stepUp;
+  const ask = rising && stepUp ? (rungAbove(base, 1) ?? base) : base;
   const bits = [];
   if (largest) bits.push(`Largest gift ${dollars(largest)}`);
   if (avgThree) bits.push(`last ${three.length === 1 ? "gift was" : `${three.length} averaged`} ${dollars(avgThree)}${rising ? " and rising" : ""}`);
@@ -202,10 +207,31 @@ export function suggestedAskCents({ largestCents = 0, lastThreeCents = [] } = {}
     // THE MATH IN ONE LINE, which is the brief's own requirement and the
     // difference between a suggestion a fundraiser trusts and a number a
     // computer produced.
-    sentence: `${bits.join(", ")}: ask ${dollars(ask)}.`,
+    sentence: `${bits.join(", ")}: ask ${dollars(ask)}${held && holdWords ? `, ${holdWords}` : ""}.`,
     largestCents: largest,
     avgLastThreeCents: avgThree,
     rising,
+    held,
+  };
+}
+
+// ── A MONTHLY ASK, from what they give in a year (WIRE-1 addendum) ─────────
+// "Ask about monthly giving" with a one-time-sized number beside it asked a
+// $4,863-a-year donor for $7,500 a month. A monthly ask is their own year
+// divided by twelve: their usual gift times how many times a year they give
+// (from their own rhythm, at most twelve), rounded to an amount a person would
+// say out loud ($5 steps under $50, $10 under $250, $25 under $1,000, then $100).
+export function monthlyAskCents({ usualGiftCents = 0, giftsPerYear = 0, cadenceWords = "" } = {}) {
+  const usual = Math.round(Number(usualGiftCents) || 0);
+  const per = Math.min(12, Math.max(0, Number(giftsPerYear) || 0));
+  if (!(usual > 0) || !(per > 0)) return null;
+  const annual = Math.round(usual * per);
+  const m = annual / 12;
+  const step = m < 5000 ? 500 : m < 25000 ? 1000 : m < 100000 ? 2500 : 10000;
+  const ask = Math.max(500, Math.round(m / step) * step);
+  return {
+    askCents: ask, monthly: true, annualCents: annual,
+    sentence: `Usual gift ${dollars(usual)}${cadenceWords ? `, ${cadenceWords}` : ""}: about ${dollars(annual)} a year, so ask ${dollars(ask)} a month.`,
   };
 }
 

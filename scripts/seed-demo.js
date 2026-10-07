@@ -3305,6 +3305,28 @@ async function main() {
     console.log(`[seed] email: ${r.photos} photos, ${r.videos} videos, ${r.templates} templates`);
   }
 
+  // WIRE-1 addendum · THE OLDER GIFTS HAVE BEEN THANKED. Four years of gifts
+  // all "Not thanked yet" is no organisation anyone would believe. Every gift
+  // more than 30 days old is marked thanked by letter a few days after it came
+  // in, and the last 30 days stay unthanked so the Agent's thank-you queue and
+  // the week's drafts still have work. Three stories keep theirs open on
+  // purpose: Margaret Chen's August gift (no thank-you by hand), Tidewater's
+  // $7,500 (one of tomorrow morning's calls) and any gift with a drafted
+  // thank-you waiting.
+  {
+    const cutoff = orgTime.addDays(TODAY, -30);
+    const r = await q(`UPDATE gifts g SET acknowledgement_sent = true,
+                              acknowledgement_sent_at = (LEFT(g.date,10)::date + 4)::timestamptz,
+                              acknowledged_via = 'letter', acknowledged_by = 'u_b72demo', acknowledged_by_name = 'Dana Reyes'
+                        WHERE g.org_id = $1 AND g.amount > 0 AND LEFT(g.date,10) < $2
+                          AND COALESCE(g.acknowledgement_sent,false) = false AND g.id <> $3
+                          AND g.donor_id NOT IN (SELECT id FROM donors WHERE org_id = $1 AND name = 'Tidewater Community Foundation')
+                          AND NOT EXISTS (SELECT 1 FROM thank_you_drafts t WHERE t.org_id = g.org_id AND t.gift_id = g.id)
+                    RETURNING g.id`, [ORG, cutoff, margaretAugGift]);
+    const [{ open }] = await q(`SELECT COUNT(*)::int AS open FROM gifts WHERE org_id=$1 AND amount > 0 AND COALESCE(acknowledgement_sent,false) = false`, [ORG]);
+    console.log(`[seed] thanked: ${r.length} gifts older than ${cutoff}; ${open} still waiting for a thank-you`);
+  }
+
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
   // `?` placeholders; this adapter numbers them for this client.

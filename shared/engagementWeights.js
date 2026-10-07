@@ -31,6 +31,14 @@ export const TOUCH_POINTS = Object.freeze({
   surveys:     { points: 3,   label: "Survey answers",    one: "survey",   many: "surveys",   how: "a survey they answered with their name on it" },
   volunteering:{ points: 2,   label: "Volunteer shifts",  one: "shift",    many: "shifts",    how: "a volunteer shift" },
   email:       { points: 1,   label: "Newsletter opens and clicks", one: "open or click", many: "opens and clicks", how: "a newsletter click (1 point) or open (half a point), from Mailchimp or Constant Contact" },
+  // WIRE-1 addendum: what a person does FOR the organisation is engagement too.
+  // Running a peer-to-peer page means asking their own friends on your behalf,
+  // which is as strong a sign as a meeting. A ticket bought, a bid placed and a
+  // membership held are each a decision to show up.
+  fundraising: { points: 5,   label: "Fundraising pages", one: "fundraising page", many: "fundraising pages", how: "a peer-to-peer page they run for you, dated by its latest gift" },
+  tickets:     { points: 3,   label: "Event tickets",     one: "event ticket", many: "event tickets", how: "a ticket or registration for an event (one they came to counts under events instead)" },
+  auctions:    { points: 3,   label: "Auction bids",      one: "auction bid", many: "auction bids", how: "an auction they bid in, dated by their latest bid" },
+  memberships: { points: 3,   label: "Memberships",       one: "membership", many: "memberships", how: "a membership year they joined or renewed" },
 });
 export const OPEN_POINTS = 0.5;          // an open without a click
 export const ENGAGEMENT_PARTS = Object.keys(TOUCH_POINTS);
@@ -65,26 +73,32 @@ export function bandFor(score) {
 // The profile's line under the tags says one word, and it is the band above,
 // never a second opinion: Close and Warm are the bands of the same names. A
 // Distant person is New when they arrived (their record or their first gift)
-// in the last NEW_DAYS days, and Cooling otherwise. donorStatus.js says the
-// same thing in SQL for lists and Groups.
+// in the last NEW_DAYS days. WIRE-1 addendum: otherwise they are judged against
+// their OWN rhythm, never the calendar. A Distant person whose giving is inside
+// their own usual gap (drift.js, stored as donor_scores.pattern 'on_track') is
+// On track: a once-a-year donor who gave this October, on pattern, is not
+// cooling. Cooling is the rest: past their own gap, or one gift and nothing
+// since. donorStatus.js says the same thing in SQL for lists and Groups.
 export const NEW_DAYS = 90;
 export const CLOSENESS = Object.freeze([
-  { key: "close",   label: "Close" },
-  { key: "warm",    label: "Warm" },
-  { key: "cooling", label: "Cooling" },
-  { key: "new",     label: "New" },
+  { key: "close",    label: "Close" },
+  { key: "warm",     label: "Warm" },
+  { key: "on_track", label: "On track" },
+  { key: "cooling",  label: "Cooling" },
+  { key: "new",      label: "New" },
 ]);
-export function closenessFor(band, { isNew = false } = {}) {
+export function closenessFor(band, { isNew = false, pattern = null } = {}) {
   const key = typeof band === "string" ? band : bandFor(band).key;
   if (key === "close" || key === "warm") return key;
-  return isNew ? "new" : "cooling";
+  if (isNew) return "new";
+  return pattern === "on_track" ? "on_track" : "cooling";
 }
 
 // ── THE EXPLANATION, as the screen shows it ─────────────────────────────────
 export const EXPLANATION = Object.freeze({
   engagement:
-    "Engagement is how close this person is, from 0 to 100. Every meeting (5 points), event attended (4), call (3), email reply (3), "
-    + "named survey answer (3), volunteer shift (2), newsletter click (1) or open (half a point) in the last 24 months counts. "
+    "Engagement is how close this person is, from 0 to 100. Every meeting (5 points), peer-to-peer page they run for you (5), event attended (4), call (3), email reply (3), "
+    + "named survey answer (3), event ticket (3), auction bid in (3), membership year (3), volunteer shift (2), newsletter click (1) or open (half a point) in the last 24 months counts. "
     + "A touch in the last 90 days counts in full and older ones fade to nothing at 24 months. "
     + "The score is where their total stands among the people you have been in touch with in those 24 months: 80 means closer than about 80 in 100 of them (people tied with them count as half). "
     + "67 and above is Close, 34 to 66 is Warm, 33 and below is Distant.",
