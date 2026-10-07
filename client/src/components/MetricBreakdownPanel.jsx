@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { T, Spin, Modal, fmtFull } from "./shared";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
+import { offerUndo } from "./EditHistory";
+import { ratioFootLine } from "../lib/figureFoot";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 
@@ -149,9 +151,7 @@ export function Foot({ data, figure }) {
     return (
       <div style={box} data-figure-total data-value={String(data.value)}>
         <span style={{ fontSize: 13, color: T.ink3 }}>
-          {data.formula === "change"
-            ? `(${n.measure === "sum" ? fmtFull(n.value) : n.value} − ${d.measure === "sum" ? fmtFull(d.value) : d.value}) ÷ ${d.measure === "sum" ? fmtFull(d.value) : d.value}`
-            : `${Number(n.value).toLocaleString("en-US")} of ${Number(d.value).toLocaleString("en-US")}`}
+          {ratioFootLine(data.formula, n, d)}
         </span>
         <strong style={{ fontSize: 18, color: T.ink }}>{`${data.value}%`}</strong>
       </div>
@@ -167,21 +167,82 @@ export function Foot({ data, figure }) {
     );
   }
   const totUnit = UNITS[data.amountKind];
-  const word = data.measure === "sum" ? "Total of every row" : data.measure === "avg" ? "Average of every row" : "Rows";
-  const shown = data.measure === "sum" ? (totUnit ? unitAmount(data.value, totUnit) : fmtFull(data.value))
+  // REPORTS-4: an average gift is the rows' total over their count; a median
+  // is the middle row once they are in order.
+  const money = data.measure === "sum" || data.measure === "mean" || data.measure === "median";
+  const word = data.measure === "sum" ? "Total of every row" : data.measure === "mean" ? "Total of every row, divided by how many there are"
+    : data.measure === "median" ? "The middle row, once they are in order of amount" : data.measure === "avg" ? "Average of every row" : "Rows";
+  const shown = money ? (totUnit ? unitAmount(data.value, totUnit) : fmtFull(data.value))
     : data.measure === "avg" ? `${data.value}${totUnit ? " " + totUnit : ""}`
     : Number(data.value).toLocaleString("en-US");
   const matches = figure && figure.value !== null && figure.value !== undefined
-    && (data.measure === "sum" ? centsOf(figure.value) === data.cents : Number(figure.value) === data.value);
+    && (money ? centsOf(figure.value) === data.cents : Number(figure.value) === data.value);
   return (
-    <div style={box} data-figure-total data-cents={data.measure === "sum" ? String(data.cents) : undefined} data-value={String(data.value)}>
+    <div style={box} data-figure-total data-cents={money ? String(data.cents) : undefined} data-value={String(data.value)}>
       <span style={{ fontSize: 13, color: T.ink3 }}>{word}{matches ? ", the number on screen" : ""}</span>
       <strong style={{ fontSize: 18, color: T.ink }}>{shown}</strong>
     </div>
   );
 }
 
-export function SourcePanel({ source, figure, onSelectDonor }) {
+// REPORTS-4 · KEEP THESE ROWS. Every figure's rows can leave the drawer two
+// ways: as a file (the same rows, every page), or as a Group of the people in
+// them, made through the Groups routes so the change is audited and the
+// shared Undo takes it back. A percentage keeps the people it counts.
+export function KeepRows({ source, title }) {
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const params = qs(source.params);
+  const fileName = `${(title || source.key).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "rows"}.csv`;
+  const download = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch(`${API}/figures/${encodeURIComponent(source.key)}/export.csv?${params}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) throw new Error("The file could not be made.");
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { setMsg(e?.message || "The file could not be made."); }
+    setBusy(false);
+  };
+  const save = async () => {
+    const n = name.trim();
+    if (!n) { setMsg("Give the group a name."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const ppl = await apiFetch(`/figures/${encodeURIComponent(source.key)}/people?${params}`);
+      if (!ppl.donorIds.length) { setMsg("There are no people in these rows to save."); setBusy(false); return; }
+      const g = await apiFetch("/groups", { method: "POST", body: JSON.stringify({ name: n, kind: "static" }) });
+      await apiFetch(`/groups/${encodeURIComponent(g.id)}/members`, { method: "POST", body: JSON.stringify({ donorIds: ppl.donorIds }) });
+      const said = `Saved ${ppl.donorIds.length} ${ppl.donorIds.length === 1 ? "person" : "people"} as the group ${n}.`;
+      setMsg(said); setNaming(false); setName("");
+      offerUndo({ message: said, undoAction: () => apiFetch(`/groups/${encodeURIComponent(g.id)}`, { method: "DELETE" }) }, "group",
+        () => setMsg(`The group ${n} was taken back out.`));
+    } catch (e) { setMsg(e?.message || "The group could not be saved."); }
+    setBusy(false);
+  };
+  const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 11px", fontSize: 12.5, fontWeight: 700, color: T.ink, cursor: busy ? "default" : "pointer" };
+  return (
+    <div data-testid="figure-keep" style={{ padding: "10px 24px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderBottom: "1px solid " + T.bg2 }}>
+      <button type="button" style={btn} disabled={busy} onClick={download} data-testid="figure-export">Download CSV</button>
+      {!naming && <button type="button" style={btn} disabled={busy} onClick={() => { setNaming(true); setMsg(""); }} data-testid="figure-save-group">Save as a group</button>}
+      {naming && <>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Name the group" aria-label="Group name" autoFocus
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setNaming(false); }}
+          style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontSize: 13, minWidth: 0, flex: "1 1 160px" }} />
+        <button type="button" style={{ ...btn, background: T.greenDk, color: T.white, border: "none" }} disabled={busy} onClick={save}>Save</button>
+        <button type="button" style={{ ...btn, border: "none", background: "transparent", color: T.ink3 }} onClick={() => setNaming(false)}>Cancel</button>
+      </>}
+      {msg && <span role="status" style={{ fontSize: 12.5, color: T.ink3, flexBasis: "100%" }}>{msg}</span>}
+    </div>
+  );
+}
+
+export function SourcePanel({ source, figure, onSelectDonor, title }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   useEffect(() => {
@@ -197,6 +258,7 @@ export function SourcePanel({ source, figure, onSelectDonor }) {
   const blank = (figure && (figure.value === null || figure.value === undefined)) || data.value === null ? (data.blank || figure?.blank) : null;
   return (
     <div data-figure-panel={source.key}>
+      <KeepRows source={data.parts ? data.parts[0].source : source} title={title} />
       {blank && (
         <div style={{ margin: "14px 24px 4px", padding: "12px 14px", borderLeft: "3px solid " + T.gold, background: T.bg, fontSize: 13.5, color: T.ink, lineHeight: 1.55 }}
           data-figure-blank>{blank}</div>
@@ -243,7 +305,7 @@ export default function MetricBreakdownPanel({ open, onClose, title, explanation
           {explanation && <div style={{ fontSize: 13, color: T.ink2, marginTop: 10, lineHeight: 1.55 }}>{explanation}</div>}
         </div>
       )}>
-        {isSource ? <SourcePanel source={source} figure={figure} onSelectDonor={onSelectDonor} /> : (
+        {isSource ? <SourcePanel source={source} figure={figure} onSelectDonor={onSelectDonor} title={title} /> : (
         <div>
           {loading ? (
             <div style={{ padding: "32px 24px", textAlign: "center", color: T.ink3, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Spin/>Loading…</div>

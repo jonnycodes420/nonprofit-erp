@@ -622,6 +622,10 @@ const PARAM_EXEMPT = [
   // an unknown name is a 404. Cross-org rows are proven directly in
   // tests/fix2-a-footing.test.js §2 (org B asking for org A's donor gets none).
   [/^\/figures\/:source\/rows$/, "param is a figure SOURCE NAME from a fixed registry, not a row id — see fix2-a-footing.test.js §2"],
+  // REPORTS-4: the same rows as /rows (figureSources.allRows through figure()),
+  // as a CSV and as the people in them. The org is the token's; the param is a
+  // source name. reports4-foot checks they hold exactly the figure's rows.
+  [/^\/figures\/:source\/(export\.csv|people)$/, "param is a figure SOURCE NAME from a fixed registry, not a row id; same rows as /rows, see reports4-foot.test.js"],
   // REPORTS-3 — the param is a figure SOURCE NAME, exactly as above: the
   // dashboard-tile catalogue is built from figureSources.js's own registry and
   // an unknown name is refused. There is no cross-org value to probe.

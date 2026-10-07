@@ -1026,6 +1026,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // linking only, see server.js's donor_relationships routes.
   const [relationships,setRelationships]=useState([]);
   const [householdTotal,setHouseholdTotal]=useState(null);
+  const [householdTotalSource,setHouseholdTotalSource]=useState(null);   // REPORTS-4
   const [relLoading,setRelLoading]=useState(true);
   const [relPickerOpen,setRelPickerOpen]=useState(false);
   const [relSearch,setRelSearch]=useState("");
@@ -1035,7 +1036,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const loadRelationships=()=>{
     setRelLoading(true);
     apiFetch(`/donors/${donor.id}/relationships`)
-      .then(r=>{setRelationships(r.relationships||[]);setHouseholdTotal(r.householdTotal??null);})
+      .then(r=>{setRelationships(r.relationships||[]);setHouseholdTotal(r.householdTotal??null);setHouseholdTotalSource(r.householdTotalSource||null);})
       .catch(()=>{setRelationships([]);setHouseholdTotal(null);})
       .finally(()=>setRelLoading(false));
   };
@@ -2456,9 +2457,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {household&&(
                 <>
                   <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(household.combined_giving)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.hardCredit||0} label="Hard credit" definition="This person's own lifetime giving: the gifts credited to them." source={softCredit.householdSources.hardCredit}/>:fmtFull(softCredit?.hardCredit||0)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.softCredit||0} label="Soft credit" definition="The lifetime giving of everyone else in this household, credited to this person through the household." source={softCredit.householdSources.softCredit}/>:fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{household.combined_source?<Figure variant="inline" kind="money" value={household.combined_giving} label="Household combined" definition="Each person in this household, with their lifetime giving. Someone who was deleted is not counted." source={household.combined_source}/>:fmtFull(household.combined_giving)}</div></div>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
@@ -2469,7 +2470,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         <PersonMark id={m.id} name={m.name} size={22}/>
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
                         {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
-                        <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
+                        <span style={{marginLeft:"auto",color:T.ink3}} onClick={e=>e.stopPropagation()}>{m.source?<Figure variant="cell" kind="money" value={m.total_giving} label={`${m.name}: lifetime giving`} source={m.source}/>:fmtFull(m.total_giving)}</span>
                       </div>
                     ))}
                   </div>
@@ -2506,7 +2507,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}} onClick={e=>e.stopPropagation()}>{householdTotalSource?<Figure variant="inline" kind="money" value={householdTotal} label="Household total" definition="This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted." source={householdTotalSource}/>:fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
               </div>
             )}
 
@@ -3063,7 +3064,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
-                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total</div>
+                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}} onClick={e=>e.stopPropagation()}>{householdTotalSource?<Figure variant="inline" kind="money" value={householdTotal} label="Household total" definition="This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted." source={householdTotalSource}/>:fmtFull(householdTotal)}</strong> household total</div>
               </div>
             )}
 

@@ -43,6 +43,11 @@ The map is generated from `map.json` (`before` and `after`), so the counts are c
 step, meeting, email, note and import. The ⌘K column went from 14 wired, 1 partly, 8 missing to 22 wired,
 1 partly, 0 missing; all cells from 138 / 67 / 17 to 146 / 67 / 9. The one partly cell left is volunteer
 shifts (volunteers are found as people; shifts are not). The After section below is the state after SEARCH-2.
+
+**REPORTS-4 (7 Oct 2026)** made every Reports tab number open rows that foot, plus household totals, giving-page
+raised and membership counts. The "Reports, opens rows" column went from 11 wired, 9 partly, 2 missing to
+14 wired, 8 partly, 0 missing; all cells from 146 / 67 / 9 to 149 / 66 / 7. The figure-by-figure
+list is `docs/reports-4/figures.md`. The After section below is the state after REPORTS-4.
 After was re-walked on 6 Oct against the merged branch: the four builders' API checks on their own seeded
 Harborlight copies, `tests/wire-journey.test.js` (63 checks, one person and one funder through every
 column), and the Muse walk below. Every cell still partly or missing names its reason and the build it
@@ -65,14 +70,14 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | object | Timeline | Org / funder record | Calendar + sync | ⌘K | Groups / Show me | Journeys / Comms | Reports, opens rows | Ask + Agent | Home / Thread | Import / export | Merge / delete / undo |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | person | W | P | W | W | W | W | W | W | · | W | W |
-| household | W | · | · | W | W | M | M | W | · | P | W |
+| household | W | · | · | W | W | M | W | W | · | P | W |
 | organization / funder | W | W | · | W | W | P | P | W | · | W | W |
 | gift | W | W | · | W | W | W | W | W | P | W | W |
 | recurring plan | W | W | M | W | P | P | W | P | W | P | P |
 | pledge | W | W | W | W | W | P | W | P | W | W | W |
 | campaign | W | W | P | W | W | W | W | P | · | W | W |
 | appeal | P | P | P | W | W | W | W | P | · | W | W |
-| giving page | P | P | W | W | W | P | M | P | · | W | W |
+| giving page | P | P | W | W | W | P | W | P | · | W | W |
 | peer-to-peer page | W | W | W | W | W | P | W | P | W | W | W |
 | event and ticket | W | W | P | W | W | P | P | W | M | P | W |
 | auction item | P | P | W | W | W | P | W | P | W | P | W |
@@ -86,7 +91,7 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | note | W | W | · | W | · | · | W | W | · | W | W |
 | document | P | W | · | W | · | · | · | P | · | P | P |
 | import | P | P | · | W | W | P | P | M | W | W | W |
-| report | · | · | · | W | P | · | P | P | · | W | · |
+| report | · | · | · | W | P | · | W | P | · | W | · |
 
 **Counts per column** (W wired · P partly · M missing · n/a)
 
@@ -98,18 +103,17 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | ⌘K | 22 | 1 | 0 | 0 |
 | Groups / Show me | 17 | 3 | 1 | 2 |
 | Journeys / Comms | 5 | 12 | 2 | 4 |
-| Reports, opens rows | 11 | 9 | 2 | 1 |
+| Reports, opens rows | 14 | 8 | 0 | 1 |
 | Ask + Agent | 9 | 13 | 1 | 0 |
 | Home / Thread | 9 | 2 | 2 | 10 |
 | Import / export | 14 | 7 | 0 | 2 |
 | Merge / delete / undo | 20 | 2 | 0 | 1 |
-| **all** | **146** | **67** | **9** | **31** |
+| **all** | **149** | **66** | **7** | **31** |
 
 **Every partly and missing cell, with what is wrong**
 
 - **person × Org / funder record** (partly): an organisation lists its contacts but does not roll up their gifts, meetings and hours. Next: ORG-ROLLUP
 - **household × Journeys / Comms** (missing): no household audience or trigger; a Group with the household rule is the way in today. Next: COMMS-3
-- **household × Reports, opens rows** (missing): the household total on the profile has no figure source. Next: REPORTS-4
 - **household × Import / export** (partly): import stamps external_household_id but does not create households. Next: IMPORT-HOUSEHOLDS
 - **organization / funder × Journeys / Comms** (partly): a Group of organisations or funders can feed a Communication or Journey; no trigger of its own. Next: COMMS-3
 - **organization / funder × Reports, opens rows** (partly): funder grant figures only; no organisations figure. Next: REPORTS-4
@@ -131,7 +135,6 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **giving page × Timeline** (partly): the gift shows; nothing page-specific (views, abandoned starts are on Gifts not finished). Next: PROFILE-2
 - **giving page × Org / funder record** (partly): as timeline. Next: PROFILE-2
 - **giving page × Journeys / Comms** (partly): a Group of page givers feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
-- **giving page × Reports, opens rows** (missing): raised on a giving page has no figure source. Next: REPORTS-4
 - **giving page × Ask + Agent** (partly): Ask has a giving pages entity; the Agent cannot see pages. Next: AGENT-3
 - **peer-to-peer page × Journeys / Comms** (partly): a Group of fundraisers feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
 - **peer-to-peer page × Ask + Agent** (partly): Ask has a peer-to-peer pages entity; the Agent cannot see them. Next: AGENT-3
@@ -146,7 +149,7 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **auction item × Ask + Agent** (partly): Ask has an auction items entity; the Agent cannot see auctions. Next: AGENT-3
 - **auction item × Import / export** (partly): no import; JSON export only. Next: EVENTS-3
 - **membership × Journeys / Comms** (partly): became_member triggers; a lapse does not. Next: JOURNEYS-3
-- **membership × Reports, opens rows** (partly): member status counts render bare; member reports return no sources. Next: REPORTS-4
+- **membership × Reports, opens rows** (partly): member counts by status open (REPORTS-4); the member reports still return no sources. Next: REPORTS-6
 - **membership × Ask + Agent** (partly): Ask sees memberships (no money); the Agent cannot. Next: AGENT-3
 - **membership × Import / export** (partly): imported members carry no money, so they are missing from membership revenue (by design, no invented gifts)
 - **grant × Journeys / Comms** (partly): a Group of funders feeds a Communication or Journey; no grant trigger. Next: JOURNEYS-3
@@ -180,7 +183,6 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **import × Reports, opens rows** (partly): import health and the move report are bespoke, no figure sources. Next: REPORTS-4
 - **import × Ask + Agent** (missing): Ask cannot see imports. Next: ASK-5
 - **report × Groups / Show me** (partly): a dashboard takes a Group; report rows cannot become one. Next: GROUPS-2
-- **report × Reports, opens rows** (partly): the giving summary's total and gift count open now; retention, top donors, LYBUNT/SYBUNT and three-year numbers still render bare beside their own rows. Next: REPORTS-4
 - **report × Ask + Agent** (partly): Ask answers open; stored board reports never reach Ask. Next: ASK-5
 
 ## Before (Part 0, committed at 5e72a53)

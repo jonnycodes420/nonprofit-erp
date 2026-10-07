@@ -10,6 +10,7 @@
 // the level's fair-market value), so nothing here totals money of its own.
 // Every count carries its sentence on hover, from the server.
 
+import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T } from "./shared";
@@ -197,12 +198,17 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
   return (
     <div data-testid="members-view" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }} title={list.sentence} aria-label={list.sentence} tabIndex={0} data-testid="members-counts">
+        {/* REPORTS-4: the count opens the memberships it counts; the label
+            under it still filters the list. Two controls, never one nested
+            in the other. */}
         {["active", "grace", "lapsed", "cancelled"].map(s => (
-          <button key={s} onClick={() => setStatus(status === s ? "" : s)} aria-pressed={status === s}
-            style={{ background: "transparent", border: "none", padding: 0, textAlign: "left", cursor: "pointer", borderBottom: status === s ? "2px solid " + T.gold500 : "2px solid transparent" }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: T.ink }}>{by[s] || 0}</div>
-            <div style={{ fontSize: 12, color: T.ink3 }}>{STATUS_LABEL[s]}</div>
-          </button>))}
+          <div key={s} style={{ textAlign: "left", borderBottom: status === s ? "2px solid " + T.gold500 : "2px solid transparent" }}>
+            <div style={{ fontSize: 26, fontWeight: 800, color: T.ink }}>{list.byStatusSource?.[s]
+              ? <Figure variant="inline" kind="count" value={by[s] || 0} label={`${STATUS_LABEL[s]} members`} source={list.byStatusSource[s]} />
+              : (by[s] || 0)}</div>
+            <button onClick={() => setStatus(status === s ? "" : s)} aria-pressed={status === s}
+              style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, color: T.ink3, cursor: "pointer", fontFamily: "inherit", textDecoration: status === s ? "none" : "underline dotted" }}>{STATUS_LABEL[s]}</button>
+          </div>))}
       </div>
 
       {settings && (

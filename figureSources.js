@@ -101,6 +101,20 @@ function funderTypeWords(t) {
   return label ? `${label.toLowerCase()} funders` : "these funders";
 }
 
+// REPORTS-4 · "their first gift ever falls in this window", for a query whose
+// gift alias is g and person alias is d.
+// The bookkeeper's file leaves these gift types out: they are credit
+// records, not money that reached the bank (BUILD-87 Part 4).
+const BOOKKEEPER_EXCLUDED_TYPES = ["soft credit", "soft-credit", "soft_credit",
+  "matching gift credit", "matched gift credit", "hard credit reversal"];
+const FIRST_GIFT_IN = (from, to) => `AND (SELECT MIN(LEFT(g2.date,10)) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) BETWEEN ${from} AND ${to}`;
+// The one definition of a lapsed MEMBER (BUILD-101 Part 3): their latest
+// membership lapsed and they hold none now. Memberships' list and counts and
+// the `members` source all read this, so the count and the list agree.
+const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id
+                                     ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
+    AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
+
 // ── PARAMETERS ─────────────────────────────────────────────────────────────
 // A source names the parameters it reads and their shape. Anything else is
 // ignored; a malformed value is refused (400), never guessed at.
@@ -113,7 +127,10 @@ const T = {
     if (v === false || v === "false") return false;
     throw new FigureParamError(`${k} must be true or false.`);
   },
-  measure: (v, k) => { if (!["sum", "count"].includes(String(v))) throw new FigureParamError(`${k} must be sum or count.`); return String(v); },
+  // REPORTS-4: mean and median too, for an average or a median gift that opens
+  // the same gifts it is the average or the middle of.
+  measure: (v, k) => { if (!["sum", "count", "mean", "median"].includes(String(v))) throw new FigureParamError(`${k} must be sum, count, mean or median.`); return String(v); },
+  int: (v, k) => { const n = Number(v); if (!Number.isInteger(n) || n < 1 || n > 1000) throw new FigureParamError(`${k} must be a whole number from 1 to 1000.`); return n; },
   // ASK-2: an Ask plan as JSON. Its shape is checked here; askEngine
   // validates it against the catalog and the org's own funds, campaigns and
   // events before a row is read, and refuses (no rows) what it does not know.
@@ -276,6 +293,13 @@ function giftsWhere(p, args) {
   else if (p.fund) { w += " AND f.id = ?"; args.push(p.fund); }
   if (p.restricted !== undefined) { w += " AND COALESCE(f.restricted,false) = ?"; args.push(p.restricted); }
   if (p.campaign) { w += " AND g.campaign_id = ?"; args.push(p.campaign); }
+  // REPORTS-4: online means paid through Stripe (the giving summary's split);
+  // page is the giving page the gift came through.
+  if (p.online === true) w += " AND g.stripe_payment_id IS NOT NULL";
+  else if (p.online === false) w += " AND g.stripe_payment_id IS NULL";
+  if (p.bookkeeper === true) { w += " AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
+  if (p.page === "none") w += " AND g.giving_page_id IS NULL";
+  else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
   if (p.donor) { w += " AND g.donor_id = ?"; args.push(p.donor); }
   if (p.assigned) { w += " AND d.assigned_to = ?"; args.push(p.assigned); }
   return w;
@@ -328,8 +352,8 @@ const SOURCES = {
     // sentence below does not mention it. It is mapped through a FIXED
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
-    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id" },
-    sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
+    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online through Stripe" : p.online === false ? " recorded by hand (not paid online)" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
     sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
       let where = giftsWhere(p, args);
@@ -353,17 +377,159 @@ const SOURCES = {
   givers: {
     label: "People who gave",
     measure: () => "count",
-    params: { from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Each person with at least one gift dated ${dd(p.from)} to ${dd(p.to)}, with what they gave in that time.`,
-    sql: (orgId, p) => ({
-      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
+    // REPORTS-4: the giving summary's filters (fund, campaign), its new and
+    // returning split (first: new | returning, by each person's first gift
+    // ever), and Top donors (top: the N who gave most, largest first).
+    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", first: "word", top: "int", measure: "measure" },
+    sentence: (p, dd) => `${p.top ? `The ${p.top} people who gave the most` : "Each person with at least one gift"} dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.first === "new" ? ", whose first gift ever falls in that time" : p.first === "returning" ? ", who had given before it" : ""}, with what they gave in that time.`,
+    sql: (orgId, p) => {
+      if (p.first && !["new", "returning"].includes(p.first)) throw new FigureParamError("first is new or returning.");
+      const args = [orgId, p.from, p.to];
+      let where = giftsWhere({ fund: p.fund, campaign: p.campaign }, args);
+      if (p.first) { where += ` AND (SELECT MIN(g2.date) FROM gifts g2 WHERE g2.org_id = g.org_id AND g2.donor_id = d.id) ${p.first === "new" ? ">=" : "<"} ?`; args.push(p.from); }
+      const inner = `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(g.date) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
                    COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' gift' ELSE ' gifts' END AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
-             GROUP BY d.id, d.name`,
-      args: [orgId, p.from, p.to],
+              LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?${where}
+             GROUP BY d.id, d.name`;
+      return {
+        sql: p.top ? `SELECT * FROM (${inner}) t ORDER BY amount DESC, id LIMIT ${p.top}` : inner,
+        args,
+        order: "amount DESC, id",
+      };
+    },
+  },
+  // REPORTS-4 · LYBUNT and SYBUNT, the predicates Reports used, moved here so
+  // the list and its count are one definition. LYBUNT: gave in the prior year,
+  // not in this one. SYBUNT: gave some year before this one, not in this one.
+  // Each row's amount is what the person gave in the prior year, so the total
+  // is the prior-year giving at stake.
+  bunt: {
+    label: "Gave before, not yet this year",
+    measure: p => p.measure || "count",
+    params: { kind: "word:required", from: "date:required", to: "date:required", prevFrom: "date:required", prevTo: "date:required", measure: "measure" },
+    sentence: (p, dd) => p.kind === "sybunt"
+      ? `Everyone who gave before ${dd(p.from)} and has given nothing dated ${dd(p.from)} to ${dd(p.to)}. The amount is what they gave ${dd(p.prevFrom)} to ${dd(p.prevTo)}.`
+      : `Everyone who gave ${dd(p.prevFrom)} to ${dd(p.prevTo)} and has given nothing dated ${dd(p.from)} to ${dd(p.to)}. The amount is what they gave in that earlier year.`,
+    sql: (orgId, p) => {
+      if (!["lybunt", "sybunt"].includes(p.kind)) throw new FigureParamError("kind is lybunt or sybunt.");
+      const before = p.kind === "lybunt"
+        ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)"
+        : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date < ?)";
+      return {
+        sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                     ROUND((SELECT COALESCE(SUM(g.amount), 0) FROM gifts g
+                             WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)::numeric, 2) AS amount,
+                     'Lifetime ' || TO_CHAR(COALESCE(d.total_giving, 0), 'FM$999,999,990.00') AS detail
+                FROM donors d
+               WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${before}
+                 AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)`,
+        args: [p.prevFrom, p.prevTo, orgId, ...(p.kind === "lybunt" ? [p.prevFrom, p.prevTo] : [p.from]), p.from, p.to],
+        order: "amount DESC, id",
+      };
+    },
+  },
+  // REPORTS-4 · Top donors, lifetime: the person's lifetime total as Steward
+  // holds it (imported totals included), the N largest.
+  "top-lifetime": {
+    label: "Top donors, lifetime",
+    measure: p => p.measure || "sum",
+    params: { top: "int:required", measure: "measure" },
+    sentence: p => `The ${p.top} people with the largest lifetime giving, each with their lifetime total (imported totals included).`,
+    sql: (orgId, p) => ({
+      sql: `SELECT * FROM (SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount,
+                   COALESCE(d.gift_count, 0) || CASE WHEN COALESCE(d.gift_count, 0) = 1 THEN ' gift' ELSE ' gifts' END AS detail
+              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.total_giving, 0) > 0
+             ORDER BY COALESCE(d.total_giving, 0) DESC, d.id LIMIT ${p.top}) t`,
+      args: [orgId],
       order: "amount DESC, id",
     }),
+  },
+  // REPORTS-4 · A household's combined giving: each member Steward still
+  // holds, with their own lifetime total. Deleted people are not members.
+  "household-giving": {
+    label: "Household combined",
+    measure: () => "sum",
+    // only: one member (their hard credit, as the household panel reads it);
+    // except: everyone else (that member's household soft credit).
+    params: { household: "id:required", only: "id", except: "id" },
+    sentence: p => p.only ? "This person's own lifetime giving: the gifts credited to them (their hard credit)."
+      : p.except ? "The lifetime giving of everyone else in this household: what this person is soft-credited with through the household."
+      : "Each person in this household, with their lifetime giving; together they are the household's combined giving. Someone who was deleted is not counted.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Lifetime giving' AS detail
+              FROM donors d WHERE d.org_id = ? AND d.household_id = ? AND d.deleted_at IS NULL${p.only ? " AND d.id = ?" : ""}${p.except ? " AND d.id <> ?" : ""}`,
+      args: [orgId, p.household, ...(p.only ? [p.only] : []), ...(p.except ? [p.except] : [])],
+      order: "amount DESC, id",
+    }),
+  },
+  // REPORTS-4 · The "household total" on a profile: this person and everyone
+  // linked to them as a spouse or household member, each once, with their
+  // lifetime giving. A deleted person is not counted (before REPORTS-4 they
+  // were: the banner added a deleted spouse's giving in).
+  "linked-household-giving": {
+    label: "Household total",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount,
+                   CASE WHEN d.id = ? THEN 'This person' ELSE 'Linked as household' END AS detail
+              FROM donors d
+             WHERE d.org_id = ? AND d.deleted_at IS NULL
+               AND (d.id = ? OR d.id IN (
+                     SELECT CASE WHEN dr.donor_id_a = ? THEN dr.donor_id_b ELSE dr.donor_id_a END
+                       FROM donor_relationships dr
+                      WHERE dr.org_id = ? AND (dr.donor_id_a = ? OR dr.donor_id_b = ?)
+                        AND dr.relationship_type IN ('spouse', 'household')))`,
+      args: [p.donor, orgId, p.donor, p.donor, orgId, p.donor, p.donor],
+      order: "amount DESC, id",
+    }),
+  },
+  // REPORTS-4 · What a giving page raised: every gift through it, less any
+  // processing fee the donor chose to cover (the page's own progress bar).
+  "page-raised": {
+    label: "Raised on this page",
+    measure: () => "sum",
+    params: { page: "id:required" },
+    sentence: () => "Every gift given through this page, less any processing fee the donor chose to cover, which is what the page's own progress bar shows.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(d.name, 'Someone no longer in Steward') AS name, g.date,
+                   ROUND((g.amount - COALESCE(g.cover_fee_amount, 0))::numeric, 2) AS amount,
+                   CASE WHEN COALESCE(g.cover_fee_amount, 0) > 0 THEN 'Fee they covered left out' ELSE 'Gift' END AS detail
+              FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND g.giving_page_id = ?`,
+      args: [orgId, p.page],
+    }),
+  },
+  // REPORTS-4 · Members by status: active, grace, lapsed (a PERSON whose
+  // latest membership lapsed and who holds none now) or cancelled, and
+  // optionally one level. A deleted person is not a member.
+  members: {
+    label: "Members",
+    measure: () => "count",
+    params: { status: "word", level: "id" },
+    sentence: p => `${{ active: "Active memberships", grace: "Memberships in their grace period", lapsed: "People whose latest membership lapsed and who hold none now", cancelled: "Cancelled memberships" }[p.status] || "Every membership"}${p.level ? " at this level" : ""}, one row each.`,
+    sql: (orgId, p) => {
+      if (p.status && !["active", "grace", "lapsed", "cancelled"].includes(p.status)) throw new FigureParamError("status is active, grace, lapsed or cancelled.");
+      const args = [orgId];
+      let w = "";
+      if (p.status) { w += " AND m.status = ?"; args.push(p.status); }
+      if (p.status === "lapsed") w += ` AND ${LAPSED_MEMBER_SQL}`;
+      if (p.level) { w += " AND m.level_id = ?"; args.push(p.level); }
+      return {
+        sql: `SELECT m.id, 'membership' AS type, m.donor_id, d.name, COALESCE(m.expires_on::text, m.starts_on::text) AS date,
+                     NULL::numeric AS amount, l.name || ' · ' || INITCAP(m.status) AS detail
+                FROM memberships m JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+                JOIN donors d ON d.id = m.donor_id AND d.org_id = m.org_id AND d.deleted_at IS NULL
+               WHERE m.org_id = ?${w}`,
+        args,
+      };
+    },
   },
   "top-givers": {
     label: "The givers who carry ninety per cent",
@@ -983,23 +1149,27 @@ const SOURCES = {
   // "Gave" is a gift above zero, so a refund never counts as giving.
   "retention-window-prior": {
     label: "Gave in the earlier window",
-    measure: () => "count",
-    params: { from1: "date:required", to1: "date:required" },
-    sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)}: the people retention is measured against.`,
+    // REPORTS-4: measure=sum is the dollars those people gave (dollar
+    // retention's denominator); firstYear=true keeps only people whose first
+    // gift ever falls in the earlier window (first-year retention).
+    measure: p => p.measure || "count",
+    params: { from1: "date:required", to1: "date:required", measure: "measure", firstYear: "bool" },
+    sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)}${p.firstYear ? " that was their first gift ever" : ""}: the people retention is measured against.${p.measure === "sum" ? " The amount is what they gave in that window." : ""}`,
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
                    'Given in the earlier window' AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
+               ${p.firstYear ? FIRST_GIFT_IN("?", "?") : ""}
              GROUP BY d.id, d.name`,
-      args: [orgId, p.from1, p.to1],
+      args: [orgId, p.from1, p.to1, ...(p.firstYear ? [p.from1, p.to1] : [])],
       order: "amount DESC, id",
     }),
   },
   "retention-window-kept": {
     label: "Gave in both windows",
-    measure: () => "count",
-    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required" },
+    measure: p => p.measure || "count",
+    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required", measure: "measure", firstYear: "bool" },
     sentence: (p, dd) => `Everyone with a gift dated ${dd(p.from1)} to ${dd(p.to1)} who gave again ${dd(p.from0)} to ${dd(p.to0)}. The amount is what they gave in the later window.`,
     sql: (orgId, p) => ({
       sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(LEFT(g.date,10)) AS date, ROUND(SUM(g.amount)::numeric, 2) AS amount,
@@ -1008,8 +1178,9 @@ const SOURCES = {
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND LEFT(g.date,10) >= ? AND LEFT(g.date,10) <= ?
                AND EXISTS (SELECT 1 FROM gifts g1 WHERE g1.org_id = g.org_id AND g1.donor_id = g.donor_id AND g1.amount > 0
                              AND LEFT(g1.date,10) >= ? AND LEFT(g1.date,10) <= ?)
+               ${p.firstYear ? FIRST_GIFT_IN("?", "?") : ""}
              GROUP BY d.id, d.name`,
-      args: [orgId, p.from0, p.to0, p.from1, p.to1],
+      args: [orgId, p.from0, p.to0, p.from1, p.to1, ...(p.firstYear ? [p.from1, p.to1] : [])],
       order: "amount DESC, id",
     }),
   },
@@ -1984,6 +2155,30 @@ const SOURCES = {
       { role: "denominator", label: "Gave in the earlier window", key: "retention-window-prior", params: { from1: p.from1, to1: p.to1 } },
     ],
   },
+  // REPORTS-4 · dollar retention: what last year's givers gave again this
+  // year, against what they gave last year.
+  "retention-dollars": {
+    label: "Dollars retained",
+    ratio: "share",
+    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required" },
+    sentence: (p, dd) => `What the people who gave ${dd(p.from1)} to ${dd(p.to1)} gave again ${dd(p.from0)} to ${dd(p.to0)}, as a share of what they gave the first time.`,
+    parts: p => [
+      { role: "numerator", label: "Given again", key: "retention-window-kept", params: { ...p, measure: "sum" } },
+      { role: "denominator", label: "Given in the earlier window", key: "retention-window-prior", params: { from1: p.from1, to1: p.to1, measure: "sum" } },
+    ],
+  },
+  // REPORTS-4 · first-year retention: of the people whose first gift ever was
+  // in the earlier window, the share who gave again.
+  "retention-first": {
+    label: "First-year retention",
+    ratio: "share",
+    params: { from1: "date:required", to1: "date:required", from0: "date:required", to0: "date:required" },
+    sentence: (p, dd) => `Of the people whose first gift ever was dated ${dd(p.from1)} to ${dd(p.to1)}, the share who gave again ${dd(p.from0)} to ${dd(p.to0)}.`,
+    parts: p => [
+      { role: "numerator", label: "Came back", key: "retention-window-kept", params: { ...p, firstYear: true } },
+      { role: "denominator", label: "Gave for the first time", key: "retention-window-prior", params: { from1: p.from1, to1: p.to1, firstYear: true } },
+    ],
+  },
   "concentration-share": {
     label: "Share of givers who carry ninety per cent",
     ratio: "share",
@@ -2074,6 +2269,12 @@ function valueOf(measure, agg) {
     const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
     return { value: money.toDollars(m), cents: m };
   }
+  // REPORTS-4: the middle gift: half the rows are at or below it, half at or
+  // above. It does not add up; it is checked against the sorted rows instead.
+  if (measure === "median") {
+    const c = money.toCents(String(agg.m ?? "0")) ?? 0;
+    return { value: agg.n > 0 ? money.toDollars(c) : 0, cents: agg.n > 0 ? c : 0 };
+  }
   return { value: Number(agg.n) || 0, cents: null };
 }
 function orderClause(o) { return o || "date DESC NULLS LAST, id DESC"; }
@@ -2087,14 +2288,14 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     const all = await def.js(orgId, p, deps);
     const sum = all.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
     const avg = all.length ? all.reduce((s, r) => s + (Number(r.amount) || 0), 0) / all.length : 0;
-    agg = { n: all.length, s: String(money.toDollars(sum)), a: avg };
+    agg = { n: all.length, s: String(money.toDollars(sum)), a: avg, m: String(medianOf(all.map(r => Number(r.amount) || 0))) };
     pageRows = wantRows ? all.slice((page - 1) * pageSize, page * pageSize) : [];
   } else {
     // `sql` may be an async builder: a source whose SQL needs something only
     // an ESM module knows (the open proposal stages) awaits it here. Awaiting
     // a plain object is a no-op, so every existing source is untouched.
     const { sql, args, order } = await def.sql(orgId, p);
-    const [a] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a FROM (${sql}) x`, args);
+    const [a] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args);
     agg = a;
     pageRows = wantRows
       ? await query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
@@ -2106,6 +2307,59 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
   };
+}
+
+function medianOf(xs) {
+  const v = xs.slice().sort((a, b) => a - b);
+  if (!v.length) return 0;
+  const mid = Math.floor(v.length / 2);
+  return Math.round((v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2) * 100) / 100;
+}
+
+// ── REPORTS-4 · EVERY ROW, AND THE ONE FOOTING RULE ────────────────────────
+// allRows: every row behind a source, page by page through the same figure()
+// the panel reads, so an export, a "save as a group" and the footing check all
+// see exactly the rows the drawer shows. A ratio's rows are its numerator's
+// (the people it counts); a difference's are its first part's.
+async function allRows(orgId, source, deps = {}) {
+  const out = [];
+  for (let page = 1; page <= 500; page++) {
+    const f = await figure(orgId, source, deps, { page, pageSize: PAGE_MAX });
+    if (!f) return null;
+    if (f.parts) return allRows(orgId, f.parts[0].source, deps);
+    out.push(...f.rows);
+    if (out.length >= f.totalRows || !f.rows.length) break;
+  }
+  return out;
+}
+
+// footCheck: THE footing rule, one function for every figure. A sum foots to
+// the cent, a count to the row, a mean to the rows' total over their count,
+// a median to the middle of the sorted rows, and a percentage to its two
+// halves, each footed the same way. `foots` is true only when every part does.
+async function footCheck(orgId, source, deps = {}) {
+  const f = await figure(orgId, source, deps, { page: 1, pageSize: 1 });
+  if (!f) return null;
+  if (f.parts) {
+    const parts = [];
+    for (const pt of f.parts) parts.push(await footCheck(orgId, pt.source, deps));
+    const [a, b] = [f.parts[0].value, f.parts[1] ? f.parts[1].value : null];
+    let expect = null;
+    if (f.measure === "difference") expect = money.toDollars((f.parts[0].cents || 0) - (f.parts[1].cents || 0));
+    else if (b > 0) expect = Math.round(f.formula === "change" ? ((a - b) / b) * 100 : (a / b) * 100);
+    return { key: f.key, measure: f.measure, value: f.value, rowsCount: null, rowsFoot: expect, parts,
+      foots: parts.every(x => x.foots) && (f.value === null || f.value === expect) };
+  }
+  const rows = await allRows(orgId, source, deps);
+  const cents = rows.map(r => money.toCents(String(r.amount ?? "0")) ?? 0);
+  const sum = cents.reduce((x, y) => x + y, 0);
+  let rowsFoot, foots;
+  if (f.measure === "sum") { rowsFoot = money.toDollars(sum); foots = sum === f.cents; }
+  else if (f.measure === "mean") { const m = rows.length ? Math.round(sum / rows.length) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
+  else if (f.measure === "median") { rowsFoot = medianOf(rows.map(r => Number(r.amount) || 0)); foots = Math.round(rowsFoot * 100) === f.cents; }
+  else if (f.measure === "avg") { rowsFoot = rows.length ? Math.round(rows.reduce((x, r) => x + (Number(r.amount) || 0), 0) / rows.length) : 0; foots = rowsFoot === f.value; }
+  else { rowsFoot = rows.length; foots = rows.length === f.value; }
+  return { key: f.key, measure: f.measure, value: f.value, rowsCount: rows.length, rowsFoot, foots };
 }
 
 async function figure(orgId, source, deps = {}, opts = {}) {
@@ -2229,4 +2483,4 @@ async function figureSentence(source) {
   return def.sentence(readParams(def, source.params || {}), d => DD.displayDate(d));
 }
 
-module.exports = { SOURCES, figure, figureValue, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
+module.exports = { SOURCES, figure, figureValue, allRows, footCheck, LAPSED_MEMBER_SQL, BOOKKEEPER_EXCLUDED_TYPES, groupFigureValues, figureSentence, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES, giftStartOpenSql, giftStartFinishedSql };
