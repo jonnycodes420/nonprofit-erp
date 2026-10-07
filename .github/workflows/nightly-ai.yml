@@ -1,0 +1,141 @@
+# HARDEN-1 item 4 · THE NIGHTLY REAL-AI RUN.
+#
+# Once a night (and on demand) this boots a throwaway Postgres and the server
+# the way ci.yml's battery does, seeds the Harborlight demo story into that
+# throwaway database (never prod data), and asks 20 fixed questions, half Agent
+# instructions and half Ask questions, against the REAL model. The server holds
+# only a dummy key: its ANTHROPIC_BASE_URL points at scripts/nightly-ai/proxy.js,
+# which alone holds the real key, counts the spend at claude-opus-5 rates and
+# refuses every call past a $2 cap. One run measured $1.32 locally (2026-10-06).
+#
+# A failing question, or the cap reached, opens ONE GitHub issue listing the
+# failing questions and the spend, and the JSON summary is kept as an artifact.
+# With no ANTHROPIC_EVAL_KEY secret the job FAILS in its first step with one
+# sentence and opens no issue: a nightly check that cannot run is never green.
+name: Nightly AI
+
+on:
+  schedule:
+    - cron: "17 7 * * *"   # 07:17 UTC, about 3am in Boston
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-ai
+  cancel-in-progress: false
+
+jobs:
+  nightly-ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: steward
+          POSTGRES_PASSWORD: steward
+          POSTGRES_DB: steward_nightly_ai
+        ports:
+          - 5544:5432
+        options: >-
+          --health-cmd "pg_isready -U steward"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The server's env, as ci.yml's battery boots it, plus the two AI lines:
+      # a DUMMY key and the counting proxy as the API's address.
+      DATABASE_URL: postgresql://steward:steward@localhost:5544/steward_nightly_ai
+      DB_SSL: disable
+      JWT_SECRET: nightly-ai-throwaway-secret
+      PORT: "5601"
+      TEST_MODE: "1"
+      SESSION_CACHE_TTL_MS: "0"
+      RESEND_API_KEY: re_dummy_local
+      RESEND_BASE_URL: http://localhost:5602   # nothing listens: no mail can leave
+      DEMO_SMTP_FROM: noreply@stewardapp.dev
+      STRIPE_SECRET_KEY: sk_test_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_localtest
+      STRIPE_API_BASE: http://localhost:5603
+      STEWARD_CREDENTIAL_KEY: ci-only-throwaway-credential-key-0123456789
+      STRIPE_BILLING_SECRET_KEY: sk_test_dummy
+      STRIPE_BILLING_API_BASE: http://localhost:5604
+      STRIPE_PRICE_FOUNDING: price_test_founding
+      STRIPE_PRICE_CORE: price_test_core
+      STRIPE_PRICE_TEAM: price_test_team
+      FOUNDER_EMAIL: jonathan@stewardapp.dev
+      DISABLE_BACKGROUND_TICKS: "1"
+      ANTHROPIC_API_KEY: sk-ant-dummy
+      ANTHROPIC_BASE_URL: http://localhost:6524
+      BASE: http://localhost:5601
+      PROXY: http://localhost:6524
+      OUT: nightly-ai/nightly-ai-summary.json
+
+    steps:
+      - name: The eval key is set
+        id: key
+        env:
+          ANTHROPIC_EVAL_KEY: ${{ secrets.ANTHROPIC_EVAL_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_EVAL_KEY" ]; then
+            echo "::error::The nightly AI run cannot start because the ANTHROPIC_EVAL_KEY repository secret is not set (Settings, Secrets and variables, Actions)."
+            exit 1
+          fi
+          echo "The eval key is present."
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install server deps (locked)
+        run: npm ci
+
+      - name: Start the counting proxy (the only holder of the real key)
+        env:
+          ANTHROPIC_EVAL_KEY: ${{ secrets.ANTHROPIC_EVAL_KEY }}
+          CAP_USD: "2"
+          PROXY_PORT: "6524"
+          SPEND_FILE: nightly-ai/spend.json
+        run: |
+          mkdir -p nightly-ai
+          nohup node scripts/nightly-ai/proxy.js > nightly-ai/proxy.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:6524/__spend >/dev/null && exit 0; sleep 1; done
+          echo "The counting proxy did not start."; cat nightly-ai/proxy.log; exit 1
+
+      - name: Boot the server and wait for /health
+        run: |
+          nohup node server.js > nightly-ai/server.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:5601/health | grep -q '"status":"ok"' && { echo "server up"; exit 0; }
+            sleep 2
+          done
+          echo "The server never became healthy."; tail -80 nightly-ai/server.log; exit 1
+
+      - name: Seed the demo story into the throwaway database
+        run: node scripts/seed-demo.js
+
+      - name: Ask the twenty questions
+        run: node scripts/nightly-ai/run.js
+
+      - name: Open an issue for the failures
+        if: failure() && steps.key.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/nightly-ai/issue.js nightly-ai/nightly-ai-summary.json
+
+      - name: Keep the summary and the logs
+        if: always() && steps.key.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-ai-summary
+          path: nightly-ai/
+          if-no-files-found: ignore
