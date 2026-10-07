@@ -75,7 +75,7 @@ export function Board({data, setData, isReadOnly}) {
   const draftEmail=async()=>{
     setEmailLoading(true); setBoardEmail("");
     await askClaude(`You are an executive director. Professional, warm, brief. Max 200 words.`,
-      `Draft a board member engagement email asking for introductions to potential donors.\nOrg: ${data.org.name} Not set ${data.org.mission}\nBoard giving: ${fmtFull(totalGiving)} total\n\nAsk board members to make 2-3 introductions to people in their network who care about arts education and youth development in NYC. Include a specific example of program impact.`,
+      `Draft a board member engagement email asking for introductions to potential donors.\nOrg: ${data.org.name}, ${data.org.mission}\nBoard giving: ${fmtFull(totalGiving)} total\n\nAsk board members to make 2-3 introductions to people in their network who care about arts education and youth development in NYC. Include a specific example of program impact.`,
       chunk=>setBoardEmail(chunk));
     setEmailLoading(false);
   };

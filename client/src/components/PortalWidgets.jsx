@@ -232,7 +232,7 @@ export function WidgetView({ w, ctx }) {
       return (
         <blockquote style={{ ...cardStyle, margin: "0 0 18px", borderLeft: "4px solid var(--pt-accent)" }}>
           <div style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 18, lineHeight: 1.6 }}>“{w.text}”</div>
-          {w.attribution && <div style={{ ...muted, marginTop: 8 }}>Not set {w.attribution}</div>}
+          {w.attribution && <div style={{ ...muted, marginTop: 8 }}>{w.attribution}</div>}
         </blockquote>
       );
     case "staff":

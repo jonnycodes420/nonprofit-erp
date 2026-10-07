@@ -401,7 +401,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {legend.length > 0 && (
           <div style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.gold600, marginBottom: 4 }}>The file's own legend</div>
-            {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>Not set {l.sheet}</span></div>)}
+            {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>from {l.sheet}</span></div>)}
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -504,7 +504,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             : null;
           return (
             <div key={ms.name} style={{ marginBottom: 10 }}>
-              <SectionHead>{ms.name} Not set {ms.entity === "donor" ? "one row per person" : "one row per gift"}</SectionHead>
+              <SectionHead>{ms.name}: {ms.entity === "donor" ? "one row per person" : "one row per gift"}</SectionHead>
               {conv && (
                 <div style={{ fontSize: 12, color: T.ink, background: T.bg, borderRadius: 8, padding: "7px 12px", marginBottom: 8 }}>{conv}</div>
               )}
@@ -638,7 +638,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>These rows LANDED. They're listed because the cell said something worth a second look.</div>
             {Object.entries(flagGroups).sort((a, b) => b[1].length - a[1].length).map(([kind, rows]) => (
               <div key={kind} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-                <span>{FLAG_LABEL[kind] || kind} Not set <strong>{fmtN(rows.length)}</strong> <span style={{ color: T.ink3 }}>e.g. “{String(rows[0].text).slice(0, 70)}”</span></span>
+                <span>{FLAG_LABEL[kind] || kind}: <strong>{fmtN(rows.length)}</strong> <span style={{ color: T.ink3 }}>e.g. “{String(rows[0].text).slice(0, 70)}”</span></span>
                 <button onClick={() => downloadCsv(`flagged-${kind}.csv`, rows, ["sheet", "line", "kind", "text", "dollars"])}
                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
               </div>
@@ -650,7 +650,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
           {Object.entries(reasonRows).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
             <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-              <span>{REASON_LABEL[reason] || reason} Not set <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
+              <span>{REASON_LABEL[reason] || reason}: <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
               <button onClick={() => downloadCsv(`refused-${reason}.csv`, rows, ["sheet", "line", "id", "reason", "detail", "dollars", "formula"])}
                 style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
             </div>
@@ -703,7 +703,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, maxHeight: 140, overflowY: "auto" }}>
             {s.merges.slice(0, 300).flatMap((m, i) => (m.folded || []).map((f, j) => (
               <div key={`${i}-${j}`} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}>
-                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> Not set {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
+                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong>, {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
               </div>
             )))}
           </div>
@@ -826,7 +826,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 6 }}>Set aside, by reason, every row has its sheet, row number and reason</div>
             {Object.entries(refusalsByReason).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
               <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-                <span>{REASON_LABEL_RESULT[reason] || reason} Not set <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
+                <span>{REASON_LABEL_RESULT[reason] || reason}: <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
                 <button onClick={() => downloadCsv(`refused-${reason}.csv`, rows, ["sheet", "line", "id", "reason", "detail", "dollars", "formula"])}
                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
               </div>

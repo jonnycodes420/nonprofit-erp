@@ -50,7 +50,7 @@ function MoveModal({ card, onClose, onMoved }) {
         <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>Move to stage</label>
         <select value={toStage} onChange={e => setToStage(e.target.value)} style={{ ...inp, marginTop: 6, marginBottom: 14 }}>
           <option value="">Choose a stage…</option>
-          {STAGE_META.filter(s => s.id !== card.stage).map(s => <option key={s.id} value={s.id}>{s.label} Not set {s.hint}</option>)}
+          {STAGE_META.filter(s => s.id !== card.stage).map(s => <option key={s.id} value={s.id}>{s.label}: {s.hint}</option>)}
         </select>
         <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>What happened <span style={{ color: T.terracotta }}>*</span></label>
         <textarea value={desc} onChange={e => setDesc(e.target.value)} rows={3} placeholder="e.g. Coffee with the board chair, ready to talk about a leadership gift." style={{ ...inp, marginTop: 6, resize: "vertical" }} />

@@ -1142,7 +1142,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     : driftData&&driftData.counts.driftingHigh>0
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
-      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?` Not set ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?`. ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
       // FIX-10 Part A — a medium flag still means someone is drifting. This
       // chip said "No donors drifting" on a file where five donors were
       // drifting at medium confidence, which is the one sentence a customer

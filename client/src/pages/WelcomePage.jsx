@@ -433,7 +433,7 @@ export default function WelcomePage() {
         {stepKey !== "start" && !(stepKey === "launch" && phase === "ready") && (
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Step {stepIdx + 1} of {flow.length} Not set {STEP_META[stepKey].label}
+              Step {stepIdx + 1} of {flow.length} · {STEP_META[stepKey].label}
               <span style={{ color: T.gold600, marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_META[stepKey].time}</span>
             </div>
             <div style={{ maxWidth: 220, margin: "0 auto", background: T.bg2, borderRadius: 99, height: 5, overflow: "hidden" }}>

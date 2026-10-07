@@ -884,7 +884,7 @@ function AppShell() {
           because for it choosing a plan really is the next thing. */}
       {billing.firstChargeAt
         ? <>
-            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""} Not set</span>
+            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""}.</span>
             <button onClick={()=>navigateTo("settings",{section:"account"})} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>See billing →</button>
           </>
         : <>
