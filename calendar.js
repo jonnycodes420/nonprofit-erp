@@ -17,12 +17,13 @@
 // FIX-28: THE ONE RULE. Every dated thing in Steward is on this calendar:
 // meetings, next steps and tasks, grant deadlines, shifts, events, journey
 // steps, campaign sends and pledge instalments, memberships ending, auctions
-// closing, campaigns and giving pages ending (WIRE-1) (birthdays when asked). A new
+// closing, campaigns and giving pages ending (WIRE-1), monthly gifts expected
+// (THREAD-3) (birthdays when asked). A new
 // kind of dated row joins TYPES here, or it is not on the calendar.
 const { query } = require("./db");
 
-const TYPES = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "birthday"];
-const DEFAULT_ON = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign"];   // birthdays off by default
+const TYPES = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "recurring", "birthday"];
+const DEFAULT_ON = ["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge", "membership", "auction", "campaign", "recurring"];   // birthdays off by default
 
 const pad = n => String(n).padStart(2, "0");
 // The labels shared/grantMilestones.js gives each kind (an ES module, so the
@@ -251,6 +252,63 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
           detail: r.p2p_enabled ? "A peer-to-peer page" : "A giving page", editable: { move: false, resize: false }, ref: { givingPageId: r.id } });
       })));
   }
+  // THREAD-3 · MONTHLY GIFTS. Not one entry per plan: seventy plans would bury
+  // the month. ONE line a day, "12 monthly gifts expected, $640", that opens
+  // its rows. The dates are Stripe's own next charge (current_period_end) and
+  // the same day each interval after it, from today forward; a plan with no
+  // date from Stripe is left off rather than guessed. What needs a person
+  // shows on its own: a charge that failed (on the day it failed) and a card
+  // that expires this month (on the month's last day).
+  if (want.has("recurring")) {
+    const ownerOk = "(?::text IS NULL OR d.assigned_to = ?)";
+    jobs.push(Promise.all([
+      query(`SELECT to_char((now() AT TIME ZONE ?)::date, 'YYYY-MM-DD') AS today`, [tz]),
+      query(
+        `SELECT rs.id, rs.amount, rs.interval, to_char(rs.current_period_end AT TIME ZONE ?, 'YYYY-MM-DD') AS next, d.id AS donor_id, d.name AS donor_name
+           FROM recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+          WHERE rs.org_id = ? AND rs.status IN ('active','recovering','recovered') AND rs.current_period_end IS NOT NULL
+            AND (rs.current_period_end AT TIME ZONE ?)::date <= ?::date AND ${ownerOk}`,
+        [tz, orgId, tz, to, owner, owner]),
+      query(
+        `SELECT rs.id, rs.amount, rs.interval, to_char(COALESCE(rs.last_failed_at, rs.first_failed_at) AT TIME ZONE ?, 'YYYY-MM-DD') AS day, d.id AS donor_id, d.name AS donor_name
+           FROM recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+          WHERE rs.org_id = ? AND rs.status = 'past_due' AND COALESCE(rs.last_failed_at, rs.first_failed_at) IS NOT NULL
+            AND (COALESCE(rs.last_failed_at, rs.first_failed_at) AT TIME ZONE ?)::date BETWEEN ?::date AND ?::date AND ${ownerOk}`,
+        [tz, orgId, tz, from, to, owner, owner]),
+      query(
+        `SELECT rs.id, rs.amount, rs.card_brand, rs.card_last4, rs.card_exp_month, rs.card_exp_year, d.id AS donor_id, d.name AS donor_name
+           FROM recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
+          WHERE rs.org_id = ? AND rs.status IN ('active','recovering','recovered','past_due') AND rs.card_exp_month IS NOT NULL AND rs.card_exp_year IS NOT NULL
+            AND make_date(rs.card_exp_year, rs.card_exp_month, 1) + INTERVAL '1 month' - INTERVAL '1 day' BETWEEN ?::date AND ?::date AND ${ownerOk}`,
+        [orgId, from, to, owner, owner]),
+    ]).then(([[t], plans, failed, cards]) => {
+      const today = t.today;
+      const usd = v => "$" + Number(v || 0).toLocaleString("en-US", { minimumFractionDigits: Number(v) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+      const byDay = new Map();
+      for (const p of plans) for (const day of chargeDays(p.next, p.interval, today, from, to)) {
+        if (!byDay.has(day)) byDay.set(day, []);
+        byDay.get(day).push({ planId: p.id, donorId: p.donor_id, donorName: p.donor_name, amount: Number(p.amount) || 0 });
+      }
+      for (const [day, rows] of byDay) {
+        rows.sort((a, b) => b.amount - a.amount || String(a.donorName).localeCompare(String(b.donorName)));
+        const total = Math.round(rows.reduce((t2, r) => t2 + r.amount, 0) * 100) / 100;
+        out.push({ id: `recurring:${day}`, type: "recurring", title: `${rows.length} monthly ${rows.length === 1 ? "gift" : "gifts"} expected, ${usd(total)}`,
+          start: day, end: day, allDay: true, amount: total, rows,
+          detail: "The next charge Stripe has for each plan. A charge is a gift only once it arrives.",
+          editable: { move: false, resize: false }, ref: { day } });
+      }
+      for (const f of failed) out.push({ id: `recurring-failed:${f.id}`, type: "recurring", title: `Card failed: ${f.donor_name}, ${usd(f.amount)}`,
+        start: f.day, end: f.day, allDay: true, donorId: f.donor_id, donorName: f.donor_name, amount: Number(f.amount) || 0, needsPerson: true,
+        detail: "Their last monthly charge did not go through.", editable: { move: false, resize: false }, ref: { planId: f.id } });
+      for (const c of cards) {
+        const last = new Date(Date.UTC(c.card_exp_year, c.card_exp_month, 0)).toISOString().slice(0, 10);
+        out.push({ id: `recurring-card:${c.id}`, type: "recurring", title: `Card expires: ${c.donor_name}`,
+          start: last, end: last, allDay: true, donorId: c.donor_id, donorName: c.donor_name, amount: Number(c.amount) || 0, needsPerson: true,
+          detail: `${c.card_brand ? c.card_brand.charAt(0).toUpperCase() + c.card_brand.slice(1) + " " : ""}card ending ${c.card_last4 || "?"} expires at the end of this month, under a ${usd(c.amount)} plan.`,
+          editable: { move: false, resize: false }, ref: { planId: c.id } });
+      }
+    }));
+  }
   if (want.has("birthday")) {
     jobs.push(query(
       `SELECT id, name, birth_month, birth_day FROM donors WHERE org_id = ? AND deleted_at IS NULL AND deceased IS NOT TRUE
@@ -268,6 +326,24 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   markConflicts(items);
   items.sort((a, b) => String(a.start).localeCompare(String(b.start)) || a.type.localeCompare(b.type));
   return items;
+}
+
+// THREAD-3: the days a plan charges inside [from, to], counted from Stripe's
+// next charge date and never before today (a past charge is a gift already).
+function chargeDays(next, interval, today, from, to) {
+  const out = [];
+  if (!next) return out;
+  let y = +next.slice(0, 4), m = +next.slice(5, 7);
+  const dom = +next.slice(8, 10);
+  const at = () => { const last = new Date(Date.UTC(y, m, 0)).getUTCDate(); return `${y}-${pad(m)}-${pad(Math.min(dom, last))}`; };
+  let day = next;
+  for (let n = 0; n < 400 && day <= to; n++) {
+    if (day >= from && day >= today) out.push(day);
+    if (interval === "week") { const d = new Date(day + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 7); day = d.toISOString().slice(0, 10); continue; }
+    if (interval === "year") y += 1; else { m += 1; if (m > 12) { m = 1; y += 1; } }
+    day = at();
+  }
+  return out;
 }
 
 // WIRE-1: ONE THING, ONCE. A journey step or a grant deadline that opened a
@@ -305,4 +381,4 @@ function markConflicts(items) {
   }
 }
 
-module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts };
+module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays };

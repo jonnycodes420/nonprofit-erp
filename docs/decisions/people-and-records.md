@@ -360,3 +360,12 @@ Backend, Whisper transcription, and extraction logic are fully built and functio
   exactly) and entity pointers (`agent_writes`, `custom_field_events` when the entity is a donor). Purge
   walks the same list: the person's own rows go, money, ledger and history rows keep the row and lose the
   pointer. A new person pointer joins MERGE_REFS or `tests/clean1-merge.test.js` fails. (WIRE-1)
+
+## THREAD-3 · deleting a person with a live plan; archive (2026-10-07)
+
+- **Delete is refused while a recurring plan is live** (active, past_due, recovering, recovered or paused), alone or in a
+  batch: "[Name] has a $X monthly plan. Cancel it first, or archive them instead." Steward never cancels a Stripe plan as
+  a side effect of delete, merge or archive. Jonathan to confirm this default.
+- **Archive** (`donors.archived_at`, `POST /donors/:id/archive` and `/unarchive`) takes a person off the Donors list and
+  every Group and changes nothing else: the plan keeps charging, gifts keep counting in every figure, search and links
+  still open the record. `/donors?archived=1` lists only archived people. Unarchive is the Undo.

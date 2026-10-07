@@ -72,7 +72,7 @@ function mount(ctx) {
 const {
   actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
   portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
-  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap, processAuctionUnpaid, requireAdmin,
+  run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap, processAuctionUnpaid, requireAdmin, processUnansweredMail,
 } = ctx;
 const app = routers.r0;
 
@@ -80,6 +80,12 @@ const app = routers.r0;
 // /memberships/run-sweep shape). The hourly tick runs it for every org.
 app.post("/auctions/run-unpaid-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
   res.json(await processAuctionUnpaid(req.user.orgId));
+}));
+
+// THREAD-3: the ops/test door onto the needs-a-reply sweep, this org only.
+// The hourly tick and every mailbox sync run it too.
+app.post("/mailbox/run-replies", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await processUnansweredMail(req.user.orgId));
 }));
 
 let PP = null;

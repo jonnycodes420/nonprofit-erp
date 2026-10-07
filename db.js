@@ -6915,6 +6915,27 @@ async function runSchemaInit(pool) {
   // WIRE-1: the Thread step a won-but-unpaid item opened, so the sweep opens
   // one per item and never a second.
   await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS unpaid_thread_id TEXT`);
+  // THREAD-3 · NOTHING THAT NEEDS A HUMAN SLIPS.
+  // (1) A donor's email nobody answered opens one step; this row says which
+  // logged email it was for, so the sweep never opens a second for it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mail_reply_steps (
+      org_id TEXT NOT NULL,
+      interaction_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      thread_id TEXT,
+      task_id TEXT,
+      created_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, interaction_id)
+    )`);
+  // (2) The one "Missed you at" task an event's no-shows open.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_event_noshow ON tasks (org_id, event_id) WHERE event_id IS NOT NULL AND type = 'event_no_show'`);
+  // (3) Archive: the person leaves the lists and their monthly plan keeps
+  // running. Delete is refused while a plan is active (routes/crm.js).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS archived_by TEXT`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auction_refund_flags (
       id TEXT PRIMARY KEY,

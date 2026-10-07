@@ -78,6 +78,8 @@ export const NEXT_STEP_TYPES = [
   // BUILD-101 Part 2 — a membership inside its renewal window. The thread's
   // own label names the person, the level and the date.
   { type: "membership_renewal", label: "Renew membership" },
+  // THREAD-3: a donor's email that has waited a business day for an answer.
+  { type: "reply",              label: "Reply" },
 ];
 
 // Pure civil-date addition (YYYY-MM-DD + n days), no Date-object timezone

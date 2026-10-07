@@ -8978,7 +8978,9 @@ async function syncMailbox(userId, orgId, providerKey) {
   await run(
     `UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=?,
             last_error=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=?`, [logged, conn.id]);
-  return { logged, dropped };
+  // THREAD-3: an email from a donor nobody has answered becomes a step.
+  const replies = await processUnansweredMail(orgId).catch(e => { console.error("[mailbox] needs reply:", e.message); return null; });
+  return { logged, dropped, replySteps: replies ? replies.opened + replies.tasks : 0 };
 }
 
 // ── INT-BUILD-1 Part 1 · THE CALENDAR, ON THE SAME CONNECTION ──────────────
@@ -9855,6 +9857,74 @@ async function processAuctionUnpaid(onlyOrgId = null) {
       out.opened++;
       if (!out.orgs.includes(a.org_id)) out.orgs.push(a.org_id);
     }
+  }
+  return out;
+}
+
+// THREAD-3 · A DONOR'S EMAIL THAT NEEDS A REPLY BECOMES A STEP.
+// An email logged from a connected mailbox, from a person on file, of kind
+// "personal" (shared/mailboxLog.js mailKind: never a newsletter, a receipt or
+// an automatic reply), from the last fortnight, with no reply after one
+// business day. A reply is an email she wrote to that person afterwards, or a
+// call, meeting or email a person here logged by hand, dated on or after it. One step per person,
+// naming the latest subject; when the person already has an open step, a task
+// for their owner (or the mailbox's owner) instead, so it does not wait
+// behind something else. Each email is claimed once in mail_reply_steps.
+// Writes a thread or a task and nothing else: nothing is drafted or sent.
+async function processUnansweredMail(onlyOrgId = null, { now = new Date() } = {}) {
+  const ML = await import("./shared/mailboxLog.js");
+  const out = { emails: 0, opened: 0, tasks: 0, orgs: [] };
+  const rows = await query(
+    `SELECT i.id, i.org_id, i.donor_id, i.created_at, i.metadata->>'subject' AS subject, i.metadata->>'logged_by' AS mailbox_user,
+            d.name, d.assigned_to, d.assigned_to_name
+       FROM interactions i
+       JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE (?::text IS NULL OR i.org_id = ?)
+        AND i.type = 'email' AND i.metadata->>'direction' = 'inbound' AND i.metadata->>'mail_kind' = 'personal'
+        AND i.created_at > ?::timestamptz - (? || ' days')::interval
+        AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE AND d.deceased IS NOT TRUE
+        AND NOT EXISTS (SELECT 1 FROM mail_reply_steps r WHERE r.org_id = i.org_id AND r.interaction_id = i.id)
+        AND NOT EXISTS (SELECT 1 FROM interactions o WHERE o.org_id = i.org_id AND o.donor_id = i.donor_id AND o.created_at > i.created_at
+              -- written after the email AND dated on or after its day: history an
+              -- import or a seed wrote today about last year is not a reply.
+              AND LEFT(o.date::text, 10) >= LEFT(i.date::text, 10)
+              AND (o.metadata->>'direction' = 'outbound'
+                   OR (o.type IN ('email','call','meeting') AND COALESCE(o.metadata->>'direction','') <> 'inbound'
+                       AND COALESCE(o.created_by,'') NOT LIKE 'system:%')))
+      ORDER BY i.created_at DESC`,
+    [onlyOrgId, onlyOrgId, now.toISOString(), String(ML.REPLY_LOOKBACK_DAYS)]);
+  const tzs = new Map();
+  const byPerson = new Map();
+  for (const r of rows) {
+    if (!tzs.has(r.org_id)) tzs.set(r.org_id, await orgTz(r.org_id));
+    const tz = tzs.get(r.org_id);
+    // The weekday in the org's own zone, so Friday evening in New York is Friday.
+    const dow = iso => { const d = orgToday(tz, new Date(iso)); return new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10))).getUTCDay(); };   // ORG_TZ_SEAM_OK
+    const due = ML.replyDueAt(new Date(r.created_at).toISOString(), dow);
+    if (!due || Date.parse(due) > now.getTime()) continue;
+    const k = r.org_id + "|" + r.donor_id;
+    if (!byPerson.has(k)) byPerson.set(k, []);
+    byPerson.get(k).push(r);
+  }
+  const path = "mailbox/needs-reply";
+  for (const list of byPerson.values()) {
+    const top = list[0];
+    out.emails += list.length;
+    const label = ML.replyStepLabel(top.name, list.map(x => x.subject));
+    const th = await openCareThread(top.org_id, top.donor_id, { type: "reply", label, dueInDays: 0, path });
+    let taskId = null;
+    if (!th) {
+      const owner = top.assigned_to ? { id: top.assigned_to, name: top.assigned_to_name }
+        : top.mailbox_user ? (await query(`SELECT id, name, email FROM users WHERE id=? AND org_id=?`, [top.mailbox_user, top.org_id]))[0] : null;
+      taskId = await openAdminTask(top.org_id, { title: label, priority: "high", donorId: top.donor_id, assignee: owner || null,
+        actorId: `system:${path}`, actorName: SYS_AUTO.name });
+      if (!taskId) continue;   // nobody to give it to, or the same task is already open: try again next pass
+      out.tasks++;
+    } else out.opened++;
+    for (const x of list) await run(
+      `INSERT INTO mail_reply_steps (org_id, interaction_id, donor_id, thread_id, task_id, created_by) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+      [x.org_id, x.id, x.donor_id, th ? th.id : null, taskId, `system:${path}`]);
+    if (!out.orgs.includes(top.org_id)) out.orgs.push(top.org_id);
   }
   return out;
 }
@@ -11032,6 +11102,7 @@ async function storeAuctionPhoto(orgId, v) {
 }
 require("./routes/auctions").mount({
   processAuctionUnpaid, requireAdmin,   // WIRE-1: the won-but-unpaid sweep's ops door
+  processUnansweredMail,   // THREAD-3: the needs-a-reply sweep's ops door
   actor, brandEmailHeaderHtml, checkWriteAccess, donateLimiter, donorMailDecision, donorSendOpts, publicAppUrl,
   portalLinkEmailLimiter, portalLinkIpLimiter, query, queryTx, recordGift, requireAuth, resend, resolveOrgBrandTheme,
   run, runTx, storeAuctionPhoto, uuid, withTransaction, wrap,
@@ -11141,7 +11212,7 @@ require("./routes/jobs").mount({
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
-  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid,
+  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
   processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,

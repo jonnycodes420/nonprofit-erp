@@ -15,7 +15,7 @@ const {
   deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
-  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid,
+  processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
   processPledgeInstallmentReminders, processPledgeReminders, processSequences,
   processTrackedSequences, processTrialReminders, processWorkflowSweeps, query, rateLimitDisabled,
   reconcileStripeVsGifts, recordTick, refreshCardsOnFile, refreshReconcileDenominator,
@@ -270,6 +270,9 @@ if (!backgroundTicksDisabled()) {
 if (!backgroundTicksDisabled()) {
   setTimeout(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 100000);
   setInterval(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 60 * 60 * 1000);
+  // THREAD-3: an email that has waited a business day for a reply becomes a
+  // step even when no new mail arrives to trigger a sync.
+  setInterval(() => recordTick("processUnansweredMail", () => processUnansweredMail()).catch(console.error), 60 * 60 * 1000);
 }
 
 // BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is
