@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BrandKitManager } from "./BrandKit";
 import { useUrlWriter } from "./RecordLink";
-import { tabHref } from "../lib/appUrls";
+import { tabHref, urlParam } from "../lib/appUrls";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
@@ -1760,6 +1760,8 @@ function ImportsHistory(){
     try{ const r=await apiFetch("/imports/"+id); setOpen(r.import||null); }
     catch(e){ setOpen(null); setErr(errorMessage(e,"Could not open that import.")); }
   };
+  // SEARCH-2: ⌘K opens Settings on one import (?import=<id>).
+  useEffect(()=>{ const id=urlParam("settings","import"); if(id)openOne(id); },[]);  // eslint-disable-line react-hooks/exhaustive-deps
   const th={fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,textAlign:"left",padding:"0 12px 8px 0"};
   const td={fontSize:13,color:T.ink,padding:"10px 12px 10px 0",borderTop:"1px solid "+T.bg3,verticalAlign:"top"};
   return (
