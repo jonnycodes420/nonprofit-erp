@@ -65,7 +65,7 @@ function yearRange(y) { return [ymd(y, 1, 1), ymd(y, 12, 31)]; }
 const FILLER = new Set(("show me list find pull up give get all our the a an of who whom that which have has had " +
   "and but or with to at for in on from were was are is be been who've who'd they them their people donors donor " +
   "everyone everybody anyone givers giver supporters supporter members member someone ones any please also just " +
-  "did do does yet so far still which what my i we been steward hey").split(" "));
+  "did do does yet so far still which what my i we been steward hey every each").split(" "));
 // AI-FIX: "a while" is six months, and the words say the date it means.
 const SPAN_DAYS = { "a while": 180, "awhile": 180, "a long time": 365, "ages": 365, "a year": 365, "this year": null };
 const NUM_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
@@ -149,7 +149,11 @@ export function templateSpec(text, ctx = {}) {
   take(/\b(gave|given|give|donated)? ?(over|more than|above) \$?([\d,]+(?:\.\d{1,2})?)( dollars)?\b/g,
     (m, g, o, n) => { rules.gaveOver = String(Number(String(n).replace(/,/g, ""))); });
   // "gave more than $10,000 this year": the year the amount is counted in.
-  if (rules.gaveOver !== undefined) take(new RegExp(`^(.*?)\\b(in |during )?${YEAR}\\b`), (m, pre, i, y) => { const r = yearRange(yearOf(y)); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; s = pre; });
+  // HARDEN-1: the words BEFORE the year are kept. This used `take`, whose
+  // replace overwrote the `s = pre` inside it, so "every donor in Marblehead
+  // who gave more than $5,000 this year" lost "in Marblehead" without a word
+  // and the Agent planned for 76 people instead of 9.
+  if (rules.gaveOver !== undefined) s = s.replace(new RegExp(`^(.*?)\\b(in |during )?${YEAR}\\b`), (m, pre, i, y) => { const r = yearRange(yearOf(y)); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; return pre + " "; });
   take(/\b(?:who )?(?:came to|attended|were at|went to) (?:an|any) event\b/g, () => { rules.attendedEvent = "any"; });
   take(/\b(?:who )?(?:came to|attended|were at|went to) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
     const ev = matchEvent(name.trim(), ctx.events || []);

@@ -184,7 +184,7 @@ app.get("/donors/:id/journey-suggestion", requireAuth, wrap(async (req, res) => 
 // filter by that yet"); the list is buildDonorFilter's, so it is the same rows
 // the Donors list, its export and a Group saved from it show. Nothing is
 // written but the question log.
-async function showMe(req, res, typed) {
+async function showMe(req, res, typed, preset = null) {
   const SM = await showMod();
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));
@@ -193,8 +193,10 @@ async function showMe(req, res, typed) {
     query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
   ]);
   const ctx = { today, events, campaigns };
-  let spec = null, specSource = "template", aiOff = false;
-  const gate = await aiGate(orgId);
+  let spec = preset, specSource = "template", aiOff = false;
+  // HARDEN-1: a question the donor list's own filters read in full (preset)
+  // is answered from them exactly; the model is not asked.
+  const gate = preset ? { ok: false, reason: null } : await aiGate(orgId);
   if (gate.ok) {
     try {
       const out = await anthropicFor(orgId).messages.create({
@@ -814,6 +816,15 @@ async function askHandler(req, res) {
   // cannot express (retention, medians, pledges). Before this, "how many people
   // made their first gift in 2026" was answered as "which first-time donors
   // need a second ask", and "recurring AND volunteers" as monthly donors.
+  // HARDEN-1 · A "WHO" QUESTION IS ANSWERED WITH PEOPLE. "Who gave over $500
+  // but hasn't been thanked?" went to the query layer, whose model planned it
+  // over GIFTS ("26 gifts match", 23 people on file). When the donor list's
+  // own filters read every word of a who/which question, that filter is the
+  // exact answer and the list of people is what she asked for.
+  if (!raw && typed && /^\s*(who|which)\b/i.test(typed) && !Sx.matchQuestion(typed) && SM.isShowMe(typed)) {
+    const ts = SM.templateSpec(typed, { today: ctx.today, events: ctx.events, campaigns: ctx.campaigns });
+    if (Object.keys(ts.rules).length && !ts.unsupported) return showMe(req, res, typed, ts);
+  }
   const RECOMMEND = /^\s*why\b|\b(should|could|ought to|need to|needs?|about to|at risk|likely to|going to)\b|\bwho (do|can) i (call|ask|thank)\b/i;
   if (!raw && typed && !RECOMMEND.test(typed)) {
     const q = await tryQuery(req, typed, body.previousQuery);

@@ -620,8 +620,10 @@ const AGENT_EXECUTORS = {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
     const body = {};
+    // HARDEN-1: the postal state is `contactState` (agentShape.compilePlan);
+    // `step.state` is the step's run state and never an address.
     for (const f of ["email", "phone", "address", "city", "state", "zip"]) {
-      const v = String(step[f] || "").trim();
+      const v = String((f === "state" ? step.contactState : step[f]) || "").trim();
       if (v && !/^(none|n\/a|null|unknown|-)$/i.test(v)) body[f] = v;
     }
     if (!Object.keys(body).length) return { failed: "there was no new email, phone or address in it" };

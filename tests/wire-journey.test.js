@@ -171,7 +171,16 @@ async function agentDraftsLeg() {
         const ids = [...String(text).matchAll(/^\s{2}(d_wire1b_\d+) \| ([^|]+) \|/gm)].map(m => ({ id: m[1], name: m[2].trim() }));
         calls.draftPeople.push(ids.length);
         input = { drafts: ids.map(p => ({ donorId: p.id, subject: "Thank you", body: `Dear ${p.name}, thank you for your gift this month. With gratitude, Wire One B.` })) };
-      } else if (tool === "plan") { calls.plan++; input = { steps: [], sends: 0, headline: "", cannot: "" }; }
+      } else if (tool === "plan") {
+        calls.plan++;
+        // HARDEN-1: a contact change the plan tool returns in PLAN_SCHEMA's own
+        // shape, postal `state` included.
+        const id = (String(text).match(/^\s{2}(d_wire1b_\d+) \|/m) || [])[1];
+        input = /new phone/i.test(String(text)) && id
+          ? { steps: [{ tool: "update_contact", donorId: id, citesRows: [id], phone: "978-555-0100", address: "", city: "Nashua", state: "NH", zip: "",
+              email: "", subject: null, body: null, title: null, note: null }], sends: 0, headline: "", cannot: "" }
+          : { steps: [], sends: 0, headline: "", cannot: "" };
+      }
       else calls.other++;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ id: "msg_t", type: "message", role: "assistant", model: "x", stop_reason: "tool_use",
@@ -237,6 +246,16 @@ async function agentDraftsLeg() {
     ok("§10 the Agent preview builds the same plan (12 drafts)", pv.status === 200 && pv.body.preview === true && pv.body.tools && pv.body.tools.draft_note === 12, pv.body);
     ok("§10 the Ask preview answers", av.status === 200, av.status);
     ok("§10 …and neither saves anything", JSON.stringify(k0) === JSON.stringify(k1), { k0, k1 });
+
+    // HARDEN-1 · A CONTACT CHANGE KEEPS THE POSTAL STATE. compilePlan wrote the
+    // step's run state ("runs") over PLAN_SCHEMA's postal `state`, so every
+    // Agent contact update set the person's state to "runs".
+    await q(`UPDATE donors SET state='MA', city='Salem' WHERE id=$1`, [P[5]]);
+    const cp = await call("POST", "/agent/instructions", { text: "Draftee F Wirefield moved to Nashua and has a new phone number, 978-555-0100" });
+    const cr = cp.status === 201 ? await call("POST", `/agent/instructions/${cp.body.id}/confirm`, {}) : cp;
+    const [cf] = await q(`SELECT phone, city, state FROM donors WHERE id=$1`, [P[5]]);
+    ok("§10 an Agent contact change writes the new phone and the postal state it was given, never \"runs\"",
+      cr.status === 200 && cf.phone && cf.phone.replace(/\D/g, "").endsWith("9785550100") && cf.city === "Nashua" && cf.state === "NH", { cf, plan: cp.body && cp.body.plan && cp.body.plan.steps, run: cr.body && cr.body.steps });
 
     const draft = mine.find(i => i.donorId === g);
     const ap = await call("POST", `/agent/waiting/agent_draft/${draft.id}/approve`, {});

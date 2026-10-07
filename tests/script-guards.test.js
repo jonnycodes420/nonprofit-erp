@@ -525,6 +525,19 @@ ok(nulFiles.length === 0,
        "a planted table that points at orgs without an org_id is caught (proven able to fail)");
   } finally { await client.end(); }
 
+  // HARDEN-1 · A BACKGROUND JOB WAITS FOR THE SCHEMA. On 7 Oct the scores
+  // job ran in a new container before its migration added donor_scores.pattern
+  // and failed for every org. recordTick (every job's seam) and the scores
+  // recompute must await the readiness promise before touching a table.
+  // Fails on the code before HARDEN-1, where neither waited.
+  {
+    const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
+    const bodyOf = name => { const i = srv.indexOf(`async function ${name}(`); return i < 0 ? "" : srv.slice(i, i + 400); };
+    ok(/markDbReady\(\)/.test(srv) && /const DB_READY = new Promise/.test(srv), "server.js resolves DB_READY when the schema is ready");
+    ok(/if \(!dbReady\) await DB_READY/.test(bodyOf("recordTick")), "every background job (recordTick) waits for the schema before it runs");
+    ok(/if \(!dbReady\) await DB_READY/.test(bodyOf("recomputeScoresForOrg")), "the scores recompute waits for the schema before it runs");
+  }
+
   for (const run of [1, 2]) {
     let out = "", code = 0;
     try { out = execFileSync("node", ["scripts/seed-demo.js"], { cwd: root, env: process.env, encoding: "utf8", stdio: "pipe" }); }

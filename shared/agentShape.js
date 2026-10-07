@@ -507,7 +507,7 @@ export function describeStep(step, byId = new Map()) {
     case "send_email": return `Send a message to ${who}.`;
     case "mark_volunteer": return `Tag ${who} Volunteer, on the same record.`;
     case "make_volunteer": return `Make ${who} a volunteer${step.hoursPerWeek ? `, ${step.hoursPerWeek} hours a week` : ""}${(step.availability || []).length ? `, ${step.availability.join(", ")}` : ""}${(step.roles || []).length ? `, as ${step.roles.join(", ")}` : ""}.`;
-    case "update_contact": return `Change ${who}'s ${[step.email && `email to ${step.email}`, step.phone && `phone to ${step.phone}`, (step.address || step.city || step.zip) && `address to ${[step.address, step.city, step.state, step.zip].filter(Boolean).join(", ")}`].filter(Boolean).join(" and ") || "contact details"}.`;
+    case "update_contact": return `Change ${who}'s ${[step.email && `email to ${step.email}`, step.phone && `phone to ${step.phone}`, (step.address || step.city || step.zip) && `address to ${[step.address, step.city, step.contactState, step.zip].filter(Boolean).join(", ")}`].filter(Boolean).join(" and ") || "contact details"}.`;
     case "set_owner": return `Make ${step.ownerName || "a colleague"} ${who}'s owner.`;
     case "add_to_group": return `Add ${who} to ${step.groupName || "the group"}.`;
     case "remove_from_group": return `Take ${who} out of ${step.groupName || "the group"}.`;
@@ -557,7 +557,15 @@ function headline(order, groups, byId, { names = true } = {}) {
 // the plan (`withheld`) and said on its own line, never in the headline.
 export function compilePlan(steps, { people = [], reads = null, withheld = 0, headline: said = null, cannot = null } = {}) {
   const byId = new Map((people || []).map(p => [p.id, p]));
-  const out = (Array.isArray(steps) ? steps : []).map(s => {
+  const out = (Array.isArray(steps) ? steps : []).map(s0 => {
+    // HARDEN-1: TWO MEANINGS OF `state`. PLAN_SCHEMA's `state` is a postal
+    // state (update_contact); a compiled step's `state` is where it stands
+    // (runs, confirm, waits). This line used to overwrite the first with the
+    // second, so every Agent contact update wrote "runs" into the person's
+    // address. The postal one is kept as `contactState`, and a run state is
+    // never mistaken for one when a compiled step is compiled again.
+    const { state: given, ...s } = s0;
+    if (given && !s.contactState && ![STEP_RUNS, STEP_CONFIRM, STEP_WAITS].includes(given)) s.contactState = given;
     const tool = TOOLS_BY_NAME[s.tool];
     const state = tool && tool.needsHuman === "always" ? STEP_CONFIRM : (s.after ? STEP_WAITS : STEP_RUNS);
     return { ...s, state, describes: describeStep(s, byId) };

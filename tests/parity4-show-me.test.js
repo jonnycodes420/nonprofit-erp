@@ -53,6 +53,16 @@ async function orgCounts() {
 }
 
 (async () => {
+  // HARDEN-1 · NOTHING SHE SAID IS DROPPED. "Every donor in Marblehead who gave
+  // more than $5,000 this year" read as the amount and the year only: the
+  // amount-and-year rule threw away every word before the year, so the city
+  // vanished without a refusal and the Agent planned for 76 people, not 9.
+  {
+    const SMx = await import("../shared/showMe.js");
+    const t = SMx.templateSpec("every donor in Marblehead who gave more than $5,000 this year", { today: "2026-10-07", events: [], campaigns: [] });
+    ok("the city before an amount and a year is kept, and nothing is left unread",
+      t.rules.city === "Marblehead" && t.rules.gaveOver === "5000" && t.rules.gaveFrom === "2026-01-01" && !t.unsupported, t);
+  }
   for (const t of ["audiences", "interactions", "opportunities", "gifts", "campaigns", "donors", "user_sessions", "users"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone) VALUES ($1,'Show Me Fixture','show-me-p4',1,'active','team','UTC')`, [ORG]);
@@ -108,8 +118,13 @@ async function orgCounts() {
     req.on("end", () => {
       captured.push(b);
       res.writeHead(200, { "Content-Type": "application/json" });
+      // HARDEN-1: the query layer's form is answered the way the real model
+      // answered "who gave over $500 but hasn't been thanked": over GIFTS.
+      const isQuery = /"name":"query_plan"/.test(b) && /been thanked/.test(b);
       res.end(JSON.stringify({ id: "msg_t", type: "message", role: "assistant", model: "x", stop_reason: "tool_use",
-        content: [{ type: "tool_use", id: "tu_1", name: "filter_spec", input: reply }], usage: { input_tokens: 1, output_tokens: 1 } }));
+        content: [isQuery
+          ? { type: "tool_use", id: "tu_1", name: "query_plan", input: { answerable: true, unsupported: null, entity: "gifts", where: [{ field: "amount", op: "gt", value: 500 }], list: true } }
+          : { type: "tool_use", id: "tu_1", name: "filter_spec", input: reply }], usage: { input_tokens: 1, output_tokens: 1 } }));
     });
   });
   await new Promise(r => mock.listen(0, r));
@@ -215,6 +230,13 @@ async function orgCounts() {
       && a7.askStep && a7.askStep.label === "Plan the ask",
       JSON.stringify((a7.rows || []).map(r => [r.donorId, r.ask && r.ask.cents])));
     await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
+    // HARDEN-1 §8: a who question the donor list's filters read in full is
+    // answered with PEOPLE from that filter, not with gifts from the model's
+    // query plan. Red before: "N gifts match".
+    await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
+    const a9 = await (await fetch(B + "/ask", { method: "POST", headers: H, body: JSON.stringify({ text: "Who gave over $500 but hasn't been thanked?" }) })).json();
+    ok("§8 a who question is answered with people, from the donor list's own filter", a9.kind === "list" && a9.rules && a9.rules.unthankedOver === "500" && a9.specSource === "template",
+      JSON.stringify(a9).slice(0, 300));
     reply = form({ gaveCampaign: "c_not_ours", notDeceased: "1" });
     const a8 = await ask("Donors who gave to the summer drive");
     ok("§7 a campaign Steward does not have is refused, never guessed", a8.answered === false && a8.refused === true && !a8.rows, JSON.stringify(a8).slice(0, 200));
