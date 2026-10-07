@@ -180,6 +180,7 @@ const READ_ONLY_POSTS = [
   /^\/reports\/[^/]*\/?(preview|run|render)$/,
   /^\/receipts\/preview$/,
   /^\/(ai|agent)\/(draft|suggest|stream|preview|brief)$/,
+  /^\/ask\/preview$/,              // HARDEN-1: the prod AI smoke's question; skips the question log
   /^\/email\/preview$/,
   /^\/appeals\/[^/]+\/preview$/,
   /^\/search$/,

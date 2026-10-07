@@ -680,10 +680,18 @@ const donorOnly = (alias = "") => `(${alias ? alias + "." : ""}person_types IS N
 
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
+// HARDEN-1: a background job waits for the schema. On 7 Oct the scores job ran
+// in a new container while its schema migration was still waiting on a lock,
+// and failed for every org on a column the migration had not added yet
+// ("column pattern of relation donor_scores does not exist"). recordTick, the
+// seam every job passes through, now awaits this before running.
+let markDbReady = null;
+const DB_READY = new Promise(resolve => { markDbReady = resolve; });
 let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
 getDb()
   .then(async () => {
     dbReady = true;
+    markDbReady();
     try { const r = await query("SELECT current_database() AS d"); DB_NAME = r[0] && r[0].d; } catch { /* non-fatal: /health reports database:null */ }
     await PT_READY;            // BUILD-94 Part 2 — PT is bound before any request
     console.log("Database ready");
@@ -1358,6 +1366,7 @@ async function recordGift(o) {
 // that is a few seconds behind is fine, a gift that waits for one is not.
 const engagementMod = require("./engagement");
 async function recomputeScoresForOrg(orgId) {
+  if (!dbReady) await DB_READY;   // HARDEN-1: the boot race on donor_scores.pattern
   const [o] = await query("SELECT id, timezone FROM orgs WHERE id=?", [orgId]);
   if (!o) return 0;
   return engagementMod.recomputeOrgScores(query, orgId, orgTime.orgToday(o));
@@ -4663,6 +4672,7 @@ async function computeRecoveryRate(orgId) {
 // a plain string still works and means "I changed nothing worth recording" —
 // which is the honest answer for most runs of most sweeps.
 async function recordTick(name, fn) {
+  if (!dbReady) await DB_READY;   // HARDEN-1: never before the schema is migrated
   const JA = require("./jobAudit");
   const kind = JA.jobKind(name);
   if (!kind) {
@@ -10543,7 +10553,10 @@ app.use((err, req, res, next) => {
   // FIX-12 Part 3: a model call the org's AI switch refused is the org's
   // choice, not a crash. A route with a non-AI path catches it before here.
   if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : 503).json({ error: err.message, code: err.code, reason: err.reason });
-  console.error(err);
+  // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
+  // so scripts/error-digest.js can group a day of these by type and route.
+  const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
+  console.error(`[500] ${req.method} ${route}`, err);
   res.status(500).json({ error: "Internal server error" });
 });
 

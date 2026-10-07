@@ -95,6 +95,12 @@ jobs:
       - name: TDZ self-reference guard
         run: node scripts/tdz-scan.js
 
+      # HARDEN-1 · the daily error digest's parser, against a fixture log. No
+      # server, no database: a parser that stops grouping by type and route
+      # fails here, not on the morning the digest is wrong.
+      - name: Error digest parser self-test
+        run: node scripts/error-digest.js --self-test
+
       # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
       # A new high/critical advisory fails the build unless it is listed in
       # audit/npm-audit-allowlist.json with a reason and a review-by date
@@ -352,6 +358,13 @@ jobs:
           echo "FAIL: prod never became healthy at $GITHUB_SHA within 5 minutes."
           echo "Prod may still be serving the previous deploy — check Railway deployments."
           exit 1
+
+      # HARDEN-1: AI is off in every test, so the only check that a model call
+      # works on prod is this one: one Ask and one Agent plan on the prod demo
+      # org through the read-only preview routes (nothing is saved). A red here
+      # means Ask or the Agent is broken on prod right now (FIX-29's class).
+      - name: Prod AI smoke (one Ask, one Agent plan, saves nothing)
+        run: node scripts/prod-ai-smoke.js
 
   # ── Deploy gate: Vercel frontend (same rules, DORMANT until activated) ────
   # No ignored-build-step (it evaluates while CI is pending and never retries).

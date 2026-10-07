@@ -70,9 +70,11 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **At most ONE new test per build, and only if it guards money, donor data, email or
   security.** Screens are covered by `tests/smoke-walk.test.js`, which opens every tab and
   every donor-profile tab and fails on a blank screen, an error boundary, a 5xx or a console
-  error. Copy, layout and per-screen numbers are reviewed by eye, not pinned. There is no
-  failing-test-first step any more: write the fix, then the one test if it earns its place.
-  CHORE-2 retired 238 suites on this rule (`docs/tests-retired.md` says how to bring one back).
+  error. Copy, layout and per-screen numbers are reviewed by eye, not pinned. CHORE-2 retired
+  238 suites on this rule (`docs/tests-retired.md` says how to bring one back).
+- **No fix merges without a test that fails before it and passes after.** Plant the defect (or
+  run the test against main), see red, then fix and see green, and say so in the PR. A fix's
+  test may extend an existing suite; it does not count against the one-new-test limit. (HARDEN-1)
 - **Affected suites while you build; the full battery once, at the end.** A red run during
   edits tells you nothing, and a full run after every edit is the slowest way to learn that.
   Nothing is done until that final battery is green, with no silent skips. It is 35 suites in
@@ -133,7 +135,7 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
   off on both sides, and it stays off. Read CI after every push. Break-glass steps are in
   `docs/decisions/tests-and-ci.md`.
 - **Prod smoke:** `node scripts/status.js` (= `npm run status`), once, after the push that
-  deploys.
+  deploys. It includes the AI smoke (`scripts/prod-ai-smoke.js`), which CI also runs after deploy.
 - **Git:** work on a branch in your own worktree. Never push a branch that sits on another
   session's unpushed commits. Merge to main only on Jonathan's word.
 

@@ -39,7 +39,13 @@ const guide = async () => (AGm = AGm || await import("../shared/askGuide.js"));
 
 // ASK-2: the org is kept with the question, so the box's suggestions are the
 // org's own most-asked questions and never another organisation's.
+// HARDEN-1: POST /ask/preview answers exactly as /ask does and writes nothing.
+// The prod smoke after each deploy asks one real question through it, so the
+// one write the Ask path makes (this log) is skipped inside a preview.
+const { AsyncLocalStorage } = require("async_hooks");
+const ASK_PREVIEW = new AsyncLocalStorage();
 async function logQuestion(orgId, text, topic, answered) {
+  if (ASK_PREVIEW.getStore()) return;
   await run(`INSERT INTO question_log (surface, question, topic, answered, org_id) VALUES ('why', ?, ?, ?, ?)`,
     [String(text).slice(0, 1000), topic, !!answered, orgId || null]).catch(() => {});
 }
@@ -178,7 +184,7 @@ app.get("/donors/:id/journey-suggestion", requireAuth, wrap(async (req, res) => 
 // filter by that yet"); the list is buildDonorFilter's, so it is the same rows
 // the Donors list, its export and a Group saved from it show. Nothing is
 // written but the question log.
-async function showMe(req, res, typed) {
+async function showMe(req, res, typed, preset = null) {
   const SM = await showMod();
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));
@@ -187,8 +193,10 @@ async function showMe(req, res, typed) {
     query(`SELECT id, name, start_date::text AS "startDate" FROM campaigns WHERE org_id = ? ORDER BY start_date DESC NULLS LAST LIMIT 200`, [orgId]),
   ]);
   const ctx = { today, events, campaigns };
-  let spec = null, specSource = "template", aiOff = false;
-  const gate = await aiGate(orgId);
+  let spec = preset, specSource = "template", aiOff = false;
+  // HARDEN-1: a question the donor list's own filters read in full (preset)
+  // is answered from them exactly; the model is not asked.
+  const gate = preset ? { ok: false, reason: null } : await aiGate(orgId);
   if (gate.ok) {
     try {
       const out = await anthropicFor(orgId).messages.create({
@@ -722,7 +730,9 @@ const NOT_YET = [
   [/\b(monthly|recurring)\b.*\b(drop|down|fell|fall|declin|lower|less)\w*|\bwhy\b.*\b(monthly|recurring) giving\b/i, "why monthly giving changed"],
 ];
 
-app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
+app.post("/ask", whyAskLimiter, requireAuth, wrap((req, res) => askHandler(req, res)));
+app.post("/ask/preview", whyAskLimiter, requireAuth, wrap((req, res) => ASK_PREVIEW.run(true, () => askHandler(req, res))));
+async function askHandler(req, res) {
   const C = await askCat();
   const Sx = await shape();
   const SM = await showMod();
@@ -806,6 +816,15 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   // cannot express (retention, medians, pledges). Before this, "how many people
   // made their first gift in 2026" was answered as "which first-time donors
   // need a second ask", and "recurring AND volunteers" as monthly donors.
+  // HARDEN-1 · A "WHO" QUESTION IS ANSWERED WITH PEOPLE. "Who gave over $500
+  // but hasn't been thanked?" went to the query layer, whose model planned it
+  // over GIFTS ("26 gifts match", 23 people on file). When the donor list's
+  // own filters read every word of a who/which question, that filter is the
+  // exact answer and the list of people is what she asked for.
+  if (!raw && typed && /^\s*(who|which)\b/i.test(typed) && !Sx.matchQuestion(typed) && SM.isShowMe(typed)) {
+    const ts = SM.templateSpec(typed, { today: ctx.today, events: ctx.events, campaigns: ctx.campaigns });
+    if (Object.keys(ts.rules).length && !ts.unsupported) return showMe(req, res, typed, ts);
+  }
   const RECOMMEND = /^\s*why\b|\b(should|could|ought to|need to|needs?|about to|at risk|likely to|going to)\b|\bwho (do|can) i (call|ask|thank)\b/i;
   if (!raw && typed && !RECOMMEND.test(typed)) {
     const q = await tryQuery(req, typed, body.previousQuery);
@@ -855,7 +874,7 @@ app.post("/ask", whyAskLimiter, requireAuth, wrap(async (req, res) => {
   if (source !== "saved") await logQuestion(req.user.orgId, typed || "(plan)", `ask: ${plan.metric}${source === "follow-up" ? " (follow-up)" : ""}`, true);
   const out = { ...answer, question: { text: typed }, planSource: source, restatement, ...(person ? { person } : {}) };
   res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore }) });
-}));
+}
 
 // ── PINNED TO HOME ─────────────────────────────────────────────────────────
 // The plan is kept, never the answer: Home re-runs it every time it opens, so

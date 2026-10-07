@@ -21,6 +21,14 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-HARDEN-1 · DONORS WHOSE STATE THE AGENT SET TO "runs" (2026-10-07)
+
+- **Decide the prod repair.** Every Agent contact update before HARDEN-1 wrote "runs" into the person's postal state (fixed now). Read-only check: `SELECT id, org_id, name FROM donors WHERE state = 'runs';`. The true value is in the Agent's undo ledger: `SELECT entity_id, before_row->>'state' AS was FROM agent_writes WHERE tool='update_contact' AND after_row->>'state'='runs';`. Restoring it is a prod write, so it is yours to run (or press Undo on each write in the Agent's Activity within 30 days).
+
+## 0-HARDEN-1 · THE NIGHTLY AI RUN NEEDS ITS OWN KEY (2026-10-07)
+
+- **Add the `ANTHROPIC_EVAL_KEY` repository secret** (an Anthropic key on a workspace with a monthly spend limit, about $60 covers 30 nights at $1.30 to $2): github.com/jonnycodes420/nonprofit-erp, Settings, Secrets and variables, Actions, New repository secret (https://github.com/jonnycodes420/nonprofit-erp/settings/secrets/actions/new). Until it exists the Nightly AI workflow fails every night with one sentence saying so.
+
 ## 0-WIRE-1 · RE-SEED THE PROD DEMO FOR THE WHOLE PERSON (2026-10-06)
 
 - **Re-seed Harborlight** so the eleven PROSPECT-1 people show their real lifetime giving (they read $0

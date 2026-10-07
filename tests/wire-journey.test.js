@@ -31,7 +31,8 @@
 //                          drafts in batches of ten, and every draft is on its
 //                          person (profile next step, the Thread, the timeline)
 //                          and in Drafts to review; approving one clears "Not
-//                          thanked yet" on that gift, and Undo puts it back
+//                          thanked yet" on that gift, and Undo puts it back;
+//                          the prod AI smoke's previews save nothing (HARDEN-1)
 //
 // HOW IT WOULD GO RED: a route that creates a second person for an email on
 // file (§1); an act that writes no line (§2, e.g. a door check-in); a dated
@@ -170,7 +171,16 @@ async function agentDraftsLeg() {
         const ids = [...String(text).matchAll(/^\s{2}(d_wire1b_\d+) \| ([^|]+) \|/gm)].map(m => ({ id: m[1], name: m[2].trim() }));
         calls.draftPeople.push(ids.length);
         input = { drafts: ids.map(p => ({ donorId: p.id, subject: "Thank you", body: `Dear ${p.name}, thank you for your gift this month. With gratitude, Wire One B.` })) };
-      } else if (tool === "plan") { calls.plan++; input = { steps: [], sends: 0, headline: "", cannot: "" }; }
+      } else if (tool === "plan") {
+        calls.plan++;
+        // HARDEN-1: a contact change the plan tool returns in PLAN_SCHEMA's own
+        // shape, postal `state` included.
+        const id = (String(text).match(/^\s{2}(d_wire1b_\d+) \|/m) || [])[1];
+        input = /new phone/i.test(String(text)) && id
+          ? { steps: [{ tool: "update_contact", donorId: id, citesRows: [id], phone: "978-555-0100", address: "", city: "Nashua", state: "NH", zip: "",
+              email: "", subject: null, body: null, title: null, note: null }], sends: 0, headline: "", cannot: "" }
+          : { steps: [], sends: 0, headline: "", cannot: "" };
+      }
       else calls.other++;
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ id: "msg_t", type: "message", role: "assistant", model: "x", stop_reason: "tool_use",
@@ -223,6 +233,29 @@ async function agentDraftsLeg() {
     const plans = (await call("GET", "/agent/plans")).body.plans || [];
     const pr = (plans.find(x => x.id === p.body.id) || {}).run || {};
     ok("§10 the plan says Waiting for you, not Done", pr.progress && pr.progress.word === "Waiting for you · 1 of 13 done", pr.progress);
+
+    // HARDEN-1: the prod AI smoke's two routes build the same plan and answer
+    // the same question, and save nothing (no instruction, no ai_log, no
+    // question in the log, no draft).
+    const kept = async () => (await q(`SELECT (SELECT COUNT(*) FROM agent_instructions WHERE org_id=$1)::int AS i, (SELECT COUNT(*) FROM ai_log WHERE org_id=$1)::int AS l,
+      (SELECT COUNT(*) FROM question_log WHERE org_id=$1)::int AS q, (SELECT COUNT(*) FROM agent_drafts WHERE org_id=$1)::int AS d`, [ORG2]))[0];
+    const k0 = await kept();
+    const pv = await call("POST", "/agent/preview", { text: "Draft a thank-you to every donor who gave this month" });
+    const av = await call("POST", "/ask/preview", { text: "Who are our supporters who run a fundraising page?" });
+    const k1 = await kept();
+    ok("§10 the Agent preview builds the same plan (12 drafts)", pv.status === 200 && pv.body.preview === true && pv.body.tools && pv.body.tools.draft_note === 12, pv.body);
+    ok("§10 the Ask preview answers", av.status === 200, av.status);
+    ok("§10 …and neither saves anything", JSON.stringify(k0) === JSON.stringify(k1), { k0, k1 });
+
+    // HARDEN-1 · A CONTACT CHANGE KEEPS THE POSTAL STATE. compilePlan wrote the
+    // step's run state ("runs") over PLAN_SCHEMA's postal `state`, so every
+    // Agent contact update set the person's state to "runs".
+    await q(`UPDATE donors SET state='MA', city='Salem' WHERE id=$1`, [P[5]]);
+    const cp = await call("POST", "/agent/instructions", { text: "Draftee F Wirefield moved to Nashua and has a new phone number, 978-555-0100" });
+    const cr = cp.status === 201 ? await call("POST", `/agent/instructions/${cp.body.id}/confirm`, {}) : cp;
+    const [cf] = await q(`SELECT phone, city, state FROM donors WHERE id=$1`, [P[5]]);
+    ok("§10 an Agent contact change writes the new phone and the postal state it was given, never \"runs\"",
+      cr.status === 200 && cf.phone && cf.phone.replace(/\D/g, "").endsWith("9785550100") && cf.city === "Nashua" && cf.state === "NH", { cf, plan: cp.body && cp.body.plan && cp.body.plan.steps, run: cr.body && cr.body.steps });
 
     const draft = mine.find(i => i.donorId === g);
     const ap = await call("POST", `/agent/waiting/agent_draft/${draft.id}/approve`, {});

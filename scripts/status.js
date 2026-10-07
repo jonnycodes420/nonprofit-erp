@@ -102,6 +102,15 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
     } catch (e) { smokeOk = null; smokeDetail = `smoke errored: ${e.message}`; }
   } else smokeDetail = "backend unreachable — smoke not run";
 
+  // HARDEN-1: one Ask and one Agent plan on the prod demo, saving nothing
+  // (scripts/prod-ai-smoke.js). STATUS_SKIP_AI=1 skips it.
+  let aiOk = null, aiDetail = "";
+  if (process.env.STATUS_SKIP_SMOKE === "1" || process.env.STATUS_SKIP_AI === "1") aiDetail = "skipped";
+  else if (backendSha) {
+    try { const r = await require("./prod-ai-smoke").runAiSmoke({ backend: BACKEND }); aiOk = r.ok; aiDetail = r.lines.join(" · "); }
+    catch (e) { aiOk = false; aiDetail = `errored: ${e.message}`; }
+  } else aiDetail = "backend unreachable, not run";
+
   // ── report ───────────────────────────────────────────────────────────────────
   const row = (label, val, note = "") => console.log(`  ${label.padEnd(18)} ${val}${note ? "  " + DIM + note + RESET : ""}`);
   console.log("\nDeploy status\n─────────────");
@@ -111,6 +120,7 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   row("prod backend", backendSha ? short(backendSha) : `${YELLOW}${backendErr}${RESET}`, backendSha ? "" : BACKEND);
   row("prod frontend", frontendSha ? short(frontendSha) : `${YELLOW}${frontendErr}${RESET}`, frontendSha ? "" : FRONTEND);
   row("prod smoke", smokeOk === true ? `${GREEN}ok${RESET}` : smokeOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, smokeDetail);
+  row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
   const flags = [];
