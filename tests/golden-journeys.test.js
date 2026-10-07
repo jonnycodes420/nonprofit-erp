@@ -28,6 +28,14 @@
 //                          (/figures/gifts/rows) foot to it to the cent
 //   J10 merge two people   a duplicate with its own gift merged in: nothing lost,
 //                          nothing doubled, no row points at the duplicate
+//   J11 sign up            FIX-32: public signup, Stripe Checkout (the billing
+//                          mock), the webhook, then the success page's key traded
+//                          ONCE for a session on the new org, which lands on
+//                          onboarding; Explore the demo reaches Home with the
+//                          sample; a real file then replaces the sample; the
+//                          trialing org is never offered Reactivate. Red on
+//                          main: its success_url was /login?welcome=1 and the
+//                          exchange route did not exist.
 //
 // WHY NOT THE DEMO ORG ITSELF (the brief said "on Harborlight"). CLAUDE.md: the
 // demo is its own org, only its seed script writes it, and no suite logs in
@@ -72,7 +80,7 @@ const http = require("http");
 const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilToday, civilPlusDays } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, BILLING_MOCK_PORT } = require("./helpers");
 
 const ORG = "org_golden", USER = "u_golden_dana", DANA = "director@golden.harborlight.test", PW = "loadtest1234";
 const today = civilToday();
@@ -81,13 +89,62 @@ const monthStart = today.slice(0, 8) + "01";
 const cents = v => Math.round(Number(v || 0) * 100);
 const T0 = Date.now();
 
-async function wipe() {
+async function wipe(org = ORG) {
   const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
-  await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [ORG]).catch(() => {});
+  await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [org]).catch(() => {});
   for (let pass = 0; pass < 6; pass++) {
-    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [ORG]).catch(() => {});
-    if (await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).then(() => true).catch(() => false)) break;
+    for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+    if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
   }
+}
+
+// J11's signup leaves an org it did not name in advance: find it by its email.
+const SIGNUP_EMAIL = "founder@signup.golden.test";
+async function wipeSignup() {
+  const links = await q(`SELECT org_id FROM close_links WHERE contact_email=$1`, [SIGNUP_EMAIL]).catch(() => []);
+  for (const l of links) if (l.org_id) await wipe(l.org_id);
+  await q(`DELETE FROM terms_acceptances WHERE email=$1`, [SIGNUP_EMAIL]).catch(() => {});
+  await q(`DELETE FROM close_links WHERE contact_email=$1`, [SIGNUP_EMAIL]).catch(() => {});
+  await q(`DELETE FROM billing_webhook_events WHERE event_id LIKE 'evt_gj11_%'`).catch(() => {});
+}
+
+// J11's Stripe: the platform-billing mock on BILLING_MOCK_PORT. Checkout
+// sessions it mints are 'open' until the journey "pays", then 'complete'.
+function billingMock() {
+  const sessions = {};
+  const SUB = { id: "sub_gj11", object: "subscription", status: "trialing",
+    trial_start: Math.floor(Date.now() / 1000), trial_end: Math.floor(Date.now() / 1000) + 30 * 86400,
+    items: { data: [{ price: { id: "price_test_t1000m" } }] } };
+  const srv = http.createServer((req, res) => {
+    let b = ""; req.on("data", c => b += c);
+    req.on("end", () => {
+      res.setHeader("Content-Type", "application/json");
+      if (req.method === "POST" && req.url.startsWith("/v1/checkout/sessions")) {
+        const form = new URLSearchParams(b);
+        const id = "cs_test_gj11_" + Object.keys(sessions).length;
+        sessions[id] = { id, object: "checkout.session", status: "open", url: "https://checkout.stripe.test/" + id,
+          success_url: form.get("success_url"), metadata: { closeLinkId: form.get("metadata[closeLinkId]") },
+          customer: "cus_gj11", subscription: SUB.id };
+        return res.end(JSON.stringify(sessions[id]));
+      }
+      const cs = req.url.match(/^\/v1\/checkout\/sessions\/([^/?]+)/);
+      if (req.method === "GET" && cs && sessions[cs[1]]) return res.end(JSON.stringify(sessions[cs[1]]));
+      if (req.method === "GET" && /^\/v1\/subscriptions\//.test(req.url)) return res.end(JSON.stringify(SUB));
+      if (req.method === "GET" && /^\/v1\/prices\//.test(req.url))
+        return res.end(JSON.stringify({ id: "price_test_t1000m", object: "price", unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } }));
+      if (req.method === "GET" && /^\/v1\/(payment_methods|customers)/.test(req.url)) return res.end(JSON.stringify({ id: "pm_gj11", object: "payment_method", card: { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 } }));
+      res.statusCode = 404; res.end(JSON.stringify({ error: { message: "mock: " + req.method + " " + req.url } }));
+    });
+  });
+  return new Promise(r => srv.listen(BILLING_MOCK_PORT, () => r({ srv, sessions })));
+}
+async function fireBilling(id, type, object) {
+  const stripe = require("stripe")("sk_test_dummy");
+  const payload = JSON.stringify({ id, type, data: { object } });
+  const secret = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
+  const header = stripe.webhooks.generateTestHeaderString({ payload, secret });
+  const r = await fetch(BASE + "/billing/webhook", { method: "POST", headers: { "Content-Type": "application/json", "stripe-signature": header }, body: payload });
+  return r.status;
 }
 
 // ── J4's stand-in model and second server ───────────────────────────────────
@@ -397,9 +454,66 @@ async function agentLeg(H) {
   ok("J10 his record shows both gifts, $90.30", (t10.gifts || []).length === 2 && (t10.gifts || []).reduce((x, g) => x + cents(g.amount), 0) === 9030, t10.gifts);
 
   await wipe();
+
+  // ── J11 sign up through Checkout, land signed in on onboarding ──────────
+  console.log("\nJ11 sign up through Checkout and land signed in on onboarding");
+  await wipeSignup();
+  const mock = await billingMock();
+  try {
+    const agr = (await api("GET", "/public/agreement", null)).body;
+    const su = await api("POST", "/public/signup", null, { orgName: "Golden Signup Trust", contactName: "Rae Golden",
+      contactEmail: SIGNUP_EMAIL, estimatedDonors: 400, interval: "monthly", acceptTerms: true, termsVersion: agr.version });
+    ok("J11 signup hands back a Checkout", su.status === 201 && /checkout\.stripe\.test/.test(su.body.url || ""), su.body);
+    const sess = Object.values(mock.sessions).pop() || {};
+    const succ = String(sess.success_url || "");
+    ok("J11 Checkout returns her to the signed-up page, never the login form",
+       /\/signed-up\?session_id=\{CHECKOUT_SESSION_ID\}&k=/.test(succ) && !/\/login/.test(succ), succ);
+    const back = new URL(succ.replace("{CHECKOUT_SESSION_ID}", sess.id || "none"));
+    const body11 = { sessionId: back.searchParams.get("session_id"), key: back.searchParams.get("k") };
+    const early = await api("POST", "/public/checkout-signin", null, body11);
+    ok("J11 before she has paid, the page waits (it does not sign anybody in)", early.status === 202 && early.body.status === "pending" && !early.body.token, early);
+    // She pays; Stripe completes the session and the webhook makes the org.
+    sess.status = "complete";
+    const wh = await fireBilling("evt_gj11_" + Date.now().toString(36), "checkout.session.completed", sess);
+    ok("J11 the webhook took the completion", wh === 200, wh);
+    const forged = await api("POST", "/public/checkout-signin", null, { sessionId: body11.sessionId, key: body11.key + "x" });
+    ok("J11 a wrong key is refused", forged.status === 410 && !forged.body.token, forged);
+    const si = await api("POST", "/public/checkout-signin", null, body11);
+    ok("J11 the key is traded for a session on the new org", si.status === 200 && si.body.token && si.body.user && si.body.user.email === SIGNUP_EMAIL, si.status + " " + JSON.stringify(si.body).slice(0, 200));
+    ok("J11 the new org lands on onboarding (not yet onboarded)", si.body.org && Number(si.body.org.onboarding_complete) === 0, si.body.org);
+    const again = await api("POST", "/public/checkout-signin", null, body11);
+    ok("J11 the key works once: a second trade is refused", again.status === 410 && !again.body.token, again);
+    const rae = si.body.token;
+    const st = (await api("GET", "/billing/status", rae)).body;
+    ok("J11 the session works, and the org is trialing with full access", st.subscriptionStatus === "trialing" && st.accessState === "full", st);
+
+    // Explore the demo, reach Home with the sample.
+    const demo = await api("POST", "/org/load-sample-data", rae, {});
+    ok("J11 Explore the demo loads the sample and finishes onboarding", demo.status < 300 && demo.body.onboarded === true, demo.body);
+    const sorg = await q(`SELECT o.id, o.onboarding_complete FROM orgs o JOIN users u ON u.org_id=o.id WHERE u.email=$1`, [SIGNUP_EMAIL]);
+    const nSample = await q(`SELECT count(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [sorg[0].id]);
+    ok("J11 Home has the sample people, and onboarding reads complete", Number(sorg[0].onboarding_complete) === 1 && nSample[0].n > 0, { sorg, nSample });
+    const st2 = (await api("GET", "/billing/status", rae)).body;
+    ok("J11 a trialing org is never offered Reactivate", st2.subscriptionStatus === "trialing" && st2.accessState === "full" && !/reactivat/i.test(JSON.stringify(st2)), st2);
+
+    // Then her real file: the sample goes, her people stay.
+    const clr = await api("POST", "/org/clear-sample-data", rae, {});
+    ok("J11 the sample clears before her real import", clr.status < 300, clr.body);
+    const g11 = IS.groupTransactions([{ key: "ivy@signup.golden.test",
+      donor: { name: "Ivy Lantern", email: "ivy@signup.golden.test", stage: "prospect" },
+      gift: { amount: 120.5, date: today, type: "cash", campaign: "", notes: "" } }]);
+    const imp11 = await api("POST", "/donors/import-combined", rae, { donors: g11.donors, gifts: g11.gifts, importId: "imp_gj11_" + Date.now().toString(36) });
+    ok("J11 her real file imports", imp11.status === 200, imp11.body);
+    const left11 = await q(`SELECT name FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [sorg[0].id]);
+    ok("J11 only her real person is on file", left11.length === 1 && left11[0].name === "Ivy Lantern", left11);
+  } finally {
+    mock.srv.close();
+    await wipeSignup();
+  }
+
   const secs = Math.round((Date.now() - T0) / 1000);
   console.log(`\ngolden journeys ran in ${secs}s`);
-  ok("the ten journeys finish well inside four minutes", secs < 240, secs);
+  ok("the eleven journeys finish well inside four minutes", secs < 240, secs);
   await closeDb();
   summary();
 })().catch(async e => { console.error(e); await wipe().catch(() => {}); await closeDb().catch(() => {}); process.exit(1); });

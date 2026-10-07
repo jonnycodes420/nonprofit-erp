@@ -82,6 +82,16 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   link. `trialEnd.js` is the one definition. Nothing an org does, such as an import, moves the date.
   (BUILD-90)
 - **Write `orgs.trial_ends_at` from Stripe's `subscription.trial_end`.** Never recompute it. (BUILD-90)
+- **Checkout lands her signed in, on onboarding (FIX-32).** A NEW-org close link (public signup or
+  super-admin) carries a one-time key in its `success_url` (`/signed-up?session_id={CHECKOUT_SESSION_ID}&k=`);
+  `close_links.signin_key_hash` holds only its sha256. `POST /public/checkout-signin` trades key + session id
+  for a session only when both match the link, Stripe says the session is `complete`, the org exists, and
+  `signin_used_at` is still null (spent atomically; dead 24 hours after the link was made). Until the
+  webhook has made the org it answers 202 `pending` and the page waits 30 seconds, then offers the link
+  by email (`/public/checkout-signin/email`), never a bare login form. An existing-org link still lands on
+  `/login`: that admin already has a password, and the key must never open an account with data in it.
+  Two-step and super-admin accounts are refused the trade. Golden journey J11; `npm run status` checks the
+  page and the route.
 - **Bring new customers in only through the super-admin close link.** Public `/signup` redirects to
   `/invitation`. No org, user or subscription exists until `checkout.session.completed`. (BUILD-90)
 - **To put an org that already exists on a plan, pass `orgId` to `POST /admin/close-links`.** Completion

@@ -133,7 +133,7 @@ ${items.join("\n")}
 // for search. Public pages an organisation publishes (giving forms, portals,
 // event pages) stay open.
 export const ROBOTS_DISALLOW = ["/dashboard", "/donors", "/app/", "/welcome", "/admin", "/login", "/signup", "/invite/", "/invitation",
-  "/forgot-password", "/reset-password", "/portal-editor", "/oauth/", "/fundraiser/manage/", "/embed/",
+  "/forgot-password", "/reset-password", "/signed-up", "/portal-editor", "/oauth/", "/fundraiser/manage/", "/embed/",
   "/portal-api/", "/account-api/", "/network-api/", "/billing/", "/recurring/", "/unsubscribe"];
 export const ROBOTS = `User-agent: *\nAllow: /\n${ROBOTS_DISALLOW.map(p => "Disallow: " + p).join("\n")}\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
 

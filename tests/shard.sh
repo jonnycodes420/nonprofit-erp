@@ -93,7 +93,7 @@ start_server() {
   FOUNDER_EMAIL=jonathan@stewardapp.dev \
   STRIPE_BILLING_SECRET_KEY=sk_test_dummy \
   STRIPE_BILLING_API_BASE="http://localhost:$billing" \
-  STRIPE_PRICE_FOUNDING=price_test_founding \
+  STRIPE_PRICE_FOUNDING=price_test_founding STRIPE_PRICE_T1000_MONTHLY=price_test_t1000m \
   STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
   INBOUND_EMAIL_ENABLED=1 INBOUND_EMAIL_DOMAIN=log.stewardapp.dev \
   INBOUND_EMAIL_SECRET=local-inbound-secret \

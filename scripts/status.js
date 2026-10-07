@@ -94,10 +94,17 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
         const body = ex.ok ? await ex.text() : await ex.text().catch(() => "");
         const looksCsv = ex.ok && /^\uFEFF?Name,/.test(body);
         const cf = await fetch(`${BACKEND}/custom-fields?entity=donor`, { headers: { Authorization: "Bearer " + auth.token } });
-        smokeOk = looksCsv && cf.ok;
+        // FIX-32: where Checkout lands. The page loads, and the key-trade route
+        // exists: an empty body finds no close link and is refused (410) with
+        // nothing written. A 404 here means paying customers land on nothing.
+        const su = await fetchText(`${FRONTEND}/signed-up`);
+        const cs = await fetch(`${BACKEND}/public/checkout-signin`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const csBody = await cs.json().catch(() => ({}));
+        const signupOk = su.ok && cs.status === 410 && csBody.error === "signin_link_invalid";
+        smokeOk = looksCsv && cf.ok && signupOk;
         smokeDetail = smokeOk
-          ? `export/csv 200 (${body.length}B) · custom-fields 200`
-          : `export/csv ${ex.status}${ex.ok && !looksCsv ? " (not CSV-shaped)" : ""} · custom-fields ${cf.status}${!ex.ok ? " — " + body.slice(0, 120) : ""}`;
+          ? `export/csv 200 (${body.length}B) · custom-fields 200 · signed-up ${su.status} · checkout-signin ${cs.status}`
+          : `export/csv ${ex.status}${ex.ok && !looksCsv ? " (not CSV-shaped)" : ""} · custom-fields ${cf.status} · signed-up ${su.status} · checkout-signin ${cs.status}${!ex.ok ? " — " + body.slice(0, 120) : ""}`;
       }
     } catch (e) { smokeOk = null; smokeDetail = `smoke errored: ${e.message}`; }
   } else smokeDetail = "backend unreachable — smoke not run";

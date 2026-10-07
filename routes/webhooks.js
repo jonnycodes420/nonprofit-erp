@@ -2464,7 +2464,9 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
   const charge = firstChargeSentence({ monthlyUsd: planAmountUsd(plan), firstChargeAt: trialEndsAt, tz });
   const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (!process.env.RESEND_API_KEY) {
-    console.warn("[close-link] RESEND_API_KEY not set — welcome email not sent to", email);
+    // FIX-32: loud. The success page signs her in, but this email is the
+    // backup way in, and a silent skip leaves nobody knowing it never went.
+    console.error(`[close-link] MAIL IS NOT CONFIGURED (RESEND_API_KEY unset): the set-your-password email to ${email} was NOT sent.`);
     return { sent: false, link };
   }
   try {

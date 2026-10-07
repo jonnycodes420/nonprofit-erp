@@ -4643,6 +4643,10 @@ async function runSchemaInit(pool) {
   // FIX-12 block below the append-only trigger) and is no longer created.
 
   await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS target_org_id TEXT`);
+  // FIX-32: Checkout's success page signs her in. The key rides the
+  // success_url once; only its sha256 is stored, and it is spent on first use.
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS signin_key_hash TEXT`);
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS signin_used_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
                     ON close_links (target_org_id) WHERE target_org_id IS NOT NULL`);
 

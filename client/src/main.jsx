@@ -51,6 +51,7 @@ const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
 const OAuthCallback      = React.lazy(() => import("./pages/OAuthCallback"));
 const ForgotPasswordPage = React.lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage  = React.lazy(() => import("./pages/ResetPasswordPage"));
+const SignedUpPage       = React.lazy(() => import("./pages/SignedUpPage"));
 const TermsPage          = React.lazy(() => import("./pages/TermsPage"));
 const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
 import { Analytics } from '@vercel/analytics/react'
@@ -284,6 +285,8 @@ function Root() {
           <Route path="/oauth/:provider/callback" element={<OAuthCallback />} />
           <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
           <Route path="/reset-password"   element={<ResetPasswordPage />} />
+          {/* FIX-32: where Stripe Checkout lands. Not PublicOnly: it replaces any session already in this browser. */}
+          <Route path="/signed-up"        element={<SignedUpPage />} />
           <Route path="/terms"            element={<TermsPage />} />
           <Route path="/privacy"          element={<PrivacyPage />} />
           <Route path="*"                 element={<Navigate to="/" replace />} />
