@@ -181,6 +181,7 @@ CORE=(
   agent3-catalog
   thread3-human
   fix31-one-record
+  tasks2-thread
   search2-everything
   reports4-foot
   reports5-import

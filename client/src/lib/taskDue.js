@@ -52,3 +52,17 @@ export function dueBadge(due, now = new Date()) {
   if (diff === 0) return { state: "today", label: "Due today" };
   return { state: "future", label: `Due ${fmtDate(due)}` };
 }
+
+// TASKS-2 — a DATE-ONLY field (a deadline, a report due date, a task's day)
+// read as a day, never as UTC midnight. new Date("2026-11-15") is midnight in
+// London, which is the evening of 14 November in New York: the grant card
+// said "Report due November 14" against a 15 November deadline.
+const LONG_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export function fmtDayLong(due) {
+  const d = parseDueLocal(due);
+  return d ? `${LONG_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}` : "";
+}
+export function fmtDayShort(due) {
+  const d = parseDueLocal(due);
+  return d ? `${MONTHS[d.getMonth()]} ${d.getDate()}` : "";
+}

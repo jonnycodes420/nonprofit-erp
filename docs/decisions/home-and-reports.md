@@ -8,6 +8,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws
   the step, never its task; Home's queue, the daily task email and the digest skip next-step tasks because the
   thread already carries them. `backfillLinkedTasks()` (db.js) runs with the schema and is safe twice.
+- **A task is in exactly one view, by one rule (TASKS-2).** `shared/taskShape.js viewOf` and `taskViewSql`
+  (routes/crm.js) say the same thing: today, upcoming (next 7 days), overdue, later, no date, done (last 30
+  days). The list, `GET /tasks/counts` and Home's "Due today" read it; `tasks2-thread` §6 checks they agree.
+  A call or meeting task with a person finishes only with an `interactionId` from
+  `POST /donors/:id/conversations` (a next step or "No next step"); a linked next step still ticks as FIX-31.
+- **First thing speaks in one subject (`shared/firstThing.js`).** The logged line's pronoun becomes the first
+  name, and the step says its day ("Christine asked for the impact report. Send it today.").
 - **Last conversation has one rule: `meetings.js conversationsWith`.** A held meeting (logged or on
   a calendar), or a call, email, ask or stewardship touch, dated on or before the org's today. A
   note is never a conversation, whoever wrote it (the Agent included), and a newsletter line is not
