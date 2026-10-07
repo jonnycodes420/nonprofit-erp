@@ -284,7 +284,10 @@ app.get("/grants/:id/checklist", requireAuth, wrap(async (req, res) => {
   const g = await grantOf(orgId, req.params.id);
   if (!g) return res.status(404).json({ error: "Grant not found" });
   const [rows, staff] = await Promise.all([
-    query(`SELECT * FROM tasks WHERE org_id=? AND grant_id=? AND voided_at IS NULL ORDER BY COALESCE(done,0), due NULLS LAST, created_at`, [orgId, g.id]),
+    // FIX-31: a deadline's own task is the deadline, listed in its box above,
+    // not a second line here. Its heads-up ("Start the report") is checklist work.
+    query(`SELECT * FROM tasks WHERE org_id=? AND grant_id=? AND voided_at IS NULL AND COALESCE(link_kind, '') <> 'deadline'
+            ORDER BY COALESCE(done,0), due NULLS LAST, created_at`, [orgId, g.id]),
     query(`SELECT id, name FROM users WHERE org_id=? AND deactivated_at IS NULL ORDER BY name`, [orgId]).catch(() => []),
   ]);
   res.json({ items: rows.map(taskRow), staff });

@@ -48,6 +48,11 @@ export function moveRequest(item, d) {
       undo: { method: "POST", path: `/calendar/events/${encodeURIComponent(r.calendarEventId)}/move`, body: { startsAt: r.startsAt, endsAt: r.endsAt } } };
   }
   if (item.type === "step") {
+    if (item.ref && item.ref.taskId && !item.ref.threadId) {
+      // FIX-31: a task moves by its day, through PATCH /tasks/:id/due.
+      const path = `/tasks/${encodeURIComponent(item.ref.taskId)}/due`, was = dayOf(item.start);
+      return { method: "PATCH", path, body: { due: addDaysCivil(was, days) }, undo: { method: "PATCH", path, body: { due: was } } };
+    }
     if (!item.ref || !item.ref.threadId) return { refused: "A task is moved from Tasks." };
     const was = { due: dayOf(item.start), time: timeOf(item.start) || "" };
     let due = addDaysCivil(was.due, days), time = was.time;

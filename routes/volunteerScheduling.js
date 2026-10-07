@@ -1688,18 +1688,25 @@ app.get("/volunteer-hub/schedule", requireAuth, wrap(async (req, res) => {
 
 // The rows behind the two week numbers: every short shift, every conflict.
 // PARITY-3 Part 3 — the four numbers across the top of the Volunteers screen.
-// Each opens its rows: active volunteers (the list's volActive rule), pending
+// Each opens its rows: on the roster (the list itself, FIX-31), pending
 // applications (Applications), and this week's conflicts and short shifts
 // (the problems below), from the same functions those screens call.
 app.get("/volunteer-hub/counts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const GRP = require("../groups");
-  const f = await GRP.buildDonorFilter(orgId, { role: "volunteer", volActive: "1" });
-  const [a] = await query(`SELECT COUNT(*)::int AS n FROM donors WHERE ${f.whereSql}`, f.params);
+  // FIX-31: the first number is everyone on the roster, the newest included.
+  // "Active" (an hour in twelve months) read 0 the day someone joined, above a
+  // list that showed them. Served lately is the line under it, not the tile.
+  const f = await GRP.buildDonorFilter(orgId, { role: "volunteer" });
+  const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const [a] = await query(`SELECT COUNT(*)::int AS n,
+      COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM volunteer_shifts vx WHERE vx.org_id = donors.org_id AND vx.person_id = donors.id AND vx.date >= ?))::int AS served
+    FROM donors WHERE ${f.whereSql}`, [since, ...f.params]);
   const [p] = await query(`SELECT COUNT(*)::int AS n FROM volunteer_applications WHERE org_id=? AND status='pending'`, [orgId]);
   const wp = await weekProblems(orgId);
   res.json({
-    active: { value: a.n, sentence: "Volunteers with an hour logged in the last twelve months, or a place on a shift still to come." },
+    roster: { value: a.n, sentence: "Everyone whose record carries the Volunteer role, including anyone added today.",
+              served: { value: a.served, since, sentence: "Of them, the people with a shift logged in the last 90 days." } },
     pending: { value: p.n, sentence: "Applications from your volunteer page waiting for Approve or Decline." },
     conflicts: { value: wp.conflicts.length, sentence: "This week, the same person with a place on two shifts that overlap in time." },
     short: { value: wp.short.length, sentence: "Published shifts this week, Monday to Sunday, where at least one role still needs people." },

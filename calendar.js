@@ -76,7 +76,8 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   }
   if (want.has("step")) {
     jobs.push(query(
-      `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name
+      `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name,
+              (SELECT k.id FROM tasks k WHERE k.thread_id = t.id AND k.org_id = t.org_id) AS task_id
          FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id AND d.deleted_at IS NULL
         WHERE t.org_id = ? AND t.closed_at IS NULL AND t.due_date IS NOT NULL AND LEFT(t.due_date::text, 10) >= ? AND LEFT(t.due_date::text, 10) <= ?
           AND (t.snoozed_until IS NULL OR t.snoozed_until::date <= t.due_date::date)
@@ -88,30 +89,32 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
           ownerId: r.owner_id, ownerName: r.owner_name || "", donorId: r.donor_id, donorName: r.donor_name, detail: r.next_step_label || "",
           // FIX-33: a meeting step moves by moving the meeting, never on its own.
           stepType: r.next_step_type || null,
-          editable: { move: r.next_step_type !== "meeting", resize: false }, ref: { threadId: r.id } });
+          editable: { move: r.next_step_type !== "meeting", resize: false }, ref: { threadId: r.id, taskId: r.task_id || null } });
       })));
     jobs.push(query(
       `SELECT t.id, t.title, t.due, t.assigned_to, t.assigned_to_name, d.id AS donor_id, d.name AS donor_name
          FROM tasks t LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
         WHERE t.org_id = ? AND COALESCE(t.done::text, '0') NOT IN ('1', 'true') AND t.voided_at IS NULL AND COALESCE(t.is_sample, false) = false
+          -- FIX-31: a next step's or a deadline's own task is drawn once, as that step or deadline.
+          AND COALESCE(t.link_kind, '') NOT IN ('next_step', 'deadline')
           AND t.due IS NOT NULL AND LEFT(t.due::text, 10) >= ? AND LEFT(t.due::text, 10) <= ?
           AND (?::text IS NULL OR t.assigned_to = ?)`,
       [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {
         const day = String(r.due).slice(0, 10);
         out.push({ id: `task:${r.id}`, type: "step", title: r.title, start: day, end: day, allDay: true, ownerId: r.assigned_to, ownerName: r.assigned_to_name || "",
-          donorId: r.donor_id || null, donorName: r.donor_name || null, detail: "A task", editable: { move: false, resize: false }, ref: { taskId: r.id } });
+          donorId: r.donor_id || null, donorName: r.donor_name || null, detail: "A task", editable: { move: true, resize: false }, ref: { taskId: r.id } });
       })));
   }
   if (want.has("deadline")) {
-    // Grant deadlines, open ones only, owned by the grant's officer. Moved here
+    // Grant deadlines, open and done (FIX-31), owned by the grant's officer. Moved here
     // through the deadline's own route, which moves its follow-up with it.
     jobs.push(query(
-      `SELECT m.id, m.kind, m.label, m.due_date, m.grant_id, m.thread_id, g.program, g.officer_id, u.name AS officer_name,
+      `SELECT m.id, m.kind, m.label, m.due_date, m.grant_id, m.thread_id, m.state, m.completed_by_name, g.program, g.officer_id, u.name AS officer_name,
               COALESCE(d.name, g.funder) AS funder_name, d.id AS donor_id
          FROM grant_milestones m JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
          LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
          LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
-        WHERE m.org_id = ? AND m.state NOT IN ('done', 'skipped') AND g.is_sample IS NOT TRUE
+        WHERE m.org_id = ? AND m.state <> 'skipped' AND g.is_sample IS NOT TRUE
           AND LEFT(m.due_date, 10) >= ? AND LEFT(m.due_date, 10) <= ?
           AND (?::text IS NULL OR g.officer_id = ?)`,
       [orgId, from, to, owner, owner]).then(rows => rows.forEach(r => {
@@ -119,8 +122,10 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
         const name = DEADLINE_LABEL[r.kind] && !(r.kind === "custom" && r.label) ? DEADLINE_LABEL[r.kind] : (r.label || "Deadline");
         out.push({ id: `deadline:${r.id}`, type: "deadline", title: `${name}: ${r.funder_name || "a grant"}`, start: day, end: day, allDay: true,
           ownerId: r.officer_id || null, ownerName: r.officer_name || "", donorId: r.donor_id || null, donorName: r.funder_name || null,
-          detail: r.program ? `Grant: ${r.program}` : "A grant deadline", editable: { move: true, resize: false }, ref: { milestoneId: r.id, grantId: r.grant_id },
-          ...(r.thread_id ? { opensThread: r.thread_id } : {}) });
+          detail: [r.program ? `Grant: ${r.program}` : "A grant deadline", r.state === "done" ? `Done${r.completed_by_name ? ` by ${r.completed_by_name}` : ""}` : null].filter(Boolean).join(" · "),
+          // FIX-31: a done deadline stays on its day, struck through, so the history shows.
+          done: r.state === "done", editable: { move: r.state !== "done", resize: false }, ref: { milestoneId: r.id, grantId: r.grant_id },
+          ...(r.thread_id && r.state !== "done" ? { opensThread: r.thread_id } : {}) });
       })));
     // WIRE-1: a grant report with its own due date and no deadline behind it
     // (a report with a milestone is already on the calendar as that milestone).

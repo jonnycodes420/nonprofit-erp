@@ -54,7 +54,8 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState("");
   const [lead, setLead] = useState(null);
-  const load = () => apiFetch("/grants/deadlines").then(d => { setData(d); setLead(d.leadDays); })
+  const [headsUp, setHeadsUp] = useState(14);   // FIX-31: the "Start the proposal" task, days ahead; 0 is off
+  const load = () => apiFetch("/grants/deadlines").then(d => { setData(d); setLead(d.leadDays); setHeadsUp(d.headsUpDays ?? 14); })
     .catch(e => { setMsg(errorMessage(e, "The deadlines could not be loaded.")); setData({ milestones: [], calendar: [], milestoneTypes: [] }); });
   useEffect(() => { load(); }, []);
   const done = async m => {
@@ -67,7 +68,7 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
   };
   const saveLead = async () => {
     setMsg("");
-    try { const r = await apiFetch("/org/grant-lead-days", { method: "PUT", body: JSON.stringify({ leadDays: lead }) }); setLead(r.leadDays); setMsg("Lead times saved."); load(); }
+    try { const r = await apiFetch("/org/grant-lead-days", { method: "PUT", body: JSON.stringify({ leadDays: lead, headsUpDays: headsUp }) }); setLead(r.leadDays); setMsg("Lead times saved."); load(); }
     catch (e) { setMsg(errorMessage(e, "The lead times did not save.")); }
   };
   if (!data) return <div style={{ padding: 40, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
@@ -118,6 +119,12 @@ export function DeadlinesView({ isReadOnly, isAdmin, onOpenGrant }) {
                   onChange={e => setLead({ ...lead, [t.key]: e.target.value === "" ? "" : Number(e.target.value) })} style={{ ...inp, width: 90 }} />
               </label>))}
           </div>
+          <label data-testid="heads-up-days" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink2, marginTop: 12, flexWrap: "wrap" }}>
+            A task to start each proposal, LOI and report
+            <input type="number" min="0" max="90" value={headsUp} disabled={!isAdmin || isReadOnly}
+              onChange={e => setHeadsUp(e.target.value === "" ? 0 : Number(e.target.value))} style={{ ...inp, width: 70 }} aria-label="Days ahead for the start task" />
+            days ahead (0 turns it off)
+          </label>
           {isAdmin && !isReadOnly && <button style={{ ...primaryBtn, marginTop: 10 }} onClick={saveLead}>Save lead times</button>}
         </section>)}
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink3 }}>{msg}</div>}
@@ -208,7 +215,10 @@ export function GrantDeadlinesPanel({ grantId, isReadOnly }) {
         {!isReadOnly && !form && <button style={{ ...quietBtn, marginLeft: "auto" }} data-testid="deadline-add"
           onClick={() => setForm({ kind: types[0]?.key || "", label: "", dueDate: "", notes: "" })}>Add a deadline</button>}
       </div>
-      {!all.length && !form && <div style={{ fontSize: 13, color: T.ink3 }}>None yet. Add the LOI, proposal, decision, report or renewal date, or any other, and each shows on the Calendar.</div>}
+      {/* FIX-31: "None yet" only when there are none; done ones are listed below. */}
+      {!all.length && !form && <div data-testid="deadlines-empty" style={{ fontSize: 13, color: T.ink3 }}>{doneList.length
+        ? "Nothing open. Add the next LOI, proposal, decision, report or renewal date."
+        : "None yet. Add the LOI, proposal, decision, report or renewal date, or any other, and each shows on the Calendar and in Tasks."}</div>}
       {all.map(m => (
         <div key={m.id}>
           {edit && edit.id === m.id ? (

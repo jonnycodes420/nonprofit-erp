@@ -5456,6 +5456,7 @@ async function composeWeekInReview(orgId, win, officerId = null) {
     `SELECT t.title, t.due, t.assigned_to_name, d.name AS donor_name, d.id AS donor_id FROM tasks t
      LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
      WHERE t.org_id = ? AND t.done = 0 AND t.voided_at IS NULL AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) < ? ${tFilter}
+       AND COALESCE(t.link_kind, '') <> 'next_step'   -- FIX-31: next steps are reported as threads
      ORDER BY t.due ASC`, [orgId, today, ...(officerId ? [officerId] : [])]);
   // BUILD-88a A.5 — the activity report rides with the sections, from the ONE
   // counter the People dashboard reads.
@@ -5688,6 +5689,11 @@ async function composeDailyTaskReminder(orgId, userId, today) {
        LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
       WHERE t.org_id=? AND t.assigned_to=? AND t.done=0 AND t.voided_at IS NULL
         AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) <= ?
+        -- FIX-31: a next step (and a deadline whose follow-up thread is open)
+        -- already has its own nudge email; one reminder per thing, not two.
+        AND COALESCE(t.link_kind, '') <> 'next_step'
+        AND NOT EXISTS (SELECT 1 FROM grant_milestones m JOIN threads th ON th.id = m.thread_id AND th.closed_at IS NULL
+                         WHERE m.id = t.milestone_id AND m.org_id = t.org_id AND t.link_kind = 'deadline')
       ORDER BY t.due ASC`,
     [orgId, userId, today]);
   const overdue = rows.filter(r => String(r.due).slice(0, 10) < today);
@@ -9210,7 +9216,7 @@ async function pushStewardDatesRun(conn, userId, orgId, providerKey) {
   const from = orgToday(tzRow), to = orgTime.addDays(from, PUSH_AHEAD_DAYS);   // ORG_TZ_SEAM_OK
   // A meeting step is the meeting, already on her calendar: never a second entry.
   const items = on ? (await CALR.calendarItems(orgId, { from, to, tz, userId, scope: "mine", types: PUSH_TYPES }))
-    .filter(i => i.ownerId === userId && i.stepType !== "meeting") : [];
+    .filter(i => i.ownerId === userId && i.stepType !== "meeting" && !i.done) : [];   // FIX-31: a done deadline stays on Steward's calendar, not hers
   const byKey = new Map(stored.map(r => [r.item_key, r]));
   const google = providerKey === "google";
   const base = google ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events`

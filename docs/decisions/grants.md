@@ -3,6 +3,12 @@
 Read this when you touch funders, grant deadlines, documents, restricted money, grant reports or grant import.
 
 ## Rules
+- **Every grant deadline is one task, kept in step by the database (FIX-31).** `trg_milestone_task_sync` writes a
+  `link_kind='deadline'` task ("[Funder]: [kind] due", the officer's, on the date, linking the grant) and, for a
+  proposal, LOI or report, one `deadline_start` heads-up `orgs.grant_headsup_days` ahead (default 14, 0 = off).
+  Done closes it, taking the deadline off deletes it, putting it back returns it. A task tick, date or Undo goes
+  back through `linkedTaskChange` (routes/crm.js) to `markMilestoneDone`/`reopenMilestone`, never the task alone.
+- **A done deadline stays on the Calendar on its day, struck through with a check (FIX-31).** Only `skipped` leaves it.
 - **Use the eight canonical grant stages and never add a second `grant_stage` column.** researching
   (shown as Prospecting) · loi · invited · submitted · awarded · declined · reporting · closed; every older
   spelling is an alias resolved only in `normalizeStatus` (shared/grantShape.js), and a status filter must

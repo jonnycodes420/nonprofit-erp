@@ -3,6 +3,11 @@
 Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follow-ups, goals, report definitions, custom reports or board reports.
 
 ## Rules
+- **A next step is one record in three views (FIX-31).** Every thread has one `link_kind='next_step'` task written
+  by `trg_thread_task_sync`; Tasks, the Thread and the Calendar read that one pair. Ticking the task logs
+  "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws
+  the step, never its task; Home's queue, the daily task email and the digest skip next-step tasks because the
+  thread already carries them. `backfillLinkedTasks()` (db.js) runs with the schema and is safe twice.
 - **Last conversation has one rule: `meetings.js conversationsWith`.** A held meeting (logged or on
   a calendar), or a call, email, ask or stewardship touch, dated on or before the org's today. A
   note is never a conversation, whoever wrote it (the Agent included), and a newsletter line is not

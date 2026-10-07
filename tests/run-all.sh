@@ -180,6 +180,7 @@ CORE=(
   repair-runs-state
   agent3-catalog
   thread3-human
+  fix31-one-record
   search2-everything
   reports4-foot
   reports5-import

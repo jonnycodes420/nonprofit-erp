@@ -14495,11 +14495,7 @@ app.post("/grants/milestones/:msId/done", requireAuth, requireCrm, checkWriteAcc
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
   if (!ms) return res.status(404).json({ error: "Milestone not found" });
-  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
-  await run(`UPDATE grant_milestones SET state='done', completed_at=NOW(),
-               completed_by=?, completed_by_name=?, updated_at=NOW()
-              WHERE id=? AND org_id=?`,
-    [actor(req).id, (u && u.name) || actor(req).name, ms.id, orgId]);
+  await markMilestoneDone(orgId, ms.id, actor(req));
   const org = await orgTz(orgId);
   res.json({ ok: true, id: ms.id, state: "done",
     nextDeadlineSentence: M.milestoneTiming({ kind: ms.kind, dueDate: ms.due_date }, orgToday(org)).sentence });  // ORG_TZ_SEAM_OK
@@ -14514,6 +14510,21 @@ app.post("/grants/milestones/:msId/reopen", requireAuth, requireCrm, checkWriteA
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
   if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  await reopenMilestone(orgId, ms, M);
+  res.json({ ok: true, id: ms.id });
+}));
+
+// FIX-31: the two ways a deadline's state changes, shared by its own routes
+// and by its task (Tasks, the Calendar), so a tick anywhere is the same tick.
+async function markMilestoneDone(orgId, msId, who) {
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
+  await run(`UPDATE grant_milestones SET state='done', completed_at=NOW(),
+               completed_by=?, completed_by_name=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [who.id, (u && u.name) || who.name, msId, orgId]);
+}
+async function reopenMilestone(orgId, ms, M) {
+  M = M || await grantMsMod();
   let threadOpen = false;
   if (ms.thread_id) {
     const [t] = await query("SELECT id FROM threads WHERE id=? AND org_id=? AND closed_at IS NULL", [ms.thread_id, orgId]);
@@ -14527,8 +14538,7 @@ app.post("/grants/milestones/:msId/reopen", requireAuth, requireCrm, checkWriteA
   if (!threadOpen && M.dueWithinLead({ kind: ms.kind, dueDate: ms.due_date }, today, leadDays)) {
     await raiseGrantMilestone(orgId, ms, { today });
   }
-  res.json({ ok: true, id: ms.id });
-}));
+}
 
 app.post("/grants/milestones/:msId/remove", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
@@ -14582,6 +14592,7 @@ app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
     calendar: M.calendarFromMilestones(open, today),
     homeLine: M.homeDeadlineLine(open, today),
     leadDays,
+    headsUpDays: ((await query("SELECT grant_headsup_days FROM orgs WHERE id=?", [orgId]))[0] || {}).grant_headsup_days ?? 14,
     milestoneTypes: M.MILESTONE_TYPES,
   });
 }));
@@ -14600,7 +14611,15 @@ app.put("/org/grant-lead-days", requireAuth, requireAdmin, checkWriteAccess, wra
   // it actually got right.
   const clean = M.normalizeLeadDays({ ...stored, ...M.pickLeadDays(req.body && req.body.leadDays) });
   await run("UPDATE orgs SET grant_lead_days=?::jsonb WHERE id=?", [JSON.stringify(clean), req.user.orgId]);
-  res.json({ leadDays: clean, defaults: M.DEFAULT_LEAD_DAYS });
+  // FIX-31: the heads-up task's days ahead (0 = off), only when it was sent.
+  const h = req.body && req.body.headsUpDays;
+  if (h !== undefined) {
+    const n = Number(h);
+    if (!Number.isInteger(n) || n < 0 || n > 90) return res.status(400).json({ error: "bad_heads_up", sentence: "Days ahead is a whole number from 0 to 90." });
+    await run("UPDATE orgs SET grant_headsup_days=? WHERE id=?", [n, req.user.orgId]);
+  }
+  const [o] = await query("SELECT grant_headsup_days FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({ leadDays: clean, defaults: M.DEFAULT_LEAD_DAYS, headsUpDays: o ? (o.grant_headsup_days ?? 14) : 14 });
 }));
 
 // POST /grants/milestones/run — the ops/test door onto the sweep (the
@@ -16426,6 +16445,58 @@ app.post("/api/v1/notes", apiLimiter, requireApiKey, requireScope("write:notes")
   res.status(201).json({ data: { id, personId, type } });
 }));
 
+// ── FIX-31 · A LINKED TASK CHANGES THROUGH ITS RECORD ──────────────────────
+// Returns null for an ordinary task (the caller writes it), { refused } when
+// the change cannot be made, or { ok } once the thread or deadline changed and
+// its trigger brought the task along. Ticking a next step's task logs a line
+// "<label>: done" and closes the thread on it (a thread may only close on a
+// line or a reason, BUILD-81); Undo takes that line back and reopens it.
+async function linkedTaskChange(req, taskId, { done, due }) {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=? AND link_kind IN ('next_step','deadline')", [taskId, orgId]);
+  if (!t) return null;
+  const who = actor(req);
+  if (t.link_kind === "deadline") {
+    const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [t.milestone_id, orgId]);
+    if (!ms) return { refused: { error: "deadline_gone", sentence: "That deadline is no longer on the grant." } };
+    if (due !== undefined && due && due !== String(ms.due_date).slice(0, 10)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return { refused: { error: "bad_due_date", sentence: "The date must be a day." } };
+      await run("UPDATE grant_milestones SET due_date=?, updated_at=NOW() WHERE id=? AND org_id=?", [due, ms.id, orgId]);
+      if (ms.thread_id) await run(`UPDATE threads SET due_date=?, original_due_date=COALESCE(original_due_date, due_date)
+                                    WHERE id=? AND org_id=? AND closed_at IS NULL`, [due, ms.thread_id, orgId]);
+    }
+    if (done === 1 && ms.state !== "done") await markMilestoneDone(orgId, ms.id, who);
+    if (done === 0 && ms.state === "done") await reopenMilestone(orgId, ms);
+    return { ok: true };
+  }
+  const [th] = await query("SELECT * FROM threads WHERE id=? AND org_id=?", [t.thread_id, orgId]);
+  if (!th) return { refused: { error: "step_gone", sentence: "That next step is no longer on the Thread." } };
+  if (due !== undefined && due && due !== String(th.due_date).slice(0, 10) && !th.closed_at) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return { refused: { error: "bad_due_date", sentence: "The date must be a day." } };
+    await run(`UPDATE threads SET due_date=?, original_due_date=COALESCE(original_due_date, due_date) WHERE id=? AND org_id=?`, [due, th.id, orgId]);
+  }
+  if (done === 1 && !th.closed_at) {
+    const intId = "int_" + uuid().slice(0, 10);
+    const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+    await withTransaction(async client => {
+      await runTx(client, `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name,metadata)
+                           VALUES (?,?,?,?,?,?,?,?,?)`,
+        [intId, orgId, th.donor_id, "note", today, `${th.next_step_label}: done.`, who.id, who.name, JSON.stringify({ via: "task_done", threadId: th.id })]);
+      await runTx(client, `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=? WHERE id=? AND org_id=? AND closed_at IS NULL`,
+        [intId, th.id, orgId]);
+    });
+  }
+  if (done === 0 && th.closed_at) {
+    const [busy] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND id<>?", [orgId, th.donor_id, th.id]);
+    if (busy) return { refused: { error: "step_replaced", sentence: "A newer next step is already open for this person, so this one stays done." } };
+    await withTransaction(async client => {
+      await runTx(client, `UPDATE threads SET closed_at=NULL, close_kind=NULL, close_reason=NULL, closing_interaction_id=NULL WHERE id=? AND org_id=?`, [th.id, orgId]);
+      if (th.closing_interaction_id) await runTx(client, `DELETE FROM interactions WHERE id=? AND org_id=? AND metadata->>'via' = 'task_done'`, [th.closing_interaction_id, orgId]);
+    });
+  }
+  return { ok: true };
+}
+
 // ── Tasks ──────────────────────────────────────────────────────────────────
 // Tasks — the daily-driver follow-up surface (BUILD-13). A task links an
 // optional donor; the linked donor is now RENDERED in the UI, so donorId must
@@ -16532,8 +16603,12 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     } else { newAssignee = null; newAssigneeName = null; }
   }
 
-  const sets = ["title=?", "due=?", "priority=?", "type=?", "done=?", "updated_at=NOW()"];
-  const params = [String(title).trim(), due || "", priority || "medium", type || "donor", done ? 1 : 0];
+  // FIX-31: a linked task's date and done state belong to its next step or
+  // deadline; change them there and the trigger brings the task along.
+  const linked = await linkedTaskChange(req, req.params.id, { done: done ? 1 : 0, due: due || "" });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  const sets = linked ? ["priority=?", "updated_at=NOW()"] : ["title=?", "due=?", "priority=?", "type=?", "done=?", "updated_at=NOW()"];
+  const params = linked ? [priority || "medium"] : [String(title).trim(), due || "", priority || "medium", type || "donor", done ? 1 : 0];
   if (donorId !== undefined) { sets.push("donor_id=?"); params.push(donorId || null); }
   if (assignedTo !== undefined) { sets.push("assigned_to=?", "assigned_to_name=?"); params.push(newAssignee, newAssigneeName); }
   params.push(req.params.id, req.user.orgId);
@@ -16554,7 +16629,11 @@ app.put("/tasks/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // One-click complete/reopen — the primary Tasks action (write-gated).
 app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const done = req.body.done === false ? 0 : 1;
-  const affected = await run(
+  // FIX-31: a next step's or a deadline's task is ticked through that record,
+  // and the record's trigger ticks the task: one record, every view.
+  const linked = await linkedTaskChange(req, req.params.id, { done });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  const affected = linked ? { changes: 1 } : await run(
     "UPDATE tasks SET done=?, updated_at=NOW() WHERE id=? AND org_id=?",
     [done, req.params.id, req.user.orgId]);
   if (!affected.changes) return res.status(404).json({ error: "Task not found" });
@@ -16564,7 +16643,29 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   res.json(rows[0]);
 }));
 
+// FIX-31: a task's day on its own (a Calendar drag, "Give it a day"). The full
+// PUT replaces every column, which a drag must never do. A linked task's day
+// moves its next step or deadline, and the trigger brings the task along.
+app.patch("/tasks/:id/due", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const due = String((req.body && req.body.due) || "");
+  if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "bad_due_date", sentence: "The date must be a day." });
+  const [t] = await query("SELECT id, due FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  req.audit = { ...(req.audit || {}), before: { due: t.due || "" }, after: { due } };
+  const linked = await linkedTaskChange(req, t.id, { due });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  if (!linked) await run("UPDATE tasks SET due=?, updated_at=NOW() WHERE id=? AND org_id=?", [due, t.id, req.user.orgId]);
+  const [row] = await query(`SELECT t.*, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id WHERE t.id = ? AND t.org_id = ?`, [t.id, req.user.orgId]);
+  res.json({ ...row, previousDue: t.due || "" });
+}));
+
 app.delete("/tasks/:id", requireAuth, wrap(async (req, res) => {
+  // FIX-31: a linked task goes when its next step or deadline goes, never alone.
+  const [lk] = await query("SELECT link_kind FROM tasks WHERE id=? AND org_id=? AND link_kind IN ('next_step','deadline')", [req.params.id, req.user.orgId]);
+  if (lk) return res.status(409).json({ error: "linked_task", sentence: lk.link_kind === "deadline"
+    ? "This task is the grant deadline itself. Take the deadline off the grant and the task goes with it."
+    : "This task is a next step. Dismiss it on the Thread and the task goes with it." });
   // FIX-14 Part 2: moved, not destroyed, so the screen can offer Undo.
   const undoId = await trashRow("tasks", req.params.id, req);
   if (!undoId) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
@@ -17062,6 +17163,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
     WHERE t.org_id = ? AND done=0 AND t.voided_at IS NULL AND t.due <= ? ${scopeClause}
+      AND COALESCE(t.link_kind, '') <> 'next_step'   -- FIX-31: a next step is already in this queue as its thread
     ORDER BY t.due ASC
     LIMIT 5
   `, [orgId, todayStr, ...scopeParams]),

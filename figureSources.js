@@ -1970,7 +1970,7 @@ const SOURCES = {
       recaptured_count: "Each person whose first gift in the period came after twelve months or more with no gift.",
       lapsed_count: "Each person tagged Lapsed today.",
       recurring_donors: "Each person with a monthly gift running today.",
-      volunteer_count: "Each volunteer with an hour logged in the last twelve months or a shift still to come.",
+      volunteer_count: "Everyone whose record carries the Volunteer role, including anyone added today.",
     }[p.plan.metric] || "The rows behind this answer.")),
     js: async (orgId, p) => require("./askEngine").cellRows(orgId, p.plan, p.cell),
   },

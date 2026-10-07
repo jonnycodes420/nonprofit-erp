@@ -77,7 +77,7 @@ async function giftSet(orgId, plan, span) {
 const DONOR_METRIC_RULES = {
   lapsed_count: { lifecycle: "lapsed", notDeceased: "1" },
   recurring_donors: { monthly: "1", notDeceased: "1" },
-  volunteer_count: { role: "volunteer", volActive: "1" },
+  volunteer_count: { role: "volunteer" },   // FIX-31: on the roster, the Volunteers tile's number
 };
 // The rows a donor-level metric counts (lapsed, monthly), from the shared filter.
 async function donorRows(orgId, rules) {
