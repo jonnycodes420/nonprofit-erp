@@ -4,7 +4,12 @@
 //   giving level  General, Mid or Major, from what they gave in the last 12
 //                 months against the org's cut points (Settings, Giving levels;
 //                 defaults $1,000 and $10,000).
-//   lifecycle     New, Current, Recaptured or Lapsed, from two 12-month windows.
+//   lifecycle     New, Current, Recaptured or Lapsed. FIX-30: Recaptured is a
+//                 return after a whole calendar year with no gift, read from
+//                 the gift that brought them back and the one before it. It
+//                 used to be "no gift in the 12 months before the last 12",
+//                 so a person who gave every October read Recaptured whenever
+//                 two of their gifts fell in the last 12 months.
 //   retained      gave last calendar year and again this calendar year.
 // Plus the closeness word (Close, Warm, On track, Cooling, New), which is ENGAGE-1's band
 // said in words (shared/engagementWeights.js closenessFor), so the word and the
@@ -28,8 +33,8 @@ const LEVELS = Object.freeze({
 });
 const LIFECYCLES = Object.freeze({
   new: { label: "New", kind: "lifecycle", sentence: "Their first gift was in the last 12 months." },
-  current: { label: "Current", kind: "lifecycle", sentence: "They gave in the last 12 months and in the 12 months before that." },
-  recaptured: { label: "Recaptured", kind: "lifecycle", sentence: "They gave in the last 12 months after going 12 months or more without a gift." },
+  current: { label: "Current", kind: "lifecycle", sentence: "They gave in the last 12 months, and before that without missing a calendar year." },
+  recaptured: { label: "Recaptured", kind: "lifecycle", sentence: "They gave in the last 12 months after a whole calendar year with no gift." },
   lapsed: { label: "Lapsed", kind: "lifecycle", sentence: "They have given before, but not in the last 12 months." },
 });
 const RETAINED = Object.freeze({ label: "Retained", kind: "retained", sentence: "They gave last calendar year and have given again this calendar year." });
@@ -86,15 +91,18 @@ function windowsFor(today) {
 function statusSql(orgId, today, cuts, { donorId = null } = {}) {
   const w = windowsFor(today);
   const args = [cuts.majorCents, cuts.midCents,
-    w.w0From, w.today, w.w0From, w.today, w.w1From, w.w1To, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
+    w.w0From, w.today, w.w0From, w.today, w.w0From, w.today, w.w0From, w.cyFrom, w.today, w.lyFrom, w.lyTo,
     orgId, w.today];
   if (donorId) args.push(donorId);
   const sql = `
     SELECT a.donor_id, a.last12, a.first_date, a.last_date,
            CASE WHEN ROUND(a.last12 * 100) >= ? THEN 'major' WHEN ROUND(a.last12 * 100) >= ? THEN 'mid' ELSE 'general' END AS level,
-           CASE WHEN a.w0 AND NOT a.before_w0 THEN 'new'
-                WHEN a.w0 AND a.w1 THEN 'current'
-                WHEN a.w0 THEN 'recaptured'
+           CASE WHEN a.w0 AND a.prev_date IS NULL THEN 'new'
+                -- The gift that brought them back is the first in the last 12
+                -- months; the one before it is the latest before the window.
+                -- A whole calendar year between them is a return.
+                WHEN a.w0 AND LEFT(a.first_w0, 4)::int - LEFT(a.prev_date, 4)::int >= 2 THEN 'recaptured'
+                WHEN a.w0 THEN 'current'
                 ELSE 'lapsed' END AS lifecycle,
            (a.this_cy AND a.last_cy) AS retained
       FROM (
@@ -103,8 +111,8 @@ function statusSql(orgId, today, cuts, { donorId = null } = {}) {
                MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS first_date,
                MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0) AS last_date,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w0,
-               COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS w1,
-               COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) < ?), false) AS before_w0,
+               MIN(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?) AS first_w0,
+               MAX(LEFT(g.date,10)) FILTER (WHERE g.amount > 0 AND LEFT(g.date,10) < ?) AS prev_date,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS this_cy,
                COALESCE(BOOL_OR(g.amount > 0 AND LEFT(g.date,10) BETWEEN ? AND ?), false) AS last_cy
           FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL

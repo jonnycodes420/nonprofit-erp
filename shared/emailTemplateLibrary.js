@@ -266,3 +266,86 @@ export function signStarterBlocks(blocks, { name, title } = {}) {
   return (Array.isArray(blocks) ? blocks : []).map(b =>
     b && b.type === "signature" && !b.name ? { ...b, name: String(name || "").trim(), title: b.title || String(title || "").trim() } : b);
 }
+
+// ── FIX-30 · THE BRIDGE: EVERY EMAIL OPENS IN THIS EDITOR ───────────────────
+// Two older stores kept emails outside the block editor: the one-person emails
+// (message_templates, COMMS-2: thank-you, receipt, year-end statement and the
+// rest) and the campaign starters (shared/emailTemplates.js). Each now opens
+// here as a saved template whose starter_key names where it came from:
+//   person_<kind>    one person's email. Its words are written back to
+//                    message_templates on every save, so every draft path,
+//                    journey and sweep that reads that store keeps working.
+//   campaign_<key>   a campaign starter, built in the org's own name and words.
+// Pure: the routes read the org's current words and hand them in.
+export const PERSON_PREFIX = "person_";
+export const CAMPAIGN_PREFIX = "campaign_";
+export const PERSON_KINDS = ["thanks_monthly", "receipt", "year_end", "event_followup", "volunteer_thanks"];
+// The emails whose tax lines are required. Those lines are one locked block:
+// the editor shows it, its words come from the brand kit, and a save without it
+// is refused.
+export const TAX_KINDS = ["receipt", "year_end"];
+export const TAX_TOKEN = "{{tax_language}}";
+const taxBlock = () => ({ type: "richtext", locked: true, blocks: [{ type: "p", text: TAX_TOKEN }] });
+
+export const personKindOf = key => {
+  const k = String(key || "").startsWith(PERSON_PREFIX) ? String(key).slice(PERSON_PREFIX.length) : "";
+  return PERSON_KINDS.includes(k) ? k : null;
+};
+export const campaignKeyOf = key => (String(key || "").startsWith(CAMPAIGN_PREFIX) ? String(key).slice(CAMPAIGN_PREFIX.length) : null);
+export const lockedBlocksFor = key => (TAX_KINDS.includes(personKindOf(key)) ? [taxBlock()] : []);
+const sameBlock = (a, b) => JSON.stringify({ t: a && a.type, b: a && a.blocks }) === JSON.stringify({ t: b && b.type, b: b && b.blocks });
+// Every required locked block is still there, word for word.
+export function missingLocked(key, blocks) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  return lockedBlocksFor(key).filter(need => !list.some(b => b && b.locked && sameBlock(b, need)));
+}
+
+// A one-person email's subject and body (plain text, paragraphs split by a
+// blank line) as blocks: the header, the words, the tax lines where they stood
+// (locked), the footer.
+export function personBlocksFromText(kind, body) {
+  const paras = String(body || "").replace(/\r\n/g, "\n").split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
+  const out = [header()];
+  let run = [];
+  const flush = () => { if (run.length) out.push(text(...run)); run = []; };
+  let taxed = false;
+  for (const p of paras) {
+    if (TAX_KINDS.includes(kind) && p === TAX_TOKEN) { flush(); out.push(taxBlock()); taxed = true; }
+    else run.push(p);
+  }
+  flush();
+  if (TAX_KINDS.includes(kind) && !taxed) {
+    // Required even if somebody's older words left it out: before the signature.
+    const at = out.length > 2 ? out.length - 1 : out.length;
+    out.splice(at, 0, taxBlock());
+  }
+  out.push(footer());
+  return out;
+}
+
+// And back: the words a draft, a journey or the volunteer sweep will read.
+export function personTextFromBlocks(blocks) {
+  const paras = [];
+  for (const b of Array.isArray(blocks) ? blocks : []) {
+    if (!b || b.type !== "richtext") continue;
+    for (const x of Array.isArray(b.blocks) ? b.blocks : []) {
+      if (!x) continue;
+      if (x.type === "ul") paras.push((x.items || []).map(i => `- ${i}`).join("\n"));
+      else if (String(x.text || "").trim()) paras.push(String(x.text).trim());
+    }
+  }
+  return paras.join("\n\n");
+}
+
+// A campaign starter's HTML paragraphs as blocks. Bold and line breaks inside
+// a paragraph become plain lines; an ask gets the org's giving button.
+const ASKS = new Set(["appeal", "monthly_appeal", "year_end"]);
+export function campaignBlocksFromHtml(key, html) {
+  const paras = String(html || "").split(/<\/p>/i)
+    .map(s => s.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim())
+    .filter(Boolean);
+  const blocks = [header(), text(...paras)];
+  if (ASKS.has(key)) blocks.push(button("give", key === "monthly_appeal" ? "Give every month" : "Give", "{{give_link}}"));
+  blocks.push(footer());
+  return blocks;
+}

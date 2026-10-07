@@ -98,7 +98,7 @@ const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.gree
 // Props from Communications: the campaign starters it already loaded (and the
 // builder that opens one), the people to preview a letter with, and the way to
 // Drafts to review.
-export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onUseCampaign, onOpenDrafts }) {
+export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts }) {
   const [tab, setTab] = useState("templates");
   const [data, setData] = useState(null);
   const [letters, setLetters] = useState(null);
@@ -121,6 +121,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
     try {
       const r = await apiFetch("/email-templates", { method: "POST", body: JSON.stringify(body) });
       const id = r.template.id;
+      if (r.existing) { load(); setOpenId(id); setBusy(""); return; }
       offerUndo({ message: `Saved "${r.template.name}" to your templates.`, undoAction: async () => {
         const x = await apiFetch(`/email-templates/${id}/archive`, { method: "POST", body: "{}" }); setOpenId(null); load(); return x;
       } }, "template");
@@ -150,37 +151,52 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
   const open = data && openId ? (data.templates || []).find(t => t.id === openId) : null;
   if (open) {
     return <EmailEditor key={open.id} template={open} isReadOnly={isReadOnly} blockTypes={data.blockTypes || []}
-      mergeFields={data.mergeFields || []} onBack={() => { setOpenId(null); load(); }} onSaved={load} />;
+      mergeFields={open.mergeFields || data.mergeFields || []} donors={donors} onOpenDrafts={onOpenDrafts} onOpenCampaigns={onOpenCampaigns}
+      onBack={() => { setOpenId(null); load(); }} onSaved={() => { load(); loadLetters(); }} />;
   }
 
   const tabs = [{ id: "templates", label: "Templates" }, { id: "brand", label: "Brand" }, { id: "media", label: "Media library" }];
   const live = (data?.templates || []).filter(t => !t.archived);
   const archived = (data?.templates || []).filter(t => t.archived);
+  // FIX-30 · EVERY EMAIL OPENS IN THE EMAIL EDITOR. A one-person email and a
+  // campaign starter open as a saved template of their own (person_<kind>,
+  // campaign_<key>): the first open makes it from the org's current words,
+  // later opens find the same one. Their cards stay where they always were,
+  // so the bridged template is not listed a second time below.
+  const BRIDGED = /^(person|campaign)_/;
+  const openBridged = key => {
+    const had = live.find(t => t.starterKey === key);
+    if (had) setOpenId(had.id); else start({ starterKey: key });
+  };
 
   // Every template, from every store, as one list of cards. `medium` is what
   // the card says first: a printed letter or an email.
   const cards = [];
   for (const t of (letters?.templates || [])) {
-    cards.push({ id: "letter-" + t.kind, store: "letter", section: templateSection("letter", t.kind, t.label),
-      name: t.label, medium: t.channel === "letter" ? "Printed letter" : "Email",
-      how: t.channel === "letter" ? "Prints with this person's details" : "To one person, as a draft you send",
+    const isLetter = t.channel === "letter";
+    cards.push({ id: "letter-" + t.kind, store: isLetter ? "letter" : "person", section: templateSection("letter", t.kind, t.label),
+      name: t.label, medium: isLetter ? "Printed letter" : "Email", editor: isLetter ? "letter" : "email",
+      how: isLetter ? "Prints with this person's details" : "To one person, as a draft you send",
       review: t.reviewed ? `Reviewed${t.reviewedBy ? " by " + t.reviewedBy : ""}` : "Not yet reviewed", reviewed: !!t.reviewed,
-      onOpen: () => setOpenLetter(t), openLabel: "Open" });
+      onOpen: isLetter ? () => setOpenLetter(t) : (isReadOnly && !live.some(x => x.starterKey === "person_" + t.kind)) || busy ? null : () => openBridged("person_" + t.kind),
+      openLabel: busy === "person_" + t.kind ? "Opening…" : "Open" });
   }
   for (const t of live) {
+    if (BRIDGED.test(t.starterKey || "")) continue;
     cards.push({ id: "designed-" + t.id, store: "designed", section: templateSection("designed", t.starterKey, `${t.name} ${t.purpose || ""}`),
-      name: t.name, medium: "Email", how: t.subject || t.purpose || "Designed with your brand",
+      name: t.name, medium: "Email", how: t.subject || t.purpose || "Designed with your brand", editor: "email",
       review: "In your templates", reviewed: true, onOpen: () => setOpenId(t.id), openLabel: "Open", designed: t });
   }
   for (const t of campaignStarters) {
     cards.push({ id: "campaign-" + t.key, store: "campaign", section: templateSection("campaign", t.key, `${t.label} ${t.blurb || ""}`),
-      name: t.label, medium: "Email", how: previewSubject ? previewSubject(t.subject) : t.subject,
+      name: t.label, medium: "Email", how: previewSubject ? previewSubject(t.subject) : t.subject, editor: "email",
       review: t.reviewed ? "Reviewed" : "Not yet reviewed", reviewed: !!t.reviewed,
-      onOpen: isReadOnly || !onUseCampaign ? null : () => onUseCampaign(t), openLabel: "Start a campaign" });
+      onOpen: (isReadOnly && !live.some(x => x.starterKey === "campaign_" + t.key)) || busy ? null : () => openBridged("campaign_" + t.key),
+      openLabel: busy === "campaign_" + t.key ? "Opening…" : "Open" });
   }
   for (const s of (data?.starters || [])) {
     cards.push({ id: "starter-" + s.starterKey, store: "designed", section: templateSection("designed", s.starterKey, `${s.name} ${s.purpose || ""}`),
-      name: s.name, medium: "Email", how: s.purpose,
+      name: s.name, medium: "Email", how: s.purpose, editor: "email",
       review: "Not yet reviewed", reviewed: false,
       onOpen: isReadOnly || busy ? null : () => start({ starterKey: s.starterKey }),
       openLabel: busy === s.starterKey ? "Starting…" : "Start from this" });
@@ -225,7 +241,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
                 ) : (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,250px),1fr))", gap: 10 }}>
                     {mine.map(c => (
-                      <div key={c.id} style={tplCard} data-template-card={c.store} data-template-id={c.id}>
+                      <div key={c.id} style={tplCard} data-template-card={c.store} data-template-id={c.id} data-template-editor={c.editor}>
                         <button type="button" style={{ ...openArea, cursor: c.onOpen ? "pointer" : "default" }} disabled={!c.onOpen}
                           aria-label={`${c.openLabel}: ${c.name}`} onClick={c.onOpen || undefined}>
                           <span style={mediumStyle} data-template-medium>{c.medium}</span>
@@ -265,7 +281,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
 }
 
 // ── THE EDITOR ──────────────────────────────────────────────────────────────
-export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onBack, onSaved }) {
+export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, donors = [], onOpenDrafts, onOpenCampaigns, onBack, onSaved }) {
   const [name, setName] = useState(template.name);
   const [subject, setSubject] = useState(template.subject);
   const [preheader, setPreheader] = useState(template.preheader);
@@ -337,6 +353,32 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
     setSaving(false);
   };
 
+  // FIX-30 · A ONE-PERSON EMAIL is drafted here for the person chosen, through
+  // the same route the old editor used, so the draft holds the words just
+  // saved. Undo dismisses the draft. Nothing is sent.
+  const [who, setWho] = useState(null);
+  const [whoQ, setWhoQ] = useState("");
+  const people = whoQ.trim() ? donors.filter(x => (x.name || "").toLowerCase().includes(whoQ.trim().toLowerCase())).slice(0, 8) : [];
+  const draftForPerson = async () => {
+    setNote("");
+    if (dirty) { setNote("Save first, so the draft holds the words you see."); return; }
+    try {
+      const r = await apiFetch(`/templates/${template.personKind}/draft`, { method: "POST", body: JSON.stringify({ donorId: who.id }) });
+      offerUndo({ message: r.sentence, undoAction: () => apiFetch(`/milestone-drafts/${r.draftId}/dismiss`, { method: "POST", body: "{}" }) }, "draft");
+      setNote(r.sentence);
+    } catch (e) { setNote(say(e, "The draft could not be made.")); }
+  };
+  // Any other email can start a campaign. It is a draft; Undo deletes it.
+  const startCampaign = async () => {
+    setNote("");
+    if (dirty) { setNote("Save first, so the campaign starts from what you see."); return; }
+    try {
+      const c = await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: template.id, name: saved.name }) });
+      offerUndo({ message: c.sentence || `Started ${c.name} from this template.`, undoAction: () => apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }) }, "campaign");
+      setNote(c.sentence || `${c.name} is a draft campaign. Nothing has been sent.`);
+    } catch (e) { setNote(say(e, "The campaign could not be started.")); }
+  };
+
   const test = async () => {
     setNote("");
     if (dirty) { setNote("Save first, so the test is the email you see."); return; }
@@ -383,9 +425,29 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
         <div style={{ flex: 1 }} />
         <button style={btn.quiet} disabled={isReadOnly} onClick={draftAi}>Draft with AI</button>
         <button style={btn.quiet} disabled={isReadOnly} onClick={test}>Send me a test</button>
+        {!template.personKind && <button style={btn.quiet} disabled={isReadOnly} onClick={startCampaign} data-testid="email-start-campaign">Start a campaign</button>}
         <button style={btn.primary} disabled={isReadOnly || saving || !dirty} onClick={save}>{saving ? "Saving…" : dirty ? "Save" : "Saved"}</button>
       </div>
-      {note && <div style={{ ...problemBox, marginBottom: 12 }} role="status">{note}</div>}
+      {note && <div style={{ ...problemBox, marginBottom: 12 }} role="status">{note}
+        {/Drafts to review/.test(note) && onOpenDrafts && <> <button style={btn.small} onClick={onOpenDrafts}>Open drafts to review</button></>}
+        {/draft campaign|is a draft/.test(note) && !template.personKind && onOpenCampaigns && <> <button style={btn.small} onClick={onOpenCampaigns}>Open campaigns</button></>}
+      </div>}
+      {template.personKind && (
+        <div style={{ ...card, marginBottom: 14 }} data-testid="email-person-draft">
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>To one person</div>
+          <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 8px", lineHeight: 1.5 }}>
+            This email goes to one person at a time, as a draft you read and send. Saving it here is what marks it reviewed, and the draft holds its words.
+          </p>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input style={{ ...input, flex: "1 1 200px", width: "auto" }} aria-label="Find a person" placeholder={who ? who.name : "Find a person by name"}
+              value={whoQ} onChange={e => setWhoQ(e.target.value)} />
+            <button style={btn.quiet} disabled={isReadOnly || !who} onClick={draftForPerson} data-testid="email-person-draft-make">
+              {who ? `Make a draft for ${who.name}` : "Make a draft for this person"}</button>
+          </div>
+          {people.map(p => <button key={p.id} type="button" onClick={() => { setWho(p); setWhoQ(""); }}
+            style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", borderTop: `1px solid ${T.bg2}`, padding: "7px 10px", cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>{p.name}</button>)}
+        </div>
+      )}
 
       {ai && (
         <div style={{ ...card, marginBottom: 14, borderColor: T.gold }} data-testid="ai-proposals">
@@ -435,10 +497,12 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, onB
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, flex: 1 }}>{(blockTypes.find(t => t.key === b.type) || {}).label || b.type}</span>
                 <button style={btn.small} aria-label="Move up" onClick={() => move(i, -1)} disabled={i === 0}>Up</button>
                 <button style={btn.small} aria-label="Move down" onClick={() => move(i, 1)} disabled={i === blocks.length - 1}>Down</button>
-                {b.type !== "footer" && <button style={btn.small} onClick={() => remove(i)}>Remove</button>}
+                {b.type !== "footer" && !b.locked && <button style={btn.small} onClick={() => remove(i)}>Remove</button>}
               </div>
-              <BlockOptions b={b} set={patch => setBlock(i, patch)} events={events} pages={pages}
-                pick={(kind, onPick) => setPicker({ kind, onPick })} />
+              {b.locked
+                ? <div style={{ fontSize: 12, color: T.ink3 }} data-testid="email-locked-block">Your tax lines, from your brand kit. This email must carry them, so this block can't be removed or changed here.</div>
+                : <BlockOptions b={b} set={patch => setBlock(i, patch)} events={events} pages={pages}
+                    pick={(kind, onPick) => setPicker({ kind, onPick })} />}
             </div>
           ))}
           <div style={{ ...card, marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>

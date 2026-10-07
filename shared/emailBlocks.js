@@ -87,22 +87,27 @@ export function youtubeThumb(videoId) {
 // ── Merge fields ───────────────────────────────────────────────────────────
 // Text is escaped FIRST, then each known token is replaced by its escaped
 // value, so neither the person's words nor a donor's name can carry markup.
-function mergeText(raw, fields, problems, where) {
+// FIX-30: a template may bring its own personal fields (a one-person email's
+// gift date, year total or tax lines); `extra` is that list, [{ key, fallback }].
+const fieldDefs = extra => (extra && extra.length ? [...EMAIL_MERGE_FIELDS, ...extra.filter(f => f && f.key && !MERGE_KEYS.has(f.key))] : EMAIL_MERGE_FIELDS);
+const keysOf = defs => (defs === EMAIL_MERGE_FIELDS ? MERGE_KEYS : new Set(defs.map(f => f.key)));
+function mergeText(raw, fields, problems, where, defs = EMAIL_MERGE_FIELDS) {
   const escaped = esc(raw);
+  const keys = keysOf(defs);
   return escaped.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (whole, name) => {
     const key = MERGE_ALIASES[name] || name;
-    if (!MERGE_KEYS.has(key)) {
-      problems.push(`${where}: {{${name}}} is not a field Steward can fill. Use one of ${EMAIL_MERGE_FIELDS.map(f => f.token).join(", ")}.`);
+    if (!keys.has(key)) {
+      problems.push(`${where}: {{${name}}} is not a field Steward can fill. Use one of ${defs.map(f => f.token || `{{${f.key}}}`).join(", ")}.`);
       return whole;
     }
-    return esc(fieldValue(fields, key));
+    return esc(fieldValue(fields, key, defs));
   });
 }
-function fieldValue(fields, key) {
+function fieldValue(fields, key, defs = EMAIL_MERGE_FIELDS) {
   const v = fields && fields[key];
   if (v != null && String(v).trim() !== "") return String(v);
-  const def = EMAIL_MERGE_FIELDS.find(f => f.key === key);
-  return def ? def.fallback : "";
+  const def = defs.find(f => f.key === key);
+  return def ? (def.fallback || "") : "";
 }
 // A URL may be a merge token ({{give_link}}) or a typed http(s) link.
 function mergeUrl(raw, fields) {
@@ -134,15 +139,17 @@ function resolveSrc(src, links) {
 // The subject line as plain text with the fields filled (a subject is not
 // HTML, so nothing is escaped). Unknown fields are left as typed; renderEmail
 // reports them.
-export function renderSubject(subject, fields) {
+export function renderSubject(subject, fields, extraFields) {
+  const defs = fieldDefs(extraFields), keys = keysOf(defs);
   return String(subject || "").replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
-    return MERGE_KEYS.has(k) ? fieldValue(fields || {}, k) : w;
+    return keys.has(k) ? fieldValue(fields || {}, k, defs) : w;
   }).replace(/[\r\n]+/g, " ").trim();
 }
 
 // ── The renderer ───────────────────────────────────────────────────────────
-export function renderEmail({ blocks, brand, fields, preheader, subject, links, mode } = {}) {
+export function renderEmail({ blocks, brand, fields, preheader, subject, links, mode, extraFields } = {}) {
+  const defs = fieldDefs(extraFields), keys = keysOf(defs);
   const problems = [];
   const images = [];
   const text = [];
@@ -156,11 +163,11 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
   const orgName = String(B.displayName || F.org_name || "").trim();
   const list = Array.isArray(blocks) ? blocks : [];
 
-  const T = (raw, where) => { blankCheck(raw, problems, where); return mergeText(raw, F, problems, where); };
+  const T = (raw, where) => { blankCheck(raw, problems, where); return mergeText(raw, F, problems, where, defs); };
   // The plain-text part gets the same fields, unescaped (it is not HTML).
   const plain = s => String(s == null ? "" : s).replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (w, n) => {
     const k = MERGE_ALIASES[n] || n;
-    return MERGE_KEYS.has(k) ? fieldValue(F, k) : w;
+    return keys.has(k) ? fieldValue(F, k, defs) : w;
   });
 
   // One image, email-safe. A missing src renders a neutral placeholder in a
@@ -235,7 +242,7 @@ export function renderEmail({ blocks, brand, fields, preheader, subject, links, 
             const items = (Array.isArray(b.items) ? b.items : []).map(it => `<li class="st-text" style="margin:0 0 6px;font-family:${fonts.sans};font-size:16px;line-height:1.6;color:${C.body};">${T(it, where)}</li>`).join("");
             out.push(`<ul style="margin:0 0 14px;padding:0 0 0 22px;">${items}</ul>`);
             for (const it of (b.items || [])) text.push(`- ${plain(it)}`);
-          } else { out.push(P(T(b.text, where))); text.push(plain(b.text)); }
+          } else { out.push(P(T(b.text, where).replace(/\n/g, "<br>"))); text.push(plain(b.text)); }
         }
         if (out.length) rows.push(row(out.join(""), `12px ${PAD}px 4px`));
         break;
@@ -462,7 +469,7 @@ export function validateEmailBlocks(blocks, allowedTypes) {
             if (b && b.type === "ul") return { type: "ul", items: (Array.isArray(b.items) ? b.items : []).slice(0, 30).map(x => str(x, 600)) };
             return { type: b && b.type === "h2" ? "h2" : "p", text: str(b && b.text, 4000) };
           });
-          out.push({ type: "richtext", blocks: bl }); break;
+          out.push({ type: "richtext", blocks: bl, ...(w.locked === true ? { locked: true } : {}) }); break;
         }
         case "image": out.push({ type: "image", image: img1(w.image, "the photo"), alt: str(w.alt, 200), caption: str(w.caption, 300) }); break;
         case "photos2": {

@@ -2492,7 +2492,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     <div style={{...cardWrap}}>
       <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <span style={sTitle}>Sequences</span>
-        <button onClick={()=>onNavigate("communications",{section:"sequences"})} style={sLink}>Open →</button>
+        <button onClick={()=>onNavigate("communications",{subtab:"sequences"})} style={sLink}>Open →</button>
       </div>
       <div style={{padding:"10px 20px 14px",display:"flex",flexDirection:"column",gap:8}}>
         {seqLines.map(s=>(

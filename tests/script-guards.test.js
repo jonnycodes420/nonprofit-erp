@@ -207,6 +207,9 @@ const LOOPBACK_HARDCODED = [
   // NAV-1 — the grouped-sidebar walk. Loopback :5631/:4193 by default,
   // hardcoded; APP/API are the per-worktree port block, never a remote host.
   "nav1-walk",
+  // FIX-30 — the template-bridge walk. Loopback only (refuses anything else);
+  // it drafts and saves on the LOCAL scratch database it is pointed at.
+  "fix30-walk",
   // FIX-11 Part 5 — the BCC-address walk. Loopback :5841/:4313 by default,
   // hardcoded. It registers its own throwaway org and only reads a screen.
   "fix11-bcc-walk",
