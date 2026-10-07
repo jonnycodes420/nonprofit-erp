@@ -3970,6 +3970,7 @@ app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media libr
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
+app.use(require("./routes/search").routers.r0);        // WIRE-1 the one search
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
@@ -10945,6 +10946,7 @@ const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, norm
   unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter };
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
+require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

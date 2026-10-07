@@ -30,6 +30,9 @@ const QUERY_KEYS = [
   // opens, reloads and shares as the same numbers. from/to/fund/campaign are
   // already here; `owner` is the officer a donor is assigned to.
   ["owner", "owner"],
+  // WIRE-1: a Group's "Email this group" opens a new Communication with that
+  // group as its audience (/app/communications?audience=<id>).
+  ["audienceId", "audience"],
 ];
 
 export function donorHref(id) {

@@ -9,7 +9,7 @@ import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
-import { AddToGroup } from "./Groups";
+import { AddToGroup, SaveAsGroup } from "./Groups";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
 import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
@@ -232,6 +232,9 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
   );
 }
 function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:PLAN_UNKNOWN,single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false,sortBy="",setSortBy,household="",clearHousehold}){
+  // WIRE-1: the server-side filters on screen, as a Group rule, offered once
+  // a filter beyond "donors" is set. The sort is not a filter.
+  const groupRules=(()=>{const r={};Object.entries(exportParams||{}).forEach(([k,v])=>{if(v&&k!=="sort")r[k]=String(v);});return Object.keys(r).length>1?r:null;})();
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
@@ -460,6 +463,10 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           filtering current page
         </span>}
         <div style={{flex:1}}/>
+        {/* WIRE-1: the list's own filters, saved as a group by rule. Only the
+            filters the server runs go in; a filter on this page only does not. */}
+        {!isReadOnly&&groupRules&&<SaveAsGroup name={`Donor list ${new Date().toISOString().slice(0,10)}`} rules={groupRules}
+          label="Save these filters as a group" testid="directory-save-group"/>}
         <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle" aria-pressed={selectMode}
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
           {selectMode?"Done":"Select"}

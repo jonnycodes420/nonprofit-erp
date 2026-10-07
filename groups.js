@@ -20,6 +20,18 @@ let _ps = null;
 async function proposalShapeMod() { return _ps || (_ps = await import("./shared/proposalShape.js")); }
 
 const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
+// WIRE-1 · THE ONE LIST OF RECURRING STATES THAT COUNT AS RUNNING. A plan in
+// any of these is still giving: the Group rules (monthly, recurring) and the
+// journey audience "gives on a recurring plan" (routes/crm.js) read this, so
+// a Group and a journey can never disagree about who is a recurring donor.
+const ACTIVE_RECURRING_STATUSES = ["active", "past_due", "recovering", "recovered"];
+const RECURRING_IN = ACTIVE_RECURRING_STATUSES.map(s => `'${s}'`).join(",");
+// WIRE-1 · a membership status a rule may name. `current` is active or in its
+// grace period, the way the membership screens count a member.
+const MEMBER_STATUSES = { current: ["active", "grace"], active: ["active"], grace: ["grace"], lapsed: ["lapsed"], any: null };
+// Rules that are a yes or an id: "1" or "any" means any of them, otherwise
+// the value is the id of one record, matched inside this org only.
+const ANY_IDS = ["attendedEvent", "registeredEvent", "gavePage", "auctionBidder", "inJourney"];
 
 const DONOR_SORTS = {
   total_giving:   "total_giving DESC",
@@ -56,9 +68,15 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push(PT.typeSql(String(role)));
   }
   if (search && String(search).trim()) {
+    // WIRE-1: a phone number and an organisation's contact person find the
+    // record too, the same as the name and the email.
     const s = "%" + String(search).trim().toLowerCase() + "%";
-    where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
-    params.push(s, s);
+    const digits = String(search).replace(/\D/g, "");
+    const phone = digits.length >= 4
+      ? " OR regexp_replace(COALESCE(phone,''), '\\D', '', 'g') LIKE ? OR regexp_replace(COALESCE(mobile,''), '\\D', '', 'g') LIKE ?" : "";
+    where.push(`(lower(name) LIKE ? OR lower(email) LIKE ? OR lower(COALESCE(contact_name,'')) LIKE ? OR lower(COALESCE(phone,'')) LIKE ?${phone})`);
+    params.push(s, s, s, s);
+    if (phone) params.push("%" + digits + "%", "%" + digits + "%");
   }
   if (stage)      { where.push("stage = ?");       params.push(String(stage)); }
   if (status)     { where.push("status = ?");      params.push(String(status)); }
@@ -147,7 +165,7 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     // A monthly recurring gift that is still running (the same live states
     // the journey suggestion reads as "they give every month").
     where.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rx WHERE rx.org_id = donors.org_id AND rx.donor_id = donors.id
-                         AND rx.interval = 'month' AND rx.status IN ('active','past_due','recovering','recovered'))`);
+                         AND rx.interval = 'month' AND rx.status IN (${RECURRING_IN}))`);
   }
   if (q.city) { where.push("lower(trim(COALESCE(city,''))) = lower(trim(?))"); params.push(String(q.city)); }
   // AI-FIX: a state, by postal code; a record may hold "NC" or "North Carolina".
@@ -251,6 +269,71 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
                               AND ix.type = 'ask' AND LEFT(ix.date,10) > ?)`);
     params.push(PS.OPEN_STAGE_KEYS, yearAgo, yearAgo);
   }
+  // ── WIRE-1 · EVERY LIST CAN BECOME A GROUP ───────────────────────────────
+  // A guest list, a campaign's donors, members, fundraisers, bidders, funders,
+  // the people in a journey, an import: each is a rule here, so the Donors
+  // list, a Group, Show me and a Communication built on a Group are the same
+  // rows. Every one is an EXISTS against a table Steward already keeps,
+  // scoped to the org, with the id as a parameter. "any" (or "1") is any of
+  // them; an id names one record, and an id from another org finds nobody.
+  const anyOr = (v) => { const x = String(v); return x === "any" || x === "1" ? null : x; };
+  const idRule = (key, sqlAny, col) => {
+    if (!q[key]) return;
+    const id = anyOr(q[key]);
+    where.push(`EXISTS (${sqlAny}${id ? ` AND ${col} = ?` : ""})`);
+    if (id) params.push(id);
+  };
+  idRule("attendedEvent", `SELECT 1 FROM event_attendees ea WHERE ea.org_id = donors.org_id AND ea.donor_id = donors.id
+                            AND (lower(COALESCE(ea.status,'')) = 'attended' OR ea.checked_in_at IS NOT NULL)`, "ea.event_id");
+  idRule("registeredEvent", `SELECT 1 FROM event_attendees er WHERE er.org_id = donors.org_id AND er.donor_id = donors.id
+                            AND lower(COALESCE(er.status,'')) NOT IN ('cancelled','invited','declined')`, "er.event_id");
+  idRule("gavePage", `SELECT 1 FROM gifts gp WHERE gp.org_id = donors.org_id AND gp.donor_id = donors.id AND gp.amount > 0
+                        AND gp.giving_page_id IS NOT NULL`, "gp.giving_page_id");
+  // A bidder is a person registered to bid (auction_bidders, the paddle),
+  // whether or not a bid has been placed yet.
+  idRule("auctionBidder", `SELECT 1 FROM auction_bidders ab WHERE ab.org_id = donors.org_id AND ab.donor_id = donors.id`, "ab.auction_id");
+  idRule("inJourney", `SELECT 1 FROM cultivation_plans cp WHERE cp.org_id = donors.org_id AND cp.donor_id = donors.id
+                         AND cp.status = 'active'`, "cp.template_id");
+  if (q.member) {
+    if (!Object.prototype.hasOwnProperty.call(MEMBER_STATUSES, String(q.member))) return { badStatus: true };
+    const sts = MEMBER_STATUSES[String(q.member)];
+    where.push(`EXISTS (SELECT 1 FROM memberships mx WHERE mx.org_id = donors.org_id AND mx.donor_id = donors.id
+                         ${sts ? "AND mx.status = ANY(?::text[])" : ""}${q.memberLevel ? " AND mx.level_id = ?" : ""})`);
+    if (sts) params.push(sts);
+    if (q.memberLevel) params.push(String(q.memberLevel));
+  } else if (q.memberLevel) return { badStatus: true };
+  if (q.hasPledge === "1") where.push(`EXISTS (SELECT 1 FROM pledges px WHERE px.org_id = donors.org_id AND px.donor_id = donors.id AND px.status = 'open')`);
+  if (q.recurring === "1") {
+    where.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rr WHERE rr.org_id = donors.org_id AND rr.donor_id = donors.id
+                         AND rr.status IN (${RECURRING_IN}))`);
+  }
+  if (q.fundraiser === "1") {
+    where.push(`EXISTS (SELECT 1 FROM peer_fundraisers pf WHERE pf.org_id = donors.org_id AND pf.person_id = donors.id
+                         AND COALESCE(pf.status,'') NOT IN ('rejected','removed'))`);
+  }
+  if (q.funder === "1") where.push(`EXISTS (SELECT 1 FROM grants gf WHERE gf.org_id = donors.org_id AND gf.funder_donor_id = donors.id)`);
+  if (q.openTask === "1") {
+    where.push(`EXISTS (SELECT 1 FROM tasks tk WHERE tk.org_id = donors.org_id AND tk.donor_id = donors.id
+                         AND COALESCE(tk.done,0) = 0 AND tk.voided_at IS NULL)`);
+  }
+  if (q.kind) {
+    if (q.kind === "organization") where.push("kind IN ('organisation','organization')");
+    else if (q.kind === "person") where.push("(kind IS NULL OR kind NOT IN ('organisation','organization'))");
+    else return { badStatus: true };
+  }
+  if (q.fromImport) { where.push("created_import_id = ?"); params.push(String(q.fromImport)); }
+  if (q.groupId) {
+    // In another group: that group's own members, worked out the same way.
+    // A group inside a group inside a group is as deep as it goes, so a loop
+    // of groups naming each other finds nobody instead of running forever.
+    const depth = opts.depth || 0;
+    if (depth >= 3) return { badStatus: true };
+    const inner = await groupById(orgId, q.groupId);
+    if (!inner) return { badStatus: true };
+    const m = await memberSql(orgId, inner, depth + 1);
+    where.push(`id IN (${m.sql})`);
+    params.push(...m.args);
+  }
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   let orderBy = (DONOR_SORTS[q.sort] || DONOR_SORTS.total_giving) + ", id";
   // The closeness word rides on every row as a column (selectCols), its
@@ -284,7 +367,10 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // ASK-2: a gift not yet thanked.
   "unthankedOver",
   // AI-FIX: the state on their address, and no contact logged since a date.
-  "state", "noContactSince"];
+  "state", "noContactSince",
+  // WIRE-1: every list can become a Group.
+  "attendedEvent", "registeredEvent", "member", "memberLevel", "hasPledge", "recurring", "fundraiser", "gavePage",
+  "auctionBidder", "funder", "inJourney", "openTask", "kind", "fromImport", "groupId"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -310,7 +396,7 @@ function normalizeRules(raw) {
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
-  for (const k of ["notDeceased", "monthly", "noAsk"]) {
+  for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "fundraiser", "funder", "openTask"]) {
     if (rules[k] === undefined) continue;
     if (rules[k] === "true") rules[k] = "1";
     if (rules[k] !== "1") delete rules[k];
@@ -327,6 +413,11 @@ function normalizeRules(raw) {
     if (rules[y] && !/^\d{4}$/.test(rules[y])) errors.push("A year is written 2026.");
     if (rules[y] && !rules[k]) errors.push("A year goes with a campaign.");
   }
+  // WIRE-1: the list rules.
+  for (const k of ANY_IDS) if (rules[k] === "1" || rules[k] === "true") rules[k] = "any";
+  if (rules.member && !Object.prototype.hasOwnProperty.call(MEMBER_STATUSES, rules.member)) errors.push("A member is current, active, in grace, lapsed or any.");
+  if (rules.memberLevel && !rules.member) rules.member = "current";
+  if (rules.kind && !["person", "organization"].includes(rules.kind)) errors.push("A kind is a person or an organization.");
   if (!Object.keys(rules).length) errors.push("A group by rule needs at least one rule, or it is everybody.");
   return { ok: errors.length === 0, rules, errors };
 }
@@ -365,6 +456,20 @@ function rulesSentence(rules = {}) {
   if (rules.notGaveCampaign) parts.push(`who have not given to one campaign${rules.notGaveCampaignYear ? ` in ${rules.notGaveCampaignYear}` : ""}`);
   if (rules.unthankedOver !== undefined) parts.push(Number(rules.unthankedOver) > 0 ? `with a gift over $${Number(rules.unthankedOver).toLocaleString("en-US")} not yet thanked` : "with a gift not yet thanked");
   if (rules.noAsk) parts.push("with no ask this year (no proposal open, nothing asked in twelve months)");
+  if (rules.kind) parts.push(rules.kind === "organization" ? "organizations" : "people, not organizations");
+  if (rules.registeredEvent) parts.push(rules.registeredEvent === "any" ? "registered for an event" : "registered for one event");
+  if (rules.attendedEvent) parts.push(rules.attendedEvent === "any" ? "who came to an event (attended or checked in)" : "who came to one event (attended or checked in)");
+  if (rules.member) parts.push({ current: "members now (active or in grace)", active: "active members", grace: "members in their grace period", lapsed: "lapsed members", any: "members, now or before" }[rules.member] + (rules.memberLevel ? " at one level" : ""));
+  if (rules.hasPledge) parts.push("with an open pledge");
+  if (rules.recurring) parts.push("with a recurring gift running, at any interval");
+  if (rules.fundraiser) parts.push("who run a peer-to-peer page");
+  if (rules.gavePage) parts.push(rules.gavePage === "any" ? "who gave through a giving page" : "who gave through one giving page");
+  if (rules.auctionBidder) parts.push(rules.auctionBidder === "any" ? "registered to bid in an auction" : "registered to bid in one auction");
+  if (rules.funder) parts.push("who fund a grant");
+  if (rules.inJourney) parts.push(rules.inJourney === "any" ? "in a journey now" : "in one journey now");
+  if (rules.openTask) parts.push("with an open task");
+  if (rules.fromImport) parts.push("added by one import");
+  if (rules.groupId) parts.push("in another group");
   if (rules.notDeceased) parts.push("not deceased");
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
   if (rules.volAnswer) parts.push("who gave one answer on their application");
@@ -401,7 +506,7 @@ async function listGroups(orgId) {
 // group page, a figure source, a campaign, a journey's audience. A rule the
 // filter refuses selects nobody, never everybody.
 const NOBODY = { sql: "SELECT NULL::text AS id WHERE false", args: [] };
-async function memberSql(orgId, group) {
+async function memberSql(orgId, group, depth = 0) {
   if (!group) return NOBODY;
   if (group.kind === "static") {
     return {
@@ -412,7 +517,7 @@ async function memberSql(orgId, group) {
     };
   }
   if (group.kind !== "dynamic") return NOBODY;
-  const f = await buildDonorFilter(orgId, group.rules || {});
+  const f = await buildDonorFilter(orgId, group.rules || {}, { depth });
   if (f.badRole || f.badStatus) return NOBODY;
   return { sql: `SELECT donors.id FROM donors WHERE ${f.whereSql}`, args: f.params };
 }
@@ -510,6 +615,6 @@ async function dynamicJoins(orgId, { donorId = null, today = "", fire } = {}) {
 
 module.exports = {
   baselineGroup, dynamicJoins, watchedDynamicGroups,
-  DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS,
+  DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS, ACTIVE_RECURRING_STATUSES,
   buildDonorFilter, normalizeRules, rulesSentence, groupById, listGroups, memberSql, memberIds, memberCounts, isMember, groupsFor, shapeGroup,
 };

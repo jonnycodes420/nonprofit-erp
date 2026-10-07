@@ -12071,8 +12071,10 @@ function audienceClauses(audience = {}, alias = "d") {
                         AND m.status IN ('active','grace'))`);
   }
   if (audience.recurring) {
+    // WIRE-1: the same running states the Group rules read (groups.js).
     sql.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rs WHERE rs.donor_id=${alias}.id AND rs.org_id=${alias}.org_id
-                        AND rs.status IN ('active','past_due'))`);
+                        AND rs.status = ANY(?::text[]))`);
+    params.push(GR.ACTIVE_RECURRING_STATUSES);
   }
   if (audience.stage) {
     sql.push(`lower(coalesce(${alias}.stage,'')) = lower(?)`);

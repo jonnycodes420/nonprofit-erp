@@ -31,6 +31,8 @@ export const SHOW_KEYS = [
   "unthankedOver",
   // AI-FIX: the state on their address; nobody in touch since a date.
   "state", "noContactSince",
+  // WIRE-1: every list can become a Group, and Show me reads the same rules.
+  "attendedEvent", "registeredEvent", "member", "hasPledge", "recurring", "fundraiser", "funder", "openTask", "kind",
 ];
 export const CANT_FILTER = "Steward can't filter by that yet";
 
@@ -148,6 +150,11 @@ export function templateSpec(text, ctx = {}) {
     (m, g, o, n) => { rules.gaveOver = String(Number(String(n).replace(/,/g, ""))); });
   // "gave more than $10,000 this year": the year the amount is counted in.
   if (rules.gaveOver !== undefined) take(new RegExp(`^(.*?)\\b(in |during )?${YEAR}\\b`), (m, pre, i, y) => { const r = yearRange(yearOf(y)); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; s = pre; });
+  take(/\b(?:who )?(?:came to|attended|were at|went to) (?:an|any) event\b/g, () => { rules.attendedEvent = "any"; });
+  take(/\b(?:who )?(?:came to|attended|were at|went to) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
+    const ev = matchEvent(name.trim(), ctx.events || []);
+    if (ev) rules.attendedEvent = ev.id; else rules.__unsupported = (rules.__unsupported ? rules.__unsupported + ", " : "") + `came to ${name.trim()}`;
+  });
   // To or at an event the org has: "to the gala", "at the Harbor Lights Gala".
   take(/\b(?:(?:gave|given|donated)\s+)?(?:to|at) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
     const n = name.trim();
@@ -161,6 +168,13 @@ export function templateSpec(text, ctx = {}) {
   take(new RegExp(`\\b(gave|given|donated|giving|gift|gifts)( to us)? (in |during )?${YEAR}\\b`, "g"),
     (...m) => { const r = yearRange(yearOf(m[4])); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; });
   take(/\b(monthly|every month|recurring monthly)( donors?| givers?| gifts?| giving)?\b/g, () => { rules.monthly = "1"; });
+  // WIRE-1: the list rules a plain question can name.
+  take(/\b(?:with |who have |who made |who've made )?(?:an )?open pledges?\b|\bwith a pledge\b/g, () => { rules.hasPledge = "1"; });
+  take(/\b(recurring|sustaining)( donors?| givers?| gifts?| giving)?\b/g, () => { rules.recurring = "1"; });
+  take(/\b(?:peer[- ]to[- ]peer )?fundraisers\b/g, () => { rules.fundraiser = "1"; });
+  take(/\bfunders\b/g, () => { rules.funder = "1"; });
+  take(/\b(organizations|organisations)\b/g, () => { rules.kind = "organization"; });
+  take(/\bwith (?:an )?open tasks?\b/g, () => { rules.openTask = "1"; });
   take(/\b(gives?|giving) monthly\b/g, () => { rules.monthly = "1"; });
   take(/\bvolunteers?\b/g, () => { rules.role = "volunteer"; });
   take(/\blapsed\b/g, () => { rules.lifecycle = "lapsed"; });
@@ -231,6 +245,15 @@ const KEY_HELP = {
   notGaveCampaignYear: "YYYY: only gifts to notGaveCampaign dated in this calendar year (only with notGaveCampaign)",
   noAsk: "1: no ask this year (no proposal open, and nothing asked of them in the last twelve months)",
   state: "a US state's two-letter postal code (NC for North Carolina): the state on their address",
+  attendedEvent: "any, or the id of one of the org's events listed below: came to that event (attended or checked in)",
+  registeredEvent: "any, or the id of one of the org's events listed below: registered for that event",
+  member: "current, active, grace, lapsed or any: holds a membership in that state (current is active or in grace)",
+  hasPledge: "1: has an open pledge",
+  recurring: "1: has a recurring gift running at any interval",
+  fundraiser: "1: runs a peer-to-peer fundraising page",
+  funder: "1: funds a grant",
+  openTask: "1: has an open task",
+  kind: "person or organization: the kind of record",
   noContactSince: "YYYY-MM-DD: nobody has logged a call, meeting, email or stewardship with them on or after this date ('a while' is six months before today)",
 };
 export function specTool() {
@@ -277,7 +300,10 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaig
   for (const k of Object.keys(raw)) {
     if (!SHOW_KEYS.includes(k) || !(ruleKeys || []).includes(k)) return { ok: false, refused: k };
   }
-  if (raw.gaveEvent && !events.some(e => e.id === raw.gaveEvent)) return { ok: false, refused: "an event Steward does not have" };
+  for (const k of ["gaveEvent", "attendedEvent", "registeredEvent"]) {
+    if (!raw[k] || (k !== "gaveEvent" && raw[k] === "any")) continue;
+    if (!events.some(e => e.id === raw[k])) return { ok: false, refused: "an event Steward does not have" };
+  }
   for (const k of ["gaveCampaign", "notGaveCampaign"])
     if (raw[k] && !campaigns.some(c => c.id === raw[k])) return { ok: false, refused: "a campaign Steward does not have" };
   const meaningful = Object.keys(raw).filter(k => k !== "notDeceased");
@@ -322,6 +348,15 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.state) w.push(`in ${US_STATES[rules.state] || rules.state}`);
   if (rules.noContactSince) w.push(`no contact logged since ${dayWords(rules.noContactSince)}`);
   if (rules.household) w.push(rules.household === "none" ? "not in a household" : "in a household");
+  if (rules.kind) w.push(rules.kind === "organization" ? "organizations" : "people, not organizations");
+  if (rules.attendedEvent) w.push(rules.attendedEvent === "any" ? "came to an event" : `came to ${evName(rules.attendedEvent)}`);
+  if (rules.registeredEvent) w.push(rules.registeredEvent === "any" ? "registered for an event" : `registered for ${evName(rules.registeredEvent)}`);
+  if (rules.member) w.push({ current: "a member now", active: "an active member", grace: "a member in grace", lapsed: "a lapsed member", any: "a member, now or before" }[rules.member] || "a member");
+  if (rules.hasPledge) w.push("an open pledge");
+  if (rules.recurring) w.push("a recurring gift running");
+  if (rules.fundraiser) w.push("runs a peer-to-peer page");
+  if (rules.funder) w.push("funds a grant");
+  if (rules.openTask) w.push("an open task");
   if (rules.notDeceased) w.push("not deceased");
   return w.map((x, i) => (i === 0 ? cap(x) : x));
 }
