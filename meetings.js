@@ -67,7 +67,7 @@ function meetingsSql(orgId, { donor = null, staff = null, from = null, to = null
            c.starts_at, c.ends_at, c.location, c.owner_user_id AS staff_id, u.name AS who,
            (c.starts_at <= NOW()) AS held, 'meeting' AS interaction_type
       FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
-     WHERE c.org_id = ? AND c.interaction_id IS NULL${wc}
+     WHERE c.org_id = ? AND c.interaction_id IS NULL AND cardinality(c.person_ids) > 0${wc}
     UNION ALL
     SELECT i.id, 'logged' AS kind, i.donor_id, NULL AS title, i.note, LEFT(i.date, 10) AS date,
            NULL::timestamptz AS starts_at, NULL::timestamptz AS ends_at, i.metadata->>'location' AS location,

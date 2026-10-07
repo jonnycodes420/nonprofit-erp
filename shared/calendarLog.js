@@ -77,7 +77,18 @@ export function classifyCalendarEvent(ev, ctx) {
     const id = lookup(a);
     if (id && !personIds.includes(id)) personIds.push(id);
   }
-  if (!personIds.length) return drop;
+  // FIX-33 Part 3b · NO GUEST ON FILE, BUT THE TITLE NAMES SOMEBODY. "Visit
+  // with Christine" booked without inviting her is still a donor meeting. The
+  // title must carry a meeting word AND name a person on file; one person is
+  // linked, more than one is kept as candidates for a person to pick, and
+  // nobody at all is dropped exactly as before.
+  let candidateIds = [], matchedBy = personIds.length ? "guest" : null;
+  if (!personIds.length && c.people) {
+    const t = titlePeople(e.title, c.people, c.staffNames || []);
+    if (t.ids.length === 1) { personIds.push(t.ids[0]); matchedBy = "title"; }
+    else if (t.ids.length > 1) { candidateIds = t.ids.slice(0, 6); matchedBy = "title_unsure"; }
+  }
+  if (!personIds.length && !candidateIds.length) return drop;
 
   const startsAt = e.startsAt ? new Date(e.startsAt) : null;
   const endsAt = e.endsAt ? new Date(e.endsAt) : startsAt;
@@ -92,8 +103,61 @@ export function classifyCalendarEvent(ev, ctx) {
       location: String(e.location || "").trim().slice(0, 300) || null,
       personIds,
       ownerUserId: String(c.ownerUserId || ""),
+      candidateIds,
+      matchedBy,
     },
   };
+}
+
+// ── FIX-33 Part 3b · WHO A TITLE NAMES ──────────────────────────────────────
+// The words that make an event a meeting. Without one of them a title naming a
+// donor ("Christine's birthday") is not a meeting and stores nothing.
+export const MEETING_WORDS = ["meeting", "meet", "visit", "coffee", "lunch", "call", "tour", "zoom", "breakfast", "dinner", "drinks"];
+const NICK = { bill: "william", will: "william", billy: "william", dave: "david", bob: "robert", rob: "robert", bobby: "robert",
+  jim: "james", jimmy: "james", mike: "michael", kate: "katherine", katie: "katherine", kathy: "katherine", liz: "elizabeth",
+  beth: "elizabeth", betty: "elizabeth", tom: "thomas", sue: "susan", jen: "jennifer", jenny: "jennifer", dan: "daniel",
+  joe: "joseph", steve: "steven", tony: "anthony", rick: "richard", rich: "richard", dick: "richard", pat: "patricia",
+  ed: "edward", ben: "benjamin", nick: "nicholas", matt: "matthew", andy: "andrew", greg: "gregory", ron: "ronald",
+  don: "donald", ken: "kenneth", larry: "lawrence", maggie: "margaret", peggy: "margaret", deb: "deborah", debbie: "deborah",
+  cindy: "cynthia", barb: "barbara", chuck: "charles", charlie: "charles", sam: "samuel", alex: "alexander", chris: "christopher" };
+const STOP = new Set(["with", "w", "and", "the", "a", "an", "at", "for", "re", "to", "of", "on", "in", "about", "our", "my", "me", "follow", "up", "quick", "catch", "intro"]);
+const fold = x => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const wordsOf = x => fold(x).replace(/[^a-z'\s]/g, " ").split(/\s+/).map(w => w.replace(/'s$/, "").replace(/'/g, "")).filter(Boolean);
+
+/**
+ * titlePeople(title, people, staffNames) -> { ids, why }
+ *   people: [{ id, name }] on file; staffNames: the org's staff names, whose
+ *   first names are never read as a donor ("Dave & Jonathan" when Jonathan is
+ *   the one with the calendar).
+ * A full name in the title wins outright; otherwise each name word is matched
+ * against first names (a nickname counts as its name) and last names. Every
+ * person any word matches is returned, so two Christines come back as two
+ * and the caller asks rather than guesses.
+ */
+export function titlePeople(title, people, staffNames = []) {
+  const words = wordsOf(title);
+  if (!words.some(w => MEETING_WORDS.includes(w))) return { ids: [], why: "no_meeting_word" };
+  const staff = new Set((staffNames || []).flatMap(n => wordsOf(n).slice(0, 1)));
+  const nameWords = words.filter(w => !MEETING_WORDS.includes(w) && !STOP.has(w) && w.length > 1 && !staff.has(w));
+  if (!nameWords.length) return { ids: [], why: "no_name" };
+  const titleStr = " " + words.join(" ") + " ";
+  const full = [], byWord = new Map();
+  for (const p of people || []) {
+    const pw = wordsOf(p.name);
+    if (pw.length < 1) continue;
+    const first = pw[0], last = pw.length > 1 ? pw[pw.length - 1] : null;
+    if (last && (titleStr.includes(` ${first} ${last} `) || nameWords.some(w => NICK[w] === first) && titleStr.includes(` ${last} `)))
+      full.push(p.id);
+    for (const w of nameWords) {
+      if (w === first || NICK[w] === first || (last && w === last)) {
+        if (!byWord.has(w)) byWord.set(w, []);
+        byWord.get(w).push(p.id);
+      }
+    }
+  }
+  if (full.length) return { ids: [...new Set(full)], why: "full_name" };
+  const ids = [...new Set([...byWord.values()].flat())];
+  return { ids, why: ids.length ? "name_word" : "no_match" };
 }
 
 // ── THE PROVIDER SHAPES ──────────────────────────────────────────────────────
@@ -129,18 +193,32 @@ export function fromGraph(item) {
 // The event goes on the STAFF MEMBER'S own calendar. The donor is an attendee
 // only if she ticked the box, which is off by default: putting a donor on an
 // invite sends them mail from her calendar, and that is a send she chose.
-export function bookingBody(provider, { title, startsAt, endsAt, location, inviteEmail }) {
+// FIX-33: the event carries the ORGANISATION's time zone, so it reads as
+// "2:00 PM Eastern" on her calendar rather than as a UTC time her calendar
+// has to translate (Outlook showed the zone as UTC on the event itself).
+export function wallTime(instant, timeZone) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(new Date(instant)).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
+export function timeBlock(provider, startsAt, endsAt, timeZone) {
+  const tz = timeZone || "UTC";
+  if (provider === "google")
+    return { start: { dateTime: wallTime(startsAt, tz), timeZone: tz }, end: { dateTime: wallTime(endsAt, tz), timeZone: tz } };
+  return { start: { dateTime: wallTime(startsAt, tz), timeZone: tz }, end: { dateTime: wallTime(endsAt, tz), timeZone: tz } };
+}
+export function bookingBody(provider, { title, startsAt, endsAt, location, inviteEmail, timeZone }) {
   if (provider === "google") {
     return {
       summary: title, location: location || undefined,
-      start: { dateTime: startsAt }, end: { dateTime: endsAt },
+      ...timeBlock(provider, startsAt, endsAt, timeZone),
       ...(inviteEmail ? { attendees: [{ email: inviteEmail }] } : {}),
     };
   }
   return {
     subject: title, location: location ? { displayName: location } : undefined,
-    start: { dateTime: startsAt.replace(/Z$/, ""), timeZone: "UTC" },
-    end: { dateTime: endsAt.replace(/Z$/, ""), timeZone: "UTC" },
+    ...timeBlock(provider, startsAt, endsAt, timeZone),
     attendees: inviteEmail ? [{ emailAddress: { address: inviteEmail }, type: "required" }] : [],
   };
 }
@@ -150,4 +228,4 @@ export const googleSendUpdates = invite => (invite ? "all" : "none");
 
 export default { CALENDAR_FIELDS, CALENDAR_FIELDS_SENTENCE, CALENDAR_SCOPE, calendarGranted,
   WINDOW_PAST_DAYS, WINDOW_AHEAD_DAYS, classifyCalendarEvent, GOOGLE_EVENT_FIELDS, GRAPH_EVENT_SELECT,
-  fromGoogle, fromGraph, bookingBody, googleSendUpdates };
+  fromGoogle, fromGraph, bookingBody, googleSendUpdates, titlePeople, MEETING_WORDS, wallTime, timeBlock };

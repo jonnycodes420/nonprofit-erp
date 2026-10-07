@@ -5974,7 +5974,7 @@ app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res)
     // Another donor's pledge marked paid by one of these gifts stays a pledge.
     await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
     // 2. Meetings: a meeting only these people were on goes; the rest drop them.
-    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND person_ids <@ ?::text[]`, [orgId, ids]);
+    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND cardinality(person_ids) > 0 AND person_ids <@ ?::text[]`, [orgId, ids]);
     if (gone.changes) children.calendar_events = gone.changes;
     const left = await runTx(client,
       `UPDATE calendar_events SET person_ids = ARRAY(SELECT p FROM unnest(person_ids) WITH ORDINALITY u(p, n) WHERE p <> ALL(?::text[]) ORDER BY n)
@@ -23641,9 +23641,7 @@ const PLAN_MONTHLY_COST = {
 // provider. The token exchange replays the same redirect_uri that was stored
 // when the flow started, so the value Google sees never disagrees with itself.
 app.get("/gmail/callback", wrap(async (req, res) => {
-  const app_ = (process.env.APP_URL || "https://www.stewardapp.dev").replace(/\/$/, "");
-  const qs = new URLSearchParams(req.query || {}).toString();
-  res.redirect(302, `${app_}/oauth/google/callback${qs ? "?" + qs : ""}`);
+  res.redirect(302, require("../publicUrl").oauthLandingUrl("google", req.query));
 }));
 
 app.get("/gmail/status", requireAuth, wrap(async (req, res) => {

@@ -55,4 +55,16 @@ function publicAppUrl() {
   return resolvePublicAppUrl().url;
 }
 
-module.exports = { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl };
+// FIX-33 · WHERE A PROVIDER'S REDIRECT IS FORWARDED. The API's callback
+// routes forward to the app, where the person is signed in. They used to read
+// APP_URL, and prod's APP_URL was the Railway API host itself, so
+// /gmail/callback forwarded to the API's own /oauth/google/callback, which
+// forwarded to itself until Safari stopped with "Too many redirects". The app
+// origin now comes from the one resolver every email link uses, which refuses
+// a deployment host, so the forward can never point back at the API.
+function oauthLandingUrl(providerKey, query = {}, env = process.env) {
+  const qs = new URLSearchParams(query || {}).toString();
+  return `${resolvePublicAppUrl(env).url}/oauth/${encodeURIComponent(providerKey)}/callback${qs ? "?" + qs : ""}`;
+}
+
+module.exports = { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl, oauthLandingUrl };

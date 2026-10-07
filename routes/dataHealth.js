@@ -75,6 +75,9 @@ const MERGE_REFS = [
   // WIRE-1: a meeting's people, the Agent's undo ledger and custom field
   // history. Their shapes are in REF_SHAPE below.
   ["calendar_events", "person_ids"], ["agent_writes", "entity_id"], ["custom_field_events", "entity_id"],
+  // FIX-33: what a booked meeting changed on the record moves with the person,
+  // and a candidate on an unsure meeting is the kept person after a merge.
+  ["meeting_effects", "donor_id"], ["calendar_events", "candidate_ids"],
 ];
 // Pointers that are not a plain "column = person id".
 //   array   the column holds several people (a meeting with two donors): the
@@ -83,6 +86,7 @@ const MERGE_REFS = [
 //   where   the column points at a person only on rows of one kind
 const REF_SHAPE = {
   "calendar_events.person_ids": { array: true },
+  "calendar_events.candidate_ids": { array: true },
   "agent_writes.entity_id": { where: "entity_table='donors'" },
   "custom_field_events.entity_id": { where: "entity='donor'" },
 };

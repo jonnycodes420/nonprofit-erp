@@ -52,6 +52,16 @@ async function touchRows(q, orgId, today, donorId = null) {
     `SELECT m.id, m.donor_id, m.date, m.kind, m.title FROM (${m.sql}) m JOIN donors d ON d.id = m.donor_id AND d.org_id = ?
       WHERE d.deleted_at IS NULL${dF}`, [...m.args, orgId, ...dA]);
   for (const r of mRows) push("meetings", r, w.TOUCH_POINTS.meetings.points, r.kind === "calendar" ? `Calendar: ${r.title || "Meeting"}` : "Meeting, logged");
+  // FIX-33: a meeting BOOKED is staff reaching out and the person saying yes,
+  // dated the day it was booked. It counts as a meeting at BOOKED_POINTS until
+  // it happens (then the meeting itself counts too), and stops counting if it
+  // is cancelled (meetingEffects.js marks the booking line cancelled).
+  const booked = await q(
+    `SELECT i.id, i.donor_id, LEFT(i.date, 10) AS date FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+      WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'note' AND i.metadata->>'kind' = 'meeting_booked'
+        AND COALESCE(i.metadata->>'cancelled', 'false') <> 'true' AND LEFT(i.date, 10) BETWEEN ? AND ?${dF}`,
+    [orgId, from, today, ...dA]);
+  for (const r of booked) push("meetings", r, w.BOOKED_POINTS, "Meeting booked");
 
   const calls = await q(
     `SELECT i.id, i.donor_id, LEFT(i.date, 10) AS date FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id

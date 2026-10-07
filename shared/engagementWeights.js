@@ -41,6 +41,9 @@ export const TOUCH_POINTS = Object.freeze({
   memberships: { points: 3,   label: "Memberships",       one: "membership", many: "memberships", how: "a membership year they joined or renewed" },
 });
 export const OPEN_POINTS = 0.5;          // an open without a click
+// FIX-33: a meeting booked with them counts under Meetings, dated the day it
+// was booked; the meeting itself counts again once it is held.
+export const BOOKED_POINTS = 3;
 export const ENGAGEMENT_PARTS = Object.keys(TOUCH_POINTS);
 
 // ── GENEROSITY: how much they give, against the organisation's own donors ──
