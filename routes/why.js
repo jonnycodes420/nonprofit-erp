@@ -197,7 +197,12 @@ async function showMe(req, res, typed) {
       });
       spec = SM.readToolSpec(out.content);
       if (spec) specSource = "ai";
-    } catch (e) { spec = null; aiOff = !!(e && e.code === "ai_off"); }
+    } catch (e) {
+      // FIX-29: the templates read it instead, and the failure is logged (a
+      // rejected schema hid here for two days).
+      spec = null; aiOff = !!(e && e.code === "ai_off");
+      if (!aiOff) console.error("[why] show me spec failed", e && e.status ? e.status : "", (e && e.message) || e);
+    }
   } else aiOff = gate.reason === "ai_disabled";
   if (!spec) spec = SM.templateSpec(typed, ctx);
   const refuse = async what => {

@@ -159,6 +159,7 @@ CORE=(
   agent2-gift
   why1-sentence-check
   parity4-show-me
+  fix29-tool-schemas
   ask2-plans
   ask2-refuse
   ask3-person-thread

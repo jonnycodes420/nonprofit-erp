@@ -99,7 +99,9 @@ async function orgCounts() {
 
   // The stand-in model. `reply` is the tool input it hands back.
   const RIGHT = { gaveFrom: `${Y - 1}-01-01`, gaveTo: `${Y - 1}-12-31`, notGaveFrom: `${Y}-01-01`, notGaveTo: `${Y}-12-31`, notDeceased: "1" };
-  let reply = RIGHT;
+  // FIX-29: the form is one list of { field, value } conditions.
+  const form = rules => ({ filters: Object.entries(rules).map(([field, value]) => ({ field, value })), suggestAsk: false, unsupported: "" });
+  let reply = form(RIGHT);
   const captured = [];
   const mock = http.createServer((req, res) => {
     let b = ""; req.on("data", c => b += c);
@@ -155,7 +157,7 @@ async function orgCounts() {
     ok("§2 AI on: the model was asked once", captured.length === before + 1, `${captured.length} vs ${before}`);
     const sent = JSON.parse(captured[captured.length - 1] || "{}");
     const tool = (sent.tools || [])[0] || {};
-    const fields = Object.keys((tool.input_schema || {}).properties || {}).filter(k => k !== "unsupported" && k !== "suggestAsk");
+    const fields = ((((tool.input_schema || {}).properties || {}).filters || {}).items || { properties: { field: {} } }).properties.field.enum || [];
     const GR = require("../groups");
     ok("§2 the model's form holds only donor list filters", fields.length > 0 && fields.every(k => GR.RULE_KEYS.includes(k)) && tool.input_schema.additionalProperties === false, fields.join(","));
     ok("§2 AI on: answered from the model's spec", a2.answered === true && a2.specSource === "ai", JSON.stringify(a2).slice(0, 300));
@@ -164,12 +166,12 @@ async function orgCounts() {
     ok("§2 both answers are in the question log as answered", (await answeredCount()) === logged0 + 2, `${await answeredCount()} vs ${logged0}`);
 
     // §3 a key no filter has.
-    reply = { ...RIGHT, zip: "019" };
+    reply = form({ ...RIGHT, zip: "019" });
     const a3 = await ask(QUESTION);
     ok("§3 a filter Steward does not have is refused", a3.answered === false && a3.refused === true && /can't filter by that yet/.test(a3.sentence) && !a3.rows, JSON.stringify(a3).slice(0, 300));
 
     // §4 the model names what it cannot express.
-    reply = { ...RIGHT, unsupported: "zip code starting 019" };
+    reply = { ...form(RIGHT), unsupported: "zip code starting 019" };
     const a4 = await ask(QUESTION + " with a zip code starting 019");
     ok("§4 a part the filters cannot express is refused", a4.answered === false && a4.refused === true && !a4.rows, JSON.stringify(a4).slice(0, 300));
 
@@ -213,7 +215,7 @@ async function orgCounts() {
       && a7.askStep && a7.askStep.label === "Plan the ask",
       JSON.stringify((a7.rows || []).map(r => [r.donorId, r.ask && r.ask.cents])));
     await q(`UPDATE orgs SET ai_enabled=true WHERE id=$1`, [ORG]);
-    reply = { gaveCampaign: "c_not_ours", notDeceased: "1" };
+    reply = form({ gaveCampaign: "c_not_ours", notDeceased: "1" });
     const a8 = await ask("Donors who gave to the summer drive");
     ok("§7 a campaign Steward does not have is refused, never guessed", a8.answered === false && a8.refused === true && !a8.rows, JSON.stringify(a8).slice(0, 200));
   } finally {
