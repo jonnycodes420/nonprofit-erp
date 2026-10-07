@@ -5768,43 +5768,75 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-
 // deletes every trashed (deleted_at IS NOT NULL) donor in the org, plus all
-// rows that exist only because those donors did — child tables first, in
-// FK-safe order (same convention as DELETE /admin/orgs/:id). Volunteers are
-// deliberately NOT deleted: a volunteer who was linked to a purged donor
-// keeps their own row, just unlinked. event_attendees keep the attendance
-// record with the donor link nulled (ON DELETE SET NULL); donor_relationships
-// and campaign_recipients clean themselves up (ON DELETE CASCADE). One
-// transaction — a mid-purge failure leaves nothing half-deleted. Admin-only;
-// like all DELETE-shaped routes, never checkWriteAccess-gated (a lapsed org
-// can still empty its trash).
+// rows that exist only because those donors did. WIRE-1: it walks EVERY person
+// pointer in Data health's MERGE_REFS, so a column added for the merge is
+// covered here in the same commit and nothing is left pointing at a person
+// who is gone:
+//   · the person's own records (gifts, receipts, pledges, notes, tasks,
+//     memberships and the rest) are deleted, child rows first in FK-safe order
+//   · a money, ledger or history row that is not theirs to take with them
+//     (a bookkeeping line, a POS sale, an auction item, another donor's gift
+//     in their honour, a household they headed, the portal log) keeps the row
+//     and loses the pointer
+//   · a meeting drops them from its people, and goes only if nobody is left
+// One transaction: a mid-purge failure leaves nothing half-deleted.
+// Admin-only; like all DELETE-shaped routes, never checkWriteAccess-gated (a
+// lapsed org can still empty its trash).
+const PURGE_KEEP_ROW = new Set([
+  "fin_transactions.donor_id", "pos_sales.person_id", "households.primary_donor_id", "grants.funder_donor_id",
+  "grant_sends.funder_donor_id", "gifts.tribute_donor_id", "gifts.match_employer_id", "auction_items.donor_id",
+  "auction_refund_flags.donor_id", "peer_fundraisers.person_id", "recurring_change_log.donor_id",
+  "portal_audit_log.donor_id", "custom_field_events.entity_id", "volunteers.donor_id", "event_attendees.donor_id",
+  "survey_responses.donor_id", "volunteer_applications.person_id", "volunteer_groups.contact_person_id",
+]);
+// The person's own rows with a plain FK to donors (or to their gifts), in the
+// order they must go: receipts and pledges point at gifts, gifts last.
+const PURGE_CHILD_TABLES = [
+  "receipts", "pledges", "memberships", "milestone_drafts", "note_reminders", "donor_materials",
+  "planned_gifts", "custom_field_values", "sequence_enrollments",
+  "payment_recovery_events", "recurring_subscriptions",
+  "tasks", "interaction_attachments", "interactions", "gifts",
+];
 app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
   const ids = trashed.map(r => r.id);
-  if (!ids.length) return res.json({ purged: 0, children: {} });
-
-  // receipts/pledges first (they FK both donors AND gifts), then the rest of
-  // the donor-scoped children, then gifts, then the donors themselves.
-  // fin_transactions is deliberately absent: it has no donor_id column (only
-  // a vendor_donor text name — the CLAUDE.md claim of a donor_id there was
-  // stale), and it's org bookkeeping history either way.
-  const CHILD_TABLES = [
-    "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials",
-    "planned_gifts", "custom_field_values", "sequence_enrollments",
-    "payment_recovery_events", "recurring_subscriptions",
-    "tasks", "interaction_attachments", "interactions", "gifts",
-  ];
-  const { purged, children } = await withTransaction(async (client) => {
-    await runTx(client, "UPDATE volunteers SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)", [orgId, ids]);
-    const children = {};
-    for (const t of CHILD_TABLES) {
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {} });
+  const { MERGE_REFS, REF_SHAPE } = require("./dataHealth");
+  const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
+  const { purged, children, unlinked } = await withTransaction(async (client) => {
+    const children = {}, unlinked = {};
+    // 1. Rows that stay, unlinked.
+    for (const [t, c] of MERGE_REFS) {
+      if (!PURGE_KEEP_ROW.has(`${t}.${c}`)) continue;
+      const r = await runTx(client, `UPDATE ${t} SET ${c}=NULL WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) unlinked[`${t}.${c}`] = r.changes;
+    }
+    // Another donor's pledge marked paid by one of these gifts stays a pledge.
+    await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
+    // 2. Meetings: a meeting only these people were on goes; the rest drop them.
+    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND person_ids <@ ?::text[]`, [orgId, ids]);
+    if (gone.changes) children.calendar_events = gone.changes;
+    const left = await runTx(client,
+      `UPDATE calendar_events SET person_ids = ARRAY(SELECT p FROM unnest(person_ids) WITH ORDINALITY u(p, n) WHERE p <> ALL(?::text[]) ORDER BY n)
+        WHERE org_id=? AND person_ids && ?::text[]`, [ids, orgId, ids]);
+    if (left.changes) unlinked["calendar_events.person_ids"] = left.changes;
+    // 3. The person's own rows, FK-safe order.
+    for (const t of PURGE_CHILD_TABLES) {
       const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id = ANY(?)`, [orgId, ids]);
       if (r.changes) children[t] = r.changes;
     }
+    // 4. Every other pointer: a row that exists only because the person did.
+    for (const [t, c] of MERGE_REFS) {
+      const k = `${t}.${c}`;
+      if (PURGE_KEEP_ROW.has(k) || (REF_SHAPE[k] || {}).array || (c === "donor_id" && PURGE_CHILD_TABLES.includes(t))) continue;
+      const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) children[t] = (children[t] || 0) + r.changes;
+    }
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
-    return { purged: d.changes, children };
+    return { purged: d.changes, children, unlinked };
   });
-  res.json({ purged, children });
+  res.json({ purged, children, unlinked });
 }));
 
 // ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
