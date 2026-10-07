@@ -21,12 +21,46 @@
 //   point   a point on a chart (an SVG circle), for the Board's line
 import { createContext, useContext, useState } from "react";
 import { T, fmtFull } from "./shared";
+import { apiFetch } from "../api";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
 // The screen that draws figures says how a person row opens that person, once.
 export const FigureContext = createContext({ openPerson: null });
 
 const centsOf = v => Math.round((Number(v) || 0) * 100);
+
+// REPORTS-4 · THE "?" ON EVERY FIGURE. One sentence, how it is counted (what
+// counts as retained, what a refund does), on a press, without opening the
+// rows. It sits BESIDE the figure's own button, never inside it.
+export function FigureWhy({ definition, label, source, tile = false }) {
+  const [on, setOn] = useState(false);
+  const [said, setSaid] = useState(null);
+  // A figure drawn without its own sentence says its source's, read on the
+  // first press (the same sentence the drawer opens with).
+  const open = () => {
+    setOn(v => !v);
+    if (!definition && said === null && source && source.key) {
+      const q = Object.entries(source.params || {}).filter(([, v]) => v !== undefined && v !== null && v !== "")
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+      apiFetch(`/figures/${encodeURIComponent(source.key)}/rows?${q}${q ? "&" : ""}pageSize=1`)
+        .then(r => setSaid(r.sentence || "")).catch(() => setSaid(""));
+    }
+  };
+  const text = definition || said;
+  if (!definition && !(source && source.key)) return null;
+  return (
+    <span style={{ position: tile ? "absolute" : "relative", ...(tile ? { top: 12, right: 12 } : {}), display: "inline-flex", verticalAlign: "middle", marginLeft: tile ? 0 : 4 }}>
+      <button type="button" data-testid="figure-why" aria-label={`How ${label || "this figure"} is counted`} aria-expanded={on}
+        onClick={e => { e.stopPropagation(); open(); }} onBlur={() => setOn(false)}
+        style={{ width: 16, height: 16, borderRadius: 99, border: "1px solid " + T.bg3, background: T.white, color: T.ink3,
+                 fontSize: 10, fontWeight: 800, lineHeight: "14px", padding: 0, cursor: "pointer", fontFamily: "inherit" }}>?</button>
+      {on && <span role="tooltip" data-testid="figure-why-text"
+        style={{ position: "absolute", zIndex: 60, top: 20, right: tile ? 0 : "auto", left: tile ? "auto" : -8, width: 240, maxWidth: "70vw",
+                 background: T.ink, color: T.white, fontSize: 12, fontWeight: 400, lineHeight: 1.45, padding: "8px 10px", borderRadius: 8,
+                 textTransform: "none", letterSpacing: 0, whiteSpace: "normal", textAlign: "left", boxShadow: "0 6px 18px rgba(15,26,18,0.25)" }}>{text || "Reading how it is counted…"}</span>}
+    </span>
+  );
+}
 
 export function Figure({ value, kind = "count", label, definition, source, blank, blankShort, variant = "tile",
                          figureKey, abs = false, suffix = "", sub, cx, cy, r = 5, color }) {
@@ -87,6 +121,7 @@ export function Figure({ value, kind = "count", label, definition, source, blank
                    fontWeight: variant === "cell" ? 700 : "inherit", whiteSpace: "nowrap" }}>
           {text}
         </button>
+        {variant === "inline" && <FigureWhy definition={definition} label={label} source={source} />}
         {panel}
       </>
     );
@@ -96,7 +131,8 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   // retention cohort) outside the button, so a figure never nests in another.
   return (
     <div className="fig-tile" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, minWidth: 0,
-                                       display: "flex", flexDirection: "column", containerType: "inline-size" }}>
+                                       display: "flex", flexDirection: "column", containerType: "inline-size", position: "relative" }}>
+      <FigureWhy definition={definition} label={label} source={source} tile />
       <button type="button" onClick={act} onKeyDown={onKey} title={definition} aria-label={aria} {...data}
         style={{ textAlign: "left", background: "transparent", border: "none", borderRadius: 12, width: "100%",
                  padding: "16px 18px 12px", cursor: openable ? "pointer" : "default", minWidth: 0,

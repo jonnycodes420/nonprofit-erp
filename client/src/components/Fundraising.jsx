@@ -1,3 +1,4 @@
+import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
 import { T, activeMark, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal, LockGlyph } from "./shared";
@@ -41,7 +42,7 @@ const lockIcon = color => LockGlyph({ size: 10, color });
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
-function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, big }) {
+function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, big, raisedSource, raisedLabel }) {
   const pct = percent == null ? 0 : percent;         // bar width — capped at 100
   const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
@@ -51,7 +52,11 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceS
     <div style={{ width: "100%" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: big ? 8 : 6, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: big ? 30 : 20, color: T.ink, lineHeight: 1 }}>{fmtFull(raised)}</span>
+          {/* REPORTS-4: the raised figure opens the gifts behind it when the
+              caller names its source. */}
+          <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: big ? 30 : 20, color: T.ink, lineHeight: 1 }}>{raisedSource
+            ? <Figure variant="inline" kind="money" value={raised} label={raisedLabel || "Raised"} source={raisedSource} />
+            : fmtFull(raised)}</span>
           <span style={{ fontSize: big ? 14 : 12, color: T.ink3 }}>of {fmtFull(goal)}</span>
         </div>
         <span style={{ fontSize: big ? 15 : 13, fontWeight: 800, color: met ? T.gold : T.ink2 }}>{shown}%</span>
@@ -1050,6 +1055,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
           // separate page-local goal. An unlinked page keeps its own goal.
           const linked = !!p.campaign_id;
           const raised = linked ? (parseFloat(p.campaign_raised) || 0) : (parseFloat(p.raised_amount) || 0);
+          const raisedSource = linked ? p.campaign_raised_source : p.raised_source;   // REPORTS-4
           const goal = linked ? (p.campaign_goal != null ? parseFloat(p.campaign_goal) : null) : (p.goal_amount != null ? parseFloat(p.goal_amount) : null);
           const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
           const url = orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "";
@@ -1060,9 +1066,9 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                 {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Counts toward {p.campaign_name}</span>}
               </div>
               {goal > 0 ? (
-                <Thermometer raised={raised} goal={goal} percent={pct} />
+                <Thermometer raised={raised} goal={goal} percent={pct} raisedSource={raisedSource} raisedLabel={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} />
               ) : (
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{raisedSource ? <Figure variant="inline" kind="money" value={raised} label={`Raised on ${p.title}`} source={raisedSource} /> : fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
               )}
               {url && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

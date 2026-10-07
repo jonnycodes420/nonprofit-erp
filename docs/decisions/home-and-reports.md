@@ -295,3 +295,17 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   page awaiting approval, an import's new duplicates, a giving source gone quiet), one open task per title.
   Both only write a row. The calendar shows memberships ending, auctions closing and campaign and page end
   dates, and a journey step or deadline that opened a Thread step shows once, not twice. (WIRE-1)
+
+## REPORTS-4 · a report's numbers are its sources' numbers (2026-10-07)
+
+- A report never states a number it computed itself. It names each figure's source in `reportFigures`
+  (routes/crm.js), which returns the value, the source and the sentence, and the screen draws a `<Figure>` from it.
+- Footing has ONE rule, `figureSources.footCheck`: a sum to the cent, a count to the row, a mean as total over count,
+  a median as the middle row, a percentage through its two halves. `tests/reports4-foot.test.js` walks every
+  figure a report response carries (any `source`, any `figures` map, and the `*Source` / `*_source` fields) and
+  checks it foots AND is the number on screen. A new report figure is covered the day it carries a source.
+- Every figure's rows can leave the drawer as a CSV or a static Group (`KeepRows` in MetricBreakdownPanel.jsx).
+- Every tile and inline figure has a "?" (`FigureWhy` in Figure.jsx). Table cells do not; their drawer opens on the
+  sentence.
+- Still bare, with their builds, in `docs/reports-4/figures.md`.
+

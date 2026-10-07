@@ -394,7 +394,7 @@
    "jc": "M no household audience or trigger; a Group with the household rule is the way in today. Next: COMMS-3",
    "home": "-",
    "mrg": "W",
-   "rep": "M the household total on the profile has no figure source. Next: REPORTS-4",
+   "rep": "W the household combined, hard and soft credit and the linked household total open their people (REPORTS-4)",
    "ask": "W",
    "io": "P import stamps external_household_id but does not create households. Next: IMPORT-HOUSEHOLDS"
   },
@@ -485,7 +485,7 @@
    "jc": "P a Group of page givers feeds a Communication or Journey; no trigger. Next: JOURNEYS-3",
    "home": "-",
    "mrg": "W",
-   "rep": "M raised on a giving page has no figure source. Next: REPORTS-4",
+   "rep": "W raised on a page opens its gifts, net of covered fees (REPORTS-4)",
    "ask": "P Ask has a giving pages entity; the Agent cannot see pages. Next: AGENT-3",
    "io": "W"
   },
@@ -537,7 +537,7 @@
    "jc": "P became_member triggers; a lapse does not. Next: JOURNEYS-3",
    "home": "W",
    "mrg": "W",
-   "rep": "P member status counts render bare; member reports return no sources. Next: REPORTS-4",
+   "rep": "P member counts by status open (REPORTS-4); the member reports (directory, by level, expiring, revenue) still return no sources. Next: REPORTS-6",
    "ask": "P Ask sees memberships (no money); the Agent cannot. Next: AGENT-3",
    "io": "P imported members carry no money, so they are missing from membership revenue (by design, no invented gifts)"
   },
@@ -667,7 +667,7 @@
    "jc": "-",
    "home": "-",
    "mrg": "-",
-   "rep": "P the giving summary's total and gift count open now; retention, top donors, LYBUNT/SYBUNT and three-year numbers still render bare beside their own rows. Next: REPORTS-4",
+   "rep": "W every Reports tab number opens rows that foot: giving summary, by fund/campaign/page, LYBUNT/SYBUNT, retention (donors, dollars, first-year), top donors, three-year, annual, bookkeeper (REPORTS-4). Solicitations and Week in review still bare: REPORTS-6",
    "ask": "P Ask answers open; stored board reports never reach Ask. Next: ASK-5",
    "io": "W"
   }

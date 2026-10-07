@@ -2596,6 +2596,44 @@ app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
   }
 }));
 
+// ── REPORTS-4 · A FIGURE'S ROWS, TO KEEP ───────────────────────────────────
+// The same rows the drawer shows (figureSources.allRows, through figure()), as
+// a file, or as the people in them so the drawer can save them as a Group.
+// Both are GETs that write nothing; the Group is made by POST /groups and
+// POST /groups/:id/members, the routes Groups already has, so the audit write
+// and Undo are theirs. A percentage's rows are the people it counts.
+async function figureRowsFor(req, res) {
+  const { page, pageSize, ...params } = req.query;
+  if (String(req.params.source) === "why" && params.q === "more" && !(await require("../prospect").canSee(req.user.userId))) {
+    res.status(403).json({ error: "major_gifts_only" }); return null;
+  }
+  try {
+    const rows = await figureSources.allRows(req.user.orgId, { key: String(req.params.source), params },
+      { computeRetentionRate, computeDriftForDonors });
+    if (!rows) { res.status(404).json({ error: "Steward has no figure by that name." }); return null; }
+    return rows;
+  } catch (e) {
+    if (e instanceof figureSources.FigureParamError) { res.status(400).json({ error: e.message }); return null; }
+    throw e;
+  }
+}
+const csvCell = v => { const t = v === null || v === undefined ? "" : String(v); return /[",\n\r]/.test(t) || /^[=+\-@]/.test(t) ? `"${(/^[=+\-@]/.test(t) ? "'" : "") + t.replace(/"/g, '""')}"` : t; };
+app.get("/figures/:source/export.csv", requireAuth, wrap(async (req, res) => {
+  const rows = await figureRowsFor(req, res);
+  if (!rows) return;
+  const lines = [["Name", "Date", "Amount", "Detail", "Kind"].join(",")];
+  for (const r of rows) lines.push([r.name, r.date || "", r.amount === null || r.amount === undefined ? "" : Number(r.amount).toFixed(2), r.detail || "", r.type || ""].map(csvCell).join(","));
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(req.params.source).replace(/[^a-z0-9-]/gi, "")}-rows.csv"`);
+  res.send(lines.join("\r\n") + "\r\n");
+}));
+app.get("/figures/:source/people", requireAuth, wrap(async (req, res) => {
+  const rows = await figureRowsFor(req, res);
+  if (!rows) return;
+  const ids = [...new Set(rows.map(r => r.donorId).filter(Boolean))];
+  res.json({ donorIds: ids, rows: rows.length });
+}));
+
 async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE id=?", [orgId]); return o || {}; }
 
 // ── BUILD-86 PART B — HER WORDS ────────────────────────────────────────────
@@ -9128,7 +9166,10 @@ async function householdView(householdId, orgId) {
             stage, status, assigned_to, assigned_to_name
      FROM donors WHERE household_id=? AND org_id=? AND deleted_at IS NULL
      ORDER BY total_giving DESC, id`, [householdId, orgId]);
-  const combinedGiving = members.reduce((s, m) => s + (parseFloat(m.total_giving) || 0), 0);
+  // REPORTS-4: combined giving is the `household-giving` source's value (the
+  // same members, added in cents), so it opens onto them and foots exactly.
+  const combinedSource = { key: "household-giving", params: { household: householdId } };
+  const combinedGiving = (await figureSources.figureValue(orgId, combinedSource)).value;
   const combinedGiftCount = members.reduce((s, m) => s + (parseInt(m.gift_count, 10) || 0), 0);
   return {
     ...hh[0],
@@ -9139,10 +9180,12 @@ async function householdView(householdId, orgId) {
       gift_count: parseInt(m.gift_count, 10) || 0,
       is_primary: m.id === hh[0].primary_donor_id,
       // per-member soft credit = combined − own hard credit = other members' gifts
-      soft_credit: combinedGiving - (parseFloat(m.total_giving) || 0),
+      soft_credit: (Math.round(combinedGiving * 100) - Math.round((parseFloat(m.total_giving) || 0) * 100)) / 100,
+      source: { key: "household-giving", params: { household: householdId, only: m.id } },
     })),
     member_count: members.length,
     combined_giving: combinedGiving,
+    combined_source: combinedSource,
     combined_gift_count: combinedGiftCount,
   };
 }
@@ -9313,8 +9356,14 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
       "SELECT COALESCE(SUM(total_giving),0) AS combined FROM donors WHERE household_id=? AND org_id=? AND deleted_at IS NULL",
       [householdId, req.user.orgId]);
     householdCombined = parseFloat(agg[0].combined) || 0;
-    softCredit = householdCombined - hardCredit;
+    softCredit = (Math.round(householdCombined * 100) - Math.round(hardCredit * 100)) / 100;
   }
+  // REPORTS-4: the household panel's three figures open their members.
+  const householdSources = householdId ? {
+    hardCredit: { key: "household-giving", params: { household: householdId, only: req.params.id } },
+    softCredit: { key: "household-giving", params: { household: householdId, except: req.params.id } },
+    householdCombined: { key: "household-giving", params: { household: householdId } },
+  } : null;
   // BUILD-98 Part 1 — the soft credits on OTHER people's gifts, which is a
   // different thing from the household view above: a DAF recommender, the
   // spouse on a joint cheque, the board member who asked. Hard stays hard;
@@ -9343,7 +9392,7 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
     row.amountCents += Math.round(Number(r.amount) * 100);
     row.giftCount += 1;
   }
-  res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined,
+  res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined, householdSources,
     giftSoftCredit: giftSoftCents / 100,
     hardPlusGiftSoft: (Math.round(hardCredit * 100) + giftSoftCents) / 100,
     raisedFor,
@@ -12905,15 +12954,17 @@ app.get("/donors/:id/relationships", requireAuth, wrap(async (req, res) => {
     relatedDonorTotalGiving: Number(donorMap[r.related_donor_id]?.total_giving) || 0,
   }));
 
-  let householdTotal = null;
+  // REPORTS-4: the household total is the `linked-household-giving` source's
+  // value, so it opens onto the people it adds up. It used to be added here,
+  // in floating point, with a deleted spouse's giving counted in.
+  let householdTotal = null, householdTotalSource = null;
   const householdLinks = relationships.filter(r => HOUSEHOLD_RELATIONSHIP_TYPES.includes(r.relationshipType));
   if (householdLinks.length) {
-    const selfRow = await query("SELECT total_giving FROM donors WHERE id = ? AND org_id = ?", [donorId, orgId]);
-    const selfTotal = Number(selfRow[0]?.total_giving) || 0;
-    householdTotal = selfTotal + householdLinks.reduce((sum, r) => sum + r.relatedDonorTotalGiving, 0);
+    householdTotalSource = { key: "linked-household-giving", params: { donor: donorId } };
+    householdTotal = (await figureSources.figureValue(orgId, householdTotalSource)).value;
   }
 
-  res.json({ relationships, householdTotal });
+  res.json({ relationships, householdTotal, householdTotalSource });
 }));
 
 app.post("/donors/:id/relationships", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -20353,6 +20404,20 @@ function reportGiftWhere(p, orgId, params) {
 }
 const REPORT_GIFT_FROM = "FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE";
 
+// ── REPORTS-4 · A REPORT'S FIGURES, EACH THROUGH ITS SOURCE ──────────────
+// Every number a report puts on screen is computed here, by the source that
+// opens its rows, and the report shows THAT value: so the number and the rows
+// behind it are one computation and cannot disagree. Returns, per key, the
+// value, the source and the one sentence that defines it.
+async function reportFigures(orgId, specs) {
+  const keys = Object.keys(specs).filter(k => specs[k]);
+  const deps = { computeRetentionRate, computeDriftForDonors };
+  const got = await Promise.all(keys.map(k => Promise.all([
+    figureSources.figureValue(orgId, specs[k], deps), figureSources.figureSentence(specs[k])])));
+  return Object.fromEntries(keys.map((k, i) => [k, { value: got[i][0].value, cents: got[i][0].cents, blank: got[i][0].blank,
+    source: specs[k], definition: got[i][1] }]));
+}
+
 async function reportGivingSummary(orgId, p) {
   const tParams = [];
   const where = reportGiftWhere(p, orgId, tParams);
@@ -20415,25 +20480,46 @@ async function reportGivingSummary(orgId, p) {
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total
      ${REPORT_GIFT_FROM} ${pWhere}`, pParams);
 
+  // REPORTS-4: every figure on the summary, through the source that opens it.
+  const F = { fund: p.fundId || undefined, campaign: p.campaignId || undefined };
+  const G = extra => ({ key: "gifts", params: { from: p.from, to: p.to, ...F, ...extra } });
+  const figures = await reportFigures(orgId, {
+    total: G({}), giftCount: G({ measure: "count" }),
+    uniqueDonors: { key: "givers", params: { from: p.from, to: p.to, ...F } },
+    newDonors: { key: "givers", params: { from: p.from, to: p.to, ...F, first: "new" } },
+    returningDonors: { key: "givers", params: { from: p.from, to: p.to, ...F, first: "returning" } },
+    avgGift: G({ measure: "mean" }), medianGift: G({ measure: "median", order: "amount" }),
+    onlineTotal: G({ online: true }), onlineCount: G({ online: true, measure: "count" }),
+    offlineTotal: G({ online: false }), offlineCount: G({ online: false, measure: "count" }),
+  });
+  const fv = k => figures[k].value;
   return {
+    figures,
     from: p.from, to: p.to,
-    total: Number(totals.total),
-    giftCount: totals.gift_count,
-    uniqueDonors: totals.unique_donors,
-    avgGift: Math.round(Number(totals.avg_gift) * 100) / 100,
-    medianGift: Number(totals.median_gift),
-    newDonors: newSplit.new_donors,
-    returningDonors: newSplit.period_donors - newSplit.new_donors,
-    onlineTotal: Number(totals.online_total),
-    onlineCount: totals.online_count,
-    offlineTotal: Number(totals.total) - Number(totals.online_total),
-    offlineCount: totals.gift_count - totals.online_count,
+    total: fv("total"),
+    giftCount: fv("giftCount"),
+    uniqueDonors: fv("uniqueDonors"),
+    avgGift: fv("avgGift"),
+    medianGift: fv("medianGift"),
+    newDonors: fv("newDonors"),
+    returningDonors: fv("returningDonors"),
+    onlineTotal: fv("onlineTotal"),
+    onlineCount: fv("onlineCount"),
+    offlineTotal: fv("offlineTotal"),
+    offlineCount: fv("offlineCount"),
     year: p.year, yearMode: p.yearMode, fiscalStartMonth: p.fiscalStartMonth,
     // The total opens too: the same gifts, through the same source.
     totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
     comparison,
     prior: { basis: "full-period", label: "The whole period before this one", from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
-    monthly: monthly.map(m => ({ month: m.month, gifts: m.gifts, total: Number(m.total), donors: m.donors })),
+    // Each month's gifts open through the same source, clipped to the period.
+    monthly: monthly.map(m => {
+      const mFrom = m.month + "-01" < p.from ? p.from : m.month + "-01";
+      const end = orgTime.addDays(orgTime.addDays(m.month + "-01", 32).slice(0, 7) + "-01", -1);
+      const mTo = end > p.to ? p.to : end;
+      return { month: m.month, gifts: m.gifts, total: Number(m.total), donors: m.donors,
+        source: { key: "gifts", params: { from: mFrom, to: mTo, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } } };
+    }),
   };
 }
 
@@ -20451,14 +20537,27 @@ async function reportByGroup(orgId, p) {
   const params = [];
   const where = reportGiftWhere(p, orgId, params);
   const rows = await query(
-    `SELECT ${cfg.name} AS name, COALESCE(SUM(g.amount),0) AS total,
+    `SELECT ${cfg.name} AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total,
             COUNT(*)::int AS gift_count, COUNT(DISTINCT g.donor_id)::int AS unique_donors
      FROM gifts g JOIN donors d ON d.id = g.donor_id ${cfg.join}
      WHERE ${where} GROUP BY 1 ORDER BY total DESC`, params);
+  // REPORTS-4: a row opens its gifts when one id names it: a fund or a page
+  // (or none of them), or a campaign by its id. A campaign known only by an
+  // old name on the gift has no id to open by, and says so by not opening.
+  const PARAM = { funds: "fund", campaigns: "campaign", giving_pages: "page" }[p.groupBy];
+  const base = { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) };
+  const rowSource = r => {
+    if (r.key_ids === 1) return { key: "gifts", params: { ...base, [PARAM]: r.key_id } };
+    if (r.key_ids === 0 && PARAM !== "campaign") return { key: "gifts", params: { ...base, [PARAM]: "none" } };
+    return null;
+  };
+  const figures = await reportFigures(orgId, { grandTotal: { key: "gifts", params: base } });
   const grand = rows.reduce((s, r) => s + Number(r.total), 0);
   return {
-    from: p.from, to: p.to, groupBy: p.groupBy, grandTotal: grand,
+    figures,
+    from: p.from, to: p.to, groupBy: p.groupBy, grandTotal: figures.grandTotal.value,
     rows: rows.map(r => ({
+      source: rowSource(r),
       name: r.name, total: Number(r.total), giftCount: r.gift_count,
       uniqueDonors: r.unique_donors,
       pct: grand > 0 ? Math.round(Number(r.total) / grand * 1000) / 10 : 0,
@@ -20487,7 +20586,12 @@ async function reportBuntList(orgId, p, kind) {
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)
      ORDER BY COALESCE(d.total_giving, 0) DESC`,
     [prior.from, prior.to, orgId, ...gaveBeforeParams, cur.from, cur.to]);
+  // REPORTS-4: the count and the prior-year giving at stake, through the
+  // `bunt` source (the same predicates, moved there).
+  const bp = { kind, from: cur.from, to: cur.to, prevFrom: prior.from, prevTo: prior.to };
+  const figures = await reportFigures(orgId, { people: { key: "bunt", params: bp }, atStake: { key: "bunt", params: { ...bp, measure: "sum" } } });
   return {
+    figures,
     year: p.year, yearMode: p.yearMode, currentPeriod: cur, priorPeriod: prior,
     rows: rows.map(r => ({
       id: r.id, name: r.name, email: r.email, assignedTo: r.assigned_to_name,
@@ -20532,6 +20636,22 @@ async function reportRetention(orgId, p) {
       firstYearDonors: r.first_year_donors, firstYearRetained: r.first_year_retained,
       firstYearRetentionRate: pct(r.first_year_retained, r.first_year_donors),
     });
+    // REPORTS-4: the row's figures through their sources, and the row shows
+    // THEIR values. A person counts as having given when a gift above zero is
+    // dated in the year, as on the Board; a refund alone is not giving.
+    const w = { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to };
+    const f = await reportFigures(orgId, {
+      retentionRate: { key: "retention-window", params: w },
+      dollarRetentionRate: { key: "retention-dollars", params: w },
+      firstYearRetentionRate: { key: "retention-first", params: w },
+      priorDonors: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to } },
+      retainedDonors: { key: "retention-window-kept", params: w },
+      priorDollars: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to, measure: "sum" } },
+      firstYearDonors: { key: "retention-window-prior", params: { from1: prior.from, to1: prior.to, firstYear: true } },
+    });
+    const row = rows[rows.length - 1];
+    for (const k of Object.keys(f)) row[k] = f[k].value;
+    row.figures = f;
   }
   return { yearMode: p.yearMode, rows };
 }
@@ -20552,7 +20672,8 @@ async function reportTopDonors(orgId, p) {
           WHERE sc.org_id=? AND sc.donor_id = ANY(?) GROUP BY sc.donor_id`, [orgId, rows.map(r => r.id)]);
       soft = new Map(sr.map(r => [r.donor_id, Number(r.soft)]));
     }
-    return { scope: "lifetime", credit: p.credit, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
+    const figures = await reportFigures(orgId, { topTotal: { key: "top-lifetime", params: { top: p.limit } } });
+    return { figures, scope: "lifetime", credit: p.credit, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
       ...(p.credit === "soft" ? { softCredit: soft.get(r.id) || 0 } : {}) })) };
   }
   const params = [];
@@ -20581,8 +20702,10 @@ async function reportTopDonors(orgId, p) {
   const rows = await query(
     `SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count, MAX(g.date) AS last_gift_date
      ${REPORT_GIFT_FROM} ${where} GROUP BY d.id, d.name
-     ORDER BY total DESC LIMIT ?`, [...params, p.limit]);
-  return { scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
+     ORDER BY total DESC, d.id LIMIT ?`, [...params, p.limit]);
+  const figures = await reportFigures(orgId, { topTotal: { key: "givers", params: { from: p.from, to: p.to, top: p.limit, measure: "sum",
+    ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } } });
+  return { figures, scope: "period", view: "individual", from: p.from, to: p.to, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: r.gift_count, lastGiftDate: r.last_gift_date })) };
 }
 
 // ── BUILD-17 reporting-cadence reports ─────────────────────────────────────
@@ -20617,14 +20740,21 @@ async function reportThreeYear(orgId, p) {
       trend: c0 > c1 ? "up" : c0 < c1 ? "down" : "flat",
     };
   });
-  const sum = k => donors.reduce((s, d) => s + d[k], 0);
-  const t0 = sum("y0"), t1 = sum("y1"), t2 = sum("y2");
+  // REPORTS-4: each year's total and givers, and the growth, through sources.
+  const yr = b => ({ from: b.from, to: b.to });
+  const figures = await reportFigures(orgId, {
+    t0: { key: "gifts", params: yr(y0) }, t1: { key: "gifts", params: yr(y1) }, t2: { key: "gifts", params: yr(y2) },
+    d0: { key: "givers", params: yr(y0) }, d1: { key: "givers", params: yr(y1) }, d2: { key: "givers", params: yr(y2) },
+    growth: { key: "giving-change", params: { from: y0.from, to: y0.to, prevFrom: y1.from, prevTo: y1.to } },
+  });
   return {
+    figures,
     yearMode: p.yearMode,
-    years: [{ year: p.year - 2, label: label(p.year - 2), total: t2, donors: donors.filter(d => d.y2 > 0).length },
-            { year: p.year - 1, label: label(p.year - 1), total: t1, donors: donors.filter(d => d.y1 > 0).length },
-            { year: p.year, label: label(p.year), total: t0, donors: donors.filter(d => d.y0 > 0).length }],
-    orgGrowthPct: t1 > 0 ? Math.round((t0 - t1) / t1 * 1000) / 10 : null,
+    // Each year's total and givers are the sources' values, and open them.
+    years: [{ year: p.year - 2, label: label(p.year - 2), total: figures.t2.value, donors: figures.d2.value, source: figures.t2.source, donorsSource: figures.d2.source },
+            { year: p.year - 1, label: label(p.year - 1), total: figures.t1.value, donors: figures.d1.value, source: figures.t1.source, donorsSource: figures.d1.source },
+            { year: p.year, label: label(p.year), total: figures.t0.value, donors: figures.d0.value, source: figures.t0.source, donorsSource: figures.d0.source }],
+    orgGrowthPct: figures.growth.value,
     labels: { y0: label(p.year), y1: label(p.year - 1), y2: label(p.year - 2) },
     rows: donors,
   };
@@ -20665,17 +20795,28 @@ async function reportAnnual(orgId, p) {
                (SELECT 1 FROM gifts g WHERE g.org_id=? AND g.donor_id=pr.donor_id AND g.date >= ? AND g.date <= ?))::int AS retained`,
     [orgId, prior.from, prior.to, orgId, cur.from, cur.to]);
   const byFund = await query(
-    `SELECT COALESCE(x.name,'No fund') AS name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name,'No fund') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN fin_funds x ON x.id = g.fund_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
   const byCampaign = await query(
-    `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
+    `SELECT COALESCE(x.name, NULLIF(g.campaign,''), 'No campaign') AS name, MIN(x.id) AS key_id, COUNT(DISTINCT x.id)::int AS key_ids, COALESCE(SUM(g.amount),0) AS total, COUNT(*)::int AS gift_count
      FROM gifts g JOIN donors d ON d.id = g.donor_id
      LEFT JOIN campaigns x ON x.id = g.campaign_id AND x.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
      GROUP BY 1 ORDER BY total DESC`, [orgId, cur.from, cur.to]);
+  // REPORTS-4: the year's figures through their sources; the page shows them.
+  const yw = { from: cur.from, to: cur.to };
+  const figures = await reportFigures(orgId, {
+    total: { key: "gifts", params: yw }, giftCount: { key: "gifts", params: { ...yw, measure: "count" } },
+    uniqueDonors: { key: "givers", params: yw }, avgGift: { key: "gifts", params: { ...yw, measure: "mean" } },
+    growthPct: { key: "giving-change", params: { ...yw, prevFrom: prior.from, prevTo: prior.to } },
+    newDonors: { key: "givers", params: { ...yw, first: "new" } }, returningDonors: { key: "givers", params: { ...yw, first: "returning" } },
+    retentionRate: { key: "retention-window", params: { from1: prior.from, to1: prior.to, from0: cur.from, to0: cur.to } },
+  });
+  const groupSource = (r, param) => r.key_ids === 1 ? { key: "gifts", params: { ...yw, [param]: r.key_id } }
+    : r.key_ids === 0 && param === "fund" ? { key: "gifts", params: { ...yw, fund: "none" } } : null;
   const total = Number(totals.total), priorTotal = Number(priorT.total);
   const grand = arr => arr.reduce((s, r) => s + Number(r.total), 0);
   return {
@@ -20688,8 +20829,10 @@ async function reportAnnual(orgId, p) {
     newDonors: split.new_donors, returningDonors: split.period_donors - split.new_donors,
     priorDonors: ret.prior_donors, retainedDonors: ret.retained,
     retentionRate: ret.prior_donors > 0 ? Math.round(ret.retained / ret.prior_donors * 1000) / 10 : null,
-    byFund: byFund.map(r => ({ name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
-    byCampaign: byCampaign.map(r => ({ name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
+    ...Object.fromEntries(Object.entries(figures).map(([k, f]) => [k, f.value])),
+    figures,
+    byFund: byFund.map(r => ({ source: groupSource(r, "fund"), name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
+    byCampaign: byCampaign.map(r => ({ source: groupSource(r, "campaign"), name: r.name, total: Number(r.total), giftCount: r.gift_count, pct: total > 0 ? Math.round(Number(r.total) / total * 1000) / 10 : 0 })),
   };
 }
 
@@ -20797,8 +20940,7 @@ async function reportSolicitations(orgId, p) {
 //
 // It is a READ path on the BUILD-79 report/file layer — `/reports/:key`,
 // `reportToCsv`, `sendReportCsv`. There is no second export path.
-const BOOKKEEPER_EXCLUDED_TYPES = ["soft credit", "soft-credit", "soft_credit",
-  "matching gift credit", "matched gift credit", "hard credit reversal"];
+const BOOKKEEPER_EXCLUDED_TYPES = figureSources.BOOKKEEPER_EXCLUDED_TYPES;   // REPORTS-4: one list, in figureSources.js
 
 // The fixed columns, in the fixed order, declared ONCE so the screen and the
 // file cannot disagree about either.
@@ -20957,7 +21099,11 @@ async function reportBookkeeper(orgId, p) {
     issue("no_deposit", "not matched to a deposit", noDeposit, "Record the deposit on the deposit sheet, or match the payout."),
   ].filter(Boolean);
 
+  // REPORTS-4: the count and total open the same gifts through `gifts`.
+  const bkBase = { from: p.from, to: p.to, bookkeeper: true, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) };
+  const figures = await reportFigures(orgId, { total: { key: "gifts", params: bkBase }, giftCount: { key: "gifts", params: { ...bkBase, measure: "count" } } });
   return {
+    figures,
     from: p.from, to: p.to,
     columns: BOOKKEEPER_COLUMNS,
     rows: out,
@@ -23207,9 +23353,7 @@ app.get("/donors/:id/memberships", requireAuth, wrap(async (req, res) => {
 // read by Drift, LYBUNT or SYBUNT, and nothing those compute is read here —
 // the suite proves both directions byte for byte. A person who lapsed as a
 // member and still gives is shown as both.
-const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id
-                                     ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
-    AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
+const LAPSED_MEMBER_SQL = figureSources.LAPSED_MEMBER_SQL;   // REPORTS-4: one definition, in figureSources.js
 
 // BUILD-101 Part 5 — THE MEMBER CARD. MEMBERS-2 moved the renderer to
 // ../memberCard.js, because the member downloads the same card from their own
@@ -23270,12 +23414,15 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
             d.your_page_sent_at AS "yourPageSentAt", d.your_page_opened_at AS "yourPageOpenedAt"
        FROM memberships m JOIN membership_levels l ON l.id=m.level_id JOIN donors d ON d.id=m.donor_id
       WHERE ${where.join(" AND ")} ORDER BY m.expires_on ${dir} NULLS LAST, d.name LIMIT 1000`, args);
-  const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status <> 'lapsed' GROUP BY 1`, [orgId]);
-  const byStatus = { active: 0, grace: 0, lapsed: 0, cancelled: 0 };
-  for (const c of counts) if (c.status in byStatus) byStatus[c.status] = c.n;
-  const [lp] = await query(`SELECT COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}`, [orgId]);
-  byStatus.lapsed = lp?.n || 0;
-  res.json({ members: rows, byStatus,
+  // REPORTS-4: each status count is the `members` source's value, so it
+  // opens onto the memberships it counts. Before, the counts included deleted
+  // people's memberships and the rows did not.
+  const byStatus = {}, byStatusSource = {};
+  for (const st of ["active", "grace", "lapsed", "cancelled"]) {
+    byStatusSource[st] = { key: "members", params: { status: st } };
+    byStatus[st] = (await figureSources.figureValue(orgId, byStatusSource[st])).value;
+  }
+  res.json({ members: rows, byStatus, byStatusSource,
     sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period. Their page says whether they have opened the page that holds their card, their renewal and their receipts." });
 }));
 

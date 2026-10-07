@@ -1510,6 +1510,19 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
      ORDER BY gp.created_at DESC`,
     [req.user.orgId]
   );
+  // REPORTS-4: each raised figure opens its gifts: the page's own through
+  // `page-raised`, a linked campaign's through `goal-raised` (the campaign's
+  // one definition, grants awarded toward it included). The list shows the
+  // sources' values, so the number and its rows are one computation.
+  const FS = require("../figureSources");
+  for (const r of rows) {
+    r.raised_source = { key: "page-raised", params: { page: r.id } };
+    r.raised_amount = (await FS.figureValue(req.user.orgId, r.raised_source)).value;
+    if (r.campaign_id) {
+      r.campaign_raised_source = { key: "goal-raised", params: { campaign: r.campaign_id } };
+      r.campaign_raised = (await FS.figureValue(req.user.orgId, r.campaign_raised_source)).value;
+    }
+  }
   res.json(rows);
 }));
 

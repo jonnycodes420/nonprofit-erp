@@ -177,6 +177,7 @@ CORE=(
   wire-journey
   golden-journeys
   search2-everything
+  reports4-foot
   int5-api-keys
   script-guards
   fix15-two-worktrees

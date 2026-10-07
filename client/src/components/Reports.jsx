@@ -84,6 +84,17 @@ const presetsFor = (fy, fiscalStartMonth = 7) => [
   { id: "custom", label: "Custom" },
 ];
 const pctStr = v => v === null || v === undefined ? "—" : `${v}%`;
+// REPORTS-4 · A REPORT'S FIGURE. Every number a report states is one of its
+// `figures` (the server computed it through the source that opens it), drawn
+// as a <Figure>: it opens its rows, foots, and has its "?". `fig` is the
+// figures entry; `kind` money | count | percent.
+const RF = ({ f, kind = "count", label, variant = "inline" }) => f
+  ? <Figure variant={variant} kind={kind} value={f.value} blank={f.blank} label={label} definition={f.definition} source={f.source} />
+  : null;
+// A table cell that opens its rows when the row names a source.
+const cellFig = (kind, label, valueKey = "total") => r => r.source
+  ? <Figure variant="cell" kind={kind} value={r[valueKey]} label={label} definition={undefined} source={r.source} />
+  : kind === "money" ? fmtFull(r[valueKey]) : r[valueKey];
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
 // The rail at desktop width; below 760px the list folds into one <select>
@@ -427,21 +438,22 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       // says so. Both figures open onto the gifts that make them.
       const c = d.comparison;
       narrative = <span data-testid="gs-narrative">You've raised <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
-          label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"}</strong> this period
+          label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
         {c && c.value > 0 && <> — {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
         {c && c.value > 0 && d.total < c.value && <WhyLink payload={showFilters && campaignId ? { key: "appeal", campaign: campaignId } : { key: "retention" }} />}
-        {" "}<strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave ({d.newDonors} new, {d.returningDonors} returning); the median gift was <strong>{fmtFull(d.medianGift)}</strong>.</span>;
+        {" "}<strong><RF f={d.figures?.uniqueDonors} label="Donors who gave" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave (<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning); the median gift was <strong><RF f={d.figures?.medianGift} kind="money" label="Median gift" /></strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {/* WIRE-1: the two cards that are the period's gifts open them. */}
           {[["Total raised", d.totalSource ? <Figure variant="inline" kind="money" value={d.total} label="Total raised" definition="Every gift dated in the period you picked." source={d.totalSource} /> : fmtFull(d.total)],
-            ["Gifts", d.totalSource ? <Figure variant="inline" kind="count" value={d.giftCount} label="Gifts" definition="Every gift dated in the period you picked, one row each." source={d.totalSource} /> : d.giftCount], ["Unique donors", d.uniqueDonors],
-            ["Average gift", fmtFull(Math.round(d.avgGift))], ["Median gift", fmtFull(d.medianGift)],
-            ["New donors", d.newDonors], ["Returning donors", d.returningDonors],
-            ["Online", `${fmtFull(d.onlineTotal)} (${d.onlineCount})`], ["Offline", `${fmtFull(d.offlineTotal)} (${d.offlineCount})`],
+            ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />], ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />],
+            ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />], ["Median gift", <RF f={d.figures?.medianGift} kind="money" label="Median gift" />],
+            ["New donors", <RF f={d.figures?.newDonors} label="New donors" />], ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />],
+            ["Online", <><RF f={d.figures?.onlineTotal} kind="money" label="Online" /> (<RF f={d.figures?.onlineCount} label="Online gifts" />)</>],
+            ["Offline", <><RF f={d.figures?.offlineTotal} kind="money" label="Offline" /> (<RF f={d.figures?.offlineCount} label="Offline gifts" />)</>],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
@@ -451,30 +463,30 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             can give in two months), so that column has no foot. */}
         <ReportTable cols={[
           { key: "month", label: "Month", type: "month" },
-          { key: "gifts", label: "Gifts", type: "count" },
-          { key: "total", label: "Total", type: "money" },
+          { key: "gifts", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.gifts} label={`Gifts in ${r.month}`} source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.gifts },
+          { key: "total", label: "Total", type: "money", render: cellFig("money", "Given that month") },
           { key: "donors", label: "Unique donors", type: "number" },
         ]} rows={d.monthly} />
       </>;
     } else if (active === "by-group") {
       empty = d.rows.length === 0;
       const top = d.rows[0];
-      narrative = top && <>Your largest {groupBy === "funds" ? "fund" : groupBy === "campaigns" ? "campaign" : "giving page"} this period is <strong>{top.name}</strong> at <strong>{fmtFull(top.total)}</strong> — {top.pct}% of the {fmtFull(d.grandTotal)} raised.</>;
+      narrative = top && <>Your largest {groupBy === "funds" ? "fund" : groupBy === "campaigns" ? "campaign" : "giving page"} this period is <strong>{top.name}</strong> at <strong>{top.source ? <Figure variant="inline" kind="money" value={top.total} label={top.name} source={top.source} /> : fmtFull(top.total)}</strong>, {top.pct}% of the <RF f={d.figures?.grandTotal} kind="money" label="Raised this period" /> raised.</>;
       table = <ReportTable cols={[
         { key: "name", label: groupBy === "funds" ? "Fund" : groupBy === "campaigns" ? "Campaign" : "Giving page", type: "text" },
-        { key: "total", label: "Total", type: "money" },
-        { key: "giftCount", label: "Gifts", type: "count" },
+        { key: "total", label: "Total", type: "money", render: cellFig("money", "Raised") },
+        { key: "giftCount", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.giftCount} label="Gifts" source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.giftCount },
         { key: "uniqueDonors", label: "Unique donors", type: "number" },
         { key: "pct", label: "% of total", type: "pct", render: r => <PctBar pct={r.pct} /> },
       ]} rows={d.rows} />;
     } else if (active === "lybunt" || active === "sybunt") {
       empty = d.rows.length === 0;
-      const atStake = d.rows.reduce((s, r) => s + r.priorYearTotal, 0);
+      const atStake = d.figures?.atStake ? d.figures.atStake.value : d.rows.reduce((s, r) => s + r.priorYearTotal, 0);
       const yl = yearMode === "fiscal" ? `FY${d.year}` : d.year;
       const priorLabel = yearMode === "fiscal" ? `FY${d.year - 1}` : String(d.year - 1);
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong>{d.rows.length} donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
-        {active === "lybunt" && atStake > 0 && <> — <strong>{fmtFull(atStake)}</strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
+      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "LYBUNT" : "SYBUNT"} /> donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+        {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${yearMode === "fiscal" ? "FY" + (d.year - 1) : d.year - 1}` : "Gave prior year", type: "money" },
@@ -488,22 +500,22 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const latest = [...d.rows].reverse().find(r => r.retentionRate !== null);
       const earlier = latest ? [...d.rows].reverse().filter(r => r.retentionRate !== null)[1] : null;
       narrative = latest
-        ? <>In <strong>{latest.label}</strong> you retained <strong>{latest.retentionRate}%</strong> of the prior year's donors ({latest.retainedDonors} of {latest.priorDonors}) and <strong>{pctStr(latest.dollarRetentionRate)}</strong> of their dollars.{earlier && latest.retentionRate < earlier.retentionRate && <WhyLink payload={{ key: "retention" }} />}{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong>{latest.firstYearRetentionRate}%</strong>; that number is what stewardship moves.</>}</>
+        ? <>In <strong>{latest.label}</strong> you retained <strong><RF f={latest.figures?.retentionRate} kind="percent" label="Retention" /></strong> of the prior year's donors (<RF f={latest.figures?.retainedDonors} label="Retained" /> of <RF f={latest.figures?.priorDonors} label="Prior-year donors" />) and <strong><RF f={latest.figures?.dollarRetentionRate} kind="percent" label="Dollars retained" /></strong> of their dollars.{earlier && latest.retentionRate < earlier.retentionRate && <WhyLink payload={{ key: "retention" }} />}{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong><RF f={latest.figures?.firstYearRetentionRate} kind="percent" label="First-year retention" /></strong>; that number is what stewardship moves.</>}</>
         : <>Not enough multi-year giving history yet to compute retention.</>;
       // Each row is a different year's cohort; they do not add up, so no foot.
       table = <ReportTable foot={false} cols={[
         { key: "label", label: "Year", type: "text" },
-        { key: "priorDonors", label: "Prior-yr donors", type: "number" },
-        { key: "retainedDonors", label: "Retained", type: "number" },
-        { key: "retentionRate", label: "Retention", type: "pct", render: r => <strong style={{ color: T.ink }}>{pctStr(r.retentionRate)}</strong> },
-        { key: "dollarRetentionRate", label: "$ retained", type: "pct", render: r => `${pctStr(r.dollarRetentionRate)}${r.priorDollars > 0 ? ` of ${fmtFull(r.priorDollars)}` : ""}` },
-        { key: "firstYearDonors", label: "First-yr donors", type: "number" },
-        { key: "firstYearRetentionRate", label: "First-yr retention", type: "pct", render: r => <strong style={{ color: r.firstYearRetentionRate !== null && r.firstYearRetentionRate < 30 ? T.gold600 : T.ink }}>{pctStr(r.firstYearRetentionRate)}</strong> },
+        { key: "priorDonors", label: "Prior-yr donors", type: "number", render: r => <RF f={r.figures?.priorDonors} variant="cell" label={`${r.label}: prior-year donors`} /> },
+        { key: "retainedDonors", label: "Retained", type: "number", render: r => <RF f={r.figures?.retainedDonors} variant="cell" label={`${r.label}: retained`} /> },
+        { key: "retentionRate", label: "Retention", type: "pct", render: r => <RF f={r.figures?.retentionRate} variant="cell" kind="percent" label={`${r.label}: retention`} /> },
+        { key: "dollarRetentionRate", label: "$ retained", type: "pct", render: r => <><RF f={r.figures?.dollarRetentionRate} variant="cell" kind="percent" label={`${r.label}: dollars retained`} />{r.priorDollars > 0 && <> of <RF f={r.figures?.priorDollars} variant="cell" kind="money" label={`${r.label}: prior-year dollars`} /></>}</> },
+        { key: "firstYearDonors", label: "First-yr donors", type: "number", render: r => <RF f={r.figures?.firstYearDonors} variant="cell" label={`${r.label}: first-year donors`} /> },
+        { key: "firstYearRetentionRate", label: "First-yr retention", type: "pct", render: r => <RF f={r.figures?.firstYearRetentionRate} variant="cell" kind="percent" label={`${r.label}: first-year retention`} /> },
       ]} rows={d.rows} />;
     } else if (active === "top-donors") {
       empty = d.rows.length === 0;
       const sum = d.rows.reduce((s, r) => s + r.total, 0);
-      narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.</>;
+      narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{d.figures?.topTotal ? <RF f={d.figures.topTotal} kind="money" label={`Top ${d.rows.length} donors`} /> : fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "rank", label: "#", type: "number" },
         { key: "name", label: "Donor", type: "text", person: true },
@@ -514,16 +526,16 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     } else if (active === "three-year") {
       empty = d.years.every(y => y.total === 0);
       const g = d.orgGrowthPct;
-      narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{fmtFull(y.total)}</strong> ({y.label})</span>)}
-        {g !== null && <> — {g >= 0 ? "up" : "down"} <strong>{Math.abs(g)}%</strong> year over year</>}. Each row compares a donor across the three years.</>;
+      narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</strong> ({y.label})</span>)}
+        {g !== null && <>: {g >= 0 ? "up" : "down"} <strong><RF f={d.figures?.growth} kind="percent" label="Change on the year before" /></strong> year over year</>}. Each row compares a donor across the three years.</>;
       const chg = r => r.changePct === null ? <span style={{ color: T.gold600, fontWeight: 700 }}>new</span>
         : <span style={{ color: T.ink, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
           {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px", minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
-            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{fmtFull(y.total)}</div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donors} donor{y.donors === 1 ? "" : "s"}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{y.source ? <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}`} source={y.source} /> : fmtFull(y.total)}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{y.donorsSource ? <Figure variant="inline" kind="count" value={y.donors} label={`Donors in ${y.label}`} source={y.donorsSource} /> : y.donors} donor{y.donors === 1 ? "" : "s"}</div>
           </div>)}
         </div>
         <ReportTable personOf={byId} onOpen={openPerson} cols={[
@@ -537,15 +549,16 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       </>;
     } else if (active === "annual") {
       empty = d.giftCount === 0;
-      narrative = <>In <strong>{d.label}</strong> you raised <strong>{fmtFull(d.total)}</strong> from <strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"}
-        {d.growthPct !== null && <> — {d.growthPct >= 0 ? "up" : "down"} {Math.abs(d.growthPct)}% from {d.priorLabel}</>}.
+      narrative = <>In <strong>{d.label}</strong> you raised <strong><RF f={d.figures?.total} kind="money" label={`Raised in ${d.label}`} /></strong> from <strong><RF f={d.figures?.uniqueDonors} label="Donors" /></strong> donor{d.uniqueDonors === 1 ? "" : "s"}
+        {d.growthPct !== null && <>: {d.growthPct >= 0 ? "up" : "down"} <RF f={d.figures?.growthPct} kind="percent" label="Change on the year before" /> from {d.priorLabel}</>}.
         {d.growthPct !== null && d.growthPct < 0 && <WhyLink payload={{ key: "lapse" }} />}
-        {" "}{d.newDonors} new, {d.returningDonors} returning{d.retentionRate !== null && <>; you kept <strong>{d.retentionRate}%</strong> of {d.priorLabel}'s donors</>}.</>;
+        {" "}<RF f={d.figures?.newDonors} label="New donors" /> new, <RF f={d.figures?.returningDonors} label="Returning donors" /> returning{d.retentionRate !== null && <>; you kept <strong><RF f={d.figures?.retentionRate} kind="percent" label="Retention" /></strong> of {d.priorLabel}'s donors</>}.</>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
-          {[["Total raised", fmtFull(d.total)], ["Gifts", d.giftCount], ["Unique donors", d.uniqueDonors], ["Average gift", fmtFull(Math.round(d.avgGift))],
-            ["Growth vs prior", d.growthPct === null ? "—" : `${d.growthPct >= 0 ? "+" : ""}${d.growthPct}%`], ["New donors", d.newDonors],
-            ["Returning donors", d.returningDonors], ["Donor retention", d.retentionRate === null ? "—" : `${d.retentionRate}%`],
+          {[["Total raised", <RF f={d.figures?.total} kind="money" label="Total raised" />], ["Gifts", <RF f={d.figures?.giftCount} label="Gifts" />],
+            ["Unique donors", <RF f={d.figures?.uniqueDonors} label="Unique donors" />], ["Average gift", <RF f={d.figures?.avgGift} kind="money" label="Average gift" />],
+            ["Growth vs prior", <RF f={d.figures?.growthPct} kind="percent" label="Growth vs prior" />], ["New donors", <RF f={d.figures?.newDonors} label="New donors" />],
+            ["Returning donors", <RF f={d.figures?.returningDonors} label="Returning donors" />], ["Donor retention", <RF f={d.figures?.retentionRate} kind="percent" label="Donor retention" />],
           ].map(([l, v]) => <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
@@ -553,14 +566,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
           <div style={{ minWidth: 0 }}>{subhead("By fund")}
-            <ReportTable cols={[{ key: "name", label: "Fund", type: "text" }, { key: "total", label: "Total", type: "money" }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
+            <ReportTable cols={[{ key: "name", label: "Fund", type: "text" }, { key: "total", label: "Total", type: "money", render: cellFig("money", "Given to this fund") }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
           <div style={{ minWidth: 0 }}>{subhead("By campaign")}
-            <ReportTable cols={[{ key: "name", label: "Campaign", type: "text" }, { key: "total", label: "Total", type: "money" }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
+            <ReportTable cols={[{ key: "name", label: "Campaign", type: "text" }, { key: "total", label: "Total", type: "money", render: cellFig("money", "Given in this campaign") }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
         </div>
       </>;
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
-      narrative = <>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      narrative = <>{d.figures?.giftCount ? <RF f={d.figures.giftCount} label="Gifts in the file" /> : d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
       const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";
       table = <>
         {/* ONE line, above the button, saying what is deliberately not here. */}
@@ -582,7 +595,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           { key: "amount", label: "Amount", type: "money" },
         ]} rows={d.byFund} />
         <div data-testid="bk-fund-total" style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginTop: 10, textAlign: "right" }}>
-          Total {fmtFull(Number(d.total))}
+          Total {d.figures?.total ? <RF f={d.figures.total} kind="money" label="Bookkeeper total" /> : fmtFull(Number(d.total))}
         </div>
       </>;
     } else if (active === "solicitations") {
