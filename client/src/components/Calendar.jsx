@@ -22,6 +22,7 @@ import { ShiftEditor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
+import { AddToRecord } from "./MeetingPanels";
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;
@@ -464,6 +465,10 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
     if (it.donorId) return <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open {it.donorName}</DonorLink>;
     return null;
   })();
+  // FIX-33 Part 3b · every meeting on the calendar can be put on a donor's
+  // record; an unsure one leads with it and lists who the title could mean.
+  const addToRecord = it.type === "meeting" && it.ref && it.ref.calendarEventId && !isReadOnly
+    ? <AddToRecord eventId={it.ref.calendarEventId} candidates={it.candidates || []} compact={!it.unsure} onDone={s => onChanged(s)}/> : null;
   return (
     <Modal onClose={onClose} width={420} ariaLabel={it.title}>
       <div data-testid="cal-card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -484,6 +489,8 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
         {it.conflict && <div data-testid="cal-card-conflict" style={{ fontSize: 13, color: T.ink, borderLeft: `3px solid ${T.gold}`, paddingLeft: 8 }}>{it.conflict}</div>}
         {it.ref && it.ref.synced && <div style={{ fontSize: 12.5, color: T.ink3 }}>Moving it here moves it on your connected calendar too.</div>}
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
+        {it.unsure && <div data-testid="cal-card-unsure" style={{ fontSize: 13.5, color: T.ink2 }}>Steward could not tell who this meeting is with.</div>}
+        {addToRecord}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>{action}<button type="button" style={chip} onClick={onClose}>Close</button></div>
       </div>
     </Modal>

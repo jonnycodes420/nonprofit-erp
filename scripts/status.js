@@ -56,8 +56,8 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null;
-  if (beRes.ok) { try { backendSha = JSON.parse(beRes.text).buildSha; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -117,6 +117,18 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
     catch (e) { aiOk = false; aiDetail = `errored: ${e.message}`; }
   } else aiDetail = "backend unreachable, not run";
 
+  // FIX-33: every live mailbox connection has read successfully in the last
+  // two hours. Counts only (no address leaves prod). A stale connection FAILS
+  // the smoke: "Connected" with nothing read is exactly what Jonathan hit.
+  let mailOk = null, mailDetail = "";
+  if (!mailboxSync) mailDetail = backendSha ? "no mailboxSync on /health (older deploy)" : "backend unreachable";
+  else if (!mailboxSync.checkedAt) mailDetail = "no sync run since the deploy yet; re-run in a minute";
+  else {
+    mailOk = Number(mailboxSync.stale) === 0;
+    mailDetail = `${mailboxSync.connections} connection(s), ${mailboxSync.stale} not read in 2 hours · checked ${mailboxSync.checkedAt}`;
+  }
+  if (mailOk === false && smokeOk !== null) smokeOk = false;
+
   // ── report ───────────────────────────────────────────────────────────────────
   const row = (label, val, note = "") => console.log(`  ${label.padEnd(18)} ${val}${note ? "  " + DIM + note + RESET : ""}`);
   console.log("\nDeploy status\n─────────────");
@@ -126,6 +138,7 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   row("prod backend", backendSha ? short(backendSha) : `${YELLOW}${backendErr}${RESET}`, backendSha ? "" : BACKEND);
   row("prod frontend", frontendSha ? short(frontendSha) : `${YELLOW}${frontendErr}${RESET}`, frontendSha ? "" : FRONTEND);
   row("prod smoke", smokeOk === true ? `${GREEN}ok${RESET}` : smokeOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, smokeDetail);
+  row("mailbox sync", mailOk === true ? `${GREEN}ok${RESET}` : mailOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, mailDetail);
   row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────

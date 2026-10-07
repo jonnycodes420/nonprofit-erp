@@ -1336,6 +1336,7 @@ const eventOut = (c, extra = {}) => ({
   id: c.id, title: c.title, startsAt: c.starts_at, endsAt: c.ends_at, location: c.location || null,
   personIds: c.person_ids || [], ownerUserId: c.owner_user_id, ownerName: c.owner_name || null, provider: c.provider,
   note: c.note || null, nextStep: c.next_step || null, loggedAt: c.logged_at || null, bookedInSteward: c.booked_in_steward === true,
+  candidateIds: c.candidate_ids || [],
   ...extra,
 });
 
@@ -1356,7 +1357,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const civilOf = e => orgToday(tzOrg, new Date(e.starts_at));   // ORG_TZ_SEAM_OK
   const calUpcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
   const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
-  const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 7 * 864e5) || null;
+  const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 30 * 864e5) || null;   // FIX-33: a booked visit shows its card from the day it is booked
 
   // THE ONE SOURCE (meetings.js): every meeting with this person, calendar
   // and logged by hand. The timeline's Meetings chip counts `meetings` (held
@@ -1484,12 +1485,13 @@ async function composeTodayMeetings(orgId, userId, { withLogged = false } = {}) 
     const fromCal = new Set(rows.map(r => r.interaction_id).filter(Boolean));
     logged = (await query(`SELECT * FROM (${sql}) m WHERE m.kind = 'logged' ORDER BY m.id`, args)).filter(m => !fromCal.has(m.id));
   }
-  const ids = [...new Set([...rows.flatMap(r => r.person_ids || []), ...logged.map(m => m.donor_id)])];
+  const ids = [...new Set([...rows.flatMap(r => [...(r.person_ids || []), ...(r.candidate_ids || [])]), ...logged.map(m => m.donor_id)])];
   const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
   const out = [];
   for (const r of rows) {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
-    out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
+    const candidates = (r.candidate_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
+    out.push(eventOut(r, { people, candidates, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
   }
   for (const m of logged) {
     const people = names[m.donor_id] ? [{ id: m.donor_id, name: names[m.donor_id] }] : [];

@@ -17634,7 +17634,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   // Only a task ATTACHED TO A DONOR joins: an org to-do ("renew the insurance")
   // is not a follow-up and does not belong on a donor's record.
   const taskRows = await query(
-    `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name,
+    `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name, k.calendar_event_id,
             k.created_at, d.name AS donor_name, d.total_giving, d.gift_count
        FROM tasks k
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
@@ -17700,6 +17700,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       // FIX-14: the rail's next step shows "Edited" from these.
       edited_at: t.edited_at || null, edited_by_name: t.edited_by_name || null,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
+      calendarEventId: t.calendar_event_id || null,   // FIX-33: a meeting step opens its meeting
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
       // The rank inputs ride ALONG so the client can explain a row without a
@@ -17734,6 +17735,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     list.push({
       id: k.id, kind: "task", donorId: k.donor_id, donorName: k.donor_name,
       nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
+      // FIX-33: a meeting's prep and after tasks open the meeting they belong to.
+      calendarEventId: k.calendar_event_id || null,
       overdue: due < today,
       overdueDays: due < today ? (orgTime.daysBetween(due, today) ?? 0) : 0,
       daysOpen: Math.max(0, daysOpen), openedOn,

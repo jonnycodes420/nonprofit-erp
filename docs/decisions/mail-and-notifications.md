@@ -126,6 +126,14 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 - **BCC logging stays off behind `INBOUND_EMAIL_ENABLED` (404 off, 503 with no secret).** The org is the
   plus-address only, the sender must be an org user, inbound never creates a donor; no provider is chosen. (BUILD-87)
 
+- **A connected mailbox is never just "Connected" (FIX-33).** Every mail read, calendar read and push writes one
+  `mailbox_sync_runs` row, ok or not, with the one plain sentence of what went wrong. The health panel, the Home
+  banner, `/health.mailboxSync` and the prod smoke read only those rows. A provider that refuses every request is a
+  failed read, never "nothing new". Outlook is asked twice: the inbox by sender, Sent Items by recipient.
+- **A calendar event is stored only when someone on file is a guest or is named in the title with a meeting word
+  (FIX-33 Part 3b).** Two possible people are kept as candidates and a person picks; the description is still never
+  read, so the title is the only text matched.
+
 ## Gotchas
 - **The Resend SDK silently drops `reply_to`.** Pass `replyTo`. (BUILD-88c)
 - **Wrapping the Resend client in an object literal deleted `resend.domains`.** Use a Proxy that overrides

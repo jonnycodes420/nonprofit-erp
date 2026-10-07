@@ -2717,6 +2717,10 @@ app.get("/health", (req, res) => {
     // BUILD-65 Part 6: the aggregate. true ONLY when every guard above is both
     // clean AND fresh (a null/stale counter fails it). One field to page on.
     guardsOk: guardsOk(),
+    // FIX-33: every live mailbox connection, and how many have not read
+    // successfully in two hours. Counts only, no address, no org. The prod
+    // smoke fails on stale > 0; checkedAt null = no sync run since boot.
+    mailboxSync: mailboxSyncHealth,
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -8896,6 +8900,26 @@ async function checkPlanLimit(org, dimension) {
 // The health panel, the reconnect banner, the error digest and the prod smoke
 // read only these rows.
 const SYNC_STALE_MS = 2 * 3600e3;
+let mailboxSyncHealth = { connections: null, stale: null, checkedAt: null };
+// Refreshed after every mail read and on the 15-minute tick. A stale
+// connection is also one ERROR line, which is what puts it in the daily
+// error digest (HARDEN-1's error-digest.yml reads the Railway error lines).
+async function refreshMailboxSyncHealth({ log = false } = {}) {
+  const rows = await query(
+    `SELECT m.id, m.provider, m.status, m.created_at,
+            (SELECT MAX(r.finished_at) FROM mailbox_sync_runs r
+              WHERE r.user_id = m.user_id AND r.provider = m.provider AND r.kind = 'mail' AND r.ok) AS last_ok
+       FROM mailbox_connections m
+      WHERE m.status IN ('active','error') AND m.paused IS NOT TRUE AND m.credentials_sealed IS NOT NULL`).catch(() => null);
+  if (!rows) return mailboxSyncHealth;
+  const now = Date.now();
+  const stale = rows.filter(r => r.status === "error"
+    || (r.last_ok ? now - new Date(r.last_ok).getTime() > SYNC_STALE_MS : now - new Date(r.created_at).getTime() > SYNC_STALE_MS));
+  if (log) for (const r of stale)
+    console.error(`[mailbox-stale] ${r.provider} connection ${r.id} has not read successfully since ${r.last_ok ? new Date(r.last_ok).toISOString() : "it was connected"}${r.status === "error" ? " (permission refused)" : ""}`);
+  mailboxSyncHealth = { connections: rows.length, stale: stale.length, checkedAt: new Date().toISOString() };
+  return mailboxSyncHealth;
+}
 async function startSyncRun(conn, kind, trigger) {
   const runId = "msr_" + uuid().slice(0, 12);
   await run(`INSERT INTO mailbox_sync_runs (id,org_id,user_id,provider,kind,trigger) VALUES (?,?,?,?,?,?)`,
@@ -8927,12 +8951,14 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
   try {
     const out = await syncMailboxRun(conn, userId, orgId, providerKey);
     await finishSyncRun(runId, { ok: true, found: out.found ?? null, logged: out.logged || 0 });
+    await refreshMailboxSyncHealth().catch(() => {});
     return out;
   } catch (e) {
     const sentence = syncErrorSentence(providerKey, "mail", e);
     console.error(`[mailbox] ${providerKey} sync for ${conn.id} failed:`, e.message);
     await finishSyncRun(runId, { ok: false, error: sentence });
     await run(`UPDATE mailbox_connections SET last_error=?, last_error_at=NOW() WHERE id=?`, [sentence, conn.id]).catch(() => {});
+    await refreshMailboxSyncHealth().catch(() => {});
     return { logged: 0, reason: "failed", error: sentence };
   }
 }
@@ -9182,8 +9208,9 @@ async function pushStewardDatesRun(conn, userId, orgId, providerKey) {
   const tzRow = await orgTz(orgId);
   const tz = tzRow.timezone || orgTime.DEFAULT_TZ;
   const from = orgToday(tzRow), to = orgTime.addDays(from, PUSH_AHEAD_DAYS);   // ORG_TZ_SEAM_OK
+  // A meeting step is the meeting, already on her calendar: never a second entry.
   const items = on ? (await CALR.calendarItems(orgId, { from, to, tz, userId, scope: "mine", types: PUSH_TYPES }))
-    .filter(i => i.ownerId === userId) : [];
+    .filter(i => i.ownerId === userId && i.stepType !== "meeting") : [];
   const byKey = new Map(stored.map(r => [r.item_key, r]));
   const google = providerKey === "google";
   const base = google ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events`
@@ -11335,7 +11362,7 @@ require("./routes/jobs").mount({
   // ENGAGE-1 — the scores, recomputed on the six-hour tick.
   recomputeAllScores,
   // INT-BUILD-1 — every live mailbox, mail and calendar, on the 15-minute tick.
-  syncMailbox, syncCalendar, pushStewardDates,
+  syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,

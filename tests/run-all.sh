@@ -140,6 +140,7 @@ CORE=(
   int3-optout
   int4-mailbox
   intb1-calendar-store
+  fix33-sync-proof
   fix14-meeting-counts
   engage1-score-breakdown
   survey1-anonymous

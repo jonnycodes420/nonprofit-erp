@@ -127,11 +127,32 @@ function TimeForm({ initialStart, initialMinutes = 60, onSubmit, submitLabel, bu
   );
 }
 
+// FIX-33: the Next step's Prep and Reschedule buttons open this card's brief
+// or its move form, so there is one brief and one move on the page.
+export const MEETING_ACTION = "steward:meeting-action";
 export function MeetingCard({ meeting, donor, onReload }) {
   const [moving, setMoving] = useState(false);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const ref = useRef(null);
+  useEffect(() => {
+    const on = e => {
+      if (!meeting || (e.detail?.eventId && e.detail.eventId !== meeting.id)) return;
+      if (e.detail?.action === "prep") setOpen(true);
+      if (e.detail?.action === "reschedule") setMoving(true);
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    };
+    window.addEventListener(MEETING_ACTION, on);
+    return () => window.removeEventListener(MEETING_ACTION, on);
+  }, [meeting]);
+  const cancel = async () => {
+    if (!(await askConfirm({ title: "Cancel this meeting?", body: "It comes off your calendar, the prep and follow-up close, and the next step goes back to what it was.", yes: "Cancel the meeting", danger: true }))) return;
+    setBusy(true); setMsg("");
+    try { const r = await apiFetch(`/calendar/events/${meeting.id}/cancel`, { method: "POST", body: "{}" }); setMsg(r.sentence); onReload && onReload(); }
+    catch (e) { setMsg(e?.sentence || errorMessage(e, "That did not cancel.")); }
+    setBusy(false);
+  };
   if (!meeting) return null;
   const first = firstNameOf(donor?.name) || "them";
   const move = async body => {
@@ -141,7 +162,7 @@ export function MeetingCard({ meeting, donor, onReload }) {
     setBusy(false);
   };
   return (
-    <section aria-label="The next meeting" data-testid="dp-meeting-card"
+    <section ref={ref} aria-label="The next meeting" data-testid="dp-meeting-card"
       style={{ background: T.white, borderRadius: 20, padding: "30px 34px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 32 }}
       className="dp-meeting-card">
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -152,6 +173,7 @@ export function MeetingCard({ meeting, donor, onReload }) {
         <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={() => setOpen(o => !o)} style={btnPrimary} aria-expanded={open}>{open ? "Close the brief" : "Open the brief"}</button>
           <button type="button" onClick={() => setMoving(m => !m)} style={btnOutline}>{moving ? "Keep it" : "Move it"}</button>
+          <button type="button" data-testid="dp-meeting-cancel" onClick={cancel} disabled={busy} style={{ ...btnOutline, border: "1px solid " + T.bg2 }}>Cancel it</button>
         </div>
         {moving && <div style={{ marginTop: 8 }}><TimeForm initialStart={meeting.startsAt}
           initialMinutes={Math.max(15, Math.round((new Date(meeting.endsAt) - new Date(meeting.startsAt)) / 60000))}
@@ -634,6 +656,13 @@ export function AfterMeetingForm({ meeting, onDone }) {
   const [next, setNext] = useState("");
   const [nextTouched, setNextTouched] = useState(false);
   const [due, setDue] = useState(plus(Date.now(), 7));
+  // FIX-33 Part 3b — the meeting card's fields. The date, place and who
+  // attended come from the meeting itself and are shown, not asked.
+  const [takeaways, setTakeaways] = useState("");
+  const [cares, setCares] = useState("");
+  const [askAmount, setAskAmount] = useState("");
+  const [askOutcome, setAskOutcome] = useState("");
+  const [noNext, setNoNext] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const timer = useRef(null);
@@ -660,7 +689,8 @@ export function AfterMeetingForm({ meeting, onDone }) {
     e.preventDefault();
     setBusy(true); setMsg("");
     try {
-      await apiFetch(`/calendar/events/${meeting.id}/log`, { method: "POST", body: JSON.stringify({ note, nextStep: next.trim() || null }) });
+      await apiFetch(`/calendar/events/${meeting.id}/log`, { method: "POST", body: JSON.stringify({ note, nextStep: next.trim() || null,
+        nextStepDate: next.trim() ? due : null, takeaways, cares, askAmount: askAmount === "" ? null : Number(askAmount), askOutcome: askOutcome || null }) });
       const done = ["the note"];
       const meetingDay = civilDayOf(meeting.startsAt);   // FIX-14 Part 1 — the org-local day, not the UTC day
       if (person && pledge) {
@@ -674,11 +704,9 @@ export function AfterMeetingForm({ meeting, onDone }) {
         await apiFetch(`/donors/${person.id}/gifts`, { method: "POST", body: JSON.stringify({ amount: gift.amount, date: meetingDay, fundId: fund?.fundId || undefined }) });
         done.push("the gift");
       }
-      if (person && next.trim()) {
-        try { await apiFetch(`/donors/${person.id}/threads`, { method: "POST", body: JSON.stringify({ label: next.trim(), due }) }); done.push("the next step"); }
-        catch (err) { if (err?.status !== 409 && err?.error !== "thread_open") throw err;
-          setMsg(`${first} already has an open next step, so this one is on the meeting only.`); }
-      }
+      // The server opens the next step with its date when she saved one
+      // (FIX-33); a second request here would make it twice.
+      if (person && next.trim()) done.push("the next step");
       onDone && onDone(`Saved ${done.join(", ").replace(/, ([^,]*)$/, " and $1")}.`);
     } catch (err) { setMsg(err?.sentence || err?.error || errorMessage(err, "That did not save.")); }
     setBusy(false);
@@ -715,18 +743,72 @@ export function AfterMeetingForm({ meeting, onDone }) {
             <span style={{ fontSize: 12, color: T.ink3 }}>Read from your note. Only what you confirm is recorded, and only when you save.</span>
           </div>
         )}
+        <div data-testid="after-meeting-facts" style={{ fontSize: 14, color: T.ink3, lineHeight: 1.5 }}>
+          {civilDayOf(meeting.startsAt)}{meeting.location ? ` · ${meeting.location}` : ""}{(meeting.people || []).length ? ` · with ${(meeting.people || []).map(p => p.name).join(", ")}` : ""}
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Key takeaways
+          <textarea data-testid="after-takeaways" rows={2} value={takeaways} onChange={e => setTakeaways(e.target.value)} style={{ ...input, resize: "none", textTransform: "none", letterSpacing: 0 }}/></label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>What they care about
+          <input data-testid="after-cares" value={cares} onChange={e => setCares(e.target.value)} style={{ ...input, textTransform: "none", letterSpacing: 0 }}/></label>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Ask made
+            <input data-testid="after-ask-amount" type="number" min="0" step="any" placeholder="Amount" value={askAmount} onChange={e => setAskAmount(e.target.value)} style={{ ...input, width: 150, textTransform: "none", letterSpacing: 0 }}/></label>
+          <select data-testid="after-ask-outcome" aria-label="What they said" value={askOutcome} onChange={e => setAskOutcome(e.target.value)} style={{ ...input, width: 190 }}>
+            <option value="">What they said</option><option value="yes">Yes</option><option value="thinking">Thinking about it</option>
+            <option value="no">No</option><option value="not_asked">No ask this time</option>
+          </select>
+        </div>
         <label htmlFor={`next-${meeting.id}`} style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Next step</label>
         <input id={`next-${meeting.id}`} value={next} onChange={e => { setNext(e.target.value); setNextTouched(true); }} style={input}/>
         {next.trim() && <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>Due
           <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ ...input, width: 170, padding: 8 }}/></label>}
-        <button type="submit" disabled={busy || (!note.trim() && !next.trim())}
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>
+          <input type="checkbox" checked={noNext} onChange={e => setNoNext(e.target.checked)}/> No next step for now</label>
+        {!next.trim() && !noNext && (note.trim() || takeaways.trim()) && <div data-testid="after-needs-next" style={{ fontSize: 13, color: T.gold700 }}>What happens next? Add a next step with a date, or tick "No next step for now".</div>}
+        <button type="submit" disabled={busy || (!note.trim() && !next.trim() && !takeaways.trim()) || (!next.trim() && !noNext)}
           style={{ padding: 15, minHeight: 52, border: 0, borderRadius: 12, background: T.greenDk, color: T.white, font: "600 16px 'DM Sans',sans-serif",
-            cursor: "pointer", opacity: busy || (!note.trim() && !next.trim()) ? 0.6 : 1 }}>{busy ? "Saving…" : saveLabel}</button>
+            cursor: "pointer", opacity: busy || (!note.trim() && !next.trim() && !takeaways.trim()) || (!next.trim() && !noNext) ? 0.6 : 1 }}>{busy ? "Saving…" : saveLabel}</button>
         {msg && <div style={{ fontSize: 14, color: T.ink }}>{msg}</div>}
       </form>
       <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5, padding: "0 4px" }}>
         The meeting is already on {first}'s profile from your calendar. Saving adds your note{pledge ? ", the pledge" : gift ? ", the gift" : ""}{next.trim() ? " and the next step" : ""}.
       </div>
+    </div>
+  );
+}
+
+// ── FIX-33 Part 3b · ADD TO A DONOR'S RECORD ────────────────────────────────
+// One click on an event Steward was not sure about (a title that named two
+// people on file, or nobody it could match): the likely people first, then a
+// search. Picking one links the meeting, and the booking takes effect on
+// their record (Next step, prep task, after task, timeline).
+export function AddToRecord({ eventId, candidates = [], onDone, compact = true }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [found, setFound] = useState([]);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    if (!open || q.trim().length < 2) { setFound([]); return; }
+    const t = setTimeout(() => apiFetch(`/search?q=${encodeURIComponent(q.trim())}`)
+      .then(r => setFound((r.results || []).filter(x => x.kind === "person").slice(0, 6))).catch(() => setFound([])), 250);
+    return () => clearTimeout(t);
+  }, [q, open]);
+  const pick = async p => {
+    setMsg("");
+    try { const r = await apiFetch(`/calendar/events/${eventId}/people`, { method: "POST", body: JSON.stringify({ donorId: p.id }) });
+      setOpen(false); onDone && onDone(r.sentence || `On ${p.name || p.title}'s record now.`); }
+    catch (e) { setMsg(e?.sentence || errorMessage(e, "That did not link.")); }
+  };
+  const small = { background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, cursor: "pointer", font: "inherit", textDecoration: "underline" };
+  if (!open) return <button type="button" data-testid="add-to-record" onClick={() => setOpen(true)} style={compact ? small : btnOutline}>Add to a donor's record</button>;
+  return (
+    <div data-testid="add-to-record-picker" style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 220 }}>
+      {candidates.length > 0 && <div style={{ fontSize: 13, color: T.ink3 }}>The title could be about more than one person. Which one?</div>}
+      {candidates.map(c => <button key={c.id} type="button" onClick={() => pick(c)} style={{ ...btnOutline, padding: "8px 12px", minHeight: 36, fontSize: 14, textAlign: "left" }}>{c.name}</button>)}
+      <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Find a person" aria-label="Find a person" style={{ ...input, padding: 8, minHeight: 36 }}/>
+      {found.map(f => <button key={f.id} type="button" onClick={() => pick(f)} style={{ ...btnOutline, padding: "8px 12px", minHeight: 36, fontSize: 14, textAlign: "left", border: "1px solid " + T.bg2 }}>{f.title}{f.email ? <span style={{ color: T.ink3 }}> · {f.email}</span> : null}</button>)}
+      <button type="button" onClick={() => setOpen(false)} style={{ ...small, color: T.ink3 }}>Not now</button>
+      {msg && <div style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
     </div>
   );
 }
@@ -793,7 +875,9 @@ export function MorningBrief({ userName, onOpenPerson, compact = false }) {
             {i > 0 && <div style={{ height: 1, background: T.bg2, marginBottom: 12 }}/>}
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
               <span><b style={{ fontWeight: 600 }}>{new Date(m.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/ [AP]M$/, "")}</b> {m.title}</span>
-              {m.people?.length === 1 && onOpenPerson
+              {!m.people?.length
+                ? <AddToRecord eventId={m.id} candidates={m.candidates || []} onDone={s => { setDone(s); load(); }}/>
+                : m.people?.length === 1 && onOpenPerson
                 ? <button type="button" onClick={() => onOpenPerson(m.people[0].id)} style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", font: "inherit" }}>Brief</button>
                 : <span style={{ color: T.ink3 }}>{m.people?.length || 0} {m.people?.length === 1 ? "person" : "people"}</span>}
             </div>
