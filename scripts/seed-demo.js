@@ -2938,8 +2938,11 @@ async function main() {
     const person = agentSeedPeople[k % Math.max(1, agentSeedPeople.length)];
     if (!person) break;
     const plan = {
-      steps: [{ tool: "find_people", label: `Read ${person.name}'s record`, citesRows: [person.id], donorId: person.id },
-              { tool: "count", label: "Count what that found", citesRows: [person.id] }],
+      // THREAD-3: each step carries the sentence the plan sheet shows. Without
+      // `describes` the two rows drew blank.
+      steps: [{ tool: "find_people", label: `Read ${person.name}'s record`, describes: `Read ${person.name}'s record.`, citesRows: [person.id], donorId: person.id },
+              { tool: "count", label: "Count what that found", describes: "Count what that found.", citesRows: [person.id] }],
+      summary: `Read ${person.name}'s record and count what that found.`,
       sends: 0, expectedCount: 1,
       reads: `${person.name}'s record`,
       confirmLabel: "Run it",

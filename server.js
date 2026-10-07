@@ -8949,6 +8949,10 @@ async function syncMailbox(userId, orgId, providerKey) {
          m.receivedAt || new Date().toISOString(), actorId, staffName,
          JSON.stringify({ message_id: String(m.id), provider: providerKey, direction: decision.direction,
                           subject: decision.subject, attachments: decision.attachmentCount,
+                          // THREAD-3: what kind of mail it is, so only a person's
+                          // email can become a reply step (processUnansweredMail).
+                          ...(decision.direction === "inbound" ? { mail_kind: ML.mailKind(m) } : {}),
+                          ...(m.threadKey ? { thread_key: String(m.threadKey) } : {}),
                           ...(decision.attachmentCount && m.webLink ? { web_link: m.webLink } : {}),
                           logged_by: userId })]);
       logged++;
@@ -9217,7 +9221,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
         const filter = chunk.map(e =>
           `from/emailAddress/address eq '${e.replace(/'/g, "''")}'`).join(" or ");
         const list = await fetch(
-          `${GRAPH_BASE()}/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,webLink&$filter=${encodeURIComponent(filter)}`,
+          `${GRAPH_BASE()}/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments,webLink,conversationId,internetMessageHeaders&$filter=${encodeURIComponent(filter)}`,
           { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
         for (const m of (list?.value || [])) {
           if (out.length >= CAP) break;
@@ -9230,6 +9234,15 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
 }
 
 const addrOf = s => { const m = String(s || "").match(/<([^>]+)>/); return (m ? m[1] : String(s || "")).trim().toLowerCase(); };
+// THREAD-3: the few headers that tell a person's email from a newsletter, a
+// receipt or an automatic reply (shared/mailboxLog.js mailKind). Read, used to
+// decide, and kept only as the one word the decision produced.
+const MAIL_KIND_HEADERS = ["auto-submitted", "x-autoreply", "x-autorespond", "precedence", "list-unsubscribe", "list-id"];
+function mailKindHeaders(get) {
+  const out = {};
+  for (const n of MAIL_KIND_HEADERS) { const v = get(n); if (v) out[n] = String(v).slice(0, 200); }
+  return out;
+}
 
 function gmailToMessage(full) {
   const headers = full.payload?.headers || [];
@@ -9252,6 +9265,8 @@ function gmailToMessage(full) {
   const acc = walk(full.payload, { text: "", attachments: 0, parts: [] });
   return {
     id: full.id,
+    threadKey: full.threadId || null,
+    headers: mailKindHeaders(n => hdr(n)),
     from: addrOf(hdr("from")),
     to: hdr("to").split(",").map(addrOf).filter(Boolean),
     cc: hdr("cc").split(",").map(addrOf).filter(Boolean),
@@ -9295,8 +9310,11 @@ async function fetchMailboxAttachments(providerKey, token, m) {
 function graphToMessage(m) {
   const html = m.body?.contentType === "html";
   const text = String(m.body?.content || "");
+  const gh = n => ((m.internetMessageHeaders || []).find(h => String(h.name || "").toLowerCase() === n) || {}).value || "";
   return {
     id: m.id,
+    threadKey: m.conversationId || null,
+    headers: mailKindHeaders(gh),
     from: addrOf(m.from?.emailAddress?.address),
     to: (m.toRecipients || []).map(r => addrOf(r.emailAddress?.address)).filter(Boolean),
     cc: (m.ccRecipients || []).map(r => addrOf(r.emailAddress?.address)).filter(Boolean),

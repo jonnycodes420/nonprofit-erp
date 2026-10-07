@@ -989,7 +989,8 @@ async function agentContext(orgId, { today, scope, allowed }) {
 }
 // ── AGENT-3 · WHAT THE AGENT CAN READ ABOUT EACH PERSON ─────────────────────
 // Their grants (and the next open milestone), memberships, open pledges, gifts
-// to campaigns and giving pages, peer-to-peer pages and auction wins. Steward's
+// to campaigns and giving pages, peer-to-peer pages and auction wins, and
+// (THREAD-3) their recurring plans and documents. Steward's
 // own queries, org-scoped, for the people the plan is about and nobody else;
 // the model reads these lines and nothing else about them. Every id is a row a
 // step may cite, and every amount is a number a draft may use.
@@ -1005,7 +1006,10 @@ async function agentObjects(orgId, ids, today) {
   if (!only.length) return out;
   const safe = p => p.catch(e => { console.error("[agent] object read failed:", e.message); return []; });
   const money = v => A3money(Math.round(Number(v || 0) * 100));
-  const [grants, members, pledges, campaignGifts, pageGifts, pages, wins] = await Promise.all([
+  // THREAD-3: monthly plans and documents, read only. A plan's next charge is
+  // Stripe's date (current_period_end) or none, never a guessed one.
+  const LIVE_PLANS = require("../groups").ACTIVE_RECURRING_STATUSES.concat(["paused"]);
+  const [grants, members, pledges, campaignGifts, pageGifts, pages, wins, plans, docs] = await Promise.all([
     safe(query(`SELECT g.id, g.funder_donor_id AS donor_id, g.funder, g.program, g.status, g.amount_awarded, g.amount_requested, g.amount,
                        g.report_due, g.deadline,
                        (SELECT json_build_object('id', m.id, 'kind', m.kind, 'label', m.label, 'due', m.due_date)
@@ -1034,6 +1038,18 @@ async function agentObjects(orgId, ids, today) {
                   JOIN auction_bidders bw ON bw.id = tb.bidder_id AND bw.org_id = ai.org_id
                  WHERE ai.org_id = ? AND bw.donor_id = ANY(?::text[]) AND LEAST(au.closes_at, COALESCE(ai.closed_at, au.closes_at)) <= NOW()
                  ORDER BY ai.id LIMIT 2000`, [orgId, only])),
+    safe(query(`SELECT id, donor_id, amount, interval, status, to_char(current_period_end, 'YYYY-MM-DD') AS next_charge,
+                       card_brand, card_last4, card_exp_month, card_exp_year, LEFT(created_at::text, 10) AS started
+                  FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ANY(?::text[]) AND status = ANY(?::text[])
+                 ORDER BY id LIMIT 2000`, [orgId, only, LIVE_PLANS])),
+    safe(query(`SELECT ia.id, ia.donor_id, ia.filename AS name, LEFT(ia.created_at::text, 10) AS added, 'attached to a note' AS place
+                  FROM interaction_attachments ia WHERE ia.org_id = ? AND ia.donor_id = ANY(?::text[]) AND ia.deleted_at IS NULL
+                UNION ALL
+                SELECT gd.id, g.funder_donor_id AS donor_id, gd.file_name AS name, LEFT(gd.uploaded_at::text, 10) AS added,
+                       'on the grant ' || COALESCE(g.program, g.funder, g.id) AS place
+                  FROM grant_documents gd JOIN grants g ON g.id = gd.grant_id AND g.org_id = gd.org_id
+                 WHERE gd.org_id = ? AND g.funder_donor_id = ANY(?::text[])
+                 ORDER BY 4 DESC LIMIT 2000`, [orgId, only, orgId, only])),
   ]);
   const add = (donorId, line, rowId, ...vals) => {
     if (!out.lines.has(donorId)) out.lines.set(donorId, []);
@@ -1066,6 +1082,17 @@ async function agentObjects(orgId, ids, today) {
   for (const w of wins) {
     add(w.donor_id, `auction win ${w.id} | ${w.title} in ${w.auction} | winning bid ${money(w.amount)} | ${w.paid_at ? "paid" : "not paid yet"}`, w.id, w.amount);
     fact(w.donor_id, w.amount, null); named(w.donor_id, w.auction, w.title);
+  }
+  for (const p of plans) {
+    const per = p.interval === "year" ? "a year" : p.interval === "week" ? "a week" : "a month";
+    const card = p.card_last4 ? ` | card ${p.card_brand || ""} ending ${p.card_last4}${p.card_exp_month ? ` expires ${p.card_exp_month}/${p.card_exp_year}` : ""}` : "";
+    const state = p.status === "past_due" ? "the last charge failed" : p.status === "paused" ? "paused" : "active";
+    add(p.donor_id, `recurring plan ${p.id} | ${money(p.amount)} ${per} | ${state} | next charge ${p.next_charge || "not known"}${card}`, p.id, p.amount);
+    fact(p.donor_id, p.amount, p.next_charge); fact(p.donor_id, 0, p.started);
+  }
+  for (const d of docs) {
+    add(d.donor_id, `document ${d.id} | ${d.name} | ${d.place} | added ${day(d.added)}`, d.id);
+    named(d.donor_id, d.name);
   }
   void today;
   return out;
@@ -1315,7 +1342,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     "- A conversation she says already happened is log_conversation with its date (today is " + today + "; yesterday is " + orgTime.addDays(today, -1) + "). Anything still to do is set_next_step with a due date.",
     "- Use an id only from the lists below (people, STAFF, GROUPS, HOUSEHOLDS, JOURNEYS, SHIFTS, EVENTS, GIFTS, GRANTS). `citesRows` holds the person's id, and the gift id for a gift step.",
     // AGENT-3: the objects under each person.
-    "- Under a person are their grants, memberships, open pledges, gifts to campaigns and pages, peer-to-peer pages and auction wins. Cite the row's id when a step is about it.",
+    "- Under a person are their grants, memberships, open pledges, gifts to campaigns and pages, peer-to-peer pages, auction wins, recurring plans and documents. Cite the row's id when a step is about it.",
+    // THREAD-3: plans and documents are read only.
+    "- A recurring plan or a document is there to read. No step changes, pauses or cancels a plan, and none sends a document.",
     "- A task about a grant (a report checklist, a deadline) is create_task with `grantId` from GRANTS, one per grant, titled with what is due and when.",
     "- A peer-to-peer page waiting for approval: the reminder is create_task for somebody here to approve it. Never a message to the fundraiser.",
     `- draft_note's \`purpose\` says what the draft is for: ${A.DRAFT_PURPOSES.join(", ")}, or "".`,
@@ -2424,7 +2453,8 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
     plans: rows.map(p => {
       const plan = typeof p.plan === "string" ? JSON.parse(p.plan || "null") : p.plan;
       const r = byIns.get(p.id);
-      const out = { ...p, plan: plan ? { ...plan, confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
+      // THREAD-3: a step is never blank, whatever the stored row says.
+      const out = { ...p, plan: plan ? { ...A.describedPlan(plan), confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
                run: r ? agentRunOut(A, r, draftStates) : null };
       // AGENT-3: the list's word, from the same steps the open plan shows.
       return { ...out, listState: A.planListState(out) };
