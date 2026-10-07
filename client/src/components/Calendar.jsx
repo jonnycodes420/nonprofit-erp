@@ -181,6 +181,12 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
           </label>))}
       </div>
       </>}
+      {/* FIX-31: a task with no day yet is still hers; one tap gives it one. */}
+      {data && Array.isArray(data.undated) && data.undated.length > 0 && (
+        <div data-testid="cal-undated" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>No date yet</div>
+          {data.undated.map(u => <UndatedRow key={u.taskId} u={u} today={data.today} isReadOnly={isReadOnly} onSaved={(m, undo) => { setNote(m); load(); offerUndo({ message: m, undoAction: async () => { const r = await undo(); load(); return r; } }, u.title); }} />)}
+        </div>)}
       {push && push.connected && !isReadOnly && (
         <label data-testid="cal-push" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, color: T.ink2, cursor: "pointer", lineHeight: 1.4 }}>
           <input type="checkbox" checked={push.enabled} onChange={togglePush} data-testid="cal-push-toggle" style={{ marginTop: 2 }} />
@@ -243,7 +249,8 @@ function Block({ item, onOpen, style, compact, children }) {
                borderRadius: 6, padding: compact ? "1px 6px" : "3px 6px", fontSize: 12, lineHeight: 1.3, overflow: "hidden", cursor: "pointer", boxSizing: "border-box", ...style }}>
       <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {item.conflict && <span data-testid="cal-conflict" aria-label={item.conflict} style={{ display: "inline-block", width: 7, height: 7, borderRadius: 99, background: T.gold, marginRight: 5, verticalAlign: "middle" }} />}
-        {item.title}
+        {item.done && <span data-testid="cal-done-check" aria-label="Done" style={{ marginRight: 4 }}>✓</span>}
+        <span style={item.done ? { textDecoration: "line-through", opacity: 0.7 } : undefined}>{item.title}</span>
       </div>
       {!compact && item.type === "shift" && item.detail && <div style={{ opacity: 0.85 }}>{item.detail}</div>}
       {children}
@@ -440,6 +447,29 @@ function Summary({ kind, items, scope, range, onClose, onOpen }) {
   );
 }
 
+// FIX-31: "Give it a day": the task's own day route, then Undo puts it back.
+function UndatedRow({ u, today, isReadOnly, onSaved }) {
+  const [day, setDay] = useState("");
+  const [open, setOpen] = useState(false);
+  const save = async () => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+    const path = `/tasks/${encodeURIComponent(u.taskId)}/due`;
+    await apiFetch(path, { method: "PATCH", body: JSON.stringify({ due: day }) });
+    onSaved(`${u.title} is on ${dayWords(day)}.`, () => apiFetch(path, { method: "PATCH", body: JSON.stringify({ due: "" }) }));
+  };
+  return (
+    <div data-testid="cal-undated-row" style={{ fontSize: 12.5, color: T.ink, display: "flex", flexDirection: "column", gap: 4, borderLeft: `3px solid ${T.bg3}`, paddingLeft: 8 }}>
+      <span style={{ fontWeight: 600 }}>{u.title}{u.donorName ? <span style={{ color: T.ink3, fontWeight: 400 }}> · {u.donorName}</span> : null}</span>
+      {!isReadOnly && (open
+        ? <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="date" aria-label={`A day for ${u.title}`} value={day} min={today} onChange={e => setDay(e.target.value)} style={{ fontSize: 12.5, padding: "4px 6px", border: `1px solid ${T.bg3}`, borderRadius: 6 }} />
+            <button type="button" style={{ ...chip, padding: "4px 10px" }} disabled={!day} onClick={save}>Save</button>
+          </span>
+        : <button type="button" data-testid="cal-give-day" style={{ ...chip, alignSelf: "flex-start", padding: "4px 10px" }} onClick={() => setOpen(true)}>Give it a day</button>)}
+    </div>
+  );
+}
+
 // ── THE CARD: essentials and one main action ───────────────────────────────
 function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShift }) {
   const it = card.item;
@@ -448,19 +478,31 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
   const when = it.allDay || String(it.start).length === 10 ? `${dayWords(String(it.start).slice(0, 10))}, all day`
     : `${dayWords(it.start.slice(0, 10))}, ${t12(it.start.slice(11, 16))} to ${t12(String(it.end).slice(11, 16))}`;
   const go = (tab, opts) => { onClose(); onNavigate && onNavigate(tab, opts); };
+  // FIX-31: done here is the same tick as in Tasks and on the Thread, with Undo.
   const done = async () => {
     setBusy(true); setErr("");
     try {
-      await apiFetch(`/threads/${it.ref.threadId}/dismiss`, { method: "POST", body: JSON.stringify({ reason: "handled_outside" }) });
+      if (it.type === "deadline") {
+        const path = `/grants/milestones/${encodeURIComponent(it.ref.milestoneId)}`;
+        await apiFetch(`${path}/done`, { method: "POST", body: "{}" });
+        offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(`${path}/reopen`, { method: "POST", body: "{}" }); onChanged(""); return r; } }, it.title);
+      } else if (it.ref.taskId) {
+        const path = `/tasks/${encodeURIComponent(it.ref.taskId)}/complete`;
+        await apiFetch(path, { method: "POST", body: JSON.stringify({ done: true }) });
+        offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
+      } else {
+        await apiFetch(`/threads/${it.ref.threadId}/dismiss`, { method: "POST", body: JSON.stringify({ reason: "handled_outside" }) });
+      }
       onChanged("Marked done.");
-    } catch (e) { setErr(errorMessage(e, "That did not save.")); }
+    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
     setBusy(false);
   };
+  const doneBtn = !isReadOnly && !it.done ? <button type="button" data-testid="cal-card-done" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button> : null;
   const action = (() => {
     if (it.type === "shift") return <button type="button" style={btn} onClick={() => onEditShift(it)}>Change this shift</button>;
     if (it.type === "event") return <RecordLink to={tabHref("fundraising", { frSection: "events", eventId: it.ref.eventId })} onOpen={() => go("fundraising", { frSection: "events", eventId: it.ref.eventId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the event to check in</RecordLink>;
-    if (it.type === "step" && it.ref.threadId && !isReadOnly) return <button type="button" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button>;
-    if (it.type === "deadline") return <RecordLink to={tabHref("grants", {})} onOpen={() => go("grants", { grantId: it.ref.grantId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the grant</RecordLink>;
+    if (it.type === "step" && (it.ref.threadId || it.ref.taskId)) return doneBtn;
+    if (it.type === "deadline") return <>{it.ref.milestoneId ? doneBtn : null}<RecordLink to={tabHref("grants", {})} onOpen={() => go("grants", { grantId: it.ref.grantId })} style={{ ...chip, display: "inline-block", textDecoration: "none" }}>Open the grant</RecordLink></>;
     if (it.type === "send") return <RecordLink to={tabHref("communications", {})} onOpen={() => go("communications", {})} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the campaign</RecordLink>;
     if (it.donorId) return <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open {it.donorName}</DonorLink>;
     return null;

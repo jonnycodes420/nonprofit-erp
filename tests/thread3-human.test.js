@@ -120,7 +120,9 @@ async function reset() {
   ok("§1 the newsletter, the receipt, the automatic reply, the answered email and the fresh one open nothing",
     threads.length === 1, threads.map(t => `${t.donor_id}:${t.next_step_label}`));
   const again = await api("POST", "/mailbox/run-replies", dana, {});
-  const tasks1 = await q(`SELECT id FROM tasks WHERE org_id=$1`, [ORG]);
+  // FIX-31: Marion's reply step is a task now (link_kind next_step); the
+  // sweep must still open no admin task of its own.
+  const tasks1 = await q(`SELECT id FROM tasks WHERE org_id=$1 AND link_kind IS NULL`, [ORG]);
   ok("§1 the sweep again opens nothing more", again.status === 200 && again.body.opened === 0 && again.body.tasks === 0 && tasks1.length === 0, again.body);
 
   // ── §2 no-shows ──────────────────────────────────────────────────────────

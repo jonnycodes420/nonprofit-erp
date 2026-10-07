@@ -1421,7 +1421,7 @@ async function main() {
          `FY${String(Number(TODAY.slice(0, 4)) + (Number(TODAY.slice(5, 7)) >= 7 ? 1 : 0)).slice(2)}`, S, SN]);
     }
     // The boat grant (above) joins the system: Meridian's, awarded, now reporting.
-    await q(`UPDATE grants SET funder_donor_id=$3, amount_requested=85000, amount_awarded=85000, status='reporting', officer_id='u_b72demo',
+    await q(`UPDATE grants SET funder_donor_id=$3, amount_requested=85000, amount_awarded=85000, status='reporting', officer_id='u_b72demo', officer='Dana Reyes',
                awarded_at=COALESCE(awarded_at, $4::timestamptz), restriction='program', fund_id='fund_b72demo_boat',
                outcomes='Second training boat bought and fitted out; 46 young people trained on it this season, 12 earned their first certificate.'
              WHERE id=$1 AND org_id=$2`, [GRANT_ID, ORG, mer, dateIn2(TODAY, -90)]);
@@ -1436,20 +1436,49 @@ async function main() {
     await q(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount,paid_gift_id,paid_at) VALUES
                ('pli_b72_tide_1',$1,'pl_b72_tide_sail',1,$2,7500,'g_b72_tide_sail1',$3::timestamptz),
                ('pli_b72_tide_2',$1,'pl_b72_tide_sail',2,$4,7500,NULL,NULL)`, [ORG, dateIn2(TODAY, -45), dateIn2(TODAY, -40), dateIn2(TODAY, 135)]);
-    // Deadlines: four this month, then the rest of the year.
+    // Deadlines, in the order a grant lives them (LOI, proposal, decision,
+    // award, reports): the ones a grant has already passed are done, by
+    // Dana, and the open ones fall four or more inside the next 30 days, so
+    // the Calendar and Tasks show them during a demo (FIX-31). Each open one
+    // has its task from the database trigger, like any org's.
+    const firstOfNextMonth = (() => { const [y, m] = TODAY.split("-").map(Number); return new Date(Date.UTC(y, m, 15)).toISOString().slice(0, 10); })();
     const MS = [
-      ["gms_b72_1", "gr_b72_bank_lit", "loi_due", inMonth(3), null],
-      ["gms_b72_2", "gr_b72_mer_winter", "proposal_due", inMonth(8), null],
-      ["gms_b72_3", "gr_b72_tide_mentor", "proposal_due", inMonth(14), null],
-      ["gms_b72_4", "gr_b72_tide_sail", "report_due", inMonth(20), null],
-      ["gms_b72_5", "gr_b72_bank_jobs", "decision", dateIn2(TODAY, 34), null],
-      ["gms_b72_6", GRANT_ID, "report_due", dateIn2(TODAY, 41), null],
-      ["gms_b72_7", "gr_b72_tide_mentor", "custom", dateIn2(TODAY, 4), "Site visit"],
+      // id, grant, kind, due, label, done
+      ["gms_b72_1", "gr_b72_bank_lit", "loi_due", inMonth(3), null, false],
+      ["gms_b72_2l", "gr_b72_mer_winter", "loi_due", dateIn2(TODAY, -30), null, true],
+      ["gms_b72_2", "gr_b72_mer_winter", "proposal_due", inMonth(8), null, false],
+      ["gms_b72_3l", "gr_b72_tide_mentor", "loi_due", dateIn2(TODAY, -45), null, true],
+      ["gms_b72_7", "gr_b72_tide_mentor", "custom", dateIn2(TODAY, 4), "Site visit", false],
+      ["gms_b72_3", "gr_b72_tide_mentor", "proposal_due", inMonth(14), null, false],
+      ["gms_b72_5p", "gr_b72_bank_jobs", "proposal_due", dateIn2(TODAY, -21), null, true],
+      ["gms_b72_5", "gr_b72_bank_jobs", "decision", dateIn2(TODAY, 24), null, false],
+      ["gms_b72_4p", "gr_b72_tide_sail", "proposal_due", dateIn2(TODAY, -120), null, true],
+      ["gms_b72_4d", "gr_b72_tide_sail", "decision", dateIn2(TODAY, -75), null, true],
+      ["gms_b72_4", "gr_b72_tide_sail", "report_due", inMonth(20), null, false],
+      // Meridian's boat grant: LOI and proposal done, the decision came, the
+      // award is recorded with its instalments, and the first report is due next month.
+      ["gms_b72_6l", GRANT_ID, "loi_due", dateIn2(TODAY, -200), null, true],
+      ["gms_b72_6p", GRANT_ID, "proposal_due", dateIn2(TODAY, -150), null, true],
+      ["gms_b72_6d", GRANT_ID, "decision", dateIn2(TODAY, -100), null, true],
+      ["gms_b72_6", GRANT_ID, "report_due", firstOfNextMonth, null, false],
     ];
-    for (const [id, gid, kind, due, label] of MS) {
-      await q(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,'pending',$7,$8)
-               ON CONFLICT DO NOTHING`, [id, ORG, gid, kind, label, due, S, SN]);
+    for (const [id, gid, kind, due, label, done] of MS) {
+      await q(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,completed_at,completed_by,completed_by_name,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8::timestamptz,$9,$10,$11,$12)
+               ON CONFLICT DO NOTHING`, [id, ORG, gid, kind, label, due, done ? "done" : "pending", done ? due : null,
+                 done ? "u_b72demo" : null, done ? "Dana Reyes" : null, S, SN]);
     }
+    // The boat award, recorded the way PUT /grants/:id/award records one: one
+    // pledge on Meridian, two instalments, the first already paid.
+    await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,status,frequency,installment_count,created_by,created_by_name)
+             VALUES ('pl_b72_boat',$1,$2,85000,$3,'Grant award: Harbor Skills: second training boat','open','semiannual',2,$4,$5)`,
+      [ORG, mer, dateIn2(TODAY, -80), S, SN]);
+    await q(`UPDATE grants SET award_pledge_id='pl_b72_boat', report_due=$3 WHERE id=$1 AND org_id=$2`, [GRANT_ID, ORG, firstOfNextMonth]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,pledge_id,created_by,created_by_name)
+             VALUES ('g_b72_boat1',$1,$2,55000,$3,'check','Check','pl_b72_boat',$4,$5)`, [ORG, mer, dateIn2(TODAY, -74), S, SN]);
+    await q(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount,paid_gift_id,paid_at) VALUES
+               ('pli_b72_boat_1',$1,'pl_b72_boat',1,$2,55000,'g_b72_boat1',$3::timestamptz),
+               ('pli_b72_boat_2',$1,'pl_b72_boat',2,$4,30000,NULL,NULL)`, [ORG, dateIn2(TODAY, -80), dateIn2(TODAY, -74), dateIn2(TODAY, 100)]);
     // The invited proposal's checklist: tasks with owners, so they are on the Calendar.
     for (const [id, title, due, done] of [["tk_b72_g1", "Ask Tidewater for the budget template", dateIn2(TODAY, -2), 1],
                                           ["tk_b72_g2", "Draft the mentor job description", inMonth(6), 0],

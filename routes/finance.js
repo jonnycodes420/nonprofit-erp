@@ -1797,7 +1797,15 @@ app.get("/calendar/items", requireAuth, wrap(async (req, res) => {
   const types = req.query.types ? String(req.query.types).split(",") : CAL.DEFAULT_ON;
   const items = await CAL.calendarItems(orgId, { from, to, tz, userId: req.user.userId, scope: req.query.scope === "mine" ? "mine" : "everyone", staff, types });
   const staffList = isAdmin ? await query(`SELECT id, name FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY name`, [orgId]).catch(() => []) : [];
-  res.json({ items, today: orgToday(tzRow), timezone: tz, timezoneConfirmed: !!tzRow.timezone_confirmed_at, types: CAL.TYPES, defaultOn: CAL.DEFAULT_ON, staff: staffList });
+  // FIX-31: open tasks with no day yet, so the calendar can offer "Give it a day".
+  const owner = staff || (req.query.scope === "mine" ? req.user.userId : null);
+  const undated = types.includes("step") ? await query(
+    `SELECT t.id, t.title, t.assigned_to_name, d.id AS donor_id, d.name AS donor_name FROM tasks t
+       LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND COALESCE(t.done::text, '0') NOT IN ('1', 'true') AND t.voided_at IS NULL AND COALESCE(t.is_sample, false) = false
+        AND COALESCE(t.due, '') = '' AND (t.donor_id IS NULL OR d.deleted_at IS NULL) AND (?::text IS NULL OR t.assigned_to = ?)
+      ORDER BY t.created_at DESC LIMIT 25`, [orgId, owner, owner]) : [];
+  res.json({ items, undated: undated.map(r => ({ taskId: r.id, title: r.title, ownerName: r.assigned_to_name || "", donorId: r.donor_id || null, donorName: r.donor_name || null })), today: orgToday(tzRow), timezone: tz, timezoneConfirmed: !!tzRow.timezone_confirmed_at, types: CAL.TYPES, defaultOn: CAL.DEFAULT_ON, staff: staffList });
 }));
 
 // FIX-28 · HER STEWARD DATES ON HER OWN CALENDAR. Off until she turns it on.

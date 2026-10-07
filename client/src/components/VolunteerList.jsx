@@ -40,7 +40,7 @@ export function VolunteerCounts({ onOpen, refreshKey }) {
   const [c, setC] = useState(null);
   useEffect(() => { apiFetch("/volunteer-hub/counts").then(setC).catch(() => setC(null)); }, [refreshKey]);
   if (!c) return null;
-  const items = [["active", "Active volunteers"], ["pending", "Pending applications"], ["conflicts", "Schedule conflicts this week"], ["short", "Shifts short this week"]];
+  const items = [["roster", "On the roster"], ["pending", "Pending applications"], ["conflicts", "Schedule conflicts this week"], ["short", "Shifts short this week"]];
   return (
     <div data-testid="vol-counts" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 14 }}>
       {items.map(([k, label]) => (
@@ -48,6 +48,7 @@ export function VolunteerCounts({ onOpen, refreshKey }) {
           style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
           <div style={eyebrow}>{label}</div>
           <div style={{ fontSize: 24, fontWeight: 800, color: (k === "conflicts" || k === "short") && c[k].value > 0 ? T.gold700 : T.ink }}>{c[k].value}</div>
+          {k === "roster" && c[k].served && <div data-testid="vol-served-90" title={c[k].served.sentence} style={{ fontSize: 12, color: T.ink3 }}>{c[k].served.value} served in the last 90 days</div>}
         </button>))}
     </div>
   );

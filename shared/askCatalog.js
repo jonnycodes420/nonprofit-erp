@@ -54,8 +54,8 @@ export const METRICS = {
     sentence: "Each person with a monthly gift running today." },
   pledged_outstanding: { label: "Pledged, not yet paid", kind: "money", base: "source", source: "pledges-open", noPeriod: "today",
     sentence: "Every open pledge, at what is still to come on it." },
-  volunteer_count: { label: "Active volunteers", kind: "count", base: "donors", noPeriod: "today", unit: ["active volunteer", "active volunteers"],
-    sentence: "Each volunteer with an hour logged in the last twelve months or a shift still to come." },
+  volunteer_count: { label: "Volunteers on the roster", kind: "count", base: "donors", noPeriod: "today", unit: ["volunteer on the roster", "volunteers on the roster"],
+    sentence: "Everyone whose record carries the Volunteer role, including anyone added today." },
   volunteer_hours: { label: "Volunteer hours", kind: "hours", base: "source", source: "volunteer-hours",
     sentence: "Every volunteer shift logged in the period, added up." },
   event_revenue:   { label: "Event revenue", kind: "money", base: "gifts", needs: "event", word: "raised",
@@ -279,7 +279,7 @@ export function templatePlan(text, ctx = {}) {
   take(/\bwhich (campaign|appeal|fund|event)s? (raised|brought in|did) (the )?(most|best)\b/g, (m, w) => { out.groupBy = w === "appeal" ? "campaign" : w; out.metric = "raised"; });
   take(/\b(how many )?(lapsed donors|donors|people) (came|come|have come|who came) back\b|\b(how many )?(were )?(won|brought) back\b/g, () => { out.metric = "recaptured_count"; });
   take(/\bhow has (their|his|her) giving changed\b|\btheir giving over (the )?years\b/g, () => { out.metric = "raised"; out.groupBy = "year"; out.period = { kind: "all_time" }; });
-  take(/\bhow many active volunteers\b|\bactive volunteers\b/g, () => { out.metric = "volunteer_count"; });
+  take(/\bhow many (active )?volunteers\b|\bactive volunteers\b|\bvolunteers on the roster\b/g, () => { out.metric = "volunteer_count"; });
   take(/^\s*who (gave|has given|donated|gives)\b/g, () => { out.kind = "who"; out.metric = out.metric || "donor_count"; });
 
   // Gift filters: a fund, a campaign or an event named by its words.
@@ -534,7 +534,7 @@ export function answerSentence(a, plan, ctx = {}) {
     else {
       const who = n === 1 ? "One person" : `${n.toLocaleString("en-US")} people`;
       const verb = { new_donor_count: "gave for the first time", recaptured_count: "came back", lapsed_count: n === 1 ? "is tagged Lapsed" : "are tagged Lapsed",
-        recurring_donors: n === 1 ? "gives monthly" : "give monthly", volunteer_count: n === 1 ? "is an active volunteer" : "are active volunteers" }[plan.metric] || "gave";
+        recurring_donors: n === 1 ? "gives monthly" : "give monthly", volunteer_count: n === 1 ? "is on the volunteer roster" : "are on the volunteer roster" }[plan.metric] || "gave";
       t(`${who} ${verb}${sc}${METRICS[plan.metric].noPeriod ? "" : per2}; `);
     }
     t(plan.top || !["lapsed_count", "recurring_donors", "volunteer_count"].includes(plan.metric) ? `${a.people[0].name} gave the most.` : `${a.people[0].name} is first on the list.`);
@@ -560,7 +560,7 @@ export function answerSentence(a, plan, ctx = {}) {
     case "recurring_monthly_value": t("Monthly gifts bring in "); f("value"); t(" a month"); break;
     case "pledged_outstanding": f("value"); t(" is pledged and not yet paid"); break;
     case "volunteer_hours": t("Volunteers gave "); f("value"); t(per); break;
-    case "volunteer_count": t("You have "); f("value"); t(` active ${v.value === 1 ? "volunteer" : "volunteers"}`); break;
+    case "volunteer_count": t("You have "); f("value"); t(` ${v.value === 1 ? "volunteer" : "volunteers"} on the roster`); break;
     case "campaign_progress": t(`${(a.campaign || {}).name || "The campaign"} has raised `); f("part0"); t(" of its "); f("part1"); t(" goal, "); f("value"); break;
     default: f("value");
   }

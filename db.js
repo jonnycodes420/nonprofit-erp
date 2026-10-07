@@ -7385,6 +7385,137 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_meeting_effects_donor ON meeting_effects (org_id, donor_id)`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS calendar_event_id TEXT`);
   await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS calendar_event_id TEXT`);
+  // FIX-31 · ONE RECORD, THREE VIEWS. A next step (a thread) and a grant
+  // deadline each keep one task in step with them, written HERE, by the
+  // database, because a thread is opened, moved and closed from a dozen
+  // routes and a hook in each would miss the thirteenth. The task carries
+  // `thread_id` or `milestone_id` + `link_kind`; the reverse direction (a task
+  // ticked in Tasks or on the Calendar) goes through the task routes, which
+  // close the thread or mark the deadline the same way their own screens do.
+  // link_kind: next_step · deadline · deadline_start (the heads-up).
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS thread_id TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS milestone_id TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS link_kind TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_thread ON tasks (thread_id) WHERE thread_id IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_milestone ON tasks (milestone_id, link_kind) WHERE milestone_id IS NOT NULL`);
+  // The heads-up before a proposal, LOI or report: days ahead, 0 = off.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_headsup_days INTEGER DEFAULT 14`);
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_thread_task_sync() RETURNS TRIGGER AS $fn$
+    DECLARE owner_ok TEXT;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        DELETE FROM tasks WHERE thread_id = OLD.id AND org_id = OLD.org_id;
+        RETURN OLD;
+      END IF;
+      -- A deadline's own follow-up is the deadline's task, never a second one.
+      IF EXISTS (SELECT 1 FROM grant_milestones m WHERE m.thread_id = NEW.id AND m.org_id = NEW.org_id) THEN
+        DELETE FROM tasks WHERE thread_id = NEW.id AND org_id = NEW.org_id;
+        RETURN NEW;
+      END IF;
+      SELECT u.id INTO owner_ok FROM users u WHERE u.id = NEW.owner_id AND u.org_id = NEW.org_id;
+      -- source_gift_id: a step a gift opened (the thank-you) is that gift's own
+      -- task, so deleting the gift voids it with the rest (FIX-10 Part C).
+      -- A closed step's voided task stays voided; an open one is never voided.
+      INSERT INTO tasks (id, org_id, title, due, priority, type, done, donor_id, assigned_to, assigned_to_name,
+                         thread_id, link_kind, source_gift_id, updated_at, created_by, created_by_name)
+      VALUES ('t_ns_' || substr(md5(NEW.id), 1, 14), NEW.org_id, NEW.next_step_label, LEFT(NEW.due_date, 10), 'medium', 'donor',
+              CASE WHEN NEW.closed_at IS NULL THEN 0 ELSE 1 END, NEW.donor_id, owner_ok, CASE WHEN owner_ok IS NULL THEN NULL ELSE NEW.owner_name END,
+              NEW.id, 'next_step', NEW.opening_gift_id, NOW(), COALESCE(NEW.created_by, 'system:thread'), COALESCE(NEW.created_by_name, 'Steward'))
+      ON CONFLICT (thread_id) WHERE thread_id IS NOT NULL DO UPDATE
+         -- Never donor_id: a thread changes person only in a merge, and the
+         -- merge moves tasks.donor_id itself, so its Undo puts the row back exactly.
+         SET title = EXCLUDED.title, due = EXCLUDED.due, done = EXCLUDED.done,
+             assigned_to = EXCLUDED.assigned_to, assigned_to_name = EXCLUDED.assigned_to_name,
+             voided_at = CASE WHEN EXCLUDED.done = 1 THEN tasks.voided_at ELSE NULL END, updated_at = NOW()
+       WHERE (tasks.title, tasks.due, tasks.done, tasks.assigned_to) IS DISTINCT FROM
+             (EXCLUDED.title, EXCLUDED.due, EXCLUDED.done, EXCLUDED.assigned_to)
+          OR (tasks.voided_at IS NOT NULL AND EXCLUDED.done = 0);
+      RETURN NEW;
+    END $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_thread_task_sync ON threads`);
+  await pool.query(`CREATE TRIGGER trg_thread_task_sync AFTER INSERT OR UPDATE OR DELETE ON threads
+                      FOR EACH ROW EXECUTE FUNCTION steward_thread_task_sync()`);
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_milestone_task_sync() RETURNS TRIGGER AS $fn$
+    DECLARE g RECORD; owner_id TEXT; owner_name TEXT; kname TEXT; start_word TEXT; lead INT; start_due DATE; is_done INT;
+    BEGIN
+      IF TG_OP = 'DELETE' THEN
+        DELETE FROM tasks WHERE milestone_id = OLD.id AND org_id = OLD.org_id;
+        RETURN OLD;
+      END IF;
+      -- The follow-up thread the lead time raised is this deadline, not another task.
+      IF NEW.thread_id IS NOT NULL THEN
+        DELETE FROM tasks WHERE thread_id = NEW.thread_id AND org_id = NEW.org_id AND link_kind = 'next_step';
+      END IF;
+      -- Taking a deadline off removes its tasks; putting it back brings them back.
+      IF NEW.state = 'skipped' THEN
+        DELETE FROM tasks WHERE milestone_id = NEW.id AND org_id = NEW.org_id;
+        RETURN NEW;
+      END IF;
+      SELECT gr.officer_id, gr.created_by, gr.is_sample, gr.funder_donor_id, COALESCE(d.name, gr.funder) AS funder_name, o.grant_headsup_days
+        INTO g
+        FROM grants gr
+        LEFT JOIN donors d ON d.id = gr.funder_donor_id AND d.org_id = gr.org_id AND d.deleted_at IS NULL
+        LEFT JOIN orgs o ON o.id = gr.org_id
+       WHERE gr.id = NEW.grant_id AND gr.org_id = NEW.org_id;
+      IF NOT FOUND OR g.is_sample IS TRUE THEN RETURN NEW; END IF;
+      -- The person named on the deadline (whoever added it), else the grant's officer.
+      SELECT u.id, u.name INTO owner_id, owner_name FROM users u
+       WHERE u.org_id = NEW.org_id AND u.id IN (g.officer_id, g.created_by, NEW.created_by)
+       ORDER BY (u.id = g.officer_id) DESC, (u.id = NEW.created_by) DESC LIMIT 1;
+      kname := CASE NEW.kind WHEN 'loi_due' THEN 'LOI due' WHEN 'proposal_due' THEN 'Proposal due' WHEN 'report_due' THEN 'Report due'
+                 WHEN 'decision' THEN 'Decision expected' WHEN 'renewal_opens' THEN 'Renewal window opens'
+                 ELSE COALESCE(NULLIF(NEW.label, ''), 'Deadline') END;
+      is_done := CASE WHEN NEW.state = 'done' THEN 1 ELSE 0 END;
+      INSERT INTO tasks (id, org_id, title, due, priority, type, done, donor_id, grant_id, assigned_to, assigned_to_name,
+                         milestone_id, link_kind, updated_at, created_by, created_by_name)
+      VALUES ('t_gd_' || substr(md5(NEW.id), 1, 14), NEW.org_id, COALESCE(g.funder_name, 'A grant') || ': ' || kname, LEFT(NEW.due_date, 10),
+              'high', 'grant', is_done, g.funder_donor_id, NEW.grant_id, owner_id, owner_name, NEW.id, 'deadline', NOW(),
+              COALESCE(NEW.created_by, 'system:grant-deadline'), COALESCE(NEW.created_by_name, 'Steward'))
+      ON CONFLICT (milestone_id, link_kind) WHERE milestone_id IS NOT NULL DO UPDATE
+         SET title = EXCLUDED.title, due = EXCLUDED.due, done = EXCLUDED.done, donor_id = EXCLUDED.donor_id,
+             assigned_to = EXCLUDED.assigned_to, assigned_to_name = EXCLUDED.assigned_to_name, voided_at = NULL, updated_at = NOW()
+       WHERE (tasks.title, tasks.due, tasks.done, tasks.assigned_to, tasks.donor_id) IS DISTINCT FROM
+             (EXCLUDED.title, EXCLUDED.due, EXCLUDED.done, EXCLUDED.assigned_to, EXCLUDED.donor_id) OR tasks.voided_at IS NOT NULL;
+      -- THE HEADS-UP: a proposal, an LOI or a report needs starting well before it is due.
+      lead := COALESCE(g.grant_headsup_days, 14);
+      start_word := CASE NEW.kind WHEN 'loi_due' THEN 'LOI' WHEN 'proposal_due' THEN 'proposal' WHEN 'report_due' THEN 'report' ELSE NULL END;
+      IF start_word IS NOT NULL AND lead > 0 AND NEW.due_date ~ '^\\d{4}-\\d{2}-\\d{2}' THEN
+        start_due := LEFT(NEW.due_date, 10)::date - lead;
+        IF EXISTS (SELECT 1 FROM tasks WHERE milestone_id = NEW.id AND link_kind = 'deadline_start') THEN
+          UPDATE tasks SET due = to_char(start_due, 'YYYY-MM-DD'),
+                           title = 'Start ' || start_word || ' for ' || COALESCE(g.funder_name, 'the grant'),
+                           done = CASE WHEN is_done = 1 THEN 1 ELSE done END, voided_at = NULL, updated_at = NOW()
+           WHERE milestone_id = NEW.id AND link_kind = 'deadline_start'
+             AND (due IS DISTINCT FROM to_char(start_due, 'YYYY-MM-DD') OR (is_done = 1 AND done <> 1)
+                  OR title IS DISTINCT FROM 'Start ' || start_word || ' for ' || COALESCE(g.funder_name, 'the grant') OR voided_at IS NOT NULL);
+        ELSIF is_done = 0 AND start_due >= CURRENT_DATE THEN
+          INSERT INTO tasks (id, org_id, title, due, priority, type, done, donor_id, grant_id, assigned_to, assigned_to_name,
+                             milestone_id, link_kind, updated_at, created_by, created_by_name)
+          VALUES ('t_gh_' || substr(md5(NEW.id), 1, 14), NEW.org_id, 'Start ' || start_word || ' for ' || COALESCE(g.funder_name, 'the grant'),
+                  to_char(start_due, 'YYYY-MM-DD'), 'medium', 'grant', 0, g.funder_donor_id, NEW.grant_id, owner_id, owner_name,
+                  NEW.id, 'deadline_start', NOW(), 'system:grant-heads-up', 'Steward')
+          ON CONFLICT DO NOTHING;
+        END IF;
+      END IF;
+      RETURN NEW;
+    END $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_milestone_task_sync ON grant_milestones`);
+  await pool.query(`CREATE TRIGGER trg_milestone_task_sync AFTER INSERT OR UPDATE OR DELETE ON grant_milestones
+                      FOR EACH ROW EXECUTE FUNCTION steward_milestone_task_sync()`);
+  // A grant's funder, officer or sample flag changing re-reads its deadlines' tasks.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_grant_task_touch() RETURNS TRIGGER AS $fn$
+    BEGIN
+      IF (NEW.officer_id, NEW.funder_donor_id, NEW.funder, NEW.is_sample) IS DISTINCT FROM (OLD.officer_id, OLD.funder_donor_id, OLD.funder, OLD.is_sample) THEN
+        UPDATE grant_milestones SET updated_at = NOW() WHERE grant_id = NEW.id AND org_id = NEW.org_id;
+      END IF;
+      RETURN NEW;
+    END $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_grant_task_touch ON grants`);
+  await pool.query(`CREATE TRIGGER trg_grant_task_touch AFTER UPDATE ON grants FOR EACH ROW EXECUTE FUNCTION steward_grant_task_touch()`);
+  await backfillLinkedTasks();
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
@@ -7392,6 +7523,24 @@ async function runSchemaInit(pool) {
     `INSERT INTO schema_meta (id, schema_hash, updated_at) VALUES (1, $1, NOW())
      ON CONFLICT (id) DO UPDATE SET schema_hash = EXCLUDED.schema_hash, updated_at = NOW()`,
     [SCHEMA_HASH]);
+}
+
+// FIX-31 · THE BACKFILL. Every open next step and every open grant deadline
+// that has no task yet gets one, by touching the row so its trigger writes
+// it. Safe to run twice: the unique indexes make a second task impossible and
+// the NOT EXISTS makes a second pass touch nothing. Returns what it made.
+async function backfillLinkedTasks() {
+  const count = async () => Number((await pool.query(
+    `SELECT COUNT(*)::int AS n FROM tasks WHERE thread_id IS NOT NULL OR milestone_id IS NOT NULL`)).rows[0].n);
+  const before = await count();
+  const t = await pool.query(`UPDATE threads SET due_date = due_date
+     WHERE closed_at IS NULL AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.thread_id = threads.id)
+       AND NOT EXISTS (SELECT 1 FROM grant_milestones m WHERE m.thread_id = threads.id AND m.org_id = threads.org_id)`);
+  const m = await pool.query(`UPDATE grant_milestones SET due_date = due_date
+     WHERE state NOT IN ('done','skipped') AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.milestone_id = grant_milestones.id AND k.link_kind = 'deadline')`);
+  const made = (await count()) - before;
+  if (made) console.log(`[fix-31] backfill: ${made} task(s) for ${t.rowCount} next step(s) and ${m.rowCount} deadline(s)`);
+  return { made, nextSteps: t.rowCount, deadlines: m.rowCount };
 }
 
 async function seedData() {
@@ -8073,4 +8222,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx };
+module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx, backfillLinkedTasks };

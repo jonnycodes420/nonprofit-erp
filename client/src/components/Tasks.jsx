@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
+import { offerUndo } from "./EditHistory";
 
 // BUILD-13 Part 1 — Tasks: the daily-driver follow-up surface.
 // Answers "what do I need to do" via three time buckets (Overdue / Due today /
@@ -73,15 +74,22 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
 
   const replace = row => setTasks(prev => { const next = (prev || []).map(t => t.id === row.id ? row : t); syncBadge(next); return next; });
 
+  // FIX-31: a tick here is the same tick as on the Thread, the Calendar and
+  // the grant (a next step's or deadline's task changes through its record),
+  // and the shared Undo toast takes it back everywhere.
+  const setDone = async (t, done) => {
+    const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done }) });
+    replace(row);
+    return row;
+  };
   const toggle = async t => {
     if (isReadOnly) return;
-    // optimistic
-    const optimistic = { ...t, done: !t.done };
-    replace(optimistic);
+    setErr("");
+    replace({ ...t, done: !t.done });   // optimistic
     try {
-      const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: !t.done }) });
-      replace(row);
-    } catch { replace(t); }
+      await setDone(t, !t.done);
+      if (!t.done) offerUndo({ message: `Done: ${t.title}.`, undoAction: () => setDone(t, false) }, t.title);
+    } catch (e) { replace(t); setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
   };
 
   const add = async () => {
@@ -160,6 +168,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
         </div>
       )}
 
+      {err && !showAdd && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
+
       {openCount === 0 && !showAdd && (
         <EmptyState icon="✓" title="You're all caught up" message="No open tasks. Add a follow-up so nothing slips, every task can link to the donor it's about." action="+ New task" onAction={isReadOnly ? undefined : () => setShowAdd(true)} />
       )}
@@ -177,7 +187,8 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
             {rows.map(t => <TaskRow key={t.id} t={t} accent={b.accent} onToggle={() => toggle(t)} isReadOnly={isReadOnly}
               onDonor={t.donor_id && onNavigate ? () => onNavigate("donors", { selectDonorId: t.donor_id }) : null}
               onEvent={t.event_id && onNavigate ? () => onNavigate("fundraising", { frSection: "events", eventId: t.event_id }) : null}
-              onDrafts={t.type === "event_no_show" && onNavigate ? () => onNavigate("communications", { subtab: "milestones" }) : null} />)}
+              onDrafts={t.type === "event_no_show" && onNavigate ? () => onNavigate("communications", { subtab: "milestones" }) : null}
+              onGrant={t.grant_id && onNavigate ? () => onNavigate("grants", { grantId: t.grant_id }) : null} />)}
           </div>
         );
       })}
@@ -199,7 +210,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
   );
 }
 
-function TaskRow({ t, accent, onToggle, onDonor, onEvent, onDrafts, isReadOnly }) {
+function TaskRow({ t, accent, onToggle, onDonor, onEvent, onDrafts, onGrant, isReadOnly }) {
   const overdue = t.due && dueDays(t.due) < 0;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, background: T.white, border: `1px solid ${T.bg2}`, borderLeft: `3px solid ${accent}`, borderRadius: 10, padding: "11px 14px" }}>
@@ -219,6 +230,8 @@ function TaskRow({ t, accent, onToggle, onDonor, onEvent, onDrafts, isReadOnly }
           {/* THREAD-3: an event's no-shows: the guest list, and the drafts waiting for her. */}
           {onEvent && <button type="button" data-testid="task-open-event" onClick={onEvent} style={taskLink}>Open the event</button>}
           {onDrafts && <button type="button" data-testid="task-open-drafts" onClick={onDrafts} style={taskLink}>Review the drafts</button>}
+          {onGrant && <button type="button" data-testid="task-open-grant" onClick={onGrant} style={taskLink}>Open the grant</button>}
+          {t.link_kind === "next_step" && <span style={{ fontSize: 11, color: T.ink3 }}>· A next step on the Thread</span>}
         </div>
       </div>
       {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.terracotta, background: T.terra100, borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}

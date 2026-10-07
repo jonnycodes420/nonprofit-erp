@@ -191,7 +191,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       <PageTitle main="Your" accent="volunteers." sub={roster && roster.people.length ? roster.sentence : " "} />
       {/* PARITY-3 Part 3 — the four numbers, each opening its rows. */}
       <VolunteerCounts refreshKey={countsKey} onOpen={k => {
-        if (k === "active") { setListFilter({ volActive: "1" }); setListKey(n => n + 1); setSection("people"); setPartOf(m => ({ ...m, people: "list" })); }
+        if (k === "roster") { setListFilter({}); setListKey(n => n + 1); setSection("people"); setPartOf(m => ({ ...m, people: "list" })); }
         if (k === "pending") { setSection("reach"); setPartOf(m => ({ ...m, reach: "applications" })); }
         if (k === "conflicts" || k === "short") { setSection("schedule"); setPartOf(m => ({ ...m, schedule: "calendar" })); }
       }} />

@@ -3,6 +3,8 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **The first Volunteers number is "On the roster": everyone with the Volunteer role, new ones included (FIX-31).**
+  Served in the last 90 days is the line under it. Ask's volunteer count and its figure definition are the same rule.
 - **The tags under a donor's name are computed, never stored, from one definition.** `donorStatus.js`
   `statusSql` gives the giving level (General, Mid, Major on the last 12 months against
   `orgs.giving_level_mid_cents` / `giving_level_major_cents`, Settings, Giving levels; defaults $1,000 and
