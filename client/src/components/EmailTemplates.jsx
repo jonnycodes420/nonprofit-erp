@@ -12,7 +12,8 @@
 // only inside the rendered email in the iframe, which is the org's surface.
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
-import { T, Spin } from "./shared";
+import { T, Spin, activeMark } from "./shared";
+import { TemplateEditor } from "./BrandKit";
 import { offerUndo } from "./EditHistory";
 import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
@@ -42,19 +43,78 @@ let keySeq = 0;
 const withKeys = blocks => (blocks || []).map(b => ({ ...b, _k: `k${++keySeq}` }));
 const stripKeys = blocks => blocks.map(b => { const c = { ...b }; delete c._k; return c; });
 
+// ── THE SECTIONS ────────────────────────────────────────────────────────────
+// WIRE-1-ADDENDUM: one Templates tab. Three stores feed it and none of them is
+// merged: the letters and thank-yous (message_templates, COMMS-2), the campaign
+// starters (shared/emailTemplates.js, opened in New Campaign) and the designed
+// emails (email_templates plus the EMAIL-1 starters). The view sorts every one
+// into four sections by the key it already has. The rule, in order:
+//   1. a known key (per store, because "year_end" is a statement in one store
+//      and an appeal in another) names its section;
+//   2. otherwise its name and purpose are read: grant, funder or foundation is
+//      Grants and funders; event, volunteer, RSVP or gala is Events and
+//      volunteers; thank, receipt, statement or welcome is Thank-yous;
+//   3. anything left is Appeals and campaigns, the closest home for a message
+//      that asks for something (the lapsed-donor note lands here by this rule).
+export const TEMPLATE_SECTIONS = [
+  { id: "thanks", label: "Thank-yous and receipts" },
+  { id: "appeals", label: "Appeals and campaigns" },
+  { id: "events", label: "Events and volunteers" },
+  { id: "grants", label: "Grants and funders" },
+];
+const SECTION_BY_KEY = {
+  letter: {
+    thanks_first: "thanks", thanks_renewal: "thanks", thanks_monthly: "thanks", thanks_major: "thanks",
+    thanks_memorial: "thanks", receipt: "thanks", year_end: "thanks", lapsed: "appeals",
+    event_followup: "events", volunteer_thanks: "events",
+  },
+  campaign: {
+    appeal: "appeals", monthly_appeal: "appeals", year_end: "appeals", newsletter: "appeals", sponsor_update: "appeals",
+    thank_you: "thanks", event_invitation: "events",
+  },
+  designed: {
+    year_end_appeal: "appeals", spring_appeal: "appeals", impact_report: "appeals", p2p_share: "appeals", membership_renewal: "appeals",
+    thank_you: "thanks", first_gift_welcome: "thanks", monthly_welcome: "thanks", failed_card: "thanks",
+    event_invitation: "events", event_thank_you: "events", volunteer_thank_you: "events",
+    grant_funder_update: "grants",
+  },
+};
+export function templateSection(store, key, words) {
+  const known = SECTION_BY_KEY[store] && key ? SECTION_BY_KEY[store][key] : null;
+  if (known) return known;
+  const w = String(words || "").toLowerCase();
+  if (/grant|funder|foundation/.test(w)) return "grants";
+  if (/event|volunteer|rsvp|gala/.test(w)) return "events";
+  if (/thank|receipt|statement|welcome/.test(w)) return "thanks";
+  return "appeals";
+}
+
+const tplCard = { ...card, display: "flex", flexDirection: "column", gap: 6, minWidth: 0 };
+const openArea = { background: "none", border: "none", padding: 0, margin: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4, color: T.ink, width: "100%" };
+const mediumStyle = { fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3 };
+const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.greenDk : T.gold700 });
+
 // ── THE LIBRARY ─────────────────────────────────────────────────────────────
-export default function EmailTemplates({ isReadOnly }) {
+// Props from Communications: the campaign starters it already loaded (and the
+// builder that opens one), the people to preview a letter with, and the way to
+// Drafts to review.
+export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onUseCampaign, onOpenDrafts }) {
   const [tab, setTab] = useState("templates");
   const [data, setData] = useState(null);
+  const [letters, setLetters] = useState(null);
   const [err, setErr] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [openLetter, setOpenLetter] = useState(null);
   const [busy, setBusy] = useState("");
   const [showArchived, setShowArchived] = useState(false);
 
   const load = useCallback(() => {
     apiFetch("/email-templates").then(d => { setData(d); setErr(""); }).catch(e => setErr(say(e, "The templates could not be loaded.")));
   }, []);
-  useEffect(() => { load(); }, [load]);
+  const loadLetters = useCallback(() => {
+    apiFetch("/templates").then(setLetters).catch(() => setLetters({ templates: [], mergeFields: [] }));
+  }, []);
+  useEffect(() => { load(); loadLetters(); }, [load, loadLetters]);
 
   const start = async body => {
     setBusy(body.starterKey || body.copyOf || "x");
@@ -96,15 +156,47 @@ export default function EmailTemplates({ isReadOnly }) {
   const tabs = [{ id: "templates", label: "Templates" }, { id: "brand", label: "Brand" }, { id: "media", label: "Media library" }];
   const live = (data?.templates || []).filter(t => !t.archived);
   const archived = (data?.templates || []).filter(t => t.archived);
+
+  // Every template, from every store, as one list of cards. `medium` is what
+  // the card says first: a printed letter or an email.
+  const cards = [];
+  for (const t of (letters?.templates || [])) {
+    cards.push({ id: "letter-" + t.kind, store: "letter", section: templateSection("letter", t.kind, t.label),
+      name: t.label, medium: t.channel === "letter" ? "Printed letter" : "Email",
+      how: t.channel === "letter" ? "Prints with this person's details" : "To one person, as a draft you send",
+      review: t.reviewed ? `Reviewed${t.reviewedBy ? " by " + t.reviewedBy : ""}` : "Not yet reviewed", reviewed: !!t.reviewed,
+      onOpen: () => setOpenLetter(t), openLabel: "Open" });
+  }
+  for (const t of live) {
+    cards.push({ id: "designed-" + t.id, store: "designed", section: templateSection("designed", t.starterKey, `${t.name} ${t.purpose || ""}`),
+      name: t.name, medium: "Email", how: t.subject || t.purpose || "Designed with your brand",
+      review: "In your templates", reviewed: true, onOpen: () => setOpenId(t.id), openLabel: "Open", designed: t });
+  }
+  for (const t of campaignStarters) {
+    cards.push({ id: "campaign-" + t.key, store: "campaign", section: templateSection("campaign", t.key, `${t.label} ${t.blurb || ""}`),
+      name: t.label, medium: "Email", how: previewSubject ? previewSubject(t.subject) : t.subject,
+      review: t.reviewed ? "Reviewed" : "Not yet reviewed", reviewed: !!t.reviewed,
+      onOpen: isReadOnly || !onUseCampaign ? null : () => onUseCampaign(t), openLabel: "Start a campaign" });
+  }
+  for (const s of (data?.starters || [])) {
+    cards.push({ id: "starter-" + s.starterKey, store: "designed", section: templateSection("designed", s.starterKey, `${s.name} ${s.purpose || ""}`),
+      name: s.name, medium: "Email", how: s.purpose,
+      review: "Not yet reviewed", reviewed: false,
+      onOpen: isReadOnly || busy ? null : () => start({ starterKey: s.starterKey }),
+      openLabel: busy === s.starterKey ? "Starting…" : "Start from this" });
+  }
+  const loading = !data || !letters;
+
   return (
-    <div style={{ padding: "4px 0 40px" }} data-testid="email-templates">
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }} role="tablist">
+    <div style={{ padding: "4px 0 40px", display: "flex", flexDirection: "column", gap: 14 }} data-testid="templates-merged">
+      <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Templates</h2>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} role="tablist">
         {tabs.map(t => (
           <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            style={{ ...btn.quiet, background: tab === t.id ? T.ink : "transparent", color: tab === t.id ? T.white : T.ink, borderColor: tab === t.id ? T.ink : T.bg3 }}>{t.label}</button>
+            style={{ ...btn.quiet, ...activeMark(tab === t.id, "bottom") }}>{t.label}</button>
         ))}
       </div>
-      {err && <div style={{ ...problemBox, marginBottom: 12 }}>{err}</div>}
+      {err && <div style={problemBox}>{err}</div>}
 
       {tab === "brand" && (LazyBrandPanel
         ? <Suspense fallback={<Spin />}><LazyBrandPanel onChanged={load} /></Suspense>
@@ -113,43 +205,50 @@ export default function EmailTemplates({ isReadOnly }) {
         ? <Suspense fallback={<Spin />}><LazyMediaLibrary /></Suspense>
         : <div style={card}>Your photos and videos will be kept here, ready for any email or page.</div>)}
 
-      {tab === "templates" && (!data ? <Spin /> : (
+      {tab === "templates" && (loading ? <Spin /> : (
         <>
-          <h3 style={{ fontSize: 15, margin: "0 0 4px", color: T.ink }}>Your templates</h3>
-          <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px" }}>
-            {live.length ? "Open one to change its words, photos and blocks. Every email carries your brand and your address and unsubscribe footer."
-              : "Start from one of the emails below. It becomes yours to change, with your brand already in it."}
+          <p style={{ fontSize: 13, color: T.ink3, margin: 0, lineHeight: 1.55, maxWidth: "70ch" }}>
+            Each one starts in Steward's words and says "Not yet reviewed" until someone here has read it and saved it in yours.
+            A letter prints. An email to one person becomes a draft for you to send, and a designed email opens with your brand, blocks and photos.
           </p>
-          {!!live.length && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12, marginBottom: 24 }}>
-              {live.map(t => (
-                <div key={t.id} style={card}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{t.name}</div>
-                  <div style={{ fontSize: 12, color: T.ink3, margin: "4px 0 12px" }}>{t.subject || t.purpose}</div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button style={btn.primary} onClick={() => setOpenId(t.id)}>Open</button>
-                    <button style={btn.quiet} disabled={isReadOnly || !!busy} onClick={() => start({ copyOf: t.id })}>Copy</button>
-                    <button style={btn.quiet} disabled={isReadOnly} onClick={() => archive(t)}>Archive</button>
-                  </div>
-                </div>
-              ))}
-            </div>
+          {openLetter && letters && (
+            <TemplateEditor t={openLetter} fields={letters.mergeFields || []} donors={donors} isReadOnly={isReadOnly} onOpenDrafts={onOpenDrafts}
+              onClose={() => setOpenLetter(null)} onSaved={t => { setOpenLetter(t); loadLetters(); }} />
           )}
-          <h3 style={{ fontSize: 15, margin: "0 0 4px", color: T.ink }}>Start from</h3>
-          <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px" }}>Each one is written to be sent once the parts that are yours are filled in: the photo, your name and any blank in square brackets.</p>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
-            {(data.starters || []).map(s => (
-              <div key={s.starterKey} style={card}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.name}</div>
-                <div style={{ fontSize: 12, color: T.ink3, margin: "4px 0 12px" }}>{s.purpose}</div>
-                <button style={btn.primary} disabled={isReadOnly || !!busy} onClick={() => start({ starterKey: s.starterKey })}>
-                  {busy === s.starterKey ? "Starting…" : "Start from this"}
-                </button>
-              </div>
-            ))}
-          </div>
+          {TEMPLATE_SECTIONS.map(sec => {
+            const mine = cards.filter(c => c.section === sec.id);
+            return (
+              <section key={sec.id} data-template-section={sec.id} style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: T.ink }}>{sec.label}</h3>
+                {mine.length === 0 ? (
+                  <div style={{ fontSize: 13, color: T.ink3 }}>Nothing here yet. A template for this lands here once one is saved.</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(100%,250px),1fr))", gap: 10 }}>
+                    {mine.map(c => (
+                      <div key={c.id} style={tplCard} data-template-card={c.store} data-template-id={c.id}>
+                        <button type="button" style={{ ...openArea, cursor: c.onOpen ? "pointer" : "default" }} disabled={!c.onOpen}
+                          aria-label={`${c.openLabel}: ${c.name}`} onClick={c.onOpen || undefined}>
+                          <span style={mediumStyle} data-template-medium>{c.medium}</span>
+                          <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{c.name}</span>
+                          <span style={{ fontSize: 12, color: T.ink3, overflowWrap: "anywhere" }}>{c.how}</span>
+                          <span data-reviewed={c.reviewed ? "1" : "0"} style={reviewedStyle(c.reviewed)}>{c.review}</span>
+                          {c.onOpen && <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}
+                        </button>
+                        {c.designed && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+                            <button style={btn.small} disabled={isReadOnly || !!busy} onClick={() => start({ copyOf: c.designed.id })}>Copy</button>
+                            <button style={btn.small} disabled={isReadOnly} onClick={() => archive(c.designed)}>Archive</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
           {!!archived.length && (
-            <div style={{ marginTop: 24 }}>
+            <div style={{ marginTop: 12 }}>
               <button style={btn.small} onClick={() => setShowArchived(v => !v)}>{showArchived ? "Hide" : "Show"} archived ({archived.length})</button>
               {showArchived && archived.map(t => (
                 <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.bg2}`, fontSize: 13 }}>

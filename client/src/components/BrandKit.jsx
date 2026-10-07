@@ -92,39 +92,9 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
   );
 }
 
-// ── THE TEMPLATE LIBRARY ────────────────────────────────────────────────────
-export function TemplateLibrary({ isReadOnly, donors = [], onOpenDrafts }) {
-  const [d, setD] = useState(null);
-  const [open, setOpen] = useState(null);
-  const load = () => apiFetch("/templates").then(setD).catch(() => setD(false));
-  useEffect(() => { load(); }, []);
-  if (d === null) return <div style={{ padding: 30 }}><Spin /></div>;
-  if (!d) return null;
-  return (
-    <div data-testid="template-library" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: T.ink }}>Letters and thank-yous</h3>
-      <p style={{ margin: 0, fontSize: 13, color: T.ink3, lineHeight: 1.55 }}>
-        Each starts in Steward's plain words and says "Not yet reviewed" until you have read it and saved it in yours. A letter prints; an email becomes a draft for you to send.
-      </p>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 10 }}>
-        {d.templates.map(t => (
-          <button key={t.kind} type="button" data-template-kind={t.kind} onClick={() => setOpen(t)}
-            style={{ ...card, textAlign: "left", cursor: "pointer", fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink }}>{t.label}</span>
-            <span style={{ fontSize: 12, color: T.ink3 }}>{t.channel === "letter" ? "Printed letter" : "Email, sent by you"}</span>
-            <span data-reviewed={t.reviewed ? "1" : "0"} style={{ fontSize: 12, fontWeight: 700, color: t.reviewed ? T.greenDk : T.gold700 }}>
-              {t.reviewed ? `Reviewed${t.reviewedBy ? " by " + t.reviewedBy : ""}` : "Not yet reviewed"}
-            </span>
-          </button>
-        ))}
-      </div>
-      {open && <TemplateEditor t={open} fields={d.mergeFields} donors={donors} isReadOnly={isReadOnly} onOpenDrafts={onOpenDrafts}
-        onClose={() => setOpen(null)} onSaved={t => { setOpen(t); load(); }} />}
-    </div>
-  );
-}
-
-function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved, onOpenDrafts }) {
+// ── ONE LETTER OR ONE-PERSON EMAIL ──────────────────────────────────────────
+// Its cards live in the one Templates tab now (EmailTemplates.jsx, WIRE-1-ADDENDUM).
+export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved, onOpenDrafts }) {
   const [subject, setSubject] = useState(t.subject);
   const [body, setBody] = useState(t.body);
   const [who, setWho] = useState(donors[0] ? donors[0].id : "");
