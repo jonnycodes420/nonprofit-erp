@@ -13159,6 +13159,23 @@ app.get("/donors/:id/fund-affinity", requireAuth, wrap(async (req, res) => {
 // ── Grants ─────────────────────────────────────────────────────────────────
 // Optional ?search= (lower LIKE on funder/program) + ?limit= for the top-bar
 // global search; no params → unchanged full list (plain array either way).
+// HARDEN-1g: A GRANT'S RECEIVED IS THE GIFTS THAT PAID ITS AWARD. The legacy
+// `grants.received` column is a hand-typed number from before awards were
+// paid in instalments; once a grant has an award pledge, the money received
+// is the gifts linked to that pledge, the same sum grantMoneyRows and
+// /grants/:id/award-plan give. Without this the grant's own profile read
+// "$0 of $6,000" while the award plan beside it said $3,000 received.
+async function withGrantReceived(orgId, grants) {
+  const pledged = grants.filter(g => g && g.award_pledge_id);
+  if (!pledged.length) return grants;
+  const sums = await query(
+    `SELECT pledge_id, COALESCE(SUM(amount),0) AS s FROM gifts WHERE org_id=? AND pledge_id = ANY(?::text[]) GROUP BY pledge_id`,
+    [orgId, pledged.map(g => g.award_pledge_id)]);
+  const by = new Map(sums.map(r => [r.pledge_id, money.toDollars(money.toCents(r.s) || 0)]));
+  for (const g of pledged) g.received = (by.get(g.award_pledge_id) || 0).toFixed(2);
+  return grants;
+}
+
 app.get("/grants", requireAuth, wrap(async (req, res) => {
   const where = ["org_id = ?"];
   const params = [req.user.orgId];
@@ -13170,7 +13187,7 @@ app.get("/grants", requireAuth, wrap(async (req, res) => {
   let sql = `SELECT * FROM grants WHERE ${where.join(" AND ")} ORDER BY deadline ASC`;
   const limit = parseInt(req.query.limit, 10);
   if (limit > 0) { sql += " LIMIT ?"; params.push(Math.min(limit, 50)); }
-  const grants = await query(sql, params);
+  const grants = await withGrantReceived(req.user.orgId, await query(sql, params));
   res.json(grants.map(g => ({ ...g, history: JSON.parse(g.history || "[]") })));
 }));
 
@@ -13332,7 +13349,7 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     ).catch(() => {});
   }
 
-  const rows = await query("SELECT * FROM grants WHERE id = ?", [req.params.id]);
+  const rows = await withGrantReceived(orgId, await query("SELECT * FROM grants WHERE id = ? AND org_id = ?", [req.params.id, orgId]));
   const g = rows[0];
   g.history = JSON.parse(g.history || "[]");
   res.json(g);
@@ -14972,7 +14989,7 @@ app.delete("/grants/:id", requireAuth, wrap(async (req, res) => {
 }));
 
 app.get("/grants/:id", requireAuth, wrap(async (req, res) => {
-  const rows = await query("SELECT * FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  const rows = await withGrantReceived(req.user.orgId, await query("SELECT * FROM grants WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]));
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   const g = rows[0];
   g.history = JSON.parse(g.history || "[]");
