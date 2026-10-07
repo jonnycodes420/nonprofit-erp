@@ -355,6 +355,10 @@ export function normalizeMoney(val, opts = {}) {
   // legacy CRMs export money. 54 such rows ($154,849.63) vanished from a
   // real file without a trace — the exact silent loss BUILD-77 Part 3 found.
   s = s.replace(/^[A-Za-z]{3}\s+(?=[\d($])/, "");
+  // FIX-33: and the same code AFTER the number ("125.00 USD"): 617 rows of
+  // a real 4,275-row export were refused as unparseable for it. Only a known
+  // code after a space, so a stray word after a number still refuses.
+  s = s.replace(/(?<=[\d.)])\s+(USD|CAD|EUR|GBP|AUD|NZD|CHF|MXN)$/i, "");
   s = s.replace(/\s+dollars?$/i, "").trim();
   if (s.endsWith("-")) { s = s.slice(0, -1).trim(); if (negMarks++) return refuse(); sign = -1; }
   let kMult = 1;
@@ -1567,12 +1571,17 @@ export function autoDetectTxMapping(headers, rows) {
                 proposalPurpose:"",proposalAmount:"",proposalStage:"",proposalCloseDate:"",proposalProbability:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
-    const hl = h.toLowerCase().trim();
+    // FIX-33: test the header as written AND as its tokens (normalizeHeader),
+    // so "E-mail Address", "Phone #" and "Fund/Designation" reach the same
+    // homes as "Email", "Phone" and "Fund". Every pattern stays anchored to
+    // the whole header.
+    const hl = h.toLowerCase().trim(), norm = normalizeHeader(h);
+    const T = re => re.test(hl) || re.test(norm);
     if (!map.donorName  && /^(name|full.?name|donor.?name|donor|contact|constituent)$/.test(hl)) map.donorName  = h;
     if (!map.firstName  && /^first.?name$/.test(hl))                                    map.firstName = h;
     if (!map.lastName   && /^last.?name$/.test(hl))                                     map.lastName  = h;
     if (!map.orgName    && /^(org(anization)?.?name|company)$/.test(hl))                map.orgName   = h;
-    if (!map.donorEmail && /^(email|email.?address|e-?mail)$/.test(hl))                          map.donorEmail = h;
+    if (!map.donorEmail && T(/^(email|email.?address|e-?mail|e mail( address)?)$/))                          map.donorEmail = h;
     // BUILD-45 §1.2 F-4 — a source-system gift/transaction id is the ONLY safe
     // gift dedup key; (donor, amount, date) never is. Anchored so a bare "ID"
     // (usually the donor id) or "Donor ID" is never grabbed.
@@ -1592,7 +1601,7 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.paymentMethod && /^(payment.?method|payment.?type|pay.?method|method|payment|tender(.?type)?)$/.test(hl)) map.paymentMethod = h;
     // A.7 — Fund and Designation are the same standard field (the workbook
     // mapper's STANDARD_GIFT_FIELDS aliases, verbatim).
-    if (!map.fund     && /^(fund|fund.?name|designation|restriction|purpose|allocation)$/.test(hl)) map.fund = h;
+    if (!map.fund     && T(/^(fund|fund.?name|designation|fund designation|restriction|purpose|allocation)$/)) map.fund = h;
     if (!map.campaign && /^(campaign|appeal|appeal.?code|solicitation)$/.test(hl))     map.campaign = h;
     if (!map.donorType && /^(donor.?type|constituent.?type|record.?type|entity.?type)$/.test(hl)) map.donorType = h;
     if (!map.wealthRating   && WEALTH_HDR.rating.test(hl))   map.wealthRating = h;
@@ -1600,10 +1609,10 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
     if (!map.birthday       && BIRTHDAY_HDR.test(hl))        map.birthday = h;
     if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
-    if (!map.phone    && /^(phone|phone.?number|telephone|mobile|cell)$/.test(hl))     map.phone    = h;
-    if (!map.address  && /^(address|street(.?address)?|address.?1|mailing.?address)$/.test(hl)) map.address = h;
+    if (!map.phone    && T(/^(phone|phone.?number|telephone|mobile|cell)$/))     map.phone    = h;
+    if (!map.address  && T(/^(address|street(.?address)?|address.?1|address line 1|mailing.?address)$/)) map.address = h;
     if (!map.city     && /^city$/.test(hl))                                            map.city     = h;
-    if (!map.state    && /^(state|province)$/.test(hl))                                map.state    = h;
+    if (!map.state    && T(/^(state|province|st)$/))                                map.state    = h;
     if (!map.zip      && /^(zip(.?code)?|postal(.?code)?)$/.test(hl))                  map.zip      = h;
     if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
     // BUILD-99 Part 6 — the proposal columns ARE claimed by header, unlike the
@@ -1801,6 +1810,21 @@ export function stageAssignmentBasis(mapped = {}) {
   };
 }
 
+// FIX-33: "A & B Last" / "A and B Last": the two first names and the shared
+// surname, or null. Read off the display name, because matchNameKey drops "&".
+function coupleFormOf(display) {
+  const m = String(normalizeName(display) || "").replace(/\s+/g, " ").trim()
+    .match(/^([\p{L}'’.-]+)\s*(?:&|\band\b)\s*([\p{L}'’.-]+)\s+([\p{L}'’.-]+(?:\s[\p{L}'’.-]+)?)$/iu);
+  return m ? { firsts: [m[1].toLowerCase(), m[2].toLowerCase()], last: m[3].toLowerCase() } : null;
+}
+// Does couple form `c` name person `p` (same surname, p's first name one of the two)?
+function coupleNamesPerson(c, p) {
+  if (!c.couple || p.couple || p.household) return false;
+  const t = p.key.split(" ");
+  return t.length >= 2 && c.couple.last.replace(/[^\p{L}\p{N} ]/gu, "") === t.slice(1).join(" ")
+    && c.couple.firsts.some(f => f.replace(/[^\p{L}\p{N}]/gu, "") === t[0]);
+}
+
 // ── BUILD-80 Part 6 — WHO IS WHO: the identity resolver ────────────────────
 // Grouping order: (1) external donor ID, when a column is recognised as one
 // — stored as TEXT, leading zeros kept; a spreadsheet-damaged ID (1.23E+05)
@@ -1828,15 +1852,22 @@ export function resolveIdentities(rows = [], txMap = {}, opts = {}) {
   };
 
   // pass 1 — which IDs are damaged or shared by different people
+  // FIX-33: under ONE source id, a couple form that names the person
+  // ("Jeffrey & Jessica Morales" beside "Jeffrey Morales") is the same record:
+  // the old system already joined them, and treating the id as shared by two
+  // people split 50 of 1,000 real donors in two. This applies to the id only;
+  // an email or a name alone still never folds a couple into a person.
   const idNames = new Map();
   for (const row of rows) {
     const id = donorIdCol ? String(row[donorIdCol] ?? "").trim() : "";
     if (!id || damagedId(id)) continue;
-    const mk = matchNameKey(displayNameOf(row).display);
+    const display = displayNameOf(row).display;
+    const mk = matchNameKey(display);
     if (!mk.key) continue;
+    mk.couple = coupleFormOf(display);
     if (!idNames.has(id)) idNames.set(id, []);
     const list = idNames.get(id);
-    if (!list.some(x => matchNamesCompatible(x, mk))) list.push(mk);
+    if (!list.some(x => matchNamesCompatible(x, mk) || coupleNamesPerson(x, mk) || coupleNamesPerson(mk, x))) list.push(mk);
   }
   const conflictedIds = new Set([...idNames.entries()].filter(([, l]) => l.length > 1).map(([id]) => id));
 

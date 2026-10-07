@@ -354,6 +354,110 @@ async function reset() {
   const [ghost] = await q(`SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND email='ghost-reconnect@b77.test'`, [ORG]);
   ok("a reconnect matching nothing creates a new donor (never a silent merge)", ghost.c === 1, ghost);
 
+  // ── §7 · FIX-33 · the 1,000-donor messy file, graded by its own key ──────
+  // tests/fixtures/fix33/steward-test-1000-donors-messy.csv went into a real
+  // org and came out with 24 extra people. The key (answer-key.json) is built
+  // by gen-answer-key.mjs from the raw CSV alone. This drives the same steps
+  // the DonorImport page takes: analyzeCsvText, the automatic mapping, the
+  // mapper plan's flag columns, the accounted builder with the person's
+  // answer to the mixed date column (month first), then /donors/import-combined
+  // in 500-donor chunks with identityResolved, exactly as the page sends it.
+  console.log("\n§7 · FIX-33: the 1,000-donor messy file against its key");
+  {
+    const K33 = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "fix33", "answer-key.json"), "utf8"));
+    const cfs = await import("../shared/customFieldShape.js");
+    const ORG33 = "org_fix33messy";
+    for (const t of ["gifts", "interactions", "tasks", "import_merges", "imports", "donors", "fin_transactions", "fin_funds", "accounts", "budgets", "users"])
+      await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG33]).catch(() => {});
+    await q(`DELETE FROM orgs WHERE id=$1`, [ORG33]).catch(() => {});
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'FIX-33 Messy','fix33-messy',1,'active','team')`, [ORG33]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix33messy',$1,'fix33messy@test.local',$2,'Messy Admin','admin')`,
+      [ORG33, bcrypt.hashSync("loadtest1234", 10)]);
+    const tok33 = await login("fix33messy@test.local");
+    const a33 = lib.analyzeCsvText(fs.readFileSync(path.join(__dirname, "fixtures", "fix33", "steward-test-1000-donors-messy.csv"), "utf8"));
+    ok("the preamble line and the TOTAL row are not data (4,275 rows read)", a33.rows.length === K33.file.dataRows, a33.rows.length);
+    const tx33 = lib.autoDetectTxMapping(a33.headers, a33.rows);
+    for (const [role, col] of [["donorEmail", "E-mail Address"], ["phone", "Phone #"], ["address", "Address Line 1"], ["state", "ST"], ["fund", "Fund/Designation"]])
+      ok(`auto-map claims ${col} as ${role}`, tx33[role] === col, { got: tx33[role] });
+    const plan33 = cfs.buildMapperPlan({ headers: a33.physical.headerCells, fields: a33.headers, rows: a33.rows, txMap: tx33 });
+    const flagColumns = {};
+    for (const c of plan33.columns) if (c.status === "flag" && c.flag !== "exclusion" && c.flag !== "frequency") flagColumns[c.flag] = c.field;
+    const built33 = lib.buildTransactionRows({ headers: a33.headers, rows: a33.rows }, tx33,
+      { rowLines: a33.rowLines, today: K33.anchorDate, dateConvention: "mdy", flagColumns,
+        coerceCustomValue: cfs.coerceCustomValue, parseBoolValue: cfs.parseBoolValue, parseExclusionValue: cfs.parseExclusionValue });
+    const usdErr = built33.dispositions.filter(d => d.reason === "unparseable_amount" && /[A-Za-z]{3}$/.test(String(d.raw["Gift Amount"]).trim()));
+    ok("no '125.00 USD'-style amount is refused (a trailing currency code is money)", usdErr.length === 0, { refused: usdErr.length });
+    const giftIds = new Set(built33.gifts.map(g => g.externalId));
+    // The key's gifts under the held mixed-date rule: she answers "month first"
+    // and the cells that only read day first are refused with their line.
+    const KG = K33.giftsUnderMonthFirstAnswer;
+    ok(`distinct gifts built == the key (${KG.rows}; the 40 double-exported copies share a Gift ID)`, giftIds.size === KG.rows, { got: giftIds.size, rows: built33.gifts.length });
+    ok(`the ${KG.refusedDayFirst} day-first cells are refused by line, never re-read or dropped`,
+      (() => { const refused = new Set(built33.dispositions.filter(d => d.reason === "unparseable_date").map(d => d.raw["Gift ID"]));
+               const dayFirst = K33.dispositions.filter(d => d.dateForm === "d/m/y (day over 12)");
+               return dayFirst.length === KG.refusedDayFirst && dayFirst.every(d => refused.has(d.giftId)); })(), null);
+    // the source system's own id says a couple form and the person are ONE record
+    const splitIds = built33.identity.conflictedIds;
+    ok("no Constituent ID is split by its own couple form ('Jeffrey & Jessica Morales' is Jeffrey Morales's record)", splitIds.length === 0, splitIds.slice(0, 6));
+    const expectRecords = K33.donors.trueDonors + K33.donors.review;
+    ok(`people built == ${expectRecords} (1,000 true donors + the ${K33.donors.review} pairs left for a person)`, built33.donors.length === expectRecords, { got: built33.donors.length });
+
+    const byD = new Map();
+    for (const g of built33.gifts) { if (!byD.has(g.donorIndex)) byD.set(g.donorIndex, []); byD.get(g.donorIndex).push(g); }
+    for (let start = 0; start < built33.donors.length; start += 500) {
+      const slice = built33.donors.slice(start, start + 500);
+      const cg = [];
+      slice.forEach((_, li) => (byD.get(start + li) || []).forEach(g => { const { donorIndex, ...rest } = g; cg.push({ ...rest, donorIndex: li }); }));
+      const r = await api("POST", "/donors/import-combined", tok33, { donors: slice, gifts: cg, identityResolved: true });
+      if (r.status !== 200) { ok("FIX-33 chunk imports", false, { status: r.status, body: JSON.stringify(r.body).slice(0, 200) }); break; }
+    }
+    const [n33] = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG33]);
+    ok(`DB people == ${expectRecords}`, n33.n === expectRecords, n33);
+    const [g33] = await q(`SELECT COUNT(*)::int n, COALESCE(SUM(amount),0)::float d, COUNT(*) FILTER (WHERE amount<0)::int r FROM gifts WHERE org_id=$1`, [ORG33]);
+    const [dupIds] = await q(`SELECT COUNT(*)::int n FROM (SELECT external_id FROM gifts WHERE org_id=$1 AND external_id IS NOT NULL GROUP BY external_id HAVING COUNT(*)>1) x`, [ORG33]);
+    ok("no Gift ID landed twice (the double export is one gift)", dupIds.n === 0, dupIds);
+    ok(`DB gifts == the key (${KG.rows} rows, $${KG.dollars}, ${KG.refunds} refunds negative)`,
+      g33.n === KG.rows && Math.abs(g33.d - KG.dollars) < 0.02 && g33.r === KG.refunds, g33);
+    // every planted duplicate the key calls certain is ONE record; every one it
+    // calls a question is two records AND a likely pair in Data health
+    // who each Constituent ID became, read through its gifts (a merged record
+    // keeps one source id, so the donor row alone cannot say)
+    const gRows = await q(`SELECT external_id, donor_id FROM gifts WHERE org_id=$1 AND external_id IS NOT NULL`, [ORG33]);
+    const donorOfGift = new Map(gRows.map(r => [r.external_id, r.donor_id]));
+    const idOf = new Map();
+    for (const d of K33.dispositions) if (d.disposition === "gift" && !idOf.has(d.donorId) && donorOfGift.has(d.giftId)) idOf.set(d.donorId, donorOfGift.get(d.giftId));
+    // a record still carrying the source id names itself; an id with no gift
+    // and no record of its own was folded into its twin
+    const extRows = await q(`SELECT id, external_donor_id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND external_donor_id IS NOT NULL`, [ORG33]);
+    const byExt = new Map(extRows.map(r => [r.external_donor_id, r.id]));
+    for (const t of K33.twins) {
+      if (!idOf.get(t.twin) && byExt.has(t.twin)) idOf.set(t.twin, byExt.get(t.twin));
+      if (!idOf.get(t.planted)) idOf.set(t.planted, byExt.get(t.planted) || idOf.get(t.twin));
+      if (!idOf.get(t.twin)) idOf.set(t.twin, idOf.get(t.planted));
+    }
+    ok("every planted duplicate and its twin can be traced to a record", K33.twins.every(t => idOf.get(t.planted) && idOf.get(t.twin)),
+      K33.twins.filter(t => !idOf.get(t.planted) || !idOf.get(t.twin)).map(t => t.planted));
+    const certainMissed = K33.twins.filter(t => t.verdict === "certain" && idOf.get(t.planted) && idOf.get(t.twin) && idOf.get(t.planted) !== idOf.get(t.twin));
+    ok(`the ${K33.donors.certain} certain duplicates merged at import`, certainMissed.length === 0, certainMissed.map(t => t.planted));
+    const reviewMerged = K33.twins.filter(t => t.verdict === "review" && idOf.get(t.planted) && idOf.get(t.planted) === idOf.get(t.twin));
+    ok("no uncertain pair was merged by the machine", reviewMerged.length === 0, reviewMerged.map(t => t.planted));
+    const pairs = (await api("GET", "/data-health/duplicates", tok33)).body.pairs || [];
+    const pk = new Set(pairs.map(p => [p.a, p.b].sort().join("|")));
+    const notQueued = K33.twins.filter(t => t.verdict === "review" && !pk.has([idOf.get(t.planted), idOf.get(t.twin)].sort().join("|")));
+    ok(`all ${K33.donors.review} uncertain pairs wait in the Data health duplicate queue`, notQueued.length === 0, notQueued.map(t => `${t.planted}/${t.twin}`));
+    // the dead are never on a list that asks someone to call or write
+    const dead = await q(`SELECT id, name FROM donors WHERE org_id=$1 AND deceased IS TRUE`, [ORG33]);
+    ok(`the ${K33.deceased.length} deceased donors are flagged`, dead.length === K33.deceased.length, dead.map(d => d.name));
+    const deadIds = new Set(dead.map(d => d.id));
+    const calls = (await api("GET", "/home/calls", tok33)).body;
+    const callIds = JSON.stringify(calls);
+    const drift33 = (await api("GET", "/drift?all=1&includeMedium=1", tok33)).body;
+    const today33 = (await api("GET", "/dashboard/today?scope=all", tok33)).body;
+    ok("no deceased donor on calls to make, the drift list or Needs Your Attention",
+      ![...deadIds].some(id => callIds.includes(id)) && !(drift33.list || []).some(r => deadIds.has(r.donorId))
+      && !(Array.isArray(today33) ? today33 : []).some(i => deadIds.has(i.donorId) && !["receipt", "receipt_mismatch"].includes(i.action)), null);
+  }
+
   await closeDb();
   summary();
 })().catch(async e => { console.error("SUITE ERROR:", e); await closeDb().catch(() => {}); process.exit(1); });

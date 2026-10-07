@@ -68,6 +68,19 @@ function nameRelation(a, b) {
   if (ta.length >= 2 && tb.length >= 2 && fa === fb && la === lb) return "initial";
   if (la === lb && ta.length >= 2 && tb.length >= 2 && NICK.has(fa) && NICK.get(fa) === NICK.get(fb)) return "nickname";
   if (ja.length >= 8 && jb.length >= 8 && editDistance(ja, jb, 2) <= 2) return "spelling";
+  // FIX-33: two shapes a real export plants that none of the above saw.
+  // "Bar Morales" / "Barbara Morales": a first name cut short (three letters
+  // or more, same last name). "Alexander Sanders-Johnson" / "Alexander
+  // Sanders": the same first name, one surname a part of the other's
+  // double-barrelled one. Both only ever make a PAIR for a person to judge.
+  if (ta.length >= 2 && tb.length >= 2) {
+    const short = fa.length < fb.length ? fa : fb, long = fa.length < fb.length ? fb : fa;
+    if (la === lb && short.length >= 3 && short !== long && long.startsWith(short)) return "shortened";
+    const rawLast = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").trim().split(/\s+/).pop() || "";
+    const pa = rawLast(a).split("-").filter(Boolean), pb = rawLast(b).split("-").filter(Boolean);
+    if (fa === fb && (pa.length > 1 || pb.length > 1) && la !== lb
+        && (pa.length > 1 ? pa.includes(rawLast(b)) : pb.includes(rawLast(a)))) return "surname";
+  }
   return null;
 }
 const NAME_WORDS = {
@@ -75,6 +88,8 @@ const NAME_WORDS = {
   initial: "names differ by a middle initial",
   nickname: "one name is a nickname of the other",
   spelling: "names differ by a letter or two",
+  shortened: "one first name is the other cut short",
+  surname: "one surname is part of the other's double surname",
 };
 
 const lowerEmail = e => String(e || "").trim().toLowerCase();
