@@ -50,16 +50,41 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   machinery untouched, so old plans and sequences keep working and every screen that reads plans
   reads journeys for free. (THREAD-2a)
 - **`maybeStartJourney` is the ONE way into a journey.** Every trigger calls it — first gift,
-  gift over the org's amount, stage change, lapsed return, new volunteer, by hand — which is what
-  makes "a donor is in at most one journey" true rather than aspirational. It is registered back
+  gift over the org's amount, stage change, lapsed return, new volunteer, by hand, and since
+  JOURNEYS-3 the hourly sweep's nine lifecycle triggers — so every rule about who goes in lives
+  in one place. It is registered back
   to server.js at mount time (`registerJourneyEngine`) because `recordGift` lives there and
   requiring crm.js from server.js would be a cycle; a null engine is a no-op, never a throw, so a
   broken journey can never refuse somebody's donation. (THREAD-2a)
-- **A higher priority replaces a lower one and writes down why.** Equal priority does not
-  replace. Major donor (90) outranks the first-year welcome (50) deliberately: a $25,000 first
-  gift is a major gift before it is a first gift. The replaced plan is `abandoned`, not deleted,
-  and `replacementReason()` writes one sentence that is stored on the row AND logged on the donor.
-  (THREAD-2a)
+- **A person can be in several journeys at once; exclusive ones still replace (JOURNEYS-3).**
+  One active plan per person PER JOURNEY (`cultivation_plans_one_active_per_journey`). A journey
+  marked "Only one of these at a time" (`cultivation_templates.exclusive`) keeps the old rule
+  against other exclusive ones: a higher priority replaces a lower one, equal does not, and the
+  replaced plan is `abandoned` with `replacementReason()` on the row and the timeline. Monthly
+  gift failed and Card expiring ship exclusive. (THREAD-2a's "at most one journey" is retired.)
+- **One touch a week across every journey, and how it is decided.** `spaceTouches`
+  (shared/journeyShape.js), run on enrolment by `spaceDonorTouches`: no two steps from DIFFERENT
+  journeys within the org's gap (`orgs.journey_touch_gap_days`, Journey settings, 7 by default);
+  a journey's own steps keep the spacing she wrote. An open step never moves. Then journeys are
+  placed highest priority first (tie: entered first); a clashing step moves to the first day the
+  gap allows, later steps of its journey follow, and the move is stored (`moved_from`,
+  `moved_reason`, `moved_by_plan_id`) and written on the timeline.
+- **Still one next step per person.** `threads_one_open` stands. `advanceCultivationPlan` walks
+  every active plan; the soonest pending step across them takes the thread, and a journey step
+  holding it but due later hands it over (the thread is re-pointed, the old step goes back to
+  pending). Each step that opens writes one timeline line (`journey-step:<id>`).
+- **The apply offer and the apply are one split (`applySplit`).** Qualify, will join, already in
+  it, in an exclusive journey that ranks the same or higher (they stay), in another journey (join
+  too, spaced, or "Leave them where they are"). The button says the will-join number and the
+  apply puts in exactly those. The result is the shared Undo toast; `POST /journeys/:id/apply/
+  undo` deletes those plans, their threads, drafts and timeline lines, restores moved steps and
+  replaced exclusive plans, then re-advances each person. Never `window.alert`: it blocks React
+  from drawing the new counts, which is how How it is going read 0 on Harborlight.
+- **The lifecycle triggers are one definition (`lifecycleRows`, routes/crm.js)**, used by the
+  hourly sweep and by "already qualify": membership ending (30 days), membership lapsed, monthly
+  gift failed, cancelled, card expiring next month, volunteer hours (10/25/50/100, crossing in the
+  window), grant awarded (on the funder), peer-to-peer goal; first event fires from attendance.
+  Each holds its event key, so nobody is enrolled twice for one event.
 - **No journey step sends anything.** A step is a thread; a thread closes on a logged human
   action. A step may carry a DRAFT and a draft is not a send — `requiresConfirmation` is
   unconditional, not a per-step setting. `tests/thread2a-no-send.test.js` runs the whole path

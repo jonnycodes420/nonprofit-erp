@@ -261,7 +261,7 @@ export default function WelcomePage() {
       await refreshOrg();
       setMetric1(m => ({ ...m, outcomeTemplate: defaultOutcomeTemplate(orgName) }));
       goNext();
-    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
+    } catch (e) { setError(errorMessage(e, "Could not save, please try again.")); }
     setSavingBasics(false);
   }
 
@@ -315,7 +315,7 @@ export default function WelcomePage() {
     try {
       await apiFetch("/goals", { method: "POST", body: JSON.stringify(goalForm) });
       goNext();
-    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
+    } catch (e) { setError(errorMessage(e, "Could not save, please try again.")); }
     setSavingGoal(false);
   }
 
@@ -332,7 +332,7 @@ export default function WelcomePage() {
       }
       go("launch");
       runFinish();
-    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
+    } catch (e) { setError(errorMessage(e, "Could not save, please try again.")); }
     setSavingMetrics(false);
   }
 
@@ -398,7 +398,7 @@ export default function WelcomePage() {
         {stepKey !== "start" && !(stepKey === "launch" && phase === "ready") && (
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Step {stepIdx + 1} of {flow.length} — {STEP_META[stepKey].label}
+              Step {stepIdx + 1} of {flow.length} Not set {STEP_META[stepKey].label}
               <span style={{ color: T.gold600, marginLeft: 8, letterSpacing: "0.04em" }}>{STEP_META[stepKey].time}</span>
             </div>
             <div style={{ maxWidth: 220, margin: "0 auto", background: T.bg2, borderRadius: 99, height: 5, overflow: "hidden" }}>
@@ -482,7 +482,7 @@ export default function WelcomePage() {
                 {TIMEZONE_CHOICES.map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>)}
                 {!TIMEZONE_CHOICES.includes(timezone) && <option value={timezone}>{timezone.replace(/_/g, " ")}</option>}
               </select>
-              <div style={{ fontSize: 11, color: ink3, marginTop: 5 }}>Every date in Steward — “this week”, “overdue”, a reminder set for 2:00 — is read in this zone.</div>
+              <div style={{ fontSize: 11, color: ink3, marginTop: 5 }}>Every date in Steward, “this week”, “overdue”, a reminder set for 2:00, is read in this zone.</div>
             </div>
 
             {error && <div style={errBox}>{error}</div>}
@@ -637,7 +637,7 @@ export default function WelcomePage() {
               </h1>
               <p style={{ fontSize: 14, color: ink3, margin: 0, lineHeight: 1.6 }}>
                 Pick the closest one. You can change every step of it afterwards, and
-                <strong style={{ color: ink }}> nothing is ever sent without you</strong> — each step
+                <strong style={{ color: ink }}> nothing is ever sent without you</strong> each step
                 becomes a reminder on your Thread on the day it is due.
               </p>
             </div>
@@ -680,14 +680,14 @@ export default function WelcomePage() {
                       ))}
                     </div>
                     <div style={{ fontSize: 12, color: T.sage400, marginTop: 9, lineHeight: 1.5 }}>
-                      Next: {(jPreview.steps || [])[0]?.label || "—"}
+                      Next: {(jPreview.steps || [])[0]?.label || "Not set"}
                       {(jPreview.steps || [])[0]?.dueDate ? `, ${new Date((jPreview.steps || [])[0].dueDate + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}` : ""}.
                     </div>
                   </>
                 ) : (
                   <div style={{ fontSize: 12.5, color: T.sage400, lineHeight: 1.55 }}>
                     You have not imported anyone yet, so there is nobody to show it on. The journey is
-                    still set up and waiting — it starts the first time somebody gives.
+                    still set up and waiting, it starts the first time somebody gives.
                   </div>
                 )}
               </div>
@@ -720,7 +720,7 @@ export default function WelcomePage() {
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 22px", lineHeight: 1.6 }}>
               {suggestion
-                ? "Based on the donors you just imported, here's a real starting point — edit anything you'd like."
+                ? "Based on the donors you just imported, here's a real starting point, edit anything you'd like."
                 : "One goal to start tracking against. You can add more anytime from your home screen."}
             </p>
 
@@ -770,7 +770,7 @@ export default function WelcomePage() {
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 20px", lineHeight: 1.6 }}>
               This is what turns a donor's gift into a concrete outcome in milestone thank-yous. We've started you
-              off with a template — edit it to fit your program.
+              off with a template, edit it to fit your program.
             </p>
 
             <div style={{ marginBottom: 14 }}>

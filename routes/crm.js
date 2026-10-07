@@ -11099,6 +11099,8 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
     if (tf.fundId && String(tf.fundId) !== String(opts.fundId || "")) return false;
     if (tf.campaignId && String(tf.campaignId) !== String(opts.campaignId || "")) return false;
     if (triggerKey === "joined_group" && String(tf.groupId || "") !== String(opts.groupId || "")) return false;
+    // JOURNEYS-3 — an hours journey that watches one milestone fires on that one.
+    if (triggerKey === "volunteer_hours" && tf.hours && !(opts.crossed || []).includes(Number(tf.hours))) return false;
     return true;
   });
   if (!filtered.length) return { started: false, reason: "below_threshold" };
@@ -11130,9 +11132,29 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
     if (!eligible.length) return { started: false, reason: "already_enrolled_for_event", eventKey };
   }
 
-  const winner = J.winningJourney(eligible);
-  if (!winner) return { started: false, reason: "no_winner" };
+  // JOURNEYS-3 · EVERY JOURNEY THIS EVENT STARTS, HIGHEST FIRST. A person may
+  // be in several journeys at once; their steps are spaced a week apart by
+  // spaceDonorTouches. Two journeys marked "only one of these at a time" keep
+  // the old ranking rule between them. A person pressing a button names one.
+  const order = eligible.slice().sort((x, y) => (J.winningJourney([x, y]) === x ? -1 : 1));
+  let first = null;
+  const also = [];
+  for (const t of order) {
+    const r = await startOneJourney(orgId, donor, t, triggerKey, eventKey, opts);
+    if (!first) first = r;
+    else if (r.started) also.push(r);
+    if (opts.forceJourneyId) break;
+  }
+  if (first && !first.started && also.length) return { ...also[0], also: also.slice(1) };
+  return also.length ? { ...first, also } : first;
+}
 
+// One journey, one person. Refuses only for a reason it can name: already in
+// this journey, in a higher exclusive one, or (when the person asked to leave
+// people where they are) in any other journey.
+async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts = {}) {
+  const J = await journeyMod();
+  const PL = await planMod();
   const v = J.validateJourney({
     name: winner.name, trigger: winner.trigger_key, priority: winner.priority,
     amountCents: winner.trigger_amount_cents, steps: winner.steps,
@@ -11147,33 +11169,40 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
   const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
   const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
 
-  // ── AT MOST ONE JOURNEY, AND THE REASON IS WRITTEN DOWN ────────────────
-  // A donor already working through something is left alone UNLESS the new
-  // one outranks it. Equal priority does not replace: being in a journey is a
-  // commitment somebody may already have acted on, and shuffling a donor
-  // between two equally good ones helps nobody.
-  const [current] = await query(
-    `SELECT id, template_name, priority FROM cultivation_plans
-      WHERE org_id=? AND donor_id=? AND status='active'`, [orgId, donorId]);
-  let replacedId = null, reason = null;
-  if (current) {
-    if (!J.shouldReplace({ priority: current.priority }, { priority: v.priority })) {
-      return { started: false, reason: "already_in_a_journey", currentPlanId: current.id,
-               currentName: current.template_name };
+  const current = await query(
+    `SELECT p.id, p.template_id, p.template_name, p.priority, COALESCE(t.exclusive, false) AS exclusive
+       FROM cultivation_plans p LEFT JOIN cultivation_templates t ON t.id = p.template_id AND t.org_id = p.org_id
+      WHERE p.org_id=? AND p.donor_id=? AND p.status='active'`, [orgId, donor.id]);
+  const same = current.find(c => c.template_id === winner.id);
+  if (same) return { started: false, reason: "already_in_this_journey", currentPlanId: same.id, currentName: same.template_name };
+  if (opts.joinOthers === false && current.length) {
+    return { started: false, reason: "in_another_journey", currentPlanId: current[0].id, currentName: current[0].template_name };
+  }
+
+  // ── ONLY ONE OF THESE AT A TIME, AND THE REASON IS WRITTEN DOWN ────────
+  // Between exclusive journeys, a person already working through one is left
+  // alone UNLESS the new one outranks it. Equal priority does not replace.
+  let replacedId = null, reason = null, replacedStep = null;
+  const rival = winner.exclusive ? current.filter(c => c.exclusive)
+    .sort((x, y) => Number(y.priority) - Number(x.priority))[0] : null;
+  if (rival) {
+    if (!J.shouldReplace({ priority: rival.priority }, { priority: v.priority })) {
+      return { started: false, reason: "already_in_a_journey", currentPlanId: rival.id,
+               currentName: rival.template_name };
     }
-    reason = J.replacementReason(current.template_name, v.name);
-    // Stopped, not deleted: the steps stay readable, and the row says what
-    // took its place.
+    reason = J.replacementReason(rival.template_name, v.name);
     await run(`UPDATE cultivation_plans SET status='abandoned', closed_at=NOW(), replaced_reason=?
-                WHERE id=? AND status='active'`, [reason, current.id]);
+                WHERE id=? AND status='active'`, [reason, rival.id]);
     const [openStep] = await query(
-      `SELECT id, thread_id FROM cultivation_plan_steps WHERE plan_id=? AND status='open'`, [current.id]);
+      `SELECT id, thread_id FROM cultivation_plan_steps WHERE plan_id=? AND status='open'`, [rival.id]);
     if (openStep) {
+      // Its thread is handed on rather than left holding a stopped plan's step.
       await run(`UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(),
                    closed_by=?, closed_by_name=?, skip_reason=? WHERE id=?`,
         [JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, reason, openStep.id]);
+      replacedStep = openStep;
     }
-    replacedId = current.id;
+    replacedId = rival.id;
   }
 
   const planId = "cp_" + uuid().slice(0, 10);
@@ -11185,7 +11214,8 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
                                     trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text,
             ?::text,?::int,?::text,?::text,?::text
-      WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text AND x.status='active')
+      WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text
+                          AND x.template_id=?::text AND x.status='active')
      RETURNING id`,
     [planId, orgId, donor.id, winner.id, v.name, today,
      donor.assigned_to || null, donor.assigned_to_name || null,
@@ -11194,9 +11224,9 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
      // first-gift journey still says what kind of journey it is; `by_hand` is
      // recorded only for a journey that genuinely has that trigger.
      opts.forceJourneyId ? (winner.trigger_key || triggerKey) : triggerKey,
-     v.priority, replacedId, reason, eventKey, orgId, donor.id]);
+     v.priority, replacedId, reason, eventKey, orgId, donor.id, winner.id]);
   } catch (e) {
-    // The unique index on the event: a concurrent fire of the same event won.
+    // A unique index: a concurrent fire of the same event, or the same journey, won.
     if (e.code === "23505") return { started: false, reason: "already_enrolled_for_event", eventKey };
     throw e;
   }
@@ -11215,24 +11245,71 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
        src.ownerMode === "specific" ? (src.ownerId || null) : (donor.assigned_to || null),
        src.ownerMode === "specific" ? null : (donor.assigned_to_name || null)]);
   }
-
-  await advanceCultivationPlan(orgId, donor.id,
-    { actorId: JOURNEY_ACTOR.id, actorName: JOURNEY_ACTOR.name, today });
+  // A replaced exclusive journey's open thread is closed with its reason, so
+  // the new journey's first step can take the person's one open thread.
+  if (replacedStep && replacedStep.thread_id) {
+    await run(`UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside'
+                WHERE id=? AND org_id=? AND closed_at IS NULL`, [replacedStep.thread_id, orgId]);
+  }
 
   // The timeline says it, in the same words the screen does.
   const line = reason
     ? reason
     : `Journey started: ${v.name} (${steps.length} ${steps.length === 1 ? "step" : "steps"}).`;
+  const lineId = "int_" + uuid().slice(0, 10);
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,'note',?,?,?,?)`,
-    ["int_" + uuid().slice(0, 10), orgId, donor.id, today, line, JOURNEY_ACTOR.id, JOURNEY_ACTOR.name])
+    [lineId, orgId, donor.id, today, line, JOURNEY_ACTOR.id, JOURNEY_ACTOR.name])
+    .then(() => run(`UPDATE cultivation_plans SET start_interaction_id=? WHERE id=?`, [lineId, planId]))
     .catch(e => console.error("[journey] timeline:", e.message));
+
+  // One touch a week across every journey this person is in, then the
+  // soonest step takes their one open thread.
+  await spaceDonorTouches(orgId, donor.id);
+  await advanceCultivationPlan(orgId, donor.id,
+    { actorId: JOURNEY_ACTOR.id, actorName: JOURNEY_ACTOR.name, today });
 
   console.log(`[journey] ${donor.id} → ${v.name} on ${triggerKey}`
     + (replacedId ? ` (replaced ${replacedId})` : ""));
   return { started: true, planId, journeyId: winner.id, name: v.name, trigger: triggerKey,
            steps: steps.length, replacedPlanId: replacedId, reason };
+}
+
+// ── JOURNEYS-3 · ONE TOUCH A WEEK ──────────────────────────────────────────
+// Every active journey this person is in, spaced by shared/journeyShape.js
+// spaceTouches with the org's gap (Journey settings, 7 days by default). A
+// moved step keeps the date it had and the journey that moved it, and the
+// reason lands on the step and on the timeline.
+async function journeyTouchGap(orgId) {
+  const [o] = await query(`SELECT journey_touch_gap_days FROM orgs WHERE id=?`, [orgId]);
+  return Number(o && o.journey_touch_gap_days) || 7;
+}
+async function spaceDonorTouches(orgId, donorId) {
+  const J = await journeyMod();
+  const plans = await query(
+    `SELECT id, template_name AS name, priority, applied_on FROM cultivation_plans
+      WHERE org_id=? AND donor_id=? AND status='active'`, [orgId, donorId]);
+  if (plans.length < 2) return [];
+  const steps = await query(
+    `SELECT id, plan_id, seq, due_date, status FROM cultivation_plan_steps
+      WHERE org_id=? AND plan_id = ANY(?::text[]) AND status IN ('pending','open')`, [orgId, plans.map(p => p.id)]);
+  const moves = J.spaceTouches(plans.map(p => ({ id: p.id, name: p.name, priority: p.priority, appliedOn: p.applied_on,
+    steps: steps.filter(s => s.plan_id === p.id).map(s => ({ id: s.id, seq: s.seq, dueDate: s.due_date, status: s.status })) })),
+    await journeyTouchGap(orgId));
+  for (const m of moves) {
+    const name = (plans.find(p => p.id === m.planId) || {}).name || "A journey";
+    const why = J.movedSentence(m, name);
+    const { changes } = await run(
+      `UPDATE cultivation_plan_steps SET due_date=?, moved_from=COALESCE(moved_from, ?), moved_reason=?,
+              moved_by_plan_id=COALESCE(moved_by_plan_id, ?)
+        WHERE id=? AND org_id=? AND status='pending'`, [m.to, m.from, why, m.becausePlanId, m.stepId, orgId]);
+    if (changes) {
+      await TL.timelineLine({ orgId, donorId, note: why, actorId: JOURNEY_ACTOR.id, actorName: JOURNEY_ACTOR.name,
+        key: `journey-moved:${m.stepId}:${m.to}`, metadata: { via: "journey_spacing", step_id: m.stepId, plan_id: m.planId } });
+    }
+  }
+  return moves;
 }
 
 // PARITY-1 Part D · the event a trigger is about, as a key written on the
@@ -11250,6 +11327,7 @@ function journeyEventKey(triggerKey, opts = {}, today = "") {
     case "giving_anniversary": return `anniversary:${String(today).slice(0, 4)}`;
     case "birthday": return `birthday:${String(today).slice(0, 4)}`;   // PARITY-3 6a: once a year
     case "attended_event": return opts.eventId ? `event:${opts.eventId}` : null;
+    case "first_event": return "first_event";
     default: return null;
   }
 }
@@ -11298,35 +11376,78 @@ async function donorInAudience(orgId, donorId, audience = {}) {
   return true;
 }
 
+// JOURNEYS-3 · A PERSON IN SEVERAL JOURNEYS STILL HAS ONE NEXT STEP. Each
+// active plan's open step is closed when its thread has closed, a plan with
+// nothing left is done, and then the person's SOONEST step across every
+// journey holds their one open thread: the next step of each plan is a
+// candidate and the earliest due wins (a tie goes to the higher priority).
+// When a journey step already holds the thread but another journey's step is
+// due sooner, the thread is handed to the sooner one and the other step goes
+// back to waiting, so the Thread always shows what is next.
 async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, today } = {}) {
   const PL = await planMod();
-  const [plan] = await query(
-    "SELECT * FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donorId]);
-  if (!plan) return null;
-  const steps = await query("SELECT * FROM cultivation_plan_steps WHERE plan_id=? ORDER BY seq", [plan.id]);
+  const plans = await query(
+    `SELECT * FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'
+      ORDER BY priority DESC, applied_on, id`, [orgId, donorId]);
+  if (!plans.length) return null;
+  const all = await query(
+    `SELECT * FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?::text[]) ORDER BY seq`,
+    [orgId, plans.map(p => p.id)]);
+  const live = [];
+  for (const plan of plans) {
+    const steps = all.filter(s => s.plan_id === plan.id);
+    // A step whose thread has closed is DONE. The thread's own close is the fact;
+    // this only reads it back, so the two can never disagree about whether the
+    // officer did the thing.
+    const open = steps.find(s => s.status === "open");
+    if (open && open.thread_id) {
+      const [th] = await query("SELECT id, closed_at, close_kind FROM threads WHERE id=? AND org_id=?", [open.thread_id, orgId]);
+      if (!th || th.closed_at) {
+        await run("UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND status='open'",
+          [actorId || null, actorName || null, open.id]);
+        open.status = "done";
+      }
+    }
+    if (steps.some(s => s.status === "open")) { live.push({ plan, steps }); continue; }
+    if (PL.nextPendingSeq(steps) == null) {
+      // Every step is done or skipped — the plan is finished, and that is a fact
+      // about the plan rather than an outcome anybody has to record.
+      await run("UPDATE cultivation_plans SET status='done', closed_at=NOW() WHERE id=? AND status='active'", [plan.id]);
+      continue;
+    }
+    live.push({ plan, steps });
+  }
+  if (!live.length) return plans[0].id;
 
-  // A step whose thread has closed is DONE. The thread's own close is the fact;
-  // this only reads it back, so the two can never disagree about whether the
-  // officer did the thing.
-  const open = steps.find(s => s.status === "open");
-  if (open && open.thread_id) {
-    const [th] = await query("SELECT id, closed_at, close_kind FROM threads WHERE id=? AND org_id=?", [open.thread_id, orgId]);
-    if (!th || th.closed_at) {
-      await run("UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND status='open'",
-        [actorId || null, actorName || null, open.id]);
-      open.status = "done";
+  // The candidates: each plan's next pending step. The soonest wins.
+  const cands = [];
+  for (const { plan, steps } of live) {
+    if (steps.some(s => s.status === "open")) continue;
+    const nextSeq = PL.nextPendingSeq(steps);
+    const step = steps.find(s => Number(s.seq) === Number(nextSeq));
+    if (step) cands.push({ plan, step });
+  }
+  if (!cands.length) return live[0].plan.id;   // a journey step already holds the thread
+  cands.sort((x, y) => String(x.step.due_date).localeCompare(String(y.step.due_date))
+    || Number(y.plan.priority) - Number(x.plan.priority));
+  const { plan, step } = cands[0];
+
+  // A journey step holding the thread but due LATER than this one hands it over.
+  const holder = live.map(l => ({ plan: l.plan, step: l.steps.find(s => s.status === "open") })).find(h => h.step);
+  if (holder && holder.step.thread_id && String(holder.step.due_date) > String(step.due_date)) {
+    const { changes } = await run(
+      `UPDATE threads SET next_step_type=?, next_step_label=?, due_date=?
+        WHERE id=? AND org_id=? AND closed_at IS NULL`,
+      [step.step_type, step.label, step.due_date, holder.step.thread_id, orgId]);
+    if (changes) {
+      await run("UPDATE cultivation_plan_steps SET status='pending', thread_id=NULL WHERE id=? AND status='open'", [holder.step.id]);
+      await run("UPDATE cultivation_plan_steps SET status='open', thread_id=? WHERE id=? AND status='pending'", [holder.step.thread_id, step.id]);
+      await journeyStepOpened(orgId, donorId, plan, step);
+      return plan.id;
     }
   }
-  if (steps.some(s => s.status === "open")) return plan.id;   // still working on one
+  if (holder) return holder.plan.id;
 
-  const nextSeq = PL.nextPendingSeq(steps);
-  if (nextSeq == null) {
-    // Every step is done or skipped — the plan is finished, and that is a fact
-    // about the plan rather than an outcome anybody has to record.
-    await run("UPDATE cultivation_plans SET status='done', closed_at=NOW() WHERE id=? AND status='active'", [plan.id]);
-    return plan.id;
-  }
-  const step = steps.find(s => Number(s.seq) === Number(nextSeq));
   const opened = await withTransaction(async client => openThreadTx(client, {
     orgId, donorId,
     step: { type: step.step_type, label: step.label, due: step.due_date },
@@ -11338,8 +11459,19 @@ async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, toda
   // ON CONFLICT is the arbiter, never a check-then-insert). The step waits.
   if (!opened) return plan.id;
   await run("UPDATE cultivation_plan_steps SET status='open', thread_id=? WHERE id=? AND status='pending'", [opened.id, step.id]);
-  await journeyTemplateDraft(orgId, donorId, step).catch(e => console.error("[journey] template draft:", e.message));
+  await journeyStepOpened(orgId, donorId, plan, step);
   return plan.id;
+}
+
+// A step that opens lands in three places: the Thread (its thread), the
+// Calendar (calendar.js reads the step and the thread as one item), and the
+// person's timeline, one line per step, here. Its template draft, if any, is
+// written for review.
+async function journeyStepOpened(orgId, donorId, plan, step) {
+  await TL.timelineLine({ orgId, donorId, actorId: JOURNEY_ACTOR.id, actorName: JOURNEY_ACTOR.name,
+    note: `Journey step: ${step.label}, due ${step.due_date} (${plan.template_name}).`,
+    key: `journey-step:${step.id}`, metadata: { via: "journey_step", step_id: step.id, plan_id: plan.id } });
+  await journeyTemplateDraft(orgId, donorId, step).catch(e => console.error("[journey] template draft:", e.message));
 }
 
 // EMAIL-1 — A STEP THAT NAMES A TEMPLATE GETS ITS WORDS WRITTEN, NOT SENT.
@@ -11437,7 +11569,10 @@ registerJourneyEngine(maybeStartJourney);
 async function runJourneySweep(onlyOrgId = null) {
   const orgs = await query(
     `SELECT DISTINCT org_id FROM cultivation_templates
-      WHERE journey_enabled=true AND archived_at IS NULL AND trigger_key IN ('joined_group','giving_anniversary','birthday')
+      WHERE journey_enabled=true AND archived_at IS NULL
+        AND trigger_key IN ('joined_group','giving_anniversary','birthday',
+                            'membership_ending','membership_lapsed','recurring_failed','recurring_cancelled',
+                            'card_expiring','volunteer_hours','grant_awarded','p2p_goal')
         ${onlyOrgId ? "AND org_id = ?" : ""}`, onlyOrgId ? [onlyOrgId] : []);
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
@@ -11479,10 +11614,116 @@ async function runJourneySweep(onlyOrgId = null) {
           if (out && out.started) fired++;
         }
       }
+      // JOURNEYS-3 — memberships, monthly gifts, cards, hours, grants, pages.
+      fired += await runLifecycleTriggers(orgId, today);
     } catch (e) { console.error(`[journey] sweep ${orgId}:`, e.message); }
   }
   return fired;
 }
+// ── JOURNEYS-3 · THE MOMENTS A SMALL TEAM MISSES ───────────────────────────
+// One definition per trigger of who it touches now, and the event each one is
+// about. The hourly sweep fires them; "apply to people who already qualify"
+// reads the same rows, so the offer and the trigger are one definition.
+// `windowDays` is how far back an event still counts (the sweep looks back a
+// fortnight, so a missed hour never loses one; the offer uses its own days).
+// Everybody is a live record who may be contacted.
+const LIVE_PERSON = `d.deleted_at IS NULL AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE`;
+async function lifecycleRows(orgId, key, today, windowDays = 14) {
+  const J = await journeyMod();
+  const w = Math.max(1, Math.min(365, Number(windowDays) || 14));
+  const P = (sql, params) => query(sql, params).catch(e => { console.error(`[journey] ${key}:`, e.message); return []; });
+  if (key === "membership_ending") {
+    return P(`SELECT m.donor_id, 'membership_ending:' || m.id || ':' || m.expires_on AS event_key
+                FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND ${LIVE_PERSON}
+               WHERE m.org_id=? AND m.status IN ('active','grace') AND COALESCE(m.expires_on,'') <> ''
+                 AND m.expires_on::date BETWEEN ?::date AND ?::date + 30`, [orgId, today, today]);
+  }
+  if (key === "membership_lapsed") {
+    return P(`SELECT m.donor_id, 'membership_lapsed:' || m.id || ':' || m.expires_on AS event_key
+                FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND ${LIVE_PERSON}
+               WHERE m.org_id=? AND m.status NOT IN ('cancelled','canceled') AND COALESCE(m.expires_on,'') <> ''
+                 AND m.expires_on::date < ?::date AND m.expires_on::date >= ?::date - ?::int
+                 AND NOT EXISTS (SELECT 1 FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id AND m2.id<>m.id
+                                   AND m2.status IN ('active','grace')
+                                   AND (COALESCE(m2.expires_on,'') = '' OR m2.expires_on::date >= ?::date))`,
+      [orgId, today, today, w, today]);
+  }
+  if (key === "recurring_failed") {
+    return P(`SELECT rs.donor_id, 'recurring_failed:' || rs.id || ':' || COALESCE(to_char(rs.first_failed_at, 'YYYY-MM-DD'), '') AS event_key
+                FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
+               WHERE rs.org_id=? AND rs.status IN ('past_due','failed','unpaid','recovering')
+                 AND rs.last_failed_at IS NOT NULL AND rs.last_failed_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "recurring_cancelled") {
+    return P(`SELECT rs.donor_id, 'recurring_cancelled:' || rs.id AS event_key
+                FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
+               WHERE rs.org_id=? AND rs.status IN ('canceled','cancelled')
+                 AND rs.canceled_at IS NOT NULL AND rs.canceled_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "card_expiring") {
+    // "Next month" in the org's own calendar.
+    const [y, m] = String(today).slice(0, 7).split("-").map(Number);
+    const ny = m === 12 ? y + 1 : y, nm = m === 12 ? 1 : m + 1;
+    return P(`SELECT rs.donor_id, 'card_expiring:' || rs.id || ':' || ?::text AS event_key
+                FROM recurring_subscriptions rs JOIN donors d ON d.id=rs.donor_id AND d.org_id=rs.org_id AND ${LIVE_PERSON}
+               WHERE rs.org_id=? AND rs.status = ANY(?::text[]) AND rs.card_exp_year=? AND rs.card_exp_month=?`,
+      [`${ny}-${String(nm).padStart(2, "0")}`, orgId, GR.ACTIVE_RECURRING_STATUSES, ny, nm]);
+  }
+  if (key === "volunteer_hours") {
+    const rows = await P(
+      `SELECT v.person_id AS donor_id,
+              COALESCE(SUM(v.hours) FILTER (WHERE v.date::date < ?::date - ?::int), 0)::float AS before,
+              COALESCE(SUM(v.hours), 0)::float AS after
+         FROM volunteer_shifts v JOIN donors d ON d.id=v.person_id AND d.org_id=v.org_id AND ${LIVE_PERSON}
+        WHERE v.org_id=? AND COALESCE(v.date,'') <> '' GROUP BY v.person_id HAVING SUM(v.hours) >= ?`,
+      [today, w, orgId, J.HOUR_MILESTONES[0]]);
+    return rows.map(r => {
+      const crossed = J.HOUR_MILESTONES.filter(m => r.before < m && r.after >= m);
+      return crossed.length ? { donor_id: r.donor_id, event_key: `volunteer_hours:${crossed[crossed.length - 1]}`, crossed } : null;
+    }).filter(Boolean);
+  }
+  if (key === "first_event") {
+    return P(`SELECT ea.donor_id, 'first_event' AS event_key
+                FROM event_attendees ea JOIN events e ON e.id=ea.event_id
+                JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
+               WHERE ea.org_id=? AND lower(coalesce(ea.status,'')) = 'attended'
+               GROUP BY ea.donor_id
+              HAVING MIN(COALESCE(e.date::date, ea.created_at::date)) >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "grant_awarded") {
+    return P(`SELECT g.funder_donor_id AS donor_id, 'grant:' || g.id AS event_key
+                FROM grants g JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+               WHERE g.org_id=? AND g.status='awarded' AND g.awarded_at IS NOT NULL
+                 AND g.awarded_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "p2p_goal") {
+    return P(`SELECT f.person_id AS donor_id, 'p2p_goal:' || f.id AS event_key
+                FROM peer_fundraisers f JOIN donors d ON d.id=f.person_id AND d.org_id=f.org_id AND ${LIVE_PERSON}
+               WHERE f.org_id=? AND COALESCE(f.personal_goal_amount, 0) > 0
+                 AND (SELECT COALESCE(SUM(x.amount),0) FROM gifts x
+                       WHERE x.org_id=f.org_id AND x.peer_fundraiser_id=f.id AND x.amount > 0) >= f.personal_goal_amount
+                 AND EXISTS (SELECT 1 FROM gifts x WHERE x.org_id=f.org_id AND x.peer_fundraiser_id=f.id
+                               AND COALESCE(x.date,'') <> '' AND x.date::date >= ?::date - ?::int)`, [orgId, today, w]);
+  }
+  return [];
+}
+async function runLifecycleTriggers(orgId, today) {
+  const J = await journeyMod();
+  const armed = await query(
+    `SELECT DISTINCT trigger_key FROM cultivation_templates
+      WHERE org_id=? AND journey_enabled=true AND archived_at IS NULL AND trigger_key = ANY(?::text[])`,
+    [orgId, J.SWEEP_TRIGGER_KEYS]);
+  let fired = 0;
+  for (const { trigger_key: key } of armed) {
+    for (const r of await lifecycleRows(orgId, key, today)) {
+      const out = await maybeStartJourney(orgId, r.donor_id, key, { today, eventKey: r.event_key, crossed: r.crossed })
+        .catch(e => { console.error(`[journey] ${key}:`, e.message); return null; });
+      if (out && out.started) fired += 1 + (out.also || []).length;
+    }
+  }
+  return fired;
+}
+
 // PARITY-3 6a — the morning look, run now for the caller's own org only, so
 // a birthday or anniversary journey can be checked without waiting an hour.
 // It starts only what the hourly sweep would start anyway (every plan holds
@@ -11541,6 +11782,10 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
   res.json({
     triggers: J.TRIGGERS,
     states: J.STATES,
+    // JOURNEYS-3 — Journey settings: the touch gap, and the milestones.
+    touchGapDays: await journeyTouchGap(req.user.orgId),
+    touchGap: { min: J.TOUCH_GAP_MIN, max: J.TOUCH_GAP_MAX, default: J.TOUCH_GAP_DEFAULT },
+    hourMilestones: J.HOUR_MILESTONES,
     groups: groupOpts,
     funds: fundOpts.map(f => ({ id: f.id, name: f.name })),
     campaigns: campaignOpts.map(c => ({ id: c.id, name: c.name })),
@@ -11575,6 +11820,7 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       completed: Number((byTpl.get(t.id) || {}).completed) || 0,
       exited: Number((byTpl.get(t.id) || {}).exited) || 0,
       triggerFilters: t.trigger_filters || {},
+      exclusive: !!t.exclusive,
       state: J.journeyState({ enabled: !!t.journey_enabled, everEnabled: !!t.ever_enabled,
         archived: !!t.archived_at, everIn: Number((byTpl.get(t.id) || {}).ever) || 0 }),
     })),
@@ -11680,7 +11926,17 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     audience: b.audience,
     triggerFilters: b.triggerFilters,
     steps: Array.isArray(b.steps) && b.steps.length ? b.steps : (preset && preset.steps),
+    exclusive: b.exclusive !== undefined ? b.exclusive === true : !!(preset && preset.exclusive),
   };
+  // JOURNEYS-3 — a ready-made step that names an EMAIL-1 starter drafts from
+  // the org's own copy of that email, saved from the starter if it has none.
+  if (Array.isArray(input.steps)) {
+    input.steps = await Promise.all(input.steps.map(async st => {
+      if (!st || !st.starter || st.draft) return st;
+      const tid = await require("./emailTemplates").ensureStarterTemplate(req.user.orgId, st.starter, actor(req)).catch(() => null);
+      return tid ? { ...st, draft: `template:${tid}` } : st;
+    }));
+  }
   const v = J.validateJourney(input);
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
   // FIX-19: a step owned by a named person names an active user of this org.
@@ -11692,18 +11948,18 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
 
   const id = "ct_" + uuid().slice(0, 10);
   await run(
-    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,ever_enabled)
-     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?,?::jsonb,?)`,
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,ever_enabled,exclusive)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?,?::jsonb,?,?)`,
     [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
      JSON.stringify(v.audience),
      preset ? preset.key : null,
      // ARMED ONLY IF ASKED. Creating a journey and having it start firing at
      // people in the same breath is not a thing anybody wants by surprise.
-     b.enabled === true, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {}), b.enabled === true]);
+     b.enabled === true, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {}), b.enabled === true, v.exclusive]);
   if (b.enabled === true) await baselineJourneyGroup(req.user.orgId, v);
   const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [id, req.user.orgId]);
   res.status(201).json({ id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
-    steps: v.steps, audience: v.audience, enabled: !!row.journey_enabled, touches: J.touchesSentence(v.steps) });
+    steps: v.steps, audience: v.audience, enabled: !!row.journey_enabled, exclusive: !!row.exclusive, touches: J.touchesSentence(v.steps) });
 }));
 
 // ── FIX-5 item 5 · DUPLICATE A WHOLE JOURNEY ─────────────────────────────
@@ -11730,10 +11986,10 @@ app.post("/journeys/:id/duplicate", requireAuth, requireAdmin, checkWriteAccess,
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
   const id = "ct_" + uuid().slice(0, 10);
   await run(
-    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters)
-     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?,?::jsonb)`,
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name,trigger_filters,exclusive)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?,?::jsonb,?)`,
     [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
-     JSON.stringify(v.audience), cur.preset_key, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {})]);
+     JSON.stringify(v.audience), cur.preset_key, actor(req).id, actor(req).name, JSON.stringify(v.triggerFilters || {}), !!cur.exclusive]);
   res.status(201).json({ id, name: v.name, copiedFrom: cur.id, enabled: false,
     sentence: `"${v.name}" is a copy of "${cur.name}" and it is off. Nothing starts until you turn it on.` });
 }));
@@ -11827,13 +12083,14 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const refused = await journeyRefsRefused(req.user.orgId, v);
   if (refused) return res.status(404).json(refused);
   const enabledNow = b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled;
+  const exclusiveNow = b.exclusive !== undefined ? b.exclusive === true : !!cur.exclusive;
   await run(
     `UPDATE cultivation_templates SET name=?, description=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
        priority=?, audience=?::jsonb, journey_enabled=?, trigger_filters=?::jsonb,
-       ever_enabled = (ever_enabled OR ?), updated_at=NOW() WHERE id=? AND org_id=?`,
+       ever_enabled = (ever_enabled OR ?), exclusive=?, updated_at=NOW() WHERE id=? AND org_id=?`,
     [v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
      JSON.stringify(v.audience),
-     enabledNow, JSON.stringify(v.triggerFilters || {}), enabledNow,
+     enabledNow, JSON.stringify(v.triggerFilters || {}), enabledNow, exclusiveNow,
      req.params.id, req.user.orgId]);
   if (enabledNow) await baselineJourneyGroup(req.user.orgId, v);
 
@@ -11867,7 +12124,7 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   }
 
   res.json({ id: req.params.id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
-    steps: v.steps, audience: v.audience, touches: J.touchesSentence(v.steps),
+    steps: v.steps, audience: v.audience, exclusive: exclusiveNow, touches: J.touchesSentence(v.steps),
     movedPeople, movedSteps: moved,
     note: b.retimeExisting === true
       ? `${movedPeople} ${movedPeople === 1 ? "person's" : "people's"} steps still to come were moved to the new timing. Steps already done were left alone.`
@@ -11876,6 +12133,49 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 
 // Who would qualify right now — the count the "apply to people who already
 // qualify" offer opens. A GET, and it writes nothing.
+//
+// JOURNEYS-3 · COUNTED HONESTLY BEFORE THE CLICK. One read of who qualifies,
+// one read of the journeys they are already in, and the split is done here:
+// who will join, who is already in this one, who is in a journey marked "only
+// one of these at a time" that ranks the same or higher (they stay), and who
+// is in other journeys (they join too, spaced a week apart, unless she says
+// leave them where they are). The apply route uses the same split, so the
+// button's number and the result cannot disagree.
+async function applySplit(orgId, t, days, audience, joinOthers = true) {
+  const ids = (await qualifyingDonors(orgId, t, days, audience)).map(r => r.id);
+  const out = { qualify: ids.length, willJoin: [], alreadyIn: [], blocked: [], inOthers: [] };
+  if (!ids.length) return out;
+  const [people, plans] = await Promise.all([
+    query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL`, [orgId, ids]),
+    query(`SELECT p.donor_id, p.template_id, p.template_name, p.priority, COALESCE(ct.exclusive, false) AS exclusive
+             FROM cultivation_plans p LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
+            WHERE p.org_id=? AND p.status='active' AND p.donor_id = ANY(?::text[])`, [orgId, ids]),
+  ]);
+  const nameOf = new Map(people.map(d => [d.id, d.name]));
+  const byDonor = new Map();
+  for (const p of plans) (byDonor.get(p.donor_id) || byDonor.set(p.donor_id, []).get(p.donor_id)).push(p);
+  for (const id of ids) {
+    if (!nameOf.has(id)) continue;
+    const mine = byDonor.get(id) || [];
+    const row = { id, name: nameOf.get(id), journeys: mine.map(p => p.template_name) };
+    if (mine.some(p => p.template_id === t.id)) { out.alreadyIn.push(row); continue; }
+    const higher = t.exclusive && mine.find(p => p.exclusive && Number(p.priority) >= Number(t.priority));
+    if (higher) { out.blocked.push({ ...row, journeys: [higher.template_name] }); continue; }
+    if (mine.length) { out.inOthers.push(row); if (joinOthers) out.willJoin.push(row); continue; }
+    out.willJoin.push(row);
+  }
+  return out;
+}
+function applySentence(split, joinOthers) {
+  const n = k => `${k} ${k === 1 ? "person" : "people"}`;
+  const parts = [`${split.qualify} qualify.`, `${split.willJoin.length} will join.`];
+  if (split.alreadyIn.length) parts.push(`${n(split.alreadyIn.length)} ${split.alreadyIn.length === 1 ? "is" : "are"} already in it.`);
+  if (split.blocked.length) parts.push(`${split.blocked.length} ${split.blocked.length === 1 ? "is" : "are"} already in a journey that ranks higher.`);
+  if (split.inOthers.length) parts.push(joinOthers
+    ? `${split.inOthers.length} ${split.inOthers.length === 1 ? "is" : "are"} in another journey and will join too, with touches spaced out.`
+    : `${split.inOthers.length} ${split.inOthers.length === 1 ? "is" : "are"} in another journey and will be left where they are.`);
+  return parts.join(" ");
+}
 app.get("/journeys/:id/qualifying", requireAuth, wrap(async (req, res) => {
   const J = await journeyMod();
   const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
@@ -11889,13 +12189,16 @@ app.get("/journeys/:id/qualifying", requireAuth, wrap(async (req, res) => {
   let audience = {};
   try { audience = J.validateAudience(req.query.audience ? JSON.parse(String(req.query.audience)) : {}); }
   catch { audience = {}; }
-  const rows = await qualifyingDonors(req.user.orgId, t, days, audience);
-  res.json({ journeyId: t.id, name: t.name, days, count: rows.length, audience,
-    donorIds: rows.map(r => r.id).slice(0, 2000),
+  const joinOthers = String(req.query.joinOthers || "true") !== "false";
+  const split = await applySplit(req.user.orgId, t, days, audience, joinOthers);
+  res.json({ journeyId: t.id, name: t.name, days, audience, joinOthers,
+    count: split.qualify, willJoin: split.willJoin.length,
+    donorIds: split.willJoin.map(r => r.id).slice(0, 2000),
+    alreadyIn: split.alreadyIn.slice(0, 200), blocked: split.blocked.slice(0, 200), inOthers: split.inOthers.slice(0, 200),
     audienceSentence: J.audienceSentence(audience),
     filters: J.AUDIENCE_FILTERS,
-    sentence: `${rows.length} ${rows.length === 1 ? "person" : "people"} already qualify — `
-      + `their trigger happened in the last ${days} days and they are not in another journey that outranks this one.` });
+    sentence: applySentence(split, joinOthers),
+    window: `Their trigger happened in the last ${days} days.` });
 }));
 
 // ── THREAD-2b 1 · THE LIVE PREVIEW, ON A REAL DONOR ─────────────────────
@@ -12042,8 +12345,9 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
 
   // Somebody already in a plan is the one case where this cannot just say
   // yes, so it says so here rather than at the confirm.
-  const [open] = await query(
-    "SELECT template_name FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donor.id]);
+  const inNow = await query(
+    "SELECT template_id, template_name FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active' ORDER BY priority DESC", [orgId, donor.id]);
+  const open = inNow.find(p => p.template_id === t.id) || null;
 
   res.json({
     journeyId: t.id, name: t.name, donorId: donor.id, donorName: donor.name,
@@ -12051,6 +12355,8 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
     firstStep: first ? { label: first.label, dueDate: first.dueDate, type: first.type } : null,
     steps: steps.map(s => ({ seq: s.seq, label: s.label, dueDate: s.dueDate })),
     alreadyIn: open ? open.template_name : null,
+    // JOURNEYS-3 — the other journeys they are in; they can be in this one too.
+    alsoIn: inNow.filter(p => p.template_id !== t.id).map(p => p.template_name),
     sentence: first
       ? `${donor.name} would start with "${first.label}", due ${first.dueDate}. Nothing is sent. Every step waits for you.`
       : "That journey has no steps yet.",
@@ -12293,6 +12599,21 @@ async function qualifyingDonorsByTrigger(orgId, t, days, audience = {}) {
           AND m.joined_on IS NOT NULL AND m.joined_on <> '' AND m.joined_on::date >= ${cut}${a.sql}`,
       [orgId, ...a.params]).catch(() => []);
   }
+  // JOURNEYS-3 — the new triggers look back with the sweep's own definition.
+  const J = await journeyMod();
+  if (J.SWEEP_TRIGGER_KEYS.includes(trigger) || trigger === "first_event") {
+    const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    const tf = t.trigger_filters || {};
+    let ids = [...new Set((await lifecycleRows(orgId, trigger, today, days))
+      .filter(r => trigger !== "volunteer_hours" || !tf.hours || (r.crossed || []).includes(Number(tf.hours)))
+      .map(r => r.donor_id))];
+    if (ids.length && a.sql) {
+      const keep = new Set((await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.id = ANY(?::text[])${a.sql}`,
+        [orgId, ids, ...a.params])).map(r => r.id));
+      ids = ids.filter(id => keep.has(id));
+    }
+    return ids.map(id => ({ id }));
+  }
   // stage_change and lapsed_return are events rather than states: there is no
   // honest way to look backwards for them, so the offer says none rather than
   // guessing. They still fire forwards, which is what they are for.
@@ -12308,14 +12629,14 @@ app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, 
     [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
 
+  const joinOthers = !(req.body && req.body.joinOthers === false);
   let ids = Array.isArray(req.body && req.body.donorIds) ? req.body.donorIds.map(String) : null;
   if (!ids && req.body && req.body.allQualifying === true) {
     const days = Math.min(365, Math.max(1, Number(req.body.days) || 90));
-    // THE SAME AUDIENCE THE COUNT WAS TAKEN WITH. The confirm said a number;
-    // if this recomputed without the filters it would put a wider set of
-    // people into a journey than the sentence somebody agreed to.
+    // THE SAME AUDIENCE AND THE SAME SPLIT THE COUNT WAS TAKEN WITH. The
+    // confirm said a number; this puts in exactly the people behind it.
     const audience = J.validateAudience(req.body.audience || {});
-    ids = (await qualifyingDonors(req.user.orgId, t, days, audience)).map(r => r.id);
+    ids = (await applySplit(req.user.orgId, t, days, audience, joinOthers)).willJoin.map(r => r.id);
   }
   if (!ids || !ids.length) return res.status(400).json({ error: "no_donors", message: "Name who should go in, or ask for everyone who qualifies." });
   if (ids.length > 2000) return res.status(400).json({ error: "too_many", message: "That is more than 2,000 people at once. Narrow it first." });
@@ -12325,11 +12646,104 @@ app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, 
     // The engine is told the journey's OWN trigger, so a by-hand apply of a
     // gift_over journey still records the trigger it belongs to. `forceId`
     // pins the journey: this is a person choosing one, not a rule picking.
-    const r = await maybeStartJourney(req.user.orgId, id, "by_hand", { forceJourneyId: t.id });
+    const r = await maybeStartJourney(req.user.orgId, id, "by_hand", { forceJourneyId: t.id, joinOthers });
     (r.started ? out.started : out.skipped).push({ donorId: id, ...r });
   }
-  res.json({ journeyId: t.id, name: t.name, started: out.started.length,
-    skipped: out.skipped.length, detail: out });
+  const n = out.started.length;
+  res.json({ journeyId: t.id, name: t.name, started: n,
+    skipped: out.skipped.length, detail: out,
+    planIds: out.started.map(r => r.planId),
+    sentence: `${n} ${n === 1 ? "person" : "people"} joined ${t.name}.` });
+}));
+
+// JOURNEYS-3 · UNDO AN APPLY. Takes the plans that apply made back out: their
+// steps, the threads and review drafts their steps opened, their timeline
+// lines, and puts back any step another journey moved to make room and any
+// exclusive journey they replaced. Then each person's soonest remaining step
+// takes their thread again. Only plans of this journey, in this org, still
+// running.
+app.post("/journeys/:id/apply/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT id, name FROM cultivation_templates WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const want = Array.isArray(req.body && req.body.planIds) ? req.body.planIds.map(String).slice(0, 2000) : [];
+  const plans = want.length ? await query(
+    `SELECT * FROM cultivation_plans WHERE org_id=? AND template_id=? AND status='active' AND id = ANY(?::text[])`,
+    [orgId, t.id, want]) : [];
+  if (!plans.length) return res.status(404).json({ error: "nothing_to_undo", sentence: "Those people are no longer in it, so there is nothing to undo." });
+  const planIds = plans.map(p => p.id);
+  const steps = await query(`SELECT id, thread_id, status FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?::text[])`, [orgId, planIds]);
+  const stepIds = steps.map(s => s.id);
+  // Steps of OTHER journeys that moved to make room go back to their dates,
+  // and the lines that said they moved come off the timeline.
+  const movedIds = (await query(`SELECT id FROM cultivation_plan_steps WHERE org_id=? AND moved_by_plan_id = ANY(?::text[])`,
+    [orgId, planIds])).map(r => r.id);
+  if (movedIds.length) await run(`DELETE FROM interactions WHERE org_id=? AND created_by=? AND metadata->>'via'='journey_spacing'
+                                    AND metadata->>'step_id' = ANY(?::text[])`, [orgId, JOURNEY_ACTOR.id, movedIds]);
+  await run(`UPDATE cultivation_plan_steps SET due_date=moved_from, moved_from=NULL, moved_reason=NULL, moved_by_plan_id=NULL
+              WHERE org_id=? AND moved_by_plan_id = ANY(?::text[]) AND status='pending' AND moved_from IS NOT NULL`, [orgId, planIds]);
+  for (const s of steps.filter(x => x.status === "open" && x.thread_id)) {
+    await run(`DELETE FROM threads WHERE id=? AND org_id=? AND closed_at IS NULL`, [s.thread_id, orgId]);
+  }
+  if (stepIds.length) {
+    await run(`DELETE FROM milestone_drafts WHERE org_id=? AND milestone_key = ANY(?::text[]) AND status='pending_review'`,
+      [orgId, stepIds.map(id => `journey-step:${id}`)]);
+    await run(`DELETE FROM interactions WHERE org_id=? AND created_by=? AND metadata->>'step_id' = ANY(?::text[])`,
+      [orgId, JOURNEY_ACTOR.id, stepIds]);
+  }
+  const lineIds = plans.map(p => p.start_interaction_id).filter(Boolean);
+  if (lineIds.length) await run(`DELETE FROM interactions WHERE org_id=? AND id = ANY(?::text[]) AND created_by=?`, [orgId, lineIds, JOURNEY_ACTOR.id]);
+  // An exclusive journey these replaced is running again.
+  for (const p of plans.filter(x => x.replaced_plan_id)) {
+    await run(`UPDATE cultivation_plans SET status='active', closed_at=NULL, replaced_reason=NULL
+                WHERE id=? AND org_id=? AND status='abandoned'`, [p.replaced_plan_id, orgId]).catch(() => null);
+    await run(`UPDATE cultivation_plan_steps SET status='pending', closed_at=NULL, closed_by=NULL, closed_by_name=NULL, skip_reason=NULL, thread_id=NULL
+                WHERE plan_id=? AND org_id=? AND status='skipped' AND closed_by=?`, [p.replaced_plan_id, orgId, JOURNEY_ACTOR.id]);
+  }
+  await run(`DELETE FROM cultivation_plans WHERE org_id=? AND id = ANY(?::text[])`, [orgId, planIds]);
+  for (const donorId of [...new Set(plans.map(p => p.donor_id))]) {
+    await advanceCultivationPlan(orgId, donorId, { actorId: actor(req).id, actorName: actor(req).name });
+  }
+  if (req.audit) req.audit.entity("journey", t.id, t.name);
+  res.json({ journeyId: t.id, undone: plans.length,
+    sentence: `${plans.length} ${plans.length === 1 ? "person was" : "people were"} taken back out of ${t.name}.` });
+}));
+
+// JOURNEYS-3 · JOURNEY SETTINGS: the touch gap. No two steps from different
+// journeys land within this many days for one person. 7 by default.
+app.put("/journeys/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const J = await journeyMod();
+  const n = Number(req.body && req.body.touchGapDays);
+  if (!Number.isInteger(n) || n < J.TOUCH_GAP_MIN || n > J.TOUCH_GAP_MAX) {
+    return res.status(400).json({ error: "invalid_gap", sentence: `Pick a whole number of days from ${J.TOUCH_GAP_MIN} to ${J.TOUCH_GAP_MAX}.` });
+  }
+  await run(`UPDATE orgs SET journey_touch_gap_days=? WHERE id=?`, [n, req.user.orgId]);
+  res.json({ touchGapDays: n, sentence: `No more than one touch every ${n} ${n === 1 ? "day" : "days"} for anyone, across all their journeys.` });
+}));
+
+// JOURNEYS-3 · EVERY JOURNEY A PERSON IS IN, with the next step from each.
+// A GET, and it writes nothing.
+app.get("/donors/:id/journeys", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  if (!(await orgOwns("donors", req.params.id, orgId))) return res.status(404).json({ error: "Donor not found" });
+  const plans = await query(
+    `SELECT p.id, p.template_id, p.template_name, p.priority, p.applied_on, COALESCE(ct.exclusive, false) AS exclusive
+       FROM cultivation_plans p LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
+      WHERE p.org_id=? AND p.donor_id=? AND p.status='active' ORDER BY p.priority DESC, p.applied_on`, [orgId, req.params.id]);
+  const steps = plans.length ? await query(
+    `SELECT id, plan_id, seq, label, due_date, status, moved_reason FROM cultivation_plan_steps
+      WHERE org_id=? AND plan_id = ANY(?::text[]) ORDER BY seq`, [orgId, plans.map(p => p.id)]) : [];
+  res.json({
+    touchGapDays: await journeyTouchGap(orgId),
+    journeys: plans.map(p => {
+      const mine = steps.filter(s => s.plan_id === p.id);
+      const next = mine.find(s => s.status === "open") || mine.find(s => s.status === "pending") || null;
+      return { planId: p.id, journeyId: p.template_id, name: p.template_name, priority: p.priority, exclusive: !!p.exclusive,
+        enteredOn: p.applied_on, total: mine.length, done: mine.filter(s => s.status === "done" || s.status === "skipped").length,
+        next: next ? { id: next.id, seq: next.seq, label: next.label, dueDate: next.due_date,
+                       open: next.status === "open", movedReason: next.moved_reason || null } : null };
+    }),
+  });
 }));
 
 // POST /donors/:id/plan — apply a template, dates offset from today.
@@ -12407,8 +12821,11 @@ async function readPlan(orgId, planId) {
 app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
   const [p] = await query(
-    `SELECT id FROM cultivation_plans WHERE org_id=? AND donor_id=?
-      ORDER BY (status='active') DESC, created_at DESC LIMIT 1`, [req.user.orgId, req.params.id]);
+    `SELECT p.id FROM cultivation_plans p WHERE p.org_id=? AND p.donor_id=?
+      ORDER BY (p.status='active') DESC,
+               -- JOURNEYS-3: of several, the one whose step holds their thread
+               EXISTS (SELECT 1 FROM cultivation_plan_steps s WHERE s.plan_id=p.id AND s.status='open') DESC,
+               p.priority DESC, p.created_at DESC LIMIT 1`, [req.user.orgId, req.params.id]);
   if (!p) return res.json({ plan: null });
   res.json({ plan: await readPlan(req.user.orgId, p.id) });
 }));
@@ -24114,6 +24531,13 @@ async function logEventAttendance(orgId, attendee, event, status, who, day) {
   if (status === "attended") {
     await maybeStartJourney(orgId, attendee.donor_id, "attended_event", { eventId: event.id })
       .catch(e => console.error("[journey] attended_event:", e.message));
+    // JOURNEYS-3 — the first event they ever came to starts its own journey.
+    const [n] = await query(`SELECT COUNT(DISTINCT event_id)::int n FROM event_attendees
+                              WHERE org_id=? AND donor_id=? AND lower(coalesce(status,''))='attended'`, [orgId, attendee.donor_id]);
+    if (Number(n && n.n) === 1) {
+      await maybeStartJourney(orgId, attendee.donor_id, "first_event", { eventId: event.id })
+        .catch(e => console.error("[journey] first_event:", e.message));
+    }
   }
   return true;
 }

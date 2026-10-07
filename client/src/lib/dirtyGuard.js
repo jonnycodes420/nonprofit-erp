@@ -21,7 +21,7 @@ export function anyDirty() {
 // forms unmount with the navigation).
 export function confirmIfDirty(message) {
   if (!holders.size) return true;
-  const ok = window.confirm(message || "You have unsaved changes — leave without saving them?");
+  const ok = window.confirm(message || "You have unsaved changes, leave without saving them?");
   if (ok) holders.clear();
   return ok;
 }

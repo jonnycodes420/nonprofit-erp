@@ -33,9 +33,9 @@ const STATUS_META = {
 };
 
 // FIX-2 finding 10 — the one formatter, never a Date in some timezone.
-const fmtDate = iso => (iso && displayDate(iso)) || "—";
+const fmtDate = iso => (iso && displayDate(iso)) || "Not set";
 const per = interval => interval === "year" ? "/yr" : "/mo";
-const money = n => n == null ? "—" : fmtFull(n);
+const money = n => n == null ? "Not set" : fmtFull(n);
 
 function StatusPill({ status }) {
   const m = STATUS_META[status] || STATUS_META.active;
@@ -60,7 +60,7 @@ function MovementSummary({ movement }) {
       <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, padding: "3px 0" }}>
         <span style={{ fontSize: 12.5, color: T.ink2 }}>{label}{count ? <span style={{ color: T.ink3 }}> · {count}</span> : null}</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: amt ? color : T.ink3, fontVariantNumeric: "tabular-nums" }}>
-          {amt ? `${sign}${fmtFull(amt)}` : "—"}
+          {amt ? `${sign}${fmtFull(amt)}` : "Not set"}
         </span>
       </div>
     );
@@ -114,7 +114,7 @@ function MovementSummary({ movement }) {
       <div>
         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Sustainer retention · 12 months</div>
         <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.2, margin: "6px 0 2px" }}>
-          {movement.retention12?.rate != null ? `${movement.retention12.rate}%` : "—"}
+          {movement.retention12?.rate != null ? `${movement.retention12.rate}%` : "Not set"}
         </div>
         {movement.retention12?.rate != null ? (
           <div style={{ fontSize: 12, color: T.ink3 }}>{movement.retention12.retained} of {movement.retention12.cohortSize} still giving a year in</div>
@@ -245,7 +245,7 @@ function ProposeModal({ sub, funds, presetKind, onClose, onDone }) {
   return (
     <Modal title={isNew ? "Propose a recurring gift" : "Propose a change"} onClose={onClose}>
       <p style={{ margin: "0 0 6px", fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
-        The donor completes this from an email — nothing changes, and no money moves, until they do. The link expires in 14 days.
+        The donor completes this from an email, nothing changes, and no money moves, until they do. The link expires in 14 days.
       </p>
       {isNew && (
         <>
@@ -302,14 +302,14 @@ function ProposeModal({ sub, funds, presetKind, onClose, onDone }) {
         <>
           <label style={labelStyle}>Fund designation (optional)</label>
           <select style={inputStyle} value={fundId} onChange={e => setFundId(e.target.value)}>
-            <option value="">General — no designation</option>
+            <option value="">General, no designation</option>
             {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </>
       )}
       {kind === "card_update" && (
         <p style={{ margin: "12px 0 0", fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
-          The donor updates their card securely on Stripe. Card details never touch Steward — or you.
+          The donor updates their card securely on Stripe. Card details never touch Steward, or you.
         </p>
       )}
       {err && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: T.terra700, background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 8, padding: "8px 12px" }}>{err}</p>}
@@ -360,7 +360,7 @@ function FundModal({ sub, funds, onClose, onConfirm }) {
       </p>
       <label style={labelStyle}>Fund</label>
       <select style={inputStyle} value={fundId} onChange={e => setFundId(e.target.value)}>
-        <option value="">General — no designation</option>
+        <option value="">General, no designation</option>
         {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
       </select>
       {err && <p style={{ margin: "12px 0 0", fontSize: 12.5, color: T.terra700 }}>{err}</p>}
@@ -502,7 +502,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
         )}
       </div>
       {stopped.map(row)}
-      {giving.length > 0 && <div style={{ fontSize: 11, color: T.ink3, padding: "8px 10px 6px", borderTop: `1px solid ${T.bg2}` }}>{giving.length} more imported sustainer{giving.length === 1 ? "" : "s"} still gave recently — reconnect them before their card would have renewed.</div>}
+      {giving.length > 0 && <div style={{ fontSize: 11, color: T.ink3, padding: "8px 10px 6px", borderTop: `1px solid ${T.bg2}` }}>{giving.length} more imported sustainer{giving.length === 1 ? "" : "s"} still gave recently, reconnect them before their card would have renewed.</div>}
       {giving.map(row)}
     </div>
   );
@@ -784,7 +784,7 @@ export function RecurringView({ onNavigate, isReadOnly }) {
 
       {subs.length === 0 && invitations.length === 0 ? (
         <EmptyState title="No recurring gifts yet."
-          line="When a donor starts a recurring gift — or you propose one and they accept — every subscription lands here: who, how much, what it supports, and which cards need rescue." />
+          line="When a donor starts a recurring gift, or you propose one and they accept, every subscription lands here: who, how much, what it supports, and which cards need rescue." />
       ) : (
         <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
@@ -814,10 +814,10 @@ export function RecurringView({ onNavigate, isReadOnly }) {
                   </td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: s.fundName ? T.ink2 : T.ink3 }}>{s.fundName || "General"}</td>
                   <td style={{ padding: "10px 10px" }}><StatusPill status={s.displayStatus} /></td>
-                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" || s.displayStatus === "paused" ? "—" : fmtDate(s.nextChargeAt)}</td>
+                  <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{s.displayStatus === "canceled" || s.displayStatus === "paused" ? "Not set" : fmtDate(s.nextChargeAt)}</td>
                   <td style={{ padding: "10px 10px", fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>{fmtDate(s.startedAt)}</td>
                   <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 12.5, color: T.ink2, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
-                    {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "—"}
+                    {s.linkedGiftCount > 0 ? `${fmtFull(s.totalGiven)} · ${s.linkedGiftCount}` : "Not set"}
                   </td>
                   <td style={{ padding: "10px 10px", textAlign: "right" }}>
                     <ActionsMenu sub={s} isReadOnly={isReadOnly} onAction={doAction} />
@@ -894,7 +894,7 @@ export function DashboardRecurring({ onNavigate }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {nothing && (
         <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "18px 20px", fontSize: 13.5, color: T.ink2 }}>
-          Nothing needs you — no failed cards, nothing about to lapse, no proposals waiting on a donor.
+          Nothing needs you, no failed cards, nothing about to lapse, no proposals waiting on a donor.
         </div>
       )}
       {!nothing && stoppedFromFile > 0 && (
@@ -914,7 +914,7 @@ export function DashboardRecurring({ onNavigate }) {
         {section("Waiting on a donor", counts.pendingProposals, T.gold300,
           data.pendingProposals.map(p => donorRow(p, `${p.kind === "create" ? "new gift invitation" : p.kind === "card_update" ? "card update" : "proposed change"} · expires ${fmtDate(p.expiresAt)}`)))}
         {section("Sustainer anniversaries", counts.anniversaries, T.gold300,
-          data.anniversaries.map(a => donorRow(a, `${a.years} year${a.years === 1 ? "" : "s"} on ${fmtDate(a.date)} · ${money(a.amount)}${per(a.interval)} — worth a note`)))}
+          data.anniversaries.map(a => donorRow(a, `${a.years} year${a.years === 1 ? "" : "s"} on ${fmtDate(a.date)} · ${money(a.amount)}${per(a.interval)} worth a note`)))}
       </div>
       <div>
         <button onClick={() => onNavigate("fundraising", { frSection: "recurring" })}

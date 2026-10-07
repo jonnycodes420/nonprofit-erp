@@ -215,7 +215,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             {done.payments > 0 && <>{done.payments} line{done.payments === 1 ? "" : "s"} recorded as {done.payments === 1 ? "a payment" : "payments"}, out of every giving total. </>}
             {done.installmentsApplied > 0 && <>{done.installmentsApplied} pledge instalment{done.installmentsApplied === 1 ? "" : "s"} applied. </>}
             The slip said {cents(done.slipCents)} and the lines come to {cents(done.giftCents + done.notGiftCents)}.
-            {done.footed ? " It foots." : " The database and the plan disagree — open the deposit on the Imports page."}
+            {done.footed ? " It foots." : " The database and the plan disagree, open the deposit on the Imports page."}
             {/* BUILD-95 — the photographs, said out loud. A cheque whose image
                 would not store is a recorded gift with no evidence, and she is
                 holding the cheque RIGHT NOW, which is the only moment taking it

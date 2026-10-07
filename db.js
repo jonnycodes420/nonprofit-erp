@@ -2822,10 +2822,13 @@ async function runSchemaInit(pool) {
       closed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
-  // ONE ACTIVE PLAN PER PERSON. Two plans would each be trying to hold the
-  // donor's single open thread, and whichever lost would sit pending forever
-  // looking like a bug.
-  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_one_active ON cultivation_plans (org_id, donor_id) WHERE status = 'active'`);
+  // ONE ACTIVE PLAN PER PERSON PER JOURNEY. JOURNEYS-3: a person may be in
+  // several journeys at once (their steps are spaced a week apart and take the
+  // donor's one open thread in turn, soonest first), but never in the same
+  // journey twice. The old one-per-person index is dropped below.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_one_active_per_journey
+                    ON cultivation_plans (org_id, donor_id, (COALESCE(template_id, ''))) WHERE status = 'active'`);
+  await pool.query(`DROP INDEX IF EXISTS cultivation_plans_one_active`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_plans_org ON cultivation_plans (org_id, status)`);
 
   await pool.query(`
@@ -6808,6 +6811,19 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS trigger_event TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_event_once
                     ON cultivation_plans (org_id, template_id, donor_id, trigger_event) WHERE trigger_event IS NOT NULL`);
+  // JOURNEYS-3 · several journeys at once. `exclusive` marks the journeys a
+  // person may be in only one of at a time (the higher one wins, as before).
+  // The touch gap is the org's: no two steps from different journeys within
+  // this many days of each other. A step moved to keep that gap remembers
+  // the date it had, why, and which journey moved it, so an Undo can put it
+  // back exactly. The plan remembers its timeline line for the same reason.
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS exclusive BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS journey_touch_gap_days INTEGER NOT NULL DEFAULT 7`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_from TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_reason TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS moved_by_plan_id TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS start_interaction_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_plans_donor_active ON cultivation_plans (org_id, donor_id) WHERE status = 'active'`);
   // The daily sweep's own memory of who was in each dynamic group yesterday,
   // so "joins a group" can fire for a rule-based group. It is a cache of the
   // last sweep, never the membership itself (that is always the live rule).

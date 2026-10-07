@@ -23,7 +23,7 @@ export function AnnualFund({data}) {
   const getForecast=async()=>{
     setAiLoading(true);setAiText("");
     await askClaude(`You are a nonprofit development strategist. Data-driven, actionable. Max 250 words.`,
-      `Annual fund forecast and strategy for ${data.org.name}.\n\nYear: ${year}\nGoal: ${fund?.goal?fmtFull(fund.goal):"not set"}\nRaised so far: ${fmtFull(fund?.totalRaised||0)}\nGoal progress: ${fund?.goalPct||0}%\nProjected year-end: ${fmtFull(fund?.projectedTotal||0)}\nDonors this year: ${fund?.donors?.total||0} (${fund?.donors?.acquired||0} new, ${fund?.donors?.retained||0} retained)\nRetention rate: ${fund?.donors?.retentionRate||0}%\nAvg gift: ${fmtFull(fund?.avgGift||0)}\nDonors who returned after a gap: ${fund?.recovered||0}\nMonthly: ${(fund?.monthly||[]).map(m=>`${m.month}: ${fmt(m.raised)}`).join(", ")}\n\nProvide:\n1. Forecast — will we hit goal? What's the gap?\n2. Top 2-3 strategies to close any gap before year-end\n3. What the retention rate signals\n4. One bold move to consider`,
+      `Annual fund forecast and strategy for ${data.org.name}.\n\nYear: ${year}\nGoal: ${fund?.goal?fmtFull(fund.goal):"not set"}\nRaised so far: ${fmtFull(fund?.totalRaised||0)}\nGoal progress: ${fund?.goalPct||0}%\nProjected year-end: ${fmtFull(fund?.projectedTotal||0)}\nDonors this year: ${fund?.donors?.total||0} (${fund?.donors?.acquired||0} new, ${fund?.donors?.retained||0} retained)\nRetention rate: ${fund?.donors?.retentionRate||0}%\nAvg gift: ${fmtFull(fund?.avgGift||0)}\nDonors who returned after a gap: ${fund?.recovered||0}\nMonthly: ${(fund?.monthly||[]).map(m=>`${m.month}: ${fmt(m.raised)}`).join(", ")}\n\nProvide:\n1. Forecast, will we hit goal? What's the gap?\n2. Top 2-3 strategies to close any gap before year-end\n3. What the retention rate signals\n4. One bold move to consider`,
       chunk=>setAiText(chunk));
     setAiLoading(false);
   };
@@ -89,7 +89,7 @@ export function AnnualFund({data}) {
       </div>
 
       <Card>
-        <SectionLabel>Monthly Revenue — {year}</SectionLabel>
+        <SectionLabel>Monthly Revenue, {year}</SectionLabel>
         <div style={{display:"flex",alignItems:"flex-end",gap:4,height:140}}>
           {fund.monthly.map(m=>{
             const h=maxMonth>0?Math.round(m.raised/maxMonth*120):0;

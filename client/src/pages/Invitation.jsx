@@ -68,7 +68,7 @@ export function InvitationSection({ headline }) {
     if (sending) return;
     setErr("");
     if (!form.name.trim() || !form.email.trim() || !form.organization.trim()) {
-      setErr("Your name, email, and organization are all I need — the rest is optional.");
+      setErr("Your name, email, and organization are all I need, the rest is optional.");
       return;
     }
     setSending(true);
@@ -87,8 +87,8 @@ export function InvitationSection({ headline }) {
       setSent(true);
     } catch (ex) {
       setErr(ex.message === "Failed to fetch"
-        ? "Couldn't reach the server — please try again, or write to jonathan@stewardapp.dev."
-        : (errorMessage(ex, "Something went wrong — please try again.")));
+        ? "Couldn't reach the server, please try again, or write to jonathan@stewardapp.dev."
+        : (errorMessage(ex, "Something went wrong, please try again.")));
     } finally {
       setSending(false);
     }
@@ -112,7 +112,7 @@ export function InvitationSection({ headline }) {
           fontSize: 13, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase",
           color: C.gold, marginBottom: 18, fontFamily: "'DM Sans',system-ui,sans-serif",
         }}>
-          Founding partners — five organizations
+          Founding partners, five organizations
         </div>
         <h2 style={{
           fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400,
@@ -130,15 +130,14 @@ export function InvitationSection({ headline }) {
           locked for as long as they stay, and my direct line.
         </p>
         <p style={{ fontSize: 13.5, color: C.sage, marginBottom: 40, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-          Founding partner rate <strong style={{ color: C.cream }}>$199 a month</strong> —
-          below both published plans, and locked for as long as you stay.{" "}
+          Founding partner rate <strong style={{ color: C.cream }}>$199 a month</strong> below both published plans, and locked for as long as you stay.{" "}
           <a href="/pricing" style={{ color: C.cream, textDecoration: "underline", textUnderlineOffset: 3 }}>See pricing</a>
         </p>
 
         {sent ? (
           <div role="status" style={{ textAlign: "left", background: "rgba(240,237,230,0.04)", border: `1px solid ${C.gold}`, borderRadius: 10, padding: "30px 28px" }}>
             <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, color: C.cream, marginBottom: 12 }}>
-              Thank you — that's with me.
+              Thank you, that's with me.
             </div>
             <p style={{ fontSize: 15.5, color: C.sage, lineHeight: 1.75, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
               If your organization looks like a fit for the founding group,

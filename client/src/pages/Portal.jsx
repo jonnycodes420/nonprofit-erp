@@ -249,13 +249,12 @@ function RequestLink({ slug, theme }) {
       {sent ? (
         <p style={{ fontSize: 15, lineHeight: 1.7 }}>
           If we have this address on file, a sign-in link is on its way. It works once and expires in
-          15 minutes — check your inbox.
+          15 minutes, check your inbox.
         </p>
       ) : (
         <form onSubmit={submit}>
           <p style={{ ...S.muted, marginTop: 0 }}>
-            Enter the email address you use for giving and we'll send you a secure sign-in link —
-            this page signs you in by email, with no password to remember.
+            Enter the email address you use for giving and we'll send you a secure sign-in link, this page signs you in by email, with no password to remember.
           </p>
           <div style={S.label}>Email address</div>
           <input style={S.input} type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -278,7 +277,7 @@ function Verify({ slug, onVerified }) {
     // The token lives in the URL FRAGMENT (never sent to any server or in a
     // Referer); it is consumed by POST, once.
     window.history.replaceState(null, "", window.location.pathname);
-    if (!token) { setErr("This link is incomplete — request a fresh one."); return; }
+    if (!token) { setErr("This link is incomplete, request a fresh one."); return; }
     (async () => {
       const r = await pfetch(`/${slug}/verify`, { method: "POST", body: { token } });
       // Refetch the session BEFORE navigating: /verify and the dashboard are
@@ -358,7 +357,7 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
     const r = await pfetch(`/${slug}/recurring/${sub.id}/${path}`, { method: "POST", body: body || {} });
     setBusy(false);
     if (r.status === 200) { setMode(null); onChanged(); }
-    else setErr((r.body && r.body.message) || "That didn't go through — please try again.");
+    else setErr((r.body && r.body.message) || "That didn't go through, please try again.");
     return r;
   };
   const statusLabel = { active: "Active", paused: "Paused", past_due: "Payment issue", recovering: "Payment issue", recovered: "Active", canceled: "Canceled" }[sub.status] || sub.status;
@@ -373,13 +372,13 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
         </div>
         {sub.cardLast4 && <div style={S.muted}>Card ending {sub.cardLast4}</div>}
       </div>
-      {sub.status === "paused" && <div style={{ ...S.muted, marginTop: 6 }}>Paused{sub.resumeAt ? ` — resumes automatically ${fmtDay(sub.resumeAt)}` : ""}. No charges while paused.</div>}
+      {sub.status === "paused" && <div style={{ ...S.muted, marginTop: 6 }}>Paused{sub.resumeAt ? ` resumes automatically ${fmtDay(sub.resumeAt)}` : ""}. No charges while paused.</div>}
       {sub.nextChargeDate && sub.status !== "canceled" && sub.status !== "paused" && (
         <div style={{ ...S.muted, marginTop: 6 }}>Next charge: {fmtDay(sub.nextChargeDate)}</div>
       )}
       {["past_due", "recovering"].includes(sub.status) && (
         <div style={{ marginTop: 10, padding: "10px 14px", background: PAL.brassWash, border: "1px solid "+PAL.brassEdge, borderRadius: 10, fontSize: 14 }}>
-          Your last payment didn't go through — updating your card usually fixes it.
+          Your last payment didn't go through, updating your card usually fixes it.
         </div>
       )}
       {sub.status !== "canceled" && (
@@ -563,8 +562,8 @@ function Dashboard({ slug, me, reload, page }) {
       {me.account && !(me.account.exists && me.account.hasPassword) && (
         <div style={{ fontSize: 13, color: PAL.greyDeep, margin: "0 0 10px" }}>
           {me.account.exists
-            ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-button, var(--pt-primary))" }}>your giving dashboard</a>.</>
-            : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}&from=${encodeURIComponent(slug)}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
+            ? <>Add a password to your giving account for one-step sign-in, use "Reset password" at <a href="/giving" style={{ color: "var(--pt-button, var(--pt-primary))" }}>your giving dashboard</a>.</>
+            : <>See all your giving in one place, <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}&from=${encodeURIComponent(slug)}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
         </div>
       )}
 

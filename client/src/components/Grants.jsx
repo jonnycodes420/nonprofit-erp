@@ -40,7 +40,7 @@ function GrantLogModal({grant,onSave,onClose}){
       ariaLabel="Log touchpoint" dialogStyle={{border:"1px solid "+T.bg3}}>
       <div>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
-        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} Not set {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
           {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
@@ -99,9 +99,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
     const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const sys=`You are an expert nonprofit grant writer and strategist. Specific, tactical. Max 250 words.`;
     const prompts={
-      analyze:`Analyze grant fit for ${grant.funder} / ${grant.program}.\nAsk: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nDescription: ${grant.description||"not set"}\nRequirements: ${grant.requirements||"not set"}\nHistory: ${(grant.history||[]).join(", ")||"none"}\nOrg: ${org?.name} — ${org?.mission}\n\nProvide:\n**Fit Score:** X/10 with 1-sentence reason\n**Key Requirements:** top 3 things the funder wants\n**Recommended Next Steps:** 3 specific actions with timing\n**Risk Flags:** anything that could disqualify us`,
-      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} — ${org?.mission}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
-      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} — ${org?.mission}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
+      analyze:`Analyze grant fit for ${grant.funder} / ${grant.program}.\nAsk: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nDescription: ${grant.description||"not set"}\nRequirements: ${grant.requirements||"not set"}\nHistory: ${(grant.history||[]).join(", ")||"none"}\nOrg: ${org?.name} Not set ${org?.mission}\n\nProvide:\n**Fit Score:** X/10 with 1-sentence reason\n**Key Requirements:** top 3 things the funder wants\n**Recommended Next Steps:** 3 specific actions with timing\n**Risk Flags:** anything that could disqualify us`,
+      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} Not set ${org?.mission}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
+      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} Not set ${org?.mission}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
       report:`Grant report outline for ${grant.funder}.\nProgram: ${grant.program} | Amount: ${fmtFull(grant.amount)} | Due: ${grant.reportDue}\nNotes: ${grant.notes}\nOrg mission: ${org?.mission}\n\nProvide: section headers, 3 key metrics to feature, narrative arc, what to emphasize.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
@@ -195,11 +195,11 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           {fundCampaigns.length>0&&<div>
             <div style={{fontSize:11,color:T.ink3,marginBottom:4}}>Counts toward campaign (optional)</div>
             <select value={ef.campaignId} onChange={e=>setEf(p=>({...p,campaignId:e.target.value}))} style={{...inp,cursor:"pointer"}}>
-              <option value="">No campaign — general operating</option>
+              <option value="">No campaign, general operating</option>
               {fundCampaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
             <div style={{fontSize:11,color:T.ink3,marginTop:4,lineHeight:1.5}}>
-              Once this grant is marked Awarded, its amount counts toward the campaign's raised total. If the foundation's money is also logged as a gift on their donor record, attribute only ONE of the two — never both.
+              Once this grant is marked Awarded, its amount counts toward the campaign's raised total. If the foundation's money is also logged as a gift on their donor record, attribute only ONE of the two, never both.
             </div>
           </div>}
           <div>
@@ -225,7 +225,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
               ["Amount Requested",fmtFull(grant.amount),T.ink],
               ["Received",fmtFull(grant.received||0),T.greenMid],
               ["% Funded",pct+"%",pct>75?T.greenMid:pct>40?T.gold600:T.ink3],
-              ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"—",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
+              ["Days to Deadline",grant.deadline?(actionable?(days<0?"Overdue":days+"d"):"Passed"):"Not set",actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                 <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
@@ -247,11 +247,11 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           <div className="grant-2col" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Application Deadline</div>
-              <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"—"}</div>
+              <div style={{fontSize:14,fontWeight:600,color:actionable&&days<14?T.terracotta:actionable&&days<30?T.gold600:T.ink}}>{grant.deadline?new Date(grant.deadline).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}):"Not set"}</div>
             </div>
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Program Officer</div>
-              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{grant.officer||"—"}</div>
+              <div style={{fontSize:14,fontWeight:600,color:T.ink}}>{grant.officer||"Not set"}</div>
             </div>
             {grant.reportDue&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>Report Due</div>
@@ -357,7 +357,7 @@ async function resolveAwardAdoption(grantId, prevStatus, nextStatus) {
     const link = window.confirm(
       `A ${fmtFull(m.amount)} manual transaction${m.vendor_donor ? ` from "${m.vendor_donor}"` : ""} (${m.date}) is already in the ledger.\n\n` +
       "Link it to this award so the money books once, not twice?\n\n" +
-      "OK — link the existing entry (recommended)\nCancel — book the award as a separate ledger entry"
+      "OK, link the existing entry (recommended)\nCancel, book the award as a separate ledger entry"
     );
     return link ? m.id : "";
   } catch { return ""; }
@@ -536,13 +536,13 @@ Current funders: ${activeGrants}
 Board: ${data.board.map(b=>b.employer).filter(Boolean).join(", ")||"various"}
 
 For each grant, provide:
-**[Rank]. [Funder Name] — [Program Name]**
+**[Rank]. [Funder Name], [Program Name]**
 Typical award: $[X]–$[Y]
 Alignment score: [X]/10
 Why you qualify: [2 sentences specific to this org]
 Next step: [concrete action]
 
-Focus on grants under $200K that match this org's size and mission. Include a mix of: private foundations, corporate foundations, and government programs. Be specific — name real programs.`;
+Focus on grants under $200K that match this org's size and mission. Include a mix of: private foundations, corporate foundations, and government programs. Be specific, name real programs.`;
 
     await askClaude(sys, msg, chunk=>setResults(chunk));
     setLoading(false);
@@ -554,7 +554,7 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
       <SectionLabel>Your Organization Profile</SectionLabel>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Mission</div>
-          <div style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{data.org.mission||"—"}</div></div>
+          <div style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{data.org.mission||"Not set"}</div></div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
           <div><div style={{fontSize:11,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:2}}>Annual Budget</div>
             <div style={{fontSize:13,color:T.ink}}>{budgetLabel}</div></div>
@@ -568,11 +568,11 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
     </Card>
 
     {(loading||results)&&<Card style={{background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500}}>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold700,marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold700,marginBottom:14}}>✦ Grant Matches, Ranked by Alignment</div>
       {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin dark/>Analyzing your org and searching grant landscape…</div>}
       {results&&<div style={{fontSize:13,color:T.ink,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
     </Card>}
 
-    {ran&&!loading&&!results&&<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:20}}>No results yet — try again.</div>}
+    {ran&&!loading&&!results&&<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:20}}>No results yet, try again.</div>}
   </div>;
 }

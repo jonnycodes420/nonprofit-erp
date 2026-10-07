@@ -382,7 +382,7 @@ export function GlobalStyles() {
     ::-webkit-scrollbar-thumb{background:${T.bg3};border-radius:99px;border:2px solid transparent;background-clip:padding-box;}
     ::-webkit-scrollbar-thumb:hover{background:${T.ink3};background-clip:padding-box;}
     *{scrollbar-width:thin;scrollbar-color:${T.bg3} transparent;}
-    /* FIX-8 Part B.4 — a figure says it opens when somebody reaches for it. */
+    /* FIX-8 Part B.4, a figure says it opens when somebody reaches for it. */
     .figure-inline{text-decoration:none;}
     .figure-inline:hover,.figure-inline:focus-visible{text-decoration:underline;text-decoration-style:dotted;text-decoration-color:${T.ink3};text-underline-offset:4px;text-decoration-thickness:2px;}
     ::selection{background:${T.greenDk}22;color:${T.ink};}
@@ -418,7 +418,7 @@ export function GlobalStyles() {
     .gold-moment .gold-moment-bar{background:linear-gradient(100deg,${T.gold500} 40%,${T.gold300} 50%,${T.gold500} 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
     @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
 
-    /* BUILD-94 FIRST RUN — the gold moment at full-screen scale. The SAME
+    /* BUILD-94 FIRST RUN, the gold moment at full-screen scale. The SAME
        gesture (a rise and one sheen), nothing new: no confetti, no second
        palette, and every movement off under prefers-reduced-motion while the
        greeting itself still reads. */
@@ -460,7 +460,7 @@ export function GlobalStyles() {
       .fr-welcome .fr-horse:nth-child(8){transform:translateX(44vw);}
     }
     }
-    /* BUILD-87 F.1 — animation-fill-mode is "backwards", NOT "both". Every one
+    /* BUILD-87 F.1, animation-fill-mode is "backwards", NOT "both". Every one
        of these animations ends on the identity transform, so "both" retained a
        transform of translateY(0) forever, and an element with any transform
        other than none is a CONTAINING BLOCK for every position:fixed
@@ -470,7 +470,7 @@ export function GlobalStyles() {
        "backwards" holds the from-keyframe before the animation starts, which is
        the only part that was ever needed, and reverts to the element's own
        style afterwards. Visually identical; structurally inert.
-       The Modal shell portals to document.body anyway — this is the belt to
+       The Modal shell portals to document.body anyway, this is the belt to
        that pair of braces, so the next component to grow a transform cannot
        break dialogs for everybody. */
     .fade-in{animation:fadeIn 0.2s ease-out backwards;}
@@ -479,14 +479,14 @@ export function GlobalStyles() {
     .modal-anim{animation:slideUp 0.2s ease-out backwards;}
     .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
     .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:${T.greenDk}!important;}
-    /* BUILD-12 shared interactive treatment — see interactive() in shared.jsx.
+    /* BUILD-12 shared interactive treatment, see interactive() in shared.jsx.
        Any aggregate/entity that navigates gets this: pointer, a warm green
        hover wash + gold accent, and a visible keyboard focus ring. */
     .click-card{cursor:pointer;transition:background 0.14s ease,box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
     .click-card:hover{background:${T.green100}!important;border-color:${T.gold500}!important;box-shadow:0 4px 20px rgba(10,10,10,0.10)!important;transform:translateY(-1px);}
     .click-card:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.45)!important;border-color:${T.gold500}!important;}
-    /* Dark interactive panels (goal card): NO background change — the inline
-       pine gradient must survive — just a gold edge + lift on hover, same
+    /* Dark interactive panels (goal card): NO background change, the inline
+       pine gradient must survive, just a gold edge + lift on hover, same
        gold focus ring. Deliberately does not carry the .click-card class so
        the light mist wash can never clobber the gradient. */
     .click-card-dark{cursor:pointer;transition:box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
@@ -495,10 +495,10 @@ export function GlobalStyles() {
     /* gold wash behind an active section tab (added by SectionTabs) */
     .dash-row:hover{background:${T.bg}!important;box-shadow:inset 2px 0 0 ${T.greenDk};}
     /* D-1 (BUILD-45): "Needs your attention" row main is a real link. Hover
-       affordance so it reads as clickable, not broken — cream-alt wash + the
+       affordance so it reads as clickable, not broken, cream-alt wash + the
        donor name underlines. Colour change only, so no transition is needed
        under prefers-reduced-motion. Brass focus ring for keyboard. */
-    /* BUILD-87 F.3.3 — the row's record is there when you want it and silent
+    /* BUILD-87 F.3.3, the row's record is there when you want it and silent
        when you do not. opacity (not display) so the row never changes height;
        focus-within so a keyboard reaches it; and always-on where there is no
        hover, because a phone cannot ask for it. */
@@ -517,13 +517,13 @@ export function GlobalStyles() {
        on one never fires the other (they're siblings, not nested). */
     .attn-row-main{min-height:44px;}
     .attn-row-action{min-height:44px;}
-    /* ── BUILD-89 — HOME IS ONE PANEL ──────────────────────────────────────
+    /* ── BUILD-89, HOME IS ONE PANEL ──────────────────────────────────────
        White panel on the light ground, the work on the left and the rail on
        the right with ONE hairline between them. Below 1100 it stacks and the
-       rail goes FIRST (order:-1) — three numbers are the right thing to meet
+       rail goes FIRST (order:-1), three numbers are the right thing to meet
        on a phone, and the work follows. minmax/min-width:0 everywhere: a long
        donor name in a flex child otherwise refuses to shrink. */
-    /* FIX-3 A (finding 1) — the two columns are the panel's TOP (the Thread
+    /* FIX-3 A (finding 1), the two columns are the panel's TOP (the Thread
        beside the rail); every section after the Thread runs the full width of
        the panel in .home-shell-lower, so the rail never stands as a tall blank
        column beside the lower half. */
@@ -532,7 +532,7 @@ export function GlobalStyles() {
     .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
     .home-shell-lower{min-width:0;padding:0 40px 40px;display:flex;flex-direction:column;border-top:1px solid ${T.bg2};}
     .home-rail{min-width:0;padding:32px;border-top:1px solid ${T.bg2};order:-1;}
-    /* HOME-TIDY 2 — the header leads on every width: above the stacked panel
+    /* HOME-TIDY 2, the header leads on every width: above the stacked panel
        on a phone, at the top of the work column beside the rail on a wide one. */
     .home-head-narrow{padding:28px 24px 8px;display:flex;flex-direction:column;gap:20px;}
     .home-head-wide{display:flex;flex-direction:column;gap:22px;margin-bottom:6px;}
@@ -548,10 +548,10 @@ export function GlobalStyles() {
     .home-rail-row:hover,.home-rail-row:focus-visible{background:${T.ground};}
     @media (prefers-reduced-motion:reduce){.home-rail-row{transition:none;}}
     /* A section inside the panel is separated by air and a rule, never by a
-       second border — the panel already drew one. */
+       second border, the panel already drew one. */
     .home-block{margin-top:28px;}
     .home-block+.home-block{border-top:1px solid ${T.bg2};padding-top:28px;}
-    /* FIX (2026-09-18) — the row is Drift's shape now: a face, a sentence that
+    /* FIX (2026-09-18), the row is Drift's shape now: a face, a sentence that
        WRAPS, one fact on the right. A fixed 64px is what forced the sentence
        into one truncated line in the first place, so the height is the
        content's and the minimum is the touch target. */
@@ -561,12 +561,12 @@ export function GlobalStyles() {
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
     .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.white};border-top:1px solid ${T.bg2};box-shadow:0 -4px 20px rgba(15,26,18,.06);padding-bottom:env(safe-area-inset-bottom,0px);}
-    /* FIX-9 Part E — TITLE CASE. The bar shouted HOME DONORS GRANTS SETTINGS
+    /* FIX-9 Part E, TITLE CASE. The bar shouted HOME DONORS GRANTS SETTINGS
        MORE in uppercase while every other label in the product is sentence
        case, and it is the first thing anybody sees on a phone. */
     .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:10px;font-weight:600;letter-spacing:.01em;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
-    /* FIX-2 C — the light active treatment (activeMark's, in CSS): cream's
+    /* FIX-2 C, the light active treatment (activeMark's, in CSS): cream's
        shade, ink, 700, a 3px emerald rule on the edge that meets the page. */
     .mobile-bottom-tab.active{background:${T.bg2};color:${T.ink};font-weight:700;box-shadow:inset 0 3px 0 ${T.greenDk};}
     .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);align-items:flex-end;}
@@ -577,38 +577,38 @@ export function GlobalStyles() {
     .mobile-more-row.active{background:${T.bg2};color:${T.ink};font-weight:700;box-shadow:inset 3px 0 0 ${T.greenDk};}
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
-    /* BUILD-41 mobile donor rows + Select toggle — desktop never shows them */
+    /* BUILD-41 mobile donor rows + Select toggle, desktop never shows them */
     .dir-row-mobile{display:none;}
     .dir-select-toggle{display:none;}
 
     /* Directory: Assign button reveals on row hover/focus instead of sitting
-       visible on every row at all times — same click target, just quieter
+       visible on every row at all times, same click target, just quieter
        when you're not looking at that row. Keyboard/focus-within keeps it
        reachable without a mouse. */
     .dir-assign-btn{opacity:0;transition:opacity 0.12s;}
     .dir-donor-row:hover .dir-assign-btn,.dir-donor-row:focus-within .dir-assign-btn{opacity:1;}
 
     /* Timeline/activity delete: hover-reveal like .dir-assign-btn (always
-       visible on mobile — see the media block below — since there's no hover) */
+       visible on mobile, see the media block below, since there's no hover) */
     .tp-del-btn{opacity:0;transition:opacity 0.12s;}
     .tp-row:hover .tp-del-btn,.tp-row:focus-within .tp-del-btn{opacity:1;}
 
     @media(max-width:768px){
-      /* No hover on touch — delete icon stays visible (small target, guarded
+      /* No hover on touch, delete icon stays visible (small target, guarded
          by the confirm dialog) */
       .tp-del-btn{opacity:1!important;}
 
-      /* Root overflow kill — nothing bleeds past viewport */
+      /* Root overflow kill, nothing bleeds past viewport */
       .app-root{overflow-x:hidden!important;max-width:100vw!important;}
       .app-content{padding:20px 16px calc(68px + env(safe-area-inset-bottom,0px)) 16px!important;max-width:100%!important;overflow-x:hidden!important;}
 
-      /* Navigation — desktop sidebar + top bar hidden, mobile header restored */
+      /* Navigation, desktop sidebar + top bar hidden, mobile header restored */
       .app-sidebar{display:none!important;}
       .app-topbar{display:none!important;}
       .app-main{margin-left:0!important;margin-top:0!important;}
       .app-header{display:flex!important;}
       /* Full-screen takeovers cover the whole screen on mobile (no fixed bar
-         to sit under) — reset the desktop top:52 offset. */
+         to sit under), reset the desktop top:52 offset. */
       .fullscreen-takeover{top:0!important;left:0!important;}
       /* FIX-26: the campaign builder's three columns (settings, editor, the
          email) were squeezed side by side at 390. They stack, full width, and
@@ -630,24 +630,24 @@ export function GlobalStyles() {
       .dash-root{font-size:14px!important;}
       .dash-bleed{margin:-20px -16px calc(-68px - env(safe-area-inset-bottom,0px)) -16px!important;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0px)) 16px!important;}
       .dash-cpad{padding:16px!important;}
-      /* BUILD-89 — the panel's own padding on a phone. */
+      /* BUILD-89, the panel's own padding on a phone. */
       .home-shell{border-radius:12px!important;}
       .home-shell-main{padding:20px!important;}
       .home-shell-lower{padding:0 20px 20px!important;}
-      /* FIX-3 A — inside the panel a section header has no side padding of its
+      /* FIX-3 A, inside the panel a section header has no side padding of its
          own (cPad is 0 there); the phone's 16px card padding put every Home
          heading 16px right of the rows it labels. */
       .home-shell .dash-cpad{padding-left:0!important;padding-right:0!important;padding-top:0!important;}
       .home-rail{padding:20px!important;}
       .home-rail-date{display:none!important;}
-      /* BUILD-88d — a card header is a title and a link, and at 390px they run
+      /* BUILD-88d, a card header is a title and a link, and at 390px they run
          into each other on one line ("20 thank-yous ready.Teach Steward your
          voice"). They wrap, with a gap, on a phone. Seen in the walk's own
          capture, not in an assertion. */
       .dash-cpad{flex-wrap:wrap!important;gap:8px!important;}
-      /* BUILD-87 F.3 — 32px of card padding is a desktop measure; at 390px it
+      /* BUILD-87 F.3, 32px of card padding is a desktop measure; at 390px it
          would leave a donor's name about 300px to live in. */
-      /* BUILD-89 — the panel supplies the horizontal padding on a phone. */
+      /* BUILD-89, the panel supplies the horizontal padding on a phone. */
       .attn-row{padding:12px 0!important;}
       .attn-band{padding:18px 0 6px 13px!important;}
       /* …and the row's THREE regions cannot share one line on a phone. Found
@@ -657,7 +657,7 @@ export function GlobalStyles() {
          name, and the buttons take the row below it. */
       .attn-row{flex-wrap:wrap!important;}
       .attn-row .attn-row-main{flex:1 1 100%!important;}
-      /* FIX-1 walk — on Home the "how late" badge sits INSIDE the row's link,
+      /* FIX-1 walk, on Home the "how late" badge sits INSIDE the row's link,
          beside the name, so its 100% basis crushed the text to one word a
          line. The link wraps, and the badge takes its own line under the
          text, indented past the face (38px mark + 14px gap). */
@@ -695,7 +695,7 @@ export function GlobalStyles() {
       .donors-view-toggle{width:100%!important;}
       .donors-view-toggle button{flex:1!important;justify-content:center!important;}
 
-      /* Kanban: contained horizontal scroll only — page never scrolls horiz */
+      /* Kanban: contained horizontal scroll only, page never scrolls horiz */
       .donor-kanban-wrap{display:flex!important;flex-direction:row!important;overflow-x:auto!important;overflow-y:visible!important;-webkit-overflow-scrolling:touch!important;scroll-snap-type:x mandatory!important;align-items:flex-start!important;min-height:auto!important;padding-bottom:12px!important;gap:10px!important;width:100%!important;}
       .kanban-col{min-width:268px!important;width:268px!important;max-width:268px!important;flex-shrink:0!important;scroll-snap-align:start!important;}
 
@@ -706,16 +706,16 @@ export function GlobalStyles() {
          only scroll container; both columns grow to their content. */
       .donor-profile-body{grid-template-columns:1fr!important;overflow-y:auto!important;overflow-x:hidden!important;}
       /* min-width:0 matters: with overflow:visible a grid item's auto min
-         size is its content's min-content (the 537px tab row) — without it
+         size is its content's min-content (the 537px tab row), without it
          the whole column blows out sideways. */
       .donor-profile-body>div{overflow:visible!important;height:auto!important;border-right:none!important;min-width:0!important;max-width:100%!important;}
-      /* FIX-8 Part A.1 — the phone keeps horizontal scroll on both tab
+      /* FIX-8 Part A.1, the phone keeps horizontal scroll on both tab
          strips. Wrapping six tabs at 390 costs three rows of vertical space
          before any content; scrolling costs a swipe. The desktop wraps. */
       .dp-tabs{overflow-x:auto!important;flex-wrap:nowrap!important;}
       .section-tabbar{overflow-x:auto!important;flex-wrap:nowrap!important;}
       /* Header stays ONE row: compact "←" back (word hidden) beside the donor
-         name — the full-width Back bar wasted ~60px of a 700px fold. */
+         name, the full-width Back bar wasted ~60px of a 700px fold. */
       .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
       .dph-back{padding:8px 12px!important;font-size:16px!important;min-width:40px!important;min-height:40px!important;}
       .dph-back-word{display:none!important;}
@@ -729,12 +729,12 @@ export function GlobalStyles() {
       .dph-more{display:flex!important;align-items:center!important;justify-content:center!important;min-width:48px!important;min-height:48px!important;}
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
       /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
-         not a color fill — the §9 gradient ban is about bars/thermometers). */
-      /* mask stops only use ALPHA — ink stands in for opaque (allowlist-clean) */
+         not a color fill, the §9 gradient ban is about bars/thermometers). */
+      /* mask stops only use ALPHA, ink stands in for opaque (allowlist-clean) */
       .dp-tabs{-webkit-mask-image:linear-gradient(to right,${T.ink} 88%,transparent);mask-image:linear-gradient(to right,${T.ink} 88%,transparent);}
 
       /* Directory donor list (BUILD-41): the desktop table is GONE under
-         768px — it crushed names to a 68px cell ("M…", "Ju…"). One tappable
+         768px, it crushed names to a 68px cell ("M…", "Ju…"). One tappable
          row per donor instead: full 17px name (wraps, never truncates),
          inline stage chip, muted meta line, right-aligned score badge.
          Checkboxes exist only in explicit Select mode. */
@@ -759,9 +759,9 @@ export function GlobalStyles() {
       .fade-in,[class*="card"]{max-width:100%!important;}
 
       /* Finance now uses SectionTabs (.section-tabbar) which scrolls
-         horizontally on its own — no finance-specific override needed. */
+         horizontally on its own, no finance-specific override needed. */
 
-      /* FIX-1 §B — Fundraising is four tabs and they FIT at 390: no sideways
+      /* FIX-1 §B, Fundraising is four tabs and they FIT at 390: no sideways
          scroll on the strip, the thing the walk found at 1440. */
       .fr-tabbar>button{padding:10px 7px!important;font-size:12.5px!important;gap:5px!important;}
 
@@ -774,7 +774,7 @@ export function GlobalStyles() {
       .grant-add-form-grid{grid-template-columns:1fr!important;}
 
       /* Communications: section tabs already scroll horizontally (SectionTabs
-         base style) — no mobile override needed since the top-tab flip */
+         base style), no mobile override needed since the top-tab flip */
 
       /* Volunteers + Board: 3-col → 2-col */
       .vol-metric-grid,.board-metric-grid{grid-template-columns:repeat(2,1fr)!important;}

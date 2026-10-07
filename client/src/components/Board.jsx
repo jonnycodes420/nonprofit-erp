@@ -75,7 +75,7 @@ export function Board({data, setData, isReadOnly}) {
   const draftEmail=async()=>{
     setEmailLoading(true); setBoardEmail("");
     await askClaude(`You are an executive director. Professional, warm, brief. Max 200 words.`,
-      `Draft a board member engagement email asking for introductions to potential donors.\nOrg: ${data.org.name} — ${data.org.mission}\nBoard giving: ${fmtFull(totalGiving)} total\n\nAsk board members to make 2-3 introductions to people in their network who care about arts education and youth development in NYC. Include a specific example of program impact.`,
+      `Draft a board member engagement email asking for introductions to potential donors.\nOrg: ${data.org.name} Not set ${data.org.mission}\nBoard giving: ${fmtFull(totalGiving)} total\n\nAsk board members to make 2-3 introductions to people in their network who care about arts education and youth development in NYC. Include a specific example of program impact.`,
       chunk=>setBoardEmail(chunk));
     setEmailLoading(false);
   };
@@ -192,7 +192,7 @@ export function Board({data, setData, isReadOnly}) {
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
           <div>
             <div style={{fontSize:15,fontWeight:700,color:T.ink}}>Board Report</div>
-            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>Generates a PDF with Executive Summary, Financial Snapshot, Donor Dashboard, and Grants & Operations — powered by AI.</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2}}>Generates a PDF with Executive Summary, Financial Snapshot, Donor Dashboard, and Grants & Operations, powered by AI.</div>
           </div>
           <button onClick={generateReport} disabled={generating} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:8,border:"none",background:T.greenDk,color:T.white,fontWeight:700,fontSize:13,cursor:generating?"not-allowed":"pointer",opacity:generating?0.7:1}}>
             {generating ? <><Spin/> Generating…</> : "✦ Generate Board Report"}
@@ -216,7 +216,7 @@ export function Board({data, setData, isReadOnly}) {
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
-                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Board Report — {qLabel}</div>
+                <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Board Report, {qLabel}</div>
                 <Pill label="PDF" color={T.greenDk}/>
               </div>
               <div style={{fontSize:11,color:T.ink3,marginBottom:10}}>Generated {genDate}{r.generated_by_name ? ` by ${r.generated_by_name}` : ""}</div>

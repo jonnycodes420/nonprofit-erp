@@ -218,23 +218,21 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
             {isGrant ? (
               <>
                 <b>{g.funder}</b> has a {fmtFull(parseFloat(g.amount) || 0)} open ask{g.program ? <> (<i>{g.program}</i>)</> : null}. Is this that grant?
-                Marking it awarded books {fmtFull(Number(form.amount) || 0)} into the ledger once, moves the board, and clears the open ask —
-                no separate manual entry.
+                Marking it awarded books {fmtFull(Number(form.amount) || 0)} into the ledger once, moves the board, and clears the open ask, no separate manual entry.
               </>
             ) : (
               <>
-                Log this as a <b>gift from {g.name}</b> instead? A gift updates their lifetime giving, receipts, and campaign attribution —
-                and lands in this ledger automatically. A ledger-only entry does none of that.
+                Log this as a <b>gift from {g.name}</b> instead? A gift updates their lifetime giving, receipts, and campaign attribution, and lands in this ledger automatically. A ledger-only entry does none of that.
               </>
             )}
           </div>
           {err && <div style={{ fontSize:12, color:T.terracotta }}>{err}</div>}
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end", flexWrap:"wrap" }}>
             <button style={ghostBtn} disabled={busy} onClick={decline}>
-              {isGrant ? "No — different money, log as typed" : "No — keep as a ledger entry"}
+              {isGrant ? "No, different money, log as typed" : "No, keep as a ledger entry"}
             </button>
             <button style={btn(T.gold, T.ink)} disabled={busy} onClick={isGrant ? acceptGrant : acceptGift}>
-              {busy ? "Working…" : isGrant ? "Yes — mark awarded" : "Log as a gift"}
+              {busy ? "Working…" : isGrant ? "Yes, mark awarded" : "Log as a gift"}
             </button>
           </div>
         </div>
@@ -271,7 +269,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         </div>
         <div style={{ position:"relative" }}>
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Vendor / Donor</div>
-          <input value={form.vendorDonor} onChange={editName} placeholder="Start typing — donors and open grants link automatically"
+          <input value={form.vendorDonor} onChange={editName} placeholder="Start typing, donors and open grants link automatically"
             onFocus={() => { if (sugs && (sugs.donors.length || sugs.grants.length)) setSugsOpen(true); }}
             onBlur={() => setTimeout(() => setSugsOpen(false), 150)}
             style={inp}/>
@@ -283,7 +281,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
           )}
           {!linked && (
             <div style={{ fontSize:11, color:T.ink3, marginTop:5, lineHeight:1.5 }}>
-              Donor or grant money enters as a gift or award — free text is for true vendors (the hardware store).
+              Donor or grant money enters as a gift or award, free text is for true vendors (the hardware store).
             </div>
           )}
           {sugsOpen && !linked && (
@@ -294,7 +292,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
                   {sugs.grants.map(g => (
                     <button key={g.id} style={sugBtn} onClick={() => pickGrant(g)}
                       onMouseDown={e => e.preventDefault()}>
-                      <b>{g.funder}</b>{g.program ? ` — ${g.program}` : ""} · {fmtFull(parseFloat(g.amount) || 0)} · {g.status}
+                      <b>{g.funder}</b>{g.program ? ` Not set ${g.program}` : ""} · {fmtFull(parseFloat(g.amount) || 0)} · {g.status}
                     </button>
                   ))}
                 </>
@@ -317,14 +315,14 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Account</div>
             <select value={form.accountId} onChange={set("accountId")} style={{ ...inp, cursor:"pointer" }}>
-              <option value="">— select —</option>
+              <option value="">Select</option>
               {filtered.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
             </select>
           </div>
           <div style={{ flex:1 }}>
             <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Fund</div>
             <select value={form.fundId} onChange={set("fundId")} style={{ ...inp, cursor:"pointer" }}>
-              <option value="">— select —</option>
+              <option value="">Select</option>
               {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
@@ -343,7 +341,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
 // ── Money in — Stripe status/balance/payouts strip (Overview) ───────────────
 const PAYOUT_STATUS = { paid:IN, in_transit:T.gold, pending:T.gold, canceled:OUT, failed:OUT };
 // FIX-2 finding 10 — the one formatter, never a Date in some timezone.
-const fmtDate = (iso, year) => iso ? ((year ? displayDate(iso) : displayDateShort(iso, new Date())) || "—") : "—";
+const fmtDate = (iso, year) => iso ? ((year ? displayDate(iso) : displayDateShort(iso, new Date())) || "Not set") : "Not set";
 const useStripeSummary = () => {
   const [s, setS] = useState(null);
   useEffect(() => {
@@ -363,7 +361,7 @@ function ConnectStripeCard({ onNavigate }) {
         <div style={{ flex:"1 1 280px" }}>
           <SectionLabel>Money in</SectionLabel>
           <div style={{ fontSize:14, color:T.ink, fontWeight:600, marginBottom:3 }}>Connect Stripe to accept donations online.</div>
-          <div style={{ fontSize:12, color:T.ink3, lineHeight:1.6 }}>Once you connect, every online gift lands here — and in your ledger — automatically, with 0% platform fees.</div>
+          <div style={{ fontSize:12, color:T.ink3, lineHeight:1.6 }}>Once you connect, every online gift lands here, and in your ledger, automatically, with 0% platform fees.</div>
         </div>
         {onNavigate && <button style={btn(T.gold, T.ink)} onClick={() => onNavigate("settings", { section:"connections", focus:"stripe" })}>Connect Stripe →</button>}
       </div>
@@ -1160,7 +1158,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               </div>
               <div style={{ fontSize:12, color:T.ink2, lineHeight:1.5 }}>
                 {fmtFull(summary.unledgeredGiving)} of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
-                The ledger tracks <strong>money moving through Steward</strong> — connect Stripe or log a transaction. Your full giving record is in Reports.
+                The ledger tracks <strong>money moving through Steward</strong> connect Stripe or log a transaction. Your full giving record is in Reports.
               </div>
             </div>
             <button onClick={() => onNavigate("reports")}
@@ -1179,7 +1177,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             const months = summary?.monthly || [];
             const active = months.filter(m => m.income !== 0 || m.expense !== 0);
             if (active.length === 0)
-              return <EmptyState title="No money has moved yet" message="Log your first transaction — or connect Stripe above — and your month-by-month income and spending will chart here."/>;
+              return <EmptyState title="No money has moved yet" message="Log your first transaction, or connect Stripe above, and your month-by-month income and spending will chart here."/>;
             const maxBar = Math.max(...active.map(m => m.income), 1);
             const hidden = months.length - active.length;
             return <>
@@ -1217,7 +1215,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:10, marginBottom:4 }}>
             <div>
               <SectionLabel>Fund Balances</SectionLabel>
-              <div style={{ fontSize:10, color:T.ink3, marginTop:2 }}>Cumulative — all money in minus out, since inception</div>
+              <div style={{ fontSize:10, color:T.ink3, marginTop:2 }}>Cumulative, all money in minus out, since inception</div>
             </div>
             {onNavigate && funds.length > 0 && (
               <button onClick={() => onNavigate("reports", { report: "std:by-fund" })} style={{ background:"none", border:"none", color:T.greenMid, fontSize:12, fontWeight:700, cursor:"pointer", padding:0 }}>Gifts by fund →</button>
@@ -1266,7 +1264,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
         </div>
         <Card style={{ padding:0, overflow:"hidden" }}>
           {sortedTxns.length === 0
-            ? <EmptyState title="No transactions here" message="This is your unified ledger — every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
+            ? <EmptyState title="No transactions here" message="This is your unified ledger, every online gift, manual entry, and imported record lands here. Log one, or connect Stripe, to begin."/>
             : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
@@ -1353,7 +1351,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             Every transaction is tagged to a fund. Restricted funds hold donor- or grant-restricted dollars and must be spent only for the designated purpose.
           </div>
           {funds.length === 0
-            ? <EmptyState title="No funds yet" message="Create your first fund — most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
+            ? <EmptyState title="No funds yet" message="Create your first fund, most orgs start with one General Operating fund and add restricted funds as grants and designated gifts come in."/>
             : funds.map((f, i) => {
             const fb = _fbMap[f.id] || { income:0, expense:0 };
             const balance = fb.income - fb.expense;

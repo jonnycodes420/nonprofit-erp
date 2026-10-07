@@ -13,7 +13,7 @@ export function Volunteers({data, setData, isReadOnly}) {
   const getConvPlan=async()=>{
     setConvLoading(true); setConvPlan("");
     await askClaude(`You are a nonprofit development strategist. Specific, tactical. Max 200 words.`,
-      `Donor conversion plan for high-potential volunteers.\n\n${data.volunteers.filter(v=>v.convertPotential==="high").map(v=>`${v.name}: ${v.hours}h, skills: ${v.skills.join(",")}, employer: ${v.employer}, notes: ${v.notes}`).join("\n")}\n\nOrg: ${data.org.name} — ${data.org.mission}\n\nFor each: first ask amount, best moment, personal connection point, suggested language.`,
+      `Donor conversion plan for high-potential volunteers.\n\n${data.volunteers.filter(v=>v.convertPotential==="high").map(v=>`${v.name}: ${v.hours}h, skills: ${v.skills.join(",")}, employer: ${v.employer}, notes: ${v.notes}`).join("\n")}\n\nOrg: ${data.org.name} Not set ${data.org.mission}\n\nFor each: first ask amount, best moment, personal connection point, suggested language.`,
       chunk=>setConvPlan(chunk));
     setConvLoading(false);
   };

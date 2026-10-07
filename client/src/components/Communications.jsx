@@ -667,7 +667,7 @@ function TrackedSequences() {
         {/* TRACKS. Tried in order, first match wins — so the order on this
             screen IS the rule, and the last one has to be Everyone else. */}
         <div>
-          <label style={S.label}>Tracks — tried in order, first match wins</label>
+          <label style={S.label}>Tracks, tried in order, first match wins</label>
           {form.tracks.map((t, i) => (
             <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
               <input value={t.label || ""} onChange={e => updTrack(i, { label: e.target.value, key: t.key || e.target.value.toLowerCase().replace(/\W+/g, "_") })}
@@ -970,7 +970,7 @@ function SequencesPanel({ data }) {
         <div style={{ color: T.ink3, fontSize: 13, textAlign: "center", padding: 40 }}>Loading…</div>
       ) : seqList.length === 0 ? (
         <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
-          No sequences yet. A good first one: three gentle emails to donors who've gone quiet for 90 days — write it once, and it looks after them from then on.
+          No sequences yet. A good first one: three gentle emails to donors who've gone quiet for 90 days, write it once, and it looks after them from then on.
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1780,7 +1780,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 20px 64px" }}>
           <h2 style={{ margin: 0, fontFamily: "'DM Serif Display',serif", fontSize: 28, fontWeight: 400, color: T.ink }}>Start from one of these.</h2>
           <p style={{ margin: "10px 0 28px", fontSize: 14, color: T.ink3, lineHeight: 1.6, maxWidth: 560 }}>
-            Every one is a finished email in {previewOrgName}&rsquo;s words — not a skeleton. Change the parts that are yours and press send.
+            Every one is a finished email in {previewOrgName}&rsquo;s words, not a skeleton. Change the parts that are yours and press send.
           </p>
 
           {/* EMAIL-1 — START FROM A TEMPLATE: the org's own, first. */}
@@ -2100,7 +2100,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           <div style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.terracotta, borderRadius: 12, padding: "12px 16px", marginBottom: 18, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 320px", fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>
               <span style={{ fontWeight: 800, color: T.ink }}>Add your mailing address. </span>
-              Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically{isAdmin ? "" : " — ask an admin to add it"}.
+              Commercial email is required to include your organization's postal address (CAN-SPAM). Set it once under Settings → Tax Receipts and it appears in every campaign and sequence footer automatically{isAdmin ? "" : " ask an admin to add it"}.
             </div>
             {isAdmin && onNavigate && (
               <button onClick={() => onNavigate("settings", { section: "receipts" })} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", whiteSpace: "nowrap" }}>
@@ -2131,7 +2131,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 </h2>
                 <div style={{ fontSize: 14, color: T.ink2, marginTop: 6, lineHeight: 1.5, maxWidth: "52ch" }}>
                   {hub === null && !hubErr ? "Counting who you can reach…"
-                    : hubErr ? "Could not load who you can reach — " + hubErr
+                    : hubErr ? "Could not load who you can reach, " + hubErr
                     : hub.reach === 0
                       ? "Nobody on file has an email address yet. Add one to a person and they become reachable here."
                       : <>You can reach <strong style={{ color: T.ink }}>{hub.reach.toLocaleString()}</strong>{" "}
@@ -2154,7 +2154,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   {[
                     { label: "Emails sent", value: (hub.stats.totalSent || 0).toLocaleString() },
-                    { label: "Open rate", value: hub.stats.openRate === null ? "—" : hub.stats.openRate + "%" },
+                    { label: "Open rate", value: hub.stats.openRate === null ? "Not set" : hub.stats.openRate + "%" },
                     { label: "Sequences running", value: hub.stats.activeSequences },
                   ].map(({ label, value }) => (
                     <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132 }}>
@@ -2180,7 +2180,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 ) : hub.campaigns.length === 0 ? (
                   <div style={{ padding: "20px 18px", fontSize: 13.5, color: T.ink2, lineHeight: 1.55, maxWidth: "58ch" }}>
                     Nothing has gone out yet. A plain thank-you to everyone who gave this year is the
-                    highest-return email in fundraising — three warm sentences, and Steward handles the
+                    highest-return email in fundraising, three warm sentences, and Steward handles the
                     footer, the suppressions and who opened it.
                   </div>
                 ) : (
@@ -2247,7 +2247,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             style={{ marginTop: 6, marginLeft: 15, background: "transparent", border: "none", padding: 0,
                                      fontSize: 11.5, fontWeight: 700, color: a.count > 0 ? T.greenMid : T.ink3,
                                      cursor: "pointer", textAlign: "left" }}>
-                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet — ${a.livesOn.label} →`}
+                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet, ${a.livesOn.label} →`}
                           </button>
                         )}
                       </li>
@@ -2402,7 +2402,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: T.ink, fontWeight: 700, fontSize: 14 }}>
                   {sendResult.queued
-                    ? `✓ Queued — sending to ${sendResult.recipientCount} recipient${sendResult.recipientCount === 1 ? "" : "s"}`
+                    ? `✓ Queued, sending to ${sendResult.recipientCount} recipient${sendResult.recipientCount === 1 ? "" : "s"}`
                     : `✓ Sent to ${sendResult.sent} donors`}
                 </span>
                 <button onClick={() => setSendResult(null)} style={{ background: "transparent", border: "none", color: T.greenDk, cursor: "pointer", fontSize: 20 }}>×</button>
@@ -2416,7 +2416,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               /* First-run signpost (BUILD-08 Phase D) — the gold "start
                  here" pattern from shared.jsx, not a bare "no data" box. */
               <StartHere
-                line="Your first campaign doesn't need to be clever — a plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
+                line="Your first campaign doesn't need to be clever, a plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
                 actionLabel={isReadOnly?undefined:"Write that thank-you →"} onAction={()=>openBuilder()}/>
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
@@ -2467,7 +2467,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           ) : <span style={{ fontSize: 11, color: T.ink3 }} data-testid="camp-row-rate">{openRateWord(c)}</span>}
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3 }}>
-                          {c.sent_at ? new Date(c.sent_at).toLocaleDateString() : c.scheduled_at ? "⏰ " + new Date(c.scheduled_at).toLocaleDateString() : "—"}
+                          {c.sent_at ? new Date(c.sent_at).toLocaleDateString() : c.scheduled_at ? "⏰ " + new Date(c.scheduled_at).toLocaleDateString() : "Not set"}
                         </div>
                         {/* Actions */}
                         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -2538,7 +2538,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                                   </span>
                                   {failedOnly === c.id && r.failure_reason && <span data-testid="camp-failed-reason" style={{ gridColumn: "1 / -1", color: T.ink3, fontSize: 11.5 }}>{r.failure_reason}</span>}
                                   <span style={{ color: T.ink3, fontSize: 11 }}>
-                                    {(r.opened_at || r.sent_at) ? new Date(r.opened_at || r.sent_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                                    {(r.opened_at || r.sent_at) ? new Date(r.opened_at || r.sent_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Not set"}
                                   </span>
                                 </div>
                               ))}
@@ -2604,7 +2604,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: T.ink }}>{d.name}</span>
                     <span style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.email}</span>
-                    <span style={{ fontSize: 11, color: T.ink3, textTransform: "capitalize" }}>{d.stage || "—"}</span>
+                    <span style={{ fontSize: 11, color: T.ink3, textTransform: "capitalize" }}>{d.stage || "Not set"}</span>
                     <span style={{ fontSize: 12, color: T.ink }}>${Number(d.total_giving || 0).toLocaleString()}</span>
                   </div>
                 ))}

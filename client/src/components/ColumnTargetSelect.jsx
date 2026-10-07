@@ -48,7 +48,7 @@ export function ColumnTargetSelect({
     return (
       <div style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: T.gold600 }}
         data-testid={testId} data-column-target="flag">
-        → safety flags ({locked}) — locked
+        → safety flags ({locked}), locked
       </div>
     );
   }
@@ -100,7 +100,7 @@ export function ColumnTargetSelect({
             {existing.map(d => <option key={d.id} value={`cf:${d.id}`}>{d.label}</option>)}
           </optgroup>
         )}
-        <optgroup label="—">
+        <optgroup label="Not set">
           {allowNew && <option value="__new__">＋ New custom field…</option>}
           <option value="ignore">Don't import this column</option>
         </optgroup>
@@ -124,7 +124,7 @@ export function ColumnTargetSelect({
             <option value="gift">on the gift</option>
           </select>
           {/select/.test(draft.type) && !(draft.options || []).length && (
-            <span style={{ fontSize: 11, color: T.terracotta }}>a choice field needs its options — pick another type</span>
+            <span style={{ fontSize: 11, color: T.terracotta }}>a choice field needs its options, pick another type</span>
           )}
           <button onClick={create} disabled={busy || !draft.label.trim() || (/select/.test(draft.type) && !(draft.options || []).length)} data-testid="ct-create-field"
             style={{ background: T.green600, color: T.white, border: "none", borderRadius: 7,

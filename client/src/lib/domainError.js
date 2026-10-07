@@ -81,7 +81,7 @@ export function rethrowProgrammerError(e) {
 export function errorMessage(e, fallback) {
   if (isProgrammerError(e)) {
     const detail = (e && e.message) ? ` (${e.message})` : "";
-    return `Something went wrong inside Steward — this is not a problem with your data, and nothing was changed.${detail}`;
+    return `Something went wrong inside Steward, this is not a problem with your data, and nothing was changed.${detail}`;
   }
   return (e && e.message) || fallback;
 }

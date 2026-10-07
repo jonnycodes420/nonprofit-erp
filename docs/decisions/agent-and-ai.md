@@ -50,8 +50,10 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   per gift, due dates from `dueDays` resolved on the server in the org's calendar, behind the AI switch and
   the plan sheet. A plan cut off at `max_tokens` is refused (422 `plan_truncated`), never half-run. (PARITY-1)
 - **Journeys start themselves, and still send nothing.** Triggers: first gift, first recurring gift, next
-  gift, membership payment, becomes a prospect, joins a group, giving anniversary (birthday waits for a
-  birth date field). A live trigger respects the journey's audience and `trigger_filters` (amount, fund,
+  gift, membership payment, becomes a prospect, joins a group, giving anniversary, birthday, and (JOURNEYS-3)
+  membership ending or lapsed, monthly gift failed or cancelled, card expiring, volunteer hours, first
+  event, grant awarded, peer-to-peer goal. Ready-made journeys for those arrive off; their email steps are
+  review drafts from the org's own EMAIL-1 templates. A live trigger respects the journey's audience and `trigger_filters` (amount, fund,
   campaign). `cultivation_plans.trigger_event` with a unique index enrols a donor once per event.
   `tests/parity1-groups-journeys.test.js`. (PARITY-1)
 - **Every model call goes through `aiClient.js`, and it asks the org's AI switch first.** `anthropicFor(orgId)`

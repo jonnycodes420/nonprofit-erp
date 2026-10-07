@@ -338,7 +338,7 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
         </select>
         {stageFilter && (
           <button onClick={() => setStageFilter("")} style={{ ...sel, cursor: "pointer", fontWeight: 700 }}>
-            Showing {d.stages.find(s => s.key === stageFilter)?.label} only — clear ×
+            Showing {d.stages.find(s => s.key === stageFilter)?.label} only, clear ×
           </button>
         )}
       </div>
@@ -536,7 +536,7 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
 
       {d.people.length === 0 ? (
         <EmptyState title="Nobody assigned yet"
-          message="Assigning somebody to an officer is what puts them in that officer's portfolio and on their board — one act, not two." />
+          message="Assigning somebody to an officer is what puts them in that officer's portfolio and on their board, one act, not two." />
       ) : (
         <div data-testid="portfolio-table" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1.5fr 110px 1.6fr 1.4fr", gap: 12, padding: "10px 14px", background: T.bg2,
@@ -553,7 +553,7 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
                 <div style={{ fontSize: 11, color: T.ink3 }}>{fmtFull(p.lifetime)} lifetime{p.stage ? " · " + p.stage : ""}</div>
               </div>
               <div style={{ fontSize: 14, fontWeight: 700, color: p.openAskCents ? T.ink : T.ink3, fontFamily: "'DM Serif Display',serif" }}>
-                {p.openAskCents ? fmtFull(p.openAskAmount) : "—"}
+                {p.openAskCents ? fmtFull(p.openAskAmount) : "Not set"}
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12, color: p.quiet ? T.gold700 : T.ink2, fontWeight: p.quiet ? 700 : 400 }}>{p.contactPhrase}</div>
@@ -756,7 +756,7 @@ export function PlansView({ isReadOnly }) {
           )}
           {d.templates.length === 0 ? (
             <EmptyState title="No plans yet"
-              message="Write the sequence you already run in your head — visit, invite, send the report, ask — and apply it to somebody in one click." />
+              message="Write the sequence you already run in your head, visit, invite, send the report, ask, and apply it to somebody in one click." />
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {d.templates.map(t => (

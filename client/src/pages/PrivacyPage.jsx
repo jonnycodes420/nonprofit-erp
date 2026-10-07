@@ -61,10 +61,10 @@ export default function PrivacyPage() {
         <p style={S.p}>This Privacy Policy describes how Steward ("we," "us," or "our") collects, uses, and shares information when you use our platform. By using Steward, you agree to the practices described in this policy.</p>
 
         <h2 style={S.h2}>1. Information We Collect</h2>
-        <p style={S.p}><strong>Account Information.</strong> When you create an account we collect your name, email address, organization name, and password (stored as a bcrypt hash — never in plaintext).</p>
-        <p style={S.p}><strong>Donor and Organization Data.</strong> We store all data you import or enter into the platform, including donor records, contact information, giving history, grant data, financial records, and notes ("Your Data"). This data belongs to you — see Section 4.</p>
+        <p style={S.p}><strong>Account Information.</strong> When you create an account we collect your name, email address, organization name, and password (stored as a bcrypt hash, never in plaintext).</p>
+        <p style={S.p}><strong>Donor and Organization Data.</strong> We store all data you import or enter into the platform, including donor records, contact information, giving history, grant data, financial records, and notes ("Your Data"). This data belongs to you, see Section 4.</p>
         <p style={S.p}><strong>Usage Data.</strong> We collect information about how you use the Service, including pages visited, features used, and actions taken. This helps us improve the platform.</p>
-        <p style={S.p}><strong>Payment Information.</strong> Subscription billing is handled by Stripe. We do not store your full payment card details — Stripe processes and stores payment information under their own privacy policy.</p>
+        <p style={S.p}><strong>Payment Information.</strong> Subscription billing is handled by Stripe. We do not store your full payment card details, Stripe processes and stores payment information under their own privacy policy.</p>
         <p style={S.p}><strong>Communications.</strong> If you contact us by email or through the support widget, we retain those communications to help resolve your issue and improve our service.</p>
         <p style={S.p}><strong>Cookies and Local Storage.</strong> We use browser localStorage to store your authentication token and session preferences. We do not use third-party advertising cookies.</p>
 
@@ -92,15 +92,15 @@ export default function PrivacyPage() {
         <h2 style={S.h2}>5. Third-Party Services</h2>
         <p style={S.p}>We use the following third-party services to operate Steward:</p>
         <ul style={S.ul}>
-          <li style={S.li}><strong>Supabase</strong> — database hosting (United States)</li>
-          <li style={S.li}><strong>Railway</strong> — backend server hosting (United States)</li>
-          <li style={S.li}><strong>Vercel</strong> — frontend hosting and analytics (United States)</li>
-          <li style={S.li}><strong>Stripe</strong> — payment processing; governed by <a href="https://stripe.com/privacy" style={S.a} target="_blank" rel="noopener noreferrer">Stripe's Privacy Policy</a></li>
-          <li style={S.li}><strong>Resend</strong> — transactional email delivery</li>
-          <li style={S.li}><strong>Anthropic</strong> — AI API for in-app AI features</li>
-          <li style={S.li}><strong>Google Gmail API</strong> — if you connect your Gmail account, we access your Gmail to sync donor email history and send emails on your behalf. We request only the minimum necessary scopes and do not read emails unrelated to donors in your Steward account.</li>
-          <li style={S.li}><strong>Intercom</strong> — customer support chat widget</li>
-          <li style={S.li}><strong>Sentry</strong> — error monitoring (may capture anonymized error traces)</li>
+          <li style={S.li}><strong>Supabase</strong> database hosting (United States)</li>
+          <li style={S.li}><strong>Railway</strong> backend server hosting (United States)</li>
+          <li style={S.li}><strong>Vercel</strong> frontend hosting and analytics (United States)</li>
+          <li style={S.li}><strong>Stripe</strong> payment processing; governed by <a href="https://stripe.com/privacy" style={S.a} target="_blank" rel="noopener noreferrer">Stripe's Privacy Policy</a></li>
+          <li style={S.li}><strong>Resend</strong> transactional email delivery</li>
+          <li style={S.li}><strong>Anthropic</strong> AI API for in-app AI features</li>
+          <li style={S.li}><strong>Google Gmail API</strong> if you connect your Gmail account, we access your Gmail to sync donor email history and send emails on your behalf. We request only the minimum necessary scopes and do not read emails unrelated to donors in your Steward account.</li>
+          <li style={S.li}><strong>Intercom</strong> customer support chat widget</li>
+          <li style={S.li}><strong>Sentry</strong> error monitoring (may capture anonymized error traces)</li>
         </ul>
         <p style={S.p}>We do not sell, rent, or share Your Data with third parties for marketing or advertising purposes.</p>
 
@@ -121,11 +121,11 @@ export default function PrivacyPage() {
         <h2 style={S.h2}>8. Your Rights</h2>
         <p style={S.p}>Depending on where you are located, you may have the following rights regarding your personal information:</p>
         <ul style={S.ul}>
-          <li style={S.li}><strong>Access</strong> — request a copy of the personal information we hold about you</li>
-          <li style={S.li}><strong>Correction</strong> — request that we correct inaccurate information</li>
-          <li style={S.li}><strong>Deletion</strong> — request that we delete your personal information</li>
-          <li style={S.li}><strong>Portability</strong> — request your data in a machine-readable format</li>
-          <li style={S.li}><strong>Opt-out</strong> — opt out of non-essential communications</li>
+          <li style={S.li}><strong>Access</strong> request a copy of the personal information we hold about you</li>
+          <li style={S.li}><strong>Correction</strong> request that we correct inaccurate information</li>
+          <li style={S.li}><strong>Deletion</strong> request that we delete your personal information</li>
+          <li style={S.li}><strong>Portability</strong> request your data in a machine-readable format</li>
+          <li style={S.li}><strong>Opt-out</strong> opt out of non-essential communications</li>
         </ul>
         <p style={S.p}>To exercise any of these rights, contact us at <a href="mailto:privacy@stewardapp.dev" style={S.a}>privacy@stewardapp.dev</a>. We will respond within 30 days.</p>
         <p style={S.p}>California residents: Steward does not sell personal information as defined under the California Consumer Privacy Act (CCPA). You have the right to know what personal information is collected about you and to request its deletion.</p>
@@ -147,9 +147,9 @@ export default function PrivacyPage() {
             plainly from audit/portal-data-handling.md. */}
         <h2 style={S.h2}>13. Donor Accounts &amp; the Giving Network</h2>
         <p style={S.p}>This section applies if you create a personal donor account at stewardapp.dev/giving, or if your nonprofit joins the Steward network through self-serve signup.</p>
-        <p style={S.p}><strong>What we collect for a donor account:</strong> your email address(es), a password (stored only as a one-way hash), and the links between your account and your giving records at organizations that use Steward. Your account is linked to an organization's records only when you prove control of the email address on those records — by clicking a link we send to that exact address. We never link records by name, address, or any guess.</p>
+        <p style={S.p}><strong>What we collect for a donor account:</strong> your email address(es), a password (stored only as a one-way hash), and the links between your account and your giving records at organizations that use Steward. Your account is linked to an organization's records only when you prove control of the email address on those records, by clicking a link we send to that exact address. We never link records by name, address, or any guess.</p>
         <p style={S.p}><strong>Who sees what:</strong> Each nonprofit sees only its own relationship with you. We never share your giving at one organization with another. Your combined giving totals are computed for your eyes only, when you look at them, and are never stored where an organization could see them, and never shown to any organization. An organization cannot tell whether you have a donor account or where else you give.</p>
-        <p style={S.p}><strong>Your controls:</strong> You can hide any organization from your dashboard at any time (this does not delete that organization's own records of your giving — their records of their donors are theirs). You can delete your account at any time from the Account tab: your account, its email addresses, and all its links are deleted. Each organization's own records of its donors are unaffected.</p>
+        <p style={S.p}><strong>Your controls:</strong> You can hide any organization from your dashboard at any time (this does not delete that organization's own records of your giving, their records of their donors are theirs). You can delete your account at any time from the Account tab: your account, its email addresses, and all its links are deleted. Each organization's own records of its donors are unaffected.</p>
         <p style={S.p}><strong>No data sale:</strong> We do not sell your personal information, and we do not use your cross-organization giving for advertising, recommendations, or any purpose other than showing it to you.</p>
         <p style={S.p}><strong>For nonprofits joining the network:</strong> we collect your organization's name, EIN, website, and a contact email; we verify your EIN against the IRS's published tax-exempt organization list and record the verification result and our listing decisions.</p>
         <p style={S.p}>Questions about any of this: <a href="mailto:privacy@stewardapp.dev" style={S.a}>privacy@stewardapp.dev</a>.</p>

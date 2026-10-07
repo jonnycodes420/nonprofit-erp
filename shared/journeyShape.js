@@ -75,6 +75,28 @@ export const TRIGGERS = [
   // PARITY-3 6a — the one PARITY-1 had to skip: there was no birth date.
   { key: "birthday",       label: "Their birthday",
     sentence: "Starts each year on somebody's birthday, by your organisation's date, checked every morning. Only people with a birthday on file." },
+  // JOURNEYS-3 — the moments a small team misses. Each is checked every hour
+  // by the journey sweep (like anniversaries), in the org's own calendar, and
+  // each enrols a person once per event: this membership's end, this plan's
+  // failure, this card's month, this many hours, this grant, this page.
+  { key: "membership_ending", label: "Their membership ends in 30 days", sweep: true,
+    sentence: "Starts 30 days before somebody's membership ends, checked every hour. Once per membership term." },
+  { key: "membership_lapsed", label: "Their membership lapses", sweep: true,
+    sentence: "Starts when somebody's membership ends and they have not renewed, checked every hour, within 30 days of the end." },
+  { key: "recurring_failed", label: "Their monthly gift fails", sweep: true,
+    sentence: "Starts when a payment on somebody's monthly gift does not go through, checked every hour. Once per failure." },
+  { key: "recurring_cancelled", label: "Their monthly gift is cancelled", sweep: true,
+    sentence: "Starts when somebody's monthly gift is cancelled, checked every hour. Once per plan." },
+  { key: "card_expiring", label: "Their card expires next month", sweep: true,
+    sentence: "Starts when the card on a running monthly gift expires next month, checked every hour. Once per card month." },
+  { key: "volunteer_hours", label: "They reach a volunteer hours milestone", sweep: true, needsHours: true,
+    sentence: "Starts when somebody's volunteer hours pass 10, 25, 50 or 100, checked every hour. Once per milestone." },
+  { key: "first_event", label: "They come to their first event",
+    sentence: "Starts the first time somebody is marked as having come to one of your events." },
+  { key: "grant_awarded", label: "A grant is awarded", sweep: true,
+    sentence: "Starts on the funder when one of their grants is marked awarded, checked every hour. Once per grant." },
+  { key: "p2p_goal", label: "Their fundraising page reaches its goal", sweep: true,
+    sentence: "Starts on the fundraiser when their peer-to-peer page reaches its goal, checked every hour. Once per page." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own — you choose who goes in it." },
 ];
@@ -105,6 +127,15 @@ export function journeyState({ enabled, everEnabled, archived, everIn } = {}) {
   return "draft";
 }
 export const TRIGGER_KEYS = TRIGGERS.map(t => t.key);
+// JOURNEYS-3 — the triggers the hourly sweep looks for, and the milestones.
+export const SWEEP_TRIGGER_KEYS = TRIGGERS.filter(t => t.sweep).map(t => t.key);
+export const HOUR_MILESTONES = [10, 25, 50, 100];
+// The highest milestone passed between two totals (in hours), or null.
+export function hoursMilestoneCrossed(before, after) {
+  const b = Number(before) || 0, a = Number(after) || 0;
+  const passed = HOUR_MILESTONES.filter(m => b < m && a >= m);
+  return passed.length ? passed[passed.length - 1] : null;
+}
 export const triggerByKey = k => TRIGGERS.find(t => t.key === k) || null;
 
 // ── FIX-4 1c · WHO IT IS FOR ──────────────────────────────────────────────
@@ -289,6 +320,71 @@ export const PRESETS = [
     ],
   },
 ];
+// JOURNEYS-3 — ONE READY-MADE JOURNEY PER NEW TRIGGER. Each arrives OFF (the
+// org turns it on). A step that names a `starter` drafts from the org's own
+// copy of that EMAIL-1 email (saved from the starter when the journey is
+// made); every other step is a call or a task. Nothing sends without a person.
+// `exclusive` marks the two that ask the same thing of a monthly giver: a
+// person is in only one of those at a time, and the higher one wins.
+PRESETS.push(
+  { key: "membership_ending", name: "Membership ending soon", trigger: "membership_ending", priority: 55,
+    blurb: "A friendly word a month before it ends, then a call if they have not renewed.",
+    steps: [
+      { type: "send",      label: "Send the renewal note",        offsetDays: 0,  starter: "membership_renewal" },
+      { type: "follow_up", label: "Call if they have not renewed", offsetDays: 21 },
+    ] },
+  { key: "membership_lapsed", name: "Membership lapsed", trigger: "membership_lapsed", priority: 65,
+    blurb: "Their membership ended. Ask what changed before asking again.",
+    steps: [
+      { type: "follow_up", label: "Call and ask how they are",     offsetDays: 3 },
+      { type: "send",      label: "Send the invitation to rejoin", offsetDays: 14, starter: "membership_renewal" },
+    ] },
+  { key: "recurring_failed", name: "Monthly gift failed", trigger: "recurring_failed", priority: 80, exclusive: true,
+    blurb: "A card did not go through. Help them fix it, kindly, and call if it stays stuck.",
+    steps: [
+      { type: "send",      label: "Send the update-your-card note", offsetDays: 1, starter: "failed_card" },
+      { type: "follow_up", label: "Call if the card is still not fixed", offsetDays: 10 },
+    ] },
+  { key: "recurring_cancelled", name: "Monthly gift cancelled", trigger: "recurring_cancelled", priority: 60,
+    blurb: "They stopped their monthly gift. Thank them for every month, no ask.",
+    steps: [
+      { type: "send",      label: "Send a thank-you for every month", offsetDays: 2, starter: "thank_you" },
+      { type: "follow_up", label: "Check in, no ask",                 offsetDays: 60 },
+    ] },
+  { key: "card_expiring", name: "Card expiring", trigger: "card_expiring", priority: 60, exclusive: true,
+    blurb: "Their card runs out next month. One note so the gift does not stop.",
+    steps: [
+      { type: "send", label: "Send the update-your-card note", offsetDays: 0, starter: "failed_card" },
+    ] },
+  { key: "volunteer_hours", name: "Volunteer hours milestone", trigger: "volunteer_hours", priority: 35,
+    blurb: "They have given you real time. Say so, by name and by number.",
+    steps: [
+      { type: "send",  label: "Send the volunteer thank-you", offsetDays: 2, starter: "volunteer_thank_you" },
+      { type: "thank", label: "Thank them at their next shift", offsetDays: 14 },
+    ] },
+  { key: "first_event", name: "First event", trigger: "first_event", priority: 45,
+    blurb: "They came for the first time. Thank them, then ask what brought them.",
+    steps: [
+      { type: "send",      label: "Send the event thank-you",   offsetDays: 1,  starter: "event_thank_you" },
+      { type: "follow_up", label: "Ask what brought them",      offsetDays: 21 },
+    ] },
+  { key: "grant_awarded", name: "Grant awarded", trigger: "grant_awarded", priority: 85,
+    blurb: "Thank the funder the same week, then show them the work.",
+    steps: [
+      { type: "thank", label: "Call the funder to say thank you", offsetDays: 2 },
+      { type: "send",  label: "Send the funder thank-you letter", offsetDays: 5,  starter: "thank_you" },
+      { type: "send",  label: "Send the first progress update",   offsetDays: 90, starter: "grant_funder_update" },
+    ] },
+  { key: "p2p_goal", name: "Fundraising page reached its goal", trigger: "p2p_goal", priority: 60,
+    blurb: "They asked their friends and it worked. Celebrate it with them.",
+    steps: [
+      { type: "thank", label: "Call to celebrate their page",     offsetDays: 1 },
+      { type: "send",  label: "Send the thank-you",               offsetDays: 3, starter: "thank_you" },
+    ] },
+);
+// The EMAIL-1 starters a ready-made step may name.
+export const PRESET_STARTERS = ["membership_renewal", "failed_card", "thank_you", "volunteer_thank_you",
+  "event_thank_you", "grant_funder_update"];
 export const PRESET_KEYS = PRESETS.map(p => p.key);
 export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 
@@ -448,6 +544,12 @@ export function validateJourney(input = {}) {
     if (idOf(rawF.fundId)) triggerFilters.fundId = idOf(rawF.fundId);
     if (idOf(rawF.campaignId)) triggerFilters.campaignId = idOf(rawF.campaignId);
   }
+  // JOURNEYS-3 — an hours journey may watch one milestone; none means any.
+  if (t && t.needsHours && rawF.hours !== undefined && rawF.hours !== null && rawF.hours !== "") {
+    const h = Number(rawF.hours);
+    if (HOUR_MILESTONES.includes(h)) triggerFilters.hours = h;
+    else errors.push({ field: "triggerFilters.hours", message: `Pick one of the milestones: ${HOUR_MILESTONES.join(", ")} hours.` });
+  }
   if (t && t.needsGroup) {
     if (idOf(rawF.groupId)) triggerFilters.groupId = idOf(rawF.groupId);
     else errors.push({ field: "triggerFilters.groupId", message: "Pick the group this journey watches." });
@@ -486,8 +588,70 @@ export function validateJourney(input = {}) {
   });
 
   return { ok: errors.length === 0, name: base.name, description: sanitizeDescription(input.description),
-           trigger, amountCents, priority, steps, triggerFilters,
+           trigger, amountCents, priority, steps, triggerFilters, exclusive: input.exclusive === true,
            audience: validateAudience(input.audience), errors };
+}
+
+// ── JOURNEYS-3 · ONE TOUCH A WEEK, ACROSS EVERY JOURNEY ──────────────────
+// A person may be in several journeys at once. Their steps are spaced so that
+// no two steps from DIFFERENT journeys fall within `gapDays` of each other
+// (7 by default, set in Journey settings). A journey's own steps keep the
+// spacing she wrote for them.
+//
+// HOW IT IS DECIDED. Open steps never move (someone may already be on them).
+// Then the journeys are placed highest priority first (a tie goes to the one
+// they entered first): each pending step keeps its date unless a step from
+// another journey is already within the gap, in which case it moves to the
+// first day the gap allows, and every later step of its own journey moves no
+// earlier than it. So the higher-ranked journey goes first and the other
+// step waits for the next open week, and each move carries the reason.
+//
+// `plans`: [{ id, name, priority, appliedOn, steps: [{ id, seq, dueDate, status }] }]
+// Returns [{ stepId, planId, from, to, becausePlanId, becauseName }].
+export const TOUCH_GAP_DEFAULT = 7, TOUCH_GAP_MIN = 1, TOUCH_GAP_MAX = 60;
+const dayNum = d => { const [y, m, dd] = String(d).slice(0, 10).split("-").map(Number); return Math.round(Date.UTC(y, m - 1, dd) / 86400000); };
+const dayStr = n => new Date(n * 86400000).toISOString().slice(0, 10);
+export function spaceTouches(plans = [], gapDays = TOUCH_GAP_DEFAULT) {
+  const gap = Math.max(TOUCH_GAP_MIN, Math.min(TOUCH_GAP_MAX, Number(gapDays) || TOUCH_GAP_DEFAULT));
+  const placed = [];   // { day, planId, name }
+  for (const p of plans) for (const s of p.steps || []) {
+    if (s.status === "open" && s.dueDate) placed.push({ day: dayNum(s.dueDate), planId: p.id, name: p.name });
+  }
+  const order = plans.slice().sort((a, b) =>
+    (Number(b.priority) || 0) - (Number(a.priority) || 0)
+    || String(a.appliedOn || "").localeCompare(String(b.appliedOn || ""))
+    || String(a.id).localeCompare(String(b.id)));
+  const moves = [];
+  for (const p of order) {
+    const steps = (p.steps || []).slice().sort((a, b) => Number(a.seq) - Number(b.seq));
+    let floor = null;
+    for (const s of steps) {
+      if (s.status === "open" && s.dueDate) { floor = dayNum(s.dueDate); continue; }
+      if (s.status !== "pending" || !s.dueDate) continue;
+      let day = dayNum(s.dueDate);
+      if (floor != null && day < floor) day = floor;
+      let because = null;
+      for (let guard = 0; guard < 400; guard++) {
+        const clash = placed.find(x => x.planId !== p.id && Math.abs(x.day - day) < gap);
+        if (!clash) break;
+        because = because || clash;
+        day = Math.max(day, clash.day + gap);
+      }
+      if (day !== dayNum(s.dueDate)) {
+        moves.push({ stepId: s.id, planId: p.id, from: String(s.dueDate).slice(0, 10), to: dayStr(day),
+                     becausePlanId: because ? because.planId : null, becauseName: because ? because.name : null });
+      }
+      placed.push({ day, planId: p.id, name: p.name });
+      floor = day;
+    }
+  }
+  return moves;
+}
+// The line written on the step and on the timeline when a step moves.
+export function movedSentence(move, journeyName) {
+  return move.becauseName
+    ? `"${journeyName}" moved to ${move.to} because "${move.becauseName}" has a touch that week and goes first.`
+    : `"${journeyName}" moved to ${move.to} to keep it after the step before it.`;
 }
 
 // ── WHICH JOURNEY WINS ───────────────────────────────────────────────────

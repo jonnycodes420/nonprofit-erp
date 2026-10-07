@@ -23,7 +23,7 @@ function bucketOf(t) {
 }
 
 const BUCKETS = [
-  { key: "overdue",  label: "Overdue",   accent: T.terracotta, empty: "Nothing overdue — you're on top of it." },
+  { key: "overdue",  label: "Overdue",   accent: T.terracotta, empty: "Nothing overdue, you're on top of it." },
   { key: "today",    label: "Due today", accent: T.gold,       empty: "Nothing due today." },
   { key: "upcoming", label: "Upcoming",  accent: T.greenMid,   empty: "No upcoming tasks scheduled." },
   { key: "someday",  label: "No date",   accent: T.ink3,       empty: null },
@@ -144,7 +144,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
             </label>
             <label style={{ ...lbl, flex: 1, minWidth: 180 }}>Linked donor (optional)
               <select value={form.donorId} onChange={e => setForm(f => ({ ...f, donorId: e.target.value }))} style={{ ...inp, padding: "8px 10px" }}>
-                <option value="">— none —</option>
+                <option value="">None</option>
                 {donors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
               </select>
             </label>
@@ -161,7 +161,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
       )}
 
       {openCount === 0 && !showAdd && (
-        <EmptyState icon="✓" title="You're all caught up" message="No open tasks. Add a follow-up so nothing slips — every task can link to the donor it's about." action="+ New task" onAction={isReadOnly ? undefined : () => setShowAdd(true)} />
+        <EmptyState icon="✓" title="You're all caught up" message="No open tasks. Add a follow-up so nothing slips, every task can link to the donor it's about." action="+ New task" onAction={isReadOnly ? undefined : () => setShowAdd(true)} />
       )}
 
       {BUCKETS.map(b => {
