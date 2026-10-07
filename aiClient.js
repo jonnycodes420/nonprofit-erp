@@ -79,4 +79,25 @@ async function transcribeAudio(orgId, { audioBuffer, mimeType, ext }) {
   });
 }
 
-module.exports = { AI_OFF_MESSAGE, AiOffError, aiGate, requireAi, anthropicFor, transcribeAudio };
+// AGENT-3 · NO SILENT FALLBACKS. FIX-29 found the Show me model path had
+// failed quietly since PARITY-4 behind a bare catch. Every place an AI call
+// gives way to the non-AI path calls this: one log line, one counted row.
+// It never throws into the caller; the answer the person reads does not wait
+// on it beyond one insert.
+function fallbackReason(err) {
+  if (!err) return "unknown";
+  if (typeof err === "string") return err.slice(0, 120);
+  if (err.code === "ai_off") return "ai_off";
+  return String(err.status || err.code || err.message || "error").slice(0, 120);
+}
+async function recordAiFallback(orgId, surface, err) {
+  const reason = fallbackReason(err);
+  if (reason !== "ai_off") console.warn(`[ai-fallback] ${surface} org=${orgId || "none"} reason=${reason}`);
+  try {
+    await query("INSERT INTO ai_fallbacks (id, org_id, surface, reason) VALUES (?,?,?,?)",
+      ["aif_" + require("crypto").randomUUID().replace(/-/g, "").slice(0, 12), orgId || null, String(surface).slice(0, 80), reason]);
+  } catch (e) { console.error("[ai-fallback] could not count it:", e.message); }
+  return reason;
+}
+
+module.exports = { AI_OFF_MESSAGE, AiOffError, aiGate, requireAi, anthropicFor, transcribeAudio, recordAiFallback, fallbackReason };

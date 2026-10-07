@@ -14,6 +14,7 @@
 // HELP-1's question_log: the question text only (never a donor's data, never
 // the answer), with whether Steward could answer it. Super-admin reads the
 // unanswered ones grouped by topic; that list is the roadmap.
+const { recordAiFallback } = require("../aiClient");   // AGENT-3: no silent fallbacks
 const express = require("express");
 const WHY = require("../why");
 const AW = require("../appealWhy");
@@ -91,13 +92,16 @@ async function writeSentence(orgId, questionText, a, Sx) {
       model: AGENT_MODEL, max_tokens: 300, thinking: { type: "disabled" },
       messages: [{ role: "user", content: Sx.sentencePrompt(questionText, facts) }],
     });
-    if (out.stop_reason && out.stop_reason !== "end_turn") return { sentence: template, source: "template", template, aiOff: false, refused: "unfinished" };
+    if (out.stop_reason && out.stop_reason !== "end_turn") { recordAiFallback(orgId, "ask.sentence", "unfinished"); return { sentence: template, source: "template", template, aiOff: false, refused: "unfinished" }; }
     const text = (out.content || []).filter(b => b.type === "text").map(b => b.text).join(" ").replace(/\s+/g, " ").trim();
     const G = await guide();
     // ASK-3: complete, plain, about the donor's world, and every number Steward's own.
     if (text && Sx.sentencePasses(text, facts) && G.sentenceIsPlain(text)) return { sentence: text, source: "ai", template, aiOff: false };
-    return { sentence: template, source: "template", template, aiOff: false, refused: !text ? "empty" : Sx.sentencePasses(text, facts) ? "plain" : "numbers" };
+    const refused = !text ? "empty" : Sx.sentencePasses(text, facts) ? "plain" : "numbers";
+    recordAiFallback(orgId, "ask.sentence", refused);
+    return { sentence: template, source: "template", template, aiOff: false, refused };
   } catch (e) {
+    recordAiFallback(orgId, "ask.sentence", e);
     return { sentence: template, source: "template", template, aiOff: e && e.code === "ai_off" };
   }
 }
@@ -209,7 +213,7 @@ async function showMe(req, res, typed, preset = null) {
       // FIX-29: the templates read it instead, and the failure is logged (a
       // rejected schema hid here for two days).
       spec = null; aiOff = !!(e && e.code === "ai_off");
-      if (!aiOff) console.error("[why] show me spec failed", e && e.status ? e.status : "", (e && e.message) || e);
+      recordAiFallback(orgId, "ask.show_me", e);
     }
   } else aiOff = gate.reason === "ai_disabled";
   if (!spec) spec = SM.templateSpec(typed, ctx);
@@ -522,7 +526,7 @@ async function tryQuery(req, typed, previousQuery = null) {
     if (!chk.ok) return { refused: chk.refused };
     return { answer: await runQueryPlan(req, chk.plan, typed, "query") };
   } catch (e) {
-    console.error("[ask] query layer", e && e.message);
+    recordAiFallback(orgId, "ask.query_layer", e);
     return null;
   }
 }
@@ -852,7 +856,7 @@ async function askHandler(req, res) {
           restatement = r && G.sentenceIsPlain(r) && Sx.numbersIn(r).every(n => allowed.has(Math.round(n * 100) / 100)) ? r : null;
           delete m.restatement; raw = m; source = "ai";
         }
-      } catch { /* the template's reading stands */ }
+      } catch (e) { recordAiFallback(orgId, "ask.plan", e); /* the template's reading stands, and is counted */ }
     }
   }
   if (!raw) {

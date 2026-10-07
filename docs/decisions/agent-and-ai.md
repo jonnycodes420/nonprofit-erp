@@ -3,6 +3,25 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **The Agent reads the objects too (AGENT-3).** Under each person in a plan or a draft batch are their grants
+  (and the next open milestone), memberships, open pledges, gifts to campaigns and giving pages, peer-to-peer
+  pages and auction wins (`agentObjects`, org-scoped, those people only). Each row's id may be cited and each
+  amount may be used; the run re-reads them before it checks citations. The find gained `grantReportDue`
+  (days), `memberExpiresFrom/To`, `auctionWinner` (any/unpaid), `fundraiser=pending`, and Show me reads
+  `closeness=cooling` for every way of saying gone quiet (gone, went, going quiet, stopped giving, slipping,
+  drifting, haven't heard from). A draft carries its `purpose` (thank_you, membership_renewal,
+  funder_update, auction_pay, p2p_approval); a funder update starts from the org's own `grant_funder_update`
+  template. A grant task carries `grantId`; a peer-to-peer approval reminder is a task for staff, never a
+  message to the fundraiser.
+- **A task lives on the person, like a draft (AGENT-3).** `create_task` opens their Thread when nothing is open
+  and writes one timeline line, in the run's transaction, both undoable.
+- **Any plan size finishes (AGENT-3).** Past `PLAN_BATCH_SIZE` (10) found or named people, the plan call runs
+  ten people at a time, three at once; a batch cut short refuses the whole plan. Drafting was already batched.
+- **No silent fallbacks (AGENT-3).** Every attempted AI call that gives way to the non-AI path calls
+  `recordAiFallback(orgId, surface, err)` (aiClient.js): one log line and one `ai_fallbacks` row. The nightly
+  real-AI run fails on any fallback during the run whose reason is not `ai_off`.
+- **A plan's status is one rule (AGENT-3).** `agentShape.planListState` decides the list word from the run's
+  steps; `/agent/plans` sends it as `listState` and the screen shows that.
 - **A "find" is a list, not a plan (AI-FIX).** "Steward, find donors in North Carolina I haven't reached out to"
   is read with the donor list's own filters (`agentFindPeople`: the templates, then the model's filter form
   whenever the templates could not read every word) and answered as a read: how many match, the filters in

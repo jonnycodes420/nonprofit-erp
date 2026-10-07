@@ -311,6 +311,42 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push(`EXISTS (SELECT 1 FROM peer_fundraisers pf WHERE pf.org_id = donors.org_id AND pf.person_id = donors.id
                          AND COALESCE(pf.status,'') NOT IN ('rejected','removed'))`);
   }
+  // AGENT-3: a page still waiting for somebody here to approve it.
+  if (q.fundraiser === "pending") {
+    where.push(`EXISTS (SELECT 1 FROM peer_fundraisers pf WHERE pf.org_id = donors.org_id AND pf.person_id = donors.id AND pf.status = 'pending')`);
+  }
+  // AGENT-3 · THE OBJECTS THE AGENT COULD NOT SEE. Each is an EXISTS against
+  // the table the object's own screen reads, org-scoped, with today from the
+  // org's calendar.
+  // A grant report due in the next N days: an open report milestone, or the
+  // grant's own report date when it has no milestones.
+  if (q.grantReportDue) {
+    const until = require("./orgTime").addDays(today, Number(q.grantReportDue));
+    where.push(`EXISTS (SELECT 1 FROM grants gr WHERE gr.org_id = donors.org_id AND gr.funder_donor_id = donors.id
+                  AND (EXISTS (SELECT 1 FROM grant_milestones gm WHERE gm.org_id = gr.org_id AND gm.grant_id = gr.id
+                                AND gm.kind LIKE 'report%' AND gm.completed_at IS NULL AND COALESCE(gm.state,'') NOT IN ('done','cancelled')
+                                AND gm.due_date BETWEEN ? AND ?)
+                       OR (NOT EXISTS (SELECT 1 FROM grant_milestones gn WHERE gn.org_id = gr.org_id AND gn.grant_id = gr.id AND gn.kind LIKE 'report%')
+                           AND LEFT(COALESCE(gr.report_due,''),10) BETWEEN ? AND ?)))`);
+    params.push(today, until, today, until);
+  }
+  // A membership that ends in a window (any membership not cancelled).
+  if (q.memberExpiresFrom || q.memberExpiresTo) {
+    where.push(`EXISTS (SELECT 1 FROM memberships me WHERE me.org_id = donors.org_id AND me.donor_id = donors.id
+                         AND me.cancelled_at IS NULL AND LEFT(COALESCE(me.expires_on,''),10) BETWEEN ? AND ?)`);
+    params.push(q.memberExpiresFrom || "0000-01-01", q.memberExpiresTo || "9999-12-31");
+  }
+  // The winner of a closed auction item: the top bid by the one ordering
+  // (auctionCore TOP_BIDS_SQL). "unpaid" is a winner whose item is not paid.
+  if (q.auctionWinner) {
+    where.push(`EXISTS (SELECT 1 FROM auction_items ai JOIN auctions au ON au.id = ai.auction_id AND au.org_id = ai.org_id
+                  JOIN LATERAL (SELECT b.bidder_id FROM auction_bids b WHERE b.org_id = ai.org_id AND b.item_id = ai.id
+                                 ORDER BY b.amount DESC, b.created_at ASC, b.id ASC LIMIT 1) tb ON true
+                  JOIN auction_bidders bw ON bw.id = tb.bidder_id AND bw.org_id = ai.org_id
+                 WHERE ai.org_id = donors.org_id AND bw.donor_id = donors.id
+                   AND LEAST(au.closes_at, COALESCE(ai.closed_at, au.closes_at)) <= NOW()
+                   ${q.auctionWinner === "unpaid" ? "AND ai.paid_at IS NULL" : ""})`);
+  }
   if (q.funder === "1") where.push(`EXISTS (SELECT 1 FROM grants gf WHERE gf.org_id = donors.org_id AND gf.funder_donor_id = donors.id)`);
   if (q.openTask === "1") {
     where.push(`EXISTS (SELECT 1 FROM tasks tk WHERE tk.org_id = donors.org_id AND tk.donor_id = donors.id
@@ -370,7 +406,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   "state", "noContactSince",
   // WIRE-1: every list can become a Group.
   "attendedEvent", "registeredEvent", "member", "memberLevel", "hasPledge", "recurring", "fundraiser", "gavePage",
-  "auctionBidder", "funder", "inJourney", "openTask", "kind", "fromImport", "groupId"];
+  "auctionBidder", "funder", "inJourney", "openTask", "kind", "fromImport", "groupId",
+  // AGENT-3: grant reports due, memberships ending, auction winners.
+  "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -396,7 +434,7 @@ function normalizeRules(raw) {
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
-  for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "fundraiser", "funder", "openTask"]) {
+  for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "funder", "openTask", ...(rules.fundraiser === "pending" ? [] : ["fundraiser"])]) {
     if (rules[k] === undefined) continue;
     if (rules[k] === "true") rules[k] = "1";
     if (rules[k] !== "1") delete rules[k];
@@ -404,7 +442,11 @@ function normalizeRules(raw) {
   if (rules.gaveOver !== undefined && !(Number(rules.gaveOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
   if (rules.unthankedOver !== undefined && !(Number(rules.unthankedOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
   if (rules.state && !/^[A-Z]{2}$/.test(String(rules.state))) errors.push("A state is its two-letter code, like NC.");
-  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "noContactSince"])
+  if (rules.grantReportDue !== undefined && !(/^\d{1,3}$/.test(rules.grantReportDue) && Number(rules.grantReportDue) >= 1 && Number(rules.grantReportDue) <= 366))
+    errors.push("A grant report window is a number of days, 1 to 366.");
+  if (rules.auctionWinner !== undefined) { if (rules.auctionWinner === "1" || rules.auctionWinner === "true") rules.auctionWinner = "any";
+    if (!["any", "unpaid"].includes(rules.auctionWinner)) errors.push("An auction winner is any or unpaid."); }
+  for (const k of ["volShiftFrom", "volShiftTo", "volHoursFrom", "volHoursTo", "gaveFrom", "gaveTo", "notGaveFrom", "notGaveTo", "noContactSince", "memberExpiresFrom", "memberExpiresTo"])
     if (rules[k] && !/^\d{4}-\d{2}-\d{2}$/.test(rules[k])) errors.push("A date is written 2026-01-31.");
   for (const k of ["volHoursMin", "volHoursMax"])
     if (rules[k] !== undefined && !(Number(rules[k]) >= 0)) errors.push("Hours is a number, 0 or more.");
@@ -462,7 +504,10 @@ function rulesSentence(rules = {}) {
   if (rules.member) parts.push({ current: "members now (active or in grace)", active: "active members", grace: "members in their grace period", lapsed: "lapsed members", any: "members, now or before" }[rules.member] + (rules.memberLevel ? " at one level" : ""));
   if (rules.hasPledge) parts.push("with an open pledge");
   if (rules.recurring) parts.push("with a recurring gift running, at any interval");
-  if (rules.fundraiser) parts.push("who run a peer-to-peer page");
+  if (rules.fundraiser) parts.push(rules.fundraiser === "pending" ? "whose peer-to-peer page is waiting for approval" : "who run a peer-to-peer page");
+  if (rules.grantReportDue) parts.push(`with a grant report due in the next ${rules.grantReportDue} days`);
+  if (rules.memberExpiresFrom || rules.memberExpiresTo) parts.push(`whose membership ends ${rules.memberExpiresFrom || "any time"} to ${rules.memberExpiresTo || "any time"}`);
+  if (rules.auctionWinner) parts.push(rules.auctionWinner === "unpaid" ? "who won an auction item and have not paid" : "who won an auction item");
   if (rules.gavePage) parts.push(rules.gavePage === "any" ? "who gave through a giving page" : "who gave through one giving page");
   if (rules.auctionBidder) parts.push(rules.auctionBidder === "any" ? "registered to bid in an auction" : "registered to bid in one auction");
   if (rules.funder) parts.push("who fund a grant");

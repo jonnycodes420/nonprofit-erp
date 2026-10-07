@@ -16,7 +16,7 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 // FIX-12 Part 7b: the after-meeting chips reach the model only through here.
-const { anthropicFor, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
+const { anthropicFor, AiOffError, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 
 const routers = {
@@ -1502,7 +1502,7 @@ app.post("/calendar/events/:id/suggest", requireAuth, wrap(async (req, res) => {
       if (chips.length) { suggestions = chips; source = "agent"; }
     } catch (e) {
       if (e instanceof AiOffError) aiOff = e.reason === "ai_disabled";
-      else console.error("[meeting-chips] engine:", e.message);
+      else recordAiFallback(req.user.orgId, "meeting_chips", e);
     }
   }
   if (!suggestions) suggestions = N.suggestFromNote(note, ctx);

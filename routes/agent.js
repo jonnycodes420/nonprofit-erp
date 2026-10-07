@@ -16,7 +16,7 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 // FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
-const { anthropicFor, AI_OFF_MESSAGE } = require("../aiClient");
+const { anthropicFor, AI_OFF_MESSAGE, recordAiFallback } = require("../aiClient");
 
 const routers = {
   r0: express.Router(),
@@ -117,6 +117,7 @@ app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res)
     // FIX-28: a draft that did not finish is never shown; the template is.
     text = msg.stop_reason && msg.stop_reason !== "end_turn" ? "" : ((msg.content || []).find(x => x.type === "text") || {}).text || "";
   } catch (e) {
+    recordAiFallback(req.user.orgId, "draft_email", e);
     if (e && e.code === "ai_off") return res.json({ ...tpl, source: "template", aiOff: true, reasons: ["AI is turned off for your organization."] });
     return res.json({ ...tpl, source: "template", reasons: ["The draft could not be written just now."] });
   }
@@ -125,7 +126,7 @@ app.post("/ai/draft-email", requireAuth, checkWriteAccess, wrap(async (req, res)
   const body = lines.filter(l => !/^Subject:/i.test(l)).join("\n").trim();
   const chk = await DC.checkDraft(`${subj}\n${body}`, await DC.draftRecord(req.user.orgId, null));
   if (!chk.ok || !body) {
-    console.warn(`[draft-email] fell back to the template: ${chk.reasons.join(" · ") || "empty"}`);
+    recordAiFallback(req.user.orgId, "draft_email", chk.reasons.join(" · ") || "empty");
     return res.json({ ...tpl, source: "template", reasons: chk.reasons });
   }
   res.json({ subject: subj || tpl.subject, body, source: "ai", reasons: [] });
@@ -225,7 +226,15 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
 // FIX-29: "a thank-you NOTE to…" takes the second noun too; it used to leave
 // "note to every grant funder", which no filter reads, and the plan was made
 // from everybody instead of the funders.
-const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan)\b(\s+(notes?|letters?|emails?|calls?|cards?|messages?)\b)?\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
+const AGENT_ACTION_LEAD = /^\s*(please\s+)?(plan|make|create|schedule|set up|add|draft|write|open|start|book|log|give me|build)\b[^.]*?\b(calls?|tasks?|notes?|emails?|letters?|thank[- ]?yous?|visits?|asks?|steps?|follow[- ]?ups?|meetings?|a call plan|call plan|plan|renewals?|reminders?|updates?|pay[- ]your[- ]bid)\b(\s+(notes?|letters?|emails?|calls?|cards?|messages?|reminders?|tasks?)\b)?\s*(to|for|with|of)?\s*(the\s+people\s+|people\s+)?/i;
+// AGENT-3: "Add the tag spring-2026 to every donor in Batchville": the who is after the tag.
+const AGENT_TAG_LEAD = /^\s*(please\s+)?(add|put|give|apply)\s+(the\s+|a\s+)?tags?\s+("[^"]+"|'[^']+'|[^\s]+)\s+(to|on|for)\s+/i;
+// AGENT-3: "Thank everyone who gave to the spring appeal": the who is after "thank".
+const AGENT_THANK_LEAD = /^\s*(please\s+)?thank\s+/i;
+// A "due …" tail is the task's due date ("plan calls to lapsed donors, due in a
+// week"), EXCEPT when it belongs to the people: a grant report due, a
+// membership ending, a pledge due. Those stay in the who.
+const AGENT_DUE_TAIL = /[,;]?\s*(?<!\b(?:report|reports|renewal|renewals|grant|grants|pledge|pledges|payment|payments|due|expiring|ending|ends|expire|expires|renewing|membership|memberships)\s)\b(due|by|within|in the next)\b.*$/i;
 // AI-FIX: the words with "Steward," (or "Hey Steward") taken off the front.
 function agentUnaddressed(text) { return String(text || "").replace(/^\s*(hey |hi |ok |okay )?steward\s*[,:!-]?\s*/i, ""); }
 // FIX-29: when a model call fails, she reads one plain sentence and no plan;
@@ -240,8 +249,16 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
   const GR = require("../groups");
   // AI-FIX: "Steward, find donors…" is addressed to Steward; the name is not the ask.
   const said = agentUnaddressed(text);
-  const FIND_LEAD = /^\s*(please\s+)?(find|show( me)?|list|pull up|look up|who are)\b\s*(me\s+)?(all\s+)?(the\s+)?/i;
-  const who = said.replace(AGENT_ACTION_LEAD, "").replace(FIND_LEAD, "").replace(/[,;]?\s*(due|by|within|in the next)\b.*$/i, "").trim();
+  const FIND_LEAD = /^\s*(please\s+)?(find|show( me)?|list|pull up|look up|who are|who(?: has| have|'s| is)|which (?:people|donors|members|funders|supporters|of (?:my|our) \w+)(?: has| have| are| is)?|who)\b\s*(me\s+)?(all\s+)?(the\s+)?/i;
+  // AGENT-3: "create a checklist task AND draft a funder update for…": each
+  // action in turn comes off the front, until the people are what is left.
+  let lead = said;
+  for (let i = 0; i < 3; i++) {
+    const next = lead.replace(AGENT_TAG_LEAD, "").replace(AGENT_ACTION_LEAD, "").replace(/^\s*(and|then|also|,)\s+/i, "");
+    if (next === lead) break;
+    lead = next;
+  }
+  const who = lead.replace(AGENT_THANK_LEAD, "").replace(FIND_LEAD, "").replace(AGENT_DUE_TAIL, "").trim();
   if (!who || who === said.trim()) return null;
   const [events, campaigns] = await Promise.all([
     query(`SELECT id, name, date::text AS date FROM events WHERE org_id = ? ORDER BY date DESC LIMIT 200`, [orgId]),
@@ -266,6 +283,7 @@ async function agentFindPeople(orgId, text, today, { client = null } = {}) {
       // is logged and stops the plan, because a find that quietly failed
       // plans for everybody instead of the people she named.
       if (!(e && e.code === "ai_off")) throw agentPlanFailed("find people", e);
+      recordAiFallback(orgId, "agent.find", e);
     }
   }
   const chk = SM.checkSpec(spec, { normalizeRules: GR.normalizeRules, ruleKeys: GR.RULE_KEYS, events, campaigns });
@@ -428,6 +446,11 @@ const AGENT_EXECUTORS = {
     if (!donor) return { skipped: "unknown_donor" };
     const id = "adr_" + uuid().slice(0, 10);
     const thanks = step.purpose === "thank_you";
+    // AGENT-3: what the draft is for, said on the Thread and the timeline.
+    const A3 = await agentShapeMod();
+    const purpose = A3.DRAFT_PURPOSES.includes(step.purpose) ? step.purpose : null;
+    const what = purpose && !thanks ? A3.PURPOSE_LABEL[purpose] : null;
+    const [tplRow] = step.templateId ? await query("SELECT id FROM email_templates WHERE id=? AND org_id=?", [String(step.templateId), ctx.orgId]) : [];
     const giftIds = Array.isArray(step.giftIds) ? step.giftIds.map(String) : [];
     // WIRE-1-ADDENDUM rule 7: A DRAFT LIVES ON THE PERSON. It used to be a row
     // in Drafts to review and nowhere else, so their profile said "Nothing is
@@ -435,7 +458,7 @@ const AGENT_EXECUTORS = {
     // their Thread as the next step and on their timeline as a draft. One open
     // thread per person (threads_one_open): an open thank-you step is
     // relabelled to point at the draft; any other open step is left alone.
-    const label = thanks ? "Thank-you draft ready, review and send" : "Draft ready, review and send";
+    const label = thanks ? "Thank-you draft ready, review and send" : what ? `${what} draft ready, review and send` : "Draft ready, review and send";
     let threadId = null;
     const [open] = await require("../db").queryTx(ctx.client,
       "SELECT id, next_step_type, next_step_label FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
@@ -455,11 +478,11 @@ const AGENT_EXECUTORS = {
         before: { next_step_label: open.next_step_label }, after: { next_step_label: label }, cites: step.citesRows });
     }
     await runTx(ctx.client,
-      `INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites,gift_ids,thread_id,purpose)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO agent_drafts (id,org_id,run_id,instruction_id,donor_id,subject,body,cites,gift_ids,thread_id,purpose,template_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
       [id, ctx.orgId, ctx.runId, ctx.instructionId || null, donor.id,
        String(step.subject || "").slice(0, 300), String(step.body || "").slice(0, 8000),
-       JSON.stringify(step.citesRows || []), JSON.stringify(giftIds), threadId, thanks ? "thank_you" : null]);
+       JSON.stringify(step.citesRows || []), JSON.stringify(giftIds), threadId, thanks ? "thank_you" : purpose, tplRow ? tplRow.id : null]);
     await agentWrite(ctx, { tool: "draft_note", table: "agent_drafts", entityId: id,
       before: null, after: { donor_id: donor.id }, cites: step.citesRows });
     // The timeline line (timelineLine.js's shape: type 'activity', keyed), in
@@ -469,7 +492,7 @@ const AGENT_EXECUTORS = {
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
        VALUES (?,?,?,'activity',?,?,?,?,?)`,
       [lineId, ctx.orgId, donor.id,
-       `${thanks ? "Thank-you drafted" : "Note drafted"} by Steward, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
+       `${thanks ? "Thank-you drafted" : what ? `${what} drafted` : "Note drafted"} by Steward, waiting for your review${step.subject ? `: "${String(step.subject).slice(0, 120)}"` : ""}.`,
        ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name,
        JSON.stringify({ line_key: `agent_draft:${id}`, agentDraftId: id, draft: true, giftIds })]);
     await agentWrite(ctx, { tool: "draft_note", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
@@ -486,14 +509,40 @@ const AGENT_EXECUTORS = {
     // the task list can sort or call overdue, so it is dropped.
     const due = /^\d{4}-\d{2}-\d{2}$/.test(String(step.due || "")) ? String(step.due)
       : Number.isInteger(step.dueDays) && step.dueDays >= 0 && step.dueDays <= 365 ? orgTime.addDays(ctx.today, step.dueDays) : "";
+    // AGENT-3: a task about a grant is on that grant (its own screen lists it).
+    const [grant] = step.grantId ? await require("../db").queryTx(ctx.client, "SELECT id FROM grants WHERE id=? AND org_id=?", [String(step.grantId), ctx.orgId]) : [];
+    const title = String(step.title || "Follow up").slice(0, 300);
     await runTx(ctx.client,
-      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,created_by,created_by_name)
-       VALUES (?,?,?,?,?,'donor',0,?,?,?)`,
-      [id, ctx.orgId, String(step.title || "Follow up").slice(0, 300), due,
-       step.priority === "high" ? "high" : "medium", donor ? donor.id : null,
+      `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,grant_id,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,0,?,?,?,?)`,
+      [id, ctx.orgId, title, due,
+       step.priority === "high" ? "high" : "medium", grant ? "grant" : "donor", donor ? donor.id : null, grant ? grant.id : null,
        AGENT_ACTOR.id, AGENT_ACTOR.name]);
     await agentWrite(ctx, { tool: "create_task", table: "tasks", entityId: id,
       before: null, after: { title: step.title }, cites: step.citesRows });
+    // AGENT-3 · WIRE-1 rule 8: A TASK LIVES ON THE PERSON. Their Thread gets it
+    // as the next step when nothing is open (one open thread per person), and
+    // their timeline gets one line, in this run's transaction.
+    if (donor) {
+      const [open] = await require("../db").queryTx(ctx.client,
+        "SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL", [ctx.orgId, donor.id]);
+      if (!open) {
+        const threadId = "thr_" + uuid().slice(0, 10);
+        const r = await runTx(ctx.client,
+          `INSERT INTO threads (id,org_id,donor_id,owner_id,next_step_type,next_step_label,due_date,opened_on,created_by,created_by_name)
+           VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,
+          [threadId, ctx.orgId, donor.id, donor.assigned_to || ctx.userId || null, "follow_up", title.slice(0, 200),
+           due || orgTime.addDays(ctx.today, 7), ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name]);
+        if (r && r.changes !== 0) await agentWrite(ctx, { tool: "create_task", table: "threads", entityId: threadId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+      }
+      const lineId = "i_" + uuid().slice(0, 10);
+      await runTx(ctx.client,
+        `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+         VALUES (?,?,?,'activity',?,?,?,?,?)`,
+        [lineId, ctx.orgId, donor.id, `Task made by Steward: "${title.slice(0, 160)}"${due ? `, due ${due}` : ""}.`,
+         ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name, JSON.stringify({ line_key: `agent_task:${id}`, taskId: id, grantId: grant ? grant.id : null })]);
+      await agentWrite(ctx, { tool: "create_task", table: "interactions", entityId: lineId, before: null, after: { donor_id: donor.id }, cites: step.citesRows });
+    }
     return { id, donorId: donor ? donor.id : null };
   },
 
@@ -938,6 +987,94 @@ async function agentContext(orgId, { today, scope, allowed }) {
     : await safe(query(`SELECT id, donor_id, amount, LEFT(date,10) AS date, acknowledgement_sent FROM gifts WHERE org_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE AND LEFT(date,10) >= ? ORDER BY date DESC LIMIT 40`, [orgId, orgTime.addDays(today, -90)]));
   return ctx;
 }
+// ── AGENT-3 · WHAT THE AGENT CAN READ ABOUT EACH PERSON ─────────────────────
+// Their grants (and the next open milestone), memberships, open pledges, gifts
+// to campaigns and giving pages, peer-to-peer pages and auction wins. Steward's
+// own queries, org-scoped, for the people the plan is about and nobody else;
+// the model reads these lines and nothing else about them. Every id is a row a
+// step may cite, and every amount is a number a draft may use.
+async function agentObjects(orgId, ids, today) {
+  const only = [...new Set((ids || []).map(String))].slice(0, 1000);
+  // facts: the amounts and dates under each person, and names: the auctions,
+  // pages, campaigns and grants they name, so a draft that says them is
+  // grounded (guardDraft) exactly as a gift's amount and date are.
+  const out = { lines: new Map(), rows: new Map(), facts: new Map(), names: new Map(), rowIds: [], values: [], grants: [] };
+  const fact = (donorId, amount, date) => { if (!out.facts.has(donorId)) out.facts.set(donorId, []);
+    out.facts.get(donorId).push({ amount: Number(amount) || 0, date: date ? String(date).slice(0, 10) : null }); };
+  const named = (donorId, ...ns) => { if (!out.names.has(donorId)) out.names.set(donorId, []); out.names.get(donorId).push(...ns.filter(Boolean)); };
+  if (!only.length) return out;
+  const safe = p => p.catch(e => { console.error("[agent] object read failed:", e.message); return []; });
+  const money = v => A3money(Math.round(Number(v || 0) * 100));
+  const [grants, members, pledges, campaignGifts, pageGifts, pages, wins] = await Promise.all([
+    safe(query(`SELECT g.id, g.funder_donor_id AS donor_id, g.funder, g.program, g.status, g.amount_awarded, g.amount_requested, g.amount,
+                       g.report_due, g.deadline,
+                       (SELECT json_build_object('id', m.id, 'kind', m.kind, 'label', m.label, 'due', m.due_date)
+                          FROM grant_milestones m WHERE m.org_id = g.org_id AND m.grant_id = g.id AND m.completed_at IS NULL
+                           AND COALESCE(m.state,'') NOT IN ('done','cancelled') ORDER BY m.due_date NULLS LAST, m.id LIMIT 1) AS next_step
+                  FROM grants g WHERE g.org_id = ? AND g.funder_donor_id = ANY(?::text[]) ORDER BY g.id LIMIT 2000`, [orgId, only])),
+    safe(query(`SELECT m.id, m.donor_id, m.status, m.expires_on, m.starts_on, l.name AS level, l.price
+                  FROM memberships m LEFT JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+                 WHERE m.org_id = ? AND m.donor_id = ANY(?::text[]) AND m.cancelled_at IS NULL ORDER BY m.expires_on DESC NULLS LAST LIMIT 2000`, [orgId, only])),
+    safe(query(`SELECT id, donor_id, amount, due_date, status FROM pledges WHERE org_id = ? AND donor_id = ANY(?::text[]) AND status = 'open'
+                 ORDER BY due_date NULLS LAST LIMIT 2000`, [orgId, only])),
+    safe(query(`SELECT g.id, g.donor_id, g.amount, LEFT(g.date,10) AS date, c.name AS campaign FROM gifts g JOIN campaigns c ON c.id = g.campaign_id AND c.org_id = g.org_id
+                 WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND COALESCE(g.is_sample, false) = false
+                 ORDER BY LEFT(g.date,10) DESC LIMIT 3000`, [orgId, only])),
+    safe(query(`SELECT g.id, g.donor_id, g.amount, LEFT(g.date,10) AS date, p.title AS page FROM gifts g JOIN giving_pages p ON p.id = g.giving_page_id AND p.org_id = g.org_id
+                 WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND COALESCE(g.is_sample, false) = false
+                 ORDER BY LEFT(g.date,10) DESC LIMIT 3000`, [orgId, only])),
+    safe(query(`SELECT f.id, f.person_id AS donor_id, f.status, f.personal_goal_amount, p.title AS page,
+                       (SELECT COALESCE(SUM(x.amount),0) FROM gifts x WHERE x.org_id = f.org_id AND x.peer_fundraiser_id = f.id AND x.amount > 0) AS raised
+                  FROM peer_fundraisers f JOIN giving_pages p ON p.id = f.giving_page_id AND p.org_id = f.org_id
+                 WHERE f.org_id = ? AND f.person_id = ANY(?::text[]) AND COALESCE(f.status,'') NOT IN ('rejected','removed') LIMIT 2000`, [orgId, only])),
+    safe(query(`SELECT ai.id, bw.donor_id, ai.title, tb.amount, ai.paid_at, au.title AS auction
+                  FROM auction_items ai JOIN auctions au ON au.id = ai.auction_id AND au.org_id = ai.org_id
+                  JOIN LATERAL (SELECT b.bidder_id, b.amount FROM auction_bids b WHERE b.org_id = ai.org_id AND b.item_id = ai.id
+                                 ORDER BY b.amount DESC, b.created_at ASC, b.id ASC LIMIT 1) tb ON true
+                  JOIN auction_bidders bw ON bw.id = tb.bidder_id AND bw.org_id = ai.org_id
+                 WHERE ai.org_id = ? AND bw.donor_id = ANY(?::text[]) AND LEAST(au.closes_at, COALESCE(ai.closed_at, au.closes_at)) <= NOW()
+                 ORDER BY ai.id LIMIT 2000`, [orgId, only])),
+  ]);
+  const add = (donorId, line, rowId, ...vals) => {
+    if (!out.lines.has(donorId)) out.lines.set(donorId, []);
+    const l = out.lines.get(donorId);
+    if (l.length < 12) l.push(line);
+    if (rowId) { out.rowIds.push(rowId); if (!out.rows.has(donorId)) out.rows.set(donorId, []); out.rows.get(donorId).push(rowId); }
+    for (const v of vals) if (Number.isFinite(Number(v)) && Number(v) > 0) out.values.push(Number(v));
+  };
+  const day = d => (d ? String(d).slice(0, 10) : "none");
+  for (const g of grants) {
+    const amt = Number(g.amount_awarded || g.amount || g.amount_requested || 0);
+    const next = g.next_step && g.next_step.due ? `${String(g.next_step.label || g.next_step.kind || "step").replace(/_/g, " ")} due ${day(g.next_step.due)}`
+      : g.report_due ? `report due ${day(g.report_due)}` : "nothing due";
+    add(g.donor_id, `grant ${g.id} | ${g.program || g.funder || "grant"} | ${g.status || "open"} | ${amt ? money(amt) : "no amount"} | ${next}`, g.id, amt);
+    fact(g.donor_id, amt, (g.next_step && g.next_step.due) || g.report_due || g.deadline); named(g.donor_id, g.program, g.funder);
+    if (g.next_step && g.next_step.id) out.rowIds.push(g.next_step.id);
+    out.grants.push({ id: g.id, donorId: g.donor_id, name: g.program || g.funder || "grant", next });
+  }
+  for (const m of members) {
+    add(m.donor_id, `membership ${m.id} | ${m.level || "member"} | ${m.status || ""} | ends ${day(m.expires_on)}${Number(m.price) ? ` | ${money(m.price)}` : ""}`, m.id, m.price);
+    fact(m.donor_id, m.price, m.expires_on); fact(m.donor_id, 0, m.starts_on); named(m.donor_id, m.level);
+  }
+  for (const p of pledges) { add(p.donor_id, `pledge ${p.id} | ${money(p.amount)} open | due ${day(p.due_date)}`, p.id, p.amount); fact(p.donor_id, p.amount, p.due_date); }
+  for (const g of campaignGifts) { add(g.donor_id, `gift ${g.id} | to ${g.campaign} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount); fact(g.donor_id, g.amount, g.date); named(g.donor_id, g.campaign); }
+  for (const g of pageGifts) { add(g.donor_id, `gift ${g.id} | through the page ${g.page} | ${money(g.amount)} | ${day(g.date)}`, g.id, g.amount); fact(g.donor_id, g.amount, g.date); named(g.donor_id, g.page); }
+  for (const f of pages) {
+    add(f.donor_id, `peer-to-peer page ${f.id} | for ${f.page} | ${f.status === "pending" ? "waiting for approval" : f.status || "live"}${Number(f.raised) ? ` | raised ${money(f.raised)}` : ""}${Number(f.personal_goal_amount) ? ` | goal ${money(f.personal_goal_amount)}` : ""}`, f.id, f.raised, f.personal_goal_amount);
+    fact(f.donor_id, f.raised, null); fact(f.donor_id, f.personal_goal_amount, null); named(f.donor_id, f.page);
+  }
+  for (const w of wins) {
+    add(w.donor_id, `auction win ${w.id} | ${w.title} in ${w.auction} | winning bid ${money(w.amount)} | ${w.paid_at ? "paid" : "not paid yet"}`, w.id, w.amount);
+    fact(w.donor_id, w.amount, null); named(w.donor_id, w.auction, w.title);
+  }
+  void today;
+  return out;
+}
+function A3money(cents) {
+  const d = Math.round(Number(cents) || 0) / 100;
+  return "$" + d.toLocaleString("en-US", { minimumFractionDigits: d % 1 ? 2 : 0, maximumFractionDigits: 2 });
+}
+
 function agentContextLines(c) {
   const out = [];
   const sec = (title, rows, fmt) => { if (rows && rows.length) out.push("", title, ...rows.map(fmt)); };
@@ -949,6 +1086,7 @@ function agentContextLines(c) {
   sec("VOLUNTEER OPPORTUNITIES (opportunityId):", c.opportunities, o => `  ${o.id} | ${o.name}`);
   sec("EVENTS (eventId):", c.events, e => `  ${e.id} | ${e.name} | ${e.date} | ${e.paid ? "paid" : "free"}`);
   sec("GIFTS (giftId):", c.gifts, g => `  ${g.id} | giver ${g.donor_id} | amount ${Number(g.amount)} | ${g.date} | ${g.acknowledgement_sent ? "thanked" : "not thanked"}`);
+  sec("GRANTS (grantId, for a task about a grant):", c.grants, g => `  ${g.id} | funder ${g.donorId} | ${g.name} | ${g.next}`);
   if (c.days) out.push("", `DAYS (availability, exactly these words): ${c.days.join(", ")}`);
   return out;
 }
@@ -967,12 +1105,39 @@ async function agentDraftGifts(orgId, A, text, today, people) {
        FROM gifts g WHERE g.org_id = ? AND g.donor_id = ANY(?::text[]) AND g.amount > 0 AND COALESCE(g.is_sample, false) = false
       ORDER BY g.donor_id, LEFT(g.date, 10) DESC, g.id`, [orgId, ids]);
 }
+// AGENT-3: an email template's words as plain text, for a draft to start
+// from: the org's own saved copy of the starter when there is one (its id
+// rides on the draft), else Steward's starter.
+async function agentTemplateWords(orgId, starterKey) {
+  const [row] = await query(`SELECT id, subject, blocks FROM email_templates WHERE org_id=? AND starter_key=? AND archived_at IS NULL
+                              ORDER BY updated_at DESC NULLS LAST LIMIT 1`, [orgId, starterKey]).catch(() => []);
+  let blocks = row ? row.blocks : null, subject = row ? row.subject : "";
+  if (!row) {
+    const LIB = await import("../shared/emailTemplateLibrary.js");
+    const st = LIB.starterByKey(starterKey);
+    if (!st) return null;
+    blocks = st.blocks; subject = st.subject;
+  }
+  const lines = [];
+  for (const b of Array.isArray(blocks) ? blocks : []) {
+    if (!b) continue;
+    if (b.type === "hero") lines.push(...[b.heading, b.sub].filter(Boolean));
+    if (b.type === "richtext") for (const x of b.blocks || []) lines.push(x.type === "ul" ? (x.items || []).map(i => `- ${i}`).join("\n") : x.text);
+    if (b.type === "quote" && b.text) lines.push(`"${b.text}"`);
+  }
+  return { id: row ? row.id : null, text: [`Subject: ${subject}`, ...lines.filter(Boolean)].join("\n\n").slice(0, 4000) };
+}
+
 // One lean call per batch of ten, three at a time. A batch the model cut short
 // refuses the whole plan (PARITY-1 Part F: never a plan that stops at an
 // arbitrary person); a person the model skipped is simply not drafted for, and
 // the plan counts them as withheld like any other dropped step.
-async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people, gifts, dryRun = false }) {
-  const thanks = A.isThankYouInstruction(instructionText);
+async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people, gifts, objs = null, dryRun = false }) {
+  // AGENT-3: what the draft is for, from her words, and for a funder update
+  // the org's own template as the words to start from.
+  const purpose = A.draftPurposeFor(instructionText);
+  const thanks = purpose === "thank_you" || (!purpose && A.isThankYouInstruction(instructionText));
+  const tpl = purpose === "funder_update" ? await agentTemplateWords(orgId, "grant_funder_update") : null;
   const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
   const orgName = (org && org.name) || "the organisation";
   // Money and days in the words a letter uses ("$4,722", "October 2, 2026"),
@@ -991,6 +1156,10 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
     "- Write money and dates as they are given (\"$4,722\", \"October 2, 2026\").",
     "- Never add up, average or compute an amount. Use only the amounts written in that person's lines.",
     "- Keep each draft under 120 words, warm and specific to the person.",
+    ...(purpose === "membership_renewal" ? ["- Each draft invites the person to renew their membership: name their level and the date it ends, from their lines."] : []),
+    ...(purpose === "auction_pay" ? ["- Each draft congratulates the person on what they won and asks them to pay for it: name each item and its winning bid from their lines. Say the payment link will follow from us; never invent one."] : []),
+    ...(purpose === "funder_update" ? ["- Each draft is an update to a funder about the grant in their lines: what it is for and what is due next.",
+      ...(tpl ? [`- Start from the organisation's own funder update template, below, in its order and voice. Replace each bracketed part with words from the person's lines, or leave that sentence out. Never leave a bracket.`, "", "THE TEMPLATE:", tpl.text] : [])] : []),
     `- Today is ${today} in this organisation's own calendar.`,
   ].join("\n");
   const batches = A.draftBatches(people);
@@ -1007,6 +1176,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
         ...batch.flatMap(p => [
           `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${A.formatCents(Math.round(Number(p.total_giving || 0) * 100))} | ${p.gift_count || 0} gifts | first ${longDay(p.first_gift_date)} | last ${longDay(p.last_gift_date)}`,
           ...(giftsBy.get(p.id) || []).map(g => `      gift ${g.id} | ${A.formatCents(Math.round(Number(g.amount) * 100))} | ${longDay(g.date)}`),
+          ...((objs && objs.lines.get(p.id)) || []).map(l => `      ${l}`),
         ]),
       ].join("\n");
       const msg = await client.messages.create({
@@ -1038,7 +1208,8 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
     seen.add(id);
     const giftIds = (giftsBy.get(id) || []).map(g => g.id);
     steps.push({ tool: "draft_note", donorId: id, subject: String(d.subject || "").slice(0, 300), body: String(d.body),
-      citesRows: [id, ...giftIds], giftIds: thanks ? giftIds : [], purpose: thanks ? "thank_you" : null });
+      citesRows: [id, ...giftIds, ...((objs && objs.rows.get(id)) || [])], giftIds: thanks ? giftIds : [],
+      purpose: thanks ? "thank_you" : purpose, templateId: tpl && tpl.id ? tpl.id : null });
   }
   return { steps, sends: 0, headline: null, cannot: null };
 }
@@ -1102,6 +1273,10 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const reachable = found ? reachable0 : [...reachable0.slice(0, 200), ...extraGivers];
   const reachableIds = new Set(reachable.map(p => p.id));
   const giftRows = windowGifts.filter(g => reachableIds.has(g.donor_id));
+  // AGENT-3: their grants, memberships, pledges, campaigns, pages and auction
+  // wins, under each person, for the people this plan is about.
+  const objs = await agentObjects(orgId, reachable.map(p => p.id), today);
+  const objLines = id => (objs.lines.get(id) || []).map(l => `      ${l}`);
   // The model is shown the persona's OWN tools, not the whole table. An
   // Analyst that is never offered set_stage rarely asks for it; the filter
   // below is what guarantees it, and this is what makes the plan sensible.
@@ -1138,31 +1313,40 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     "- Write `cannot` about her donors and her work. Never mention rows, data, columns, lists or what you were shown.",
     "- The people listed are the people she meant. Never create a task or note asking which person she meant.",
     "- A conversation she says already happened is log_conversation with its date (today is " + today + "; yesterday is " + orgTime.addDays(today, -1) + "). Anything still to do is set_next_step with a due date.",
-    "- Use an id only from the lists below (people, STAFF, GROUPS, HOUSEHOLDS, JOURNEYS, SHIFTS, EVENTS, GIFTS). `citesRows` holds the person's id, and the gift id for a gift step.",
+    "- Use an id only from the lists below (people, STAFF, GROUPS, HOUSEHOLDS, JOURNEYS, SHIFTS, EVENTS, GIFTS, GRANTS). `citesRows` holds the person's id, and the gift id for a gift step.",
+    // AGENT-3: the objects under each person.
+    "- Under a person are their grants, memberships, open pledges, gifts to campaigns and pages, peer-to-peer pages and auction wins. Cite the row's id when a step is about it.",
+    "- A task about a grant (a report checklist, a deadline) is create_task with `grantId` from GRANTS, one per grant, titled with what is due and when.",
+    "- A peer-to-peer page waiting for approval: the reminder is create_task for somebody here to approve it. Never a message to the fundraiser.",
+    `- draft_note's \`purpose\` says what the draft is for: ${A.DRAFT_PURPOSES.join(", ")}, or "".`,
     "- A gift she says arrived is prepare_gift (amount in dollars). You never record money.",
     "- `headline`: one short sentence, under 90 characters, saying what the plan does.",
     "- Add nothing she did not ask for, except one draft she would plainly want (a welcome to a new volunteer).",
   ].join("\n");
 
   const actx = await agentContext(orgId, { today, scope, allowed });
+  if (allowed.has("create_task")) actx.grants = objs.grants;
   if (allowed.has("make_volunteer")) actx.days = (await import("../shared/volunteerApply.js")).AVAILABILITY;
   // Who "me" is, for "make me her owner".
   const [meRow] = userId ? await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [userId, orgId]) : [];
-  const user = [
+  // AGENT-3: the prompt for a group of the people (all of them, or one batch).
+  const userFor = list => { const ids = new Set(list.map(p => p.id)); return [
     `Her instruction, verbatim: "${String(instructionText).slice(0, 2000)}"`,
     ...(meRow ? [`She is ${meRow.name} (${meRow.id}).`] : []),
     "",
     `Today: ${today}`,
     "",
     scope ? "The records she named:" : found
-      ? `The people find_people found for her words (${found.words.join(" · ")}), ${reachable.length}. These are exactly the people she meant: one step for each of them, and nobody else.`
-      : `The people on file (${reachable.length}):`,
-    ...reachable.map(p =>
-      `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | first ${p.first_gift_date ? String(p.first_gift_date).slice(0, 10) : "never"} | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}${scope ? ` | email ${p.email || "none"} | phone ${p.phone || "none"} | household ${p.household_id || "none"} | owner ${p.assigned_to_name || "none"}` : ""}`),
-    ...agentContextLines(actx),
-    ...(win ? ["", `The gifts dated ${win.words} (${win.from} to ${win.to}), ${giftRows.length}:`,
-      ...giftRows.map(g => `  ${g.id} | giver ${g.donor_id} | ${g.donor_name} | amount ${Number(g.amount)} | date ${String(g.date).slice(0, 10)}`)] : []),
-  ].join("\n");
+      ? `The people find_people found for her words (${found.words.join(" · ")}), ${list.length}${list.length < reachable.length ? ` of ${reachable.length} (this is one group of them)` : ""}. These are exactly the people she meant: one step for each of them, and nobody else.`
+      : `The people on file (${list.length}):`,
+    ...list.flatMap(p => [
+      `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | first ${p.first_gift_date ? String(p.first_gift_date).slice(0, 10) : "never"} | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}${scope ? ` | email ${p.email || "none"} | phone ${p.phone || "none"} | household ${p.household_id || "none"} | owner ${p.assigned_to_name || "none"}` : ""}`,
+      ...objLines(p.id)]),
+    ...agentContextLines(list === reachable ? actx : { ...actx, grants: (actx.grants || []).filter(g => ids.has(g.donorId)), gifts: (actx.gifts || []).filter(g => ids.has(g.donor_id)) }),
+    ...(win ? ["", `The gifts dated ${win.words} (${win.from} to ${win.to}), ${giftRows.filter(g => ids.has(g.donor_id)).length}:`,
+      ...giftRows.filter(g => ids.has(g.donor_id)).map(g => `  ${g.id} | giver ${g.donor_id} | ${g.donor_name} | amount ${Number(g.amount)} | date ${String(g.date).slice(0, 10)}`)] : []),
+  ].join("\n"); };
+  const user = userFor(reachable);
 
   // WIRE-1-ADDENDUM: a drafting instruction over a known set of people is
   // written in batches of ten with a lean schema (agentDraftInBatches), so a
@@ -1171,7 +1355,36 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const draftGifts = drafting ? await agentDraftGifts(orgId, A, instructionText, today, reachable) : [];
   let raw, _truncated = false;
   if (drafting) {
-    raw = await agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people: reachable, gifts: draftGifts, dryRun });
+    raw = await agentDraftInBatches({ A, V, words, client, orgId, userId, who, instructionText, today, people: reachable, gifts: draftGifts, objs, dryRun });
+  } else if ((found || scope) && reachable.length > A.PLAN_BATCH_SIZE) {
+    // AGENT-3 · ANY PLAN SIZE FINISHES. Ten people a call, three calls at a
+    // time; a batch cut short refuses the whole plan, as one call would.
+    const batches = A.draftBatches(reachable, A.PLAN_BATCH_SIZE);
+    const outs = new Array(batches.length);
+    let next = 0, cut = null;
+    const one = async () => {
+      while (next < batches.length && !cut) {
+        const i = next++;
+        const u = userFor(batches[i]);
+        const msg = await client.messages.create({ model: AGENT_MODEL, max_tokens: 8000, system,
+          tools: [{ name: "plan", description: "The steps she will read before anything runs.", strict: true, input_schema: A.PLAN_SCHEMA }],
+          tool_choice: { type: "tool", name: "plan" }, messages: [{ role: "user", content: u }] });
+        if (msg.stop_reason === "max_tokens") { cut = { batch: i, steps: 0 }; break; }
+        const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "plan");
+        outs[i] = block && block.input ? block.input : { steps: [], sends: 0 };
+        if (!dryRun) await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full) VALUES (?,?,?,'agent_plan',?,?,?)`,
+          ["log_" + uuid().slice(0, 8), orgId, userId || null, `${String(instructionText).slice(0, 80)} (plan ${i + 1}/${batches.length})`,
+           (system + "\n\n" + u).slice(0, 200000), JSON.stringify(outs[i]).slice(0, 200000)]);
+      }
+    };
+    await Promise.all([one(), one(), one()]);
+    if (cut) {
+      console.warn(`[agent] a plan batch hit max_tokens (batch ${cut.batch + 1} of ${batches.length})`);
+      _truncated = true;
+      throw Object.assign(new Error("plan truncated"), { truncated: true, stepsReturned: 0 });
+    }
+    raw = { steps: outs.flatMap(o => (Array.isArray(o.steps) ? o.steps : [])), sends: outs.reduce((n, o) => n + (Number(o.sends) || 0), 0),
+            headline: (outs.find(o => o.headline) || {}).headline || null, cannot: (outs.find(o => String(o.cannot || "").trim()) || {}).cannot || null };
   } else {
   const msg = await client.messages.create({
     model: AGENT_MODEL,
@@ -1205,9 +1418,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // tool she has not signed for stays in, so validatePlan REFUSES the plan
   // rather than trimming it.
   const byId = new Map(reachable.map(p => [p.id, p]));
-  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id), ...(actx.gifts || []).map(g => g.id), ...draftGifts.map(g => g.id)];
+  const knownRowIds = [...reachable.map(p => p.id), ...giftRows.map(g => g.id), ...(actx.gifts || []).map(g => g.id), ...draftGifts.map(g => g.id), ...objs.rowIds];
   const groundedValues = [...reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount]),
-    ...giftRows.map(g => g.amount), ...draftGifts.map(g => g.amount)].map(Number).filter(Number.isFinite);
+    ...giftRows.map(g => g.amount), ...draftGifts.map(g => g.amount), ...objs.values].map(Number).filter(Number.isFinite);
   const steps = [];
   let withheld = 0;
   let outOfScope = 0;
@@ -1229,9 +1442,10 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     const v = dVideos.find(x => x.donor_id === st.donorId);
     // WIRE-1-ADDENDUM: the gifts a batched draft was shown are on its record.
     return SG.guardDraft(`${st.subject || ""}\n${st.body}`, { donor: byId.get(st.donorId) || {}, orgName: "",
-      rows: draftGifts.filter(g => g.donor_id === st.donorId).map(g => ({ amount: Number(g.amount), date: String(g.date).slice(0, 10) })),
+      rows: [...draftGifts.filter(g => g.donor_id === st.donorId).map(g => ({ amount: Number(g.amount), date: String(g.date).slice(0, 10) })),
+        ...(objs.facts.get(st.donorId) || [])],   // AGENT-3: their membership's end, their win, their grant's due date
       video: v ? { ready: true, url: `${publicAppUrl()}/v/${v.token}` } : null,
-      meetings: dMeets.filter(x => x.donor_id === st.donorId), events: dEvents.map(e => e.name) }).reasons;
+      meetings: dMeets.filter(x => x.donor_id === st.donorId), events: [...dEvents.map(e => e.name), ...(objs.names.get(st.donorId) || [])] }).reasons;
   };
   for (const s0 of Array.isArray(raw.steps) ? raw.steps : []) {
     let s = s0;
@@ -1247,7 +1461,11 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
       || (s.tool === "sign_up_shift" && !(s.shiftName = (() => { const x = idIn(actx.shifts, s.slotId); return x && `${x.name || x.opportunity || "the shift"} on ${x.date}`; })()))
       || (s.tool === "register_event" && !(s.eventName = (idIn(actx.events, s.eventId) || {}).name))
       || (s.tool === "mark_gift_thanked" && !giftIds.has(s.giftId))
-      || (s.tool === "propose_merge" && (!byId.has(s.otherDonorId) || s.otherDonorId === s.donorId));
+      || (s.tool === "propose_merge" && (!byId.has(s.otherDonorId) || s.otherDonorId === s.donorId))
+      // AGENT-3: a grant task names one of this person's grants, or none.
+      || (s.tool === "create_task" && s.grantId && !(objs.grants.find(g => g.id === s.grantId && (!s.donorId || g.donorId === s.donorId))));
+    if (!bad && s.tool === "draft_note") s = { ...s, purpose: A.DRAFT_PURPOSES.includes(s.purpose) ? s.purpose : (s.purpose === "" ? null : A.draftPurposeFor(instructionText)) };
+    if (!bad && s.tool === "create_task" && s.grantId) s = { ...s, citesRows: [...new Set([...(s.citesRows || []), s.grantId])] };
     if (bad) { withheld++; continue; }
     if (s.tool === "mark_gift_thanked") {
       const g = idIn(actx.gifts, s.giftId);
@@ -1391,7 +1609,10 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
   const citedGifts = citedGiftIds.length && named.length
     ? await query(`SELECT id, donor_id, amount FROM gifts WHERE org_id = ? AND id = ANY(?::text[]) AND donor_id = ANY(?::text[])`,
         [orgId, citedGiftIds, named]) : [];
-  const knownRowIds = [...people.map(p => p.id), ...citedGifts.map(g => g.id)];
+  // AGENT-3: a step may cite one of the person's grants, memberships, pledges,
+  // pages or auction wins; the run reads them again for the same people.
+  const runObjs = named.length ? await agentObjects(orgId, named, null) : { rowIds: [] };
+  const knownRowIds = [...people.map(p => p.id), ...citedGifts.map(g => g.id), ...runObjs.rowIds];
   // Deceased, do-not-contact and sample people get no work, whatever the plan
   // says (BUILD-83; the incident's rule that fiction generates nothing).
   const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
@@ -2203,8 +2424,10 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
     plans: rows.map(p => {
       const plan = typeof p.plan === "string" ? JSON.parse(p.plan || "null") : p.plan;
       const r = byIns.get(p.id);
-      return { ...p, plan: plan ? { ...plan, confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
+      const out = { ...p, plan: plan ? { ...plan, confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
                run: r ? agentRunOut(A, r, draftStates) : null };
+      // AGENT-3: the list's word, from the same steps the open plan shows.
+      return { ...out, listState: A.planListState(out) };
     }),
   });
 }));
@@ -2287,7 +2510,8 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
     instructionId: a.instruction_id || null, purpose: a.purpose || null, subject: a.subject || "",
     giftCount: Array.isArray(a.gift_ids) ? a.gift_ids.length : 0,
     persona: a.persona || null, personaName: a.persona ? PSw.getPersona(a.persona).name : null,
-    title: `A note Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
+    // AGENT-3: the draft says what it is (a renewal, a funder update, a pay-your-bid note).
+    title: `${a.purpose && a.purpose !== "thank_you" && A.PURPOSE_LABEL[a.purpose] ? `A ${A.PURPOSE_LABEL[a.purpose].toLowerCase()}` : "A note"} Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
     body: G.plainText(a.body) });
   items.sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt));
   res.json({ count: items.length, items,
@@ -2399,7 +2623,7 @@ async function approveWaitingItem(req, kind, id) {
       await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [orgId, giftIds]).catch(() => {});
     }
     const line = await TLa.timelineLine({ orgId, donorId: d.donor_id, actorId: who.id, actorName, date: today, key: `agent_draft_approved:${d.id}`,
-      note: `${d.purpose === "thank_you" ? "Thank-you" : "Note"} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,
+      note: `${d.purpose === "thank_you" ? "Thank-you" : ((await agentShapeMod()).PURPOSE_LABEL[d.purpose] || "Note")} approved to send by ${actorName}${d.subject ? `: "${String(d.subject).slice(0, 120)}"` : ""}.`,
       metadata: { agentDraftId: d.id, giftIds } });
     // A thread closes as an outcome only with the line that closed it (the
     // threads check constraint), so no line means it stays open.
@@ -2464,7 +2688,8 @@ app.post("/agent/waiting/agent_draft/:id/reopen", requireAuth, checkWriteAccess,
     `UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
       WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [orgId, d.donor_id, marked]);
   if (d.approved_line_id) await run("DELETE FROM interactions WHERE id=? AND org_id=?", [d.approved_line_id, orgId]);
-  const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : "Draft ready, review and send";
+  const PL = (await agentShapeMod()).PURPOSE_LABEL;
+  const label = d.purpose === "thank_you" ? "Thank-you draft ready, review and send" : PL[d.purpose] ? `${PL[d.purpose]} draft ready, review and send` : "Draft ready, review and send";
   if (d.thread_id) {
     // The thread comes back open unless the person has opened another since.
     const [other] = await query("SELECT id FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND id<>?", [orgId, d.donor_id, d.thread_id]);

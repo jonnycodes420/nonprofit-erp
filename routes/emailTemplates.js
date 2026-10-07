@@ -21,7 +21,7 @@
 "use strict";
 const express = require("express");
 const { publicAppUrl } = require("../publicUrl");
-const { aiGate, anthropicFor } = require("../aiClient");
+const { aiGate, anthropicFor, recordAiFallback } = require("../aiClient");
 const mailPolicy = require("../mailPolicy");
 
 const routers = { r0: express.Router() };
@@ -456,7 +456,7 @@ app.post("/email-templates/:id/draft-ai", requireAuth, checkWriteAccess, wrap(as
         + (instructions ? `What the person asked for: ${instructions}\n` : "")
         + `\nSlots:\n${JSON.stringify(slots)}` }],
     });
-    if (msg.stop_reason !== "end_turn") return templateAnswer("The draft did not finish, so Steward did not show it.");
+    if (msg.stop_reason !== "end_turn") { recordAiFallback(req.user.orgId, "email_template.draft_ai", "The draft did not finish, so Steward did not show it."); return templateAnswer("The draft did not finish, so Steward did not show it."); };
     const raw = (msg.content || []).filter(c => c.type === "text").map(c => c.text).join("").trim();
     let parsed = null;
     try { parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { parsed = null; }
@@ -464,11 +464,12 @@ app.post("/email-templates/:id/draft-ai", requireAuth, checkWriteAccess, wrap(as
     const proposals = [];
     for (const s of slots) {
       const t = got.get(s.id);
-      if (!t) return templateAnswer("The draft left some of the words out, so Steward set it aside.");
+      if (!t) { recordAiFallback(req.user.orgId, "email_template.draft_ai", "The draft left some of the words out, so Steward set it aside."); return templateAnswer("The draft left some of the words out, so Steward set it aside."); };
       const bad = numbersIn(t).find(n => !source.includes(n.replace(/^\$/, "")));
       const lostToken = tokensIn(s.text).find(k => !t.includes(k));
       const newToken = tokensIn(t).find(k => !tokensIn(s.text).includes(k) && !EB.EMAIL_MERGE_FIELDS.some(f => f.token === k.replace(/\s+/g, "")));
       if (bad || lostToken || newToken || /\u2014/.test(t) || t.length > 4000) {
+        recordAiFallback(req.user.orgId, "email_template.draft_ai", "set aside");
         return templateAnswer(`Steward set the written draft aside because it ${bad ? `added a number (${bad}) the record does not hold` : lostToken ? `dropped ${lostToken}` : newToken ? `used ${newToken}, which Steward cannot fill` : "broke the house style"}.`);
       }
       proposals.push({ id: s.id, current: s.text, proposed: t });
@@ -477,7 +478,7 @@ app.post("/email-templates/:id/draft-ai", requireAuth, checkWriteAccess, wrap(as
       sentence: "Steward proposed these words from your organization's own details and the template as it stands. Read each one; nothing changes until you apply it and press Save." });
   } catch (e) {
     console.warn("[email-template draft-ai] fell back to the template:", e.message);
-    return templateAnswer("Drafting could not be reached just now.");
+    { recordAiFallback(req.user.orgId, "email_template.draft_ai", "Drafting could not be reached just now."); return templateAnswer("Drafting could not be reached just now."); };
   }
 }));
 
