@@ -222,6 +222,22 @@ const id = k => `d_par1t_${k}`;
     && JSON.stringify(keptTags) === JSON.stringify(["Board", "VIP", "has-refused-rows:2"]), { status: put10.status, keptTags });
   await q(`DELETE FROM imports WHERE org_id=$1`, [ORG]).catch(() => {});
 
+  // ── FIX-33 · AN IMPORTED PERSON WITH NO OWNER READS "No owner" ──────────
+  // Every imported donor showed "?" for an owner. The list row now carries
+  // the owner as words, and Assign goes through the one assign route, which
+  // the audit middleware records. HOW IT WENT RED before the fix: the row
+  // carried no owner_label at all.
+  const ownerOf = async () => ((await api("GET", `/donors?limit=200`, tok)).body.donors || []).find(d => d.id === id("refused")) || {};
+  const before11 = await ownerOf();
+  ok("§11 an unassigned person's owner reads No owner", before11.owner_label === "No owner", before11.owner_label);
+  const [aud11a] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]);
+  const as11 = await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_par1t_staff" });
+  const after11 = await ownerOf();
+  ok("§11 Assign sets the owner to a person in the org, by name", as11.status === 200 && after11.owner_label === "Parity Staff" && after11.assigned_to === "u_par1t_staff", { status: as11.status, label: after11.owner_label });
+  const [aud11] = await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_method='PATCH' AND request_path LIKE '%/assign'`, [ORG]).catch(() => [{ n: -1 }]);
+  ok("§11 and the audit trail recorded it", aud11a.n >= 0 && aud11.n === aud11a.n + 1, { before: aud11a.n, after: aud11.n });
+  ok("§11 a user from no org of theirs is refused", (await api("PATCH", `/donors/${id("refused")}/assign`, tok, { assignedTo: "u_nobody" })).status === 400);
+
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); process.exitCode = 1; await closeDb().catch(() => {}); });

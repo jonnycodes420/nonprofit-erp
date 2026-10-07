@@ -694,9 +694,16 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     const pending = !d.assignedTo && d.pendingAssigneeName;
                     const label = d.assignedToName || d.pendingAssigneeName || "";
                     const oc=officerColorMap[d.assignedTo];
+                    // FIX-33: nobody assigned reads "No owner" (it was a "?"
+                    // circle and "Not set"), with Assign right beside it.
+                    if(!label)return(<>
+                      <span data-testid="dir-no-owner" style={{fontSize:12,color:T.ink3,whiteSpace:"nowrap"}}>{d.ownerLabel||"No owner"}</span>
+                      {isAdmin&&!isReadOnly&&onAssign&&<button type="button" data-testid="dir-owner-assign" onClick={e=>{e.stopPropagation();onAssign(d);}}
+                        style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Assign</button>}
+                    </>);
                     return(<>
-                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
-                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"Not set"}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
+                      <div title={label} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{label[0]}</div>
+                      <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
                     </>);
                   })()}
                 </div>
@@ -723,7 +730,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                 </div>}
                 {isAdmin&&<div className="dir-col-assign dir-assign-cell" style={{textAlign:"right"}}>
                   {/* Reassigning the owner is Team (server 403s for Core). */}
-                  {teamPortfolios&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}
+                  {teamPortfolios&&(d.assignedToName||d.pendingAssigneeName)&&<button onClick={e=>{e.stopPropagation();onAssign(d);}} className="dir-assign-btn" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>Assign</button>}
                 </div>}
               </div>,
               /* BUILD-41: the phone row (shown <768px; the grid row above is

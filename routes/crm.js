@@ -3695,6 +3695,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     // one function the profile's block reads too. Only for someone who may
     // see it (admin or the major gifts permission); null for anyone else.
     room: roomMap ? roomWord(roomMap.get(d.id)) : null,
+    // FIX-33 · the owner in words. An imported person with nobody assigned
+    // read "?"; they read "No owner", beside an Assign that uses the one
+    // assign route (PATCH /donors/:id/assign).
+    owner_label: d.assigned_to_name || d.pending_assignee_name || "No owner",
   });
 
   if (req.query.limit === undefined) {
