@@ -381,6 +381,32 @@ async function groupsAreQuick() {
   }
   trouble = [];
 
+  // WIRE-1-ADDENDUM · ONE TEMPLATES TAB. "Templates" and "Email templates" were
+  // the same thing twice. An old link to either lands on the one tab, the old
+  // tab is gone from the bar, and every template from the three stores is on
+  // it exactly once (letters and one-person emails, campaign starters, the
+  // designed emails and their starters). Fails before the merge: there is no
+  // templates-merged root and ?subtab=emailtemplates opens the old tab.
+  {
+    const [lt, cs, et] = await Promise.all(["/templates", "/campaigns/templates", "/email-templates"].map(p => api("GET", p, auth.token)));
+    const want = (lt.body.templates || []).length + (cs.body.templates || []).length
+      + (et.body.templates || []).filter(t => !t.archived).length + (et.body.starters || []).length;
+    for (const sub of ["templates", "emailtemplates"]) {
+      trouble = [];
+      await page.goto(`${APP}/app/communications?subtab=${sub}`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.waitForSelector("[data-template-card]", { timeout: 15000 }).catch(() => {});
+      const r = await page.evaluate(() => {
+        const ids = [...document.querySelectorAll("[data-template-card]")].map(c => c.dataset.templateId);
+        return { merged: !!document.querySelector('[data-testid="templates-merged"]'), n: ids.length, unique: new Set(ids).size,
+          oldTab: [...document.querySelectorAll(".comm-tabbar button")].some(b => /email templates/i.test(b.innerText || "")) };
+      });
+      ok(`§templates ?subtab=${sub} lands on the one Templates tab with every template once (${r.n} of ${want})`,
+        r.merged && !r.oldTab && r.n === want && r.unique === r.n, r);
+      await look(`communications · templates (${sub})`);
+    }
+  }
+  trouble = [];
+
   for (const d of three) {
     for (const tab of PROFILE_TABS) {
       trouble = [];

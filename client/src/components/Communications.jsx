@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { TemplateLibrary } from "./BrandKit";
 import { SurveysPanel } from "./Surveys";
 import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
@@ -19,6 +18,12 @@ import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, st
 import { makeT } from "../../../shared/vocabulary";
 import { campaignStats, sentWord, openRateWord } from "../../../shared/campaignKind";
 import { AgentDraftReview, agentDraftsIn } from "./AgentDraftReview";
+
+// WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
+// they are one Templates tab now. An old link to either (?subtab=templates,
+// ?subtab=emailtemplates, a bookmark, a card) lands on it.
+const COMMS_NAV_ALIASES = { emailtemplates: "templates", "email-templates": "templates", email_templates: "templates" };
+export const commsNavOf = id => (id && COMMS_NAV_ALIASES[id]) || id || "hub";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -1374,7 +1379,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   }, []);
 
   // Sidebar nav
-  const [nav, setNav] = useState(initialNav || "hub");
+  const [nav, setNav] = useState(() => commsNavOf(initialNav));
   // BUILD-97 — the hub's single read. One request, so the landing screen does
   // not assemble itself in a different order on every visit.
   const [hub, setHub] = useState(null);
@@ -2036,9 +2041,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const NAV = [
     { id: "hub",        label: "Overview",   icon: "◉" },
     { id: "campaigns",  label: "Campaigns",  icon: "✉" },
+    // One tab for every template: letters, one-person emails, campaign
+    // starters and the EMAIL-1 designed emails (WIRE-1-ADDENDUM).
     { id: "templates",  label: "Templates",  icon: "⊞" },
-    // EMAIL-1: emails built from blocks, with the org's brand and a live preview.
-    { id: "emailtemplates", label: "Email templates", icon: "▤" },
     { id: "audience",   label: "Audience",   icon: "◈" },
     { id: "analytics",  label: "Analytics",  icon: "⬡" },
     { id: "sequences",  label: "Sequences",  icon: "⟳" },
@@ -2551,35 +2556,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
           </div>
         )}
 
-        {/* ── TEMPLATES ─────────────────────────────────────────────────────── */}
+        {/* ── TEMPLATES ─────────────────────────────────────────────────────
+            WIRE-1-ADDENDUM: one tab. Letters and thank-yous, the campaign
+            starters New Campaign opens on and the designed emails, in four
+            sections (EmailTemplates.jsx says the rule). */}
         {nav === "templates" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Templates</h2>
-            {/* COMMS-2 — the library of letters and thank-yous, in the brand kit. */}
-            <TemplateLibrary isReadOnly={isReadOnly} donors={data?.donors || []} onOpenDrafts={() => setNav("milestones")} />
-            <h3 style={{ margin: "8px 0 0", fontSize: 17, fontWeight: 800, color: T.ink }}>Campaign emails</h3>
-            <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>
-              The same starters &ldquo;New Campaign&rdquo; opens on — finished emails in {previewOrgName}&rsquo;s words, not skeletons.
-            </p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-              {templates.map(tpl => (
-                <div key={tpl.key} data-testid={"template-card-" + tpl.key}
-                  {...interactive(isReadOnly ? null : () => openTemplate(tpl), { label: `Use the ${tpl.label} email` })}
-                  style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: 32, display: "flex", flexDirection: "column", gap: 12 }}>
-                  <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, minHeight: 20 }}>
-                    {brand?.logo
-                      ? <img src={brand.logo} alt="" style={{ height: 22, maxWidth: 110, objectFit: "contain" }} />
-                      : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{brand?.displayName || previewOrgName}</span>}
-                  </div>
-                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, lineHeight: 1.2 }}>{tpl.label}</div>
-                  {!tpl.reviewed && <NotReviewedPill />}
-                  <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>{tpl.blurb}</div>
-                  <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, fontSize: 13, fontWeight: 700, color: T.ink }}>{renderPreview(tpl.subject)}</div>
-                  {!isReadOnly && <span style={{ fontSize: 13, fontWeight: 700, color: T.greenDk }}>Use this &rarr;</span>}
-                </div>
-              ))}
-            </div>
-          </div>
+          <EmailTemplates isReadOnly={isReadOnly} donors={data?.donors || []}
+            campaignStarters={templates} previewSubject={s => renderPreview(s)}
+            onUseCampaign={tpl => openTemplate(tpl)} onOpenDrafts={() => setNav("milestones")} />
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}
@@ -2723,7 +2707,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}
-        {nav === "emailtemplates" && <EmailTemplates isReadOnly={isReadOnly} />}
         {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>
