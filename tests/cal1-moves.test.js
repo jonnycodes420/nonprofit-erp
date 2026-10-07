@@ -38,7 +38,7 @@ function sameInstant(block, isoUtc) {
 const ORG = "org_cal1mv", ORG2 = "org_cal1mv2";
 const PORT = Number(process.env.CALENDAR_MOCK_PORT || 5823);
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
-const TABLES = ["volunteer_signups", "volunteer_slot_roles", "volunteer_slots", "volunteer_opportunities", "calendar_events", "mailbox_connections", "threads", "donors", "users"];
+const TABLES = ["volunteer_signups", "volunteer_slot_roles", "volunteer_slots", "volunteer_opportunities", "meeting_effects", "calendar_events", "mailbox_connections", "tasks", "threads", "interactions", "donors", "users"];   // FIX-33: a moved meeting writes its effects
 
 let refuse = false;
 const patches = [];
@@ -122,7 +122,7 @@ async function reset() {
   const [t2] = await q(`SELECT due_date, due_time FROM threads WHERE id='th_cal1_s'`);
   const [s2] = await q(`SELECT date, start_time, end_time FROM volunteer_slots WHERE id='vsl_cal1'`);
   ok("§2 the meeting is back to the minute, here and on Google", new Date(m2.starts_at).toISOString() === `${MON}T14:00:00.000Z` && new Date(m2.ends_at).toISOString() === `${MON}T15:00:00.000Z`
-    && patches.length === 2 && Date.parse(patches[1].body.start.dateTime) === Date.parse(`${MON}T14:00:00Z`), { m2, p: patches[1] });
+    && patches.length === 2 && sameInstant(patches[1].body.start, `${MON}T14:00:00Z`), { m2, p: patches[1] });
   ok("§2 the next step is back exactly", t2.due_date === plus(1) && t2.due_time === "09:30", t2);
   ok("§2 the shift is back exactly", s2.date === plus(2) && s2.start_time === "09:00" && s2.end_time === "12:00", s2);
   ok("§2 …and each Undo is its own audit row", (await audits(mReq.path)) === before.m + 2 && (await audits(sReq.path)) === before.s + 2 && (await audits(hReq.path)) === before.h + 2);
