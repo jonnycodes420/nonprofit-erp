@@ -448,7 +448,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const c = d.comparison;
       narrative = <span data-testid="gs-narrative">You've raised <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
           label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong><RF f={d.figures?.giftCount} label="Gifts" /> gift{d.giftCount === 1 ? "" : "s"}</strong> this period
-        {c && c.value > 0 && <> Not set {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
+        {c && c.value > 0 && <>, {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
           label={c.label} definition={c.definition} source={c.source} /> at the same point last year{c.imported ? " (from your old system)" : ""}</>}.
         {/* WHY-1 — a number down against last year asks why: the campaign's
             own question when the report is filtered to one, else retention. */}
@@ -671,7 +671,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       } else {
         const s = d.sections, tt = s.totals;
         empty = false;
-        narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""} Not set <strong>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
+        narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""}, <strong>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
         const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>{title}</div>
           {items.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>{e}</div>
@@ -681,7 +681,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         </div>;
         table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>
           <Section title="Gifts received" items={s.gifts} empty="No gifts this week." render={g => <><span>{g.donorName}</span><strong>{fmtFull(g.amount)}</strong></>} />
-          <Section title="Asks / pledges made" items={s.asks} empty="No new asks this week." render={a => <><span>{a.donorName}{a.name ? ` Not set ${a.name}` : ""}</span><strong>{fmtFull(a.targetAmount)}</strong></>} />
+          <Section title="Asks / pledges made" items={s.asks} empty="No new asks this week." render={a => <><span>{a.donorName}{a.name ? ` · ${a.name}` : ""}</span><strong>{fmtFull(a.targetAmount)}</strong></>} />
           <Section title="Moves" items={s.moves} empty="No pipeline moves this week." render={m => <div style={{ width: "100%" }}><div style={{ fontWeight: 600 }}>{m.donorName} · {m.fromStage || "Not set"} → {m.toStage}</div><div style={{ fontSize: 12, color: T.ink3 }}>{m.description}</div></div>} />
           <Section title="Past-due tasks" items={s.pastDueTasks} empty="Nothing past due, nice." render={t => <><span>{t.title}{t.donorName ? ` · ${t.donorName}` : ""}</span><span style={{ color: T.gold600, fontSize: 12, whiteSpace: "nowrap" }}>due {displayDate(t.due)}</span></>} />
         </div>;

@@ -89,7 +89,7 @@ if (offenders.length) {
   let parse = null;
   try { ({ parse } = require(path.join(repoRoot, "client", "node_modules", "@babel", "parser"))); } catch { /* reported below */ }
   ok(!!parse, "the parser for the em dash guard is installed (npm ci --prefix client)");
-  const dashes = [];
+  const dashes = [], notSet = [];
   const scanCopy = (rel, src) => {
     const ast = parse(src, { sourceType: "module", plugins: ["jsx"], errorRecovery: true });
     (function visit(n) {
@@ -98,6 +98,13 @@ if (offenders.length) {
       if (n.type === "StringLiteral" || n.type === "JSXText") text = n.value;
       else if (n.type === "TemplateElement") text = n.value.cooked != null ? n.value.cooked : n.value.raw;
       if (text && text.includes("\u2014")) dashes.push(`${rel}:${n.loc.start.line}  ${text.trim().slice(0, 80)}`);
+      // JOURNEYS-3 follow-up: the dash codemod turned SEPARATORS (" \u2014 " between two values)
+      // into the words "Not set" ("charge of $199 Not set"). "Not set" is only ever a whole
+      // placeholder: alone in its literal (JSX line breaks around it are fine) or the select
+      // option "Not set yet". A space or tab beside it means it sits between other copy.
+      if (text && /Not set/.test(text) && text.trim() !== "Not set yet" && /[ \t]Not set|Not set[ \t]/.test(text)) {
+        notSet.push(`${rel}:${n.loc.start.line}  ${JSON.stringify(text.slice(0, 80))}`);
+      }
       for (const k of Object.keys(n)) {
         if (k === "loc" || /Comments$/.test(k)) continue;
         const v = n[k];
@@ -109,9 +116,11 @@ if (offenders.length) {
     const copyFiles = tracked.filter(f => f.startsWith("client/src/") && /\.(jsx?|mjs)$/.test(f));
     for (const rel of copyFiles) {
       const src = fs.readFileSync(path.join(repoRoot, rel), "utf8");
-      if (/\u2014|\\u2014|&mdash;/.test(src)) scanCopy(rel, src);
+      if (/\u2014|\\u2014|&mdash;|Not set/.test(src)) scanCopy(rel, src);
     }
     ok(dashes.length === 0, `no em dash in client copy (found ${dashes.length})`);
+    ok(notSet.length === 0, `"Not set" is only a whole placeholder, never a separator (found ${notSet.length})`);
+    for (const d of notSet.slice(0, 40)) console.error("    " + d);
     for (const d of dashes.slice(0, 40)) console.error("    " + d);
     // Proven able to fail: a planted em dash in copy is found, one in a comment is not.
     const before = dashes.length;
@@ -120,6 +129,11 @@ if (offenders.length) {
     ok(dashes.length - before === 2, "the guard catches a planted em dash in JSX text and in a template, not in a comment",
        dashes.slice(before));
     dashes.length = before;
+    const nsBefore = notSet.length;
+    scanCopy("planted3.jsx", 'const d = <span>{a} Not set {b}</span>; const e = `x ${1} Not set ${2}`; const f = <i>Not set</i>; const g = "Not set";');
+    ok(notSet.length - nsBefore === 2, "the separator guard catches a planted \"Not set\" between two values, not the bare placeholder",
+       notSet.slice(nsBefore));
+    notSet.length = nsBefore;
   }
 }
 

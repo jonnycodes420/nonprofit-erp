@@ -944,7 +944,7 @@ function NetworkReview() {
               )}
               {decisions.length > 0 && (
                 <div style={{ marginTop: 10, fontSize: 11, color: A.muted }}>
-                  {decisions.map((d, i) => <div key={i}>{String(d.at).slice(0, 16)} · {d.by} · {d.action}{d.reason ? ` Not set ${d.reason}` : ""}</div>)}
+                  {decisions.map((d, i) => <div key={i}>{String(d.at).slice(0, 16)} · {d.by} · {d.action}{d.reason ? ` · ${d.reason}` : ""}</div>)}
                 </div>
               )}
             </div>

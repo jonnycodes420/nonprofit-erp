@@ -292,7 +292,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
                   {sugs.grants.map(g => (
                     <button key={g.id} style={sugBtn} onClick={() => pickGrant(g)}
                       onMouseDown={e => e.preventDefault()}>
-                      <b>{g.funder}</b>{g.program ? ` Not set ${g.program}` : ""} · {fmtFull(parseFloat(g.amount) || 0)} · {g.status}
+                      <b>{g.funder}</b>{g.program ? ` · ${g.program}` : ""} · {fmtFull(parseFloat(g.amount) || 0)} · {g.status}
                     </button>
                   ))}
                 </>

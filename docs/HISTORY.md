@@ -55,6 +55,10 @@ counts read 0 because `window.alert` blocked React from drawing them; and the em
 `no-emoji` that parses client copy (518 dashes removed across 52 files). The dialog opened in 74 ms
 locally before and 84 ms after (one query, now two reads in parallel); prod was not timed because signing
 in to the demo writes a session. Test: `tests/journeys3-triggers.test.js` (99). Map 163 / 55 / 4 to 168 / 50 / 4 (merged after THREAD-3).
+**Follow-up (JOURNEYS-3-FIX):** the dash codemod treated a spaced separator (" — " between two values) as a
+bare placeholder and printed "Not set" in 44 places ("until your first charge of $199 Not set", "Org: X Not set
+mission"). Each became the separator its sentence needs (a colon, a middle dot, a comma, "to"), and `no-emoji`
+now fails on "Not set" with copy beside it (44 on f733ac4, 0 after).
 
 ## THREAD-3 · Nothing that needs a human slips (2026-10-07)
 

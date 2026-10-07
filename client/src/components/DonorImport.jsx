@@ -2205,7 +2205,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                 Frequency flags the gifts contradict
               </div>
               {result.frequencyConflicts.slice(0,10).map((c,i)=>(
-                <div key={i} style={{color:T.ink2}}><strong style={{color:T.ink}}>{c.name}</strong> Not set {c.message}. The pattern wins; no monthly expectations were set.</div>
+                <div key={i} style={{color:T.ink2}}><strong style={{color:T.ink}}>{c.name}</strong>: {c.message}. The pattern wins; no monthly expectations were set.</div>
               ))}
             </div>
           )}
@@ -2301,7 +2301,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {result.largestGifts.map((g,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` Not set ${displayDate(g.date)||g.date}` : ""}
+                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` · ${displayDate(g.date)||g.date}` : ""}
                   </span>
                   <span style={{color:T.ink,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>
                     {"$" + Number(g.dollars).toLocaleString(undefined,{maximumFractionDigits:2})}<span style={{color:T.ink3}}> · line {g.line}</span>
@@ -2342,7 +2342,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {shown.map((f,i)=>(
                 <div key={i} data-flagged-donor={f.name} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{f.name}</strong>{" Not set "}
+                    <strong style={{color:T.ink}}>{f.name}</strong>{": "}
                     {[f.flags.deceased&&"deceased",f.flags.doNotSolicit&&"do-not-solicit",f.flags.doNotContact&&"do-not-contact",f.flags.doNotMail&&"do-not-mail",f.flags.doNotEmail&&"do-not-email"].filter(Boolean).join(", ")}
                     {f.rows>1 && <span style={{color:T.ink3}}>{` (${f.rows.toLocaleString()} rows)`}</span>}
                   </span>
@@ -2367,7 +2367,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               </div>
               {result.exclusionConflicts.slice(0,20).map((c,i)=>(
                 <div key={i} style={{color:T.ink2}}>
-                  <strong style={{color:T.ink}}>{c.name}</strong> Not set {c.message}
+                  <strong style={{color:T.ink}}>{c.name}</strong>: {c.message}
                 </div>
               ))}
               {result.exclusionConflicts.length > 20 && <div style={{color:T.ink3}}>+{result.exclusionConflicts.length-20} more, each set on the donor's record.</div>}
@@ -2821,7 +2821,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                 <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   <strong>Gift types we don't recognise:</strong>{" "}
                   {payload.semantics.unrecognizedTypes.map(u => `“${u.type}” (${u.count}${u.examples?.[0] ? `, e.g. line ${u.examples[0].line}` : ""})`).join(" · ")}
-                  {" Not set "}these rows import as ordinary gifts with the type kept as written.
+                  {": "}these rows import as ordinary gifts with the type kept as written.
                 </div>
               )}
               {dateConvEvidence?.convention === "mixed" && (
@@ -2921,7 +2921,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                       <ul style={{margin:"6px 0 0 0",paddingLeft:18,color:T.ink2}}>
                         {npsp.ignored.map(ig=>(
                           <li key={ig.header} style={{marginBottom:3}}>
-                            <strong>{ig.header}</strong> Not set {ig.reason}
+                            <strong>{ig.header}</strong>: {ig.reason}
                           </li>
                         ))}
                       </ul>
@@ -3146,7 +3146,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {(existingCols.length>0||proposedCols.length>0) && (
                 <div style={{background:T.bg,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-                    Columns without a standard home{cfUndecided>0?` Not set ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
+                    Columns without a standard home{cfUndecided>0?`, ${cfUndecided} still need${cfUndecided===1?"s":""} a decision`:""}
                   </div>
                   {existingCols.map(c=>{
                     const discarded = cfDecisions[c.index]?.action==="discard";
@@ -4060,7 +4060,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                                 return hits.length ? hits.map(d=>(
                                   <div key={d.id} onClick={()=>{setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}));setPickingIdx(null);setPickSearch("");}}
                                     style={{padding:"7px 12px",cursor:"pointer",fontSize:12,color:T.ink,borderBottom:"1px solid "+T.bg2}}>
-                                    <strong>{d.name}</strong>{d.email?` Not set ${d.email}`:""}
+                                    <strong>{d.name}</strong>{d.email?` · ${d.email}`:""}
                                   </div>
                                 )) : <div style={{padding:"10px 12px",fontSize:12,color:T.ink3}}>No donors found</div>;
                               })()}

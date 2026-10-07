@@ -390,7 +390,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   {p.campaign_name&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300}}>Counts toward {p.campaign_name}</span>}
                 </div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                  {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` Not set ${pct}%`:""}
+                  {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` · ${pct}%`:""}
                 </div>
                 {goal>0&&(
                   <div style={{background:T.bg,borderRadius:99,height:6,overflow:"hidden",marginTop:6,maxWidth:320}}>
@@ -725,7 +725,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",
                   color:T.ink,fontSize:13,fontFamily:"inherit",minWidth:260,
                   cursor:(!isAdmin||isReadOnly)?"not-allowed":"pointer"}}>
-          {ZONES.map(([z,label])=><option key={z} value={z}>{label} Not set {z}</option>)}
+          {ZONES.map(([z,label])=><option key={z} value={z}>{label} · {z}</option>)}
           {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
         </select>
         {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
@@ -1715,7 +1715,7 @@ function AddPhotos({isReadOnly}){
                               borderRadius:7,background:T.bgCard,color:T.ink,maxWidth:260}}>
                       <option value="">Who is this?</option>
                       {(n.candidates&&n.candidates.length?n.candidates:people).map(p=>(
-                        <option key={p.id} value={p.id}>{p.name}{p.email?` Not set ${p.email}`:""}</option>
+                        <option key={p.id} value={p.id}>{p.name}{p.email?` · ${p.email}`:""}</option>
                       ))}
                     </select>
                   )}
@@ -3488,7 +3488,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <strong style={{color:T.ink}}>{row.donorName}</strong>
                 <span style={{color:T.ink3}}> · {row.label}{row.type?` (${row.type})`:""} · </span>
                 <span style={{color:T.terracotta}}>"{String(row.value).slice(0,40)}"</span>
-                <span style={{color:T.ink3}}> Not set {row.problem}</span>
+                <span style={{color:T.ink3}}>: {row.problem}</span>
               </span>
               <input defaultValue={String(row.value)} onChange={e=>setKeptRawEdits(p=>({...p,[`${row.donorId}|${row.key}`]:e.target.value}))}
                 style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12,color:T.ink,width:140}}/>
@@ -3528,7 +3528,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{f.label}</div>
-                  <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type}{(f.type==="select"||f.type==="multi_select")&&f.options?.length?` Not set ${f.options.slice(0,8).join(", ")}${f.options.length>8?` (+${f.options.length-8} more)`:""}`:""}
+                  <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{CF_TYPE_LABELS[f.type]||f.type}{(f.type==="select"||f.type==="multi_select")&&f.options?.length?`: ${f.options.slice(0,8).join(", ")}${f.options.length>8?` (+${f.options.length-8} more)`:""}`:""}
                     {f.createdSource&&f.createdSource!=="legacy-migration"?` · created during ${f.createdSource}${f.createdByName?` by ${f.createdByName}`:""}`:""}
                   </div>
                 </div>
@@ -3578,7 +3578,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             onMouseLeave={e=>e.currentTarget.style.borderLeftColor=T.bg3}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.active===false&&<span style={{marginLeft:5,fontSize:10,color:T.ink3,fontWeight:400}}>inactive</span>}</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()} Not set {m.outcome_template}</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:2}}>${Number(m.dollar_threshold).toLocaleString()}: {m.outcome_template}</div>
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>

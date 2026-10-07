@@ -40,7 +40,7 @@ function GrantLogModal({grant,onSave,onClose}){
       ariaLabel="Log touchpoint" dialogStyle={{border:"1px solid "+T.bg3}}>
       <div>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
-        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} Not set {grant.program}</div>
+        <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} · {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
           {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
@@ -99,9 +99,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
     const key=`${grant.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const sys=`You are an expert nonprofit grant writer and strategist. Specific, tactical. Max 250 words.`;
     const prompts={
-      analyze:`Analyze grant fit for ${grant.funder} / ${grant.program}.\nAsk: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nDescription: ${grant.description||"not set"}\nRequirements: ${grant.requirements||"not set"}\nHistory: ${(grant.history||[]).join(", ")||"none"}\nOrg: ${org?.name} Not set ${org?.mission}\n\nProvide:\n**Fit Score:** X/10 with 1-sentence reason\n**Key Requirements:** top 3 things the funder wants\n**Recommended Next Steps:** 3 specific actions with timing\n**Risk Flags:** anything that could disqualify us`,
-      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name} Not set ${org?.mission}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
-      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name} Not set ${org?.mission}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
+      analyze:`Analyze grant fit for ${grant.funder} / ${grant.program}.\nAsk: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nDescription: ${grant.description||"not set"}\nRequirements: ${grant.requirements||"not set"}\nHistory: ${(grant.history||[]).join(", ")||"none"}\nOrg: ${org?.name}, ${org?.mission}\n\nProvide:\n**Fit Score:** X/10 with 1-sentence reason\n**Key Requirements:** top 3 things the funder wants\n**Recommended Next Steps:** 3 specific actions with timing\n**Risk Flags:** anything that could disqualify us`,
+      strategy:`Grant strategy for ${grant.funder} / ${grant.program}.\nAmount: ${fmtFull(grant.amount)} | Status: ${grant.status} | Deadline: ${grant.deadline}\nOfficer: ${grant.officer}\nNotes: ${grant.notes}\nHistory: ${(grant.history||[]).join(", ")}\nOrg: ${org?.name}, ${org?.mission}\n\nProvide: key narrative angle, what funder cares about, red flags, 3 specific things to include.`,
+      loi:`Write a compelling Letter of Inquiry for ${grant.funder}.\nProgram: ${grant.program} | Ask: ${fmtFull(grant.amount)}\nOrg: ${org?.name}, ${org?.mission}\n\nWrite a 3-paragraph LOI: hook, program fit, ask.`,
       report:`Grant report outline for ${grant.funder}.\nProgram: ${grant.program} | Amount: ${fmtFull(grant.amount)} | Due: ${grant.reportDue}\nNotes: ${grant.notes}\nOrg mission: ${org?.mission}\n\nProvide: section headers, 3 key metrics to feature, narrative arc, what to emphasize.`,
     };
     await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
