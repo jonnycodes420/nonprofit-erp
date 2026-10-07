@@ -17747,6 +17747,11 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
       WHERE k.org_id = ? AND k.done = 0 AND k.voided_at IS NULL AND k.donor_id IS NOT NULL AND d.deleted_at IS NULL
         AND k.due IS NOT NULL AND k.due <> ''
+        -- FIX-31: a next step's own task IS the thread row above, and a deadline
+        -- whose follow-up thread is open is that thread; each shows once.
+        AND COALESCE(k.link_kind, '') <> 'next_step'
+        AND NOT EXISTS (SELECT 1 FROM grant_milestones m JOIN threads th ON th.id = m.thread_id AND th.closed_at IS NULL
+                         WHERE m.id = k.milestone_id AND m.org_id = k.org_id AND k.link_kind = 'deadline')
         ${donorId ? "AND k.donor_id = ?" : ""}
         ${effScope === "all" || !userId ? "" : "AND (k.assigned_to = ? OR (k.assigned_to IS NULL AND d.assigned_to = ?))"}
       ORDER BY k.due ASC, k.id ASC`,
