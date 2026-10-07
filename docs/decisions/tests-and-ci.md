@@ -70,6 +70,10 @@ Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a 
   `jsonb_exists(col, ?)`. `availability ? ?` was a syntax error on prod for weeks. (FIX-27)
 
 ## Gotchas
+- **Never write GitHub's skip-ci marker (square brackets around "skip ci") in a commit message or PR body**,
+  not even to describe the error digest. A squash merge copies every commit message into one, GitHub honours
+  the marker anywhere in it, and the merge to main then runs no CI and deploys nothing. HARDEN-1's merge
+  (269724f) did exactly this; a follow-up PR deployed it. Only `error-digest.yml`'s own commit carries it. (HARDEN-1)
 - **A browser leg that SKIPs exits 0, and `run-all` counts it as a PASS.** After a battery, run
   `grep -l SKIP $SUITE_LOG_DIR/*.log`. A fresh worktree has no `client/dist`, so all of its browser
   legs skip. (BUILD-88a, BUILD-96)
