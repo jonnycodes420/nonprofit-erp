@@ -3839,6 +3839,9 @@ async function runSchemaInit(pool) {
   //   • every actual destruction is recorded in asset_purge_log.
   // Pinned by tests/asset-retention.test.js (incl. the one-seam battery).
   await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  // INT-PROD-1: true only on a row the S3-put catch wrote to Postgres, so the
+  // /health fallback alarm counts failures, not the demo seed's own rows.
+  await pool.query(`ALTER TABLE portal_assets ADD COLUMN IF NOT EXISTS s3_fallback BOOLEAN NOT NULL DEFAULT FALSE`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_portal_assets_deleted ON portal_assets(deleted_at) WHERE deleted_at IS NOT NULL`);
   // FIX-20 Part 0: an asset is PRIVATE unless an admin placed it on a public
   // page. /portal-assets/:id serves a public one to anyone and a private one

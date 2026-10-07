@@ -132,6 +132,7 @@ CORE=(
   build103-soft-credit
   agents1-persona-scope
   int1-paypal-webhook
+  int-prod-1-guards
   intpos-sale-is-not-a-gift
   int2-send-once
   parity2-qbo-sync

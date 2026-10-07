@@ -56,8 +56,8 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
 
   // ── prod surfaces ────────────────────────────────────────────────────────────
   const beRes = await fetchText(`${BACKEND}/health`);
-  let backendSha = null, backendErr = null, mailboxSync = null;
-  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; } catch { backendErr = "unparseable /health"; } }
+  let backendSha = null, backendErr = null, mailboxSync = null, guards = null;
+  if (beRes.ok) { try { const h = JSON.parse(beRes.text); backendSha = h.buildSha; mailboxSync = h.mailboxSync || null; guards = { ok: h.guardsOk, failed: h.guardsFailed }; } catch { backendErr = "unparseable /health"; } }
   else backendErr = beRes.error || `HTTP ${beRes.status}`;
 
   const feRes = await fetchText(FRONTEND);
@@ -139,6 +139,10 @@ async function fetchText(url, { timeoutMs = 15000 } = {}) {
   row("prod frontend", frontendSha ? short(frontendSha) : `${YELLOW}${frontendErr}${RESET}`, frontendSha ? "" : FRONTEND);
   row("prod smoke", smokeOk === true ? `${GREEN}ok${RESET}` : smokeOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, smokeDetail);
   row("mailbox sync", mailOk === true ? `${GREEN}ok${RESET}` : mailOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, mailDetail);
+  // INT-PROD-1: guardsOk with the name of each guard that fails, so a false
+  // never needs a hunt. Reported, not a smoke failure: a guard is a page.
+  row("guards", !guards ? `${YELLOW}unverified${RESET}` : guards.ok === true ? `${GREEN}ok${RESET}` : `${RED}FALSE${RESET}`,
+      guards && guards.ok !== true ? (Array.isArray(guards.failed) ? `failing: ${guards.failed.join(", ") || "none named"}` : "no guardsFailed on /health (older deploy)") : "");
   row("prod AI smoke", aiOk === true ? `${GREEN}ok${RESET}` : aiOk === false ? `${RED}FAILING${RESET}` : `${YELLOW}unverified${RESET}`, aiDetail);
 
   // ── divergence flags (loud) ───────────────────────────────────────────────────
