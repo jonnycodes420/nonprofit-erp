@@ -57,6 +57,8 @@ let PRICES = {
   price_test_founding: { unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
   price_test_core:     { unit_amount: 24900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
   price_test_team:     { unit_amount: 49900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
+  // FIX-32: the battery now sets STRIPE_PRICE_T1000_MONTHLY (golden journey J11).
+  price_test_t1000m:   { unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
 };
 function startBillingMock(port = BILLING_MOCK_PORT) {
   return new Promise(resolve => {
