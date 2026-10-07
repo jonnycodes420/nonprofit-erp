@@ -196,6 +196,9 @@ const ACTIVITY_PART_WORDS = {
   conversations: "Each call, meeting, email, ask, note and stewardship touch with them, and each calendar meeting they were in",
   journeys: "Each journey they were started on",
 };
+// A timestamp read as the org's own day: a row made at 9pm in New York is that
+// day, not tomorrow, whatever timezone the database session runs in.
+const orgTz = a => `COALESCE((SELECT NULLIF(o.timezone, '') FROM orgs o WHERE o.id = ${a}.org_id), 'UTC')`;
 const ACTIVITY_SQL = {
   events: (orgId, p) => ({
     sql: `SELECT ea.id, 'event' AS type, ea.donor_id, e.name, LEFT(e.date::text, 10) AS date, NULL::numeric AS amount,
@@ -203,7 +206,7 @@ const ACTIVITY_SQL = {
             FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
            WHERE ea.org_id = ? AND ea.donor_id = ? AND ea.status IN ('registered','confirmed','attended','no_show')
              AND ((LEFT(e.date::text, 10) >= ? AND LEFT(e.date::text, 10) <= ?)
-                  OR (TO_CHAR(ea.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(ea.created_at, 'YYYY-MM-DD') <= ?))`,
+                  OR (TO_CHAR(ea.created_at AT TIME ZONE ${orgTz('ea')}, 'YYYY-MM-DD') >= ? AND TO_CHAR(ea.created_at AT TIME ZONE ${orgTz('ea')}, 'YYYY-MM-DD') <= ?))`,
     args: [orgId, p.donor, p.from, p.to, p.from, p.to] }),
   memberships: (orgId, p) => ({
     sql: `SELECT m.id, 'membership' AS type, m.donor_id, COALESCE(l.name, 'Membership') AS name, LEFT(m.joined_on::text, 10) AS date,
@@ -213,26 +216,26 @@ const ACTIVITY_SQL = {
              AND (m.expires_on IS NULL OR LEFT(m.expires_on::text, 10) >= ?)`,
     args: [orgId, p.donor, p.to, p.from] }),
   fundraising: (orgId, p) => ({
-    sql: `SELECT pf.id, 'fundraiser' AS type, pf.person_id AS donor_id, pf.name, TO_CHAR(pf.created_at, 'YYYY-MM-DD') AS date,
+    sql: `SELECT pf.id, 'fundraiser' AS type, pf.person_id AS donor_id, pf.name, TO_CHAR(pf.created_at AT TIME ZONE ${orgTz('pf')}, 'YYYY-MM-DD') AS date,
                  ROUND(COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.org_id = pf.org_id AND g.peer_fundraiser_id = pf.id
                                   AND g.date >= ? AND g.date <= ?), 0)::numeric, 2) AS amount,
                  'Peer-to-peer page, ' || COALESCE(pf.status, 'open') AS detail
             FROM peer_fundraisers pf WHERE pf.org_id = ? AND pf.person_id = ?
-             AND (TO_CHAR(pf.created_at, 'YYYY-MM-DD') <= ?)`,
+             AND (TO_CHAR(pf.created_at AT TIME ZONE ${orgTz('pf')}, 'YYYY-MM-DD') <= ?)`,
     args: [p.from, p.to, orgId, p.donor, p.to] }),
   auction: (orgId, p) => ({
-    sql: `SELECT i.id, 'auction_item' AS type, bd.donor_id, i.title AS name, TO_CHAR(MAX(b.created_at), 'YYYY-MM-DD') AS date,
+    sql: `SELECT i.id, 'auction_item' AS type, bd.donor_id, i.title AS name, TO_CHAR(MAX(b.created_at) AT TIME ZONE ${orgTz('i')}, 'YYYY-MM-DD') AS date,
                  NULL::numeric AS amount, 'Highest bid $' || TO_CHAR(MAX(b.amount), 'FM999,999,990.00') AS detail
             FROM auction_bids b JOIN auction_bidders bd ON bd.id = b.bidder_id AND bd.org_id = b.org_id
             JOIN auction_items i ON i.id = b.item_id AND i.org_id = b.org_id
-           WHERE b.org_id = ? AND bd.donor_id = ? AND TO_CHAR(b.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(b.created_at, 'YYYY-MM-DD') <= ?
+           WHERE b.org_id = ? AND bd.donor_id = ? AND TO_CHAR(b.created_at AT TIME ZONE ${orgTz('b')}, 'YYYY-MM-DD') >= ? AND TO_CHAR(b.created_at AT TIME ZONE ${orgTz('b')}, 'YYYY-MM-DD') <= ?
            GROUP BY i.id, bd.donor_id, i.title`,
     args: [orgId, p.donor, p.from, p.to] }),
   pledges: (orgId, p) => ({
-    sql: `SELECT pl.id, 'pledge' AS type, pl.donor_id, 'Pledge' AS name, TO_CHAR(pl.created_at, 'YYYY-MM-DD') AS date,
+    sql: `SELECT pl.id, 'pledge' AS type, pl.donor_id, 'Pledge' AS name, TO_CHAR(pl.created_at AT TIME ZONE ${orgTz('pl')}, 'YYYY-MM-DD') AS date,
                  ROUND(pl.amount::numeric, 2) AS amount, INITCAP(COALESCE(pl.status, 'open')) AS detail
             FROM pledges pl WHERE pl.org_id = ? AND pl.donor_id = ? AND COALESCE(pl.is_shell, false) = false
-             AND TO_CHAR(pl.created_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(pl.created_at, 'YYYY-MM-DD') <= ?`,
+             AND TO_CHAR(pl.created_at AT TIME ZONE ${orgTz('pl')}, 'YYYY-MM-DD') >= ? AND TO_CHAR(pl.created_at AT TIME ZONE ${orgTz('pl')}, 'YYYY-MM-DD') <= ?`,
     args: [orgId, p.donor, p.from, p.to] }),
   conversations: (orgId, p) => ({
     sql: `SELECT i.id, i.type, i.donor_id, INITCAP(i.type) AS name, LEFT(i.date::text, 10) AS date, NULL::numeric AS amount,
@@ -240,18 +243,18 @@ const ACTIVITY_SQL = {
             FROM interactions i WHERE i.org_id = ? AND i.donor_id = ? AND i.type = ANY(?)
              AND LEFT(i.date::text, 10) >= ? AND LEFT(i.date::text, 10) <= ?
           UNION ALL
-          SELECT ce.id, 'meeting' AS type, ?::text AS donor_id, COALESCE(ce.title, 'Meeting') AS name, TO_CHAR(ce.starts_at, 'YYYY-MM-DD') AS date,
+          SELECT ce.id, 'meeting' AS type, ?::text AS donor_id, COALESCE(ce.title, 'Meeting') AS name, TO_CHAR(ce.starts_at AT TIME ZONE ${orgTz('ce')}, 'YYYY-MM-DD') AS date,
                  NULL::numeric AS amount, 'On the calendar' AS detail
             FROM calendar_events ce WHERE ce.org_id = ? AND ? = ANY(ce.person_ids) AND ce.dismissed_at IS NULL
-             AND TO_CHAR(ce.starts_at, 'YYYY-MM-DD') >= ? AND TO_CHAR(ce.starts_at, 'YYYY-MM-DD') <= ?
+             AND TO_CHAR(ce.starts_at AT TIME ZONE ${orgTz('ce')}, 'YYYY-MM-DD') >= ? AND TO_CHAR(ce.starts_at AT TIME ZONE ${orgTz('ce')}, 'YYYY-MM-DD') <= ?
              AND NOT EXISTS (SELECT 1 FROM interactions x WHERE x.org_id = ce.org_id AND x.donor_id = ? AND x.type = 'meeting'
-                              AND LEFT(x.date::text, 10) = TO_CHAR(ce.starts_at, 'YYYY-MM-DD'))`,
+                              AND LEFT(x.date::text, 10) = TO_CHAR(ce.starts_at AT TIME ZONE ${orgTz('ce')}, 'YYYY-MM-DD'))`,
     args: [orgId, p.donor, CONVERSATION_TYPES, p.from, p.to, p.donor, orgId, p.donor, p.from, p.to, p.donor] }),
   journeys: (orgId, p) => ({
     sql: `SELECT cp.id, 'journey' AS type, cp.donor_id, COALESCE(cp.template_name, 'A journey') AS name,
-                 LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) AS date, NULL::numeric AS amount, INITCAP(COALESCE(cp.status, 'active')) AS detail
+                 LEFT(COALESCE(cp.applied_on::text, TO_CHAR(cp.created_at AT TIME ZONE ${orgTz('cp')}, 'YYYY-MM-DD')), 10) AS date, NULL::numeric AS amount, INITCAP(COALESCE(cp.status, 'active')) AS detail
             FROM cultivation_plans cp WHERE cp.org_id = ? AND cp.donor_id = ?
-             AND LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) >= ? AND LEFT(COALESCE(cp.applied_on::text, cp.created_at::text), 10) <= ?`,
+             AND LEFT(COALESCE(cp.applied_on::text, TO_CHAR(cp.created_at AT TIME ZONE ${orgTz('cp')}, 'YYYY-MM-DD')), 10) >= ? AND LEFT(COALESCE(cp.applied_on::text, TO_CHAR(cp.created_at AT TIME ZONE ${orgTz('cp')}, 'YYYY-MM-DD')), 10) <= ?`,
     args: [orgId, p.donor, p.from, p.to] }),
 };
 
