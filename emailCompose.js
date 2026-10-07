@@ -208,8 +208,13 @@ async function campaignPreflight(campaign, orgId) {
 // A template, read for an org, never another's.
 async function templateFor(orgId, templateId) {
   if (!templateId) return null;
+  // FIX-30: a one-person email (a receipt, a statement; starter_key person_*)
+  // is not offered here. Its fields are one person's gift and year, which a
+  // campaign, a batch or another draft cannot fill; it is drafted from its own
+  // page in Templates.
   const [t] = await query(
-    "SELECT * FROM email_templates WHERE id=? AND org_id=? AND archived_at IS NULL", [String(templateId), orgId]);
+    `SELECT * FROM email_templates WHERE id=? AND org_id=? AND archived_at IS NULL
+        AND COALESCE(starter_key, '') NOT LIKE 'person\\_%'`, [String(templateId), orgId]);
   return t || null;
 }
 

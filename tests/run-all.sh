@@ -176,6 +176,7 @@ CORE=(
   fix11-inbound-resend
   wire-journey
   golden-journeys
+  repair-runs-state
   search2-everything
   reports4-foot
   reports5-import

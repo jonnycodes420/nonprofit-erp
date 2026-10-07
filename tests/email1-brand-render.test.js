@@ -109,7 +109,54 @@ async function sendAndWait(tok, id) {
   ok("§3 a photo without alt text refuses the send, in words", refused.status === 400 && /alt|describe|not ready/i.test(JSON.stringify(refused.body)), refused.body);
   ok("§3 nothing was sent", captured.length === before, captured.slice(before).map(c => c.path));
 
-  for (const t of ["campaign_recipients", "campaigns", "email_templates", "media_items", "giving_pages", "interactions"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [orgId]).catch(() => {});
+  // ── §4 · FIX-30: the one-person emails and campaign starters open here ───
+  // A receipt opened in this editor carries its tax lines as a locked block a
+  // save cannot drop or change; its saved words go back to the store every
+  // draft reads, so the draft made after the save holds them; a campaign
+  // starter opens as blocks in the org's own name.
+  // How it goes red: drop the write-back in PUT /email-templates/:id → "the
+  // draft holds the words"; drop missingLocked → "refused without its tax lines".
+  console.log("\n§4 the bridge");
+  const rc = await api("POST", "/email-templates", tok, { starterKey: "person_receipt" });
+  const receipt = rc.body.template || {};
+  ok("§4 the receipt opens as an email template", rc.status === 201 && receipt.personKind === "receipt", rc.body);
+  ok("§4 its tax lines are a locked block", (receipt.blocks || []).some(b => b.locked && JSON.stringify(b.blocks).includes("{{tax_language}}")), receipt.blocks);
+  ok("§4 its fields are the one-person fields", (receipt.mergeFields || []).some(f => f.token === "{{gift_amount}}"), receipt.mergeFields);
+  const again = await api("POST", "/email-templates", tok, { starterKey: "person_receipt" });
+  ok("§4 opening it again opens the same one", again.status === 200 && again.body.template.id === receipt.id, again.body);
+  const pv = await api("POST", `/email-templates/${receipt.id}/preview`, tok, { device: "desktop" });
+  ok("§4 the preview fills the tax lines and knows every field", /tax-exempt|Email One Brand Org Inc/i.test(pv.body.html || "") && !(pv.body.problems || []).some(p => /not a field/.test(p)), pv.body.problems);
+  const noTax = (receipt.blocks || []).filter(b => !b.locked);
+  const r1 = await api("PUT", `/email-templates/${receipt.id}`, tok, { blocks: noTax });
+  ok("§4 a save without its tax lines is refused", r1.status === 400 && r1.body.error === "locked_block", r1.body);
+  const changedTax = (receipt.blocks || []).map(b => (b.locked ? { ...b, blocks: [{ type: "p", text: "No tax lines here." }] } : b));
+  const r2 = await api("PUT", `/email-templates/${receipt.id}`, tok, { blocks: changedTax });
+  ok("§4 a save that rewrites the tax lines is refused", r2.status === 400 && r2.body.error === "locked_block", r2.body);
+  const r3 = await api("PUT", `/email-templates/${receipt.id}`, tok, { blocks: (receipt.blocks || []).map(b => (b.type === "richtext" && !b.locked && /Dear/.test(JSON.stringify(b)) ? { ...b, blocks: [{ type: "p", text: "Hello {{first_name}}, the bridge words for {{gift_amount}}." }] } : b)) });
+  ok("§4 a save with its tax lines goes through", r3.status === 200, r3.body);
+  const r4 = await api("PUT", `/email-templates/${receipt.id}`, tok, { subject: "Your receipt", blocks: [...(r3.body.template || receipt).blocks, { type: "richtext", blocks: [{ type: "p", text: "{{last_gift_date}}" }] }] });
+  ok("§4 a field a draft cannot fill is refused", r4.status === 400 && r4.body.error === "unknown_fields", r4.body);
+  const [mt] = await q("SELECT subject, body, reviewed_at FROM message_templates WHERE org_id=$1 AND kind='receipt'", [orgId]);
+  ok("§4 the saved words are the receipt's words, reviewed", mt && /the bridge words/.test(mt.body) && mt.body.includes("{{tax_language}}") && mt.reviewed_at, mt);
+  const lib = await api("GET", "/templates", tok);
+  ok("§4 the old library reads it as reviewed", (lib.body.templates || []).find(t => t.kind === "receipt").reviewed === true);
+  const [rosa] = await q("SELECT id FROM donors WHERE org_id=$1 AND email=$2", [orgId, donorEmail]);
+  await api("POST", `/donors/${rosa.id}/gifts`, tok, { amount: 120, date: "2026-09-01", type: "one-time" });
+  await api("PUT", "/brand-kit", tok, { signatureName: "Brand Tester" });
+  const dr = await api("POST", "/templates/receipt/draft", tok, { donorId: rosa.id });
+  const [draft] = await q("SELECT body FROM milestone_drafts WHERE id=$1", [dr.body.draftId || ""]);
+  ok("§4 the draft holds the words saved in this editor", dr.status === 201 && draft && /the bridge words for \$120/.test(draft.body), [dr.status, dr.body, draft]);
+  const cp = await api("POST", "/email-templates", tok, { copyOf: receipt.id });
+  ok("§4 a one-person email is not copied", cp.status === 409, cp.body);
+  const asCampaign = await api("POST", "/campaigns/from-template", tok, { templateId: receipt.id, name: "Receipt to all" });
+  ok("§4 a one-person email cannot become a campaign", asCampaign.status === 404, asCampaign.body);
+  const ap = await api("POST", "/email-templates", tok, { starterKey: "campaign_appeal" });
+  const appeal = ap.body.template || {};
+  ok("§4 a campaign starter opens as blocks in the org's name", ap.status === 201 && (appeal.blocks || []).some(b => b.type === "richtext" && /Email One Brand Org/.test(JSON.stringify(b))) && (appeal.blocks || []).some(b => b.type === "button"), appeal.blocks);
+  const ac = await api("POST", "/campaigns/from-template", tok, { templateId: appeal.id, name: "Bridged appeal" });
+  ok("§4 and starts a campaign", ac.status === 201, ac.body);
+
+  for (const t of ["campaign_recipients", "campaigns", "email_templates", "media_items", "giving_pages", "interactions", "milestone_drafts", "message_templates"]) await q(`DELETE FROM ${t} WHERE org_id=$1`, [orgId]).catch(() => {});
   mock.close();
   await closeDb();
   summary();

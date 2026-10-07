@@ -128,5 +128,18 @@ ok(has(appSrc, "initialReport={reportsIntent?.report}"), "Reports receives initi
 ok(has(reports, "initialReport, initialParams"), "Reports consumes initialReport/initialParams");
 ok(has(reports, 'initialParams?.from && initialParams?.to) ? "custom"'), "Reports maps a from/to intent onto the custom preset");
 
+// FIX-30: App carries a Communications deep link as `subtab` (App.jsx
+// navigateTo → setCommsInitialNav(opts.subtab)). The Dashboard's Sequences
+// "Open" sent `section`, which App drops, so it landed on Overview.
+// HOW IT WENT RED: on main, the Dashboard's call carried section:"sequences".
+const commsCalls = [];
+for (const f of fs.readdirSync(path.join(__dirname, "..", "client/src/components")).filter(n => n.endsWith(".jsx"))) {
+  const src = read("client/src/components/" + f);
+  for (const m of src.matchAll(/(?:onNavigate|navigateTo)\(\s*"communications"\s*,\s*\{([^}]*)\}/g)) commsCalls.push([f, m[1]]);
+}
+ok(appSrc.includes("setCommsInitialNav(opts?.subtab"), "App reads a Communications deep link from subtab");
+ok(commsCalls.length > 0 && commsCalls.every(([, body]) => !/\bsection\s*:/.test(body)), "no link into Communications names a section App drops: " + commsCalls.filter(([, b]) => /\bsection\s*:/.test(b)).map(([f]) => f).join(", "));
+ok(has(dash, 'onNavigate("communications",{subtab:"sequences"})') && /nav === "sequences"/.test(comms), "the Dashboard's sequences link opens Sequences");
+
 console.log(`\nclickability.test.js — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

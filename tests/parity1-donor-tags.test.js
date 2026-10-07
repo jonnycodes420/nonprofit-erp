@@ -142,6 +142,30 @@ const id = k => `d_par1t_${k}`;
   ok("§7 a rising donor with Room to give not yet known is not stepped up",
     sc.suggestedAsk && sc.suggestedAsk.askCents === 5000 && /Room to give is not yet known/.test(sc.suggestedAsk.sentence), sc.suggestedAsk);
 
+  // ── FIX-30 · RECAPTURED IS A RETURN AFTER A WHOLE YEAR WITH NO GIFT ───────
+  // Fixed dates, read through the tag's own list with today=2026-10-07, so
+  // the check does not move with the clock. HOW IT WENT RED before the fix:
+  // the every-October giver read Recaptured (two gifts in the last 12 months,
+  // the one before them five days outside "the 12 months before"), and the
+  // person who skipped all of 2025 read Current (a gift inside that window).
+  const FX = "2026-10-07";
+  const Y8 = {
+    everyOct: [[4590, "2023-10-28"], [4724, "2024-10-03"], [4770, "2025-10-14"], [4722, "2026-10-02"]],
+    skipped:  [[200, "2024-10-10"], [200, "2026-09-01"]],
+    cameBack: [[90, "2023-05-01"], [90, "2025-11-01"]],
+  };
+  for (const [k, gifts] of Object.entries(Y8)) {
+    await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ($1,$2,$3,'cultivate','system:test','test')`, [id(k), ORG, `Fixture ${k}`]);
+    for (const [amount, date] of gifts)
+      await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'system:test','test')`,
+        [`g_par1t_${++n}`, ORG, id(k), amount, date]);
+  }
+  const tagged = async tag => ((await api("GET", `/figures/donors-by-status/rows?tag=${tag}&today=${FX}&pageSize=200`, tok)).body.rows || []).map(w => w.donorId);
+  const cur8 = await tagged("current"), rec8 = await tagged("recaptured");
+  ok("§8 a person who gave every October is Current, not Recaptured", cur8.includes(id("everyOct")) && !rec8.includes(id("everyOct")), { cur8, rec8 });
+  ok("§8 a person who missed a whole calendar year is Recaptured", rec8.includes(id("skipped")) && !cur8.includes(id("skipped")), { cur8, rec8 });
+  ok("§8 a person back after two quiet years is Recaptured", rec8.includes(id("cameBack")), rec8);
+
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); process.exitCode = 1; await closeDb().catch(() => {}); });

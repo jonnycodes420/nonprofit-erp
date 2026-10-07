@@ -1469,7 +1469,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   useEffect(() => {
     if (view !== "gallery") return;
     apiFetch("/email-templates")
-      .then(r => setMyTemplates((Array.isArray(r) ? r : (Array.isArray(r?.templates) ? r.templates : [])).filter(x => !x.archived)))
+      .then(r => setMyTemplates((Array.isArray(r) ? r : (Array.isArray(r?.templates) ? r.templates : [])).filter(x => !x.archived && !x.personKind)))
       .catch(() => setMyTemplates([]));
   }, [view]);
 
@@ -2563,7 +2563,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "templates" && (
           <EmailTemplates isReadOnly={isReadOnly} donors={data?.donors || []}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
-            onUseCampaign={tpl => openTemplate(tpl)} onOpenDrafts={() => setNav("milestones")} />
+            onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")} />
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}

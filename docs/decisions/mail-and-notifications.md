@@ -9,6 +9,15 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   once. In send mode any problem (an image without alt text, an unknown field, a blank still in brackets)
   throws `EMAIL_NOT_READY` and the whole send is refused. The footer slot is always emitted and is filled
   with `unsubscribeEmailFooterHtml` for each person. No WebP in email: media photos are stored as JPEG.
+- **Every email in Templates opens in the EMAIL-1 editor (FIX-30).** A one-person email (the five
+  `channel:"email"` kinds in shared/brandKit.js) and a campaign starter (shared/emailTemplates.js) open as a
+  saved template with `starter_key` `person_<kind>` or `campaign_<key>`, made from the org's current words on
+  first open (shared/emailTemplateLibrary.js has the converters). A one-person email's save writes its words
+  back to `message_templates` and marks it reviewed, so `/templates/:kind/draft`, journeys and the volunteer
+  sweep keep reading the store they always read; its fields are the brand kit's; a receipt or year-end
+  statement carries its tax lines as a locked block a save cannot drop or change. `emailCompose.templateFor`
+  never returns a `person_` template, so it cannot become a campaign or another draft's words. Printed
+  letters keep their own editor.
 - **Video in email is a picture.** The video block is its thumbnail with a play button, linking to the
   org's own video page `GET /watch/:orgSlug/:provider/:videoId`; no inbox plays video.
 - **A campaign can wait for approval.** `awaiting_approval` is never picked up by the scheduler; an admin's

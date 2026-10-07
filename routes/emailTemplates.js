@@ -26,9 +26,13 @@ const mailPolicy = require("../mailPolicy");
 
 const routers = { r0: express.Router() };
 
-let EB = null, LIB = null, PW = null, PP = null;
+let EB = null, LIB = null, PW = null, PP = null, BK = null, CS = null, VOC = null;
 const READY = Promise.all([
   import("../shared/emailBlocks.js").then(m => { EB = m; }),
+  // FIX-30: the two older stores the bridge reads from.
+  import("../shared/brandKit.js").then(m => { BK = m; }),
+  import("../shared/emailTemplates.js").then(m => { CS = m; }),
+  import("../shared/vocabulary.js").then(m => { VOC = m; }),
   import("../shared/emailTemplateLibrary.js").then(m => { LIB = m; }),
   import("../shared/pageWidgets.js").then(m => { PW = m; }),
   import("../shared/publicPage.js").then(m => { PP = m; }),
@@ -106,16 +110,50 @@ function mount(ctx) {
 C = ctx;
 const {
   actor, checkWriteAccess, query, run, requireAuth, uuid, wrap,
-  unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter,
+  unsubscribeEmailFooterHtml, orgSendingIdentity, resend, orgMaySendEmail, demoMailNote, videoLimiter, donorFacingOrgName,
 } = ctx;
 const app = routers.r0;
 
-const shape = r => ({
-  id: r.id, starterKey: r.starter_key || null, name: r.name, purpose: r.purpose,
-  subject: r.subject, preheader: r.preheader, blocks: Array.isArray(r.blocks) ? r.blocks : [],
-  archived: !!r.archived_at, archivedAt: r.archived_at || null,
-  createdByName: r.created_by_name || null, createdAt: r.created_at, updatedAt: r.updated_at,
-});
+// FIX-30 · A ONE-PERSON EMAIL'S FIELDS are the brand kit's (COMMS-2): its
+// gift, its year, its tax lines. The fallback is the bracketed name the
+// draft path prints when a person has nothing on file.
+const personFieldDefs = () => BK.MERGE_FIELDS.map(f => ({ key: f.key, label: f.label, sample: f.sample, fallback: `[${f.key.replace(/_/g, " ")}]` }));
+const shape = r => {
+  const personKind = LIB.personKindOf(r.starter_key);
+  return {
+    id: r.id, starterKey: r.starter_key || null, name: r.name, purpose: r.purpose,
+    subject: r.subject, preheader: r.preheader, blocks: Array.isArray(r.blocks) ? r.blocks : [],
+    archived: !!r.archived_at, archivedAt: r.archived_at || null,
+    createdByName: r.created_by_name || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    // FIX-30: a one-person email names its kind, and types its own fields.
+    ...(personKind ? { personKind, mergeFields: personFieldDefs().map(f => ({ token: `{{${f.key}}}`, label: f.label })) } : {}),
+  };
+};
+// The org's own words for one kind: saved ones if somebody saved them, else Steward's.
+async function personWords(orgId, kind) {
+  const def = BK.kindDef(kind);
+  const [row] = await query("SELECT subject, body FROM message_templates WHERE org_id=? AND kind=?", [orgId, kind]);
+  return { label: def.label, subject: row ? row.subject : def.subject, body: row ? row.body : def.body };
+}
+// The sample person for a one-person email's preview: the brand kit's samples,
+// with the org's own name, signature, address and tax lines.
+async function personSample(orgId, person) {
+  const [o] = await query(`SELECT name, legal_name, receipt_signature_name, receipt_signature_title, brand_signature_extra,
+                                  receipt_address, tax_language FROM orgs WHERE id=?`, [orgId]);
+  const v = Object.fromEntries(BK.MERGE_FIELDS.map(f => [f.key, f.sample]));
+  const sig = [o && o.receipt_signature_name, o && o.receipt_signature_title, o && o.brand_signature_extra].filter(Boolean).join("\n");
+  return { ...v, first_name: firstName(person.name) || v.first_name, full_name: person.name || v.full_name,
+    org_name: (o && o.name) || v.org_name, signature: sig || v.signature, org_address: (o && o.receipt_address) || "",
+    tax_language: (o && o.tax_language) || BK.DEFAULT_TAX_LANGUAGE((o && (o.legal_name || o.name)) || "") };
+}
+// A campaign starter, in this org's name and words, as the six are offered on
+// the campaign screen.
+async function campaignStarter(orgId, key) {
+  const [org] = await query("SELECT name, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const vocab = (() => { try { return org && org.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  return CS.templatesFor({ orgName, t: VOC.makeT(vocab) }).find(x => x.key === key) || null;
+}
 const starterShape = s => ({ starterKey: s.key, name: s.name, purpose: s.purpose, subject: s.subject, preheader: s.preheader, blocks: s.blocks, starter: true });
 
 async function templateRow(orgId, id) {
@@ -156,10 +194,10 @@ function fillStarterLinks(blocks, ectx) {
     return b;
   });
 }
-function renderFor(row, ectx, fields, mode) {
+function renderFor(row, ectx, fields, mode, extraFields) {
   return EB.renderEmail({
     blocks: row.blocks || [], brand: ectx.brand, fields, links: ectx.links,
-    subject: row.subject || "", preheader: row.preheader || "", mode,
+    subject: row.subject || "", preheader: row.preheader || "", mode, extraFields,
   });
 }
 
@@ -182,7 +220,23 @@ app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res
   const orgId = req.user.orgId;
   const b = req.body || {};
   let base;
-  if (b.starterKey) {
+  const personKind = LIB.personKindOf(b.starterKey), campaignKey = LIB.campaignKeyOf(b.starterKey);
+  if (personKind || campaignKey) {
+    // FIX-30: one saved template per bridged email. Opening it twice opens the same one.
+    const [had] = await query(`SELECT * FROM email_templates WHERE org_id=? AND starter_key=? AND archived_at IS NULL ORDER BY created_at LIMIT 1`,
+      [orgId, String(b.starterKey)]);
+    if (had) return res.json({ template: shape(had), existing: true });
+    if (personKind) {
+      const w = await personWords(orgId, personKind);
+      base = { starter_key: b.starterKey, name: w.label, purpose: "person", subject: w.subject, preheader: "",
+               blocks: LIB.personBlocksFromText(personKind, w.body) };
+    } else {
+      const c = await campaignStarter(orgId, campaignKey);
+      if (!c) return res.status(400).json({ error: "unknown_starter", sentence: "That starting point is not one Steward has." });
+      base = { starter_key: b.starterKey, name: c.label, purpose: c.blurb || "appeal", subject: c.subject, preheader: "",
+               blocks: LIB.campaignBlocksFromHtml(campaignKey, CS.normalizeMergeFields(c.body)) };
+    }
+  } else if (b.starterKey) {
     const s = LIB.starterByKey(String(b.starterKey));
     if (!s) return res.status(400).json({ error: "unknown_starter", sentence: "That starting point is not one Steward has." });
     const person = await me(req);
@@ -192,7 +246,10 @@ app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res
   } else if (b.copyOf) {
     const src = await templateRow(orgId, b.copyOf);
     if (!src) return res.status(404).json({ error: "Template not found" });
-    base = { starter_key: src.starter_key, name: clip(`${src.name} (copy)`, 120), purpose: src.purpose,
+    if (LIB.personKindOf(src.starter_key)) return res.status(409).json({ error: "one_person_email",
+      sentence: "A one-person email has one version, the one every draft uses. Change it instead of copying it." });
+    // A copy of a bridged campaign starter is the org's own email, not the starter.
+    base = { starter_key: LIB.campaignKeyOf(src.starter_key) ? null : src.starter_key, name: clip(`${src.name} (copy)`, 120), purpose: src.purpose,
              subject: src.subject, preheader: src.preheader, blocks: src.blocks || [] };
   } else {
     return res.status(400).json({ error: "starter_or_copy", sentence: "Start from one of the emails, or copy one of yours." });
@@ -226,8 +283,31 @@ app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, 
   for (const s of [name, subject, preheader]) {
     if (/\u2014/.test(s)) return res.status(400).json({ error: "em_dash", sentence: "Use a comma or a full stop instead of a long dash." });
   }
+  // FIX-30 · A ONE-PERSON EMAIL keeps its required tax lines, uses only the
+  // fields a draft can fill, and its words go back to the store every draft,
+  // journey and sweep reads (message_templates). Saving there is reviewing it,
+  // exactly as saving in the old editor was.
+  const personKind = LIB.personKindOf(row.starter_key);
+  let words = null;
+  if (personKind) {
+    if (LIB.missingLocked(row.starter_key, blocks).length)
+      return res.status(400).json({ error: "locked_block", sentence: "The tax lines are required on this email and can't be removed or changed. They come from your brand kit." });
+    words = { subject: subject.trim().slice(0, 200), body: LIB.personTextFromBlocks(blocks).slice(0, 8000) };
+    if (!words.subject || !words.body) return res.status(400).json({ error: "words_required", sentence: "This email needs a subject and some words." });
+    const unknown = [...new Set([...BK.unknownFields(words.subject), ...BK.unknownFields(words.body)])];
+    if (unknown.length) return res.status(400).json({ error: "unknown_fields",
+      sentence: `These are not fields a one-person email can fill: ${unknown.map(u => "{{" + u + "}}").join(", ")}. Pick fields from the list.` });
+  }
   await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?`,
     [name, subject, preheader, JSON.stringify(blocks), row.id, orgId]);
+  if (personKind) {
+    const who = actor(req);
+    await run(`INSERT INTO message_templates (id,org_id,kind,subject,body,reviewed_at,reviewed_by_name,created_by,created_by_name)
+               VALUES (?,?,?,?,?,NOW(),?,?,?)
+               ON CONFLICT (org_id, kind) DO UPDATE SET subject=EXCLUDED.subject, body=EXCLUDED.body, reviewed_at=NOW(),
+                 reviewed_by_name=EXCLUDED.reviewed_by_name, updated_at=NOW()`,
+      ["mt_" + uuid().slice(0, 10), orgId, personKind, words.subject, words.body, who.name, who.id, who.name]);
+  }
   if (req.audit) req.audit.entity("email_template", row.id, name);
   res.json({ template: shape(await templateRow(orgId, row.id)) });
 }));
@@ -252,8 +332,9 @@ async function previewHtml(req, row) {
   const orgId = req.user.orgId;
   const person = await me(req);
   const ectx = await buildEmailContext(orgId);
-  const fields = await sampleFields(orgId, person, ectx);
-  const r = renderFor(row, ectx, fields, "preview");
+  const personKind = LIB.personKindOf(row.starter_key);
+  const fields = personKind ? { ...(await sampleFields(orgId, person, ectx)), ...(await personSample(orgId, person)) } : await sampleFields(orgId, person, ectx);
+  const r = renderFor(row, ectx, fields, "preview", personKind ? personFieldDefs() : null);
   const footer = await unsubscribeEmailFooterHtml(person.email || "you@example.org", orgId, "campaign");
   const html = r.html.replace(EB.FOOTER_SLOT, footer);
   const lint = EB.lintEmailHtml(r.html);
@@ -302,7 +383,7 @@ app.post("/email-templates/:id/test", requireAuth, checkWriteAccess, wrap(async 
     return res.json({ sent: false, to, html: p.html, problems: p.problems, reason: gate.reason,
       sentence: demo || mailPolicy.REASON_SENTENCE[gate.reason] || "Nothing was sent." });
   }
-  const subj = EB.renderSubject(row.subject || row.name, p.fields) || row.name;
+  const subj = EB.renderSubject(row.subject || row.name, p.fields, LIB.personKindOf(row.starter_key) ? personFieldDefs() : null) || row.name;
   const identity = await orgSendingIdentity(orgId);
   let delivered = false;
   if (process.env.RESEND_API_KEY) {
