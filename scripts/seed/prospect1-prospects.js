@@ -75,9 +75,15 @@ async function seedProspect1(q, ORG, { TODAY, gen = GEN, sch = SCH, who = ["u_b7
       }
     }
     if (extra.event) {
-      const [ev] = await q(`SELECT id FROM events WHERE org_id=$1 ORDER BY date DESC NULLS LAST LIMIT 1`, [ORG]);
-      if (ev) await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [`ea_pr1_${ORG}_${key}`, ev.id, ORG, id, name, email]);
+      // WIRE-1: they came to the org's most recent past event, so the demo has
+      // a person who gives, volunteers and attended (the whole-person walk).
+      const [ev] = await q(`SELECT id, name FROM events WHERE org_id=$1 AND date::text <= $2 ORDER BY date DESC NULLS LAST LIMIT 1`, [ORG, TODAY]);
+      if (ev) {
+        await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,attendance_logged_at) VALUES ($1,$2,$3,$4,$5,$6,'attended',NOW())`,
+          [`ea_pr1_${ORG}_${key}`, ev.id, ORG, id, name, email]);
+        await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name) VALUES ($1,$2,$3,'event',(SELECT date::text FROM events WHERE id=$4),$5,$6,$7)`,
+          [`int_pr1_${ORG}_${key}_came`, ORG, id, ev.id, `Came to ${ev.name}.`, ...who]);
+      }
     }
     if (extra.hours) {
       await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,'After-school tutoring',$6,$7)`,
