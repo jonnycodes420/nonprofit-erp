@@ -17428,7 +17428,10 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
       ? (x, y) => ((engMap.get(y.donorId) || {}).engagement || 0) - ((engMap.get(x.donorId) || {}).engagement || 0) || (y.usualGift || 0) - (x.usualGift || 0)
       : (x, y) => (y.usualGift || 0) - (x.usualGift || 0));
   const cap = driftEngine.DRIFT.HOME_LIST_CAP;
+  // FIX-33 · "Meeting set for 16 Oct" on a drifting row, so nobody calls her twice.
+  const meetingSet = await require("../meetingEffects").meetingSetFor(orgId, drifting.map(a => a.donorId)).catch(() => new Map());
   const row = a => ({
+    meetingSet: meetingSet.get(a.donorId)?.sentence || null,
     donorId: a.donorId, donorName: a.donorName, reason: a.reason,
     confidence: a.confidence, valueAtRisk: a.valueAtRisk,
     usualGift: a.usualGift || 0,          // the labelled "at risk" figure on the row

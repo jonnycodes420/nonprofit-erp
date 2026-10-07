@@ -246,7 +246,10 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
     const n = DT.refusedRowsOf(t && t.tags);
     if (n > 0) importRefusals = { count: n, line: refusedLine(n), rowsPath: `/donors/${d.id}/refused-rows` };
   }
-  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals });
+  // FIX-33 · a booked meeting answers "Cooling" and "Drifting" on the same
+  // line, so nobody calls her twice.
+  const meetingSet = (await require("../meetingEffects").meetingSetFor(orgId, [d.id])).get(d.id) || null;
+  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals, meetingSet });
 }));
 
 // FIX-33 · the rows behind that line. The importer keeps each refused row

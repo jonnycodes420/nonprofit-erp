@@ -133,6 +133,7 @@ export function ClosenessLine({ status, onOpenDonor }) {
         </span>
       ))}
       {c.facts.length ? "." : ""}
+      {status.meetingSet && <span data-testid="dp-meeting-set" style={{ fontWeight: 700, color: T.greenDk }}> {status.meetingSet.sentence}.</span>}
     </div>
   );
 }
