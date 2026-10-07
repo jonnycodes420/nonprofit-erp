@@ -1,0 +1,100 @@
+# HARDEN-1 item 6 · THE DAILY ERROR DIGEST.
+#
+# Reads yesterday's (UTC) error lines from the production service's logs with
+# the Railway CLI and the project-scoped RAILWAY_TOKEN that ci.yml's
+# deploy-railway job already uses (service nonprofit-erp, environment
+# production; read only), groups them by type and by route with
+# scripts/error-digest.js, and commits docs/errors/YYYY-MM-DD.md to main.
+#
+# The commit message carries [skip ci], so it never starts ci.yml and never
+# deploys. No new service, no settings change.
+name: Error digest
+
+on:
+  schedule:
+    - cron: "23 6 * * *"   # 06:23 UTC, after the UTC day it reads has closed
+  workflow_dispatch:
+    inputs:
+      day:
+        description: "The UTC day to digest (YYYY-MM-DD). Empty means yesterday."
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: error-digest
+  cancel-in-progress: false
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      SERVICE: nonprofit-erp
+      ENVIRONMENT: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Railway CLI
+        run: |
+          for i in 1 2 3; do
+            npm install -g @railway/cli && break
+            echo "install attempt $i failed; retrying in 10s"; sleep 10
+            [ "$i" = "3" ] && exit 1
+          done
+          railway --version
+
+      - name: Read the day's error lines
+        id: logs
+        run: |
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "::error::The error digest cannot read the logs because the RAILWAY_TOKEN repository secret is not set."
+            exit 1
+          fi
+          DAY="${{ github.event.inputs.day }}"
+          [ -n "$DAY" ] || DAY=$(date -u -d "yesterday" +%F)
+          echo "day=$DAY" >> "$GITHUB_OUTPUT"
+          : > logs.jsonl
+          # A day can span several deployments, and `railway logs` reads one at a
+          # time: read every deployment created from the day before through now.
+          SINCE=$(date -u -d "$DAY -1 day" +%FT%TZ)
+          railway deployment list --service "$SERVICE" --environment "$ENVIRONMENT" --limit 40 --json > deployments.json
+          node -e '
+            const d = JSON.parse(require("fs").readFileSync("deployments.json", "utf8"));
+            const since = process.argv[1];
+            const ids = d.filter(x => x.createdAt >= since).map(x => x.id);
+            if (!ids.length && d[0]) ids.push(d[0].id);   // the one that was live all day
+            const older = d.find(x => x.createdAt < since && x.status === "SUCCESS");
+            if (older && !ids.includes(older.id)) ids.push(older.id);   // live at the start of the day
+            console.log(ids.join("\n"));
+          ' "$SINCE" > ids.txt
+          while read -r id; do
+            [ -n "$id" ] || continue
+            echo "reading deployment $id"
+            railway logs "$id" --service "$SERVICE" --environment "$ENVIRONMENT" --lines 5000 --filter "@level:error" --json >> logs.jsonl || echo "could not read $id"
+          done < ids.txt
+          wc -l logs.jsonl
+
+      - name: Write the digest
+        run: node scripts/error-digest.js --in logs.jsonl --day "${{ steps.logs.outputs.day }}"
+
+      - name: Commit it to main
+        run: |
+          git config user.name "steward-error-digest"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/errors
+          if git diff --cached --quiet; then echo "nothing new to commit"; exit 0; fi
+          git commit -m "Error digest for ${{ steps.logs.outputs.day }} [skip ci]"
+          for i in 1 2 3; do
+            git push origin HEAD:main && exit 0
+            git pull --rebase origin main
+          done
+          exit 1

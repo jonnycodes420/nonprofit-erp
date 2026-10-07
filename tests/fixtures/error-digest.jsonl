@@ -1,0 +1,37 @@
+{"timestamp":"2026-10-05T23:59:59.100000000Z","message":"[schema] yesterday-only line that must be left out","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303804614Z","message":"    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303812561Z","message":"    at async query (/app/db.js:56:18)","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303816174Z","message":"    at async reconcileStripeVsGifts (/app/server.js:7799:16) {","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303858811Z","message":"  length: 117,","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303863448Z","message":"error: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303866920Z","message":"  severity: 'FATAL',","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303872154Z","message":"    at /app/node_modules/pg-pool/index.js:45:11","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303872673Z","message":"  code: 'XX000',","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303877393Z","message":"  detail: undefined,","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T02:56:28.303899999Z","message":"}","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568122394Z","message":"error: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568129722Z","message":"    at /app/node_modules/pg-pool/index.js:45:11","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568149383Z","message":"    at async query (/app/db.js:56:18)","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568163728Z","message":"    at async syncAllGmail (/app/routes/jobs.js:395:23) {","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568171258Z","message":"  length: 117,","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:08.568199055Z","message":"}","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:31.100634154Z","message":"[scores] org_a69dbc4f: column \"pattern\" of relation \"donor_scores\" does not exist","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:41:50.920698022Z","message":"[scores] org_d3779a40: column \"pattern\" of relation \"donor_scores\" does not exist","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T03:42:12.690396472Z","message":"[scores] org_b72demo: column \"pattern\" of relation \"donor_scores\" does not exist","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T14:02:11.000100000Z","message":"[500] PATCH /donors/d_b72_27/contact","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T14:02:11.000200000Z","message":"TypeError: Cannot read properties of undefined (reading 'trim')","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T14:02:11.000300000Z","message":"    at normaliseContact (/app/routes/donors.js:812:22)","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T15:20:45.000100000Z","message":"[500] PATCH /donors/d_9f3a11/contact","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T15:20:45.000200000Z","message":"TypeError: Cannot read properties of undefined (reading 'trim')","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T16:00:00.000100000Z","message":"[500] POST /agent/instructions Error: model call timed out after 120000 ms","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T16:30:00.000100000Z","message":"[agent] plan failed 503 Overloaded","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T17:30:00.000100000Z","message":"[agent] plan failed 529 Overloaded","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T18:00:00.000100000Z","message":"[uncaughtException] \u2014 process will exit: RangeError: Invalid time value","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T18:00:00.000200000Z","message":"    at Date.toISOString (<anonymous>)","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T18:10:00.000100000Z","message":"[unhandledRejection]: error: relation \"note_reminders\" does not exist","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:14:00.000000000Z","message":"npm warn config production Use `--omit=dev` instead.","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:15:51.163351468Z","message":"npm error path /app","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:15:51.163356158Z","message":"npm error command failed","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:15:51.163360948Z","message":"npm error signal SIGTERM","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:15:51.163364938Z","message":"npm error command sh -c node server.js","attributes":{"level":"error"}}
+{"timestamp":"2026-10-06T19:15:51.163368918Z","message":"npm error A complete log of this run can be found in: /root/.npm/_logs/2026-10-06T23_41_47_020Z-debug-0.log","attributes":{"level":"error"}}
