@@ -1975,7 +1975,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* BUILD-76 — the drift reason, inline on the record (hover-only
                 would hide the one sentence that explains the badge). */}
             {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
-            {/* FIX-33 — the rows an import could not read are their own plain
+            {/* FIX-33: the rows an import could not read are their own plain
                 line (admins only, with the rows behind it), never a raw tag and
                 never folded into the drift sentence above. */}
             <ImportRefusalsLine status={status}/>
