@@ -93,7 +93,12 @@ export const PACK_SECTIONS = [
     figures: [
       { key: "donorCount", label: "People who gave", kind: "count",
         definition: "Distinct givers with at least one gift dated in the period this pack covers.",
-        source: w => ({ key: "givers", params: { from: w.from, to: w.to } }) },
+        // REPORTS-4: `givers` takes a fund and a campaign now, so a pack filtered
+        // by either narrows this count too; owner and group still cannot, and
+        // the tile says so (filtersHonoured reads the source's params).
+        source: w => ({ key: "givers", params: { from: w.from, to: w.to,
+          ...(w.filters && w.filters.fund ? { fund: w.filters.fund } : {}),
+          ...(w.filters && w.filters.campaign ? { campaign: w.filters.campaign } : {}) } }) },
       { key: "retentionRate", label: "Retention", kind: "percent",
         definition: "Of the people who gave last calendar year, the share who have given again this one. It is a calendar-year measure and does not move with the period this pack covers. Blank until there is enough history for the number to mean anything.",
         source: () => ({ key: "retention", params: {} }) },

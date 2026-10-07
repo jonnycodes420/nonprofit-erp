@@ -317,9 +317,14 @@ const sink = http.createServer((req, res) => {
   let fBad = [];
   for (const f of fFigs) { const [good, why] = await foots(tok, f); if (!good) fBad.push(`${f.where}: ${why}`); }
   ok("§3 every figure in a filtered pack foots to its filtered rows", fBad.length === 0, fBad.slice(0, 6));
+  // REPORTS-4: `givers` takes a fund now, so the donor count IS narrowed and
+  // says nothing; retention still cannot be, and says so.
   const donorFig = fFigs.find(f => f.where === "people.donorCount");
+  ok("§3 a number that can be narrowed by fund is narrowed, and says nothing",
+    donorFig && !donorFig.note && donorFig.source && donorFig.source.params && donorFig.source.params.fund === "ff_rp3_sch", donorFig);
+  const unNarrowed = fFigs.find(f => f.source && f.source.key === "retention");
   ok("§3 a number that cannot be narrowed by fund says so rather than implying it was",
-    donorFig && typeof donorFig.note === "string" && /not narrowed by fund/.test(donorFig.note), donorFig && donorFig.note);
+    unNarrowed && typeof unNarrowed.note === "string" && /not narrowed by fund/.test(unNarrowed.note), unNarrowed && unNarrowed.note);
 
   // ── §4 the definitions page defines every number that got printed ──
   const labels = figs.filter(f => f.where.startsWith("giving.") || f.where.startsWith("people.") || f.where.startsWith("volunteers."))
