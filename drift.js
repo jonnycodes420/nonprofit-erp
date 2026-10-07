@@ -319,4 +319,25 @@ function composeReason(a, events, today) {
   return `Gave ${humanCadence(a.cadenceDays)}${spanPhrase}, usually around ${fmtAmt(typical)}. ${gapPhrase}`;
 }
 
-module.exports = { DRIFT, assessDrift, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
+// FIX-33 · GIVING MORE THAN THEIR PATTERN IS NOT COOLING. A person who
+// usually gives twice a year and has given four times in the last twelve
+// months can still be past their own median gap (four gifts in February, then
+// a quiet summer). The gap is not the story: they have already given their
+// usual year, and more. True when the giving events (same-day gifts are one)
+// in the 365 days up to today number at least their usual count for a year
+// (365 days over their own cadence, at least one; a seasonal giver's year is
+// one gift). `a` is assessDrift's answer for the same gifts.
+function aboveOwnPattern(gifts, today, a) {
+  if (!a || !a.cadenceDays || a.cadenceDays <= 0) return false;
+  const from = orgTime.addDays(today, -365);
+  const days = new Set();
+  for (const g of gifts || []) {
+    if (!(Number(g.amount) > 0) || !orgTime.parseCivil(g.date)) continue;
+    const d = String(g.date).slice(0, 10);
+    if (orgTime.compareCivil(d, from) >= 0 && orgTime.compareCivil(d, today) <= 0) days.add(d);
+  }
+  const usual = Math.max(1, Math.round(365.25 / a.cadenceDays));
+  return days.size >= usual;
+}
+
+module.exports = { DRIFT, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };

@@ -16,7 +16,8 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   is inside their OWN usual gap (drift.js `assessDrift`, stored as `donor_scores.pattern` by the score
   compute), otherwise Cooling (`closenessFor` in shared/engagementWeights.js; `closenessSql` in
   donorStatus.js for lists). Cooling is never judged against the calendar: a once-a-year donor who gave
-  on pattern is On track. Never a second score. (PARITY-1, WIRE-1 addendum)
+  on pattern is On track, and so is a person whose gifts in the last 365 days number at least their own usual year
+  (`drift.js aboveOwnPattern`): giving more than their pattern is never Cooling. Never a second score. (PARITY-1, WIRE-1 addendum, FIX-33)
 - **Engagement counts what a person does FOR the org,** not only what the org does to them: a
   peer-to-peer page they run (5), an event ticket (3), an auction they bid in (3) and a membership year
   (3) sit beside meetings, calls and shifts, each from its own table and each opening its rows through

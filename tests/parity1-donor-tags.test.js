@@ -166,6 +166,25 @@ const id = k => `d_par1t_${k}`;
   ok("§8 a person who missed a whole calendar year is Recaptured", rec8.includes(id("skipped")) && !cur8.includes(id("skipped")), { cur8, rec8 });
   ok("§8 a person back after two quiet years is Recaptured", rec8.includes(id("cameBack")), rec8);
 
+  // ── FIX-33 · GIVING MORE THAN THEIR PATTERN IS NOT COOLING ────────────────
+  // Twice a year for three years, then four gifts close together and a quiet
+  // stretch: the gap since the latest gift (230 days) is past their own
+  // median gap (180 days), but they have given more in the last year than
+  // their usual two. HOW IT WENT RED before the fix: the profile read
+  // "Cooling: gave 4 times this year" and the Cooling filter listed them.
+  const above = [-1460, -1280, -1095, -915, -730, -550, -365, -260, -250, -240, -230];
+  await q(`INSERT INTO donors (id,org_id,name,stage,created_by,created_by_name) VALUES ($1,$2,'Fixture abovePattern','cultivate','system:test','test')`, [id("above"), ORG]);
+  for (const dd of above)
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,50,$4,'system:test','test')`,
+      [`g_par1t_${++n}`, ORG, id("above"), civilPlusDays(dd)]);
+  ok("§9 the scores recompute", (await api("POST", "/scores/recompute", tok, {})).status === 200);
+  const ab = (await api("GET", `/donors/${id("above")}/status`, tok)).body;
+  ok("§9 a person giving more often than their own pattern is not Cooling on the profile",
+    ab.closeness && ab.closeness.key !== "cooling", ab.closeness);
+  const cool9 = ((await api("GET", `/donors?limit=200&closeness=cooling`, tok)).body.donors || []).map(d => d.id);
+  ok("§9 nor in the Cooling list, while the donor past their own gap still is",
+    !cool9.includes(id("above")) && cool9.includes(id("drifter")), cool9);
+
   summary();
   await closeDb();
 })().catch(async e => { console.error(e); process.exitCode = 1; await closeDb().catch(() => {}); });

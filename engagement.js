@@ -253,8 +253,12 @@ function reasonFor(row, today) {
 // inside it, 'drifting' and 'lapsed' are past it, null is fewer than two gifts
 // (no rhythm to judge against). Refunds are not gifts here.
 function patternOf(gifts, today) {
-  const a = driftEngine.assessDrift(gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 })), today);
+  const gs = gifts.filter(g => g.cents > 0).map(g => ({ date: g.date, amount: g.cents / 100 }));
+  const a = driftEngine.assessDrift(gs, today);
   if (a.state === "ok") return "on_track";
+  // FIX-33: more gifts in the last year than their own usual year is not
+  // cooling, however long the gap since the latest one.
+  if (driftEngine.aboveOwnPattern(gs, today, a)) return "on_track";
   if (a.state === "drifting" || a.state === "lapsed") return a.state;
   return null;
 }
