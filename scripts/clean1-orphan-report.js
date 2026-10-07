@@ -28,7 +28,7 @@
 //          and volunteer notes were added later).
 "use strict";
 const { Client } = require("pg");
-const { MERGE_REFS } = require("../routes/dataHealth");
+const { MERGE_REFS, REF_SHAPE } = require("../routes/dataHealth");
 
 // What the old merge moved, as of the version CLEAN-1 replaced.
 const OLD_MOVED = new Set([
@@ -88,7 +88,9 @@ async function main() {
       const rows = [];
       for (const [t, c] of refs) {
         if (!existing.has(`${t}.${c}`)) { console.log(`  (${t}.${c} is not in this database; skipped)`); continue; }
-        const r = (await client.query(`SELECT org_id, COUNT(*)::int AS n FROM ${t} WHERE ${c} = ANY($1) GROUP BY org_id`, [ids])).rows;
+        const shape = REF_SHAPE[`${t}.${c}`] || {};
+        const where = shape.array ? `${c} && $1::text[]` : `${c} = ANY($1)${shape.where ? ` AND ${shape.where}` : ""}`;
+        const r = (await client.query(`SELECT org_id, COUNT(*)::int AS n FROM ${t} WHERE ${where} GROUP BY org_id`, [ids])).rows;
         for (const x of r) rows.push({ org: x.org_id, col: `${t}.${c}`, n: x.n });
       }
       if (!rows.length) { console.log("  none: no row in these columns points at a folded record"); continue; }

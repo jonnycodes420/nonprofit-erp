@@ -72,10 +72,35 @@ const MERGE_REFS = [
   ["volunteer_groups", "contact_person_id"], ["volunteer_magic_links", "person_id"], ["volunteer_notes", "person_id"],
   ["volunteer_qualifications", "person_id"], ["volunteer_shifts", "person_id"], ["volunteer_signups", "person_id"],
   ["volunteers", "donor_id"], ["workflow_runs", "donor_id"],
+  // WIRE-1: a meeting's people, the Agent's undo ledger and custom field
+  // history. Their shapes are in REF_SHAPE below.
+  ["calendar_events", "person_ids"], ["agent_writes", "entity_id"], ["custom_field_events", "entity_id"],
 ];
+// Pointers that are not a plain "column = person id".
+//   array   the column holds several people (a meeting with two donors): the
+//           merged id is replaced by the kept id, or dropped when the kept id
+//           is already there, and undo puts the array back exactly
+//   where   the column points at a person only on rows of one kind
+const REF_SHAPE = {
+  "calendar_events.person_ids": { array: true },
+  "agent_writes.entity_id": { where: "entity_table='donors'" },
+  "custom_field_events.entity_id": { where: "entity='donor'" },
+};
+// The WHERE clause that finds a person's rows in one pointer column. Takes the
+// person id as its one placeholder.
+function refMatch(t, c) {
+  const s = REF_SHAPE[`${t}.${c}`] || {};
+  if (s.array) return { sql: `?=ANY(${c})`, array: true };
+  return { sql: `${c}=?${s.where ? ` AND ${s.where}` : ""}`, array: false };
+}
 // Columns whose names look like a person pointer but are not one.
 const NOT_MOVED = {
   "donors.external_donor_id": "the person's id in the system they came from, a value not a pointer; it is a field the merge screen offers",
+  "donors.external_donor_ids": "the person's ids in other systems, values not pointers; the merge unites both lists onto the kept record",
+  "fin_audit_log.entity_id": "an append-only log of what happened to a record at the time; history is never rewritten",
+  "workflow_runs.entity_id": "the run's dedupe key part; the person on a run is workflow_runs.donor_id, which moves",
+  "asset_pointer_history.entity_id": "a log of photo and file pointer changes as they happened; history is never rewritten",
+  "api_call_log.entity_id": "a log of public API calls as they were made; history is never rewritten",
 };
 // Tables with no `id` column: a row is found by these columns plus the pointer.
 const KEY_COLS = { donor_scores: [], public_filings: [], group_members: ["group_id"], group_sweep_seen: ["group_id"] };
@@ -313,7 +338,7 @@ app.post("/data-health/pairs/dismiss", requireAuth, checkWriteAccess, wrap(async
 async function movingCounts(orgId, personId) {
   const out = {};
   for (const [t, c] of MERGE_REFS) {
-    const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=? AND ${c}=?`, [orgId, personId]);
+    const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM ${t} WHERE org_id=? AND ${refMatch(t, c).sql}`, [orgId, personId]);
     if (n) out[`${t}.${c}`] = n;
   }
   return out;
@@ -395,14 +420,24 @@ async function mergePeople(orgId, keptId, mergedId, { choices = null, me, confid
     for (const [t, c, mode] of MERGE_REFS) {
       const withId = await hasIdCol(client, t);
       const keyCols = KEY_COLS[t] || [];
-      const rows = await queryTx(client, `SELECT to_jsonb(x.*) AS j FROM ${t} x WHERE org_id=? AND ${c}=?`, [orgId, mergedId]);
+      const ref = refMatch(t, c);
+      const rows = await queryTx(client, `SELECT to_jsonb(x.*) AS j FROM ${t} x WHERE org_id=? AND ${ref.sql}`, [orgId, mergedId]);
       if (!rows.length) continue;
+      if (ref.array) {
+        // Each row's array before the merge is kept on the merge record, so
+        // undo restores it exactly (order and all), not by a reverse guess.
+        await runTx(client,
+          `UPDATE ${t} SET ${c} = CASE WHEN ?=ANY(${c}) THEN array_remove(${c}, ?) ELSE array_replace(${c}, ?, ?) END
+            WHERE org_id=? AND ?=ANY(${c})`, [keptId, mergedId, mergedId, keptId, orgId, mergedId]);
+        moved.push({ table: t, column: c, ids: rows.map(r => r.j.id), arrays: rows.map(r => ({ id: r.j.id, before: r.j[c] })) });
+        continue;
+      }
       const match = j => withId
         ? { sql: "id=?", vals: [j.id] }
         : { sql: [`org_id=?`, ...keyCols.map(k => `${k}=?`)].join(" AND "), vals: [orgId, ...keyCols.map(k => j[k])] };
       await client.query("SAVEPOINT dh_bulk");
       try {
-        await runTx(client, `UPDATE ${t} SET ${c}=? WHERE org_id=? AND ${c}=?`, [keptId, orgId, mergedId]);
+        await runTx(client, `UPDATE ${t} SET ${c}=? WHERE org_id=? AND ${ref.sql}`, [keptId, orgId, mergedId]);
         await client.query("RELEASE SAVEPOINT dh_bulk");
         moved.push({ table: t, column: c, ids: withId ? rows.map(r => r.j.id) : null, keys: withId ? null : rows.map(r => Object.fromEntries(keyCols.map(k => [k, r.j[k]]))) });
         continue;
@@ -591,7 +626,14 @@ app.post("/data-health/merges/:id/undo", requireAuth, checkWriteAccess, wrap(asy
       await restore(m.merged_before, m.merged_id);
       // Every moved row points back at the person it came from.
       for (const mv of m.moved || []) {
-        if (mv.ids && mv.ids.length) {
+        if (mv.arrays && mv.arrays.length) {
+          // An array pointer goes back to the exact array it held, if the row
+          // still names the kept person (it was not edited away since).
+          for (const a of mv.arrays) {
+            await runTx(client, `UPDATE ${mv.table} SET ${mv.column}=?::text[] WHERE org_id=? AND id=? AND ?=ANY(${mv.column})`,
+              [a.before, orgId, a.id, m.kept_id]);
+          }
+        } else if (mv.ids && mv.ids.length) {
           await runTx(client, `UPDATE ${mv.table} SET ${mv.column}=? WHERE org_id=? AND ${mv.column}=? AND id = ANY(?)`, [m.merged_id, orgId, m.kept_id, mv.ids]);
         } else if (mv.keys && mv.keys.length) {
           for (const k of mv.keys) {
@@ -803,4 +845,4 @@ module.exports.runDataHealth = runDataHealth;
 module.exports.mergePeople = mergePeople;
 }
 
-module.exports = { routers, mount, MERGE_REFS, NOT_MOVED, KEY_COLS, UNDO_DAYS };
+module.exports = { routers, mount, MERGE_REFS, NOT_MOVED, KEY_COLS, REF_SHAPE, refMatch, UNDO_DAYS };
