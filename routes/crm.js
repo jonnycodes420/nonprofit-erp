@@ -6726,6 +6726,11 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     // Inside the SAME transaction as the gift row's delete: a void that
     // committed without the delete would cancel a thank-you for a gift that
     // still exists.
+    // FIX-31: the next step the gift opened (its thank-you) is dismissed with
+    // it, so its task is closed and voided below with the gift's others.
+    await runTx(client,
+      "UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='gift_deleted' WHERE org_id=? AND opening_gift_id=? AND closed_at IS NULL",
+      [req.user.orgId, req.params.id]);
     const voided = await runTx(client,
       "UPDATE tasks SET voided_at=NOW(), voided_reason='gift_deleted', updated_at=NOW() WHERE org_id=? AND source_gift_id=? AND voided_at IS NULL",
       [req.user.orgId, req.params.id]);

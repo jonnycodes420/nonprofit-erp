@@ -220,6 +220,10 @@ async function reset() {
   await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by)
            VALUES ('ce_c1m_both',$1,'u_c1m','google','ev_c1m_both','Coffee','2026-03-02T15:00:00Z','2026-03-02T16:00:00Z',$2,'u_c1m')`, [ORG, [B, C, A]])
     .catch(e => ok("a meeting with both people", false, e.message));
+  // FIX-31: every thread has its task, written by a trigger the planter's
+  // session turned off. Touch the planted thread with triggers on, so the
+  // fixture is in the state every real org is in before the merge.
+  await q(`UPDATE threads SET due_date = due_date WHERE org_id=$1`, [ORG]);
   for (const id of [A, B]) await q(`UPDATE donors SET total_giving=(SELECT COALESCE(SUM(amount),0) FROM gifts WHERE org_id=$1 AND donor_id=$2) WHERE id=$2`, [ORG, id]);
   ok(`a row is planted in every one of the ${MERGE_REFS.length - 1} other pointer columns`, planted === MERGE_REFS.length - 1, planted);
 

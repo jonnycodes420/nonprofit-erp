@@ -7414,16 +7414,23 @@ async function runSchemaInit(pool) {
         RETURN NEW;
       END IF;
       SELECT u.id INTO owner_ok FROM users u WHERE u.id = NEW.owner_id AND u.org_id = NEW.org_id;
+      -- source_gift_id: a step a gift opened (the thank-you) is that gift's own
+      -- task, so deleting the gift voids it with the rest (FIX-10 Part C).
+      -- A closed step's voided task stays voided; an open one is never voided.
       INSERT INTO tasks (id, org_id, title, due, priority, type, done, donor_id, assigned_to, assigned_to_name,
-                         thread_id, link_kind, updated_at, created_by, created_by_name)
+                         thread_id, link_kind, source_gift_id, updated_at, created_by, created_by_name)
       VALUES ('t_ns_' || substr(md5(NEW.id), 1, 14), NEW.org_id, NEW.next_step_label, LEFT(NEW.due_date, 10), 'medium', 'donor',
               CASE WHEN NEW.closed_at IS NULL THEN 0 ELSE 1 END, NEW.donor_id, owner_ok, CASE WHEN owner_ok IS NULL THEN NULL ELSE NEW.owner_name END,
-              NEW.id, 'next_step', NOW(), COALESCE(NEW.created_by, 'system:thread'), COALESCE(NEW.created_by_name, 'Steward'))
+              NEW.id, 'next_step', NEW.opening_gift_id, NOW(), COALESCE(NEW.created_by, 'system:thread'), COALESCE(NEW.created_by_name, 'Steward'))
       ON CONFLICT (thread_id) WHERE thread_id IS NOT NULL DO UPDATE
-         SET title = EXCLUDED.title, due = EXCLUDED.due, done = EXCLUDED.done, donor_id = EXCLUDED.donor_id,
-             assigned_to = EXCLUDED.assigned_to, assigned_to_name = EXCLUDED.assigned_to_name, voided_at = NULL, updated_at = NOW()
-       WHERE (tasks.title, tasks.due, tasks.done, tasks.assigned_to, tasks.donor_id) IS DISTINCT FROM
-             (EXCLUDED.title, EXCLUDED.due, EXCLUDED.done, EXCLUDED.assigned_to, EXCLUDED.donor_id) OR tasks.voided_at IS NOT NULL;
+         -- Never donor_id: a thread changes person only in a merge, and the
+         -- merge moves tasks.donor_id itself, so its Undo puts the row back exactly.
+         SET title = EXCLUDED.title, due = EXCLUDED.due, done = EXCLUDED.done,
+             assigned_to = EXCLUDED.assigned_to, assigned_to_name = EXCLUDED.assigned_to_name,
+             voided_at = CASE WHEN EXCLUDED.done = 1 THEN tasks.voided_at ELSE NULL END, updated_at = NOW()
+       WHERE (tasks.title, tasks.due, tasks.done, tasks.assigned_to) IS DISTINCT FROM
+             (EXCLUDED.title, EXCLUDED.due, EXCLUDED.done, EXCLUDED.assigned_to)
+          OR (tasks.voided_at IS NOT NULL AND EXCLUDED.done = 0);
       RETURN NEW;
     END $fn$ LANGUAGE plpgsql`);
   await pool.query(`DROP TRIGGER IF EXISTS trg_thread_task_sync ON threads`);

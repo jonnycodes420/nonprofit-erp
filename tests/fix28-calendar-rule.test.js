@@ -55,8 +55,10 @@ async function reset() {
   await reset();
   const pw = bcrypt.hashSync("loadtest1234", 4);
   for (const [o, slug] of [[ORG, "fix28-cal"], [ORG2, "fix28-cal2"]]) {
-    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
-             VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW())`, [o, `Calendar ${slug}`, slug]);
+    // grant_headsup_days 0: FIX-31's "Start the proposal" tasks are off, so the
+    // push below is exactly the items this suite names (fix31-one-record has them).
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,grant_headsup_days)
+             VALUES ($1,$2,$3,1,'active','team','America/New_York',NOW(),0)`, [o, `Calendar ${slug}`, slug]);
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Dana','admin')`, [`u_${o}`, o, `dana@${o}.local`, pw]);
   }
   const U = `u_${ORG}`;
