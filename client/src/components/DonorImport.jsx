@@ -3511,6 +3511,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           campaign: txMap.campaign ? String(row[txMap.campaign] ||"") : "",
           notes:    txMap.notes    ? String(row[txMap.notes]    ||"") : "",
           externalId: txMap.externalId ? (String(row[txMap.externalId]||"").trim() || undefined) : undefined,
+          paymentMethod: txMap.paymentMethod ? (String(row[txMap.paymentMethod]||"").trim() || undefined) : undefined,
           rawName, rawEmail, rawSource:`row ${i+2}`, ...match,
         });
       }
@@ -3610,13 +3611,27 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
       if (g.confidence === "low" && !ov)      return null;
       const donorId = ov?.donorId || g.suggestedDonor?.id;
       if (!donorId)                           return null;
-      return { donorId, amount:g.amount, date:g.date, type:g.type, campaign:g.campaign, notes:g.notes, externalId:g.externalId };
+      return { donorId, amount:g.amount, date:g.date, type:g.type, campaign:g.campaign, notes:g.notes, externalId:g.externalId, paymentMethod:g.paymentMethod };
     }).filter(Boolean);
     if (!toSend.length) { setErr("No gifts to import."); return; }
     setLoading(true); setErr("");
     try {
-      const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend }) });
-      setResult(res); setStep("result");
+      // WIRE-1: one run id, stamped on every gift and recorded, so Undo this
+      // import removes exactly these gifts.
+      const runId = newRunId();
+      const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend, importId:runId }) });
+      let recorded = false;
+      if (res.inserted > 0) {
+        const R = res.reconciliation || {}, rowsR = R.rows || {}, dollarsR = R.dollars || {};
+        const fig = { rowsIn: Number(rowsR.inFile) || 0, giftsCreated: Number(res.inserted) || 0, donorsCreated: 0,
+          rowsSetAside: Number(rowsR.skipped) || 0, rowsErrored: Number(rowsR.errored) || 0,
+          dollarsIn: Number(dollarsR.inFile) || 0, dollarsCreated: Number(dollarsR.created) || 0 };
+        recorded = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
+          id: runId, name: srcFile?.name || "Gift file", sourceFilename: srcFile?.name || null, shape: "gifts", ...fig,
+          summary: { ...fig, dollarsSetAside: Number(dollarsR.skipped) || 0, dollarsErrored: Number(dollarsR.errored) || 0 },
+        }) }).then(() => true).catch(() => false);   // the import happened; the receipt is not the import
+      }
+      setResult(recorded ? { ...res, runId } : res); setStep("result");
     } catch(e) { setErr(errorMessage(e, "Import failed.")); }
     setLoading(false);
   };
@@ -3667,6 +3682,18 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
               <strong style={{color:T.ink}}>{result.inserted}</strong> gifts imported across{" "}
               <strong style={{color:T.ink}}>{result.donorsUpdated}</strong> donors
               {result.externalIdDupes > 0 && <> · <strong>{result.externalIdDupes}</strong> already imported (matched by transaction ID)</>}
+              {result.runId && (
+                <div style={{fontSize:12.5,marginTop:10}}>
+                  {result.undone ? (
+                    <div data-testid="gi-undone" style={{color:T.ink}}>{result.undoSentence}</div>
+                  ) : (
+                    <button data-testid="gi-undo" disabled={loading} onClick={undoCreatedImport}
+                      style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+                      {loading?"Undoing…":"Undo this import"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
           {Array.isArray(result.heldForReview) && result.heldForReview.length > 0 && (

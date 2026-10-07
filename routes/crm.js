@@ -125,6 +125,20 @@ let app = routers.r0;
 // lost its rows (the BUILD-54 finding, hit live in a pre-push run). Width,
 // not retry: 2^128 puts the class out of reach on every import mint site.
 const importId = prefix => prefix + uuid().replace(/-/g, "");
+// WIRE-1: an imported gift names its campaign; Reports filtered by campaign
+// match on campaign_id. One org-scoped lookup, exact and case-insensitive. A
+// name two campaigns share is left unresolved rather than guessed.
+async function campaignIdResolver(orgId) {
+  const rows = await query("SELECT id, name FROM campaigns WHERE org_id=?", [orgId]);
+  const byName = new Map();
+  for (const r of rows) {
+    const k = String(r.name || "").trim().toLowerCase();
+    if (!k) continue;
+    byName.set(k, byName.has(k) ? null : r.id);
+  }
+  return name => byName.get(String(name || "").trim().toLowerCase()) || null;
+}
+const IMPORT_RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
 
 // BUILD-72 Part 1 — an import that does not reconcile is not a 500. The
@@ -4520,7 +4534,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // A chunked import passes the SAME id for every chunk, which is what makes
   // the report whole rather than per-chunk. An absent or malformed id leaves
   // the column NULL and behaves exactly as before.
-  const runId = /^imp_[A-Za-z0-9_-]{4,40}$/.test(String(req.body.importId || ""))
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || ""))
     ? String(req.body.importId) : null;
 
   // Plan limit check (same as /donors/import)
@@ -5132,7 +5146,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // (13 before A.7 added payment_method), interactions 8, so 2,000 rows/batch
   // is 28,000 and 16,000 — comfortably
   // inside it — and takes the trip count from ~1,800 to ~185.
-  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 14 params/row → 28,000 of the 65,535 cap
+  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 16 params/row (WIRE-1 added campaign_id) → 32,000 of the 65,535 cap
+  const campaignIdOf = await campaignIdResolver(orgId);
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -5141,13 +5156,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign,
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign),
         // A.7 — was a hardcoded NULL. The fund the row named, resolved above.
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
         g.paymentMethod || null, runId);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -5161,7 +5176,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -5759,52 +5774,97 @@ app.post("/donors/bulk-delete", requireAuth, requireAdmin, wrap(async (req, res)
   );
   if (owned.length !== ids.length) return res.status(403).json({ error: "One or more donors not found in your org" });
 
-  const result = await run(
-    "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL",
-    [ids, req.user.orgId]
-  );
-  res.json({ deleted: result.changes });
+  // WIRE-1: one trash row per person, exactly as DELETE /donors/:id writes,
+  // so the shared Undo toast can bring the whole batch back.
+  const who = actor(req);
+  const { changes, undoIds } = await withTransaction(async (client) => {
+    const gone = await queryTx(client,
+      "UPDATE donors SET deleted_at=NOW() WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL RETURNING id",
+      [ids, req.user.orgId]);
+    const undoIds = [];
+    for (const g of gone) {
+      const undoId = "del_" + uuid().slice(0, 12);
+      await runTx(client, `INSERT INTO deleted_records (id, org_id, table_name, record_id, row_data, created_by, created_by_name)
+                 VALUES (?, ?, 'donors', ?, '{"__soft":true}'::jsonb, ?, ?)`,
+        [undoId, req.user.orgId, g.id, who.id, who.name]);
+      undoIds.push(undoId);
+    }
+    return { changes: gone.length, undoIds };
+  });
+  res.json({ deleted: changes, undoIds, undoSeconds: UNDO_SECONDS });
 }));
 
 // The "permanent-purge" the comment above bulk-delete anticipated: hard-
 // deletes every trashed (deleted_at IS NOT NULL) donor in the org, plus all
-// rows that exist only because those donors did — child tables first, in
-// FK-safe order (same convention as DELETE /admin/orgs/:id). Volunteers are
-// deliberately NOT deleted: a volunteer who was linked to a purged donor
-// keeps their own row, just unlinked. event_attendees keep the attendance
-// record with the donor link nulled (ON DELETE SET NULL); donor_relationships
-// and campaign_recipients clean themselves up (ON DELETE CASCADE). One
-// transaction — a mid-purge failure leaves nothing half-deleted. Admin-only;
-// like all DELETE-shaped routes, never checkWriteAccess-gated (a lapsed org
-// can still empty its trash).
+// rows that exist only because those donors did. WIRE-1: it walks EVERY person
+// pointer in Data health's MERGE_REFS, so a column added for the merge is
+// covered here in the same commit and nothing is left pointing at a person
+// who is gone:
+//   · the person's own records (gifts, receipts, pledges, notes, tasks,
+//     memberships and the rest) are deleted, child rows first in FK-safe order
+//   · a money, ledger or history row that is not theirs to take with them
+//     (a bookkeeping line, a POS sale, an auction item, another donor's gift
+//     in their honour, a household they headed, the portal log) keeps the row
+//     and loses the pointer
+//   · a meeting drops them from its people, and goes only if nobody is left
+// One transaction: a mid-purge failure leaves nothing half-deleted.
+// Admin-only; like all DELETE-shaped routes, never checkWriteAccess-gated (a
+// lapsed org can still empty its trash).
+const PURGE_KEEP_ROW = new Set([
+  "fin_transactions.donor_id", "pos_sales.person_id", "households.primary_donor_id", "grants.funder_donor_id",
+  "grant_sends.funder_donor_id", "gifts.tribute_donor_id", "gifts.match_employer_id", "auction_items.donor_id",
+  "auction_refund_flags.donor_id", "peer_fundraisers.person_id", "recurring_change_log.donor_id",
+  "portal_audit_log.donor_id", "custom_field_events.entity_id", "volunteers.donor_id", "event_attendees.donor_id",
+  "survey_responses.donor_id", "volunteer_applications.person_id", "volunteer_groups.contact_person_id",
+]);
+// The person's own rows with a plain FK to donors (or to their gifts), in the
+// order they must go: receipts and pledges point at gifts, gifts last.
+const PURGE_CHILD_TABLES = [
+  "receipts", "pledges", "memberships", "milestone_drafts", "note_reminders", "donor_materials",
+  "planned_gifts", "custom_field_values", "sequence_enrollments",
+  "payment_recovery_events", "recurring_subscriptions",
+  "tasks", "interaction_attachments", "interactions", "gifts",
+];
 app.post("/donors/purge-trash", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const trashed = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NOT NULL", [orgId]);
   const ids = trashed.map(r => r.id);
-  if (!ids.length) return res.json({ purged: 0, children: {} });
-
-  // receipts/pledges first (they FK both donors AND gifts), then the rest of
-  // the donor-scoped children, then gifts, then the donors themselves.
-  // fin_transactions is deliberately absent: it has no donor_id column (only
-  // a vendor_donor text name — the CLAUDE.md claim of a donor_id there was
-  // stale), and it's org bookkeeping history either way.
-  const CHILD_TABLES = [
-    "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials",
-    "planned_gifts", "custom_field_values", "sequence_enrollments",
-    "payment_recovery_events", "recurring_subscriptions",
-    "tasks", "interaction_attachments", "interactions", "gifts",
-  ];
-  const { purged, children } = await withTransaction(async (client) => {
-    await runTx(client, "UPDATE volunteers SET donor_id=NULL WHERE org_id=? AND donor_id = ANY(?)", [orgId, ids]);
-    const children = {};
-    for (const t of CHILD_TABLES) {
+  if (!ids.length) return res.json({ purged: 0, children: {}, unlinked: {} });
+  const { MERGE_REFS, REF_SHAPE } = require("./dataHealth");
+  const whereAny = (t, c) => { const w = (REF_SHAPE[`${t}.${c}`] || {}).where; return `${c} = ANY(?)${w ? ` AND ${w}` : ""}`; };
+  const { purged, children, unlinked } = await withTransaction(async (client) => {
+    const children = {}, unlinked = {};
+    // 1. Rows that stay, unlinked.
+    for (const [t, c] of MERGE_REFS) {
+      if (!PURGE_KEEP_ROW.has(`${t}.${c}`)) continue;
+      const r = await runTx(client, `UPDATE ${t} SET ${c}=NULL WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) unlinked[`${t}.${c}`] = r.changes;
+    }
+    // Another donor's pledge marked paid by one of these gifts stays a pledge.
+    await runTx(client, `UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=? AND fulfilled_gift_id IN (SELECT id FROM gifts WHERE org_id=? AND donor_id = ANY(?))`, [orgId, orgId, ids]);
+    // 2. Meetings: a meeting only these people were on goes; the rest drop them.
+    const gone = await runTx(client, `DELETE FROM calendar_events WHERE org_id=? AND person_ids <@ ?::text[]`, [orgId, ids]);
+    if (gone.changes) children.calendar_events = gone.changes;
+    const left = await runTx(client,
+      `UPDATE calendar_events SET person_ids = ARRAY(SELECT p FROM unnest(person_ids) WITH ORDINALITY u(p, n) WHERE p <> ALL(?::text[]) ORDER BY n)
+        WHERE org_id=? AND person_ids && ?::text[]`, [ids, orgId, ids]);
+    if (left.changes) unlinked["calendar_events.person_ids"] = left.changes;
+    // 3. The person's own rows, FK-safe order.
+    for (const t of PURGE_CHILD_TABLES) {
       const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND donor_id = ANY(?)`, [orgId, ids]);
       if (r.changes) children[t] = r.changes;
     }
+    // 4. Every other pointer: a row that exists only because the person did.
+    for (const [t, c] of MERGE_REFS) {
+      const k = `${t}.${c}`;
+      if (PURGE_KEEP_ROW.has(k) || (REF_SHAPE[k] || {}).array || (c === "donor_id" && PURGE_CHILD_TABLES.includes(t))) continue;
+      const r = await runTx(client, `DELETE FROM ${t} WHERE org_id=? AND ${whereAny(t, c)}`, [orgId, ids]);
+      if (r.changes) children[t] = (children[t] || 0) + r.changes;
+    }
     const d = await runTx(client, "DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
-    return { purged: d.changes, children };
+    return { purged: d.changes, children, unlinked };
   });
-  res.json({ purged, children });
+  res.json({ purged, children, unlinked });
 }));
 
 // ── Duplicate merge (BUILD-08 Phase C) ─────────────────────────────────────
@@ -8500,8 +8560,10 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // people only where `created_import_id` is this run AND they have no other
 // gift and no other interaction. A person who has acquired any history since
 // stays, and so do their gifts.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7 };
+// WIRE-1: "gifts" is the gift-history file matched to people already on file;
+// its gifts carry the run id, so it reverses as a whole like the others.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -8700,7 +8762,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
       }
       fileFpCounts.set(rowKey, (fileFpCounts.get(rowKey) || 0) + 1);
     }
-    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey });
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey,
+      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null });
   }
   const duplicateCandidates = {
     withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
@@ -8737,6 +8800,10 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // BUILD-83 FIX — same round-trip budget as /donors/import-combined: batches
   // are trips to the database, and 200 was costing four trips per 200 gifts.
   const BATCH = IMPORT_GIFT_BATCH;
+  // WIRE-1: the run id the client minted (as /donors/import-combined takes
+  // it), so Undo import reaches these gifts, and the campaign by id.
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
+  const campaignIdOf = await campaignIdResolver(orgId);
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
@@ -8758,9 +8825,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
           const kept = await queryTx(client,
-            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,payment_method,import_id,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
-            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null, actor(req).id, actor(req).name]
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign), g.fund_id, g.notes, g.externalId || null,
+             g.paymentMethod, runId, actor(req).id, actor(req).name]
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
@@ -14419,6 +14488,7 @@ async function planGrantImport(orgId, body) {
 // transaction, so a file that fails halfway leaves no half-imported pipeline.
 app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const I = await grantImportMod();
+  const GS = await grantShapeMod();
   const orgId = req.user.orgId;
   const plan = await planGrantImport(orgId, req.body || {});
   if (plan.error) return res.status(400).json(plan);
@@ -14499,8 +14569,19 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
       // in a spreadsheet already had its cheques, and minting instalments for it
       // would put money on the books twice — once as the file's history and once
       // as a promise nobody is waiting for.
-      if (g.status === "awarded") {
-        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, NOW()) WHERE id=? AND org_id=?", [id, orgId]);
+      // WIRE-1: every status that holds an award (awarded, reporting, closed)
+      // is stamped, and from the file's decision date when it has one, so a
+      // 2019 award does not count as this year's. No date: today, as before.
+      if (GS.AWARDED_STATUS_KEYS.includes(g.status)) {
+        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, ?::date::timestamptz, NOW()) WHERE id=? AND org_id=?",
+          [g.decidedOn || null, id, orgId]);
+      }
+      // The report the file says is due becomes the grant's report_due
+      // deadline, so it reaches Home, the calendar and the grant's timeline.
+      if (g.reportDue) {
+        await trun(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
+                    VALUES (?,?,?,'report_due',NULL,?,'pending','',?,?)`,
+          ["gms_" + uuid().slice(0, 10), orgId, id, g.reportDue, who.id, byName]);
       }
       written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
     }
@@ -15714,6 +15795,8 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
        FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.voided_at IS NULL ${mine ? "AND t.assigned_to = ?" : ""}
+        -- WIRE-1: a deleted person's tasks go with them (and come back on Undo).
+        AND (t.donor_id IS NULL OR d.deleted_at IS NULL)
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
     mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
   );
