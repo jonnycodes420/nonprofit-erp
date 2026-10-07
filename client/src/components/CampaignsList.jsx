@@ -16,6 +16,7 @@ import { HowDidItDo } from "./HowDidItDo";
 import { AskBox } from "./AskPanel";
 import { RecordLink } from "./RecordLink";
 import { tabHref } from "../lib/appUrls";
+import { SaveAsGroup } from "./Groups";
 import { displayDate } from "../../../shared/displayDate";
 
 export const campaignHref = id => tabHref("fundraising", { frSection: "campaigns", campaignId: id });
@@ -284,6 +285,12 @@ function CampaignPage({ g, id, allGoals, editBtn, isReadOnly, onBack, onOpenCamp
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.ink3 }}>
           Click the amount raised to see every gift behind it, or the donors to see who gave.
         </div>
+        {/* WIRE-1: this campaign's donors as a group by rule, kept up to date. */}
+        {!isReadOnly && !g.isOverarching && (
+          <div style={{ marginTop: 10 }}>
+            <SaveAsGroup name={`${g.name} donors`} rules={{ gaveCampaign: g.id }} label="Save these donors as a group" testid="campaign-save-group" />
+          </div>
+        )}
       </div>
 
       {/* ASK-2: the box, scoped to this campaign. */}

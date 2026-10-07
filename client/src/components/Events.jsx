@@ -8,6 +8,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventPageEditor } from "./EventPageEditor";
+import { SaveAsGroup } from "./Groups";
 import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 // PARITY-4: one chair on the drawn seating chart, in px (the phone tap target).
@@ -1522,6 +1523,11 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)" }}>Attendees ({totalCount})</div>
+              {/* WIRE-1: the guest list as a group by rule, kept up to date. */}
+              {totalCount > 0 && (
+                <SaveAsGroup name={`${event.name} guests`} rules={{ registeredEvent: event.id }} label="Save these guests as a group" testid="event-save-group"
+                  style={{ background: "transparent", color: T.inkInverse, border: "1px solid " + T.green650, fontSize: 11, fontWeight: 700 }} />
+              )}
               {attendedCount > 0 && (
                 <button onClick={() => setShowFollowUp(true)} style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "5px 12px", color: T.gold500, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   ✦ Follow-up Tasks

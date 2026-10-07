@@ -196,6 +196,9 @@ const SEG_MODES  = [
   { id: "byStage",     label: "By Stage" },
   { id: "byTier",      label: "By Tier" },
   { id: "manual",      label: "Manual" },
+  // WIRE-1: any Group, kept by hand or by a rule. The server resolves it to
+  // its members at send time (resolveSegmentSpec, mode "audience").
+  { id: "audience",    label: "A group" },
 ];
 
 
@@ -212,6 +215,7 @@ function segLabel(raw) {
     byStage: `Stages: ${(raw?.stages || []).join(", ") || "none"}`,
     byTier:  `Tiers: ${(raw?.tiers || []).join(", ") || "none"}`,
     manual:  `${(raw?.donorIds || []).length} manually selected`,
+    audience: raw?.audienceName ? `The group ${raw.audienceName}` : "One group",
   }[mode] || "All donors with email";
 }
 
@@ -278,6 +282,19 @@ function LeftOut({ preview }) {
 function SegmentPicker({ seg, onChange, allDonors }) {
   const mode = seg.mode || "all";
   const upd  = p => onChange({ ...seg, ...p });
+  // WIRE-1: the org's Groups, read once the group mode is chosen.
+  const [groups, setGroups] = useState(null);
+  useEffect(() => {
+    if (mode !== "audience" || groups) return;
+    apiFetch("/groups").then(r => setGroups((r && r.groups) || [])).catch(() => setGroups([]));
+  }, [mode, groups]);
+  useEffect(() => {
+    // A group chosen before the list arrived (a link from the Group page)
+    // gets its name, so the label says which group it is.
+    if (mode !== "audience" || !groups || !seg.audienceId || seg.audienceName) return;
+    const g = groups.find(x => x.id === seg.audienceId);
+    if (g) onChange({ ...seg, audienceName: g.name });
+  }, [mode, groups, seg.audienceId]);   // eslint-disable-line react-hooks/exhaustive-deps
   const tog  = (key, val) => {
     const arr = seg[key] || [];
     upd({ [key]: arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val] });
@@ -320,6 +337,14 @@ function SegmentPicker({ seg, onChange, allDonors }) {
             </button>
           ))}
         </div>
+      )}
+      {mode === "audience" && (
+        <select aria-label="Which group" data-testid="segment-group" value={seg.audienceId || ""}
+          onChange={e => { const g = (groups || []).find(x => x.id === e.target.value); upd({ audienceId: e.target.value || undefined, audienceName: g ? g.name : undefined }); }}
+          style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "6px 10px", fontSize: 12.5, color: T.ink, background: T.white, maxWidth: 320 }}>
+          <option value="">{groups === null ? "Loading your groups…" : groups.length ? "Choose a group" : "No groups yet"}</option>
+          {(groups || []).map(g => <option key={g.id} value={g.id}>{g.name}{g.kind === "dynamic" ? " (by rule)" : ""}</option>)}
+        </select>
       )}
       {mode === "manual" && (
         <div style={{ maxHeight: 200, overflowY: "auto", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 8px" }}>
@@ -1347,6 +1372,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // FIX-15 Part 5: /app/communications?subtab=campaigns&campaign=<id> opens
   // with that campaign expanded, so a campaign's name is a real link.
   const [expandedId, setExpandedId]   = useState(() => urlParam("communications", "campaign"));
+  // WIRE-1: /app/communications?audience=<group id> (a Group page's "Email
+  // this group") opens a new campaign with that group as its audience. It
+  // opens a draft and nothing more: she writes it, and each send is hers.
+  const [presetSeg] = useState(() => { const a = urlParam("communications", "audience"); return a ? { mode: "audience", audienceId: a } : null; });
   const [failedOnly, setFailedOnly]   = useState(null);   // WHY-1 Part 8: the campaign whose failed rows are showing
   // FIX-6 item 5 — which figure is open, and the rows behind it.
   const [statRows, setStatRows] = useState(null);
@@ -1354,6 +1383,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // Builder
   const [view, setView]               = useState("list"); // list | builder
+  // WIRE-1: arriving with a group opens New Campaign (the starting emails),
+  // and whichever she picks starts with that group as its audience.
+  useEffect(() => { if (presetSeg && !isReadOnly) { setNav("campaigns"); setView("gallery"); } }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   const [form, setForm]               = useState(BLANK);
   const [editingId, setEditingId]     = useState(null);
   const [sending, setSending]         = useState(false);
@@ -1497,7 +1529,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const mode = raw.mode || "all";
     const body = normalizeMergeFields(campaign.body || "");
     setForm({ name: campaign.name || "", subject: campaign.subject || "", bodyHtml: body,
-      seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [] },
+      seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [],
+             ...(raw.audienceId ? { audienceId: raw.audienceId, audienceName: raw.audienceName || undefined } : {}) },
       scheduledAt: campaign.scheduled_at ? new Date(campaign.scheduled_at).toISOString().slice(0, 16) : "",
       // EMAIL-1 — a campaign from a template: its words are the template's
       // blocks, rendered for each person at send. `detach` lets them go.
@@ -1515,7 +1548,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const openTemplate = (tpl) => {
     const body = normalizeMergeFields(tpl.body || "");
     setForm({ name: tpl.label || tpl.name || "", subject: tpl.subject || "", bodyHtml: body,
-      seg: { mode: "all" }, scheduledAt: "",
+      seg: presetSeg ? { ...presetSeg } : { mode: "all" }, scheduledAt: "",
       // PARITY-1 E — which starter this came from, so a save can say whether
       // its words were changed (the server decides).
       starterKey: tpl.key || "", starterReviewed: !!tpl.reviewed, starterBody: body });
@@ -1544,6 +1577,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         undoAction: async () => { const x = await apiFetch(`/campaigns/${c.id}`, { method: "DELETE" }); setView("list"); await loadCampaigns(); return x; } }, "campaign");
       await loadCampaigns();
       openBuilder(c);
+      if (presetSeg) setForm(f => ({ ...f, seg: { ...presetSeg } }));
     } catch (e) { alert(errorMessage(e)); }
   };
 

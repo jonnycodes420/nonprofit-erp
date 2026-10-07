@@ -14,6 +14,7 @@ import { RecordLink, useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventKiosk } from "./Events";
 import { EventPageEditor } from "./EventPageEditor";
+import { SaveAsGroup } from "./Groups";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = primary => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -158,6 +159,8 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {!isReadOnly && guests?.guests?.length > 0 && <button onClick={() => setDoor(d => !d)} style={btn(!door)} data-testid="event-door-checkin">{door ? "Close check-in" : "Check in at the door"}</button>}
             {!isReadOnly && guests?.guests?.length > 0 && <button onClick={saveAttendance} disabled={!Object.keys(marks).length} style={btn(false)} data-testid="event-save-attendance">Save attendance</button>}
+            {/* WIRE-1: the guest list as a group by rule, kept up to date. */}
+            {!isReadOnly && guests?.guests?.length > 0 && <SaveAsGroup name={`${event.name} guests`} rules={{ registeredEvent: event.id }} label="Save these guests as a group" testid="event-save-group" />}
           </span>
         </div>
         {door && <div style={{ marginTop: 10 }}><EventKiosk eventId={event.id} /></div>}
