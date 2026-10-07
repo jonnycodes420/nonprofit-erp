@@ -1918,7 +1918,10 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         );
       }
     } else if (event.type === "invoice.payment_succeeded") {
-      if (orgId) {
+      // FIX-32: the $0 invoice Stripe issues when a trial STARTS is not a
+      // payment. Reading it as one flipped a brand-new org from trialing to
+      // active a quarter of a second after it was born.
+      if (orgId && !(Number(obj.amount_paid) === 0 && obj.billing_reason === "subscription_create")) {
         const periodEnd = obj.lines?.data?.[0]?.period?.end
           ? new Date(obj.lines.data[0].period.end * 1000).toISOString()
           : null;
@@ -1963,19 +1966,11 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         } else if (s === "past_due") {
           await run("UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?", [orgId]);
         } else if (s === "canceled" || s === "unpaid") {
-          // Downgrade to core so Team features re-lock on read surfaces too
-          // (planTier is plan-driven once status is not trialing).
-          await run("UPDATE orgs SET subscription_status='canceled', plan='core', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+          await markSubscriptionEnded(orgId);
         }
       }
     } else if (event.type === "customer.subscription.deleted") {
-      if (orgId) {
-        // Revert tier + re-lock: plan → core (base tier), read-only after grace.
-        await run(
-          "UPDATE orgs SET subscription_status='canceled', plan='core', grace_until=NOW() + INTERVAL '3 days' WHERE id=?",
-          [orgId]
-        );
-      }
+      if (orgId) await markSubscriptionEnded(orgId);
     }
   } catch (err) {
     console.error("Billing webhook error:", err);
@@ -2545,6 +2540,23 @@ async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz
     console.error("[close-link] confirmation email failed:", e.message);
     return { sent: false };
   }
+}
+
+// FIX-32: A SUBSCRIPTION THAT ENDS. Cancelling inside the thirty free days
+// costs nothing and takes nothing away: the org keeps everything until the
+// trial's own end date, which is the date it was promised, and the plan it
+// chose stays its plan so "Keep Steward" can put it back on the same one.
+// Only a subscription that ends AFTER the first charge gets the three days'
+// grace. The plan is never rewritten: there is one plan, everything included.
+async function markSubscriptionEnded(orgId) {
+  const [org] = await query("SELECT trial_ends_at FROM orgs WHERE id=?", [orgId]);
+  const trialEnd = org && org.trial_ends_at ? new Date(org.trial_ends_at) : null;
+  if (trialEnd && trialEnd.getTime() > Date.now()) {
+    await run("UPDATE orgs SET subscription_status='canceled', grace_until=? WHERE id=?",
+      [trialEnd.toISOString(), orgId]);
+    return;
+  }
+  await run("UPDATE orgs SET subscription_status='canceled', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
 }
 
 // Turn a COMPLETED Checkout session into an organisation. Called only from the

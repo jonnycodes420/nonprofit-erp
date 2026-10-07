@@ -9,7 +9,7 @@ import { apiFetch, adaptDonor } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
-import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";

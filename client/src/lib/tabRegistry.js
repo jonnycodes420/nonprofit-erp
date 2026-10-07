@@ -98,21 +98,8 @@ const MORE_TABS=[
 // desktop rail, the collapsed rail and the phone's More drawer all read:
 // client/src/lib/navGroups.js. This file keeps what a tab IS — its label, its
 // icon name, who may see it. navGroups.js says where it sits.
-// FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →
-// Major gifts (App.jsx's navigateTo sends every "pipeline" there). The gate
-// did not move: the Pipeline part inside Major gifts reads this same Set, so
-// a Core org sees the lock where the board now lives.
-const TEAM_GATED=new Set(["pipeline"]);
-// BUILD-88a A.3 — FINANCE IS BEHIND THE TEAM FLAG. Cowork's recommendation,
-// and Jonathan's to overturn in one line by emptying this set: a ledger, a
-// chart of accounts and a budget are a bookkeeper's tools, and a one-person
-// shop that opens Finance meets an empty set of books it did not ask for and
-// cannot fill. Unlike the Pipeline this is not a locked PREVIEW — there is
-// nothing of the org's own to show behind glass, and an empty ledger under a
-// padlock is an advertisement, not a feature (BUILD-87's rule about showing
-// somebody a screen that is not for them). No customer is on Core with books
-// today, so nothing is taken away from anyone.
-const CORE_HIDDEN_TABS=new Set(["finance"]);
+// FIX-32: one plan, everything included. The Core gates that hid Finance
+// and padlocked the Pipeline are gone.
 
 // BUILD-58 W-2 — the Portal tier is NOT the CRM, and its shell says so
 // honestly: only the surfaces the tier's own capabilities live on (gift
@@ -143,4 +130,4 @@ const CRM_HIDDEN_TABS=new Set(["portal"]);
 // lib/fundraisingSections.js.
 const FR_PART_TABS={auctions:"auctions",p2p:"p2p",memberships:"members"};
 
-export { FR_PART_TABS, TABS, BOTTOM_TABS, MORE_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };
+export { FR_PART_TABS, TABS, BOTTOM_TABS, MORE_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };

@@ -333,6 +333,54 @@ async function reset() {
   ok("…so a price left at a retired amount reads as CONFIGURED BUT NOT READY, not as fine",
      teamRow.configured === true && teamRow.ready === false && teamRow.stripeAmountUsd === 299, teamRow);
 
+  console.log("\n§8 · FIX-32: the $0 trial invoice is not a payment, and cancelling inside the trial takes nothing away");
+  // Prod, 7 Oct: Stripe's $0 `subscription_create` invoice flipped a new org
+  // to `active` in the same second it was born, and a cancel two minutes later
+  // rewrote it to plan='core', status canceled, three days' grace: a Reactivate
+  // banner with the retired Core/Team picker, and "Unlock with Team" on the
+  // donor profile, for an org that had been promised thirty free days.
+  r = await fireBilling("evt_cl_inv0", "invoice.payment_succeeded", {
+    id: "in_cl_0", object: "invoice", customer: "cus_test_cl", subscription: "sub_cl_1",
+    amount_paid: 0, billing_reason: "subscription_create",
+    lines: { data: [{ period: { end: now + 30 * 86400 } }] },
+  });
+  ok("the $0 trial invoice is accepted", r.status === 200, r.body);
+  let o8 = (await q(`SELECT * FROM orgs WHERE id=$1`, [org.id]))[0];
+  ok("…and the org is STILL trialing (a $0 invoice is not a charge)", o8.subscription_status === "trialing", o8.subscription_status);
+
+  const planBefore = o8.plan;
+  r = await fireBilling("evt_cl_del", "customer.subscription.deleted", {
+    id: "sub_cl_1", object: "subscription", customer: "cus_test_cl", status: "canceled",
+    items: { data: [{ price: { id: "price_test_core" } }] },
+  });
+  ok("a cancel inside the trial is accepted", r.status === 200, r.body);
+  o8 = (await q(`SELECT * FROM orgs WHERE id=$1`, [org.id]))[0];
+  ok("…the plan she chose is left as it was (never rewritten to a lower tier)", o8.plan === planBefore, { before: planBefore, after: o8.plan });
+  ok("…and access runs to the trial's own end date, not three days",
+     o8.grace_until && new Date(o8.grace_until).getTime() === new Date(o8.trial_ends_at).getTime(),
+     { grace: o8.grace_until, trialEnd: o8.trial_ends_at });
+
+  await q(`UPDATE users SET password_hash=$1 WHERE email=$2`, [hash, NEW_ED]);
+  const ed = await login(NEW_ED);
+  const st = await api("GET", "/billing/status", ed);
+  ok("/billing/status: full access, the whole product", st.body.accessState === "full" && st.body.planTier === "team",
+     { accessState: st.body.accessState, planTier: st.body.planTier });
+  ok("…and the one sentence: the trial's end and no charge",
+     st.body.trialCanceled === true && /^Your trial ends [A-Z][a-z]{2} \d{1,2} and you won't be charged\.$/.test(st.body.trialCanceledSentence || ""),
+     st.body.trialCanceledSentence);
+
+  // "Keep Steward": a new Checkout on the plan from her close link, on her own
+  // customer, with the trial ending on the date she was first promised.
+  const before8 = sessions.length;
+  r = await api("POST", "/billing/create-checkout", ed, { keep: true, plan: "anything-the-client-says" });
+  const keep = sessions[before8];
+  ok("Keep Steward opens a Checkout", r.status === 200 && !!keep, r.body);
+  ok("…for the plan on her close link, not one the client names",
+     keep && keep.form.get("line_items[0][price]") === "price_test_core", keep && keep.form.get("line_items[0][price]"));
+  ok("…ending the free period on the SAME date",
+     keep && Number(keep.form.get("subscription_data[trial_end]")) === Math.floor(new Date(o8.trial_ends_at).getTime() / 1000),
+     keep && keep.form.get("subscription_data[trial_end]"));
+
   mockSrv.close(); sink.close();
   await closeDb();
   summary();

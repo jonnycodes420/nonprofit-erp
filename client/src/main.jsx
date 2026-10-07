@@ -249,7 +249,7 @@ function Root() {
           {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
               MARKETING_ROUTES above, in the marketing shell with the prices on
               the first screen. The page keeps the signed-in checkout the app's
-              own Pricing.jsx had, because UpgradeModal, goToPricing() and
+              own Pricing.jsx had, because UpgradeModal and
               Settings still send paying organisations here to change plan. */}
           <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/invitation" element={<InvitationPage />} />

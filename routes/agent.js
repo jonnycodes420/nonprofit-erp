@@ -27,7 +27,7 @@ const {
   AGENT_MODEL, ALL_PIPELINE_STAGES, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
-  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
+  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requireCrm, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
   requireSuperAdmin, resend,   // HELP-1
 } = ctx;
@@ -3222,7 +3222,7 @@ app.get("/sequences/:id/enrollments", requireAuth, wrap(async (req, res) => {
 // Enrolling a donor in a sequence from the profile is part of the Team
 // portfolio/officer layer (donor-profile Core/Team split FIX). Viewing/CRUD of
 // sequences in Communications is unaffected; only the per-donor enroll is gated.
-app.post("/sequences/:id/enroll", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+app.post("/sequences/:id/enroll", requireAuth, requireCrm, wrap(async (req, res) => {
   const { donorId } = req.body;
   if (!donorId) return res.status(400).json({ error: "A donor is needed." });
   const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);

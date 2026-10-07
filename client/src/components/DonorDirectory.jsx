@@ -12,7 +12,7 @@ import { PlanFollowUpModal } from "./PlanFollowUp";
 import { AddToGroup, SaveAsGroup } from "./Groups";
 import { DonorLink } from "./RecordLink";
 import { donorHref, rowClick } from "../lib/appUrls";
-import { PLAN_UNKNOWN, planLocks } from "../lib/entitlement";
+import { PLAN_UNKNOWN } from "../lib/entitlement";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
@@ -520,7 +520,6 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
               </div>
             );
           })}
-          {planLocks(portfolioMeta.tier)&&<span style={{fontSize:11,color:T.ink3,fontStyle:"italic"}}>Color-code portfolios on the Team plan</span>}
         </div>
       )}
 

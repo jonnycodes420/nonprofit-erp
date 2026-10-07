@@ -5,8 +5,9 @@
 // not a silent hole. Four callers:
 //   teamStaff   — staff user, Team org, active
 //   teamAdmin   — admin user, Team org, active
-//   coreAdmin   — admin user, CORE org, active  (Team features must 403
-//                 plan_required by DIRECT API CALL — not just hidden UI)
+//   coreAdmin:  admin user, legacy plan='core' org, active. Since FIX-32
+//                 (one plan, everything included) it gets EVERY route a Team
+//                 org gets; no route answers plan_required.
 //   roAdmin     — admin user, Team org, trial_expired (read_only: writes 402,
 //                 reads and exports stay open — the data-hostage rule)
 // Legend: 2xx = allowed · 403 = role/plan rejection · 402 = read_only ·
@@ -74,10 +75,12 @@ async function mkOrg(id, plan, status) {
     { name: "record pledge", m: "POST", p: o => `/donors/${donor(o)}/pledges`, b: () => ({ amount: 100, dueDate: "2026-12-01" }),
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
 
-    // ── the major-gifts LAYER is Team: Core must be rejected SERVER-SIDE ──
+    // ── FIX-32. ONE PLAN, EVERYTHING INCLUDED. The major-gifts layer used to
+    //    403 a Core org (requirePlan("team")); every CRM org now has it, and
+    //    a legacy plan='core' org is the proof. Billing state still gates writes. ──
     // (distinct target stages per caller — the two Team callers share a donor)
     { name: "pipeline move", m: "POST", p: o => `/pipeline/${donor(o)}/move`, b: (o, i, ctx, caller) => ({ toStage: caller === "teamAdmin" ? "qualify" : "solicit", description: "pm44" }),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     // BUILD-99 (major gifts) Part 1 NARROWED this route: an ask is a proposal,
     // and one person may hold only ONE OPEN proposal per fund. The two Team
     // callers share a donor, so the second one 409'd — the same collision the
@@ -87,22 +90,22 @@ async function mkOrg(id, plan, status) {
     { name: "log ask (opportunity)", m: "POST",
       p: (o, i, ctx, caller) => `/donors/${caller === "teamStaff" ? donor(o) + "_b" : donor(o)}/opportunities`,
       b: () => ({ name: "PM Ask", targetAmount: 500 }),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     // BUILD-45 fixed F-1: these Team-layer writes now carry checkWriteAccess,
-    // so a READ_ONLY (lapsed/trial-expired) Team org gets 402 — the plan gate
-    // still 403s a Core caller (requirePlan runs first). assign is admin-gated
+    // so a READ_ONLY (lapsed/trial-expired) org gets 402. There is no plan
+    // gate in front of them any more (FIX-32). assign is admin-gated
     // (BUILD-31 oversight model), so staff → 403.
     { name: "assign owner (admin-gated per BUILD-31 oversight model)", m: "PATCH", p: o => `/donors/${donor(o)}/assign`, b: o => ({ assignedTo: `u_${o}_s` }),
-      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     { name: "bulk stage", m: "PATCH", p: () => "/donors/bulk-stage", b: o => ({ ids: [donor(o)], stage: "steward" }),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     { name: "wealth score", m: "POST", p: o => `/donors/${donor(o)}/score`, b: () => ({}),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     // and the two F-1 routes the matrix didn't previously cover — now gated too
     { name: "per-donor stage change", m: "PATCH", p: o => `/donors/${donor(o)}/stage`, b: () => ({ stage: "qualify" }),
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
     { name: "bulk assign owner", m: "PATCH", p: () => "/donors/bulk-assign", b: o => ({ ids: [donor(o)], assignedTo: `u_${o}_s` }),
-      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
+      exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: "open", roAdmin: 402 } },
 
     // ── admin-only org surface: staff must be rejected server-side ──
     { name: "org branding", m: "PUT", p: () => "/orgs/branding", b: () => ({ brandAccent: "#8a3a24" }),
@@ -126,7 +129,7 @@ async function mkOrg(id, plan, status) {
     { name: "export CSV zip (admin)", m: "GET", p: () => "/org/export/csv", b: () => undefined,
       exp: { teamStaff: 403, teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } },
     { name: "solicitations CSV (Team artifact)", m: "GET", p: () => "/reports/solicitations?format=csv", b: () => undefined,
-      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: "open" } }, // Core may LOOK (JSON locked) but not pull the artifact
+      exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: "open", roAdmin: "open" } }, // FIX-32: no Team artifact any more; every org pulls it
   ];
 
   // workflow ids per org (provision lazily via GET)

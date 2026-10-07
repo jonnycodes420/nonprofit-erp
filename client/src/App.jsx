@@ -5,7 +5,7 @@ import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import { HelpPanel } from "./components/HelpPanel";
 import { useAuth } from "./main";
-import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
+import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -31,29 +31,13 @@ import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar, MobileSearch } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
-import { PLAN_UNKNOWN } from "./lib/entitlement";
-import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
+import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
 import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
 import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
-// The tier rule, as a module-level function rather than a value computed
-// halfway down the component: `navigateTo` is declared above it and needs it,
-// and a `const` read from a closure that could run first is a TDZ crash
-// waiting for the right click. (BUILD-88a A.3 introduced exactly that and the
-// A.4 browser suite caught it on the next run.) A billing that has not loaded
-// is PLAN_UNKNOWN: not Core (no lock may flash before the plan loads) and not
-// Team either (FIX-3 finding 9, client/src/lib/entitlement.js).
-function planTierOf(billing){
-  if(!billing)return PLAN_UNKNOWN;
-  if(billing.planTier)return billing.planTier;
-  const p=billing.plan;
-  if(p==="team"||p==="growth"||p==="impact")return "team";
-  if(billing.subscriptionStatus==="trialing")return "team";
-  return "core";
-}
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
@@ -168,6 +152,7 @@ function AppShell() {
   const [bannerDismissed,setBannerDismissed]=useState(false);
   const [exportingBanner,setExportingBanner]=useState(false);
   const [showPlanPicker,setShowPlanPicker]=useState(false);
+  const [keeping,setKeeping]=useState(false); // FIX-32 Keep Steward in flight
   const [showInstallPrompt,setShowInstallPrompt]=useState(false);
   const [deferredPrompt,setDeferredPrompt]=useState(null);
   const [commsInitialNav,setCommsInitialNav]=useState(null);
@@ -296,10 +281,6 @@ function AppShell() {
     // …and the mirror of it: a CRM org cannot navigate to a tab hidden from
     // the CRM, however it got asked to (a stale deep link, an older card).
     else if(data?.org?.plan!=="portal"&&CRM_HIDDEN_TABS.has(t))t="dashboard";
-    // BUILD-88a A.3 — and the same mirror for a tab this PLAN does not have: a
-    // deep link to Finance from a Core org lands on Home, never on a screen
-    // whose nav entry it cannot see.
-    if(planTierOf(billing)==="core"&&CORE_HIDDEN_TABS.has(t))t="dashboard";
     // FIX-1 §B — the Pipeline is no longer a tab: it folded into Fundraising →
     // Major gifts. Every navigateTo("pipeline") (Home's portfolio card, an older
     // link) lands on that part, carrying its scope.
@@ -495,13 +476,6 @@ function AppShell() {
   const accessState=billing?.accessState||"full";
   const isReadOnly=accessState==="read_only";
   const subStatus=billing?.subscriptionStatus;
-  // Plan tier drives the sidebar lock indicator on Team-gated items. Prefer the
-  // server's authoritative planTier (BUILD-24); fall back to the local mirror of
-  // orgPlanTier: Team = team/growth/impact OR a live trial; everything else
-  // (core/seed/founding/lapsed) = Core. While billing is unknown the tier is
-  // PLAN_UNKNOWN, which is neither, so no lock flashes before the plan loads.
-  const planTier=planTierOf(billing);
-  const isCoreTier=planTier==="core";
   // BUILD-58 W-2 — the portal-tier shell. Derived from /org (synchronous with
   // the data load, no billing-fetch flash). tabAllowed filters every nav
   // surface; navigateTo routes a disallowed target back to the portal hub.
@@ -509,7 +483,6 @@ function AppShell() {
   // A portal-tier org sees ONLY its own surfaces; every other org sees the CRM
   // minus whatever is hidden from it.
   const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id)
-    :(isCoreTier&&CORE_HIDDEN_TABS.has(id))?false
     :!CRM_HIDDEN_TABS.has(id);
   // ── NAV-1 — THE RAIL, GROUPED ─────────────────────────────────────────────
   // One list of groups drives three surfaces: the sidebar at 1440, the
@@ -568,6 +541,19 @@ function AppShell() {
   const showWarningBanner=accessState==="warning";
   const showReadOnlyBanner=isReadOnly;
 
+  // FIX-32: "Keep Steward": a new Checkout on the plan already chosen. The
+  // server carries the org's own trial end onto it, so the first charge stays
+  // on the date the org was first promised.
+  async function keepSteward(){
+    setKeeping(true);
+    try{
+      const r=await apiFetch("/billing/create-checkout",{method:"POST",body:JSON.stringify({keep:true,plan:billing?.plan})});
+      window.location.href=r.url;
+    }catch(e){
+      setKeeping(false);
+      alert(billingErrorMessage(e,"Checkout could not be opened. Please try again."));
+    }
+  }
   async function openPortal(){
     try{
       const r=await apiFetch("/billing/create-portal",{method:"POST"});
@@ -625,7 +611,6 @@ function AppShell() {
   const navCurrent=(frPartNow&&Object.keys(FR_PART_TABS).find(k=>FR_PART_TABS[k]===frPartNow))||tab;
   const navItem=(t)=>{
     const active=navCurrent===t.id;
-    const locked=TEAM_GATED.has(t.id)&&isCoreTier;
     // GTM-1b 5 — collapsed, the item is its icon and its title attribute.
     // `aria-label` carries the name so a screen reader still hears "Donors".
     // FIX-13 Part 6 — a real link to the tab, so it opens in a new browser tab.
@@ -638,11 +623,10 @@ function AppShell() {
           and the glyph cannot disagree about how wide an icon is. */}
       <span style={{width:NAV_ICON_SIZE,display:"flex",alignItems:"center",justifyContent:"center",color:active?T.ink:T.sage600,flexShrink:0}}><NavIcon id={t.id}/></span>
       {!sidebarCollapsed&&t.label}
-      {!sidebarCollapsed&&locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
       {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
       {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
         ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
-        : <span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>)}
+        : <span style={{...DUE_BADGE,marginLeft:"auto"}}>{tasksDue}</span>)}
     </RecordLink>;
   };
 
@@ -881,6 +865,14 @@ function AppShell() {
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.gold100,borderRadius:8,color:T.gold100,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data"}</button>
       <button onClick={()=>setShowPlanPicker(true)} style={{background:T.gold500,border:"none",borderRadius:8,color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>Reactivate →</button>
     </div>}
+    {/* FIX-32: cancelled inside the free thirty days. Nothing was charged and
+        nothing is taken away before the trial's own end date, so this is not a
+        "Reactivate" and there is no plan to choose: the one offer is to keep
+        the plan already chosen, on the same date. */}
+    {billing?.trialCanceled&&<div data-testid="trial-canceled-banner" style={{background:T.bgElevated,borderBottom:"1px solid "+T.greenDk,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.sage400,flexWrap:"wrap"}}>
+      <span style={{flex:1,minWidth:200}}><strong style={{color:T.inkInverse}}>{billing.trialCanceledSentence}</strong> Everything stays open until then.</span>
+      {auth?.user?.role==="admin"&&<button data-testid="keep-steward" onClick={keepSteward} disabled={keeping} style={{background:T.gold500,border:"none",borderRadius:8,color:T.ink,fontSize:12,fontWeight:700,cursor:keeping?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:keeping?0.7:1}}>{keeping?"Opening checkout...":"Keep Steward"}</button>}
+    </div>}
     {showTrialBanner&&<div style={{background:billing.trialDaysLeft<=3?T.gold700:T.bgElevated,borderBottom:`1px solid ${billing.trialDaysLeft<=3?T.gold600:T.greenDk}`,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:billing.trialDaysLeft<=3?T.gold100:T.sage400}}>
       <span>⏳</span>
       {/* BUILD-90 — AN ORG IN TRIAL HAS USUALLY ALREADY DECIDED. It signed
@@ -897,7 +889,7 @@ function AppShell() {
           </>
         : <>
             <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> left in your trial,</span>
-            <button onClick={goToPricing} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Choose a plan →</button>
+            <button onClick={()=>navigateTo("settings",{section:"account"})} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>See billing →</button>
           </>}
       <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.sage600,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
@@ -945,7 +937,7 @@ function AppShell() {
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
-      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} isCoreTier={isCoreTier}/>}
+      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} isAdmin={auth?.user?.role==="admin"} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
           Settings section is untouched, so both doors open the same thing. */}

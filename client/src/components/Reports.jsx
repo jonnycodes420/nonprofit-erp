@@ -1,7 +1,7 @@
 import { MeetingsByStaffCard } from "./MovesPanels";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
+import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf, isSavedDashboard, savedDashIdOf, SDASH_PREFIX, BOARD_PACK_ID, NEW_DASH_ID, STORED_REPORTS_ID } from "../lib/reportsRail";
@@ -268,7 +268,6 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-  const [planLocked, setPlanLocked] = useState(false); // 403 plan_required → upgrade card
   const [digestType, setDigestType] = useState("weekly"); // week-in-review: weekly | monthly
   const [downloading, setDownloading] = useState(false);
   const [fiscalStart, setFiscalStart] = useState(null); // the org's first fiscal month; null until the server says
@@ -377,14 +376,14 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     // A standard or saved report (or the builder) fetches its own; nothing here.
     if (!isTab) return;
     let dead = false;
-    setLoading(true); setErr(""); setPlanLocked(false);
+    setLoading(true); setErr("");
     const url = DIGEST_REPORTS.includes(active) ? `/digests/preview?${paramsStr}` : `/reports/${active}?${paramsStr}`;
     apiFetch(url)
       // Tag the payload with the report key it belongs to — between
       // switching reports and the effect firing there's one render where
       // `data` still holds the previous report's shape.
-      .then(d => { if (!dead) { setData({ key: active, d }); setPlanLocked(!!d?.locked); setLoading(false); } })
-      .catch(e => { if (!dead) { if (e.error === "plan_required" || e.status === 403) setPlanLocked(true); setErr(e.message); setLoading(false); } });
+      .then(d => { if (!dead) { setData({ key: active, d }); setLoading(false); } })
+      .catch(e => { if (!dead) { setErr(e.message); setLoading(false); } });
     return () => { dead = true; };
   }, [active, isTab, paramsStr, customIncomplete, presetPending]);
 
@@ -780,8 +779,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
               {campaigns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>}
             <div style={{ flex: 1 }} />
-            {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete || planLocked}
-              style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading || planLocked ? 0.6 : 1 }}>
+            {!DIGEST_REPORTS.includes(active) && <button onClick={downloadCsv} disabled={downloading || loading || customIncomplete}
+              style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading ? 0.6 : 1 }}>
               {downloading ? "Downloading…" : "Download CSV"}
             </button>}
             {pdfTwin && <button onClick={() => fetchFile(`/saved-reports/${encodeURIComponent(pdfTwin)}/pdf`, `${label || active}.pdf`)} disabled={downloading || loading}
@@ -790,7 +789,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             </button>}
           </div>
 
-          {DIGEST_REPORTS.includes(active) && !planLocked && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, marginTop: -4 }}>
+          {DIGEST_REPORTS.includes(active) && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, marginTop: -4 }}>
             {digestType === "weekly"
               ? "This is the Week in Review that's emailed to your whole team every Monday, the last completed week's gifts, asks, moves, and past-due tasks."
               : "This is your Monthly Report, emailed at the start of each month, your asks, moves, gifts closed, and portfolio."}
@@ -803,15 +802,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             Running {label}…
           </div>}
 
-          {/* Team sub-tab on a Core org: the server returns the org's OWN data
-              flagged locked, and we dim it behind the shared LockedFeature
-              glass — a real preview, not a bare 403 card. Fallback (no data)
-              still renders the locked overlay. */}
           {(() => {
-            const lockMeta = active === "solicitations"
-              ? { title: "Oversight for a staffed office", blurb: "Open asks by stage, a stage-weighted forecast, and asks-vs-closes by officer, this preview shows your own pipeline data. Unlock the Team plan to work it." }
-              : { title: "Monthly per-officer reports", blurb: "Each officer's month, asks made, moves logged, and gifts closed. This preview shows your own numbers; the full per-officer roll-up is on the Team plan." };
-            const errBlock = !planLocked && err && <div style={{ fontSize: 13, color: T.terracotta, padding: "24px 0", textAlign: "center" }}>{err}</div>;
+            const errBlock = err && <div style={{ fontSize: 13, color: T.terracotta, padding: "24px 0", textAlign: "center" }}>{err}</div>;
             const body = !err && d && (empty
               ? <EmptyState icon="▤" title={active === "lybunt" || active === "sybunt" ? "No one, that's good news" : "No gifts in this period yet"}
                   message={active === "lybunt" ? "Every donor who gave last year has already given this year." : active === "sybunt" ? "Every past donor has given this year." : "Once gifts land in this period, this report fills in automatically."} />
@@ -820,11 +812,6 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
                   {table}
                 </> : null);
             if (customIncomplete || loading) return null;
-            if (planLocked) return (
-              <LockedFeature minHeight={d ? 420 : 300} title={lockMeta.title} blurb={lockMeta.blurb} onCta={goToPricing}>
-                {body}
-              </LockedFeature>
-            );
             return <>{errBlock}{body}</>;
           })()}
         </Card>}

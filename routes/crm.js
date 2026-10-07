@@ -85,7 +85,7 @@ const {
   emitWebhook,
   recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
-  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients, campaignAudience,
+  reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,
@@ -5676,7 +5676,7 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // purely Team (BUILD-19; donor-profile Core/Team split FIX). Core sees stage
 // read-only; changing it (single or bulk) requires the Team plan. This
 // reverses the earlier "per-donor stage dropdown is Core-fine" note.
-app.patch("/donors/:id/stage", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.patch("/donors/:id/stage", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { stage, prevStage } = req.body;
   const valid = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!valid.includes(stage)) return res.status(400).json({ error: "Invalid stage" });
@@ -5770,7 +5770,7 @@ app.post("/donors/:id/unarchive", requireAuth, requireAdmin, checkWriteAccess, w
   res.json({ archived: false, sentence: `${r[0].name} is back on your lists.` });
 }));
 
-app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.patch("/donors/:id/assign", requireAuth, requireAdmin, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { assignedTo } = req.body;
   // Assignment IS pipeline membership (BUILD-30): assigning an officer puts the
   // donor in that officer's portfolio AND on their board immediately; unassigning
@@ -5815,7 +5815,7 @@ app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), 
 // Future: restore-from-trash view + permanent-purge scheduled job can be
 // built on deleted_at — the column is stable and org-scoped.
 
-app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.patch("/donors/bulk-stage", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { ids, stage } = req.body;
   const VALID = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
@@ -5835,7 +5835,7 @@ app.patch("/donors/bulk-stage", requireAuth, requirePlan("team"), checkWriteAcce
   res.json({ updated: result.changes });
 }));
 
-app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { ids, assignedTo } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
   if (!assignedTo) return res.status(400).json({ error: "assignedTo required" });
@@ -10055,7 +10055,7 @@ app.get("/portfolio/officers", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { color } = req.body;
   if (color && !/^#[0-9a-fA-F]{6}$/.test(String(color))) return res.status(400).json({ error: "Color must be a 6-digit hex like #1a6b4a." });
   const u = await query("SELECT id FROM users WHERE id=? AND org_id=?", [req.params.userId, req.user.orgId]);
@@ -10068,7 +10068,7 @@ app.put("/portfolio/officers/:userId/color", requireAuth, requireAdmin, requireP
 // The whole pipeline is a staffed-office capability → Team. Reads return a
 // `tier`/`locked` flag rather than 403'ing so a Core org renders a graceful
 // "upgrade to manage a major-gifts pipeline" state, not a broken tab. Every
-// WRITE (move, opportunity) is hard requirePlan('team') + checkWriteAccess.
+// WRITE (move, opportunity) is hard requireCrm('team') + checkWriteAccess.
 
 // GET /pipeline — the board: prospects grouped by stage, officer color map,
 // ask amount + stage age + next task per card, and the forecast. Batched
@@ -10081,7 +10081,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   // Core orgs get a READ-only locked preview populated with their OWN data
   // (the board derives entirely from donors.stage / opportunities / moves /
   // tasks — all org-scoped reads a Core user already has). Writes stay hard-
-  // gated on POST /pipeline/:donorId/move (requirePlan('team') → 403), so this
+  // gated on POST /pipeline/:donorId/move (requireCrm('team') → 403), so this
   // only softens the read presentation; it does not open a write path.
   const locked = tier !== "team";
 
@@ -10227,7 +10227,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
 // the caller's own board; already-owned donors stay with their owner). No
 // separate flag. Cross-officer assignment stays the admin `/donors/bulk-assign`.
 // Team + write-gated.
-app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/pipeline/add", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.status(400).json({ error: "ids array required" });
   const owned = await query(
@@ -10249,7 +10249,7 @@ app.post("/pipeline/add", requireAuth, requirePlan("team"), checkWriteAccess, wr
 // Assignment IS membership (BUILD-30), so removing from the board = unassigning;
 // the donor stays in the Directory with its stage label untouched. Team +
 // write-gated (a curation write, not a delete).
-app.post("/pipeline/remove", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/pipeline/remove", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
   if (!ids.length) return res.status(400).json({ error: "ids array required" });
   const owned = await query(
@@ -10263,7 +10263,7 @@ app.post("/pipeline/remove", requireAuth, requirePlan("team"), checkWriteAccess,
 }));
 
 // POST /pipeline/:donorId/move — the managed stage change. Description REQUIRED.
-app.post("/pipeline/:donorId/move", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/pipeline/:donorId/move", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { toStage, description } = req.body;
   if (!ALL_PIPELINE_STAGES.includes(toStage)) return res.status(400).json({ error: "Invalid stage" });
   if (!description || !String(description).trim()) return res.status(400).json({ error: "A description of the move is required." });
@@ -10322,7 +10322,7 @@ app.get("/donors/:id/opportunities", requireAuth, wrap(async (req, res) => {
   res.json(rows.map(o => ({ ...o, target_amount: parseFloat(o.target_amount) || 0, gift_amount: o.gift_amount == null ? null : parseFloat(o.gift_amount) })));
 }));
 
-app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/:id/opportunities", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const { name, targetAmount, expectedClose } = req.body;
   const amt = parseFloat(targetAmount);
   if (!(amt > 0)) return res.status(400).json({ error: "A positive target ask amount is required." });
@@ -10352,7 +10352,7 @@ app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWri
 
 // PUT /opportunities/:id — edit, or close won/lost. Closing 'won' links the
 // real gift and records the actual gift amount (the ask-vs-gift accountability).
-app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/opportunities/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const existing = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Opportunity not found" });
   const { name, targetAmount, expectedClose, status, giftId, giftAmount } = req.body;
@@ -10513,7 +10513,7 @@ app.get("/donors/:id/proposals", requireAuth, wrap(async (req, res) => {
 
 // POST /donors/:id/proposals — one ask. Team, because the whole major-gifts
 // layer is (the BUILD-19/BUILD-20 split; a Core org sees the panel behind glass).
-app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/:id/proposals", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const P = await proposalMod();
   const orgId = req.user.orgId;
   const [donor] = await query("SELECT id, name, assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
@@ -10613,7 +10613,7 @@ async function logProposalLine(orgId, donorId, req, note) {
 //   · `status` is never sent by a caller. It is derived from the stage, once,
 //     by statusForStage — so the twenty BUILD-15/17/85/86 reads that filter on
 //     it cannot disagree with what the screen shows.
-app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const P = await proposalMod();
   const orgId = req.user.orgId;
   const [existing] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -10974,7 +10974,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
 
 // PUT /portfolio/:officerId/target — the target and the cap, both hers, both
 // optional. Sending null CLEARS one, which is how "I have not decided" is said.
-app.put("/portfolio/:officerId/target", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/portfolio/:officerId/target", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const isAdmin = req.user.role === "admin";
   const want = String(req.params.officerId || "").trim();
@@ -11529,7 +11529,7 @@ app.get("/cultivation-templates", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-app.post("/cultivation-templates", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/cultivation-templates", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const PL = await planMod();
   const v = PL.validateTemplate({ name: req.body.name, steps: req.body.steps });
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_template", errors: v.errors });
@@ -11541,7 +11541,7 @@ app.post("/cultivation-templates", requireAuth, requirePlan("team"), checkWriteA
   res.status(201).json({ id: row.id, name: row.name, steps: row.steps });
 }));
 
-app.put("/cultivation-templates/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/cultivation-templates/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const PL = await planMod();
   const [ex] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!ex) return res.status(404).json({ error: "Template not found" });
@@ -12762,7 +12762,7 @@ app.get("/donors/:id/journeys", requireAuth, wrap(async (req, res) => {
 }));
 
 // POST /donors/:id/plan — apply a template, dates offset from today.
-app.post("/donors/:id/plan", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/:id/plan", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const PL = await planMod();
   const orgId = req.user.orgId;
   const [donor] = await query("SELECT id, name, assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
@@ -12856,7 +12856,7 @@ app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
 //
 // IT SENDS NOTHING. It writes a logged interaction and opens the next step.
 // That is the entire definition of a journey step completing.
-app.post("/plan-steps/:id/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/plan-steps/:id/done", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [s] = await query(
     `SELECT st.*, p.donor_id, p.status AS plan_status FROM cultivation_plan_steps st
@@ -12907,7 +12907,7 @@ app.post("/plan-steps/:id/done", requireAuth, requirePlan("team"), checkWriteAcc
   res.json({ plan: await readPlan(orgId, s.plan_id), done: req.params.id, note, interactionId: intId });
 }));
 
-app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/plan-steps/:id/skip", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [s] = await query(
     `SELECT st.*, p.donor_id, p.status AS plan_status FROM cultivation_plan_steps st
@@ -12944,7 +12944,7 @@ app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAcc
 
 // POST /plans/:id/stop — the officer decides the plan is over. The steps keep
 // what they were, so "we got three steps in and stopped" stays readable.
-app.post("/plans/:id/stop", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/plans/:id/stop", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [p] = await query("SELECT * FROM cultivation_plans WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!p) return res.status(404).json({ error: "Plan not found" });
@@ -13096,7 +13096,7 @@ async function briefRowsFor(orgId, donorId) {
 // rests on a row you can open, and this is that list. It also means the row
 // gathering — which is Steward's code, not a model's — is provable with no key
 // configured at all.
-app.get("/donors/:id/brief-rows", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+app.get("/donors/:id/brief-rows", requireAuth, requireCrm, wrap(async (req, res) => {
   const ctx = await briefRowsFor(req.user.orgId, req.params.id);
   if (!ctx) return res.status(404).json({ error: "Donor not found" });
   res.json({
@@ -13106,7 +13106,7 @@ app.get("/donors/:id/brief-rows", requireAuth, requirePlan("team"), wrap(async (
 }));
 
 // POST /donors/:id/brief — write it, validate it, log it as an agent run.
-app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const B = await briefShapeMod();
   const TH = await thresholdsMod();
   const orgId = req.user.orgId;
@@ -13658,7 +13658,7 @@ app.post("/scores/recompute", requireAuth, requireAdmin, wrap(async (req, res) =
 
 // Wealth/capacity scoring is part of the Team major-gifts layer — Core sees a
 // stored score read-only (behind glass) but can't compute/recompute it.
-app.post("/donors/:id/score", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/donors/:id/score", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const result = await calcWealthScore(req.params.id, req.user.orgId);
   if (!result) return res.status(404).json({ error: "Donor not found" });
   res.json(result);
@@ -14021,7 +14021,7 @@ app.get("/funders", requireAuth, wrap(async (req, res) => {
 // PUT /funders/:donorId — say what kind of funder an organisation is. It lives
 // on the FUNDER because the Sunrise Foundation is a private foundation across
 // every grant it ever makes; per-grant storage would let two rows disagree.
-app.put("/funders/:donorId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/funders/:donorId", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const G = await grantShapeMod();
   const r = await resolveFunder(req.user.orgId, req.params.donorId);
   if (!r.ok) {
@@ -14100,7 +14100,7 @@ app.get("/funders/:donorId/grants", requireAuth, wrap(async (req, res) => {
 }));
 
 // POST /funders/:donorId/grants — one request to one funder.
-app.post("/funders/:donorId/grants", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/funders/:donorId/grants", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const G = await grantShapeMod();
   const orgId = req.user.orgId;
   const fr = await resolveFunder(orgId, req.params.donorId);
@@ -14166,7 +14166,7 @@ async function checkGrantOfficer(orgId, officerId) {
 // general PUT already carries the ledger stamp, the campaign attribution and the
 // adopt-an-existing-row guard, and threading a pledge writer through all of that
 // is how one of those stops working.
-app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const G = await grantShapeMod();
   const orgId = req.user.orgId;
   const [g] = await query(
@@ -14244,7 +14244,7 @@ app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess,
 // PUT /grants/:id/decline — a no, with its reason, its date, and whether to try
 // again. Declining does NOT touch the award pledge if one somehow exists: money
 // already committed is a fact, and a status is not a reason to delete it.
-app.put("/grants/:id/decline", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/grants/:id/decline", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const G = await grantShapeMod();
   const orgId = req.user.orgId;
   const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -14362,7 +14362,7 @@ async function addGrantMilestone(res, { orgId, grantId, kind, due, label, notes,
 }
 
 // POST /grants/:id/milestones — add a dated thing owed on this grant.
-app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/:id/milestones", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const M = await grantMsMod();
   const orgId = req.user.orgId;
   const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -14400,7 +14400,7 @@ app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteA
 // PUT /grants/milestones/:msId — MOVING THE DATE MOVES THE THREAD.
 // A date that moves and leaves a thread pointing at the old one is how an
 // officer ends up chasing a deadline that no longer exists.
-app.put("/grants/milestones/:msId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.put("/grants/milestones/:msId", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const M = await grantMsMod();
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
@@ -14461,7 +14461,7 @@ app.put("/grants/milestones/:msId", requireAuth, requirePlan("team"), checkWrite
 // (BUILD-81's CHECK), and closing it from here would write a close with no
 // interaction behind it. The milestone is marked and the thread is the
 // officer's to log a line against.
-app.post("/grants/milestones/:msId/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/milestones/:msId/done", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const M = await grantMsMod();
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
@@ -14480,7 +14480,7 @@ app.post("/grants/milestones/:msId/done", requireAuth, requirePlan("team"), chec
 // if one was raised and is still open, is still its thread); a removed
 // deadline is `skipped`, which every read already leaves out, so putting it
 // back is the same reopen.
-app.post("/grants/milestones/:msId/reopen", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/milestones/:msId/reopen", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const M = await grantMsMod();
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
@@ -14501,7 +14501,7 @@ app.post("/grants/milestones/:msId/reopen", requireAuth, requirePlan("team"), ch
   res.json({ ok: true, id: ms.id });
 }));
 
-app.post("/grants/milestones/:msId/remove", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/milestones/:msId/remove", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [ms] = await query("SELECT id FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
   if (!ms) return res.status(404).json({ error: "Milestone not found" });
@@ -14606,7 +14606,7 @@ function grantDocRow(r, orgId) {
 }
 
 // POST /grants/:id/documents — one file, on a grant that already exists.
-app.post("/grants/:id/documents", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/:id/documents", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [g] = await query("SELECT id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Grant not found" });
@@ -14894,7 +14894,7 @@ app.get("/interaction-files/:id", fileLimiter, requireAuth404, wrap(async (req, 
 }));
 
 // POST /grants/:id/spend — one line of spending against a restricted award.
-app.post("/grants/:id/spend", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/:id/spend", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const R = await restrictedMod();
   const orgId = req.user.orgId;
   const [g] = await query("SELECT id, restriction FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -15094,7 +15094,7 @@ async function planGrantImport(orgId, body) {
 
 // POST /grants/import — the ONE write path. Everything lands inside one
 // transaction, so a file that fails halfway leaves no half-imported pipeline.
-app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/import", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const I = await grantImportMod();
   const GS = await grantShapeMod();
   const orgId = req.user.orgId;
@@ -22133,9 +22133,6 @@ const REPORT_HANDLERS = {
   "p2p-fundraisers": reportP2PFundraisers,
   "p2p-teams": reportP2PTeams,
 };
-// [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
-// org gets 403 plan_required (the client renders an upgrade state).
-const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 
 // Gifts by month, this year beside last year, from the giving-summary handler
 // itself — the Reports tab's monthly figures, twice, aligned by fiscal month.
@@ -22370,23 +22367,10 @@ app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
 app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
-  // Team-only reports on a Core org: return a READ-only locked preview built
-  // from the org's OWN data (a report is a pure read), flagged `locked:true`
-  // so the client dims it behind the LockedFeature glass — a bare 403 card is
-  // replaced by a real preview. CSV EXPORT of a locked report is still refused
-  // (403) — you can look, but pulling the team artifact out is Team-only.
-  let reportLocked = false;
-  if (TEAM_ONLY_REPORTS.has(key)) {
-    const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
-    reportLocked = !orgRows.length || orgPlanTier(orgRows[0]) !== "team";
-    if (reportLocked && req.query.format === "csv")
-      return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "The solicitations report is available on the Team plan." });
-  }
   let p;
   try { p = parseReportParams(req.query, await orgForYears(req.user.orgId)); }   // ORG_TZ_SEAM_OK
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
   const data = await REPORT_HANDLERS[key](req.user.orgId, p);
-  if (reportLocked && data && typeof data === "object" && !Array.isArray(data)) data.locked = true;
   if (p.format === "csv") {
     // BUILD-87 Part 4 — a report that has declared itself unbalanced REFUSES
     // to become a file, and says why. Asserted in cents by the handler, before

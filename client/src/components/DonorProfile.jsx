@@ -24,8 +24,7 @@ import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
 import { ProfileTimeline } from "./ProfileTimeline";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
-import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
-import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
@@ -1246,10 +1245,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // Pipeline: moves history + ask/gift opportunities (BUILD-15, Team plan)
   const [moves,setMoves]=useState([]);
   const [opps,setOpps]=useState([]);
-  // The plan starts UNKNOWN, never "core": a plan that has not loaded is not a
-  // plan without the feature (FIX-3 finding 9, client/src/lib/entitlement.js).
-  const [planTier,setPlanTier]=useState(PLAN_UNKNOWN);
-  const [planFailed,setPlanFailed]=useState(false);
   const [askOpen,setAskOpen]=useState(false);
   const [askName,setAskName]=useState("");const [askAmt,setAskAmt]=useState("");
   // Smart-move suggestions (BUILD-22): surfaced, never auto-applied. `dismissed`
@@ -1265,9 +1260,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const acceptSuggestion=async(sug)=>{
     setDismissedSug(s=>[...s,sug.signal]);
     if(!sug.toStage) return; // advisory-only signal (e.g. "going quiet")
-    if(planTier==="team"){
+    {
       // Logs a move (from original stage → toStage) with the signal as its
-      // description. Core → this route 403s, so the PATCH below carries it.
+      // description.
       try{ await apiFetch(`/pipeline/${donor.id}/move`,{method:"POST",body:JSON.stringify({toStage:sug.toStage,description:`Accepted suggestion: ${sug.reason}`})}); }catch(_){}
     }
     onStageChange&&onStageChange(donor.id,sug.toStage); // parent UI + Core-safe stage PATCH
@@ -1287,22 +1282,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   useEffect(()=>{
     refreshSoftCredit();refreshPipeline();
     apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>setDesignations([]));
-    setPlanFailed(false);
-    apiFetch("/portfolio/officers").then(r=>setPlanTier(r?.tier||PLAN_UNKNOWN)).catch(()=>setPlanFailed(true));
   },[donor.id]);
-  const isTeam=planTier==="team";
-  // Donor-profile Core/Team split (FIX): the CRM core stays fully available to
-  // Core; only the major-gifts LAYER (moves & asks, move-stage, wealth score,
-  // suggested actions, sequences, reassign) is Team. `lockMajor` reuses the ONE
-  // shared LockedFeature wrapper (same treatment as the Pipeline tab / BUILD-20)
-  // — Core sees the real panel with its own data behind frosted glass + an
-  // "Unlock with Team" CTA; writes stay server-gated (requirePlan('team')→403).
-  // A plain function (not a `<Component>`) so Team never remounts the subtree.
-  // While the plan is unknown it draws the pending state, never the lock.
-  const lockMajor=(children,opts={})=>isTeam?children:(!planKnown(planTier)?<PlanPending failed={planFailed}/>:
-    <LockedFeature title={opts.title||"A Team-plan feature"} blurb={opts.blurb} minHeight={opts.minHeight||220}
-      onCta={goToPricing}>{children}</LockedFeature>
-  );
+  // FIX-32: one plan, everything included. The major-gifts layer (moves and
+  // asks, move stage, wealth score, suggested actions, sequences, reassign)
+  // used to sit behind upgrade glass for a lower tier; there is no
+  // Core any more, so it is always the real panel.
+  const isTeam=true;
+  const lockMajor=children=>children;
   // Add this donor to the working Pipeline board (deliberate act; idempotent).
   const [pipelineAdded,setPipelineAdded]=useState(false);
   const addToPipeline=async()=>{
@@ -2303,8 +2289,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
               title="The ask" addLabel="+ New ask" testid="dp-the-ask"
               after={<div style={{marginTop:12}}>
-              {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
-                  panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
+              {/* Pipeline: Moves & Asks (BUILD-15). Every plan has it (FIX-32). */}
               {lockMajor(
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
@@ -2351,14 +2336,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     </div>
                   )}
                   {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves logged yet. Move this donor on the Pipeline board.</div>}
-                </div>,
-                {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
+                </div>
               )}
               </div>}>
           {/* The stage, and the smart moves that argue for changing it. Both
-              are the major-gifts layer, so a Core org sees the one frosted
-              preview — and, until the plan is KNOWN, the pending state and
-              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
+              are the major-gifts layer, which every plan includes (FIX-32). */}
           {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:12}}>
             <div style={{fontSize:11.5,fontWeight:700,color:T.ink3,marginBottom:7}}>Stage</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>

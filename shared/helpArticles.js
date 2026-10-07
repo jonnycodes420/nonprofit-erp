@@ -110,7 +110,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Act on several people at once`, steps: [
         `Click "Select" and tick the rows you want.`,
-        `Choose "Plan a follow-up". On the Team plan you also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete". "Delete" takes a donor off your lists and totals; Steward keeps the record, so support can bring it back. To remove a person for good, use Erase on their profile.`,
+        `Choose "Plan a follow-up". You also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete". "Delete" takes a donor off your lists and totals; Steward keeps the record, so support can bring it back. To remove a person for good, use Erase on their profile.`,
       ]},
       { h: `Good to know`, p: [
         `"Export CSV" exports what the search and the stage, owner and designation menus match. The advanced filters only narrow the page you are looking at, and a badge says so. To bring people in from a file, see Import donors.`,
@@ -250,7 +250,7 @@ export const HELP_ARTICLES = [
         `Giving pages are created in Settings, under Giving Pages. This screen lists them with "Open ↗" and "Copy link".`,
         `"Propose a recurring gift" under Recurring emails the donor a proposal. Nothing changes until they accept, and the link lasts 14 days.`,
         `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organisation's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
-        `The Pipeline is on the Team plan. On Core you see a locked preview. Moving a card asks what happened.`,
+        `Every plan includes the Pipeline. Moving a card asks what happened.`,
         `Proposals are started from a person's record with "+ New proposal". Plans never send anything.`,
         `"Mark as sent" under Acknowledgments records the gifts as thanked by letter. It does not send anything.`,
       ]},
@@ -353,7 +353,7 @@ export const HELP_ARTICLES = [
     summary: `Finance is the ledger: transactions, funds, budgets, payouts, restricted money and the month-end exports.`,
     sections: [
       { h: `Who sees this`, p: [
-        `Finance is on the Team plan and is not shown on Core. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
+        `Every plan includes Finance. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
       ]},
       { h: `What you see`, p: [
         `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts and the Deposit sheet, whose "Open the deposit sheet" button opens the slip right there. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
@@ -399,7 +399,7 @@ export const HELP_ARTICLES = [
         `Click "Save report". It appears under Your saved reports.`,
       ]},
       { h: `Good to know`, p: [
-        `A saved report cannot be edited or deleted yet; build a new one if you need a change. Solicitations and the Pipeline figure on the Fundraising dashboard are on the Team plan.`,
+        `A saved report cannot be edited or deleted yet; build a new one if you need a change.`,
       ]},
     ],
   },
@@ -521,7 +521,7 @@ export const HELP_ARTICLES = [
         `Read the confirm and agree. They can no longer sign in, records they wrote keep their name, and their donors become unassigned.`,
       ]},
       { h: `Good to know`, p: [
-        `You cannot remove yourself. When every seat on your plan is used, Team says so and offers "Upgrade your plan →".`,
+        `You cannot remove yourself. Every plan has unlimited users.`,
       ]},
     ],
   },

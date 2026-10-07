@@ -6,7 +6,7 @@
 // upgrade state, not a broken tab.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
+import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, DriftBadge, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
 import { DonorLink } from "./RecordLink";
@@ -242,7 +242,6 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
 
   if (loading && !data) return <div style={{ padding: 40, color: T.ink3 }}>Loading pipeline…</div>;
 
-  const locked = !!(data && data.locked);
   const f = data?.forecast;
   const officers = data?.officers || [];
   const columns = data?.columns || {};
@@ -259,9 +258,8 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
   // `multiOfficer`). Standing UI rule: hide single-value pickers.
   const multiOfficer = !!(data && data.multiOfficer);
   const showPortfolioToggle = canViewAll && multiOfficer;
-  // Drag-and-drop is a Team write path: off in the locked Core preview and for
-  // read-only orgs. The keyboard/button "Move →" path stays available regardless.
-  const dndEnabled = !isReadOnly && !locked;
+  // Drag-and-drop is off for read-only orgs. The keyboard/button "Move →" path stays available regardless.
+  const dndEnabled = !isReadOnly;
 
   const board = (
     <div>
@@ -386,20 +384,6 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
     </div>
   );
 
-  if (locked) {
-    return (
-      <div>
-        {!embedded && <PageTitle main="Prospect" accent="Pipeline" />}
-        <LockedFeature
-          title="Manage a major-gifts pipeline"
-          blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors, unlock the board to work it."
-          onCta={goToPricing}
-        >
-          {board}
-        </LockedFeature>
-      </div>
-    );
-  }
 
   return board;
 }

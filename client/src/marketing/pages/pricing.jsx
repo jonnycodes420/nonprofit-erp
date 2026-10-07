@@ -8,7 +8,7 @@
 // then the four cards. At 1440x900 the whole tier row is on the first screen.
 //
 // IT REPLACES THE APP ROUTE, AND THE CHECKOUT COMES WITH IT. /pricing is not
-// only a marketing page: UpgradeModal, goToPricing() and two links in Settings
+// only a marketing page: UpgradeModal and two links in Settings
 // send SIGNED-IN organisations here to change plan, and a real customer's
 // upgrade runs through it. So the tier card keeps both behaviours it had:
 //
@@ -33,8 +33,8 @@
 // and the in-app plans are unchanged (pricing.json still lists them; the
 // signup route and Settings, Billing still read them).
 //
-// A SIGNED-IN organisation that lands here to change plan (UpgradeModal,
-// goToPricing()) still gets its way through: one button to Settings, Billing.
+// A SIGNED-IN organisation that lands here to change plan (UpgradeModal)
+// still gets its way through: one button to Settings, Billing.
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../main";
 import PRICING from "../../../../pricing.json";

@@ -194,7 +194,7 @@ async function renewalTouched(orgId, rid) {
 
 function mount(ctx) {
 C = ctx;
-const { query, run, wrap, requireAuth, requireAdmin, requirePlan, checkWriteAccess, actor, withTransaction } = ctx;
+const { query, run, wrap, requireAuth, requireAdmin, requireCrm, checkWriteAccess, actor, withTransaction } = ctx;
 const app = routers.r0;
 
 app.get("/grant-overview", requireAuth, wrap(async (req, res) => {
@@ -218,7 +218,7 @@ app.put("/org/grant-goal", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   });
 }));
 
-app.post("/grants/:id/plan-renewal", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/:id/plan-renewal", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const out = await planRenewal(req.user.orgId, String(req.params.id), actor(req));
   if (out.notFound) return res.status(404).json({ error: out.sentence });
   // Improve the one audit row: a planned renewal names the grant it made; a
@@ -230,7 +230,7 @@ app.post("/grants/:id/plan-renewal", requireAuth, requirePlan("team"), checkWrit
   res.status(out.renewalGrantId && !out.existing ? 201 : 200).json({ ...out, undoSeconds: out.renewalGrantId && !out.existing ? UNDO_SECONDS : undefined });
 }));
 
-app.post("/grants/:id/renewal/undo", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+app.post("/grants/:id/renewal/undo", requireAuth, requireCrm, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [g] = await query(`SELECT id FROM grants WHERE id = ? AND org_id = ?`, [String(req.params.id), orgId]);
   if (!g) return res.status(404).json({ error: "That grant is not on file." });

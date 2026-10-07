@@ -769,6 +769,13 @@ app.get("/admin/billing-diagnostic", requireAuth, requireSuperAdmin, wrap(async 
   });
 }));
 
+// "Nov 6", in the org's zone. A malformed zone falls back, never throws.
+function shortChargeDate(at, tz) {
+  const opts = { month: "short", day: "numeric" };
+  try { return new Date(at).toLocaleDateString("en-US", { ...opts, timeZone: tz || "America/New_York" }); }
+  catch { return new Date(at).toLocaleDateString("en-US", { ...opts, timeZone: "America/New_York" }); }
+}
+
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT plan, subscription_status, trial_ends_at, signed_at, stripe_customer_id, stripe_customer_id_test, stripe_subscription_id, grace_until, current_period_end, billing_card_brand, billing_card_last4 FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -777,6 +784,8 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
   const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
   const isTrial = (org.subscription_status || "trialing") === "trialing";
+  const trialCanceledNow = ["canceled", "cancelled"].includes(org.subscription_status || "")
+    && !!trialEndsAt && trialEndsAt.getTime() > Date.now();
   // BUILD-90 90b — Settings shows THE SAME DATE the reminder email shows and
   // the same one Checkout showed, because all three build the sentence from
   // this one field through closeLink.js. No phone call required to cancel:
@@ -821,6 +830,13 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     canCancel: !!org.stripe_subscription_id && !["canceled"].includes(org.subscription_status || ""),
     cardLast4: billingCardLast4(org),
     cardBrand: org.billing_card_brand || null,
+    // FIX-32: cancelled inside the free thirty days. The org keeps everything
+    // until the trial's own end date and is never charged; the one offer is
+    // "Keep Steward", a new Checkout on the same plan ending on the same date.
+    trialCanceled: trialCanceledNow,
+    trialCanceledSentence: trialCanceledNow
+      ? `Your trial ends ${shortChargeDate(trialEndsAt, tz)} and you won't be charged.`
+      : null,
   });
 }));
 
@@ -862,7 +878,17 @@ function handleBillingConfigError(err, res, { plan, surface } = {}) {
 }
 
 app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { plan } = req.body;
+  let { plan } = req.body;
+  // FIX-32: "Keep Steward" after a cancel inside the trial: the plan is the
+  // one the org signed up for, read from its close link, never a choice. (A
+  // subscription that ended used to rewrite orgs.plan to 'core', so the org
+  // row alone cannot be trusted for an org that cancelled before this fix.)
+  if (req.body && req.body.keep === true) {
+    const [kept] = await query(
+      `SELECT o.plan, cl.plan AS link_plan FROM orgs o LEFT JOIN close_links cl ON cl.id = o.close_link_id WHERE o.id=?`,
+      [req.user.orgId]);
+    plan = (kept && (kept.link_plan || kept.plan)) || plan;
+  }
   // Live commercial model (BUILD-24). `founding` is the private $99 founding-
   // partner price — off-menu, super-admin only, never in the public UI. Legacy
   // seed/growth/impact stay mapped so a pre-cutover org can still reactivate on
@@ -1928,7 +1954,12 @@ async function cancelOrgSubscription(orgId) {
   try {
     if (isTrial) {
       await billingStripe.subscriptions.cancel(org.stripe_subscription_id);
-      await run("UPDATE orgs SET subscription_status='canceled', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+      // FIX-32: cancelling inside the free thirty days keeps everything open
+      // until the trial's own end date; the plan is left as chosen so "Keep
+      // Steward" can restore it.
+      await run(`UPDATE orgs SET subscription_status='canceled',
+                   grace_until=CASE WHEN trial_ends_at > NOW() THEN trial_ends_at ELSE NOW() + INTERVAL '3 days' END
+                 WHERE id=?`, [orgId]);
       console.log(`[billing] ${orgId} cancelled during trial — no charge was ever made`);
       return { ok: true, when: "now", freeOfCharge: true };
     }
