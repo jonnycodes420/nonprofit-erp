@@ -755,7 +755,59 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
 // immediately after onboarding for every org that isn't shown the OTHER
 // import button, buried in the regular Donors tab, after the fact.
-export function DonorImport({ onClose, onImported, withHistory = false, org = null, onOpenHome = null }) {
+// FIX-32 · A REAL FILE REPLACES THE SAMPLE, AND SHE SAYS SO FIRST. An org
+// that explored the demo has 25 invented people in it; importing her own file
+// on top of them mixes fiction into every total. Before the importer opens,
+// the sample count is read from the same route the banner and the clear use,
+// and if there is any, she confirms the clear (or keeps the sample and
+// closes). Nothing is deleted without the click.
+export function DonorImport(props) {
+  const [gate, setGate] = useState("checking"); // checking | ask | open
+  const [count, setCount] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    apiFetch("/org/sample-data-status")
+      .then(st => { if (!live) return;
+        if (st && st.hasSampleData) { setCount(st.sampleDonorCount || 0); setGate("ask"); } else setGate("open"); })
+      .catch(() => { if (live) setGate("open"); });
+    return () => { live = false; };
+  }, []);
+  async function clearAndOpen() {
+    setBusy(true); setErr("");
+    try { await apiFetch("/org/clear-sample-data", { method: "POST" }); setGate("open"); }
+    catch (e) { setErr(errorMessage(e, "The sample data could not be cleared. Please try again.")); }
+    setBusy(false);
+  }
+  if (gate === "open") return <DonorImportFile {...props} />;
+  if (gate === "checking") return null;
+  return (
+    <Modal onClose={props.onClose} width={520} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding={28} ariaLabel="Sample data is loaded" dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+      <div data-testid="import-clear-sample">
+        <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,color:T.ink,marginBottom:8}}>Sample data is loaded</div>
+        <div style={{fontSize:14,color:T.ink2,lineHeight:1.6,marginBottom:18}}>
+          {count.toLocaleString()} sample donor{count===1?" is":"s are"} in your workspace. Importing your real file clears them first, with
+          their gifts and conversations, so nothing invented ends up in your totals. Your file is not touched.
+        </div>
+        {err && <div style={{fontSize:13,color:T.terracotta,marginBottom:12}}>{err}</div>}
+        <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+          <button onClick={props.onClose} disabled={busy}
+            style={{background:"none",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 16px",fontSize:14,fontWeight:600,color:T.ink,cursor:"pointer",fontFamily:"inherit"}}>
+            Keep the sample
+          </button>
+          <button data-testid="import-clear-sample-yes" onClick={clearAndOpen} disabled={busy}
+            style={{background:T.green,border:"none",borderRadius:10,padding:"10px 16px",fontSize:14,fontWeight:700,color:T.white,cursor:busy?"not-allowed":"pointer",opacity:busy?0.7:1,fontFamily:"inherit"}}>
+            {busy ? "Clearing…" : "Clear the sample and import"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DonorImportFile({ onClose, onImported, withHistory = false, org = null, onOpenHome = null }) {
   // The org's civil today, for the future-date test (BUILD-72's rule).
   const orgToday = orgCivilToday(org?.timezone);
   // An org already mid-move is not asked where its donors are every time it

@@ -3006,6 +3006,17 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     finally{ setCancelBusy(false); }
   }
 
+  // FIX-32: "Keep Steward" after a cancel inside the trial: a new Checkout
+  // on the plan already chosen, ending its free period on the same date.
+  const [keepBusy,setKeepBusy]=useState(false);
+  async function keepSteward(){
+    setKeepBusy(true);
+    try{
+      const r=await apiFetch("/billing/create-checkout",{method:"POST",body:JSON.stringify({keep:true,plan:billing?.plan})});
+      window.location.href=r.url;
+    }catch(e){ setKeepBusy(false); setCancelNote(billingErrorMessage(e,"Checkout could not be opened. Please try again.")); }
+  }
+
   async function openBillingPortal(){
     // Open the portal in a NEW TAB so Settings stays put, and ALWAYS reset the
     // loading state (the old same-tab redirect left the button stuck on
@@ -3771,6 +3782,12 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 </div>
               )}
             </div>
+            {billing.trialCanceled&&(
+              <div data-testid="settings-trial-canceled" style={{fontSize:13,color:T.ink,lineHeight:1.55,background:T.bg,border:`1px solid ${T.bg2}`,borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <span style={{flex:1,minWidth:200}}><strong>{billing.trialCanceledSentence}</strong> Everything stays open until then.</span>
+                {isAdmin&&<button data-testid="settings-keep-steward" onClick={keepSteward} disabled={keepBusy} style={{background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:keepBusy?"wait":"pointer",opacity:keepBusy?0.7:1}}>{keepBusy?"Opening checkout...":"Keep Steward"}</button>}
+              </div>
+            )}
             {billing.firstChargeSentence&&(
               <div style={{fontSize:13,color:T.ink,lineHeight:1.55,background:T.bg,border:`1px solid ${T.bg2}`,borderRadius:10,padding:"12px 14px"}}>
                 <strong>{billing.firstChargeSentence}</strong> Cancel any time before then and you pay nothing.
@@ -3832,7 +3849,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               // single "Manage billing" is enough. Expectation-setting copy sits
               // ABOVE the action. A manual-grant plan (no Stripe subscription)
               // would open an EMPTY portal → we explain that in-app instead.
-              const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan);
+              // FIX-32: any plan but the bare trial/seed is a subscriber's plan. The
+              // list used to name the legacy plans only, so an org on a current
+              // band was told to "Start a subscription".
+              const isSubscriber=!!billing.plan&&billing.plan!=="trial"&&billing.plan!=="seed";
               const hasSub=!!billing.hasSubscription;
               const isUpgradable=billing.plan==="trial"||billing.plan==="seed";
               const planLabel=planDisplayName(billing.plan)||billing.plan;
@@ -3851,7 +3871,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                       {portalLoading?"Opening…":"Manage billing →"}
                     </button>
                   )}
-                  {(isUpgradable||(isSubscriber&&!hasSub))&&(
+                  {!billing.trialCanceled&&(isUpgradable||(isSubscriber&&!hasSub))&&(
                     <a href="/pricing" style={{display:"inline-block",background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
                       Choose a plan →
                     </a>

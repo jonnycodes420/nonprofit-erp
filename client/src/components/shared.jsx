@@ -1128,8 +1128,7 @@ export function PageTitle({main,accent,sub}) {
   );
 }
 // LockGlyph — a monochrome padlock drawn in SVG (NOT an emoji, so it reads
-// premium and passes the no-emoji guard). Used by the sidebar Team-gated
-// indicator and the LockedFeature overlay.
+// premium and passes the no-emoji guard).
 export const LockGlyph=({size=12,color="currentColor",style})=>(
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{display:"block",...style}}>
     <path d="M7 10.5V8a5 5 0 0 1 10 0v2.5" fill="none" stroke={color} strokeWidth="2.2" strokeLinecap="round"/>
@@ -1137,39 +1136,6 @@ export const LockGlyph=({size=12,color="currentColor",style})=>(
   </svg>
 );
 
-// The ONE upgrade destination. Every "See plans / Unlock with Team / Upgrade"
-// CTA routes here — the in-app /pricing page, where a plan button starts a real
-// Stripe Checkout (POST /billing/create-checkout). Full navigation (not SPA
-// navigate) is deliberate: /pricing lives outside the AppShell tab router, and
-// it matches the codebase's other billing redirects (openPortal, Stripe URLs).
-export const goToPricing=()=>{ window.location.href="/pricing"; };
-
-// LockedFeature — the reusable "Givebutter-style" locked preview. Renders the
-// REAL surface (the org's own data) dimmed behind frosted glass, non-
-// interactive, with an "Unlock with Team" overlay. Writes are still server-
-// gated (requirePlan('team') → 403); this only softens the READ presentation
-// so a Core user sees what they'd get, not a bare upgrade card. One wrapper so
-// every Team surface shares the exact treatment (top-level tabs AND Team
-// sub-tabs inside Core tabs).
-export function LockedFeature({title,blurb,cta="See plans",onCta,children,minHeight=420}){
-  return (
-    <div className="locked-feature" style={{position:"relative",minHeight}}>
-      <div aria-hidden="true" style={{filter:"blur(3.5px) saturate(0.82)",opacity:0.5,pointerEvents:"none",userSelect:"none"}}>
-        {children}
-      </div>
-      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"clamp(48px,12vh,120px)",background:"linear-gradient(180deg,rgba(240,237,230,0.30),rgba(240,237,230,0.62))",backdropFilter:"blur(0.5px)"}}>
-        <div style={{background:T.bgCard||T.white,border:`1px solid ${T.gold300}`,borderLeft:`4px solid ${T.gold500||T.gold}`,borderRadius:T.radiusLg||16,padding:"24px 26px",maxWidth:460,boxShadow:T.shadowLg||"0 12px 40px rgba(15,26,18,0.18)"}}>
-          <div style={{fontSize:12,fontWeight:800,letterSpacing:".08em",textTransform:"uppercase",color:T.gold600,display:"flex",alignItems:"center",gap:7}}>
-            <LockGlyph size={12} color={T.gold600}/> Team plan
-          </div>
-          <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:23,color:T.ink,margin:"7px 0 9px",lineHeight:1.2}}>{title}</div>
-          <div style={{fontSize:14,color:T.ink2||T.ink3,lineHeight:1.6}}>{blurb}</div>
-          {onCta&&<button onClick={onCta} style={{marginTop:18,background:T.gold500||T.gold,border:"none",borderRadius:T.radiusSm||8,padding:"10px 20px",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer"}}>Unlock with Team: {cta} →</button>}
-        </div>
-      </div>
-    </div>
-  );
-}
 // PlanPending — what a Team surface shows while the org's plan is still
 // unknown (FIX-3 finding 9). Never the lock: a plan that has not loaded is not
 // a plan without the feature (client/src/lib/entitlement.js). `failed` says

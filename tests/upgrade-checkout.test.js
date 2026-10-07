@@ -25,18 +25,44 @@ const pricing  = read("client/src/pages/Pricing.jsx");
 const app      = read("client/src/App.jsx");
 const server   = read("server.js");
 
-// ── The one upgrade destination (shared.jsx) ───────────────────────────────
-ok(/export const goToPricing\s*=/.test(shared), "shared.jsx exports goToPricing()");
-ok(/goToPricing[\s\S]{0,80}window\.location\.href\s*=\s*"\/pricing"/.test(shared), "goToPricing navigates to the /pricing page");
-
-// ── Upgrade CTAs route to the pricing page, NOT to Settings ────────────────
-for (const [name, src] of [["Pipeline", pipeline], ["Reports", reports], ["Donors", donors]]) {
-  ok(/import\s*\{[^}]*goToPricing/.test(src), `${name} imports goToPricing`);
-  ok(/onCta=\{goToPricing\}/.test(src), `${name} LockedFeature onCta = goToPricing (not onNavigate("settings"))`);
-  ok(!/onCta=\{\(\)\s*=>\s*onNavigate\s*&&\s*onNavigate\("settings"\)\}/.test(src) &&
-     !/onCta=\{onNavigate\?\(\)=>onNavigate\("settings"\):undefined\}/.test(src),
-     `${name}'s old "go to Settings" CTA is gone`);
+// ── FIX-32. ONE PLAN, EVERYTHING INCLUDED: no lock, no upgrade CTA ────────
+// A cancelled trial was rewritten to plan='core' and its donor profile came
+// back frosted over with "A Team-plan feature / Unlock with Team: See plans".
+// There is no Core and no Team any more, so no client file may draw that lock
+// or route to it. Every source under client/src is read, not a chosen few.
+const clientFiles = [];
+(function walk(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) walk(full);
+    else if (/\.(jsx?|tsx?)$/.test(e.name)) clientFiles.push(path.relative(path.join(__dirname, ".."), full));
+  }
+})(path.join(__dirname, "..", "client", "src"));
+const BANNED = [
+  ["LockedFeature", /\bLockedFeature\b/],
+  ["goToPricing", /\bgoToPricing\b/],
+  ["Unlock with Team", /Unlock with Team/],
+  ["A Team-plan feature", /Team-plan feature/],
+  ["plan_required", /plan_required/],
+  ["planLocks", /\bplanLocks\b/],
+  ["TEAM_GATED / CORE_HIDDEN_TABS", /\b(TEAM_GATED|CORE_HIDDEN_TABS)\b/],
+  ["CHECKOUT_PLANS (the retired Core $249 / Team $499 list)", /\bCHECKOUT_PLANS\b/],
+];
+for (const [label, re] of BANNED) {
+  const hits = clientFiles.filter(f => re.test(read(f)));
+  ok(hits.length === 0, `no client source carries ${label} (found in: ${hits.join(", ")})`);
 }
+// The plan picker offers pricing.json's bands and nothing else.
+const picker = read("client/src/components/PlanPicker.jsx");
+ok(/import PRICING from "\.\.\/\.\.\/\.\.\/pricing\.json"/.test(picker) && /PRICING\.tiers\.map/.test(picker),
+   "PlanPicker renders pricing.json's tiers");
+ok(!/\b(Core|Team)\b/.test(picker) && !/\b249\b/.test(picker), "PlanPicker names no Core, no Team and no $249");
+// Server: no route is gated on a tier any more (only the Portal tier, which is
+// not the CRM, is refused the CRM).
+const serverAll = ["server.js", ...fs.readdirSync(path.join(__dirname, "..", "routes")).filter(f => f.endsWith(".js")).map(f => "routes/" + f)]
+  .map(f => read(f)).join("\n");
+ok(!/requirePlan\(/.test(serverAll), "no server route is wrapped in requirePlan()");
+ok(!/"plan_required"/.test(serverAll), "the server never answers plan_required");
 
 // ── Pricing page starts a REAL Stripe Checkout for the chosen plan ─────────
 ok(/import\s*\{\s*apiFetch\s*\}\s*from\s*"\.\.\/api"/.test(pricing), "Pricing imports apiFetch");
@@ -76,10 +102,14 @@ ok(/activeDonorSentence/.test(pricing), "…and the page renders the one sentenc
 // ── Founding stays off-menu (never rendered on the public pricing page) ────
 ok(!/id:\s*"founding"/.test(pricing), "the founding-partner plan is NOT surfaced on the pricing page");
 
-// ── App.jsx: trial banner → pricing page (not the empty Customer Portal) ───
-ok(/import\s*\{[^}]*goToPricing/.test(app), "App imports goToPricing");
-ok(/onClick=\{goToPricing\}[\s\S]{0,220}(Choose a plan|Upgrade now)/.test(app),
-   "the trial banner 'Choose a plan / Upgrade now' routes to the pricing page (was openPortal → empty Portal)");
+// ── App.jsx: a trialing org never sees Reactivate (FIX-32) ────────────────
+// The trial banner points at Settings, Billing; a trial cancelled inside its
+// thirty days says when it ends and offers "Keep Steward", never Reactivate.
+const trialBanner = (app.match(/\{showTrialBanner&&<div[\s\S]*?<\/div>\}/) || [""])[0];
+ok(trialBanner && !/Reactivate|setShowPlanPicker/.test(trialBanner), "the trial banner carries no Reactivate and no plan picker");
+const cancelledTrial = (app.match(/\{billing\?\.trialCanceled&&<div[\s\S]*?<\/div>\}/) || [""])[0];
+ok(/trialCanceledSentence/.test(cancelledTrial) && /Keep Steward/.test(cancelledTrial) && !/Reactivate|setShowPlanPicker/.test(cancelledTrial),
+   "a trial cancelled inside the thirty days shows its end date and Keep Steward, not Reactivate");
 
 // ── App.jsx: return handling for a completed checkout ──────────────────────
 ok(/params\.get\("subscribed"\)\s*===\s*"true"/.test(app), "App reads ?subscribed=true on return from Stripe");

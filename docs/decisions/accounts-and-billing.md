@@ -82,6 +82,16 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   link. `trialEnd.js` is the one definition. Nothing an org does, such as an import, moves the date.
   (BUILD-90)
 - **Write `orgs.trial_ends_at` from Stripe's `subscription.trial_end`.** Never recompute it. (BUILD-90)
+- **Checkout lands her signed in, on onboarding (FIX-32).** A NEW-org close link (public signup or
+  super-admin) carries a one-time key in its `success_url` (`/signed-up?session_id={CHECKOUT_SESSION_ID}&k=`);
+  `close_links.signin_key_hash` holds only its sha256. `POST /public/checkout-signin` trades key + session id
+  for a session only when both match the link, Stripe says the session is `complete`, the org exists, and
+  `signin_used_at` is still null (spent atomically; dead 24 hours after the link was made). Until the
+  webhook has made the org it answers 202 `pending` and the page waits 30 seconds, then offers the link
+  by email (`/public/checkout-signin/email`), never a bare login form. An existing-org link still lands on
+  `/login`: that admin already has a password, and the key must never open an account with data in it.
+  Two-step and super-admin accounts are refused the trade. Golden journey J11; `npm run status` checks the
+  page and the route.
 - **Bring new customers in only through the super-admin close link.** Public `/signup` redirects to
   `/invitation`. No org, user or subscription exists until `checkout.session.completed`. (BUILD-90)
 - **To put an org that already exists on a plan, pass `orgId` to `POST /admin/close-links`.** Completion
@@ -92,12 +102,32 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   `cancel_at_period_end`.** Assert what Stripe was told. (BUILD-90)
 - **Show a manually granted plan (`hasSubscription:false`) as a manual grant.** Never open an empty Customer
   Portal for it. (BUILD-31)
-- **Keep plan bands soft for core/team/founding (`SOFT_BAND_PLANS`).** If bands are ever enforced, count
-  ACTIVE donors, not every record. (BUILD-24)
-- **Put `requirePlan` before `checkWriteAccess` on Team writes.** Core then gets 403 `plan_required` and a
-  lapsed Team org gets 402. (BUILD-45 F-1)
-- **Keep `/auth/invite` write-ungated and seat-limited.** Team allows 10 users, counting pending invites.
-  An import may assign donors to `invite:<id>`, and they are held until accept. (BUILD-45, invites FIX)
+- **Keep plan bands soft for core/team/founding and every tier plan (`SOFT_BAND_PLANS`).** A band is a
+  conversation and thirty days' notice, never a door. If bands are ever enforced, count ACTIVE donors,
+  not every record. (BUILD-24)
+- **One plan, everything included: no route, panel or tab is gated on a tier.** `orgPlanTier` returns
+  `"team"` (the full CRM) for every org except `plan='portal'`, and `requireCrm` refuses only the Portal
+  tier (403 `crm_not_included`). There is no `requirePlan`, no `plan_required`, no `LockedFeature`, no
+  `goToPricing` and no Core-hidden tab; `tests/upgrade-checkout.test.js` scans every client file and every
+  route file for them. Writes are gated by billing state (`checkWriteAccess`, 402) and nothing else.
+  (FIX-32, replacing BUILD-45 F-1)
+- **Keep `/auth/invite` write-ungated.** Seats are unlimited on every plan, the trial and the legacy
+  Core/Team/founding prices included (FIX-32). An import may assign donors to `invite:<id>`, and they are
+  held until accept. (BUILD-45, invites FIX)
+- **A subscription that ends inside the free thirty days takes nothing away.** `markSubscriptionEnded`
+  (webhooks.js) and the in-trial `/billing/cancel` set `subscription_status='canceled'` and
+  `grace_until = trial_ends_at`, never rewrite `orgs.plan`, and `getOrgAccessState` reads a cancelled org
+  whose trial end is still ahead as `full`. `/billing/status` says `trialCanceledSentence` ("Your trial
+  ends Nov 6 and you won't be charged."), and the only offer is **Keep Steward**: `POST
+  /billing/create-checkout {keep:true}`, which reads the plan from the org's close link and carries the
+  org's own `trial_ends_at` onto the new subscription. A trialing org never sees Reactivate or a plan
+  picker. After the first charge, ending a subscription is three days' grace as before. (FIX-32)
+- **Stripe's $0 `subscription_create` invoice is not a payment.** `invoice.payment_succeeded` with
+  `amount_paid: 0` and `billing_reason: "subscription_create"` changes nothing; it used to flip a brand-new
+  org from `trialing` to `active` in the second it was born. (FIX-32)
+- **The plan picker (`PlanPicker.jsx`) renders `pricing.json`'s bands and nothing else.** It opens only
+  for an org whose PAID subscription has lapsed. The retired Core $249 / Team $499 list is gone from the
+  client. (FIX-32)
 - **Enforce cross-officer visibility (all portfolios, the officer filter, bulk assign) as admin-only on the
   server.** Do not merely hide it. (BUILD-31, BUILD-36)
 - **Revoke sessions by bumping `users.sessions_valid_after`** on password reset, role change or removal.
@@ -117,7 +147,7 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Provision the ledger at birth on every org-creation path through `ensureOrgLedger`.** The paths are
   register, register-org, network signup and the close link. (BUILD-58 W-3)
 - **Compute setup-checklist items live from org data.** Only the dismissal is stored
-  (`orgs.setup_card_state`). The `team` item exists only on Team. (BUILD-35)
+  (`orgs.setup_card_state`). The `team` item is on every org now that there is one plan. (BUILD-35, FIX-32)
 - **Show a setting's payoff on one screen, or cut the setting from the UI** while keeping the data model.
   (BUILD-31)
 - **Make the first login a non-dead-end for every tier.** `tests/first-login-matrix.test.js` is a data

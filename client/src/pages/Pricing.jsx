@@ -70,68 +70,8 @@ const CAL = "https://calendly.com/xjca2006/new-meeting";
 
 const SERIF = "'DM Serif Display',Georgia,serif";
 
-// ── Live-billing plans (BUILD-24 cutover, superseded by GTM-1a) ────────────
-// CHECKOUT_PLANS and BILLING_PLANS below are LEGACY and are exported because
-// the in-app PlanPicker and the upgrade modal still read them for an org that
-// is on one of those prices today. Nothing on THIS page renders from them any
-// more. Do not add to them; add a band to pricing.json.
-export const CHECKOUT_PLANS = [
-  {
-    id: "core",
-    name: "Core",
-    price: 249,
-    tagline: "Everything a small shop needs.",
-    highlight: false,
-    features: [
-      "Full donor CRM + 0%-fee online giving",
-      "Receipts + year-end statements",
-      "Households, soft credit, planned-giving",
-      "Retention workflows + reports",
-    ],
-  },
-  {
-    id: "team",
-    name: "Team",
-    price: 499,
-    tagline: "For staffed development offices.",
-    highlight: true,
-    features: [
-      "Everything in Core",
-      "Moves management + prospect pipeline",
-      "Officer portfolios + per-officer reports",
-      "Solicitations report + multi-officer digests",
-    ],
-  },
-];
-
-// Legacy Stripe-wired set (seed/growth/impact) — retained for reference and any
-// pre-cutover org reactivating on its old price.
-export const BILLING_PLANS = [
-  {
-    id: "seed",
-    name: "Seed",
-    price: 99,
-    tagline: "For solo founders and tiny teams.",
-    features: ["1 user seat", "Up to 1,000 donor records", "Full platform, CRM, grants, finance, AI", "Email support"],
-    highlight: false,
-  },
-  {
-    id: "growth",
-    name: "Growth",
-    price: 249,
-    tagline: "For teams ready to grow.",
-    features: ["Up to 5 user seats", "Up to 10,000 donor records", "Everything in the platform, nothing locked", "Priority support"],
-    highlight: true,
-  },
-  {
-    id: "impact",
-    name: "Impact",
-    price: 499,
-    tagline: "For established orgs at scale.",
-    features: ["Unlimited user seats", "Unlimited donor records", "Everything in Growth", "Dedicated onboarding call"],
-    highlight: false,
-  },
-];
+// FIX-32: the retired Core/Team and Seed/Growth/Impact lists that lived
+// here are gone. pricing.json is the one price list; PlanPicker reads it too.
 
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 

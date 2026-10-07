@@ -769,6 +769,13 @@ app.get("/admin/billing-diagnostic", requireAuth, requireSuperAdmin, wrap(async 
   });
 }));
 
+// "Nov 6", in the org's zone. A malformed zone falls back, never throws.
+function shortChargeDate(at, tz) {
+  const opts = { month: "short", day: "numeric" };
+  try { return new Date(at).toLocaleDateString("en-US", { ...opts, timeZone: tz || "America/New_York" }); }
+  catch { return new Date(at).toLocaleDateString("en-US", { ...opts, timeZone: "America/New_York" }); }
+}
+
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const orgs = await query("SELECT plan, subscription_status, trial_ends_at, signed_at, stripe_customer_id, stripe_customer_id_test, stripe_subscription_id, grace_until, current_period_end, billing_card_brand, billing_card_last4 FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -777,6 +784,8 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
   const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
   const isTrial = (org.subscription_status || "trialing") === "trialing";
+  const trialCanceledNow = ["canceled", "cancelled"].includes(org.subscription_status || "")
+    && !!trialEndsAt && trialEndsAt.getTime() > Date.now();
   // BUILD-90 90b — Settings shows THE SAME DATE the reminder email shows and
   // the same one Checkout showed, because all three build the sentence from
   // this one field through closeLink.js. No phone call required to cancel:
@@ -821,6 +830,13 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     canCancel: !!org.stripe_subscription_id && !["canceled"].includes(org.subscription_status || ""),
     cardLast4: billingCardLast4(org),
     cardBrand: org.billing_card_brand || null,
+    // FIX-32: cancelled inside the free thirty days. The org keeps everything
+    // until the trial's own end date and is never charged; the one offer is
+    // "Keep Steward", a new Checkout on the same plan ending on the same date.
+    trialCanceled: trialCanceledNow,
+    trialCanceledSentence: trialCanceledNow
+      ? `Your trial ends ${shortChargeDate(trialEndsAt, tz)} and you won't be charged.`
+      : null,
   });
 }));
 
@@ -862,7 +878,17 @@ function handleBillingConfigError(err, res, { plan, surface } = {}) {
 }
 
 app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const { plan } = req.body;
+  let { plan } = req.body;
+  // FIX-32: "Keep Steward" after a cancel inside the trial: the plan is the
+  // one the org signed up for, read from its close link, never a choice. (A
+  // subscription that ended used to rewrite orgs.plan to 'core', so the org
+  // row alone cannot be trusted for an org that cancelled before this fix.)
+  if (req.body && req.body.keep === true) {
+    const [kept] = await query(
+      `SELECT o.plan, cl.plan AS link_plan FROM orgs o LEFT JOIN close_links cl ON cl.id = o.close_link_id WHERE o.id=?`,
+      [req.user.orgId]);
+    plan = (kept && (kept.link_plan || kept.plan)) || plan;
+  }
   // Live commercial model (BUILD-24). `founding` is the private $99 founding-
   // partner price — off-menu, super-admin only, never in the public UI. Legacy
   // seed/growth/impact stay mapped so a pre-cutover org can still reactivate on
@@ -1112,6 +1138,7 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   }
 
   const closeLinkId = "cl_" + uuid().slice(0, 8);
+  const signin = mintSigninKey();
   const params = checkoutSessionParams({
     plan, orgName, contactEmail, closeLinkId, priceId,
     // An org that already exists keeps the Stripe customer it already has, so
@@ -1119,16 +1146,19 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
     // link has neither yet and Checkout mints them.
     customerId: targetOrg ? (targetOrg.billing_customer_id || null) : null,
     targetOrgId: targetOrg ? targetOrg.id : null,
-    successUrl: publicAppUrl() + "/login?welcome=1",
+    // FIX-32: a NEW org's link lands her signed in. An existing org already
+    // has its admin and her password, so that link still lands on sign-in.
+    successUrl: targetOrg ? publicAppUrl() + "/login?welcome=1" : signinSuccessUrl(signin.key),
     cancelUrl: publicAppUrl() + "/pricing",
   });
 
   try {
     const session = await billingStripe.checkout.sessions.create(params);
     await run(
-      `INSERT INTO close_links (id, org_name, contact_email, plan, stripe_session_id, checkout_url, created_by, created_by_name, target_org_id)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
-      [closeLinkId, orgName, contactEmail, plan.id, session.id, session.url, req.user.userId, req.user.email, targetOrg ? targetOrg.id : null]
+      `INSERT INTO close_links (id, org_name, contact_email, plan, stripe_session_id, checkout_url, created_by, created_by_name, target_org_id, signin_key_hash)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [closeLinkId, orgName, contactEmail, plan.id, session.id, session.url, req.user.userId, req.user.email, targetOrg ? targetOrg.id : null,
+       targetOrg ? null : signin.hash]
     );
     console.log(`[close-link] ${closeLinkId} created for ${orgName} (${contactEmail}) on ${plan.id} by ${req.user.email}`
       + (targetOrg ? ` - EXISTING org ${targetOrg.id}` : ""));
@@ -1243,6 +1273,131 @@ app.get("/public/agreement", wrap(async (req, res) => {
   res.json({ version: agr.version, sha256: agr.sha256, markdown: agr.text });
 }));
 
+// ── FIX-32 · CHECKOUT SIGNS HER IN ─────────────────────────────────────────
+// After paying she used to land on /login with no password. Now the success
+// URL carries a one-time key (only its sha256 is stored). The page trades it,
+// together with Stripe's {CHECKOUT_SESSION_ID}, for a session. Neither half is
+// trusted alone: the key must hash to the close link's, the session id must be
+// that link's, Stripe must say the session is complete, and the key is spent
+// on first use and dies SIGNIN_KEY_HOURS after the link was made.
+const SIGNIN_KEY_HOURS = 24;
+function mintSigninKey() {
+  const key = crypto.randomBytes(24).toString("base64url");
+  return { key, hash: crypto.createHash("sha256").update(key).digest("hex") };
+}
+function signinSuccessUrl(key) {
+  // Stripe substitutes {CHECKOUT_SESSION_ID} itself; it must stay unencoded.
+  return publicAppUrl() + "/signed-up?session_id={CHECKOUT_SESSION_ID}&k=" + encodeURIComponent(key);
+}
+async function checkoutSigninLink(b) {
+  const sessionId = String(b.sessionId || "").trim(), key = String(b.key || "").trim();
+  if (!sessionId || !key) return null;
+  const hash = crypto.createHash("sha256").update(key).digest("hex");
+  const rows = await query(
+    `SELECT * FROM close_links WHERE stripe_session_id=? AND signin_key_hash=? AND target_org_id IS NULL
+        AND created_at > NOW() - (? * INTERVAL '1 hour')`, [sessionId, hash, SIGNIN_KEY_HOURS]);
+  return rows[0] || null;
+}
+const CHECKOUT_SIGNIN_BAD = { error: "signin_link_invalid",
+  message: "This sign-in link has expired or was already used. We can email you a fresh one." };
+
+// GET /public/checkout-signin: the prod smoke's read-only proof that the
+// route Checkout depends on is deployed (scripts/status.js). Says nothing else.
+app.get("/public/checkout-signin", (req, res) => res.json({ ok: true, route: "checkout-signin" }));
+
+// POST /public/checkout-signin { sessionId, key }
+//   200 { token, user, org }       signed in, once
+//   202 { status:"pending", orgName }  Stripe has the card, the org is still being made
+//   410 signin_link_invalid        wrong, expired or already spent
+app.post("/public/checkout-signin", registerLimiter, wrap(async (req, res) => {
+  const link = await checkoutSigninLink(req.body || {});
+  if (!link) return res.status(410).json(CHECKOUT_SIGNIN_BAD);
+  if (link.signin_used_at) return res.status(410).json({ ...CHECKOUT_SIGNIN_BAD, orgName: link.org_name });
+  if (!billingStripe) return res.status(503).json({ error: "stripe_not_configured", message: "Checkout is not available right now." });
+  // Stripe is the witness that this browser finished paying for THIS link.
+  let session;
+  try { session = await billingStripe.checkout.sessions.retrieve(link.stripe_session_id); }
+  catch (e) {
+    console.error("[checkout-signin] could not read the Checkout session:", e.message);
+    return res.status(202).json({ status: "pending", orgName: link.org_name });
+  }
+  if (!session || session.status !== "complete" || session.metadata?.closeLinkId !== link.id) {
+    return res.status(202).json({ status: "pending", orgName: link.org_name });
+  }
+  if (!link.org_id) return res.status(202).json({ status: "pending", orgName: link.org_name });
+  const users = await query(
+    `SELECT * FROM users WHERE org_id=? AND lower(email)=lower(btrim(?)) AND deactivated_at IS NULL`,
+    [link.org_id, link.contact_email]);
+  if (!users.length) return res.status(202).json({ status: "pending", orgName: link.org_name });
+  const user = users[0];
+  if (user.mfa_enabled_at || user.is_super_admin) {
+    // Never a way round two-step: that person signs in at the front door.
+    return res.status(410).json({ ...CHECKOUT_SIGNIN_BAD, orgName: link.org_name });
+  }
+  // Spent here, atomically: two tabs racing get one session between them.
+  const spent = await query(
+    `UPDATE close_links SET signin_used_at=NOW() WHERE id=? AND signin_used_at IS NULL RETURNING id`, [link.id]);
+  if (!spent.length) return res.status(410).json({ ...CHECKOUT_SIGNIN_BAD, orgName: link.org_name });
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [user.org_id]);
+  req.audit.org(user.org_id);
+  req.audit.actor({ kind: "user", id: user.id, name: user.name || user.email });
+  req.audit.entity("user", user.id, user.email);
+  req.audit.action("signed in after Checkout");
+  const { token } = await require("../twoFactor").issueSession(user, req, signToken);
+  res.json({
+    token,
+    user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin: false, mfaEnabled: false },
+    org: { ...org, onboarding_complete: org.onboarding_complete ?? 0 },
+  });
+}));
+
+// POST /public/checkout-signin/email { sessionId, key }: the fallback when the
+// page gave up waiting. Sends the same set-your-password link the welcome
+// email carries, to the address on the close link and nowhere else.
+app.post("/public/checkout-signin/email", passwordResetLimiter, wrap(async (req, res) => {
+  const link = await checkoutSigninLink(req.body || {});
+  if (!link) return res.status(410).json(CHECKOUT_SIGNIN_BAD);
+  const masked = String(link.contact_email).replace(/^(.).*(@.*)$/, "$1***$2");
+  if (!link.org_id) {
+    // The welcome email goes out the moment the org exists; nothing to add.
+    return res.json({ ok: true, sent: false, to: masked,
+      message: `We will email ${masked} a sign-in link as soon as ${link.org_name} is ready.` });
+  }
+  const [user] = await query(`SELECT id, email FROM users WHERE org_id=? AND lower(email)=lower(btrim(?))`,
+    [link.org_id, link.contact_email]);
+  if (!user) return res.json({ ok: true, sent: false, to: masked,
+    message: `We will email ${masked} a sign-in link as soon as ${link.org_name} is ready.` });
+  const mail = await sendSigninLinkEmail(user);
+  res.json({ ok: true, sent: mail.sent, to: masked,
+    message: mail.sent ? `We emailed a sign-in link to ${masked}.`
+      : `We could not send email just now. Use "Forgot password" on the sign-in page with ${masked}.` });
+}));
+
+async function sendSigninLinkEmail(user) {
+  const token = crypto.randomBytes(32).toString("hex");
+  await run(`INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '1 hour')`,
+    ["prt_" + uuid().slice(0, 8), user.id, token]);
+  const link = `${publicAppUrl()}/reset-password?token=${token}`;
+  if (!process.env.RESEND_API_KEY) {
+    console.error(`[checkout-signin] MAIL IS NOT CONFIGURED (RESEND_API_KEY unset): the sign-in link for ${user.email} was NOT sent.`);
+    return { sent: false };
+  }
+  try {
+    const { error } = await resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to: user.email,
+      subject: "Your Steward sign-in link",
+      html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">`
+        + `<p>Set your password to sign in to Steward. This link works for one hour.</p>`
+        + `<p><a href="${link}" style="color:#0D5C3A">Set your password</a></p></div>`,
+    });
+    if (error) throw new Error(error.message);
+    return { sent: true };
+  } catch (e) {
+    console.error("[checkout-signin] sign-in email failed:", e.message);
+    return { sent: false };
+  }
+}
+
 const SIGNUP_ACTOR_ID = "system:public-signup";
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -1342,9 +1497,13 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   }
 
   const closeLinkId = "cl_" + uuid().slice(0, 8);
+  // FIX-32: after Checkout she lands signed in, on onboarding. This used to
+  // be /login?welcome=1: she paid and was handed a password form for an
+  // account whose password she had never set.
+  const signin = mintSigninKey();
   const params = checkoutSessionParams({
     plan, orgName, contactEmail, closeLinkId, priceId,
-    successUrl: publicAppUrl() + "/login?welcome=1",
+    successUrl: signinSuccessUrl(signin.key),
     cancelUrl: publicAppUrl() + "/pricing",
   });
 
@@ -1358,10 +1517,10 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
 
   await run(
     `INSERT INTO close_links (id, org_name, contact_email, contact_name, plan, stripe_session_id, checkout_url,
-                              created_by, created_by_name, signup_source, estimated_donors, billing_interval)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+                              created_by, created_by_name, signup_source, estimated_donors, billing_interval, signin_key_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [closeLinkId, orgName, contactEmail, contactName, plan.id, session.id, session.url,
-     SIGNUP_ACTOR_ID, contactName, "public", estimate, interval]
+     SIGNUP_ACTOR_ID, contactName, "public", estimate, interval, signin.hash]
   );
 
   // The acceptance is written BEFORE the card, deliberately. She read the
@@ -1799,7 +1958,12 @@ async function cancelOrgSubscription(orgId) {
   try {
     if (isTrial) {
       await billingStripe.subscriptions.cancel(org.stripe_subscription_id);
-      await run("UPDATE orgs SET subscription_status='canceled', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+      // FIX-32: cancelling inside the free thirty days keeps everything open
+      // until the trial's own end date; the plan is left as chosen so "Keep
+      // Steward" can restore it.
+      await run(`UPDATE orgs SET subscription_status='canceled',
+                   grace_until=CASE WHEN trial_ends_at > NOW() THEN trial_ends_at ELSE NOW() + INTERVAL '3 days' END
+                 WHERE id=?`, [orgId]);
       console.log(`[billing] ${orgId} cancelled during trial — no charge was ever made`);
       return { ok: true, when: "now", freeOfCharge: true };
     }

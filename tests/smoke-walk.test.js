@@ -164,6 +164,99 @@ async function groupsAreQuick() {
   }
 }
 
+// FIX-32 · THE DEMO DOOR, AND SAMPLE DONORS ARE NOT AN IMPORT. On 7 Oct a
+// signup chose "Explore the demo" on the start page: 25 sample donors loaded
+// and the page never moved, because /dashboard bounces an org whose
+// onboarding is not complete back to /welcome. Going on to the import step
+// then said "25 donors, safely home", celebrating invented people as her file.
+//
+// HOW IT GOES RED: the demo door leaves onboarding incomplete, or the client
+// navigates before its auth context hears about it (§demo stays on /welcome);
+// the import step counts sample donors as imported (§sample shows "safely
+// home" and no "Import your real file"); a real import opens over the sample
+// without asking (§sample sees no confirm).
+// Proven red on main (e6d318b): see the FIX-32 PR.
+async function demoDoor(browser) {
+  const bcrypt = require("bcryptjs");
+  const { q } = require("./helpers");
+  const ORGS = ["org_fix32_demo", "org_fix32_sample"];
+  const wipe = async org => {
+    const tables = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='org_id' AND table_name <> 'orgs'`)).map(r => r.table_name);
+    for (let pass = 0; pass < 6; pass++) {
+      for (const t of tables) await q(`DELETE FROM "${t}" WHERE org_id=$1`, [org]).catch(() => {});
+      if (await q(`DELETE FROM orgs WHERE id=$1`, [org]).then(() => true).catch(() => false)) break;
+    }
+  };
+  // A fresh signup: trialing, onboarding NOT complete, one admin.
+  const fresh = async (org, email) => {
+    await wipe(org);
+    await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,trial_ends_at)
+             VALUES ($1,$2,$3,0,'trialing','t1000_monthly','America/New_York',NOW() + INTERVAL '30 days')`, [org, "Fix32 " + org, org.replace(/_/g, "-")]);
+    await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ($1,$2,$3,$4,'Sam Fix','admin')`,
+      ["u_" + org, org, email, bcrypt.hashSync("loadtest1234", 4)]);
+    const li = await api("POST", "/auth/login", null, { email, password: "loadtest1234" });
+    const tok = li.body && li.body.token;
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: "block" });
+    await ctx.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [tok, JSON.stringify(li.body.user || {}), JSON.stringify(li.body.org || {})]);
+    return { tok, ctx, page: await ctx.newPage() };
+  };
+  try {
+    // §demo — Explore the demo lands on Home with the sample in it.
+    {
+      const { tok, ctx, page } = await fresh(ORGS[0], "sam@fix32-demo.test");
+      await page.goto(`${APP}/welcome`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.locator('[data-testid="start-demo"]').click({ timeout: 15000 });
+      const landed = await page.waitForURL(u => /\/dashboard/.test(String(u)), { timeout: 30000 }).then(() => true).catch(() => false);
+      await page.waitForTimeout(1500);
+      const where = new URL(page.url()).pathname;
+      ok("§demo Explore the demo lands on Home, not back on the start page", landed && where === "/dashboard", where);
+      const st = await api("GET", "/org/sample-data-status", tok);
+      ok("§demo …with the 25 sample donors in it", st.body && st.body.sampleDonorCount === 25, st.body);
+      const [o] = await q(`SELECT onboarding_complete FROM orgs WHERE id=$1`, [ORGS[0]]);
+      ok("§demo …and onboarding reads complete, so a reload stays on Home", Number(o.onboarding_complete) === 1, o);
+      await ctx.close();
+    }
+    // §sample — sample donors loaded before the import step are not an import.
+    {
+      const { tok, ctx, page } = await fresh(ORGS[1], "sam@fix32-sample.test");
+      await api("POST", "/org/load-sample-data", tok, {});
+      // The state the 7 Oct signup reached: sample in, onboarding still open.
+      await q(`UPDATE orgs SET onboarding_complete=0 WHERE id=$1`, [ORGS[1]]);
+      await page.goto(`${APP}/welcome`, { waitUntil: "domcontentloaded", timeout: 45000 });
+      await page.locator('[data-testid="start-import"]').click({ timeout: 15000 });
+      await page.getByRole("button", { name: /Continue/ }).first().click({ timeout: 15000 });
+      // A plan that reads as Team puts "Invite your team" between basics and import.
+      const importStep = page.getByRole("heading", { name: "Import your donors" });
+      for (let i = 0; i < 20 && !(await importStep.count()); i++) {
+        const later = page.getByRole("button", { name: /invite them later/i });
+        if (await later.count()) await later.click();
+        await page.waitForTimeout(500);
+      }
+      await page.waitForTimeout(800);
+      const text = await page.evaluate(() => document.body.innerText || "");
+      ok("§sample the import step does not call sample donors safely home", !/safely home/i.test(text), text.slice(0, 300));
+      ok("§sample the import step says sample data is loaded and offers the real file",
+        /Sample data is loaded/i.test(text) && (await page.locator('[data-testid="import-real-file"]').count()) === 1, text.slice(0, 300));
+      if (await page.locator('[data-testid="import-real-file"]').count()) {
+        await page.locator('[data-testid="import-real-file"]').click();
+        const asked = await page.locator('[data-testid="confirm-clear-sample"]').waitFor({ timeout: 5000 }).then(() => true).catch(() => false);
+        const before = await api("GET", "/org/sample-data-status", tok);
+        ok("§sample importing the real file asks before clearing, and clears nothing until she confirms",
+          asked && before.body.sampleDonorCount === 25, { asked, before: before.body });
+        await page.locator('[data-testid="confirm-clear-sample-yes"]').click();
+        await page.waitForTimeout(2500);
+        const after = await api("GET", "/org/sample-data-status", tok);
+        ok("§sample confirming clears the sample", after.body && after.body.hasSampleData === false, after.body);
+      }
+      await ctx.close();
+    }
+  } finally {
+    for (const o of ORGS) await wipe(o);
+  }
+}
+
 (async () => {
   console.log("smoke-walk");
   const login = await api("POST", "/auth/login", null, DEMO);
@@ -459,6 +552,8 @@ async function groupsAreQuick() {
       await look("donor profile after a meeting delete and Undo");
     }
   }
+
+  await demoDoor(browser);
 
   await browser.close();
   await closeDb();

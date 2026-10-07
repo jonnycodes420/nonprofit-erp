@@ -187,6 +187,7 @@ jobs:
       STRIPE_PRICE_FOUNDING: price_test_founding
       STRIPE_PRICE_CORE: price_test_core
       STRIPE_PRICE_TEAM: price_test_team
+      STRIPE_PRICE_T1000_MONTHLY: price_test_t1000m   # FIX-32: J11 signs up through public signup
       FOUNDER_EMAIL: jonathan@stewardapp.dev   # From on the close-link welcome + the 7-day reminder
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.

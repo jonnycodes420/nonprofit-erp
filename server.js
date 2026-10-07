@@ -2952,51 +2952,42 @@ async function orgOwns(table, id, orgId) {
   return rows.length > 0;
 }
 
-// ── Plan tiers (BUILD-14, cutover BUILD-24) ────────────────────────────────
-// Steward's up-market features (officer portfolios, moves/major-gifts, per-
-// officer reports) gate to the "team" tier. Tier is DERIVED from the org's
-// plan + subscription. BUILD-24 made Core/Team first-class plan values (the
-// $249/$499 commercial model actually charged via Stripe); the legacy
-// seed/growth/impact enum is still recognized so pre-cutover orgs and any
-// in-flight subscription keep their tier without a destructive migration:
-//   team  = { team, growth, impact }  OR any live trial (full-feature trial)
-//   core  = { core, seed, founding }  OR lapsed/canceled (team features re-lock)
-// `founding` is the private $99 founding-partner price — a core-tier discount,
-// so it maps to core. See "Platform billing (BUILD-24)" in CLAUDE.md.
-// GTM-1a — EVERYTHING IS IN THE PLAN, so every tier plan is the top tier.
-// The tiers price on how many donors you work, not on which features you get,
-// and `orgPlanTier` is the gate that decides whether a surface opens. Reading
-// the ids from the catalogue rather than listing them means a fourth band
-// cannot ship half-locked.
-const TIER_PLAN_IDS = require("./closeLink").TIER_CLOSE_PLANS.map(p => p.id);
-const TEAM_PLANS = new Set(["team", "growth", "impact", "internal_test", ...TIER_PLAN_IDS]);
+// ── One plan, everything included (FIX-32) ──────────────────────────────
+// There used to be a Core tier and a Team tier, and `orgPlanTier` decided
+// which surfaces opened. GTM-1a made every price the same product, priced only
+// on how many donors you work, but the gate stayed: an org whose subscription
+// ended was rewritten to plan='core' and found its donor profile frosted over
+// with "Unlock with Team". There is one plan now, so every CRM org is the full
+// product whatever it pays and whatever its subscription is doing. Access to
+// WRITE is decided by `checkWriteAccess` (billing state), never by a tier.
+//
+// The value "team" is kept as the name of "the full CRM" because the officer
+// scoping below (portfolios, digests) reads it; it is no longer a price.
+// BUILD-46: the network Portal tier is a different product, not the CRM, and
+// stays its own tier.
 function orgPlanTier(org) {
-  // BUILD-46: the network Portal tier is its own tier and is NEVER
-  // trial-elevated — a network signup gets the portal product, not a free
-  // Team trial of the CRM. Checked before the trialing shortcut on purpose.
-  if (org.plan === "portal") return "portal";
-  if ((org.subscription_status || "trialing") === "trialing") return "team"; // full-feature trial
-  return TEAM_PLANS.has(org.plan) ? "team" : "core";
+  if (org && org.plan === "portal") return "portal";
+  return "team";
 }
-function requirePlan(tier) {
-  return async (req, res, next) => {
-    try {
-      const rows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [req.user.orgId]);
-      if (!rows.length) return res.status(404).json({ error: "Org not found" });
-      if (tier === "team" && orgPlanTier(rows[0]) !== "team") {
-        return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "Officer portfolios are available on the Team plan." });
-      }
-    } catch (e) { console.error("requirePlan error:", e); return res.status(500).json({ error: "server_error" }); }
-    next();
-  };
+// The one plan check left: a Portal-tier org has no CRM. Every other org has
+// every route. (Was requireCrm, which 403'd a Core org.)
+async function requireCrm(req, res, next) {
+  try {
+    const rows = await query("SELECT plan FROM orgs WHERE id=?", [req.user.orgId]);
+    if (!rows.length) return res.status(404).json({ error: "Org not found" });
+    if (orgPlanTier(rows[0]) === "portal") {
+      return res.status(403).json({ error: "crm_not_included", message: "The donor network plan does not include the CRM." });
+    }
+  } catch (e) { console.error("requireCrm error:", e); return res.status(500).json({ error: "server_error" }); }
+  next();
 }
 
 // ── BUILD-46 §3.1 — the Portal tier is NOT the CRM ─────────────────────────
 // A plan='portal' org gets: its donor portal, gift recording, receipts, and
 // impact updates. The CRM route families below are gated here with ONE
 // middleware (mounted before the routes) instead of touching ~40 route
-// definitions. Team-only surfaces are already excluded by requirePlan("team")
-// (orgPlanTier('portal') !== 'team'). The one carve-out: the basic
+// definitions. The pipeline and portfolio surfaces are already excluded by
+// requireCrm (orgPlanTier('portal') === 'portal'). The one carve-out: the basic
 // giving-summary report stays available ("no reports beyond basic giving").
 // Enforced-and-pinned by tests/network-gate.test.js.
 const PORTAL_TIER_BLOCKED_PREFIXES = [
@@ -8423,11 +8414,20 @@ async function processPledgeReminders() {
 }
 
 // ── Billing helpers ────────────────────────────────────────────────────────
+function trialCanceled(org) {
+  const status = org.subscription_status || "";
+  if (status !== "canceled" && status !== "cancelled") return false;
+  const end = org.trial_ends_at ? new Date(org.trial_ends_at).getTime() : null;
+  return !!end && end > Date.now();
+}
 function getOrgAccessState(org) {
   const status = org.subscription_status || "trialing";
   const now = Date.now();
   const graceUntil = org.grace_until ? new Date(org.grace_until).getTime() : null;
   if (status === "active" || status === "trialing") return "full";
+  // FIX-32: cancelled inside the free thirty days: nothing was charged and
+  // nothing is taken away until the trial's own end date.
+  if (trialCanceled(org)) return "full";
   if (status === "past_due" || status === "canceled" || status === "cancelled") {
     if (graceUntil && now < graceUntil) return "warning";
     return "read_only";
@@ -8438,7 +8438,7 @@ function getOrgAccessState(org) {
 
 async function checkWriteAccess(req, res, next) {
   try {
-    const orgs = await query("SELECT subscription_status, grace_until FROM orgs WHERE id=?", [req.user.orgId]);
+    const orgs = await query("SELECT subscription_status, grace_until, trial_ends_at FROM orgs WHERE id=?", [req.user.orgId]);
     if (orgs.length && getOrgAccessState(orgs[0]) === "read_only") {
       return res.status(402).json({ error: "subscription_required", message: "Your account is in read-only mode. Reactivate your subscription to make changes." });
     }
@@ -8811,14 +8811,16 @@ import("./shared/seats.js").then(m => {
 // on the pricing page — but NOT hard-enforced (see SOFT_BAND_PLANS below).
 // When bands are eventually enforced they must count ACTIVE donors (gave within
 // ~3 years), not every record, or the pricing page's claim becomes false.
+// FIX-32: unlimited users on every plan, including the trial and the legacy
+// Core/Team/founding prices. One plan; a seat count is not a gate.
 const PLAN_LIMITS = {
-  core:     { seats: 3,         records: 5000,      extraSeatPrice: null },
-  team:     { seats: 10,        records: 25000,     extraSeatPrice: null },
-  founding: { seats: 3,         records: 5000,      extraSeatPrice: null },
+  core:     { seats: SEATS_UNLIMITED, records: 5000,      extraSeatPrice: null },
+  team:     { seats: SEATS_UNLIMITED, records: 25000,     extraSeatPrice: null },
+  founding: { seats: SEATS_UNLIMITED, records: 5000,      extraSeatPrice: null },
   seed:     { seats: 1,         records: 1000,      extraSeatPrice: null },
   growth:   { seats: 5,         records: 10000,     extraSeatPrice: 25   },
   impact:   { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null },
-  trial:    { seats: 10,        records: 25000,     extraSeatPrice: null },
+  trial:    { seats: SEATS_UNLIMITED, records: 25000,     extraSeatPrice: null },
   portal:   { seats: 3,         records: 25000,     extraSeatPrice: null }, // BUILD-46 network tier (soft)
 };
 
@@ -8836,6 +8838,7 @@ PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraS
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
 // no pre-cutover org's behavior changes.
+const TIER_PLAN_IDS = require("./closeLink").TIER_CLOSE_PLANS.map(p => p.id);
 const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal", "internal_test", ...TIER_PLAN_IDS]);
 
 // Returns the limits actually in effect for an org, accounting for trial state
@@ -11043,7 +11046,7 @@ require("./routes/why").mount({
 });
 require("./routes/prospect").mount({ checkWriteAccess, query, requireAdmin, requireAuth, run, uuid, wrap });
 // GRANTS-1: one shared context for the four grant modules.
-const GRANTS1_CTX = { actor, checkWriteAccess, query, run, requireAdmin, requireAuth, requirePlan, uuid, wrap, orgTz, orgToday, orgTime,
+const GRANTS1_CTX = { actor, checkWriteAccess, query, run, requireAdmin, requireAuth, requireCrm, uuid, wrap, orgTz, orgToday, orgTime,
   grantMoneyRows, grantBalanceFrom, agentGate, withTransaction, testMode, putThemeAsset, recordAssetPointerHistory };
 require("./routes/grantSystem").mount(GRANTS1_CTX);
 require("./routes/grantLibrary").mount(GRANTS1_CTX);
@@ -11126,7 +11129,7 @@ require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
-  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
+  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requireCrm, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
   // HELP-1 — Ask Steward, the question log and support tickets.
   requireSuperAdmin, resend,
@@ -11191,7 +11194,7 @@ require("./routes/crm").mount({
   raiseGrantMilestone, rateLimitDisabled, rbCents, rbCentsEv, rbCustomDefs, rbFormatCell,
   recalcDonorSummary, recalcPledgePayment, recordAssetPointerHistory, recordAutoMove, recordGift,
   recordMove, registerForEvent, renderReceiptPdf, renewMembership, reportCurrentYear,
-  reportYearBounds, requireAdmin, requireAuth, requirePlan, resend, resolveCampaignRecipients, campaignAudience,
+  reportYearBounds, requireAdmin, requireAuth, requireCrm, resend, resolveCampaignRecipients, campaignAudience,
   resolveOrgBrandTheme, resolvePdfLogo, resolveWidgetsPublic, restrictedMod, round2, run,
   runBuilderDef, runCampaignSend, runDailyTaskRemindersForOrg, runDigestsForOrg,
   runSavedReportScheduleForOrg, runStepRemindersForOrg, runThreadNudgesForOrg, runTx, sampleDataMod,

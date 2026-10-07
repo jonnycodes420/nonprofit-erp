@@ -46,7 +46,7 @@ export const ROUTES = [
 
   // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
-  // UpgradeModal, goToPricing() and Settings is unchanged.
+  // UpgradeModal and Settings is unchanged.
   { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Everything is included and nothing is sold separately. No platform fee on gifts, your whole team, thirty days free, then month to month." },
 
   { path: "/why", page: "why", title: T("Imagine never losing track of a single person who believes in what you do."), description: VISION },

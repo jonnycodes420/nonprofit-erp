@@ -1,7 +1,7 @@
 import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
-import { T, activeMark, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal, LockGlyph } from "./shared";
+import { T, activeMark, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { MembersView } from "./Memberships";
@@ -19,7 +19,6 @@ import { PeerToPeerView } from "./PeerToPeer";
 import { AuctionsView } from "./Auctions";
 import { StartedNotFinished } from "./StartedNotFinished";
 import { HowDidItDo } from "./HowDidItDo";
-import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { useLocation } from "react-router-dom";
@@ -38,7 +37,6 @@ const fundHref = id => tabHref("finance", { subtab: "funds", fundId: id });
 // gold = on-track/primary, terracotta = behind, greens = neutral/positive.
 
 // The Team plan's padlock, the one the sidebar used for the Pipeline.
-const lockIcon = color => LockGlyph({ size: 10, color });
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
@@ -91,7 +89,7 @@ const SOURCE_BADGE = {
 };
 
 
-export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope, isCoreTier }) {
+export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, initialSection, initialScope }) {
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
   // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
   // on mount only, navNonce remounts like the other intent tabs.
@@ -154,10 +152,6 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
     campaigns: campaigns.length || undefined,
     pages: pages.filter(p => p.status === "active").length || undefined,
   };
-  // The Team gate that marked the sidebar's Pipeline item (TEAM_GATED) marks
-  // the Pipeline part now; the board itself still renders the server's locked
-  // preview for Core, exactly as it did as a tab.
-  const lockedPart = p => !!(p.teamGated && TEAM_GATED.has("pipeline") && isCoreTier);
 
 
   const roTip = isReadOnly ? "Reactivate your subscription to make changes." : undefined;
@@ -197,7 +191,6 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.ink3, border: "none", borderRadius: "6px 6px 0 0", padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...activeMark(on, "bottom") }}>
                 {p.label}
                 {PART_BADGE[p.id] != null && <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>{PART_BADGE[p.id]}</span>}
-                {lockedPart(p) && <span title="Team plan" style={{ display: "inline-flex" }}>{lockIcon(on ? T.ink : T.ink3)}</span>}
               </button>
             );
           })}
@@ -218,7 +211,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
         <>
           <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
             onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} onOpenCampaign={openCampaign} />
-          {fundraisingIndex(setSubtab, isCoreTier)}
+          {fundraisingIndex(setSubtab)}
         </>
       )}
 
@@ -322,7 +315,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
 // The four tabs replaced fourteen. Somebody who learned the old tabs can still
 // find each one by the name it had, one click from the Overview: every part of
 // every section, under the question it answers. Names and links, no figures.
-function fundraisingIndex(onGoto, isCoreTier) {
+function fundraisingIndex(onGoto) {
   return (
     <div data-fr-index="" style={{ marginTop: 26, borderTop: "1px solid " + T.bg3, paddingTop: 16 }}>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 12 }}>Everything in Fundraising</div>
@@ -334,7 +327,7 @@ function fundraisingIndex(onGoto, isCoreTier) {
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {s.parts.map(p => (
                 <button key={p.id} onClick={() => onGoto(p.id)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: "3px 8px 3px 0", fontSize: 12.5, fontWeight: 600, color: T.greenMid, cursor: "pointer" }}>{p.label}{p.teamGated && TEAM_GATED.has("pipeline") && isCoreTier && lockIcon(T.ink3)}</button>
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: "3px 8px 3px 0", fontSize: 12.5, fontWeight: 600, color: T.greenMid, cursor: "pointer" }}>{p.label}</button>
               ))}
             </div>
           </div>
