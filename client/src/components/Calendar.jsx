@@ -20,7 +20,7 @@ import { DonorLink, RecordLink } from "./RecordLink";
 import { AskBox } from "./AskPanel";
 import { ShiftEditor } from "./VolunteerSchedule";
 import { errorMessage } from "../lib/domainError";
-import { tabHref } from "../lib/appUrls";
+import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
@@ -107,7 +107,9 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
   // The first read learns the org's today and default types.
   useEffect(() => {
     apiFetch(`/calendar/items?from=2000-01-01&to=2000-01-01`).then(d => {
-      setAnchor(d.today); setTypes(loadTypes(d.defaultOn));
+      // SEARCH-2: ⌘K opens the calendar on a meeting's day (?day=YYYY-MM-DD).
+      const asked = urlParam("calendar", "day");
+      setAnchor(/^\d{4}-\d{2}-\d{2}$/.test(asked || "") ? asked : d.today); setTypes(loadTypes(d.defaultOn));
     }).catch(() => { const t = new Date().toISOString().slice(0, 10); setAnchor(t); setTypes(loadTypes(["meeting", "step", "deadline", "shift", "event", "journey", "send", "pledge"])); });
   }, []);
   useEffect(() => { load(); }, [load]);

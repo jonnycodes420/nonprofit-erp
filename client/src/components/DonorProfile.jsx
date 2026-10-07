@@ -1838,11 +1838,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   };
   // FIX-14 Part 3 (from Part 5) — /donors/<id>#gift-<gid> scrolls to that gift
   // and marks it; a gift older than the timeline's first page opens Gifts.
+  // SEARCH-2: the same for a pledge (#pledge-), a monthly plan (#plan-) and a
+  // timeline entry (#item-: a note, an email, a logged meeting), and #gifts
+  // opens the Gifts tab. Each names the tab its row lives on; the tab opens
+  // first, then the row is found, scrolled to and marked.
   useEffect(()=>{
-    const h=typeof window!=="undefined"?window.location.hash:"";
-    if(!/^#gift-/.test(h)||!giftsFull.length)return undefined;
-    const el=document.getElementById(h.slice(1));
-    if(!el){ if(dpTab==="overview"&&giftsFull.some(g=>"gift-"+g.id===h.slice(1)))setDpTab("gifts"); return undefined; }
+    const h=typeof window!=="undefined"?decodeURIComponent(window.location.hash.slice(1)):"";
+    const m=h.match(/^(gift|pledge|plan|item)-(.+)$/);
+    if(!m&&h!=="gifts")return undefined;
+    const wantTab=m&&m[1]==="item"?"activity":"gifts";
+    if(m&&m[1]==="gift"&&!giftsFull.length)return undefined;
+    const el=m?document.getElementById(h):null;
+    if(!el){
+      if(dpTab!==wantTab&&(dpTab==="overview"||h==="gifts"))setDpTab(wantTab);
+      if(wantTab==="activity"){ if(actMode!=="log")setActMode("log"); if(actFilter!=="all")setActFilter("all"); }
+      return undefined;
+    }
     if(el.dataset.marked)return undefined;
     el.dataset.marked="1";
     el.scrollIntoView({block:"center",behavior:"smooth"});
@@ -1850,7 +1861,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     const t=setTimeout(()=>{el.style.outline="";el.style.outlineOffset="";},4000);
     return ()=>clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[giftsFull,dpTab,rel]);
+  },[giftsFull,dpTab,rel,pledges,recurringSub,actMode,localInts]);
   const openForNextMove=useMemo(()=>{
     const today=new Date();
     const steps=dpItems.map(it=>({
@@ -2688,7 +2699,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               const meta=RS_META[recurringSub.status]||{label:recurringSub.status,color:T.ink3};
               const atRisk=["past_due","recovering"].includes(recurringSub.status);
               return(
-                <div style={{background:T.white,border:"1px solid "+meta.color+"30",borderLeft:"3px solid "+meta.color,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div id={`plan-${recurringSub.id}`} style={{background:T.white,border:"1px solid "+meta.color+"30",borderLeft:"3px solid "+meta.color,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                     <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800}}>{meta.label}</span>
                     <span style={{fontSize:12,color:T.ink3}}>
@@ -2894,7 +2905,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     const isOverdue=pl.status==="open"&&pl.first_overdue_at;
                     const daysOver=isOverdue?daysDiff(pl.due_date):null;
                     return(
-                      <div key={pl.id} style={{background:T.white,border:`1px solid ${isOverdue?T.terracotta+"40":T.bg3}`,borderLeft:`3px solid ${isOverdue?T.terracotta:meta.color}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                      <div key={pl.id} id={`pledge-${pl.id}`} style={{background:T.white,border:`1px solid ${isOverdue?T.terracotta+"40":T.bg3}`,borderLeft:`3px solid ${isOverdue?T.terracotta:meta.color}`,borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
                         <div>
                           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                             <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(pl.amount)}</span>
@@ -3191,7 +3202,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   // of the amount; the money is read off the gift itself.
                   const linkedGift=i.gift_id?giftsFull.find(g=>g.id===i.gift_id):null;
                   const typeColor={call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700,material:T.ink3}[i.type]||T.ink3;
-                  return(<div key={i.id||i.date} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                  return(<div key={i.id||i.date} id={i.id?`item-${i.id}`:undefined} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
                     <div style={{fontSize:16,flexShrink:0,marginTop:1,color:typeColor}}>{typeIcon}</div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>

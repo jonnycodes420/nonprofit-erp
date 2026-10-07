@@ -6331,6 +6331,13 @@ async function runSchemaInit(pool) {
   // the external or Stripe id. A cheque number is how a bookkeeper ties a row
   // to a bank statement, so it is a field.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS check_number TEXT`);
+  // SEARCH-2 · ⌘K finds a gift by its exact amount ("$500") or cheque number
+  // ("1053"), and an email or note by its type, newest first. Each is an exact
+  // match inside one org, so each gets the index that keeps it from reading
+  // the org's whole gift list or timeline as an org grows.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_amount ON gifts (org_id, amount)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_check ON gifts (org_id, check_number) WHERE check_number IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_type_date ON interactions (org_id, type, date DESC)`);
 
   // WHICH DEPOSIT THIS GIFT ARRIVED IN. `deposited_on` is the day the money
   // reached the bank (the deposit sheet's date, or a payout's arrival date);

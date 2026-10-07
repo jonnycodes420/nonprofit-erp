@@ -45,7 +45,15 @@ const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();
 // WIRE-1 · WHAT EACH KIND OF RESULT SAYS AND WHERE IT OPENS. The group name,
 // the second line, and the screen (a tab and its options, the same ones the
 // rest of the app navigates with). Order here is the order on screen.
+// SEARCH-2: `key` is the server's name for the kind ("see all" asks for it).
+const fmtCents = n => { const v=Number(n)||0; return "$"+(Number.isInteger(v)?v.toLocaleString():v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})); };
+const shortDay = iso => { if(!iso) return null; const d=new Date(iso+"T12:00:00"); return isNaN(d)?iso:d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"}); };
 const SEARCH_KINDS = [
+  // SEARCH-2: "Rafael gift" is the person, opened on their gifts.
+  { kind:"personGifts", key:"personGifts", group:"Their gifts", row:d=>({ title:d.title+"’s gifts",
+      sub:d.totalGiving?fmtMoney(d.totalGiving)+" lifetime":"Gifts and pledges",
+      personId:d.id, personName:d.title, personKind:d.personKind||null,
+      tab:"donors", opts:{selectDonorId:d.id, anchor:"gifts"} }) },
   { kind:"person", group:"People", row:d=>({
       sub:[d.organization?"Organization":typeLabels(d).join(" · "), d.contactName?"Contact "+d.contactName:null,
            d.email||d.phone||(personIsDonor(d)?fmtMoney(d.totalGiving)+" lifetime":null)].filter(Boolean).join(" · "),
@@ -70,15 +78,44 @@ const SEARCH_KINDS = [
   { kind:"boardFile", group:"Saved reports", row:b=>({ sub:["Past board report",b.period].filter(Boolean).join(" · "), tab:"reports", opts:{report:"board-files"} }) },
   { kind:"document", group:"Documents", row:f=>({ sub:f.donorName, tab:"donors", opts:{selectDonorId:f.donorId} }) },
   { kind:"grantDocument", group:"Documents", row:f=>({ sub:f.funder, tab:"grants", opts:{grantId:f.grantId} }) },
+  // SEARCH-2: the records that hang off a person open on that person's
+  // profile, on their own row (the profile reads the #anchor).
+  { kind:"gift", key:"gifts", group:"Gifts", row:g=>({ title:fmtCents(g.amount)+" from "+g.title,
+      sub:[shortDay(g.date), g.checkNumber?"cheque "+g.checkNumber:g.method].filter(Boolean).join(" · "),
+      tab:"donors", opts:{selectDonorId:g.donorId, anchor:"gift-"+g.id} }) },
+  { kind:"plan", key:"plans", group:"Monthly plans", row:r=>({ title:fmtCents(r.amount)+(r.interval==="year"?" a year":" a month")+" from "+r.title,
+      sub:{active:"Active",past_due:"Payment failed",recovering:"Recovering",recovered:"Card fixed",paused:"Paused",canceled:"Canceled"}[r.status]||r.status||"",
+      tab:"donors", opts:{selectDonorId:r.donorId, anchor:"plan-"+r.id} }) },
+  { kind:"pledge", key:"pledges", group:"Pledges", row:p=>({ title:fmtCents(p.amount)+" pledged by "+p.title,
+      sub:[p.status==="open"?"Open":p.status==="fulfilled"?"Fulfilled":p.status==="written_off"?"Written off":p.status, p.due?"due "+shortDay(p.due):null].filter(Boolean).join(" · "),
+      tab:"donors", opts:{selectDonorId:p.donorId, anchor:"pledge-"+p.id} }) },
+  { kind:"journey", key:"journeys", group:"Journeys", row:j=>({ sub:[`${j.steps} ${j.steps===1?"step":"steps"}`, j.on?"On":null].filter(Boolean).join(" · "),
+      tab:"journeys", opts:{journeyId:j.id} }) },
+  { kind:"meeting", key:"meetings", group:"Meetings", row:m=>({ sub:[m.donorName, shortDay(m.date), m.location].filter(Boolean).join(" · "),
+      ...(m.logged ? { tab:"donors", opts:{selectDonorId:m.donorId, anchor:"item-"+m.id} } : { tab:"calendar", opts:{day:m.date} }) }) },
+  { kind:"email", key:"emails", group:"Emails", row:e=>({ sub:[e.from?"from "+e.from:null, e.from!==e.donorName?e.donorName:null, shortDay(e.date)].filter(Boolean).join(" · "),
+      tab:"donors", opts:{selectDonorId:e.donorId, anchor:"item-"+e.id} }) },
+  { kind:"note", key:"notes", group:"Notes", row:n=>({ sub:[n.donorName, shortDay(n.date)].filter(Boolean).join(" · "),
+      tab:"donors", opts:{selectDonorId:n.donorId, anchor:"item-"+n.id} }) },
+  { kind:"import", key:"imports", group:"Imports", row:i=>({ sub:[shortDay(i.date), `${i.rows} ${i.rows===1?"row":"rows"}`, i.undone?"Undone":null].filter(Boolean).join(" · "),
+      tab:"settings", opts:{section:"imports", importId:i.id} }) },
 ];
+// The server's names for each kind, so "See all" on a group asks for its kinds.
+const SERVER_KEY = { person:"people", household:"households", campaign:"campaigns", event:"events", page:"pages",
+  p2p:"p2p", grant:"grants", auction:"auctions", level:"levels", task:"tasks", report:"reports", dashboard:"dashboards",
+  boardFile:"boardFiles", document:"files", grantDocument:"grantFiles" };
+const serverKey = k => k.key || SERVER_KEY[k.kind];
+const GROUP_TOP = 3;
 
 // FIX-26: THE ONE SEARCH, for the desktop bar and the phone header alike. It
 // was written inside TopBar, which a phone never shows, so on a phone nothing
 // could be searched for and Auctions, Peer-to-peer and Memberships could not
 // be found. Same server search, same quick-nav list, same rows.
-function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search people, events, grants… ⌘K" }) {
+function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search people, gifts, notes, meetings… ⌘K" }) {
   const [q,setQ] = useState("");
-  const [results,setResults] = useState(null);   // {donors:[], grants:[]} | null
+  const [results,setResults] = useState(null);   // [{kind,id,title,…}] | null
+  const [more,setMore] = useState({});           // server kind -> it has more than it sent
+  const [expanded,setExpanded] = useState(null);  // { group, results } once "See all" is picked
   const [open,setOpen] = useState(false);
   const [sel,setSel] = useState(0);
   const rootRef = useRef(null);
@@ -101,8 +138,9 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
         const r = await apiFetch(`/search?q=${encodeURIComponent(term)}`);
         if (seq !== seqRef.current) return; // stale response — a newer query is in flight
         setResults(Array.isArray(r?.results) ? r.results : []);
+        setMore(r?.more || {}); setExpanded(null);
         setSel(0);
-      } catch { if (seq === seqRef.current) setResults([]); }
+      } catch { if (seq === seqRef.current) { setResults([]); setMore({}); setExpanded(null); } }
     }, 220);
     return ()=>clearTimeout(t);
   },[q]);
@@ -113,8 +151,22 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     return QUICK_NAV.filter(a=>a.keywords.includes(term)||a.label.toLowerCase().includes(term));
   },[q]);
 
+  // SEARCH-2: "See all" on a group: the same search, only that group's kinds,
+  // up to fifty of each. The group grows in place; the rest stay as they were.
+  const seeAll = async group => {
+    const keys = SEARCH_KINDS.filter(k=>k.group===group).map(serverKey);
+    const term = q.trim(); const seq = seqRef.current;
+    try {
+      const r = await apiFetch(`/search?q=${encodeURIComponent(term)}&kinds=${keys.join(",")}`);
+      if (seq !== seqRef.current) return;
+      setExpanded({ group, results: Array.isArray(r?.results) ? r.results : [] });
+    } catch { /* the top three stay */ }
+    inputRef.current?.focus();
+  };
+
   const pick = item => {
-    setOpen(false); setQ(""); setResults(null);
+    if (item.seeAll) { seeAll(item.seeAll); return; }
+    setOpen(false); setQ(""); setResults(null); setExpanded(null);
     inputRef.current?.blur();
     item.onSelect();
     if (onPicked) onPicked();
@@ -126,21 +178,33 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     const out = [];
     // WIRE-1: each result is a row in its kind's group, in SEARCH_KINDS
     // order, and opens the screen that kind lives on.
+    // SEARCH-2: three to a group, then "See all" when it holds more.
     const byKind = {};
     (results||[]).forEach(r=>{ (byKind[r.kind] = byKind[r.kind] || []).push(r); });
-    SEARCH_KINDS.forEach(k=>{
-      (byKind[k.kind]||[]).forEach(r=>{
+    const exp = {};
+    (expanded?.results||[]).forEach(r=>{ (exp[r.kind] = exp[r.kind] || []).push(r); });
+    const groupNames = [];
+    SEARCH_KINDS.forEach(k=>{ if (!groupNames.includes(k.group)) groupNames.push(k.group); });
+    groupNames.forEach(g=>{
+      const kinds = SEARCH_KINDS.filter(k=>k.group===g);
+      const all = expanded?.group===g;
+      const rows = [];
+      kinds.forEach(k=>(((all?exp:byKind)[k.kind])||[]).forEach(r=>{
         const row = k.row(r);
-        out.push({ group:k.group, key:k.kind+"_"+r.id, title:r.title, ...row,
+        rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, ...row,
           onSelect:()=>onNavigate(row.tab,row.opts), href:row.link===false?undefined:tabHref(row.tab,row.opts) });
-      });
+      }));
+      const shown = all ? rows : rows.slice(0, GROUP_TOP);
+      out.push(...shown);
+      const hasMore = !all && (rows.length > GROUP_TOP || kinds.some(k=>more[serverKey(k)]));
+      if (hasMore) out.push({ group:g, key:"seeall_"+g, title:"See all "+g.toLowerCase(), seeAll:g, isSeeAll:true });
     });
     navMatches.forEach(a=>out.push({
       group:"Go to", key:a.id, title:a.label, sub:a.hint,
       onSelect:()=>a.go(onNavigate),
     }));
     return out;
-  },[results,navMatches,onNavigate]);
+  },[results,more,expanded,navMatches,onNavigate]);
 
   const showDrop = open && q.trim().length>0 && (flat.length>0 || (q.trim().length>=2 && results!==null));
 
@@ -198,7 +262,7 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
                 {item.personId && <PersonMark id={item.personId} name={item.personName} kind={item.personKind} size={22}/>}
                 <div style={{minWidth:0,flex:1}}>
                   <div style={{fontSize:13,fontWeight:600,color:T.inkInverse,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</span>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",...(item.isSeeAll?{color:T.gold,fontWeight:700,fontSize:12}:{})}} {...(item.isSeeAll?{"data-testid":"search-see-all"}:{})}>{item.title}</span>
                     <DriftBadge drift={item.drift}/>
                   </div>
                   {item.sub && <div style={{fontSize:11.5,color:"rgba(240,237,230,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}
@@ -224,7 +288,7 @@ export function MobileSearch({ onNavigate }) {
       onKeyDown={e=>{ if (e.key==="Escape") setOn(false); }}
       style={{position:"fixed",top:0,left:0,right:0,zIndex:300,background:T.ink,borderBottom:"1px solid "+T.bgElevated,padding:"calc(8px + env(safe-area-inset-top,0px)) 12px 8px",display:"flex",gap:8,alignItems:"flex-start",boxSizing:"border-box"}}>
       <GlobalSearch onNavigate={onNavigate} inputRef={inputRef} autoFocus onPicked={()=>setOn(false)}
-        placeholder="Search people, grants, pages"
+        placeholder="Search people, gifts, notes"
         style={{position:"relative",flex:1,minWidth:0}}/>
       <button type="button" onClick={()=>setOn(false)}
         style={{background:"transparent",border:"none",color:T.inkInverse,fontSize:13,fontWeight:600,padding:"8px 4px",cursor:"pointer",flexShrink:0}}>Cancel</button>

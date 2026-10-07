@@ -175,6 +175,7 @@ CORE=(
   fix12-recipe-drafts
   fix11-inbound-resend
   wire-journey
+  search2-everything
   int5-api-keys
   script-guards
   fix15-two-worktrees

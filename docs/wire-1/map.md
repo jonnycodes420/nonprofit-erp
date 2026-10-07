@@ -38,6 +38,11 @@ when the place does not apply (a note has no date, a report has no merge).
 | **all 253 cells (31 n/a)** | **67** | **138** | **98** | **67** | **57** | **17** |
 
 The map is generated from `map.json` (`before` and `after`), so the counts are counted, not typed.
+
+**SEARCH-2 (6 Oct 2026)** wired the eight ⌘K cells left missing: gift, recurring plan, pledge, journey
+step, meeting, email, note and import. The ⌘K column went from 14 wired, 1 partly, 8 missing to 22 wired,
+1 partly, 0 missing; all cells from 138 / 67 / 17 to 146 / 67 / 9. The one partly cell left is volunteer
+shifts (volunteers are found as people; shifts are not). The After section below is the state after SEARCH-2.
 After was re-walked on 6 Oct against the merged branch: the four builders' API checks on their own seeded
 Harborlight copies, `tests/wire-journey.test.js` (63 checks, one person and one funder through every
 column), and the Muse walk below. Every cell still partly or missing names its reason and the build it
@@ -62,9 +67,9 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | person | W | P | W | W | W | W | W | W | · | W | W |
 | household | W | · | · | W | W | M | M | W | · | P | W |
 | organization / funder | W | W | · | W | W | P | P | W | · | W | W |
-| gift | W | W | · | M | W | W | W | W | P | W | W |
-| recurring plan | W | W | M | M | P | P | W | P | W | P | P |
-| pledge | W | W | W | M | W | P | W | P | W | W | W |
+| gift | W | W | · | W | W | W | W | W | P | W | W |
+| recurring plan | W | W | M | W | P | P | W | P | W | P | P |
+| pledge | W | W | W | W | W | P | W | P | W | W | W |
 | campaign | W | W | P | W | W | W | W | P | · | W | W |
 | appeal | P | P | P | W | W | W | W | P | · | W | W |
 | giving page | P | P | W | W | W | P | M | P | · | W | W |
@@ -74,13 +79,13 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | membership | W | W | W | W | W | P | P | P | W | P | W |
 | grant | W | W | W | W | W | P | W | P | P | W | W |
 | volunteer shift and hours | W | P | P | P | W | P | P | W | W | W | W |
-| journey step | W | W | W | M | W | W | P | W | W | · | W |
+| journey step | W | W | W | W | W | W | P | W | W | · | W |
 | task / next step | P | P | P | W | W | P | P | W | W | · | W |
-| meeting | W | W | W | M | P | · | W | P | · | P | W |
-| email | W | W | · | M | M | M | P | P | M | W | W |
-| note | W | W | · | M | · | · | W | W | · | W | W |
+| meeting | W | W | W | W | P | · | W | P | · | P | W |
+| email | W | W | · | W | M | M | P | P | M | W | W |
+| note | W | W | · | W | · | · | W | W | · | W | W |
 | document | P | W | · | W | · | · | · | P | · | P | P |
-| import | P | P | · | M | W | P | P | M | W | W | W |
+| import | P | P | · | W | W | P | P | M | W | W | W |
 | report | · | · | · | W | P | · | P | P | · | W | · |
 
 **Counts per column** (W wired · P partly · M missing · n/a)
@@ -90,7 +95,7 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | Timeline | 16 | 6 | 0 | 1 |
 | Org / funder record | 14 | 7 | 0 | 2 |
 | Calendar + sync | 9 | 5 | 1 | 8 |
-| ⌘K | 14 | 1 | 8 | 0 |
+| ⌘K | 22 | 1 | 0 | 0 |
 | Groups / Show me | 17 | 3 | 1 | 2 |
 | Journeys / Comms | 5 | 12 | 2 | 4 |
 | Reports, opens rows | 11 | 9 | 2 | 1 |
@@ -98,7 +103,7 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | Home / Thread | 9 | 2 | 2 | 10 |
 | Import / export | 14 | 7 | 0 | 2 |
 | Merge / delete / undo | 20 | 2 | 0 | 1 |
-| **all** | **138** | **67** | **17** | **31** |
+| **all** | **146** | **67** | **9** | **31** |
 
 **Every partly and missing cell, with what is wrong**
 
@@ -108,16 +113,13 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **household × Import / export** (partly): import stamps external_household_id but does not create households. Next: IMPORT-HOUSEHOLDS
 - **organization / funder × Journeys / Comms** (partly): a Group of organisations or funders can feed a Communication or Journey; no trigger of its own. Next: COMMS-3
 - **organization / funder × Reports, opens rows** (partly): funder grant figures only; no organisations figure. Next: REPORTS-4
-- **gift × ⌘K** (missing): gifts are not searched by text (amount, cheque number); the donor is. Next: SEARCH-2
 - **gift × Home / Thread** (partly): a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-3
 - **recurring plan × Calendar + sync** (missing): the next charge date is not on the calendar: 72 monthly plans would bury the month. Next: decide with Jonathan
-- **recurring plan × ⌘K** (missing): plans are not searched; the person is. Next: SEARCH-2
 - **recurring plan × Groups / Show me** (partly): any-active recurring rule now, one shared status list; no failed-plan rule yet. Next: GROUPS-2
 - **recurring plan × Journeys / Comms** (partly): first_recurring triggers; a failed or cancelled plan does not. Next: JOURNEYS-3
 - **recurring plan × Ask + Agent** (partly): Ask sees plans; the Agent cannot. Next: AGENT-3
 - **recurring plan × Import / export** (partly): an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING
 - **recurring plan × Merge / delete / undo** (partly): soft-deleting a person does not stop their Stripe plan; it needs a human decision on what deleting a giver means. Next: RECURRING-DELETE
-- **pledge × ⌘K** (missing): pledges are not searched; the person is. Next: SEARCH-2
 - **pledge × Journeys / Comms** (partly): a Group with an open pledge feeds a Communication or Journey; no pledge trigger. Next: JOURNEYS-3
 - **pledge × Ask + Agent** (partly): Ask has a pledges entity; the Agent may not create one by design and cannot read them. Next: AGENT-3
 - **campaign × Calendar + sync** (partly): end dates are on it; start dates are not. Next: CAL-2
@@ -154,31 +156,26 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **volunteer shift and hours × ⌘K** (partly): volunteers are found as people; shifts are not. Next: SEARCH-2
 - **volunteer shift and hours × Journeys / Comms** (partly): new_volunteer triggers; an hours milestone does not. Next: JOURNEYS-3
 - **volunteer shift and hours × Reports, opens rows** (partly): a volunteer coordinator gets 403 on /figures, so their hour figures do not open. Next: VOL-3
-- **journey step × ⌘K** (missing): journeys are not searched. Next: SEARCH-2
 - **journey step × Reports, opens rows** (partly): journey rows open through a private endpoint. Next: REPORTS-4
 - **task / next step × Timeline** (partly): tasks show; an open Thread step does not, and a dismissal writes nothing. Next: PROFILE-2
 - **task / next step × Org / funder record** (partly): as timeline
 - **task / next step × Calendar + sync** (partly): on it; pushed only when someone owns it. Next: CAL-2
 - **task / next step × Journeys / Comms** (partly): a Group with open tasks feeds a Communication or Journey; no trigger. Next: JOURNEYS-3
 - **task / next step × Reports, opens rows** (partly): tasks have no figure source. Next: REPORTS-4
-- **meeting × ⌘K** (missing): meetings are not searched. Next: SEARCH-2
 - **meeting × Groups / Show me** (partly): counts toward no-contact-since only. Next: GROUPS-2
 - **meeting × Ask + Agent** (partly): Ask's conversations leave out calendar meetings (the person answer counts them). Next: ASK-5
 - **meeting × Import / export** (partly): calendar_events is not in the CSV export. Next: EXPORT-2
-- **email × ⌘K** (missing): emails are not searched. Next: SEARCH-2
 - **email × Groups / Show me** (missing): no opened or clicked rule. Next: GROUPS-2
 - **email × Journeys / Comms** (missing): no email-opened trigger. Next: JOURNEYS-3
 - **email × Reports, opens rows** (partly): bulk email stats are computed in the browser. Next: REPORTS-4
 - **email × Ask + Agent** (partly): as conversations. Next: ASK-5
 - **email × Home / Thread** (missing): a donor's email that needs a reply opens no step: the mailbox reads only what matches a person, and deciding 'needs a reply' wants care. Next: MAIL-2
-- **note × ⌘K** (missing): notes are not searched. Next: SEARCH-2
 - **document × Timeline** (partly): attachments show; grant documents only on the funder panel; receipt PDFs never. Next: PROFILE-2
 - **document × Ask + Agent** (partly): Ask has a documents entity; the Agent cannot see them. Next: AGENT-3
 - **document × Import / export** (partly): stored files are left out of the export (by design, the export is data)
 - **document × Merge / delete / undo** (partly): erase leaves interaction_attachments. Next: TRUST-3
 - **import × Timeline** (partly): imported rows show; the import itself is never an item. Next: PROFILE-2
 - **import × Org / funder record** (partly): as timeline
-- **import × ⌘K** (missing): imports are not searched; they are on Settings > Imports. Next: SEARCH-2
 - **import × Journeys / Comms** (partly): a Group from an import feeds a Communication or Journey. Next: none needed
 - **import × Reports, opens rows** (partly): import health and the move report are bespoke, no figure sources. Next: REPORTS-4
 - **import × Ask + Agent** (missing): Ask cannot see imports. Next: ASK-5
