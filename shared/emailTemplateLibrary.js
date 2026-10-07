@@ -340,10 +340,12 @@ export function personTextFromBlocks(blocks) {
 // A campaign starter's HTML paragraphs as blocks. Bold and line breaks inside
 // a paragraph become plain lines; an ask gets the org's giving button.
 const ASKS = new Set(["appeal", "monthly_appeal", "year_end"]);
+// The words are plain text (renderEmail escapes them again), so any angle
+// bracket left after the tags come off is dropped rather than kept.
+const plainText = h => String(h).replace(/<br\s*\/?>/gi, "\n").split("<").map((part, i) => (i === 0 ? part : part.slice(part.indexOf(">") + 1 || part.length)))
+  .join("").replace(/[<>]/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim();
 export function campaignBlocksFromHtml(key, html) {
-  const paras = String(html || "").split(/<\/p>/i)
-    .map(s => s.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").trim())
-    .filter(Boolean);
+  const paras = String(html || "").split(/<\/p>/i).map(plainText).filter(Boolean);
   const blocks = [header(), text(...paras)];
   if (ASKS.has(key)) blocks.push(button("give", key === "monthly_appeal" ? "Give every month" : "Give", "{{give_link}}"));
   blocks.push(footer());
