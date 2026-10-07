@@ -44,6 +44,7 @@ const { BASE, ok, summary, login, api, q, closeDb, STRIPE_MOCK_PORT, civilToday,
 const ORG = "org_wire1p", ACCT = "acct_wire1p", USER = "u_wire1p", DANA = "dana@wire1p.local";
 const WREN = "wren.wirefield@wire1.test", FUNDER_MAIL = "grants@lanterntrust.test";
 const CAL_PORT = Number(process.env.CALENDAR_MOCK_PORT || 5618);
+process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const stripeLib = new Stripe("sk_test_dummy");
 const cents = v => Math.round(Number(v || 0) * 100);

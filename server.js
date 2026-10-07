@@ -9792,7 +9792,7 @@ async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, ac
 // already holds an open step waits for the next pass. Sends nothing.
 async function processAuctionUnpaid(onlyOrgId = null) {
   const AC = require("./auctionCore");
-  const out = { auctions: 0, opened: 0, waiting: 0 };
+  const out = { auctions: 0, opened: 0, waiting: 0, orgs: [] };
   const auctions = await query(
     `SELECT a.id, a.org_id, a.title, a.closes_at FROM auctions a
       WHERE (?::text IS NULL OR a.org_id = ?)
@@ -9817,6 +9817,7 @@ async function processAuctionUnpaid(onlyOrgId = null) {
       await run(`UPDATE auction_items SET unpaid_thread_id=?, updated_at=NOW() WHERE id=? AND org_id=? AND unpaid_thread_id IS NULL`,
         [th.id, it.id, a.org_id]);
       out.opened++;
+      if (!out.orgs.includes(a.org_id)) out.orgs.push(a.org_id);
     }
   }
   return out;
