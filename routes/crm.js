@@ -125,6 +125,20 @@ let app = routers.r0;
 // lost its rows (the BUILD-54 finding, hit live in a pre-push run). Width,
 // not retry: 2^128 puts the class out of reach on every import mint site.
 const importId = prefix => prefix + uuid().replace(/-/g, "");
+// WIRE-1: an imported gift names its campaign; Reports filtered by campaign
+// match on campaign_id. One org-scoped lookup, exact and case-insensitive. A
+// name two campaigns share is left unresolved rather than guessed.
+async function campaignIdResolver(orgId) {
+  const rows = await query("SELECT id, name FROM campaigns WHERE org_id=?", [orgId]);
+  const byName = new Map();
+  for (const r of rows) {
+    const k = String(r.name || "").trim().toLowerCase();
+    if (!k) continue;
+    byName.set(k, byName.has(k) ? null : r.id);
+  }
+  return name => byName.get(String(name || "").trim().toLowerCase()) || null;
+}
+const IMPORT_RUN_ID_RE = /^imp_[A-Za-z0-9_-]{4,40}$/;
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
 
 // BUILD-72 Part 1 — an import that does not reconcile is not a 500. The
@@ -4520,7 +4534,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // A chunked import passes the SAME id for every chunk, which is what makes
   // the report whole rather than per-chunk. An absent or malformed id leaves
   // the column NULL and behaves exactly as before.
-  const runId = /^imp_[A-Za-z0-9_-]{4,40}$/.test(String(req.body.importId || ""))
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || ""))
     ? String(req.body.importId) : null;
 
   // Plan limit check (same as /donors/import)
@@ -5132,7 +5146,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // (13 before A.7 added payment_method), interactions 8, so 2,000 rows/batch
   // is 28,000 and 16,000 — comfortably
   // inside it — and takes the trip count from ~1,800 to ~185.
-  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 14 params/row → 28,000 of the 65,535 cap
+  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 16 params/row (WIRE-1 added campaign_id) → 32,000 of the 65,535 cap
+  const campaignIdOf = await campaignIdResolver(orgId);
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -5141,13 +5156,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign,
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign),
         // A.7 — was a hardcoded NULL. The fund the row named, resolved above.
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
         g.paymentMethod || null, runId);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -5161,7 +5176,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -8545,8 +8560,10 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // people only where `created_import_id` is this run AND they have no other
 // gift and no other interaction. A person who has acquired any history since
 // stays, and so do their gifts.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7 };
+// WIRE-1: "gifts" is the gift-history file matched to people already on file;
+// its gifts carry the run id, so it reverses as a whole like the others.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -8745,7 +8762,8 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
       }
       fileFpCounts.set(rowKey, (fileFpCounts.get(rowKey) || 0) + 1);
     }
-    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey });
+    toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey,
+      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null });
   }
   const duplicateCandidates = {
     withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
@@ -8782,6 +8800,10 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // BUILD-83 FIX — same round-trip budget as /donors/import-combined: batches
   // are trips to the database, and 200 was costing four trips per 200 gifts.
   const BATCH = IMPORT_GIFT_BATCH;
+  // WIRE-1: the run id the client minted (as /donors/import-combined takes
+  // it), so Undo import reaches these gifts, and the campaign by id.
+  const runId = IMPORT_RUN_ID_RE.test(String(req.body.importId || "")) ? String(req.body.importId) : null;
+  const campaignIdOf = await campaignIdResolver(orgId);
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
@@ -8803,9 +8825,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           // conflicted (already-imported) row inserts nothing, and its
           // interaction + ledger stamp are skipped with it.
           const kept = await queryTx(client,
-            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,fund_id,notes,external_id,payment_method,import_id,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
              ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING RETURNING id`,
-            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, g.fund_id, g.notes, g.externalId || null, actor(req).id, actor(req).name]
+            [id, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, campaignIdOf(g.campaign), g.fund_id, g.notes, g.externalId || null,
+             g.paymentMethod, runId, actor(req).id, actor(req).name]
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
@@ -14464,6 +14488,7 @@ async function planGrantImport(orgId, body) {
 // transaction, so a file that fails halfway leaves no half-imported pipeline.
 app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const I = await grantImportMod();
+  const GS = await grantShapeMod();
   const orgId = req.user.orgId;
   const plan = await planGrantImport(orgId, req.body || {});
   if (plan.error) return res.status(400).json(plan);
@@ -14544,8 +14569,19 @@ app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, w
       // in a spreadsheet already had its cheques, and minting instalments for it
       // would put money on the books twice — once as the file's history and once
       // as a promise nobody is waiting for.
-      if (g.status === "awarded") {
-        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, NOW()) WHERE id=? AND org_id=?", [id, orgId]);
+      // WIRE-1: every status that holds an award (awarded, reporting, closed)
+      // is stamped, and from the file's decision date when it has one, so a
+      // 2019 award does not count as this year's. No date: today, as before.
+      if (GS.AWARDED_STATUS_KEYS.includes(g.status)) {
+        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, ?::date::timestamptz, NOW()) WHERE id=? AND org_id=?",
+          [g.decidedOn || null, id, orgId]);
+      }
+      // The report the file says is due becomes the grant's report_due
+      // deadline, so it reaches Home, the calendar and the grant's timeline.
+      if (g.reportDue) {
+        await trun(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,label,due_date,state,notes,created_by,created_by_name)
+                    VALUES (?,?,?,'report_due',NULL,?,'pending','',?,?)`,
+          ["gms_" + uuid().slice(0, 10), orgId, id, g.reportDue, who.id, byName]);
       }
       written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
     }
