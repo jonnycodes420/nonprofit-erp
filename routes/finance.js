@@ -1575,7 +1575,7 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting already has a note." });
   const note = String(req.body?.note || "").trim().slice(0, 8000);
   const nextStep = String(req.body?.nextStep || "").trim().slice(0, 300) || null;
-  // FIX-33 Part 3b — the meeting card's fields. Each is optional; what she
+  // FIX-33 Part 3b: the meeting card's fields. Each is optional; what she
   // filled in rides on the conversation, and the date, place and who
   // attended come from the meeting itself.
   const B = req.body || {};
@@ -1608,7 +1608,7 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   }
   await run(`UPDATE calendar_events SET note=?, next_step=?, logged_at=NOW(), logged_by=?, interaction_id=?, updated_at=NOW() WHERE id=?`,
     [note || null, nextStep, who.id, firstId, c.id]);
-  // FIX-33 Part 3 — the prep and after tasks are done and the meeting step is
+  // FIX-33 Part 3: the prep and after tasks are done and the meeting step is
   // answered. A next step with a date becomes the person's open step.
   await require("../meetingEffects").meetingLogged(c.id, firstId);
   if (nextStep && nextStepDate) {
@@ -1711,7 +1711,7 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
     `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,booked_in_steward,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
     [id, orgId, req.user.userId, got.conn.provider, String(made.id), title, startsAt, endsAt, location, [d.id], who.id, who.name]);
-  // FIX-33 Part 3 — the booking reaches the whole record, not only Coming up.
+  // FIX-33 Part 3: the booking reaches the whole record, not only Coming up.
   await require("../meetingEffects").applyMeeting(id, { actorId: who.id, actorName: who.name });
   res.status(201).json({ ok: true, id, sentence: invite
     ? `On your calendar, and ${d.name} was sent the invitation from it.`

@@ -656,7 +656,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
   const [next, setNext] = useState("");
   const [nextTouched, setNextTouched] = useState(false);
   const [due, setDue] = useState(plus(Date.now(), 7));
-  // FIX-33 Part 3b — the meeting card's fields. The date, place and who
+  // FIX-33 Part 3b: the meeting card's fields. The date, place and who
   // attended come from the meeting itself and are shown, not asked.
   const [takeaways, setTakeaways] = useState("");
   const [cares, setCares] = useState("");

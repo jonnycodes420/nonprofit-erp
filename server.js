@@ -9147,7 +9147,7 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
       ["cal_" + uuid().slice(0, 12), orgId, userId, providerKey, String(ev.id), r.title, r.startsAt, r.endsAt,
        r.location, r.personIds, r.candidateIds || [], r.matchedBy || null, actorId, "Calendar sync"]);
     kept++;
-    // FIX-33 Part 3 — a meeting with somebody on file changes their record,
+    // FIX-33 Part 3: a meeting with somebody on file changes their record,
     // and a moved one moves what it changed.
     if (row) await ME.applyMeeting(row.id, { actorId, actorName: "Calendar sync" })
       .catch(e => console.error("[calendar] meeting effects:", e.message));

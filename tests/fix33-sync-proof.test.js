@@ -1,4 +1,4 @@
-// tests/fix33-sync-proof.test.js — FIX-33. PROOF THAT MAIL AND CALENDAR SYNC, NOT JUST "CONNECTED".
+// tests/fix33-sync-proof.test.js: FIX-33. PROOF THAT MAIL AND CALENDAR SYNC, NOT JUST "CONNECTED".
 //
 //     A MESSAGE OR MEETING WITH SOMEBODY ON FILE LANDS ON THEIR RECORD, BOTH
 //     DIRECTIONS; ANYTHING ELSE STORES NOTHING; AND A BOOKED MEETING CHANGES
@@ -168,7 +168,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   const lee = { token: await login(LEE, "loadtest1234") };
 
   // ── §1 · §2 · §4 · MAIL BOTH WAYS, AND NOTHING ABOUT ANYBODY ELSE ─────────
-  console.log("\n— §1 §2 §4 · mail in, mail out, and a stranger —");
+  console.log("\n· §1 §2 §4 · mail in, mail out, and a stranger");
   S.inbox = [
     graphMsg("in_c1", "christine@example.com", [DANA], "Lunch next week?", "Could we meet next week to talk about the scholarship?", daysAgo(1)),
     graphMsg("in_m1", "margaret@example.com", [DANA], "A question about my gift", "Would you be able to send me last year's total?", daysAgo(6)),
@@ -195,7 +195,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§4 the stranger's mail stored nothing anywhere (subject absent)", (await anywhere("biopsy")) === 0 && (await anywhere(STRANGER)) === 0);
 
   // ── §3 · AN UNANSWERED EMAIL BECOMES A REPLY STEP, AND A REPLY CLOSES IT ───
-  console.log("\n— §3 · the reply step —");
+  console.log("\n· §3 · the reply step");
   await api("POST", "/mailbox/run-replies", dana.token, {});
   const mStep = await openThread(M);
   ok("§3 Margaret's unanswered email opened a Reply step", mStep && mStep.next_step_type === "reply", JSON.stringify(mStep && [mStep.next_step_type, mStep.next_step_label]));
@@ -204,7 +204,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§3 Dana's reply from Outlook closed it", !(await openThread(M)), JSON.stringify(await openThread(M)));
 
   // ── §5 · CALENDAR EVENTS BECOME MEETINGS ON THE PROFILE (Part 3b) ──────────
-  console.log("\n— §5 · calendar events become meetings —");
+  console.log("\n· §5 · calendar events become meetings");
   S.events = [
     graphEvent("ev_guest", "Coffee", 24 * 5, [DANA, "margaret@example.com"], "Magee's"),
     graphEvent("ev_title", "Visit with Christine", 24 * 6, [DANA], "Drinklings"),
@@ -230,7 +230,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§5 Margaret's profile shows the meeting in Coming up", (relM.body.upcoming || []).some(u => u.title === "Coffee"), JSON.stringify((relM.body.upcoming || []).map(u => u.title)));
 
   // ── §6 · §7 · BOOK IN STEWARD: THE CALENDAR, IN THE ORG'S ZONE, AND THE WHOLE RECORD ──
-  console.log("\n— §6 §7 · fix33-meeting-booked —");
+  console.log("\n· §6 §7 · fix33-meeting-booked");
   // Remove the title-matched event so Christine's open step is a plain follow-up first.
   S.events = S.events.filter(e => e.id !== "ev_title");
   await api("POST", "/mailbox/microsoft/sync", dana.token, { what: "calendar" });
@@ -319,7 +319,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§6 Google Calendar gets the event in the org's zone too", gb.status === 201 && gPost && gPost.body.start.timeZone === TZ && String(gPost.body.start.dateTime).startsWith(wall), JSON.stringify(gPost && gPost.body.start));
 
   // ── §8 · DATES ON HER CALENDAR ONLY WHEN SHE SAID SO ─────────────────────
-  console.log("\n— §8 · put my dates on my calendar —");
+  console.log("\n· §8 · put my dates on my calendar");
   await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name,created_by,created_by_name)
            VALUES ('th_fix33_push',$1,$2,'follow_up','Call about the gala table',$3,$4,'u_fix33_dana','Dana Reyes','u_fix33_dana','Dana Reyes')`,
     [ORG, D2, orgDay(Date.now() + 4 * 864e5), today]);
@@ -333,7 +333,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§8 …and a meeting step is never pushed as a second entry", !pushes.some(t => /Lunch with David/.test(t)), JSON.stringify(pushes));
 
   // ── §9 · §10 · THE WATCH ─────────────────────────────────────────────────
-  console.log("\n— §9 §10 · the health panel, the banner, the smoke —");
+  console.log("\n· §9 §10 · the health panel, the banner, the smoke");
   const rl = await api("POST", "/mailbox/google/sync", lee.token, { what: "mail" });
   ok("§9 a refused token is a failed read, said in one sentence", rl.body.ok === false && /refused Steward's permission/.test(rl.body.error || ""), JSON.stringify(rl.body));
   const mbLee = await api("GET", "/mailbox", lee.token);

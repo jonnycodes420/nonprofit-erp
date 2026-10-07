@@ -1,4 +1,4 @@
-// meetingEffects.js — FIX-33 Part 3. A BOOKED MEETING CHANGES THE WHOLE RECORD.
+// meetingEffects.js: FIX-33 Part 3. A BOOKED MEETING CHANGES THE WHOLE RECORD.
 //
 // Jonathan booked "Visit with Christine" from Steward. It reached Outlook and
 // the profile's Coming up, and nothing else moved: the Next step still said
