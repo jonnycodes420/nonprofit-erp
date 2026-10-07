@@ -16,7 +16,8 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
-const AC = require("../auctionCore");   // PARITY-2 Part 4: who won, and the split
+const AC = require("../auctionCore");
+const TL = require("../timelineLine");   // WIRE-1 rule 2: every act lands on the timeline   // PARITY-2 Part 4: who won, and the split
 const { rateLimit } = require("express-rate-limit");
 
 const routers = {
@@ -749,6 +750,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             );
             // BUILD-57 — movement ledger: log 'created' only when the row was
             // genuinely reserved (a redelivered webhook logs nothing).
+            // WIRE-1: starting a plan is a line on the person, once per
+            // subscription however the events race (keyed on Stripe's id;
+            // invoice.payment_failed below writes the same key).
+            if (donorId && session.subscription) {
+              await TL.timelineLine({ orgId, donorId,
+                note: `Started giving ${recurAmount != null ? TL.lineMoney(recurAmount) + " " : ""}${TL.intervalWords(subInterval)}.`,
+                actorId: "system:webhooks/stripe", actorName: "Stripe (online plan)",
+                key: `recurring_started:${session.subscription}`,
+                metadata: { via: "recurring", stripe_subscription_id: session.subscription } });
+            }
             if (insertedSub.length) {
               await logRecurringChange(orgId, insertedSub[0].id, donorId, "created",
                 { newAmount: recurAmount, interval: subInterval, actor: "donor" });
@@ -1195,6 +1206,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                VALUES (?,?,?,?,?,?,?,'past_due',1,NOW(),NOW(),0,NOW())`,
               ["rsub_" + uuid().slice(0, 8), org.id, donor.id, invSubId, inv.customer || null, amount, interval]
             );
+            await TL.timelineLine({ orgId: org.id, donorId: donor.id,
+              note: interval ? `Started giving ${amount != null ? TL.lineMoney(amount) + " " : ""}${TL.intervalWords(interval)}.`
+                             : `Started a recurring gift${amount != null ? " of " + TL.lineMoney(amount) : ""}.`,
+              actorId: "system:webhooks/stripe", actorName: "Stripe (online plan)",
+              key: `recurring_started:${invSubId}`, metadata: { via: "recurring", stripe_subscription_id: invSubId } });
           } else if (isNewCycle) {
             // Previously active/recovered/canceled — this is a genuinely new
             // failure cycle, so restart the dunning cadence from day 0.

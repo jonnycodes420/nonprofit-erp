@@ -15,6 +15,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person
 
 const routers = {
   r0: express.Router(),
@@ -151,8 +152,7 @@ app.post("/volunteer-hours/import", requireAuth, checkWriteAccess, wrap(async (r
     const ck = email || "n:" + name.toLowerCase();
     let pid = cache.get(ck);
     if (!pid) {
-      if (email) { const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]); if (m.length === 1) pid = m[0].id; }
-      if (!pid && name) { const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) LIMIT 2", [orgId, name]); if (m.length === 1) pid = m[0].id; }
+      pid = await PM.findPersonId(orgId, { email, name });   // WIRE-1 rule 1
       if (!pid) {
         pid = "d_" + uuid().slice(0, 10);
         await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
@@ -238,7 +238,10 @@ app.post("/volunteer-hub/people", requireAuth, checkWriteAccess, wrap(async (req
     return res.status(400).json({ error: "no_person", message: "A volunteer needs a name, or an email address." });
   }
   if (email) {
-    const m = await query("SELECT id, name, total_giving FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
+    // WIRE-1 rule 1: two records already on one address is a duplicate to
+    // merge, never a reason to make a third.
+    const knownId = await PM.findPersonId(orgId, { email });
+    const m = knownId ? await query("SELECT id, name, total_giving FROM donors WHERE id=? AND org_id=?", [knownId, orgId]) : [];
     if (m.length === 1) {
       if (phone) await run("UPDATE donors SET phone=? WHERE id=? AND org_id=? AND COALESCE(phone,'')=''", [phone, m[0].id, orgId]);
       const r = await makeVolunteer(orgId, m[0].id, b, who);
@@ -999,10 +1002,10 @@ app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false 
   const availability = String(req.body?.availability || "").trim().slice(0, 1000);
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return res.status(400).send(volunteerPage("Check the form", `<p>Please give your name and an email address.</p><p><a href="/volunteer/join?token=${encodeURIComponent(req.body.token)}">Go back</a></p>`));
-  const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [o.id, email]);
+  const knownId = await PM.findPersonId(o.id, { email, name });   // WIRE-1 rule 1
   let pid;
-  if (m.length === 1) {
-    pid = m[0].id;
+  if (knownId) {
+    pid = knownId;
     await markVolunteer(o.id, pid);
   } else {
     pid = "d_" + uuid().slice(0, 10);

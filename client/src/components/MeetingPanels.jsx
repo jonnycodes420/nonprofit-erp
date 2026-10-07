@@ -232,6 +232,8 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
     }
   }
   for (const g of gifts || []) items.push({ kind: "gift", bucket: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  // WIRE-1 · on an employer, the gifts it matched: the employee's gift, said as matched.
+  for (const g of rel.matchedGifts || []) items.push({ kind: "gift", bucket: "gift", id: "mg:" + g.id, date: String(g.date || "").slice(0, 10), g: { ...g, matched: true } });
   // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
   // stewardship touch, an email typed in by hand) is on this one timeline too.
   const inThreads = new Set((rel.emailThreads || []).flatMap(t => t.ids || []));
@@ -295,6 +297,14 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       by = i.logged_by_name || i.created_by_name || "";
       meta = by ? `Moved by ${by}` : null;
       type = "Stage change";
+    } else if (it.kind === "talk" && (it.logged.type === "activity" || (it.logged.type === "event" && metaOf(it.logged).via))) {
+      // WIRE-1: a line Steward wrote for an act ("Registered for the Gala."):
+      // the sentence is the title, never "Meeting".
+      const i = it.logged;
+      title = String(i.note || "").replace(/\.$/, "");
+      by = i.logged_by_name || i.created_by_name || "";
+      meta = by ? `By ${by}` : null;
+      type = i.type === "event" ? "Event" : "Activity";
     } else if (it.kind === "talk" || it.kind === "meeting") {
       const i = it.logged;
       title = conversationTitle(i);
@@ -328,6 +338,11 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       meta = by ? `Attached by ${by}` : null;
     } else {
       const g = it.g;
+      if (g.matched) {
+        title = `Matched gift: ${g.donor_name || "an employee"} gave ${fmtFull(Number(g.amount))}`;
+        body = "Their gift names this organisation as the employer that matches it.";
+        return { title, body, meta, by, type };
+      }
       title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
       body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
       by = g.created_by_name || "";
@@ -344,7 +359,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
-        {TIMELINE_FILTERS.filter(([k]) => (k !== "service" || (service || []).length > 0) && (k !== "stage" || items.some(i => i.bucket === "stage"))).map(([k, l]) => chip(k, l))}
+        {TIMELINE_FILTERS.filter(([k]) => (k !== "service" || (service || []).length > 0) && ((k !== "stage" && k !== "activity") || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
       </div>
       {(filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
         <input type="checkbox" checked={hideMass} onChange={e => setPref({ hideMass: e.target.checked })} style={{ accentColor: T.greenDk }}/>
@@ -399,7 +414,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             {canWrite && isOpen && <AttachButton interactionId={lg.id}/>}
           </div>) : null;
         return (
-          <div key={it.id} id={it.kind === "gift" ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+          <div key={it.id} id={it.kind === "gift" && !it.g.matched ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.target !== e.currentTarget) return; if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
