@@ -175,7 +175,9 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
               <span style={{ fontSize: 11, fontWeight: 700, color: T.ink3 }}>{rows.length}</span>
             </div>
             {rows.map(t => <TaskRow key={t.id} t={t} accent={b.accent} onToggle={() => toggle(t)} isReadOnly={isReadOnly}
-              onDonor={t.donor_id && onNavigate ? () => onNavigate("donors", { selectDonorId: t.donor_id }) : null} />)}
+              onDonor={t.donor_id && onNavigate ? () => onNavigate("donors", { selectDonorId: t.donor_id }) : null}
+              onEvent={t.event_id && onNavigate ? () => onNavigate("fundraising", { frSection: "events", eventId: t.event_id }) : null}
+              onDrafts={t.type === "event_no_show" && onNavigate ? () => onNavigate("communications", { subtab: "milestones" }) : null} />)}
           </div>
         );
       })}
@@ -197,7 +199,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
   );
 }
 
-function TaskRow({ t, accent, onToggle, onDonor, isReadOnly }) {
+function TaskRow({ t, accent, onToggle, onDonor, onEvent, onDrafts, isReadOnly }) {
   const overdue = t.due && dueDays(t.due) < 0;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, background: T.white, border: `1px solid ${T.bg2}`, borderLeft: `3px solid ${accent}`, borderRadius: 10, padding: "11px 14px" }}>
@@ -214,6 +216,9 @@ function TaskRow({ t, accent, onToggle, onDonor, isReadOnly }) {
               : <span style={{ fontSize: 11.5, color: T.ink3 }}>♦ {t.donor_name}</span>
           )}
           {t.assigned_to_name && <span style={{ fontSize: 11, color: T.ink3 }}>· {t.assigned_to_name}</span>}
+          {/* THREAD-3: an event's no-shows: the guest list, and the drafts waiting for her. */}
+          {onEvent && <button type="button" data-testid="task-open-event" onClick={onEvent} style={taskLink}>Open the event</button>}
+          {onDrafts && <button type="button" data-testid="task-open-drafts" onClick={onDrafts} style={taskLink}>Review the drafts</button>}
         </div>
       </div>
       {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.terracotta, background: T.terra100, borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}
@@ -221,5 +226,6 @@ function TaskRow({ t, accent, onToggle, onDonor, isReadOnly }) {
   );
 }
 
+const taskLink = { background: "none", border: "none", padding: "1px 4px", fontSize: 11.5, fontWeight: 700, color: T.greenMid, cursor: "pointer", fontFamily: "inherit" };
 const inp = { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "10px 12px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "'DM Sans',sans-serif", width: "100%", boxSizing: "border-box" };
 const lbl = { display: "flex", flexDirection: "column", gap: 4, fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.04em" };

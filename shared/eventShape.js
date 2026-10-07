@@ -20,6 +20,18 @@
 
 export const LEVEL_KINDS = ["ticket", "sponsor"];
 export const ATTENDANCE = ["registered", "attended", "no_show", "cancelled"];
+
+// THREAD-3 · THE PEOPLE WHO DID NOT COME. One task per event, never one per
+// person: most no-shows need no call, so the task holds the list and a draft
+// each person can be sent or left. The draft waits in Drafts; nothing is sent.
+export const MISSED_YOU = Object.freeze({
+  subject: "Missed you at {{event_name}}",
+  body: "Dear {{first_name}},\n\nWe missed you at {{event_name}}. I hope all is well. If you would like to hear how the evening went, I would be glad to tell you, and we would love to see you at the next one.\n\nWarmly,\n{{signature}}",
+});
+export function missedYouTaskTitle(eventName, n, drafted) {
+  const who = n === 1 ? "1 person" : `${n} people`;
+  return `Missed you at ${eventName}: ${who} did not come` + (drafted ? `, ${drafted === 1 ? "1 draft" : `${drafted} drafts`} waiting in Drafts` : "");
+}
 export const MAX_QTY = 50;
 
 const toCents = v => Math.round(Number(v) * 100);

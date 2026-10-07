@@ -368,7 +368,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
           return { restored: undoIds.length };
         } }, "people");
       } else flash(`${n} donor${n!==1?"s":""} moved to trash`);
-    }catch(e){flash("Error: "+e.message);}
+    }catch(e){flash(e&&e.error==="active_plan"?e.sentence:"Error: "+e.message);}
     setBusy(false);
   }
 

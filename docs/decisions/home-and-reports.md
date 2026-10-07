@@ -309,3 +309,15 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   sentence.
 - Still bare, with their builds, in `docs/reports-4/figures.md`.
 
+
+## THREAD-3 · what opens a step on its own (2026-10-07)
+
+- **A donor's email that needs a reply.** Only mail logged from a connected mailbox, from a person on file, of kind
+  `personal` (`mailKind` in shared/mailboxLog.js), from the last 14 days, with no reply one business day after it
+  arrived. A reply is an outbound email, or a call, meeting or email logged by a person, written after the email and dated
+  on or after its day (imported history written today is not a reply). One step per person; a task when a step is open.
+  `mail_reply_steps` claims each email once.
+- **An event's no-shows are one task per event**, never one per person (`openNoShowTask`, unique on `tasks.event_id`),
+  with a "Missed you at" draft per person with an email in Drafts. Nothing is sent.
+- **The calendar never shows one entry per plan.** Monthly gifts are one line a day from Stripe's `current_period_end`
+  forward; a plan with no date is left off, never guessed. Failed charges and cards expiring this month show one by one.

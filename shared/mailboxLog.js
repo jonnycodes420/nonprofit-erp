@@ -259,7 +259,7 @@ export const NEVER_TOUCHES = ["total_giving", "last_gift_date", "drift", "lybunt
 // (those close when the money or the renewal arrives, not when somebody was
 // reminded). Closing those on an email would mark a thing done that has not
 // happened, which is the failure mode this narrow list exists to prevent.
-export const CONTACT_STEP_TYPES = ["follow_up", "try_again", "send", "follow_up_no_reply", "thank", "thank_you_note"];
+export const CONTACT_STEP_TYPES = ["follow_up", "try_again", "send", "follow_up_no_reply", "thank", "thank_you_note", "reply"];
 
 export function closesStep(step, { donorIds, date }) {
   const s = step || {};
@@ -272,7 +272,92 @@ export function closesStep(step, { donorIds, date }) {
   return true;
 }
 
+// ── THREAD-3 · AN EMAIL THAT NEEDS A REPLY ─────────────────────────────────
+//
+// A donor or a funder wrote, and nobody here has written back. After one
+// business day that is a step on the Thread. Most mail that arrives from an
+// address on file is NOT that: the newsletter a funder sends everyone, the
+// receipt from a donor's own payment system, the out-of-office that answered
+// Dana's thank-you. Those need no reply, and a step for each would bury the
+// one that does.
+//
+// HOW THEY ARE TOLD APART, in this order, from the message's own headers
+// first and its words only after:
+//   1. auto_reply: the headers machines set when they answer for a person
+//      (Auto-Submitted other than "no", X-Autoreply, X-Autorespond,
+//      Precedence: auto_reply), or a subject that opens the way out-of-office
+//      replies open ("Automatic reply:", "Out of office", "Auto:").
+//   2. receipt: a subject that names a receipt, invoice, order, payment or
+//      donation confirmation (unless it is a Re: or Fwd:), or a sender whose mailbox is receipts@,
+//      billing@, invoices@ or payments@.
+//   3. newsletter: List-Unsubscribe or List-Id (every bulk sender must set
+//      one), Precedence bulk/list/junk, or a no-reply or newsletter sender.
+//   4. personal: everything else. Only these can become a step.
+// A real person's reply carries none of these headers, so the error this
+// leans toward is a step for a message that did not need one, which a person
+// dismisses in a second, rather than a donor's question nobody sees.
+export const MAIL_KINDS = ["personal", "auto_reply", "receipt", "newsletter"];
+export const MAIL_KIND_SENTENCE =
+  "A donor's email becomes a step only when a person wrote it: newsletters, receipts and automatic replies are logged on the record and open nothing.";
+
+const AUTO_SUBJECT = /^\s*(automatic reply|auto(matic)?[- ]?reply|auto:|out of (the )?office|away from (the )?office|i am (currently )?out of)/i;
+const RECEIPT_SUBJECT = /\b(receipt|invoice|order (confirmation|#|no\.?|number)|payment (received|confirmation|receipt)|your (donation|payment|order|purchase)|donation confirmation|thank you for your (order|purchase|payment))\b/i;
+const RECEIPT_SENDER = /^(receipts?|billing|invoices?|payments?|orders?|accounts?-?payable)([.+_-].*)?@/i;
+const BULK_SENDER = /^(no-?reply|do-?not-?reply|donotreply|newsletters?|news|updates?|marketing|mailer-daemon|notifications?|info-?noreply)([.+_-].*)?@/i;
+
+/**
+ * What kind of message this is: personal | auto_reply | receipt | newsletter.
+ * @param msg {from, subject, headers: {lowercased name: value}}
+ */
+export function mailKind(msg) {
+  const m = msg || {};
+  const h = m.headers || {};
+  const hv = n => String(h[n] == null ? "" : h[n]).trim().toLowerCase();
+  const subject = String(m.subject || "");
+  const from = norm(m.from);
+  const auto = hv("auto-submitted");
+  if ((auto && auto !== "no") || hv("x-autoreply") || hv("x-autorespond") || hv("precedence") === "auto_reply"
+      || AUTO_SUBJECT.test(subject)) return "auto_reply";
+  // "Re: your invoice question" is a person answering, not a receipt: a reply
+  // or a forward is judged by its sender and headers, never by its subject.
+  const answering = /^\s*(re|fwd?|aw)\s*:/i.test(subject);
+  if ((!answering && RECEIPT_SUBJECT.test(subject)) || RECEIPT_SENDER.test(from)) return "receipt";
+  if (hv("list-unsubscribe") || hv("list-id") || ["bulk", "list", "junk"].includes(hv("precedence"))
+      || BULK_SENDER.test(from)) return "newsletter";
+  return "personal";
+}
+
+// "No reply after one business day": the moment a message arrived, plus one
+// day, rolled past a Saturday or a Sunday. Friday at 3pm is due Monday at 3pm.
+// `dayOfWeek(iso)` names the weekday of an instant (0 Sunday … 6 Saturday) in
+// the org's zone; the caller passes it so this stays free of any clock or zone.
+export const REPLY_AFTER_BUSINESS_DAYS = 1;
+export function replyDueAt(receivedAtIso, dayOfWeek) {
+  const t = Date.parse(receivedAtIso);
+  if (!Number.isFinite(t)) return null;
+  const dow = typeof dayOfWeek === "function" ? dayOfWeek : (iso => new Date(iso).getUTCDay());
+  let due = t;
+  for (let n = 0; n < REPLY_AFTER_BUSINESS_DAYS; n++) {
+    due += 86400000;
+    while ([0, 6].includes(dow(new Date(due).toISOString()))) due += 86400000;
+  }
+  return new Date(due).toISOString();
+}
+// Only mail from the last fortnight can open a step. A first sync reads months
+// of history, and a step for every old unanswered message on day one is a
+// flood nobody asked for; an email older than this was answered some other way.
+export const REPLY_LOOKBACK_DAYS = 14;
+
+export function replyStepLabel(name, subjects) {
+  const subs = (subjects || []).map(x => String(x || "").trim()).filter(Boolean);
+  const who = String(name || "").trim() || "them";
+  if (!subs.length) return `Reply to ${who}`;
+  const first = subs[0].length > 80 ? subs[0].slice(0, 77) + "..." : subs[0];
+  return `Reply to ${who}: "${first}"` + (subs.length > 1 ? ` and ${subs.length - 1} more` : "");
+}
+
 export default {
+  MAIL_KINDS, MAIL_KIND_SENTENCE, mailKind, replyDueAt, REPLY_AFTER_BUSINESS_DAYS, REPLY_LOOKBACK_DAYS, replyStepLabel,
   FIELDS_LOGGED, FIELDS_SENTENCE, DIRECTIONS, DROP_REASONS,
   isNeverLogged, validateNeverLog, trimQuoted, attachmentLine,
   classifyMailboxMessage, conversationNote,

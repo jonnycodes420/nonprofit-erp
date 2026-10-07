@@ -418,7 +418,7 @@
    "srch": "W by amount (\"$500\"), cheque number, day (\"Oct 3\") or donor; opens the gift on the profile (SEARCH-2)",
    "grp": "W",
    "jc": "W",
-   "home": "P a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-3",
+   "home": "P a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-4",
    "mrg": "W",
    "rep": "W",
    "ask": "W",
@@ -427,14 +427,14 @@
   "recurring plan": {
    "tl": "W",
    "org": "W",
-   "cal": "M the next charge date is not on the calendar: 72 monthly plans would bury the month. Next: decide with Jonathan",
+   "cal": "W one line a day, \"12 monthly gifts expected, $640\", that opens its rows, from Stripe's next charge date; failed charges and cards expiring this month show one by one (THREAD-3)",
    "srch": "W by amount or donor; opens the plan on the profile (SEARCH-2)",
    "grp": "P any-active recurring rule now, one shared status list; no failed-plan rule yet. Next: GROUPS-2",
    "jc": "W first_recurring, a failed payment, a cancelled plan and a card expiring next month each start a journey (JOURNEYS-3)",
    "home": "W",
-   "mrg": "P soft-deleting a person does not stop their Stripe plan; it needs a human decision on what deleting a giver means. Next: RECURRING-DELETE",
+   "mrg": "W delete is refused while a plan is live (\"[Name] has a $X monthly plan. Cancel it first, or archive them instead.\"); archive keeps the plan running; Steward never cancels a plan as a side effect (THREAD-3)",
    "rep": "W",
-   "ask": "P Ask sees plans; the Agent cannot. Next: AGENT-4",
+   "ask": "W the Agent reads each person's plans, read only: amount, status, next charge, card (THREAD-3)",
    "io": "P an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING"
   },
   "pledge": {
@@ -509,7 +509,7 @@
    "srch": "W",
    "grp": "W",
    "jc": "P attended_event and first_event fire from the attendance list, check-in and scan; there is still no this-event's-guests audience except a Group. Next: COMMS-3",
-   "home": "M an event no-show opens nothing; most no-shows need no call. Next: THREAD-3 if wanted",
+   "home": "W an event's no-shows open ONE task, \"Missed you at [event]\", with a template draft per person in Drafts (THREAD-3)",
    "mrg": "W",
    "rep": "P event rows open through a private endpoint, not the figure registry. Next: REPORTS-4",
    "ask": "W",
@@ -613,7 +613,7 @@
    "srch": "W by subject or sender; opens its timeline row (SEARCH-2)",
    "grp": "M no opened or clicked rule. Next: GROUPS-2",
    "jc": "M no email-opened trigger. Next: JOURNEYS-4",
-   "home": "M a donor's email that needs a reply opens no step: the mailbox reads only what matches a person, and deciding 'needs a reply' wants care. Next: MAIL-2",
+   "home": "W a donor's or funder's own email with no reply after one business day becomes a Reply step (or a task when a step is already open); newsletters, receipts and automatic replies open nothing (THREAD-3)",
    "mrg": "W",
    "rep": "P bulk email stats are computed in the browser. Next: REPORTS-4",
    "ask": "P as conversations. Next: ASK-5",
@@ -642,7 +642,7 @@
    "home": "-",
    "mrg": "P erase leaves interaction_attachments. Next: TRUST-3",
    "rep": "-",
-   "ask": "P Ask has a documents entity; the Agent cannot see them. Next: AGENT-4",
+   "ask": "W the Agent reads each person's note attachments and grant documents, read only (THREAD-3)",
    "io": "P stored files are left out of the export (by design, the export is data)"
   },
   "import": {

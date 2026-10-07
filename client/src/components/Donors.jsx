@@ -73,6 +73,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[convoTarget,setConvoTarget]=useState(null);
   const[convoSearch,setConvoSearch]=useState("");
   const[editTarget,setEditTarget]=useState(null);
+  // THREAD-3: a delete refused because the person has a live monthly plan.
+  const[planBlock,setPlanBlock]=useState(null);   // { id, sentence }
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   // FIX-10 D — A FAILURE IS NOT A SUGGESTION. A failed stream used to be
@@ -457,7 +459,22 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
       setDirTotal(t=>Math.max(0,t-1));
       setSelected(null);
-    }catch(e){console.error(e);}
+    }catch(e){
+      if(e&&e.error==="active_plan"){setPlanBlock({id,sentence:e.sentence});return;}
+      console.error(e);
+    }
+  };
+  // THREAD-3: archive keeps the plan running and takes them off the lists.
+  const archiveDonor=async(id)=>{
+    try{
+      const r=await apiFetch(`/donors/${id}/archive`,{method:"POST",body:"{}"});
+      setPlanBlock(null);
+      setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
+      setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
+      setDirTotal(t=>Math.max(0,t-1));
+      setSelected(null);
+      offerUndo({message:r.sentence,undoAction:async()=>{const x=await apiFetch(`/donors/${id}/unarchive`,{method:"POST",body:"{}"});setDirReloadKey(k=>k+1);return x;}},"person");
+    }catch(e){setPlanBlock(b=>b&&{...b,err:errorMessage(e,"That did not save.")});}
   };
 
   const generateCallList=async()=>{
@@ -551,6 +568,18 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
+      {planBlock&&<Modal onClose={()=>setPlanBlock(null)} width={420} ariaLabel="This person has a monthly plan">
+        <div data-testid="delete-plan-block" style={{display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Not deleted</div>
+          <div data-testid="delete-plan-sentence" style={{fontSize:14,color:T.ink,lineHeight:1.5}}>{planBlock.sentence}</div>
+          <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.45}}>Steward never cancels a plan for you. Archiving takes them off your lists and their gifts keep arriving.</div>
+          {planBlock.err&&<div role="alert" style={{fontSize:13}}>{planBlock.err}</div>}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button type="button" data-testid="delete-plan-archive" onClick={()=>archiveDonor(planBlock.id)} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Archive instead</button>
+            <button type="button" onClick={()=>setPlanBlock(null)} style={{background:T.bg2,color:T.ink,border:"none",borderRadius:8,padding:"9px 16px",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Keep them</button>
+          </div>
+        </div>
+      </Modal>}
       {selected ? (
       <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}

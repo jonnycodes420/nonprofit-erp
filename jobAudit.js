@@ -35,6 +35,7 @@ const JOB_WRITES = {
   processGrantMilestones:            "raises a grant milestone and drafts its report",
   processMembershipRenewals:         "renews a membership and charges or drafts for it",
   processAuctionUnpaid:              "opens a Thread step for a won auction item that is not paid",
+  processUnansweredMail:             "opens a Thread step or task for a donor's email nobody has answered",
   processPledgeInstallmentReminders: "reminds a donor about a pledge instalment",
   processSavedReportSchedule:        "sends a saved report on its schedule",
   processBoardPackSchedule:          "sends the board pack to the org's staff and board addresses",
