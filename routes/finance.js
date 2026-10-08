@@ -749,7 +749,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
     const [made] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
       [req.user.userId, req.user.orgId, key]);
     const apis = made ? await runApiCheck(made).catch(() => null) : null;
-    const apiRefused = (apis || []).filter(a => !a.ok).map(a => a.sentence);
+    const apiRefused = (apis || []).filter(a => a.ok === false).map(a => a.sentence);
     const first = await Promise.race([
       (async () => { const m = await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => null);
                      const c = calendarOk ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => null) : null;
@@ -1298,14 +1298,16 @@ app.post("/mailbox/:provider/sync", requireAuth, checkWriteAccess, wrap(async (r
   const key = String(req.params.provider || "");
   if (!O.isProvider(key) || O.PROVIDERS[key].kind !== "mailbox") return res.status(404).json({ error: "unknown_provider" });
   const what = ["mail", "calendar"].includes(req.body?.what) ? req.body.what : "both";
-  // FIX-34: Check again: each API is asked first, so a switched-off one is named.
-  const [c0] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
-    [req.user.userId, req.user.orgId, key]);
-  const apis = c0 && c0.credentials_sealed ? await runApiCheck(c0).catch(() => null) : null;
-  const apiOff = (apis || []).filter(a => !a.ok).map(a => a.sentence);
   // FIX-33: "Read now" on the card. Same runs as the tick, recorded as hers.
   const mail = what !== "calendar" ? await syncMailbox(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ logged: 0 })) : null;
   const calendar = what !== "mail" ? await syncCalendar(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ kept: 0 })) : null;
+  // FIX-34: Check again: each API is asked one cheap question after the reads
+  // (so a refused token is still the read's own failure), and a switched-off
+  // API is named. A 404 (ok: null) is "not checked", never a refusal.
+  const [c0] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+    [req.user.userId, req.user.orgId, key]);
+  const apis = c0 && c0.credentials_sealed && !c0.paused ? await runApiCheck(c0).catch(() => null) : null;
+  const apiOff = (apis || []).filter(a => a.ok === false).map(a => a.sentence);
   const running = (mail && mail.reason === "running") || (calendar && calendar.reason === "running");
   const error = apiOff.length ? apiOff.join(" ") : (mail && mail.error) || (calendar && calendar.error) || null;
   const [conn] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status <> 'disconnected'`,
