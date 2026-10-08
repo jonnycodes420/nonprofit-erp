@@ -5,6 +5,9 @@
 // Usage: PLAYWRIGHT_DIR=$HOME/steward-qa API=http://localhost:6501 BASE=http://localhost:6510 \
 //        DATABASE_URL=... BRIEF_HTML=path node scripts/fix34e-capture.js
 const path = require("path");
+for (const [k, v] of [["API", process.env.API], ["BASE", process.env.BASE], ["DATABASE_URL", process.env.DATABASE_URL]]) {
+  if (v && !/localhost|127\.0\.0\.1/.test(v)) { console.error(`Refusing: ${k} is not loopback (${v}).`); process.exit(2); }
+}
 const fs = require("fs");
 const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR, "node_modules", "playwright"));
 const { Client } = require("pg");
