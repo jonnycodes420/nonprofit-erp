@@ -16936,6 +16936,38 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   // POST /donors/:id/conversations (which requires a next step or an explicit
   // "No next step") and its id comes here. A bare tick is refused, so the
   // thread never ends without a decision.
+  // FIX-34 · AN EMAIL SENT FROM ITS TASK asks for the next step the way a
+  // call does: the email's own timeline line (sent through /tasks/:id/email)
+  // carries the decision, and a next step opens a thread on it.
+  if (done === 1 && !t.done && t.donor_id && req.body.interactionId && req.body.nextStep) {
+    const [ei] = await query(
+      `SELECT id, date FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'via'='task_email' AND metadata->>'taskId'=?
+          AND metadata->>'next_step' IS NULL`, [String(req.body.interactionId), orgId, t.donor_id, t.id]);
+    if (ei) {
+      const shape = await threadShapeMod();
+      const ns = req.body.nextStep;
+      const skipped = ns.skipped === true;
+      let step = null;
+      if (!skipped) {
+        const typeLabel = shape.nextStepLabelFor(ns.type);
+        if (!typeLabel || !/^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true}" });
+        step = { type: ns.type, label: shape.sanitizeStepLabel(ns.label) || typeLabel, due: ns.due, time: null };
+      }
+      const [donor] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [t.donor_id, orgId]);
+      const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+      const userName = me?.name || "";
+      const { today } = await taskDays(orgId);
+      await withTransaction(async client => {
+        await runTx(client, `UPDATE interactions SET metadata = COALESCE(metadata,'{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
+          [JSON.stringify({ next_step: skipped ? "skipped" : "set", ...(step ? { next_step_label: step.label } : {}) }), ei.id, orgId]);
+        await queryTx(client, `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
+            WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`, [ei.id, orgId, t.donor_id]);
+        if (step) await openThreadTx(client, { orgId, donorId: t.donor_id, step, openedOn: today,
+          ownerId: donor?.assigned_to || req.user.userId, ownerName: donor?.assigned_to ? donor.assigned_to_name : userName,
+          actorId: req.user.userId, actorName: userName, openingInteractionId: ei.id, followon: null });
+      });
+    }
+  }
   let viaConversation = false;
   if (done === 1 && !t.done && t.donor_id && !t.link_kind && ts.NEEDS_OUTCOME.has(ts.kindOf(t))) {
     const iid = String(req.body.interactionId || "");
@@ -16977,6 +17009,104 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   }
   if (recur && done === 0) await run("DELETE FROM tasks WHERE recur_parent_id=? AND org_id=? AND done=0 AND link_kind IS NULL", [t.id, orgId]);
   res.json({ ...(await readTask(orgId, t.id)), next });
+}));
+
+// FIX-34 · A THANK-YOU TASK DOES THE THANKING. The task's Thank-you button
+// opens the draft for THAT gift (the task's source gift, else the person's
+// latest gift not yet thanked). Sending it, or marking it sent, is one write:
+// the gift is thanked the way /acknowledgments/mark thanks it, its drafted
+// thank-you leaves the queue, and the task closes. She pressed Send; Steward
+// did not send anything on its own. Undo (POST /tasks/:id/thank/undo) puts
+// all three back.
+async function taskGiftToThank(orgId, t, giftId) {
+  if (giftId) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=? AND donor_id=?", [String(giftId), orgId, t.donor_id]); if (g) return g; }
+  if (t.source_gift_id) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [t.source_gift_id, orgId]); if (g) return g; }
+  const [g] = await query(
+    `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE
+      ORDER BY date DESC, id DESC LIMIT 1`, [orgId, t.donor_id]);
+  return g || null;
+}
+app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const g = await taskGiftToThank(req.user.orgId, t, req.query.giftId);
+  const [d] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [t.donor_id, req.user.orgId]);
+  res.json({ gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.acknowledgement_sent === true } : null,
+             donor: d ? { id: d.id, name: d.name, email: d.email || null } : null });
+}));
+app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await ACK_READY;
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const g = await taskGiftToThank(orgId, t, req.body && req.body.giftId);
+  if (!g) return res.status(409).json({ error: "no_gift", sentence: "There is no gift on file to thank this person for yet." });
+  const mode = req.body && req.body.mode === "send" ? "send" : "mark";
+  if (mode === "send") {
+    const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
+    const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
+    if (!subject || !body) return res.status(400).json({ error: "A thank-you needs a subject and words." });
+    const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+    await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
+      [mdId, orgId, t.donor_id, `task-thanks:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
+    const [draft] = await query("SELECT * FROM milestone_drafts WHERE id=?", [mdId]);
+    const r = await sendMilestoneDraft(req, draft);
+    if (r.status !== 200) { await run("DELETE FROM milestone_drafts WHERE id=? AND org_id=?", [mdId, orgId]); return res.status(r.status).json({ error: r.error, sentence: r.error }); }
+  }
+  const before = { acknowledgement_sent: g.acknowledgement_sent === true, acknowledgement_sent_at: g.acknowledgement_sent_at || null,
+    acknowledged_by: g.acknowledged_by || null, acknowledged_by_name: g.acknowledged_by_name || null, acknowledged_via: g.acknowledged_via || null };
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const whoName = u?.name || actor(req).name;
+  await run(
+    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+                      acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
+                      acknowledged_via=COALESCE(acknowledged_via, 'email')
+      WHERE org_id=? AND id=?`, [actor(req).id, whoName, orgId, g.id]);
+  const drafts = await query("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND gift_id=? AND sent_at IS NULL AND skipped_at IS NULL RETURNING id", [orgId, g.id]).catch(() => []);
+  const linked = await linkedTaskChange(req, t.id, { done: 1 });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  if (!linked) await run("UPDATE tasks SET done=1, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
+  await run("UPDATE tasks SET completed_at=COALESCE(completed_at, NOW()), completed_by_name=? WHERE id=? AND org_id=?", [actor(req).name, t.id, orgId]);
+  if (req.audit) { req.audit.entity("gift", g.id); req.audit.before(before); req.audit.after({ acknowledgement_sent: true, task_done: true, mode }); }
+  res.json({ ok: true, mode, giftId: g.id, before, draftIds: drafts.map(d => d.id), task: await readTask(orgId, t.id) });
+}));
+app.post("/tasks/:id/thank/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  const b = (req.body && req.body.before) || {};
+  const giftId = String((req.body && req.body.giftId) || "");
+  if (giftId && !b.acknowledgement_sent) {
+    await run(`UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
+                WHERE org_id=? AND id=?`, [orgId, giftId]);
+  }
+  const ids = Array.isArray(req.body && req.body.draftIds) ? req.body.draftIds.map(String) : [];
+  if (ids.length) await run("UPDATE thank_you_drafts SET sent_at=NULL WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
+  const linked = await linkedTaskChange(req, t.id, { done: 0 });
+  if (!linked) await run("UPDATE tasks SET done=0, completed_at=NULL, completed_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
+  res.json({ ok: true, task: await readTask(orgId, t.id) });
+}));
+
+// FIX-34 · AN EMAIL TASK OPENS A DRAFT. Send goes through the one draft sender
+// (sendMilestoneDraft: donorMailDecision, the footer, the timeline line). The
+// task stays open: it is finished through /tasks/:id/complete with the email's
+// interactionId and a next step (or "No next step"), the way a call is.
+app.post("/tasks/:id/email", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
+  const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
+  if (!subject || !body) return res.status(400).json({ error: "An email needs a subject and words." });
+  const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+  await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
+    [mdId, orgId, t.donor_id, `task-email:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
+  const [draft] = await query("SELECT * FROM milestone_drafts WHERE id=?", [mdId]);
+  const r = await sendMilestoneDraft(req, draft, { taskId: t.id });
+  if (r.status !== 200) { await run("DELETE FROM milestone_drafts WHERE id=? AND org_id=?", [mdId, orgId]); return res.status(r.status).json({ error: r.error, sentence: r.error }); }
+  res.json({ ok: true, interactionId: r.interactionId, needsNextStep: true });
 }));
 
 // FIX-31: a task's day on its own (a Calendar drag, "Give it a day"). The full
@@ -23325,7 +23455,7 @@ app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => 
 // One send of one draft, by the person who pressed the button. Used by the
 // single "Send" and by "Send all reviewed", so the two cannot drift apart.
 // FIX-12 Part 2: workflow recipes' emails arrive here as drafts too.
-async function sendMilestoneDraft(req, draft) {
+async function sendMilestoneDraft(req, draft, opts = {}) {
   const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
   const donor = donorRows[0];
   if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };
@@ -23365,11 +23495,13 @@ async function sendMilestoneDraft(req, draft) {
     [req.user.userId, who.name, draft.id]
   );
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
+  const intId = "i_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name]
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata) VALUES (?, ?, ?, 'email', ?, ?, ?, ?, ?)",
+    [intId, req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name,
+     opts.taskId ? JSON.stringify({ via: "task_email", taskId: opts.taskId, touch: "email" }) : null]
   ).catch(() => {});
-  return { status: 200 };
+  return { status: 200, interactionId: intId };
 }
 
 // PARITY-3 — the volunteer routes send their drafts through this one function.

@@ -3499,7 +3499,7 @@ async function givingAccountEntry(org) {
 const {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
   demoMailNote, donorMailDecisions,
-  linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
+  linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail, staffUnsubscribeUrl,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
   trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
@@ -6009,8 +6009,11 @@ async function composeThreadNudgeQueue(orgId, today, opts) {
 // named, with its day count — the BUILD-81 line that made the subject do the
 // work. A brief with no threads falls back to the task sentence rather than
 // inventing a thread that is not there.
-function morningBriefSubject(threads, taskCount, org) {
+function morningBriefSubject(threads, taskCount, org, meetingCount = 0) {
   const total = threads.length + taskCount;
+  if (threads.length === 0 && taskCount === 0 && meetingCount) {
+    return `${meetingCount} meeting${meetingCount === 1 ? "" : "s"} today · ${displayNameCase(org.name || "")}`;
+  }
   if (threads.length === 0) {
     return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today — ${displayNameCase(org.name || "")}`;
   }
@@ -6035,7 +6038,7 @@ function morningBriefSubject(threads, taskCount, org) {
 // EVERY THREAD ROW CARRIES ITS REASON. shared/threadRank.js decided the order;
 // this prints the sentence that order was built from, so the list can always
 // answer "why am I looking at this one first?" without the reader guessing.
-function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }) {
+function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [] }) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
   const row = t => {
     const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
@@ -6072,6 +6075,16 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }
       <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.dueToday, ...tasks.overdue].map(taskLi).join("")}</table>
     </div>` : "";
 
+  // FIX-34 · TODAY'S MEETINGS ride in the same morning email, from the same
+  // composer Home's meetings panel reads (routes/finance.js composeTodayMeetings).
+  const tz = org.timezone || "America/New_York";
+  const at = iso => { try { return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }); } catch { return ""; } };
+  const meetingBlock = meetings.length ? `
+    <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};" data-section="meetings">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your meetings today</div>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${meetings.map(m => `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
+        <strong>${digestEsc(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${digestEsc(m.title || "Meeting")}${(m.people || []).length ? `<span style="color:${SAGE};"> with ${digestEsc(m.people.map(p => p.name).join(", "))}</span>` : ""}</td></tr>`).join("")}</table>
+    </div>` : "";
   const teamBlock = team && team.length ? `
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #dcd8cd;">
       <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Across the team</div>
@@ -6088,7 +6101,8 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }
 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
-      ${threadBlock}${taskBlock}${teamBlock}${footer}
+      ${threadBlock}${taskBlock}${meetingBlock}${teamBlock}${footer}
+      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Account. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
 
@@ -6120,6 +6134,7 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
       GROUP BY 1 ORDER BY 2 DESC`, [today, org.id, today]);
   const multiOfficer = teamRows.filter(r => r.who !== "Unassigned").length >= 2;
+  const briefCarriedMeetings = new Set();
 
   for (const u of users) {
     const isAdmin = u.role === "admin";
@@ -6140,7 +6155,13 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     const suppressed = (!wantsThreads && tqAll.list.length > 0) || (!wantsTasks && taskAll.count > 0);
     const tq = wantsThreads ? tqAll : { list: [], more: 0, total: 0 };
     const taskDigest = wantsTasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };
-    if (tq.list.length === 0 && taskDigest.count === 0) {
+    // FIX-34 · today's meetings ride with the tasks, under the same setting.
+    let meetingsToday = [];
+    if (wantsTasks) {
+      try { meetingsToday = (await require("./routes/finance").composeTodayMeetings(org.id, u.id, { withLogged: true })).meetings || []; }
+      catch (e) { console.error("[morning-brief] meetings:", e.message); }
+    }
+    if (tq.list.length === 0 && taskDigest.count === 0 && meetingsToday.length === 0) {
       // WHY there is no email matters to whoever is reading this report: a
       // person who turned both notifications off is not the same as a person
       // with a clear morning, and reporting both as "empty" hides a setting
@@ -6151,7 +6172,7 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
 
     const subject = morningBriefSubject(tq.list, taskDigest.count, org);
     const payload = { recipientUserId: u.id, email: u.email, subject,
-                      threads: tq.list.length, tasks: taskDigest.count, count: tq.list.length + taskDigest.count };
+                      threads: tq.list.length, tasks: taskDigest.count, meetings: meetingsToday.length, count: tq.list.length + taskDigest.count };
     if (!send) { out.sent.push(payload); continue; }
 
     // Reserve only the ledgers whose section this brief actually carries. A
@@ -6159,16 +6180,17 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     // re-sent — so a second tick can never repeat a line the user has read.
     let threads = tq.list, more = tq.more, tasks = taskDigest;
     if (threads.length && !(await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen }))) { threads = []; more = 0; }
-    if (tasks.count && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length }))) tasks = { rows: [], overdue: [], dueToday: [], count: 0 };
-    if (threads.length === 0 && tasks.count === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+    let meetings = meetingsToday;
+    if ((tasks.count || meetings.length) && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length, meetings: meetings.length }))) { tasks = { rows: [], overdue: [], dueToday: [], count: 0 }; meetings = []; }
+    if (threads.length === 0 && tasks.count === 0 && meetings.length === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
 
-    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today,
+    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today, meetings,
                                           team: isAdmin && multiOfficer ? teamRows : null });
-    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body)) out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
+    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org, meetings.length), body)) { out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count, meetings: meetings.length }); if (meetings.length) briefCarriedMeetings.add(u.id); }
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
-  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send }); }
+  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send, skipUsers: briefCarriedMeetings }); }
   catch (e) { console.error("[meeting-brief]", org.id, e.message); }
   return out;
 }
@@ -6181,12 +6203,14 @@ async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(o
 // composeTodayMeetings), to the staff member's OWN sign-in address and nobody
 // else. Off unless she ticks it in Settings → Account. One a day (the
 // meeting_brief ledger), and none on a day with no meetings.
-async function runMeetingBriefForOrg(org, { today, send = true }) {
+async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null }) {
   const out = { sent: [], skipped: [] };
   const users = await query(
     "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
   const fin = require("./routes/finance");
   for (const u of users) {
+    // FIX-34 · the morning email already carried her meetings: one email, not two.
+    if (skipUsers && skipUsers.has(u.id)) { out.skipped.push({ recipientUserId: u.id, reason: "in_morning_brief" }); continue; }
     const { meetings } = await fin.composeTodayMeetings(org.id, u.id, { withLogged: true });
     if (!meetings.length) { out.skipped.push({ recipientUserId: u.id, reason: "no_meetings" }); continue; }
     if (!send) { out.sent.push({ recipientUserId: u.id, count: meetings.length }); continue; }
