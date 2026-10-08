@@ -242,7 +242,13 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
     reads.notes = {
       sql: `SELECT i.id, i.date, i.note, i.donor_id, d.name AS donor_name
          FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id AND d.deleted_at IS NULL
-        WHERE i.org_id = ? AND i.type = 'note' AND i.note ILIKE ? ${E}
+        WHERE i.org_id = ? AND i.note ILIKE ? ${E}
+          -- IMPORT-2: the words of every conversation, not only notes. Calls,
+          -- letters, texts and event talk carry what was said, and an imported
+          -- email's body is history nobody else searches. Meetings and synced
+          -- mail keep their own kinds above.
+          AND (i.type IN ('note', 'call', 'letter', 'text', 'event', 'ask', 'stewardship', 'visit', 'other')
+               OR (i.type = 'email' AND i.metadata->>'source' = 'history-import'))
         ORDER BY i.date DESC NULLS LAST, i.created_at DESC, i.id LIMIT ${L}`, args: [orgId, p] };
   }
   // Imports: by the name or file name, or the day it went in (the org's day).

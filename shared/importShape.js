@@ -1608,7 +1608,7 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.wealthCapacity && WEALTH_HDR.capacity.test(hl)) map.wealthCapacity = h;
     if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
     if (!map.birthday       && BIRTHDAY_HDR.test(hl))        map.birthday = h;
-    if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
+    if (!map.notes    && /^(notes?|memo|comments?|background)$/.test(hl))              map.notes    = h;
     if (!map.phone    && T(/^(phone|phone.?number|telephone|mobile|cell)$/))     map.phone    = h;
     if (!map.address  && T(/^(address|street(.?address)?|address.?1|address line 1|mailing.?address)$/)) map.address = h;
     if (!map.city     && /^city$/.test(hl))                                            map.city     = h;
@@ -3006,6 +3006,16 @@ export function groupTransactions(items = []) {
         if (ck.household && !dk2.household && matchNamesCompatible(ck, dk2)) canon.name = donor.name;
       }
       if (donor.externalDonorId && !canon.externalDonorId) canon.externalDonorId = donor.externalDonorId;
+      // IMPORT-2: A FOLDED ROW'S ID IS STILL AN ID THIS PERSON ANSWERS TO. Two
+      // old ids folded into one person kept only the first, so a notes file
+      // naming the second matched nobody. Every id is kept on the record.
+      else if (donor.externalDonorId && canon.externalDonorId
+               && donorIdKey(donor.externalDonorId) !== donorIdKey(canon.externalDonorId)) {
+        const ids = Array.isArray(canon.externalDonorIds) && canon.externalDonorIds.length
+          ? canon.externalDonorIds : [String(canon.externalDonorId)];
+        if (!ids.some(x => donorIdKey(x) === donorIdKey(donor.externalDonorId))) ids.push(String(donor.externalDonorId));
+        canon.externalDonorIds = ids;
+      }
       if (Array.isArray(donor.tags) && donor.tags.length)
         canon.tags = [...new Set([...(canon.tags || []), ...donor.tags])];
       for (const k of ["email", "phone", "city", "state", "address", "zip", "notes", "owner"]) {
@@ -3542,7 +3552,7 @@ export const STANDARD_DONOR_FIELDS = [
   { key: "doNotEmail",   label: "Do not email",   aliases: ["do not email", "no email"], flag: true },
   { key: "deceased",     label: "Deceased",       aliases: ["deceased", "is deceased", "deceased?", "deceased date"], flag: true },
   { key: "status",     label: "Status",       aliases: ["status", "donor status"] },
-  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo", "remarks"] },
+  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo", "remarks", "background"] },
   { key: "owner",      label: "Owner",        aliases: ["owner", "assigned to", "assigned officer", "solicitor", "gift officer", "relationship manager", "account manager", "managed by", "assigned fundraiser"] },
   // aggregate history columns a donors sheet legitimately carries
   { key: "total",      label: "Lifetime giving", aliases: ["lifetime giving", "lifetime", "total giving", "total", "total donated", "cumulative giving"] },
@@ -3564,7 +3574,7 @@ export const STANDARD_GIFT_FIELDS = [
   { key: "pledgeId",   label: "Pledge ID",    aliases: ["pledge id", "pledge no", "pledge #"] },
   { key: "donorName",  label: "Donor name",   aliases: ["donor name", "donor", "name", "constituent name", "full name", "donor email"] },
   { key: "donorEmail", label: "Donor email",  aliases: ["email", "donor email", "email address"] },
-  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo"] },
+  { key: "notes",      label: "Notes",        aliases: ["notes", "note", "comments", "memo", "background"] },
 ];
 export const STANDARD_RECURRING_FIELDS = [
   { key: "donorId",    label: "Donor ID",     aliases: ["donor id", "constituent id", "id", "account id"] },

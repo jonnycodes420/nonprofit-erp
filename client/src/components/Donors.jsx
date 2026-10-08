@@ -2,6 +2,7 @@ import { NoRecentMeetingPanel, WarmNotAskedPanel } from "./MovesPanels";
 import { useState, useEffect, useMemo, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import OldReportsImport from "./OldReportsImport";
+import HistoryImport from "./HistoryImport";
 import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
@@ -83,7 +84,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // their own map, keyed the same way, and the panel offers a retry.
   const[aiErr,setAiErr]=useState({});
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);const[showOldReports,setShowOldReports]=useState(false);const[showHistory,setShowHistory]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -120,6 +121,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirSearch,setDirSearch]=useState(search);
   const[dirReloadKey,setDirReloadKey]=useState(0);
   useEffect(()=>{const t=setTimeout(()=>setDirSearch(search),300);return()=>clearTimeout(t);},[search]);
+  // IMPORT-2: "Bring in your notes" from a profile or the donor import's last screen.
+  useEffect(()=>{const open=()=>setShowHistory(true);window.addEventListener("steward:history-import",open);return()=>window.removeEventListener("steward:history-import",open);},[]);
   // PARITY-1 — one tag or closeness filter, "level:major", "closeness:warm".
   const[dirStatus,setDirStatus]=useState("");
   useEffect(()=>{setDirPage(0);},[dirSearch,dirStage,dirAssignee,dirDesignation,dirSort,dirHousehold,dirStatus]);
@@ -531,6 +534,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
       {/* REPORTS-5: the second door to the one old-reports wizard. */}
       {showOldReports&&<OldReportsImport onClose={()=>setShowOldReports(false)}/>}
+      {/* IMPORT-2: notes and history. Also opened from a profile's "No history
+          yet" and from the donor import's last screen, by one window event. */}
+      {showHistory&&<HistoryImport onClose={()=>setShowHistory(false)} onDone={reloadDonors}/>}
       {showHours&&<HoursImportModal onClose={()=>setShowHours(false)} onDone={reloadDonors} Modal={Modal} Papa={Papa} presets={HOURS_PRESETS_MOD}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
           MAGICAL import (DonorImport withHistory: shape detection + the
@@ -621,6 +627,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 {label:"Import + History",hint:"One file in, donors + full gift history out",badge:"Recommended",act:()=>setShowCombinedImport(true)},
                 {label:"Import donors only",hint:"A contact list with no gift rows",act:()=>setShowImport(true)},
                 {label:"Add giving history",hint:"Attach a gift export to donors already here",act:()=>setShowGiftImport(true)},
+                {label:"Bring your notes and history",hint:"Notes, calls, meetings, open tasks and letters from your old system",act:()=>setShowHistory(true)},
                 {divider:true},
                 {label:"Import volunteer hours",hint:"A Wranglr or VolunteerHub hours export",act:()=>setShowHours(true)},
                 {label:"Import grants",hint:"A grants spreadsheet from another system, or your own",act:()=>setShowGrantImport(true)},

@@ -845,6 +845,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             {fmtN(result.semantics.counts?.pledges || 0)} pledges recorded as commitments · {fmtN(result.semantics.counts?.merges || 0)} merges logged for undo.
           </div>
         )}
+        {/* IMPORT-2: the next file, offered quietly (an outline, not a second primary). */}
+        <button type="button" data-testid="wb-bring-notes" onClick={() => { if (onImported) onImported(); else onClose(); setTimeout(() => window.dispatchEvent(new Event("steward:history-import")), 0); }}
+          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 16px", color: T.ink, fontSize: 13.5, fontWeight: 700, cursor: "pointer", marginRight: 8, fontFamily: "inherit" }}>
+          Bring your notes and history
+        </button>
         {/* ONE primary action. No confetti, no second button competing with it. */}
         {btn(onOpenHome ? "Open Home" : "Done", () => {
           if (onImported) onImported(); else onClose();

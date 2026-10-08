@@ -141,6 +141,7 @@ CORE=(
   oauth-state
   int3-optout
   mailchimp1-sync
+  import2-history
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof
