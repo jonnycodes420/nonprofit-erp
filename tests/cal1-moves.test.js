@@ -24,7 +24,7 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
 // FIX-33: a move reaches the calendar as wall-clock time in the org's zone
 // (it used to be a UTC instant). The same INSTANT is what must match.
 function sameInstant(block, isoUtc) {
@@ -92,6 +92,18 @@ async function reset() {
   const item = id => list.body.items.find(i => i.id === id);
   const audits = async path => Number((await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1 AND request_path=$2`, [ORG, path]))[0].n);
   const send = r => api(r.method, r.path, tok, r.body);
+  // FIX-34 · THE CI-ONLY FLAKE. middleware/auditTrail.js writes its one row on
+  // res "finish", AFTER the response has gone (snapshot reads, then the
+  // insert), by design: a write's response does not wait on its audit. So a
+  // count read the instant the response lands can be one short; on CI's slower
+  // shared runners it was (PR #168, #171). Wait for the rows this suite asserts
+  // to arrive (never a fixed sleep), then assert the count EXACTLY, so a
+  // second row still fails.
+  const auditsAt = async want => {
+    const now = async () => ({ m: await audits(want.paths[0]), s: await audits(want.paths[1]), h: await audits(want.paths[2]) });
+    await waitFor(async () => { const c = await now(); return c.m >= want.m && c.s >= want.s && c.h >= want.h; }, { timeout: 10000, interval: 25 });
+    return now();
+  };
 
   // ── §1 · each drag goes through its own route, one audit row each ───────
   console.log("\n— §1 · the drag: its own route, one audit row —");
@@ -111,8 +123,9 @@ async function reset() {
   ok("§1 the next step is two days on at 10:30", t1.due_date === plus(3) && t1.due_time === "10:30", t1);
   const [s1] = await q(`SELECT date, start_time, end_time FROM volunteer_slots WHERE id='vsl_cal1'`);
   ok("§1 the shift runs to 13:00", s1.date === plus(2) && s1.start_time === "09:00" && s1.end_time === "13:00", s1);
-  ok("§1 one audit row for each move", (await audits(mReq.path)) === before.m + 1 && (await audits(sReq.path)) === before.s + 1 && (await audits(hReq.path)) === before.h + 1,
-    { m: [before.m, await audits(mReq.path)], s: [before.s, await audits(sReq.path)], h: [before.h, await audits(hReq.path)] });
+  const paths = [mReq.path, sReq.path, hReq.path];
+  const c1 = await auditsAt({ paths, m: before.m + 1, s: before.s + 1, h: before.h + 1 });
+  ok("§1 one audit row for each move", c1.m === before.m + 1 && c1.s === before.s + 1 && c1.h === before.h + 1, { before, after: c1 });
 
   // ── §2 · Undo puts each back exactly ────────────────────────────────────
   console.log("\n— §2 · Undo: the same route, the old values —");
@@ -125,7 +138,8 @@ async function reset() {
     && patches.length === 2 && sameInstant(patches[1].body.start, `${MON}T14:00:00Z`), { m2, p: patches[1] });
   ok("§2 the next step is back exactly", t2.due_date === plus(1) && t2.due_time === "09:30", t2);
   ok("§2 the shift is back exactly", s2.date === plus(2) && s2.start_time === "09:00" && s2.end_time === "12:00", s2);
-  ok("§2 …and each Undo is its own audit row", (await audits(mReq.path)) === before.m + 2 && (await audits(sReq.path)) === before.s + 2 && (await audits(hReq.path)) === before.h + 2);
+  const c2 = await auditsAt({ paths, m: before.m + 2, s: before.s + 2, h: before.h + 2 });
+  ok("§2 …and each Undo is its own audit row", c2.m === before.m + 2 && c2.s === before.s + 2 && c2.h === before.h + 2, { before, after: c2 });
 
   // ── §3 · when the calendar refuses, nothing moves; another org, nothing ─
   console.log("\n— §3 · refused and tenant —");
