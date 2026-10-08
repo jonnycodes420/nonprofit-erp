@@ -165,7 +165,7 @@ const resend = new Proxy(_rawResend, {
     });
   },
 });
-const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
+const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
 const { signToken, tokenUserId, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
@@ -3499,7 +3499,7 @@ async function givingAccountEntry(org) {
 const {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
   demoMailNote, donorMailDecisions,
-  linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
+  linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail, staffUnsubscribeUrl,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
   trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
@@ -6009,8 +6009,11 @@ async function composeThreadNudgeQueue(orgId, today, opts) {
 // named, with its day count — the BUILD-81 line that made the subject do the
 // work. A brief with no threads falls back to the task sentence rather than
 // inventing a thread that is not there.
-function morningBriefSubject(threads, taskCount, org) {
+function morningBriefSubject(threads, taskCount, org, meetingCount = 0) {
   const total = threads.length + taskCount;
+  if (threads.length === 0 && taskCount === 0 && meetingCount) {
+    return `${meetingCount} meeting${meetingCount === 1 ? "" : "s"} today · ${displayNameCase(org.name || "")}`;
+  }
   if (threads.length === 0) {
     return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today — ${displayNameCase(org.name || "")}`;
   }
@@ -6035,7 +6038,7 @@ function morningBriefSubject(threads, taskCount, org) {
 // EVERY THREAD ROW CARRIES ITS REASON. shared/threadRank.js decided the order;
 // this prints the sentence that order was built from, so the list can always
 // answer "why am I looking at this one first?" without the reader guessing.
-function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }) {
+function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [] }) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
   const row = t => {
     const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
@@ -6072,6 +6075,16 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }
       <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.dueToday, ...tasks.overdue].map(taskLi).join("")}</table>
     </div>` : "";
 
+  // FIX-34 · TODAY'S MEETINGS ride in the same morning email, from the same
+  // composer Home's meetings panel reads (routes/finance.js composeTodayMeetings).
+  const tz = org.timezone || "America/New_York";
+  const at = iso => { try { return new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", timeZone: tz }); } catch { return ""; } };
+  const meetingBlock = meetings.length ? `
+    <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};" data-section="meetings">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your meetings today</div>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${meetings.map(m => `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
+        <strong>${digestEsc(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${digestEsc(m.title || "Meeting")}${(m.people || []).length ? `<span style="color:${SAGE};"> with ${digestEsc(m.people.map(p => p.name).join(", "))}</span>` : ""}</td></tr>`).join("")}</table>
+    </div>` : "";
   const teamBlock = team && team.length ? `
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #dcd8cd;">
       <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Across the team</div>
@@ -6088,7 +6101,8 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }
 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
-      ${threadBlock}${taskBlock}${teamBlock}${footer}
+      ${threadBlock}${taskBlock}${meetingBlock}${teamBlock}${footer}
+      ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Account. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
 
@@ -6120,6 +6134,7 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
       GROUP BY 1 ORDER BY 2 DESC`, [today, org.id, today]);
   const multiOfficer = teamRows.filter(r => r.who !== "Unassigned").length >= 2;
+  const briefCarriedMeetings = new Set();
 
   for (const u of users) {
     const isAdmin = u.role === "admin";
@@ -6140,7 +6155,13 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     const suppressed = (!wantsThreads && tqAll.list.length > 0) || (!wantsTasks && taskAll.count > 0);
     const tq = wantsThreads ? tqAll : { list: [], more: 0, total: 0 };
     const taskDigest = wantsTasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };
-    if (tq.list.length === 0 && taskDigest.count === 0) {
+    // FIX-34 · today's meetings ride with the tasks, under the same setting.
+    let meetingsToday = [];
+    if (wantsTasks) {
+      try { meetingsToday = (await require("./routes/finance").composeTodayMeetings(org.id, u.id, { withLogged: true })).meetings || []; }
+      catch (e) { console.error("[morning-brief] meetings:", e.message); }
+    }
+    if (tq.list.length === 0 && taskDigest.count === 0 && meetingsToday.length === 0) {
       // WHY there is no email matters to whoever is reading this report: a
       // person who turned both notifications off is not the same as a person
       // with a clear morning, and reporting both as "empty" hides a setting
@@ -6151,7 +6172,7 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
 
     const subject = morningBriefSubject(tq.list, taskDigest.count, org);
     const payload = { recipientUserId: u.id, email: u.email, subject,
-                      threads: tq.list.length, tasks: taskDigest.count, count: tq.list.length + taskDigest.count };
+                      threads: tq.list.length, tasks: taskDigest.count, meetings: meetingsToday.length, count: tq.list.length + taskDigest.count };
     if (!send) { out.sent.push(payload); continue; }
 
     // Reserve only the ledgers whose section this brief actually carries. A
@@ -6159,16 +6180,17 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
     // re-sent — so a second tick can never repeat a line the user has read.
     let threads = tq.list, more = tq.more, tasks = taskDigest;
     if (threads.length && !(await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen }))) { threads = []; more = 0; }
-    if (tasks.count && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length }))) tasks = { rows: [], overdue: [], dueToday: [], count: 0 };
-    if (threads.length === 0 && tasks.count === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+    let meetings = meetingsToday;
+    if ((tasks.count || meetings.length) && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length, meetings: meetings.length }))) { tasks = { rows: [], overdue: [], dueToday: [], count: 0 }; meetings = []; }
+    if (threads.length === 0 && tasks.count === 0 && meetings.length === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
 
-    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today,
+    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today, meetings,
                                           team: isAdmin && multiOfficer ? teamRows : null });
-    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body)) out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
+    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org, meetings.length), body)) { out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count, meetings: meetings.length }); if (meetings.length) briefCarriedMeetings.add(u.id); }
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
-  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send }); }
+  try { out.meetingBriefs = await runMeetingBriefForOrg(org, { today, send, skipUsers: briefCarriedMeetings }); }
   catch (e) { console.error("[meeting-brief]", org.id, e.message); }
   return out;
 }
@@ -6181,12 +6203,14 @@ async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(o
 // composeTodayMeetings), to the staff member's OWN sign-in address and nobody
 // else. Off unless she ticks it in Settings → Account. One a day (the
 // meeting_brief ledger), and none on a day with no meetings.
-async function runMeetingBriefForOrg(org, { today, send = true }) {
+async function runMeetingBriefForOrg(org, { today, send = true, skipUsers = null }) {
   const out = { sent: [], skipped: [] };
   const users = await query(
     "SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL AND deactivated_at IS NULL AND notify_meeting_brief = true", [org.id]);
   const fin = require("./routes/finance");
   for (const u of users) {
+    // FIX-34 · the morning email already carried her meetings: one email, not two.
+    if (skipUsers && skipUsers.has(u.id)) { out.skipped.push({ recipientUserId: u.id, reason: "in_morning_brief" }); continue; }
     const { meetings } = await fin.composeTodayMeetings(org.id, u.id, { withLogged: true });
     if (!meetings.length) { out.skipped.push({ recipientUserId: u.id, reason: "no_meetings" }); continue; }
     if (!send) { out.sent.push({ recipientUserId: u.id, count: meetings.length }); continue; }
@@ -8941,11 +8965,21 @@ async function finishSyncRun(runId, { ok, found = null, logged = null, error = n
     [!!ok, found, logged, error ? String(error).slice(0, 300) : null, runId]).catch(() => {});
 }
 // The sentence a person reads. Never a status code, never a stack.
+// FIX-34: "did not answer" is said ONLY for a timeout; a refusal says it was
+// refused and why (apiCheck.js holds the wording).
 function syncErrorSentence(providerKey, what, e) {
   const label = providerKey === "google" ? (what === "calendar" ? "Google Calendar" : "Gmail") : "Outlook";
   if (e && e.code === "token_refused") return `${label} refused Steward's permission. Reconnect to keep it working.`;
-  if (e && e.code === "provider_refused") return `${label} did not answer when Steward asked for your ${what}. Steward tries again every 15 minutes.`;
-  return `Steward could not finish reading your ${what}. It tries again every 15 minutes.`;
+  if (e && e.sentence) return e.sentence;
+  return `Steward could not finish reading your ${what}. It tries again in 5 minutes.`;
+}
+// FIX-34 · ONE RUN PER CONNECTION AT A TIME, and a 429 is honoured. The lock
+// is a Postgres advisory lock, so it also holds across two instances.
+const APIC = require("./apiCheck");
+const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
+const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
+async function noteRetryAfter(conn, e) {
+  if (e && e.retryAfter) await run(`UPDATE mailbox_connections SET retry_after=? WHERE id=?`, [e.retryAfter.toISOString(), conn.id]).catch(() => {});
 }
 const PROVIDER_TIMEOUT_MS = 20000;
 const providerFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -8956,6 +8990,11 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
     [userId, orgId, providerKey]);
   if (!conn) return { logged: 0, reason: "not_connected" };
   if (conn.paused === true) return { logged: 0, reason: "paused" };
+  if (backedOff(conn)) return { logged: 0, reason: "backed_off" };
+  const locked = await withTryAdvisoryLock(syncLockKey("mail", conn), () => syncMailboxLocked(conn, userId, orgId, providerKey, trigger));
+  return locked && locked.skipped ? { logged: 0, reason: "running" } : locked;
+}
+async function syncMailboxLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "mail", trigger);
   await run(`UPDATE mailbox_connections SET last_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
   try {
@@ -8965,6 +9004,7 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
     return out;
   } catch (e) {
     const sentence = syncErrorSentence(providerKey, "mail", e);
+    await noteRetryAfter(conn, e);
     console.error(`[mailbox] ${providerKey} sync for ${conn.id} failed:`, e.message);
     await finishSyncRun(runId, { ok: false, error: sentence });
     await run(`UPDATE mailbox_connections SET last_error=?, last_error_at=NOW() WHERE id=?`, [sentence, conn.id]).catch(() => {});
@@ -8973,16 +9013,65 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
   }
 }
 
+// FIX-34 · A GMAIL RUN WITH NOTHING NEW IS ONE SMALL CALL. Gmail's history
+// list from the last read's history id says whether anything arrived, was sent
+// or was deleted since; if nothing, the run stops there. An expired or unknown
+// id (404) falls back to the full read, which stores a fresh id.
+async function gmailHistoryNow(token) {
+  const r = await providerFetch(`${GMAIL_BASE()}/gmail/v1/users/me/profile`, { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  const b = r && r.ok ? await r.json().catch(() => null) : null;
+  return b && b.historyId ? String(b.historyId) : null;
+}
+async function gmailUnchanged(conn, token) {
+  if (!conn.gmail_history_id) return null;
+  const r = await providerFetch(`${GMAIL_BASE()}/gmail/v1/users/me/history?` + new URLSearchParams({ startHistoryId: conn.gmail_history_id, maxResults: "1" }),
+    { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  if (!r) return null;
+  if (!r.ok) {
+    if (r.status === 429) throw APIC.providerError("google", "mail", 429, await r.json().catch(() => null),
+      APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+    return null;
+  }
+  const b = await r.json().catch(() => null);
+  // Only a real history answer (it always carries the mailbox's historyId) can say "nothing new".
+  return b && b.historyId && !(b.history && b.history.length) ? { historyId: String(b.historyId) } : null;
+}
+
 async function syncMailboxRun(conn, userId, orgId, providerKey) {
   const ML = await import("./shared/mailboxLog.js");
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
+  let historyId = null;
+  if (providerKey === "google") {
+    const same = await gmailUnchanged(conn, token);
+    if (same) {
+      await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0, gmail_history_id=?,
+                        last_error=NULL, last_error_at=NULL, retry_after=NULL, updated_at=NOW() WHERE id=?`, [same.historyId, conn.id]);
+      return { logged: 0, found: 0, unchanged: true };
+    }
+    historyId = await gmailHistoryNow(token);   // taken BEFORE the read, so nothing that lands during it is skipped next time
+  }
+  // FIX-34 · OUTLOOK MAIL THROUGH GRAPH DELTA: one small call per folder
+  // (Inbox, Sent Items) when nothing changed. Any change, a lost link (410) or
+  // a link older than 6 hours means the full read below, as before.
+  let graphLinks = null;
+  if (providerKey === "microsoft") {
+    const [inbox, sent] = [await graphDeltaGate(conn, "inbox", token), await graphDeltaGate(conn, "sent", token)];
+    graphLinks = { inbox, sent };
+    if (inbox.unchanged && sent.unchanged) {
+      await saveGraphDelta(conn, graphLinks);
+      await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0,
+                        last_error=NULL, last_error_at=NULL, retry_after=NULL, updated_at=NOW() WHERE id=?`, [conn.id]);
+      return { logged: 0, found: 0, unchanged: true };
+    }
+  }
 
   const donors = await query(
     `SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email <> '' AND deleted_at IS NULL`,
     [orgId]);
   if (!donors.length) {
     // Nobody on file with an email is a finished read, not a silent one.
+    if (graphLinks) await saveGraphDelta(conn, graphLinks);
     await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_logged_count=0, last_error=NULL, last_error_at=NULL,
                       updated_at=NOW() WHERE id=?`, [conn.id]);
     return { logged: 0, found: 0, reason: "no_people" };
@@ -9006,7 +9095,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
   // Every request the provider refused, and none it answered: that is a
   // failed read, said so, never "nothing new".
   if (fetched.asked && fetched.refused === fetched.asked)
-    throw Object.assign(new Error(`all ${fetched.asked} provider requests refused`), { code: "provider_refused" });
+    throw APIC.providerError(providerKey, "mail", fetched.lastStatus, fetched.lastBody);
   const messages = fetched.messages;
   // FIX-14 Part 1 — an email is filed under the day it arrived IN THE ORG's
   // zone. The normalizers sliced the UTC day, so mail after 8pm in New York
@@ -9071,7 +9160,9 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
 
   await run(
     `UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=?,
-            last_error=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=?`, [logged, conn.id]);
+            last_error=NULL, last_error_at=NULL, retry_after=NULL, gmail_history_id=COALESCE(?, gmail_history_id), updated_at=NOW() WHERE id=?`,
+    [logged, historyId, conn.id]);
+  if (graphLinks) await saveGraphDelta(conn, graphLinks);
   // THREAD-3: an email from a donor nobody has answered becomes a step.
   const replies = await processUnansweredMail(orgId).catch(e => { console.error("[mailbox] needs reply:", e.message); return null; });
   return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0 };
@@ -9088,6 +9179,11 @@ async function syncCalendar(userId, orgId, providerKey, { trigger = "tick" } = {
     `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
     [userId, orgId, providerKey]);
   if (!conn || conn.calendar_granted !== true || conn.paused === true || !conn.credentials_sealed) return { kept: 0 };
+  if (backedOff(conn)) return { kept: 0, reason: "backed_off" };
+  const locked = await withTryAdvisoryLock(syncLockKey("calendar", conn), () => syncCalendarLocked(conn, userId, orgId, providerKey, trigger));
+  return locked && locked.skipped ? { kept: 0, reason: "running" } : locked;
+}
+async function syncCalendarLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "calendar", trigger);
   await run(`UPDATE mailbox_connections SET calendar_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
   try {
@@ -9097,6 +9193,7 @@ async function syncCalendar(userId, orgId, providerKey, { trigger = "tick" } = {
     return out;
   } catch (e) {
     const sentence = syncErrorSentence(providerKey, "calendar", e);
+    await noteRetryAfter(conn, e);
     console.error(`[calendar] ${providerKey} sync for ${conn.id} failed:`, e.message);
     await finishSyncRun(runId, { ok: false, error: sentence });
     await run(`UPDATE mailbox_connections SET calendar_error=? WHERE id=?`, [sentence, conn.id]).catch(() => {});
@@ -9109,6 +9206,22 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   const ME = require("./meetingEffects");
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
+  const readStartedAt = new Date();
+  if (await calendarUnchanged(conn, providerKey, token)) {
+    await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+    return { kept: 0, found: 0, unchanged: true };
+  }
+  // FIX-34 · OUTLOOK CALENDAR THROUGH calendarView/delta, the same way.
+  let calLinks = null;
+  if (providerKey === "microsoft") {
+    const g = await graphDeltaGate(conn, "calendar", token);
+    calLinks = { calendar: g };
+    if (g.unchanged) {
+      await saveGraphDelta(conn, calLinks);
+      await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+      return { kept: 0, found: 0, unchanged: true };
+    }
+  }
 
   const people = await query(
     `SELECT id, name, email FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
@@ -9124,9 +9237,8 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
 
   const from = new Date(Date.now() - CL.WINDOW_PAST_DAYS * 864e5).toISOString();
   const to = new Date(Date.now() + CL.WINDOW_AHEAD_DAYS * 864e5).toISOString();
+  // The provider refused: fetchCalendarEvents throws, what is stored is left alone, and the run says why.
   const events = await fetchCalendarEvents(providerKey, token, from, to);
-  // The provider refused: leave what is stored alone, and say so.
-  if (events === null) throw Object.assign(new Error("calendar refused"), { code: "provider_refused" });
 
   const actorId = `system:calendar/${providerKey}/${userId}`;
   const ctx = { paused: false, neverLog, excludedIds, mailboxAddress: conn.address, staffEmails, donorsByEmail, ownerUserId: userId,
@@ -9173,7 +9285,9 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   for (const g of gone) await ME.revertMeeting(g.id, { actorId, actorName: "Calendar sync" })
     .catch(e => console.error("[calendar] meeting revert:", e.message));
   if (gone.length) await run(`DELETE FROM calendar_events WHERE id = ANY(?)`, [gone.map(g => g.id)]);
-  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), calendar_read_from=?, retry_after=NULL WHERE id=?`,
+    [readStartedAt.toISOString(), conn.id]);
+  if (calLinks) await saveGraphDelta(conn, calLinks);
   // KEPT only: how many events she has that are not meetings is not Steward's to know.
   return { kept, found: kept };
 }
@@ -9280,7 +9394,7 @@ async function fetchCalendarEvents(providerKey, token, from, to) {
           maxResults: "250", fields: CL.GOOGLE_EVENT_FIELDS, ...(pageToken ? { pageToken } : {}) });
         const r = await providerFetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
           { headers: { Authorization: "Bearer " + token } });
-        if (!r.ok) { console.error(`[calendar] google answered ${r.status}`); return null; }
+        if (!r.ok) { console.error(`[calendar] google answered ${r.status}`); throw await calRefusal(r, "google"); }
         const body = await r.json();
         for (const it of body.items || []) out.push(CL.fromGoogle(it));
         if (!body.nextPageToken) break;
@@ -9291,14 +9405,94 @@ async function fetchCalendarEvents(providerKey, token, from, to) {
         startDateTime: from, endDateTime: to, $select: CL.GRAPH_EVENT_SELECT, $top: "250" });
       for (let i = 0; i < 5 && url; i++) {
         const r = await providerFetch(url, { headers: { Authorization: "Bearer " + token, Prefer: 'outlook.timezone="UTC"' } });
-        if (!r.ok) { console.error(`[calendar] microsoft answered ${r.status}`); return null; }
+        if (!r.ok) { console.error(`[calendar] microsoft answered ${r.status}`); throw await calRefusal(r, "microsoft"); }
         const body = await r.json();
         for (const it of body.value || []) out.push(CL.fromGraph(it));
         url = body["@odata.nextLink"] || null;
       }
     }
-  } catch (e) { console.error(`[calendar] ${providerKey} fetch:`, e.message); return null; }
+  } catch (e) {
+    if (e && e.reason) throw e;
+    console.error(`[calendar] ${providerKey} fetch:`, e.message);
+    throw APIC.providerError(providerKey, "calendar", null, null);   // a timeout: the only "did not answer"
+  }
   return out;
+}
+async function calRefusal(r, providerKey) {
+  const body = await r.json().catch(() => null);
+  return APIC.providerError(providerKey, "calendar", r.status, body, r.status === 429 ? APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3) : null);
+}
+// FIX-34 · A CALENDAR RUN WITH NOTHING NEW IS ONE SMALL CALL. Google is asked
+// whether anything changed (deletions included) since the last full read; if
+// nothing did, the run stops there. A full read still happens at least every
+// 6 hours so events sliding into the window are picked up.
+const CAL_FULL_EVERY_MS = 6 * 3600e3;
+// FIX-34 · GRAPH DELTA AS THE "ANYTHING NEW?" QUESTION. Each folder keeps its
+// deltaLink on the connection (graph_delta: { inbox, sent, calendar } each
+// { link, at }). A stored link younger than 6 hours is asked once: no changes
+// is one small call and the run stops. Otherwise the link is (re)made by
+// paging a delta from now (mail) or over the calendar window, and the full
+// read runs. A 410 (link gone) or any other refusal is a full read; a 429 waits.
+const GRAPH_DELTA_FULL_MS = 6 * 3600e3;
+const graphDeltaStart = (key) => {
+  const g = GRAPH_BASE() + "/v1.0/me";
+  if (key === "calendar") {
+    const CLW = { past: 30, ahead: 60 };   // shared/calendarLog.js WINDOW_PAST_DAYS / WINDOW_AHEAD_DAYS
+    return `${g}/calendarView/delta?` + new URLSearchParams({ startDateTime: new Date(Date.now() - CLW.past * 864e5).toISOString(),
+      endDateTime: new Date(Date.now() + CLW.ahead * 864e5).toISOString() });
+  }
+  const folder = key === "inbox" ? "Inbox" : "SentItems";
+  return `${g}/mailFolders('${folder}')/messages/delta?` + new URLSearchParams({ $select: "id",
+    $filter: `receivedDateTime ge ${new Date(Date.now() - 5 * 60e3).toISOString()}` });
+};
+async function graphDeltaWalk(url, token, pages, what = "mail") {
+  let changed = 0;
+  for (let i = 0; i < pages && url; i++) {
+    const r = await providerFetch(url, { headers: { Authorization: "Bearer " + token, Prefer: "odata.maxpagesize=50" } }).catch(() => null);
+    if (!r) return null;
+    if (!r.ok) {
+      if (r.status === 429) throw APIC.providerError("microsoft", what, 429, await r.json().catch(() => null),
+        APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+      return null;                                   // 410 and the rest: no link, full read
+    }
+    const b = await r.json().catch(() => null);
+    if (!b) return null;
+    changed += (b.value || []).length;
+    if (b["@odata.deltaLink"]) return { link: b["@odata.deltaLink"], changed };
+    url = b["@odata.nextLink"] || null;
+  }
+  return null;
+}
+async function graphDeltaGate(conn, key, token) {
+  const stored = (conn.graph_delta || {})[key];
+  if (stored && stored.link && Date.now() - new Date(stored.at).getTime() < GRAPH_DELTA_FULL_MS) {
+    const what = key === "calendar" ? "calendar" : "mail";
+    const w = await graphDeltaWalk(stored.link, token, 20, what);
+    if (w) return { unchanged: w.changed === 0, link: w.link, at: stored.at };
+  }
+  // No usable link: make one now (before the full read, so nothing that lands during it is missed).
+  const fresh = await graphDeltaWalk(graphDeltaStart(key), token, 40, key === "calendar" ? "calendar" : "mail");
+  return { unchanged: false, link: fresh ? fresh.link : null, at: new Date().toISOString() };
+}
+async function saveGraphDelta(conn, parts) {
+  const cur = { ...(conn.graph_delta || {}) };
+  for (const [k, v] of Object.entries(parts)) cur[k] = v && v.link ? { link: v.link, at: v.at } : null;
+  conn.graph_delta = cur;
+  await run(`UPDATE mailbox_connections SET graph_delta=? WHERE id=?`, [JSON.stringify(cur), conn.id]).catch(() => {});
+}
+
+async function calendarUnchanged(conn, providerKey, token) {
+  if (providerKey !== "google" || !conn.calendar_read_from) return false;
+  if (Date.now() - new Date(conn.calendar_read_from).getTime() > CAL_FULL_EVERY_MS) return false;
+  const q = new URLSearchParams({ updatedMin: new Date(conn.calendar_read_from).toISOString(), showDeleted: "true",
+    singleEvents: "true", maxResults: "1", fields: "kind,items(id)" });
+  const r = await providerFetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
+    { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  if (!r) return false;
+  if (!r.ok) { if (r.status === 429) throw await calRefusal(r, "google"); return false; }
+  const body = await r.json().catch(() => null);
+  // Only a real events list (kind calendar#events) can say "nothing changed".
+  return !!body && body.kind === "calendar#events" && Array.isArray(body.items) && body.items.length === 0;
 }
 
 // A mailbox token, refreshed through the same seam every other connection
@@ -9355,7 +9549,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
   const out = [];
   const seen = new Set();
   const CHUNK = 15, CAP = 120;
-  let asked = 0, refused = 0;
+  let asked = 0, refused = 0, lastStatus = null, lastBody = null;
   const auth = { headers: { Authorization: "Bearer " + token } };
   // One request, counted: a refusal is a number the caller can act on, not a
   // null that reads as an empty mailbox.
@@ -9363,9 +9557,19 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
     asked++;
     try {
       const r = await providerFetch(url, auth);
-      if (!r.ok) { refused++; console.error(`[mailbox] ${providerKey} answered ${r.status}`); return null; }
+      if (!r.ok) {
+        refused++; lastStatus = r.status; lastBody = await r.json().catch(() => null);
+        console.error(`[mailbox] ${providerKey} answered ${r.status}`);
+        // FIX-34: a 429 stops the run and the connection waits as long as it was told.
+        if (r.status === 429) throw APIC.providerError(providerKey, "mail", 429, lastBody,
+          APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+        return null;
+      }
       return await r.json();
-    } catch (e) { refused++; console.error(`[mailbox] ${providerKey} fetch:`, e.message); return null; }
+    } catch (e) {
+      if (e && e.reason) throw e;
+      refused++; lastStatus = null; console.error(`[mailbox] ${providerKey} fetch:`, e.message); return null;
+    }
   };
   const keep = m => { if (m && m.id && !seen.has(String(m.id)) && out.length < CAP) { seen.add(String(m.id)); out.push(m); } };
   const GRAPH_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink,conversationId,internetMessageHeaders";
@@ -9395,7 +9599,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
       for (const m of (sent?.value || [])) keep({ ...graphToMessage(m), sent: true });
     }
   }
-  return { messages: out, asked, refused };
+  return { messages: out, asked, refused, lastStatus, lastBody };
 }
 
 const addrOf = s => { const m = String(s || "").match(/<([^>]+)>/); return (m ? m[1] : String(s || "")).trim().toLowerCase(); };

@@ -152,6 +152,33 @@ function landingFor(g, map) {
   };
 }
 
+// ── FIX-34 Q · WHAT IS STILL TO MAP ──────────────────────────────────────
+// Nothing goes to QuickBooks, by a press or by the hourly tick, while any of
+// the org's funds has no QuickBooks account or no deposit account is chosen.
+// A gift would otherwise be posted, or held, against "an account not chosen
+// yet". Returns the names still to map and the one sentence that says so.
+async function mappingGaps(orgId, map) {
+  const funds = await query(
+    `SELECT id, name FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
+  const unmapped = funds.filter(f => !(map.funds[f.id] && map.funds[f.id].accountId)).map(f => f.name);
+  const noDeposit = !map.depositAccount;
+  // A press of Sync may go once SOMETHING can land (the deposit account and
+  // at least one account chosen); a gift on a fund still unmapped then waits
+  // in Pending with its own sentence and nothing is sent for it. The hourly
+  // tick asks more: EVERY fund mapped.
+  const anyMapped = [...Object.values(map.funds), ...Object.values(map.campaigns)].some(x => x && x.accountId);
+  const canSync = !noDeposit && anyMapped && !map.otherCompany;
+  if (!unmapped.length && !noDeposit) return { ok: true, canSync: !map.otherCompany, funds: [], depositAccount: true, sentence: null };
+  const list = xs => xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+  const parts = [];
+  if (unmapped.length) parts.push(`a QuickBooks income account for ${list(unmapped.map(n => `"${n}"`))}`);
+  if (noDeposit) parts.push("the account the money lands in");
+  return { ok: false, canSync, funds: unmapped, depositAccount: !noDeposit,
+    sentence: canSync
+      ? `Choose ${parts.join(", and ")} in the mapping. Until then those gifts wait in Pending and auto-sync stays off.`
+      : `Before anything is sent, choose ${parts.join(", and ")} in the mapping. Nothing has been sent.` };
+}
+
 // ── PENDING: THE ONE DEFINITION ───────────────────────────────────────────
 // The Pending list, the figure above it and the drill-through behind that
 // figure all read THIS, so the number and its rows cannot disagree. A gift is
@@ -368,13 +395,26 @@ const dollars = cents => Math.round(Number(cents) || 0) / 100;
 function describe(g) {
   return [g.fund_name ? `Gift to ${g.fund_name}` : "Gift", g.campaign_name || null].filter(Boolean).join(" · ").slice(0, 4000);
 }
+// FIX-34 Q · THE MEMO IS A SENTENCE A BOOKKEEPER READS. It said "Steward
+// gift g_0f787cb7", which is Steward's database talking. It now says who gave
+// and to which fund. The gift's id goes in DocNumber (the receipt number, at
+// most 21 characters), where it ties the entry back to Steward without being
+// in anybody's way. Nothing dedupes on either: the once-only guarantee is
+// Steward's own sync row and Intuit's request id, so receipts sent under the
+// old memo still count as sent and are never sent again.
+function receiptMemo(g) {
+  const who = safeName(g.donor_name || "an anonymous donor", 200) || "an anonymous donor";
+  const fund = g.fund_name ? safeName(g.fund_name, 200) : "";
+  return `Gift from ${who}${fund ? `, ${fund},` : ""} via Steward`.slice(0, 4000);
+}
 function buildSalesReceipt(g, landing, { customerId, itemId, depositAccountId }) {
   const amount = dollars(g.cents);
   return {
     TxnDate: String(g.date).slice(0, 10),
     CustomerRef: { value: String(customerId) },
     DepositToAccountRef: { value: String(depositAccountId) },
-    PrivateNote: `Steward gift ${g.id}`,
+    PrivateNote: receiptMemo(g),
+    DocNumber: String(g.id).slice(0, 21),
     Line: [{
       Amount: amount, DetailType: "SalesItemLineDetail", Description: describe(g),
       SalesItemLineDetail: { ItemRef: { value: String(itemId) }, Qty: 1, UnitPrice: amount,
@@ -562,7 +602,7 @@ async function syncPayout(ctx, payoutRef, gifts) {
 // `giftIds` null with `all` true is Sync all; otherwise only those gifts. The
 // caller is a person (routes/finance.js) or the org's own auto-sync tick, and
 // `who` is stamped on every row either way.
-async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null }) {
+async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null, everyFundMapped = false }) {
   const refuse = (error, sentence, status = 409) => ({ ok: false, status, error, sentence });
   const [org] = await query(`SELECT id, is_demo_org, qbo_sync_enabled FROM orgs WHERE id=?`, [orgId]);
   if (!org || org.qbo_sync_enabled !== true)
@@ -578,6 +618,9 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
   if (!conn.realm_id) return refuse("no_company", "Steward does not know which QuickBooks company this is. Connect it again.");
   if (!all && !(Array.isArray(giftIds) && giftIds.length))
     return refuse("nothing_chosen", "Choose the gifts to send, or press Sync all.", 400);
+  // FIX-34 Q: refused here, for the button and the hourly tick alike.
+  const gaps = await mappingGaps(orgId, map);
+  if (!gaps.ok && (everyFundMapped || !gaps.canSync)) return refuse("needs_mapping", gaps.sentence);
 
   // ONE RUN PER ORG AT A TIME. A lease on the connection row, taken with a
   // conditional UPDATE, so a second press waits for nothing and holds no
@@ -680,14 +723,16 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
       for (const g of pending) results.push(await syncSalesReceipt(ctx, g));
     }
   } finally {
+    const sentNow = results.some(r => r.status === "synced");
     const [left] = await query(
       `SELECT COUNT(*)::int AS n FROM gift_bookkeeping_syncs WHERE org_id=? AND vendor=? AND realm_id=? AND status='failed'`, [orgId, VENDOR, ctx.realmId]);
     const nFailed = Number(left && left.n) || 0;
     await run(
-      `UPDATE bookkeeping_connections SET sync_lock_until=NULL, last_sent_at=NOW(),
+      `UPDATE bookkeeping_connections SET sync_lock_until=NULL,
+              last_sent_at=CASE WHEN ? THEN NOW() ELSE last_sent_at END,
               last_error=?, last_error_at=CASE WHEN ? THEN NOW() ELSE last_error_at END, updated_at=NOW()
         WHERE id=? AND org_id=?`,
-      [nFailed ? `${nFailed} ${nFailed === 1 ? "gift is" : "gifts are"} waiting in Pending with a problem to fix.` : null,
+      [sentNow, nFailed ? `${nFailed} ${nFailed === 1 ? "gift is" : "gifts are"} waiting in Pending with a problem to fix.` : null,
        nFailed > 0, conn.id, orgId]);
   }
   const count = s => results.filter(r => r.status === s).length;
@@ -701,6 +746,30 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
          failed ? `${failed} could not go yet and ${failed === 1 ? "stays" : "stay"} in Pending with the reason` : null,
          already ? `${already} already there, not sent again` : null].filter(Boolean).join("; ") + ".",
   };
+}
+
+// ── FIX-34 Q · WHAT WAS SENT: THE ONE COUNT ──────────────────────────────
+// The QuickBooks card on Connections and the sync panel both say how much has
+// gone, and both read THIS: gifts whose sync row is `synced` for the company
+// the connection points at, since a day. The card read INT-2's deposit table,
+// which this path never writes, and so said "0 deposits sent" after a send.
+async function sentSummary(orgId, sinceDate) {
+  const [r] = await query(
+    `SELECT COUNT(DISTINCT s.qbo_id)::int AS entries, COUNT(*)::int AS gifts,
+            COALESCE(SUM(s.amount_cents), 0)::bigint AS cents, MAX(s.synced_at) AS last_at
+       FROM gift_bookkeeping_syncs s
+      WHERE s.org_id=? AND s.vendor='${VENDOR}' AND s.status='synced'
+        AND s.realm_id = (SELECT COALESCE(bc.realm_id, '') FROM bookkeeping_connections bc
+                           WHERE bc.org_id = s.org_id AND bc.vendor = '${VENDOR}' AND bc.status <> 'disconnected' LIMIT 1)
+        AND s.synced_at >= ?::date`, [orgId, sinceDate]);
+  return { entries: Number(r && r.entries) || 0, gifts: Number(r && r.gifts) || 0,
+           cents: Number(r && r.cents) || 0, lastAt: (r && r.last_at) || null };
+}
+// What the card's line under the name says: what the code sends, per mode.
+function sendsSentence(map) {
+  return map && map.mode === "deposit"
+    ? "Each payout becomes one deposit in QuickBooks. Nothing is sent twice."
+    : "Each gift becomes one sales receipt in QuickBooks. Nothing is sent twice.";
 }
 
 // ── THE LISTS FOR THE MAPPING SCREEN ──────────────────────────────────────
@@ -751,5 +820,5 @@ async function fetchPreview(ctx) {
 module.exports = {
   VENDOR, NO_FUND, MINOR_VERSION, apiBase, environment, appHost, txnLink,
   RUN_LIMIT, readMapping, startDateOf, landingFor, pendingWhere, pendingRowsSql, plainError, requestId,
-  buildSalesReceipt, buildPayoutDeposit, syncGifts, fetchLists, fetchPreview, qboCall, qboQuery, safeName,
+  buildSalesReceipt, buildPayoutDeposit, syncGifts, mappingGaps, sentSummary, sendsSentence, receiptMemo, fetchLists, fetchPreview, qboCall, qboQuery, safeName,
 };

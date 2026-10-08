@@ -273,6 +273,20 @@ function patternOf(gifts, today) {
   return null;
 }
 
+// FIX-34 · THE CLOSENESS WORD ON READ. The profile's closeness line and the
+// score card's band word were reading donor_scores.pattern, written the night
+// the scores ran, while the drift badge is computed on read: a gift in between
+// and the two disagreed. Both now read this, from the gifts as they are now.
+async function closenessNow(q, orgId, donorId, today, bandKey) {
+  const w = await weights();
+  const DS = require("./donorStatus");
+  const { gifts } = await givingRows(q, orgId, donorId);
+  const pattern = patternOf(gifts.filter(g => g.date && g.date <= today), today);
+  const [fs] = await q(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [donorId, orgId]);
+  const isNew = !!(fs && fs.first && String(fs.first).slice(0, 10) >= DS.windowsFor(today).newFrom);
+  return { key: w.closenessFor(bandKey || "distant", { isNew, pattern }), pattern };
+}
+
 // ── THE COMPUTE ─────────────────────────────────────────────────────────────
 // Every person in the org, both scores, parts that add to each score.
 async function scoreOrg(q, orgId, today) {
@@ -408,4 +422,4 @@ async function suggestedAsk(q, orgId, donorId, opts = {}) {
     sentence: `${own.sentence.replace(/: ask \$[\d,.]+(?:, [^.]*)?\.$/, "")}; the screening file (${s.provider}, ${s.screenedOn}) puts capacity at ${range}, so one step up: ask ${RT.dollars(up)}.` };
 }
 
-module.exports = { touchRows, givingRows, generosityParts, patternOf, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };
+module.exports = { touchRows, givingRows, generosityParts, patternOf, closenessNow, scoreOrg, recomputeOrgScores, partRows, suggestedAsk, apportion, pctAtOrBelow, weights, reasonFor };

@@ -467,7 +467,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     if (!x.last || r.occurred_on > x.last) x.last = r.occurred_on;
   }
 
-  const byProvider = new Map(sources.filter(s => s.status !== "disconnected").map(s => [s.provider, s]));
+  const byProvider = new Map(sources.filter(sourceIsConnected).map(s => [s.provider, s]));
   // FIX-10 D — what the SECOND half of the Stripe card says, built from the
   // same row every other API source is built from.
   const stripePart = card => ({
@@ -483,7 +483,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   for (const key of Object.keys(PROVIDERS)) {
     const s = byProvider.get(key);
     const b = (s && bucket.get(s.id)) || empty;
-    const connected = !!s && s.status !== "disconnected";
+    const connected = sourceIsConnected(s);
     const isFile = PROVIDERS[key].mode === "file";
     const isPos = PROVIDERS[key].pos === true;
     const pos = (s && posBy.get(s.id)) || null;
@@ -564,7 +564,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   {
     const BK = await import("../shared/bookkeeping.js");
     const books = await query(
-      `SELECT id, vendor, status, last_sent_at, last_error FROM bookkeeping_connections
+      `SELECT id, vendor, status, last_sent_at, last_error, mapping, realm_id FROM bookkeeping_connections
         WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
     const byVendor = new Map(books.map(b => [b.vendor, b]));
     // PARITY-2 Part 5: QuickBooks is offered only where the founder turned
@@ -586,7 +586,21 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
                 COUNT(*) FILTER (WHERE status <> 'sent')::int AS held
            FROM bookkeeping_deposits WHERE org_id=? AND vendor=? AND deposit_on >= ?`,
         [orgId, key, since30]) : [{ sent: 0, cents: 0, held: 0 }];
-      const sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      let sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      let sentCents = Number(sentRow.cents) || 0, lastSent = b ? b.last_sent_at : null;
+      // FIX-34 Q · QUICKBOOKS COUNTS WHAT ITS SYNC SENT. Where the org's
+      // QuickBooks sync is on, the gifts go through qboSync.js, which never
+      // writes bookkeeping_deposits: this card read "0 deposits sent, $0,
+      // never" beside "1 sent to QuickBooks". It reads the sync's own count
+      // now, the same one the sync panel shows.
+      const QSm = key === "quickbooks" && b && qboFlag && qboFlag.qbo_sync_enabled === true ? require("../qboSync") : null;
+      const qMap = QSm ? QSm.readMapping(b) : null;
+      if (QSm) {
+        const q = await QSm.sentSummary(orgId, since30);
+        sentN = qMap.mode === "deposit" ? q.entries : q.gifts; sentCents = q.cents; heldN = 0;
+        lastSent = q.lastAt || null;
+      }
+      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : "deposit";
       // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
       // rather than counting deposits that cannot have happened.
       if (BK.VENDORS[key].sends === false) {
@@ -608,19 +622,20 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
-        subtitle: "Steward sends one deposit per payout. It never sends the same payout twice.",
+        subtitle: QSm ? QSm.sendsSentence(qMap) : "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
         oauthProvider: OAUTH_BY_VENDOR[key] || null,
-        lastSentAt: b ? b.last_sent_at : null,
-        lastSyncedAt: b ? b.last_sent_at : null,
+        lastSentAt: lastSent,
+        lastSyncedAt: lastSent,
         status: !b ? "not_connected" : b.last_error ? "broken" : "healthy",
         sentence: !b ? C.STATUSES.not_connected.definition
           : b.last_error ? String(b.last_error)
           : sentN
-            ? `${sentN} deposit${sentN === 1 ? "" : "s"} sent this month, ${C.money(Number(sentRow.cents))} in all.`
+            ? `${sentN} ${sentNoun}${sentN === 1 ? "" : "s"} sent this month, ${C.money(sentCents)} in all.`
             : "Connected. Nothing has been sent this month yet.",
-        deposits30: sentN, deposits30Cents: Number(sentRow.cents) || 0, held30: heldN,
+        deposits30: sentN, deposits30Cents: sentCents, held30: heldN,
+        sentLabel: sentN === 1 ? `${sentNoun} sent` : `${sentNoun}s sent`,
         heldSentence: heldN ? `${heldN} ${heldN === 1 ? "deposit is" : "deposits are"} held and not sent.` : null,
       });
     }
@@ -820,6 +835,19 @@ app.get("/connections/:id/log", requireAuth, wrap(async (req, res) => {
     definition: "Every time Steward checked this connection, newest first, in plain sentences. What came in, what was skipped and why, and what failed." });
 }));
 
+// FIX-34 Y · THE ONE OBVIOUS FUND. An org with exactly one unrestricted,
+// non-sample fund (General Operating, as a rule) has one obvious place for a
+// source's gifts; with two or more it is the person's choice, never a guess.
+async function soleGeneralFundId(orgId) {
+  const rows = await query(
+    `SELECT id FROM fin_funds WHERE org_id=? AND COALESCE(restricted,false)=false AND COALESCE(is_sample,false)=false`, [orgId]);
+  return rows.length === 1 ? rows[0].id : null;
+}
+// FIX-34 Y · ONE CONNECTION, ONE STATUS. A giving source is connected when its
+// row is not disconnected. The Connections card and the "Connects directly"
+// tile both read THIS, so the two can never disagree about one row.
+function sourceIsConnected(s) { return !!s && s.status !== "disconnected"; }
+
 app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   const { providerLabel } = await import("../shared/givingSources.js");
   const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
@@ -836,7 +864,7 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   res.json({
     sources: rows.map(r => ({
       id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
-      displayName: r.display_name, status: r.status,
+      displayName: r.display_name, status: r.status, connected: sourceIsConnected(r),
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
       sitsOnTopOf: r.sits_on_top_of || null,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
@@ -860,6 +888,13 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
     // no credential, no claim: a name, so the page can say it back and the
     // product knows what it keeps being asked for.
     otherSources: readOtherSources(orgRow[0] && orgRow[0].other_giving_sources),
+    // FIX-34 Y · THE FUNDS THE "GIFTS GO TO" PICKER OFFERS, from the same
+    // answer as the sources. The picker read `r.funds` off /finance/funds,
+    // which answers with a bare array, so it offered no fund at all.
+    funds: (await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false
+                          ORDER BY restricted ASC, name ASC`, [req.user.orgId]))
+      .map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+    obviousFundId: await soleGeneralFundId(req.user.orgId),
   });
 }));
 
@@ -1112,6 +1147,9 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
     if (!f) return res.status(400).json({ error: "unknown_fund" });
   }
+  // FIX-34 Y: with one obvious choice (the org's only unrestricted fund),
+  // gifts from a new source go there instead of being a question each time.
+  if (!fundId) fundId = await soleGeneralFundId(orgId);
 
   let sealed = null;
   if (spec.credentialFields.length) {

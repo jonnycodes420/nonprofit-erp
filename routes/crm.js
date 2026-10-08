@@ -13612,7 +13612,13 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   if (!row) { await recomputeScoresForOrg(orgId); [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]); }
   const W = await engagementMod.weights();
   const parts = (typeof row?.parts === "string" ? JSON.parse(row.parts) : row?.parts) || { engagement: [], generosity: [] };
-  const band = W.bandFor(row ? row.engagement : 0);
+  const band0 = W.bandFor(row ? row.engagement : 0);
+  // FIX-34 · ONE STATUS. A Distant score beside a green "On track" line was two
+  // answers on one profile; the band word is the closeness word (PARITY-1:
+  // "the band in words"), read on the gifts as they are now.
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const cl = await engagementMod.closenessNow(query, orgId, d.id, today, band0.key);
+  const band = cl.key === band0.key ? band0 : { key: cl.key, label: W.CLOSENESS.find(c => c.key === cl.key).label };
   res.json({
     donorId: d.id,
     engagement: row ? row.engagement : 0, generosity: row ? row.generosity : 0,
@@ -16936,14 +16942,56 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   // POST /donors/:id/conversations (which requires a next step or an explicit
   // "No next step") and its id comes here. A bare tick is refused, so the
   // thread never ends without a decision.
+  // FIX-34 · AN EMAIL SENT FROM ITS TASK asks for the next step the way a
+  // call does: the email's own timeline line (sent through /tasks/:id/email)
+  // carries the decision, and a next step opens a thread on it.
+  if (done === 1 && !t.done && t.donor_id && req.body.interactionId && req.body.nextStep) {
+    const [ei] = await query(
+      `SELECT id, date FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'via'='task_email' AND metadata->>'taskId'=?
+          AND metadata->>'next_step' IS NULL`, [String(req.body.interactionId), orgId, t.donor_id, t.id]);
+    if (ei) {
+      const shape = await threadShapeMod();
+      const ns = req.body.nextStep;
+      const skipped = ns.skipped === true;
+      let step = null;
+      if (!skipped) {
+        const typeLabel = shape.nextStepLabelFor(ns.type);
+        if (!typeLabel || !/^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true}" });
+        step = { type: ns.type, label: shape.sanitizeStepLabel(ns.label) || typeLabel, due: ns.due, time: null };
+      }
+      const [donor] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [t.donor_id, orgId]);
+      const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+      const userName = me?.name || "";
+      const { today } = await taskDays(orgId);
+      await withTransaction(async client => {
+        await runTx(client, `UPDATE interactions SET metadata = COALESCE(metadata,'{}'::jsonb) || ?::jsonb WHERE id=? AND org_id=?`,
+          [JSON.stringify({ next_step: skipped ? "skipped" : "set", ...(step ? { next_step_label: step.label } : {}) }), ei.id, orgId]);
+        await queryTx(client, `UPDATE threads SET closed_at = NOW(), close_kind = 'outcome', closing_interaction_id = ?
+            WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL RETURNING id`, [ei.id, orgId, t.donor_id]);
+        if (step) await openThreadTx(client, { orgId, donorId: t.donor_id, step, openedOn: today,
+          ownerId: donor?.assigned_to || req.user.userId, ownerName: donor?.assigned_to ? donor.assigned_to_name : userName,
+          actorId: req.user.userId, actorName: userName, openingInteractionId: ei.id, followon: null });
+      });
+    }
+  }
+  // FIX-34: a next step's own task (link_kind next_step) that is a call or a
+  // meeting is finished the same way: the Calendar's Mark done used to close
+  // it with no "How did it go?" and no "What's next?". A deadline's task keeps
+  // its plain tick.
   let viaConversation = false;
-  if (done === 1 && !t.done && t.donor_id && !t.link_kind && ts.NEEDS_OUTCOME.has(ts.kindOf(t))) {
+  let outcomeKind = !t.link_kind ? ts.kindOf(t) : null;
+  if (t.link_kind === "next_step" && t.thread_id) {
+    const [th] = await query("SELECT next_step_type FROM threads WHERE id=? AND org_id=?", [t.thread_id, orgId]);
+    outcomeKind = th && ts.NEEDS_OUTCOME.has(th.next_step_type) ? th.next_step_type : ts.kindOf(t);
+  }
+  if (done === 1 && !t.done && t.donor_id && outcomeKind && ts.NEEDS_OUTCOME.has(outcomeKind)) {
     const iid = String(req.body.interactionId || "");
     const [i] = iid ? await query(
       `SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'next_step' IN ('set','skipped')`,
       [iid, orgId, t.donor_id]) : [];
     if (!i) return res.status(422).json({ error: "needs_outcome",
-      sentence: `Say how the ${ts.kindOf(t) === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
+      kind: outcomeKind,
+      sentence: `Say how the ${outcomeKind === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
     viaConversation = true;
   }
   // FIX-31: a next step's or a deadline's task is ticked through that record,
@@ -16977,6 +17025,105 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   }
   if (recur && done === 0) await run("DELETE FROM tasks WHERE recur_parent_id=? AND org_id=? AND done=0 AND link_kind IS NULL", [t.id, orgId]);
   res.json({ ...(await readTask(orgId, t.id)), next });
+}));
+
+// FIX-34 · A THANK-YOU TASK DOES THE THANKING. The task's Thank-you button
+// opens the draft for THAT gift (the task's source gift, else the person's
+// latest gift not yet thanked). Sending it, or marking it sent, is one write:
+// the gift is thanked the way /acknowledgments/mark thanks it, its drafted
+// thank-you leaves the queue, and the task closes. She pressed Send; Steward
+// did not send anything on its own. Undo (POST /tasks/:id/thank/undo) puts
+// all three back.
+async function taskGiftToThank(orgId, t, giftId) {
+  if (giftId) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=? AND donor_id=?", [String(giftId), orgId, t.donor_id]); if (g) return g; }
+  if (t.source_gift_id) { const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [t.source_gift_id, orgId]); if (g) return g; }
+  const [g] = await query(
+    `SELECT * FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0 AND acknowledgement_sent IS NOT TRUE
+      ORDER BY date DESC, id DESC LIMIT 1`, [orgId, t.donor_id]);
+  return g || null;
+}
+app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const g = await taskGiftToThank(req.user.orgId, t, req.query.giftId);
+  const [d] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [t.donor_id, req.user.orgId]);
+  const [gc] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0", [req.user.orgId, t.donor_id]);
+  res.json({ giftCount: gc ? gc.n : 0, gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.acknowledgement_sent === true } : null,
+             donor: d ? { id: d.id, name: d.name, email: d.email || null } : null });
+}));
+app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await ACK_READY;
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const g = await taskGiftToThank(orgId, t, req.body && req.body.giftId);
+  if (!g) return res.status(409).json({ error: "no_gift", sentence: "There is no gift on file to thank this person for yet." });
+  const mode = req.body && req.body.mode === "send" ? "send" : "mark";
+  if (mode === "send") {
+    const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
+    const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
+    if (!subject || !body) return res.status(400).json({ error: "A thank-you needs a subject and words." });
+    const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+    await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
+      [mdId, orgId, t.donor_id, `task-thanks:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
+    const [draft] = await query("SELECT * FROM milestone_drafts WHERE id=?", [mdId]);
+    const r = await sendMilestoneDraft(req, draft);
+    if (r.status !== 200) { await run("DELETE FROM milestone_drafts WHERE id=? AND org_id=?", [mdId, orgId]); return res.status(r.status).json({ error: r.error, sentence: r.error }); }
+  }
+  const before = { acknowledgement_sent: g.acknowledgement_sent === true, acknowledgement_sent_at: g.acknowledgement_sent_at || null,
+    acknowledged_by: g.acknowledged_by || null, acknowledged_by_name: g.acknowledged_by_name || null, acknowledged_via: g.acknowledged_via || null };
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const whoName = u?.name || actor(req).name;
+  await run(
+    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+                      acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
+                      acknowledged_via=COALESCE(acknowledged_via, 'email')
+      WHERE org_id=? AND id=?`, [actor(req).id, whoName, orgId, g.id]);
+  const drafts = await query("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND gift_id=? AND sent_at IS NULL AND skipped_at IS NULL RETURNING id", [orgId, g.id]).catch(() => []);
+  const linked = await linkedTaskChange(req, t.id, { done: 1 });
+  if (linked && linked.refused) return res.status(409).json(linked.refused);
+  if (!linked) await run("UPDATE tasks SET done=1, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
+  await run("UPDATE tasks SET completed_at=COALESCE(completed_at, NOW()), completed_by_name=? WHERE id=? AND org_id=?", [actor(req).name, t.id, orgId]);
+  if (req.audit) { req.audit.entity("gift", g.id); req.audit.before(before); req.audit.after({ acknowledgement_sent: true, task_done: true, mode }); }
+  res.json({ ok: true, mode, giftId: g.id, before, draftIds: drafts.map(d => d.id), task: await readTask(orgId, t.id) });
+}));
+app.post("/tasks/:id/thank/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Task not found" });
+  const b = (req.body && req.body.before) || {};
+  const giftId = String((req.body && req.body.giftId) || "");
+  if (giftId && !b.acknowledgement_sent) {
+    await run(`UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_by=NULL, acknowledged_by_name=NULL, acknowledged_via=NULL
+                WHERE org_id=? AND id=?`, [orgId, giftId]);
+  }
+  const ids = Array.isArray(req.body && req.body.draftIds) ? req.body.draftIds.map(String) : [];
+  if (ids.length) await run("UPDATE thank_you_drafts SET sent_at=NULL WHERE org_id=? AND id = ANY(?)", [orgId, ids]);
+  const linked = await linkedTaskChange(req, t.id, { done: 0 });
+  if (!linked) await run("UPDATE tasks SET done=0, completed_at=NULL, completed_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?", [t.id, orgId]);
+  res.json({ ok: true, task: await readTask(orgId, t.id) });
+}));
+
+// FIX-34 · AN EMAIL TASK OPENS A DRAFT. Send goes through the one draft sender
+// (sendMilestoneDraft: donorMailDecision, the footer, the timeline line). The
+// task stays open: it is finished through /tasks/:id/complete with the email's
+// interactionId and a next step (or "No next step"), the way a call is.
+app.post("/tasks/:id/email", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM tasks WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
+  const subject = String((req.body && req.body.subject) || "").trim().slice(0, 200);
+  const body = String((req.body && req.body.body) || "").trim().slice(0, 8000);
+  if (!subject || !body) return res.status(400).json({ error: "An email needs a subject and words." });
+  const who = actor(req), mdId = "md_" + uuid().slice(0, 12);
+  await run(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,'pending_review','task',?,?)`,
+    [mdId, orgId, t.donor_id, `task-email:${t.id}:${Date.now()}`, subject, body, who.id, who.name]);
+  const [draft] = await query("SELECT * FROM milestone_drafts WHERE id=?", [mdId]);
+  const r = await sendMilestoneDraft(req, draft, { taskId: t.id });
+  if (r.status !== 200) { await run("DELETE FROM milestone_drafts WHERE id=? AND org_id=?", [mdId, orgId]); return res.status(r.status).json({ error: r.error, sentence: r.error }); }
+  res.json({ ok: true, interactionId: r.interactionId, needsNextStep: true });
 }));
 
 // FIX-31: a task's day on its own (a Calendar drag, "Give it a day"). The full
@@ -18180,6 +18327,10 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
       // FIX-33: a meeting's prep and after tasks open the meeting they belong to.
       calendarEventId: k.calendar_event_id || null,
+      // FIX-34: Done on a task row finishes THAT task, through its own route,
+      // never the donor's open thread (logging a conversation would close the
+      // meeting step a prep task belongs to). The row then shows the next step.
+      doneRoute: `/tasks/${encodeURIComponent(k.id)}/complete`,
       overdue: due < today,
       overdueDays: due < today ? (orgTime.daysBetween(due, today) ?? 0) : 0,
       daysOpen: Math.max(0, daysOpen), openedOn,
@@ -18197,26 +18348,47 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     });
   }
 
+  // FIX-34 · ONE ROW PER DONOR. A booked meeting put three rows on the Thread
+  // for one person (the prep, the meeting, "How did it go?"). The Thread is a
+  // list of PEOPLE: each donor shows once, as the soonest open step, carrying
+  // the rest as `moreSteps` (the row opens them in place). Done on that row
+  // leaves the next one soonest. Tasks still lists every step; a profile read
+  // (donorId) keeps every row. Counts below are donors, not steps.
+  let shownList = list;
+  if (!donorId) {
+    const soon = (a, b) => String(a.nextStep.due || "9999").localeCompare(String(b.nextStep.due || "9999"))
+      || (a.kind === b.kind ? 0 : a.kind === "thread" ? -1 : 1) || String(a.nextStep.time || "").localeCompare(String(b.nextStep.time || ""));
+    const byDonor = new Map();
+    for (const r of list) { if (!byDonor.has(r.donorId)) byDonor.set(r.donorId, []); byDonor.get(r.donorId).push(r); }
+    shownList = [];
+    for (const rs of byDonor.values()) {
+      rs.sort(soon);
+      const [head, ...rest] = rs;
+      head.moreSteps = rest.map(r => ({ id: r.id, kind: r.kind, label: r.nextStep.label, due: r.nextStep.due, time: r.nextStep.time || null,
+        overdue: r.overdue, calendarEventId: r.calendarEventId || null }));
+      shownList.push(head);
+    }
+  }
   // Rank + band + cap in the ONE place that decides it.
-  const forRank = list.map(t => ({ ...t, ...t.signals }));
+  const forRank = shownList.map(t => ({ ...t, ...t.signals }));
   const q = rank.buildQueue(forRank, today, { cap: donorId ? 0 : (cap == null ? rank.QUEUE_CAP : cap) });
   const ranked = q.list.map(r => {
     const { signals, ...rest } = r;
     return { ...rest, rank: r.rank, band: r.band };
   });
 
-  const overdue = list.filter(t => t.overdue).length;
+  const overdue = shownList.filter(t => t.overdue).length;
   // FIX-1 §9 — "oldest" is the oldest ROW, by the one figure its badge and the
   // Home sentence also read (shared/threadFigures.js), over the whole list, not
   // the capped one. It used to be max(daysOpen) while the badges said overdue.
   const { threadFigures } = await import("../shared/threadFigures.js");
-  const figures = threadFigures(list);
+  const figures = threadFigures(shownList);
   const oldestDays = figures.oldest ? figures.oldest.days : 0;
   const oldest = figures.oldest && figures.oldest.days > 0 ? figures.oldest : null;
   const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
   return {
     list: ranked, bands: q.bands, more: q.more,
-    stat: { open: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
+    stat: { open: shownList.length, steps: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
     scope: effScope, canViewAll: isAdmin, hasAny: everCount > 0, today,
   };
 }
@@ -19308,6 +19480,9 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   } else if (g > 0 && r >= g) {
     paceState = "met";
   }
+  // FIX-34: "On pace" beside "$0 of $25,000, 0%" said two things. Nothing
+  // counted yet is never on pace; the bar says $0 and no badge rides it.
+  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
            paceSentence, paceRaisedPct, paceElapsedPct };
 }
@@ -19550,13 +19725,22 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
       );
       currentAmount = parseFloat(r2[0]?.total) || 0;
     } else {
-      const r2 = await query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, gr.period_start, gr.period_end]);
-      currentAmount = parseFloat(r2[0]?.total) || 0;
+      // FIX-34 · ONE RAISED FIGURE. The goal bar summed its own window (the
+      // 90 days onboarding proposed) with its own query, and read "$0 of
+      // $25,000" directly above "Raised FY 2026-27 $119,737.03". With no
+      // campaign, a raised-money goal counts the same gifts as the Raised card:
+      // the same rows, the same total (curRows, computed once), and says so.
+      currentAmount = parseFloat(curRows[0]?.total) || 0;
     }
-    const pace = computeFundraisingPace(currentAmount, goalAmount, gr.period_start, gr.period_end);
+    const totalRaised = gr.goal_type !== "lapsed_recovery";
+    const pStart = totalRaised ? cur.start : gr.period_start, pEnd = totalRaised ? cur.end : gr.period_end;
+    const pace = computeFundraisingPace(currentAmount, goalAmount, pStart, pEnd);
+    // A label that is only the amount again ("25,000") is not a name.
+    const label = /^[\s$£€\d,.]*$/.test(String(gr.label || "")) ? null : gr.label;
     goal = {
-      id: gr.id, label: gr.label, goalType: gr.goal_type, goalAmount, currentAmount,
-      periodStart: gr.period_start, periodEnd: gr.period_end, source: "goal", ...pace,
+      id: gr.id, label, goalType: gr.goal_type, goalAmount, currentAmount,
+      periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace,
+      ...(totalRaised ? { sourceNote: `Counts every gift dated in ${cur.chartLabel}, the same gifts as Raised below.` } : {}),
     };
   }
 
@@ -23325,7 +23509,7 @@ app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => 
 // One send of one draft, by the person who pressed the button. Used by the
 // single "Send" and by "Send all reviewed", so the two cannot drift apart.
 // FIX-12 Part 2: workflow recipes' emails arrive here as drafts too.
-async function sendMilestoneDraft(req, draft) {
+async function sendMilestoneDraft(req, draft, opts = {}) {
   const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
   const donor = donorRows[0];
   if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };
@@ -23365,11 +23549,13 @@ async function sendMilestoneDraft(req, draft) {
     [req.user.userId, who.name, draft.id]
   );
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
+  const intId = "i_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name]
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata) VALUES (?, ?, ?, 'email', ?, ?, ?, ?, ?)",
+    [intId, req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name,
+     opts.taskId ? JSON.stringify({ via: "task_email", taskId: opts.taskId, touch: "email" }) : null]
   ).catch(() => {});
-  return { status: 200 };
+  return { status: 200, interactionId: intId };
 }
 
 // PARITY-3 — the volunteer routes send their drafts through this one function.

@@ -387,7 +387,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
             Your goal
           </div>
-          <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>
+          {orgGoal.label && <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>}
           <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
             rawPercent={orgGoal.rawPercent} over={orgGoal.over}
             paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} big />

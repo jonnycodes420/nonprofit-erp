@@ -136,6 +136,11 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
 - **A calendar event is stored only when someone on file is a guest or is named in the title with a meeting word
   (FIX-33 Part 3b).** Two possible people are kept as candidates and a person picks; the description is still never
   read, so the title is the only text matched.
+- **The morning email carries today's meetings (FIX-34).** Under the same `notify_daily_tasks` setting as its
+  task section, from `composeTodayMeetings`; a person whose morning email carried them gets no separate
+  meetings email. Its unsubscribe line is a staff token on `/unsubscribe` (`staff: "morning_brief"`): GET and
+  HEAD render and write nothing; the POST turns off `notify_daily_tasks` and `notify_thread_nudge` for that
+  user only and never touches donor suppression. A demo org sends nothing (`sendDigestEmail`'s org gate).
 
 ## Gotchas
 - **The Resend SDK silently drops `reply_to`.** Pass `replyTo`. (BUILD-88c)

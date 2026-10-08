@@ -23,6 +23,7 @@ import { errorMessage } from "../lib/domainError";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { moveRequest, movedWords, addDaysCivil } from "../../../shared/calendarMoves.js";
 import { AddToRecord } from "./MeetingPanels";
+import { FinishSheet } from "./Tasks";
 
 // ── Shared consts (the TDZ rule: above every line that reads them) ─────────
 const HOUR_PX = 48, DAY_START = 7, DAY_END = 21, SNAP = 15;
@@ -230,7 +231,7 @@ export default function CalendarPage({ isReadOnly, onNavigate, isAdmin }) {
       </div>
       {narrow && !isReadOnly && <button type="button" data-testid="cal-add" aria-label="Add" onClick={() => setAdding({ date: anchor, time: null })}
         style={{ position: "fixed", right: 18, bottom: 84, width: 52, height: 52, borderRadius: 99, background: T.greenDk, color: T.white, border: "none", fontSize: 28, lineHeight: 1, boxShadow: "0 6px 18px rgba(15,26,18,0.25)", zIndex: 260 }}>+</button>}
-      {card && <ItemCard card={card} isReadOnly={isReadOnly} onClose={() => setCard(null)} onNavigate={onNavigate} onChanged={m => { setCard(null); setNote(m || ""); load(); }}
+      {card && <ItemCard card={card} today={today} onMove={move} isReadOnly={isReadOnly} onClose={() => setCard(null)} onNavigate={onNavigate} onChanged={m => { setCard(null); setNote(m || ""); load(); }}
         onEditShift={it => { setCard(null); setForm({ kind: "shift", item: it }); }} />}
       {adding && <AddMenu at={adding} onClose={() => setAdding(null)} onPick={kind => { setForm({ kind, date: adding.date, time: adding.time }); setAdding(null); }} />}
       {form && <AddForm form={form} onClose={() => setForm(null)} onSaved={m => { setForm(null); setNote(m || ""); load(); }} />}
@@ -471,10 +472,17 @@ function UndatedRow({ u, today, isReadOnly, onSaved }) {
 }
 
 // ── THE CARD: essentials and one main action ───────────────────────────────
-function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShift }) {
+function ItemCard({ card, today, onMove, isReadOnly, onClose, onNavigate, onChanged, onEditShift }) {
   const it = card.item;
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // FIX-34: a call or a meeting step is finished the way Tasks finishes it,
+  // with "How did it go?" and "What's next?" (the server refuses a bare tick).
+  const [finish, setFinish] = useState(null);
+  const [resched, setResched] = useState(null);
+  // FIX-34: a booked meeting that IS the next step carries that step, so its
+  // card offers the step's actions and the day shows the meeting once.
+  const stepRef = it.type === "meeting" && it.step ? { threadId: it.step.threadId, taskId: it.step.taskId } : it.ref;
   const when = it.allDay || String(it.start).length === 10 ? `${dayWords(String(it.start).slice(0, 10))}, all day`
     : `${dayWords(it.start.slice(0, 10))}, ${t12(it.start.slice(11, 16))} to ${t12(String(it.end).slice(11, 16))}`;
   const go = (tab, opts) => { onClose(); onNavigate && onNavigate(tab, opts); };
@@ -486,22 +494,46 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
         const path = `/grants/milestones/${encodeURIComponent(it.ref.milestoneId)}`;
         await apiFetch(`${path}/done`, { method: "POST", body: "{}" });
         offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(`${path}/reopen`, { method: "POST", body: "{}" }); onChanged(""); return r; } }, it.title);
-      } else if (it.ref.taskId) {
-        const path = `/tasks/${encodeURIComponent(it.ref.taskId)}/complete`;
+      } else if (stepRef.taskId) {
+        const path = `/tasks/${encodeURIComponent(stepRef.taskId)}/complete`;
         await apiFetch(path, { method: "POST", body: JSON.stringify({ done: true }) });
         offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
       } else {
-        await apiFetch(`/threads/${it.ref.threadId}/dismiss`, { method: "POST", body: JSON.stringify({ reason: "handled_outside" }) });
+        await apiFetch(`/threads/${stepRef.threadId}/dismiss`, { method: "POST", body: JSON.stringify({ reason: "handled_outside" }) });
       }
       onChanged("Marked done.");
-    } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
+    } catch (e) {
+      if (e && e.error === "needs_outcome" && it.donorId) {
+        setFinish({ id: stepRef.taskId, kind: e.kind === "call" ? "call" : "meeting", donor_id: it.donorId, donor_name: it.donorName, title: it.title });
+      } else setErr((e && e.sentence) || errorMessage(e, "That did not save."));
+    }
     setBusy(false);
+  };
+  const finished = async () => {
+    setFinish(null);
+    const path = `/tasks/${encodeURIComponent(stepRef.taskId)}/complete`;
+    offerUndo({ message: `Marked done: ${it.title}.`, undoAction: async () => { const r = await apiFetch(path, { method: "POST", body: JSON.stringify({ done: false }) }); onChanged(""); return r; } }, it.title);
+    onChanged("Marked done.");
+  };
+  // Reschedule: the meeting moves through its own route (and on Google or
+  // Outlook first), with Undo, exactly as a drag does.
+  const reschedule = async () => {
+    if (!resched || !resched.day) return;
+    const from = it.start.slice(0, 10), fromT = it.start.slice(11, 16);
+    const days = Math.round((Date.UTC(+resched.day.slice(0, 4), +resched.day.slice(5, 7) - 1, +resched.day.slice(8, 10)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8, 10))) / 86400000);
+    const [h1, m1] = fromT.split(":").map(Number), [h2, m2] = String(resched.time || fromT).split(":").map(Number);
+    onClose();
+    await onMove(it, { days, minutes: (h2 * 60 + m2) - (h1 * 60 + m1) });
   };
   const doneBtn = !isReadOnly && !it.done ? <button type="button" data-testid="cal-card-done" style={btn} disabled={busy} onClick={done}>{busy ? "Saving…" : "Mark done"}</button> : null;
   const action = (() => {
     if (it.type === "shift") return <button type="button" style={btn} onClick={() => onEditShift(it)}>Change this shift</button>;
     if (it.type === "event") return <RecordLink to={tabHref("fundraising", { frSection: "events", eventId: it.ref.eventId })} onOpen={() => go("fundraising", { frSection: "events", eventId: it.ref.eventId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the event to check in</RecordLink>;
     if (it.type === "step" && (it.ref.threadId || it.ref.taskId)) return doneBtn;
+    if (it.type === "meeting" && it.step && !isReadOnly) return <>
+      {it.donorId && <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ ...chip, display: "inline-block", textDecoration: "none" }} data-testid="cal-card-prep">Prep</DonorLink>}
+      {it.editable && it.editable.move && <button type="button" data-testid="cal-card-reschedule" style={chip} onClick={() => setResched(r => r ? null : { day: it.start.slice(0, 10), time: it.start.slice(11, 16) })}>Reschedule</button>}
+      {doneBtn}</>;
     if (it.type === "deadline") return <>{it.ref.milestoneId ? doneBtn : null}<RecordLink to={tabHref("grants", {})} onOpen={() => go("grants", { grantId: it.ref.grantId })} style={{ ...chip, display: "inline-block", textDecoration: "none" }}>Open the grant</RecordLink></>;
     if (it.type === "send") return <RecordLink to={tabHref("communications", {})} onOpen={() => go("communications", {})} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open the campaign</RecordLink>;
     if (it.donorId) return <DonorLink id={it.donorId} onOpen={() => go("donors", { selectDonorId: it.donorId })} style={{ ...btn, display: "inline-block", textDecoration: "none" }}>Open {it.donorName}</DonorLink>;
@@ -511,6 +543,7 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
   // record; an unsure one leads with it and lists who the title could mean.
   const addToRecord = it.type === "meeting" && it.ref && it.ref.calendarEventId && !isReadOnly
     ? <AddToRecord eventId={it.ref.calendarEventId} candidates={it.candidates || []} compact={!it.unsure} onDone={s => onChanged(s)}/> : null;
+  if (finish) return <FinishSheet t={finish} today={today} onClose={() => setFinish(null)} onDone={finished} />;
   return (
     <Modal onClose={onClose} width={420} ariaLabel={it.title}>
       <div data-testid="cal-card" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -533,6 +566,12 @@ function ItemCard({ card, isReadOnly, onClose, onNavigate, onChanged, onEditShif
         {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
         {it.unsure && <div data-testid="cal-card-unsure" style={{ fontSize: 13.5, color: T.ink2 }}>Steward could not tell who this meeting is with.</div>}
         {addToRecord}
+        {it.step && <div data-testid="cal-card-step" style={{ fontSize: 13.5, color: T.ink2 }}>The next step with {it.donorName || "them"}.</div>}
+        {resched && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <input type="date" aria-label="New day" value={resched.day} onChange={e => setResched({ ...resched, day: e.target.value })} style={chip} />
+          <input type="time" aria-label="New time" value={resched.time} onChange={e => setResched({ ...resched, time: e.target.value })} style={chip} />
+          <button type="button" data-testid="cal-card-reschedule-save" style={btn} onClick={reschedule}>Move it</button>
+        </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>{action}<button type="button" style={chip} onClick={onClose}>Close</button></div>
       </div>
     </Modal>

@@ -185,6 +185,7 @@ CORE=(
   thread3-human
   fix31-one-record
   tasks2-thread
+  fix34-thanks
   search2-everything
   reports4-foot
   reports5-import

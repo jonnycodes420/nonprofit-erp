@@ -26,6 +26,9 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   donorStatus.js for lists). Cooling is never judged against the calendar: a once-a-year donor who gave
   on pattern is On track, and so is a person whose gifts in the last 365 days number at least their own usual year
   (`drift.js aboveOwnPattern`): giving more than their pattern is never Cooling. Never a second score. (PARITY-1, WIRE-1 addendum, FIX-33)
+  FIX-34: that rule lives inside `assessDrift` now (a drift past the gap with a full year of gifts is `ok`), so the badge,
+  the reason line, the closeness word and the score card's band word (`engagement.closenessNow`, read on the gifts, never the
+  stored `donor_scores.pattern`) give one status.
 - **Engagement counts what a person does FOR the org,** not only what the org does to them: a
   peer-to-peer page they run (5), an event ticket (3), an auction they bid in (3) and a membership year
   (3) sit beside meetings, calls and shifts, each from its own table and each opening its rows through

@@ -195,8 +195,18 @@ function assessDrift(gifts, today, opts = {}) {
   const refusedRows = Number(opts.refusedRows) || 0;
   if (refusedRows > 0 && confidence === "high") confidence = "medium";
 
+  // FIX-34 · ONE STATUS. FIX-33 taught the closeness word that giving more
+  // than their own year is never cooling (aboveOwnPattern), but this state,
+  // which the badge and the reason line read, still said drifting, so Emily
+  // Jackson read "On track" in green beside "DRIFTING · UNSURE". The rule
+  // lives here now, in the one computation every drift surface reads.
+  let aboveOwn = false;
+  if (state === "drifting" && aboveOwnPattern(events, today, { cadenceDays: seasonal ? 365 : cadence })) {
+    state = "ok"; aboveOwn = true;
+  }
+
   const out = {
-    state, confidence, basis, events: n,
+    state, confidence, basis, events: n, aboveOwnPattern: aboveOwn,
     cadenceDays: seasonal ? 365 : (cadence != null ? Math.round(cadence) : null),
     intervalCv: cv != null ? Math.round(cv * 100) / 100 : null,
     daysSinceLast, overdueRatio, expectedNext, driftStartDate,

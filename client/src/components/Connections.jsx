@@ -752,7 +752,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               : c.kind === "bookkeeping" ? <>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.deposits30 ?? 0}</div>
-                <div style={{ fontSize: 11.5, color: T.ink3 }}>{(c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent"}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.sentLabel || ((c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent")}</div>
               </div>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{money(c.deposits30Cents)}</div>
@@ -1058,7 +1058,10 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   // ── The cards, one model for every kind ────────────────────────────────
   const cards = [];
   const oauthNotReady = c => c.oauthProvider && oauth && oauth[c.oauthProvider] && oauth[c.oauthProvider].ready === false;
-  const giving = (k) => renderGivingSources ? renderGivingSources(k, nonce) : null;
+  // FIX-34 Y: the panel tells this page when a source changed, and the cards
+  // are read again, so the card and the tile below it say the same thing.
+  const reloadCards = () => apiFetch("/connections").then(setD).catch(() => {});
+  const giving = (k) => renderGivingSources ? renderGivingSources(k, nonce, reloadCards) : null;
   for (const c of d.cards || []) {
     let status = statusOf(c);
     let reason = status === "attention" ? c.sentence : "";

@@ -8,11 +8,24 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws
   the step, never its task; Home's queue, the daily task email and the digest skip next-step tasks because the
   thread already carries them. `backfillLinkedTasks()` (db.js) runs with the schema and is safe twice.
+- **A booked meeting is one thing (FIX-34).** When a next step IS a meeting, `calendar.js foldMeetingSteps`
+  keeps the meeting item and hangs the step on it (`item.step`); the card offers Prep, Reschedule, Mark done.
+  The Thread (`composeThreads`, no `donorId`) is one row per donor: the soonest open step, the rest as
+  `moreSteps`, and `stat.open` counts donors. Tasks and a profile read keep every step. A call or meeting
+  next step is finished through how it went and what's next: `/tasks/:id/complete` refuses a bare tick
+  (422 `needs_outcome`) and the Calendar opens Tasks' `FinishSheet`. A deadline's task keeps its plain tick.
 - **A task is in exactly one view, by one rule (TASKS-2).** `shared/taskShape.js viewOf` and `taskViewSql`
   (routes/crm.js) say the same thing: today, upcoming (next 7 days), overdue, later, no date, done (last 30
   days). The list, `GET /tasks/counts` and Home's "Due today" read it; `tasks2-thread` §6 checks they agree.
   A call or meeting task with a person finishes only with an `interactionId` from
   `POST /donors/:id/conversations` (a next step or "No next step"); a linked next step still ticks as FIX-31.
+- **A Thank-you or Email task does the thing (FIX-34).** Its button opens the draft in Tasks, from the org's
+  template (Templates), for that person and, for a thank-you, THAT gift (`source_gift_id`, else the latest
+  unthanked). `POST /tasks/:id/thank` (Send or Mark sent) thanks the gift as `/acknowledgments/mark` does,
+  takes its drafted thank-you out of the queue and closes the task; `/thank/undo` puts all three back.
+  `POST /tasks/:id/email` sends through `sendMilestoneDraft` and leaves the task open: it finishes through
+  `/tasks/:id/complete` with that email's `interactionId` and a next step or "No next step". Select boxes
+  show only after "Select" (or a long press); every row tap target is 44 x 44 px.
 - **First thing speaks in one subject (`shared/firstThing.js`).** The logged line's pronoun becomes the first
   name, and the step says its day ("Christine asked for the impact report. Send it today.").
 - **Last conversation has one rule: `meetings.js conversationsWith`.** A held meeting (logged or on
@@ -96,6 +109,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   Run a task's `donorId` and `assignedTo` through `orgOwns`. (BUILD-46, BUILD-13)
 - **Goal roll-ups are derived live and never stored, and children are not double-counted.** Every surface reads
   `fundraisingGoalsPortfolio` via `/fundraising/overview`, never flat `/fundraising/campaigns`. (BUILD-16, FIX 2026-07-19)
+- **The org goal bar counts the Raised card's gifts.** On Fundraising, a `total_raised` goal with no campaign shows the
+  same figure as "Raised · FY" (one query, `curRows`), paced over that year, and says so under the bar. A label that is
+  only the amount is not shown as a name, and no pace badge rides a bar at $0. (FIX-34)
 - **A beaten goal reads as a win.** The headline shows `rawPercent` and `goalHeadSub` reads "Goal met · $X over".
   Only the bar uses the capped `percent`. (FIX 2026-07-19)
 - **Impact and ROI count attributable money only.** Never present total giving as "Steward raised", and an

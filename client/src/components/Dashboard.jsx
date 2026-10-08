@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
+import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
@@ -40,6 +41,8 @@ const todayCivil=()=>new Date().toISOString().split("T")[0];
 // heading ("Send the proposal"); inside a sentence it is mid-sentence. Only the
 // first letter moves, and only when the word is not already a name or an
 // acronym — "Send the LOI" keeps its LOI.
+// FIX-34: "2 more for Christopher", but an organisation keeps its whole name.
+const ORG_NAME_RE=/\b(foundation|trust|fund|church|inc|llc|ltd|company|corporation|association|society|club|group|bank|school|university|council|collective|partners|ministries)\b/i;
 const lowerFirst=s=>{
   const str=String(s||"").trim();
   if(!str)return str;
@@ -1890,6 +1893,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Home and "Cannot access 'ys' before initialization" in a minified bundle,
   // not a lint error. A const is declared above every line that reads it.
   const [threadAllOpen,setThreadAllOpen]=useState(false);
+  // FIX-34 — one row per donor; "2 more for Christopher" opens the rest IN the row.
+  const [moreOpen,setMoreOpen]=useState(null);
+  // FIX-34 — Done on a TASK row (a meeting's prep, "How did it go?") finishes
+  // that task only, with Undo, and the row moves to the donor's next step. A
+  // thread row, or a task that needs an outcome (422), logs the conversation.
+  const finishRow=async t=>{
+    const convo=()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
+    if(t.kind!=="task"||!t.doneRoute) return convo();
+    try{
+      await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:true})});
+      loadThreads();
+      offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
+    }catch(e){ if(e&&e.error==="needs_outcome") convo(); }
+  };
 
   // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
   // First thing takes threadList[0] and says it properly, so the rest of the
@@ -1980,8 +1997,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}.</span>
+            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
+            {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-steps-more" aria-expanded={moreOpen===t.donorId}
+              onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
+              onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}
+              style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",cursor:"pointer"}}>{t.moreSteps.length} more for {ORG_NAME_RE.test(String(t.donorName||""))?t.donorName:(firstNameOf(t.donorName)||t.donorName)}</span></>}
           </div>
+          {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
+            <ul data-testid="thread-steps-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
+              {t.moreSteps.map(m=><li key={m.id}>{m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
+            </ul>)}
           {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
           {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
           {/* BUILD-85 — the row still answers "why this one first?", and F.3.3's
@@ -2025,7 +2050,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       </a>
       <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-        <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
+        <button className="attn-row-action" onClick={()=>finishRow(t)} disabled={isReadOnly}
           title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
           style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
         {/* BUILD-94 Part 5 — a next step is an appointment somebody has to

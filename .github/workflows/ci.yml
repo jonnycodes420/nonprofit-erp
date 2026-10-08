@@ -36,6 +36,7 @@ jobs:
   # the marker lookup is scoped to successful runs of this workflow.
   tree-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       tree: ${{ steps.t.outputs.tree }}
       skip: ${{ steps.t.outputs.skip }}
@@ -58,6 +59,7 @@ jobs:
   # batteries in a dozen confusing ways, so failing in two seconds is kinder.
   guards:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true'
     steps:
@@ -130,6 +132,7 @@ jobs:
   # the `guards` job, and the battery waits on them.
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     needs: [tree-check, guards]
     if: needs.tree-check.outputs.skip != 'true'
 
@@ -244,7 +247,12 @@ jobs:
             .playwright
             .playwright-browsers
           key: playwright-${{ runner.os }}-1.61.1
+      # FIX-34: PR #170's job sat on this step for five hours on 7 Oct. The
+      # step now has its own ceiling, each attempt is capped at six minutes
+      # by `timeout`, and a failed or hung attempt is retried once before the
+      # step fails. The job itself also has a ceiling (timeout-minutes above).
       - name: Install Playwright + Chromium
+        timeout-minutes: 14
         run: |
           mkdir -p .playwright
           # The package.json is WRITTEN, not `npm init -y`-ed: npm derives the
@@ -254,13 +262,16 @@ jobs:
           if [ ! -f .playwright/package.json ]; then
             printf '{"name":"steward-ci-playwright","version":"1.0.0","private":true}\n' > .playwright/package.json
           fi
-          if [ ! -d .playwright/node_modules/playwright ]; then
-            (cd .playwright && npm i --no-audit --no-fund playwright@1.61.1)
-          fi
-          # --with-deps installs the shared libraries Chromium needs on the
-          # runner image; it is a no-op when they are already present, and it
-          # is NOT covered by the cache (it writes outside the workspace).
-          (cd .playwright && npx playwright install --with-deps chromium)
+          install_pw() {
+            if [ ! -d .playwright/node_modules/playwright ]; then
+              (cd .playwright && timeout 360 npm i --no-audit --no-fund playwright@1.61.1) || return 1
+            fi
+            # --with-deps installs the shared libraries Chromium needs on the
+            # runner image; it is a no-op when they are already present, and it
+            # is NOT covered by the cache (it writes outside the workspace).
+            (cd .playwright && timeout 360 npx playwright install --with-deps chromium)
+          }
+          install_pw || { echo "Playwright install failed or hung; retrying once"; sleep 10; install_pw; }
           node -e "console.log('playwright', require('$GITHUB_WORKSPACE/.playwright/node_modules/playwright/package.json').version)"
 
       # tests/shard.sh creates this shard's database, boots its own server on
@@ -306,6 +317,7 @@ jobs:
   # a local checkout — see audit/deploy-rewire.md.
   deploy-railway:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [tree-check, test]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.
@@ -380,6 +392,7 @@ jobs:
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     needs: [tree-check, test]
     # `always()` because the battery is SKIPPED when this exact tree already
     # passed, and a skipped job would otherwise take the deploy down with it.

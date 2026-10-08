@@ -11,7 +11,7 @@ import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 
-const BAND_COLOUR = { close: T.greenDk, warm: T.ink, distant: T.gold700 };
+const BAND_COLOUR = { close: T.greenDk, warm: T.ink, distant: T.gold700, on_track: T.greenDk, cooling: T.gold700, new: T.ink };
 
 export function useScores(donorId) {
   const [s, setS] = useState(null);

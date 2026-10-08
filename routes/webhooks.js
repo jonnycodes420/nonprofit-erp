@@ -2112,10 +2112,18 @@ sharedRecordUnsubscribe = recordUnsubscribe;
 // So: GET RENDERS. It says which organisation it is about (a person on four
 // nonprofits' lists cannot answer "unsubscribe from what?"), and it carries
 // ONE button that POSTs. Three states, one page.
-function unsubscribeHtml({ ok, email, orgName, token, done }) {
+function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
   const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organisation";
-  const message = !ok
+  const message = ok && staff
+    ? (done
+      ? `<h1>The morning email is off</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not get the morning email any more. Turn it back on in Settings, under Account.</p>`
+      : `<h1>Stop the morning email?</h1>
+         <p>${email ? `<strong>${esc(email)}</strong> ` : "You "}will stop getting Steward's morning email with your tasks, meetings and threads. Nothing else changes.</p>
+         <form method="POST" action="/unsubscribe?token=${encodeURIComponent(token || "")}">
+           <button type="submit" class="go">Stop the morning email</button>
+         </form>`)
+    : !ok
     ? `<h1>Link expired</h1><p>This unsubscribe link is invalid or has expired. If you're still receiving unwanted emails, reply to any message and ask to be removed.</p>`
     : done
       ? `<h1>You're unsubscribed</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}won't receive any more emails from ${who}. It can take a few minutes to fully take effect.</p>`
@@ -2176,6 +2184,7 @@ app.get("/unsubscribe", wrap(async (req, res) => {
   const decoded = verifyUnsubscribeToken(req.query.token);
   res.set("Content-Type", "text/html");
   if (!decoded) return res.status(400).send(unsubscribeHtml({ ok: false }));
+  if (decoded.staff === "morning_brief") return res.send(unsubscribeHtml({ ok: true, staff: true, email: decoded.email, token: req.query.token, done: false }));
   const orgName = await unsubscribeOrgName(decoded.orgId);
   res.send(unsubscribeHtml({ ok: true, email: decoded.email, orgName, token: req.query.token, done: false }));
 }));
@@ -2186,6 +2195,13 @@ app.get("/unsubscribe", wrap(async (req, res) => {
 app.post("/unsubscribe", wrap(async (req, res) => {
   const decoded = verifyUnsubscribeToken(req.query.token);
   if (!decoded) return res.status(400).end();
+  // FIX-34 · a staff member's morning email: her own two settings, nothing else.
+  if (decoded.staff === "morning_brief") {
+    await run("UPDATE users SET notify_daily_tasks=false, notify_thread_nudge=false WHERE id=? AND org_id=?", [String(decoded.userId || ""), decoded.orgId]);
+    if (!/text\/html/.test(String(req.headers.accept || ""))) return res.status(200).end();
+    res.set("Content-Type", "text/html");
+    return res.send(unsubscribeHtml({ ok: true, staff: true, email: decoded.email, done: true }));
+  }
   await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
   // A mail client's one-click POST wants a bare 200; a person who pressed the
   // button on the page wants to be told it worked.

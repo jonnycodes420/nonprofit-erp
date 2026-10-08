@@ -394,15 +394,29 @@ if (!backgroundTicksDisabled()) {
 // button, and Outlook never synced at all. It reads the live table now, mail
 // and calendar, for both providers. A row with no sealed token (a demo's
 // example) has nothing to read and is skipped.
+// FIX-34 · EVERY 5 MINUTES, AND NOT ONE AFTER ANOTHER. The FIX-33 tick read
+// every connection in turn (mail, calendar, push, then the next connection),
+// so one slow first read held every other connection, and /health's checkedAt
+// was set only when the whole loop finished. Connections now run a few at a
+// time; each read is guarded by its own advisory lock (server.js), so a tick
+// that lands while the last one is still reading a connection skips it, and a
+// 429 is honoured by skipping the connection until Retry-After.
+const MAILBOX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const MAILBOX_SYNC_PARALLEL = 4;
+async function syncOneConnection(conn) {
+  await syncMailbox(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[mailbox-sync]", e.message));
+  await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
+  await pushStewardDates(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-push]", e.message));
+}
 async function syncAllGmail() {
   const connections = await query(
     `SELECT user_id, org_id, provider FROM mailbox_connections
-      WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL`);
-  for (const conn of connections) {
-    await syncMailbox(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[mailbox-sync]", e.message));
-    await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
-    await pushStewardDates(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-push]", e.message));
-  }
+      WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL
+        AND (retry_after IS NULL OR retry_after <= NOW())`);
+  const queue = connections.slice();
+  await Promise.all(Array.from({ length: Math.min(MAILBOX_SYNC_PARALLEL, queue.length) }, async () => {
+    while (queue.length) await syncOneConnection(queue.shift());
+  }));
   // FIX-33: the /health count and one error line per stale connection.
   await refreshMailboxSyncHealth({ log: true }).catch(e => console.error("[mailbox-stale] check failed:", e.message));
 }
@@ -422,10 +436,12 @@ if (!backgroundTicksDisabled()) {
   }, 60 * 60 * 1000);
 }
 
-// Run Gmail sync on startup (10s delay) then every 15 min
+// Mail and calendar read on startup (10s delay) then every 5 minutes. The
+// health count is taken at boot too, so /health never says null for a tick.
 if (!backgroundTicksDisabled()) {
+  setTimeout(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
   setTimeout(() => syncAllGmail().catch(console.error), 10000);
-  setInterval(() => syncAllGmail().catch(console.error), 15 * 60 * 1000);
+  setInterval(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);
 }
 
 // Check trial expiry on startup (15s delay) then every 6 hours
