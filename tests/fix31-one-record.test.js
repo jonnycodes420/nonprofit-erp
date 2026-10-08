@@ -9,7 +9,8 @@
 //     §3 moving the deadline moves the task, moving the task moves the
 //        deadline; taking it off removes the task, and putting it back returns it;
 //     §4 a next step planned on a profile is in Tasks, on the Thread and on the
-//        Calendar; ticking it from the Calendar closes it everywhere and Undo
+//        Calendar; ticking it from the Calendar (FIX-34: through how it went
+//        and what's next, a bare tick is refused) closes it everywhere and Undo
 //        reopens it; moving it moves it everywhere;
 //     §5 the backfill run twice makes one task per record, never two;
 //     §6 one volunteer added makes "On the roster" 1 on Volunteers and in Ask,
@@ -136,18 +137,24 @@ const linked = (where, args) => q(`SELECT * FROM tasks WHERE ${where} ORDER BY l
   items = await cal(day(0), day(10));
   const stepItem = items.find(i => i.type === "step" && i.ref.threadId === thId);
   ok("§4 it is on the Calendar once, carrying its task", !!stepItem && stepItem.ref.taskId === st.id && items.filter(i => i.ref && (i.ref.threadId === thId || i.ref.taskId === st.id)).length === 1, items.map(i => i.id));
-  // The Calendar card's Mark done is the task's own complete route.
-  await api("POST", `/tasks/${st.id}/complete`, T, { done: true });
+  // The Calendar card's Mark done is the task's own complete route. FIX-34
+  // changed this ON PURPOSE: a call step is finished the way Tasks finishes
+  // it, so a bare tick is refused and the sheet's "How did it go?" and
+  // "What's next?" (POST /donors/:id/conversations) come first.
+  const bareTick = await api("POST", `/tasks/${st.id}/complete`, T, { done: true });
+  ok("§4 a bare tick from the Calendar is refused: say how the call went and what's next (FIX-34)", bareTick.status === 422 && bareTick.body.error === "needs_outcome", [bareTick.status, bareTick.body]);
+  const conv = await api("POST", "/donors/d_f31_p/conversations", T, { touch: "call_reached", line: "She can visit in April.", nextStep: { skipped: true } });
+  await api("POST", `/tasks/${st.id}/complete`, T, { done: true, interactionId: conv.body.interactionId });
   const [th1] = await q(`SELECT closed_at, close_kind, closing_interaction_id FROM threads WHERE id=$1`, [thId]);
   [st] = await linked("thread_id=$1", [thId]);
   const thr2 = await api("GET", "/threads?scope=all", T);
-  ok("§4 done from the Calendar: the thread closed on a line, the task is done, the Thread no longer holds it",
-    !!th1.closed_at && th1.close_kind === "outcome" && !!th1.closing_interaction_id && Number(st.done) === 1 && !JSON.stringify(thr2.body).includes(thId), [th1, st.done]);
+  ok("§4 done from the Calendar: the thread closed on her line, the task is done, the Thread no longer holds it",
+    !!th1.closed_at && th1.close_kind === "outcome" && th1.closing_interaction_id === conv.body.interactionId && Number(st.done) === 1 && !JSON.stringify(thr2.body).includes(thId), [th1, st.done]);
   await api("POST", `/tasks/${st.id}/complete`, T, { done: false });
   const [th2] = await q(`SELECT closed_at FROM threads WHERE id=$1`, [thId]);
-  const [gone] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE id=$1`, [th1.closing_interaction_id]);
+  const [kept] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE id=$1`, [th1.closing_interaction_id]);
   [st] = await linked("thread_id=$1", [thId]);
-  ok("§4 Undo reopened the thread and the task, and took the line back", !th2.closed_at && Number(st.done) === 0 && gone.n === 0, [th2, st.done, gone]);
+  ok("§4 Undo reopened the thread and the task; what she wrote about the call stays on the timeline", !th2.closed_at && Number(st.done) === 0 && kept.n === 1, [th2, st.done, kept]);
   await api("PUT", `/threads/${thId}`, T, { due: day(7) });
   ok("§4 moving the step (a Calendar drag) moved the task", (await linked("thread_id=$1", [thId]))[0].due === day(7));
   await api("PATCH", `/tasks/${st.id}/due`, T, { due: day(8) });
