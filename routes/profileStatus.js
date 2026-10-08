@@ -42,12 +42,11 @@ const weights = async () => (W = W || await import("../shared/engagementWeights.
 // The closeness word and the facts that put them there. The word comes from
 // the stored ENGAGE-1 band (closenessFor), the facts each from a source.
 async function closeness(orgId, d, today, w) {
-  const Wt = await weights();
-  const [score] = await query(`SELECT engagement, band, pattern FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
-  // The same "first seen" the list column uses (donorStatus.firstSeenSql).
-  const [fs] = await query(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [d.id, orgId]);
-  const isNew = !!(fs && fs.first && fs.first >= w.newFrom);
-  const key = Wt.closenessFor(score ? score.band : "distant", { isNew, pattern: score ? score.pattern : null });
+  const [score] = await query(`SELECT engagement, band FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
+  // FIX-34: their pattern is read from the gifts now (engagement.closenessNow,
+  // drift.js's rule), never the stored nightly column, so this word and the
+  // drift badge computed on read cannot disagree.
+  const { key } = await E.closenessNow(query, orgId, d.id, today, score ? score.band : "distant");
   const facts = [];
   const add = async (source, text) => {
     const v = await FS.figureValue(orgId, source);

@@ -13612,7 +13612,13 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   if (!row) { await recomputeScoresForOrg(orgId); [row] = await query("SELECT * FROM donor_scores WHERE org_id=? AND donor_id=?", [orgId, d.id]); }
   const W = await engagementMod.weights();
   const parts = (typeof row?.parts === "string" ? JSON.parse(row.parts) : row?.parts) || { engagement: [], generosity: [] };
-  const band = W.bandFor(row ? row.engagement : 0);
+  const band0 = W.bandFor(row ? row.engagement : 0);
+  // FIX-34 · ONE STATUS. A Distant score beside a green "On track" line was two
+  // answers on one profile; the band word is the closeness word (PARITY-1:
+  // "the band in words"), read on the gifts as they are now.
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const cl = await engagementMod.closenessNow(query, orgId, d.id, today, band0.key);
+  const band = cl.key === band0.key ? band0 : { key: cl.key, label: W.CLOSENESS.find(c => c.key === cl.key).label };
   res.json({
     donorId: d.id,
     engagement: row ? row.engagement : 0, generosity: row ? row.generosity : 0,
@@ -19339,6 +19345,9 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
   } else if (g > 0 && r >= g) {
     paceState = "met";
   }
+  // FIX-34: "On pace" beside "$0 of $25,000, 0%" said two things. Nothing
+  // counted yet is never on pace; the bar says $0 and no badge rides it.
+  if (r <= 0 && (paceState === "on_track" || paceState === "ahead")) { paceState = null; paceSentence = null; }
   return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
            paceSentence, paceRaisedPct, paceElapsedPct };
 }
@@ -19581,13 +19590,22 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
       );
       currentAmount = parseFloat(r2[0]?.total) || 0;
     } else {
-      const r2 = await query("SELECT COALESCE(SUM(amount),0) AS total FROM gifts WHERE org_id = ? AND date >= ? AND date <= ?", [orgId, gr.period_start, gr.period_end]);
-      currentAmount = parseFloat(r2[0]?.total) || 0;
+      // FIX-34 · ONE RAISED FIGURE. The goal bar summed its own window (the
+      // 90 days onboarding proposed) with its own query, and read "$0 of
+      // $25,000" directly above "Raised FY 2026-27 $119,737.03". With no
+      // campaign, a raised-money goal counts the same gifts as the Raised card:
+      // the same rows, the same total (curRows, computed once), and says so.
+      currentAmount = parseFloat(curRows[0]?.total) || 0;
     }
-    const pace = computeFundraisingPace(currentAmount, goalAmount, gr.period_start, gr.period_end);
+    const totalRaised = gr.goal_type !== "lapsed_recovery";
+    const pStart = totalRaised ? cur.start : gr.period_start, pEnd = totalRaised ? cur.end : gr.period_end;
+    const pace = computeFundraisingPace(currentAmount, goalAmount, pStart, pEnd);
+    // A label that is only the amount again ("25,000") is not a name.
+    const label = /^[\s$£€\d,.]*$/.test(String(gr.label || "")) ? null : gr.label;
     goal = {
-      id: gr.id, label: gr.label, goalType: gr.goal_type, goalAmount, currentAmount,
-      periodStart: gr.period_start, periodEnd: gr.period_end, source: "goal", ...pace,
+      id: gr.id, label, goalType: gr.goal_type, goalAmount, currentAmount,
+      periodStart: pStart, periodEnd: pEnd, source: "goal", ...pace,
+      ...(totalRaised ? { sourceNote: `Counts every gift dated in ${cur.chartLabel}, the same gifts as Raised below.` } : {}),
     };
   }
 
