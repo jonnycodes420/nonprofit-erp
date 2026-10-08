@@ -25,6 +25,20 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-34 · TASKS-2's loose ends before the Monday demo (2026-10-08)
+
+Built in five parallel worktrees (A calendar and Thread, B profile status and goal, C Google checks and reads, D QuickBooks and PayPal, E task actions and the morning email), merged into one branch. One test, `fix34-thanks`, runs a part file per worktree (`tests/fix34/*.js`) plus the CI ceiling check.
+
+- **One meeting, one item.** `calendar.js foldMeetingSteps` folds a next step that is a meeting into the meeting's card (Prep, Reschedule, Mark done). `composeThreads` without a donor returns one row per donor, the soonest open step plus `moreSteps`; Home counts donors. Done on a task row finishes only that task (`doneRoute`), so the row moves to the next step.
+- **The Calendar's tick asks how it went.** `/tasks/:id/complete` refuses a bare tick of a call or meeting next step (422 `needs_outcome`) and the Calendar opens Tasks' `FinishSheet`. fix31-one-record §4 was changed on purpose to expect this.
+- **cal1-moves flake.** `middleware/auditTrail.js` writes the audit row on `res.on("finish")`, after the response. A count read the moment the response lands can be one short; CI's slower runners hit it. Reproduced by holding a SHARE lock on `fin_audit_log` (red 3 of 5), fixed by waiting for the exact rows asserted and then counting exactly (5 of 5).
+- **Emily's contradiction.** FIX-33 put "giving above her own pattern is not cooling" only into `engagement.patternOf` (the stored nightly pattern). `drift.assessDrift`, which draws the badge and the reason line, never got it. Now `assessDrift` applies `aboveOwnPattern`, and the closeness line and score card read `engagement.closenessNow` from the gifts as they are.
+- **Goal bar.** A `total_raised` goal with no campaign uses the Raised card's own figure, paced over the fiscal year; `computeFundraisingPace` never says On pace at $0.
+- **Google checks its APIs.** `apiCheck.js` asks each API one cheap question after connect and on Check again; "did not answer" is only a timeout. Reads every 5 minutes, up to four connections at once, a non-waiting advisory lock per connection, 429 Retry-After honoured. "Add to:" on Book a visit with two or more calendars.
+- **QuickBooks.** Auto-sync starts off and cannot turn on until every fund is mapped; counters read `qboSync.sentSummary`; the memo is a sentence and the gift id is in DocNumber. **PayPal's picker** read `r.funds` from a route that returns a bare array, so it never offered a fund.
+- **Tasks.** Thank-you and Email tasks open drafts (`POST /tasks/:id/thank`, `/thank/undo`, `/tasks/:id/email`); select boxes hide until Select; every row target is 44 by 44; the morning email carries today's meetings and a staff unsubscribe that only POST changes.
+- **CI.** Every job has `timeout-minutes`; the Playwright install has its own ceiling, six minutes an attempt, retried once.
+
 ## INT-PROD-1 · PayPal and QuickBooks on production, and why guardsOk was false (2026-10-07)
 
 - **guardsOk false on prod** was `themeAssets.dbFallbackRows: 28` with `dbFallbackSinceBoot: 0`. The count read every
