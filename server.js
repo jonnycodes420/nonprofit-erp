@@ -165,7 +165,7 @@ const resend = new Proxy(_rawResend, {
     });
   },
 });
-const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
+const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx } = require("./db");
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
 const { signToken, tokenUserId, requireAuth, requireSuperAdmin: requireSuperAdminJwt } = require("./auth");
@@ -8941,11 +8941,21 @@ async function finishSyncRun(runId, { ok, found = null, logged = null, error = n
     [!!ok, found, logged, error ? String(error).slice(0, 300) : null, runId]).catch(() => {});
 }
 // The sentence a person reads. Never a status code, never a stack.
+// FIX-34: "did not answer" is said ONLY for a timeout; a refusal says it was
+// refused and why (apiCheck.js holds the wording).
 function syncErrorSentence(providerKey, what, e) {
   const label = providerKey === "google" ? (what === "calendar" ? "Google Calendar" : "Gmail") : "Outlook";
   if (e && e.code === "token_refused") return `${label} refused Steward's permission. Reconnect to keep it working.`;
-  if (e && e.code === "provider_refused") return `${label} did not answer when Steward asked for your ${what}. Steward tries again every 15 minutes.`;
-  return `Steward could not finish reading your ${what}. It tries again every 15 minutes.`;
+  if (e && e.sentence) return e.sentence;
+  return `Steward could not finish reading your ${what}. It tries again in 5 minutes.`;
+}
+// FIX-34 · ONE RUN PER CONNECTION AT A TIME, and a 429 is honoured. The lock
+// is a Postgres advisory lock, so it also holds across two instances.
+const APIC = require("./apiCheck");
+const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
+const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
+async function noteRetryAfter(conn, e) {
+  if (e && e.retryAfter) await run(`UPDATE mailbox_connections SET retry_after=? WHERE id=?`, [e.retryAfter.toISOString(), conn.id]).catch(() => {});
 }
 const PROVIDER_TIMEOUT_MS = 20000;
 const providerFetch = (url, opts = {}) => fetch(url, { ...opts, signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
@@ -8956,6 +8966,11 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
     [userId, orgId, providerKey]);
   if (!conn) return { logged: 0, reason: "not_connected" };
   if (conn.paused === true) return { logged: 0, reason: "paused" };
+  if (backedOff(conn)) return { logged: 0, reason: "backed_off" };
+  const locked = await withTryAdvisoryLock(syncLockKey("mail", conn), () => syncMailboxLocked(conn, userId, orgId, providerKey, trigger));
+  return locked && locked.skipped ? { logged: 0, reason: "running" } : locked;
+}
+async function syncMailboxLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "mail", trigger);
   await run(`UPDATE mailbox_connections SET last_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
   try {
@@ -8965,6 +8980,7 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
     return out;
   } catch (e) {
     const sentence = syncErrorSentence(providerKey, "mail", e);
+    await noteRetryAfter(conn, e);
     console.error(`[mailbox] ${providerKey} sync for ${conn.id} failed:`, e.message);
     await finishSyncRun(runId, { ok: false, error: sentence });
     await run(`UPDATE mailbox_connections SET last_error=?, last_error_at=NOW() WHERE id=?`, [sentence, conn.id]).catch(() => {});
@@ -8973,10 +8989,43 @@ async function syncMailbox(userId, orgId, providerKey, { trigger = "tick" } = {}
   }
 }
 
+// FIX-34 · A GMAIL RUN WITH NOTHING NEW IS ONE SMALL CALL. Gmail's history
+// list from the last read's history id says whether anything arrived, was sent
+// or was deleted since; if nothing, the run stops there. An expired or unknown
+// id (404) falls back to the full read, which stores a fresh id.
+async function gmailHistoryNow(token) {
+  const r = await providerFetch(`${GMAIL_BASE()}/gmail/v1/users/me/profile`, { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  const b = r && r.ok ? await r.json().catch(() => null) : null;
+  return b && b.historyId ? String(b.historyId) : null;
+}
+async function gmailUnchanged(conn, token) {
+  if (!conn.gmail_history_id) return null;
+  const r = await providerFetch(`${GMAIL_BASE()}/gmail/v1/users/me/history?` + new URLSearchParams({ startHistoryId: conn.gmail_history_id, maxResults: "1" }),
+    { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  if (!r) return null;
+  if (!r.ok) {
+    if (r.status === 429) throw APIC.providerError("google", "mail", 429, await r.json().catch(() => null),
+      APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+    return null;
+  }
+  const b = await r.json().catch(() => null);
+  return b && !(b.history && b.history.length) ? { historyId: b.historyId ? String(b.historyId) : conn.gmail_history_id } : null;
+}
+
 async function syncMailboxRun(conn, userId, orgId, providerKey) {
   const ML = await import("./shared/mailboxLog.js");
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
+  let historyId = null;
+  if (providerKey === "google") {
+    const same = await gmailUnchanged(conn, token);
+    if (same) {
+      await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0, gmail_history_id=?,
+                        last_error=NULL, last_error_at=NULL, retry_after=NULL, updated_at=NOW() WHERE id=?`, [same.historyId, conn.id]);
+      return { logged: 0, found: 0, unchanged: true };
+    }
+    historyId = await gmailHistoryNow(token);   // taken BEFORE the read, so nothing that lands during it is skipped next time
+  }
 
   const donors = await query(
     `SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email <> '' AND deleted_at IS NULL`,
@@ -9006,7 +9055,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
   // Every request the provider refused, and none it answered: that is a
   // failed read, said so, never "nothing new".
   if (fetched.asked && fetched.refused === fetched.asked)
-    throw Object.assign(new Error(`all ${fetched.asked} provider requests refused`), { code: "provider_refused" });
+    throw APIC.providerError(providerKey, "mail", fetched.lastStatus, fetched.lastBody);
   const messages = fetched.messages;
   // FIX-14 Part 1 — an email is filed under the day it arrived IN THE ORG's
   // zone. The normalizers sliced the UTC day, so mail after 8pm in New York
@@ -9071,7 +9120,8 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
 
   await run(
     `UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=?,
-            last_error=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=?`, [logged, conn.id]);
+            last_error=NULL, last_error_at=NULL, retry_after=NULL, gmail_history_id=COALESCE(?, gmail_history_id), updated_at=NOW() WHERE id=?`,
+    [logged, historyId, conn.id]);
   // THREAD-3: an email from a donor nobody has answered becomes a step.
   const replies = await processUnansweredMail(orgId).catch(e => { console.error("[mailbox] needs reply:", e.message); return null; });
   return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0 };
@@ -9088,6 +9138,11 @@ async function syncCalendar(userId, orgId, providerKey, { trigger = "tick" } = {
     `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
     [userId, orgId, providerKey]);
   if (!conn || conn.calendar_granted !== true || conn.paused === true || !conn.credentials_sealed) return { kept: 0 };
+  if (backedOff(conn)) return { kept: 0, reason: "backed_off" };
+  const locked = await withTryAdvisoryLock(syncLockKey("calendar", conn), () => syncCalendarLocked(conn, userId, orgId, providerKey, trigger));
+  return locked && locked.skipped ? { kept: 0, reason: "running" } : locked;
+}
+async function syncCalendarLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "calendar", trigger);
   await run(`UPDATE mailbox_connections SET calendar_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
   try {
@@ -9097,6 +9152,7 @@ async function syncCalendar(userId, orgId, providerKey, { trigger = "tick" } = {
     return out;
   } catch (e) {
     const sentence = syncErrorSentence(providerKey, "calendar", e);
+    await noteRetryAfter(conn, e);
     console.error(`[calendar] ${providerKey} sync for ${conn.id} failed:`, e.message);
     await finishSyncRun(runId, { ok: false, error: sentence });
     await run(`UPDATE mailbox_connections SET calendar_error=? WHERE id=?`, [sentence, conn.id]).catch(() => {});
@@ -9109,6 +9165,11 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   const ME = require("./meetingEffects");
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
+  const readStartedAt = new Date();
+  if (await calendarUnchanged(conn, providerKey, token)) {
+    await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+    return { kept: 0, found: 0, unchanged: true };
+  }
 
   const people = await query(
     `SELECT id, name, email FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
@@ -9124,9 +9185,8 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
 
   const from = new Date(Date.now() - CL.WINDOW_PAST_DAYS * 864e5).toISOString();
   const to = new Date(Date.now() + CL.WINDOW_AHEAD_DAYS * 864e5).toISOString();
+  // The provider refused: fetchCalendarEvents throws, what is stored is left alone, and the run says why.
   const events = await fetchCalendarEvents(providerKey, token, from, to);
-  // The provider refused: leave what is stored alone, and say so.
-  if (events === null) throw Object.assign(new Error("calendar refused"), { code: "provider_refused" });
 
   const actorId = `system:calendar/${providerKey}/${userId}`;
   const ctx = { paused: false, neverLog, excludedIds, mailboxAddress: conn.address, staffEmails, donorsByEmail, ownerUserId: userId,
@@ -9173,7 +9233,8 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   for (const g of gone) await ME.revertMeeting(g.id, { actorId, actorName: "Calendar sync" })
     .catch(e => console.error("[calendar] meeting revert:", e.message));
   if (gone.length) await run(`DELETE FROM calendar_events WHERE id = ANY(?)`, [gone.map(g => g.id)]);
-  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), calendar_read_from=?, retry_after=NULL WHERE id=?`,
+    [readStartedAt.toISOString(), conn.id]);
   // KEPT only: how many events she has that are not meetings is not Steward's to know.
   return { kept, found: kept };
 }
@@ -9280,7 +9341,7 @@ async function fetchCalendarEvents(providerKey, token, from, to) {
           maxResults: "250", fields: CL.GOOGLE_EVENT_FIELDS, ...(pageToken ? { pageToken } : {}) });
         const r = await providerFetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
           { headers: { Authorization: "Bearer " + token } });
-        if (!r.ok) { console.error(`[calendar] google answered ${r.status}`); return null; }
+        if (!r.ok) { console.error(`[calendar] google answered ${r.status}`); throw await calRefusal(r, "google"); }
         const body = await r.json();
         for (const it of body.items || []) out.push(CL.fromGoogle(it));
         if (!body.nextPageToken) break;
@@ -9291,14 +9352,39 @@ async function fetchCalendarEvents(providerKey, token, from, to) {
         startDateTime: from, endDateTime: to, $select: CL.GRAPH_EVENT_SELECT, $top: "250" });
       for (let i = 0; i < 5 && url; i++) {
         const r = await providerFetch(url, { headers: { Authorization: "Bearer " + token, Prefer: 'outlook.timezone="UTC"' } });
-        if (!r.ok) { console.error(`[calendar] microsoft answered ${r.status}`); return null; }
+        if (!r.ok) { console.error(`[calendar] microsoft answered ${r.status}`); throw await calRefusal(r, "microsoft"); }
         const body = await r.json();
         for (const it of body.value || []) out.push(CL.fromGraph(it));
         url = body["@odata.nextLink"] || null;
       }
     }
-  } catch (e) { console.error(`[calendar] ${providerKey} fetch:`, e.message); return null; }
+  } catch (e) {
+    if (e && e.reason) throw e;
+    console.error(`[calendar] ${providerKey} fetch:`, e.message);
+    throw APIC.providerError(providerKey, "calendar", null, null);   // a timeout: the only "did not answer"
+  }
   return out;
+}
+async function calRefusal(r, providerKey) {
+  const body = await r.json().catch(() => null);
+  return APIC.providerError(providerKey, "calendar", r.status, body, r.status === 429 ? APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3) : null);
+}
+// FIX-34 · A CALENDAR RUN WITH NOTHING NEW IS ONE SMALL CALL. Google is asked
+// whether anything changed (deletions included) since the last full read; if
+// nothing did, the run stops there. A full read still happens at least every
+// 6 hours so events sliding into the window are picked up.
+const CAL_FULL_EVERY_MS = 6 * 3600e3;
+async function calendarUnchanged(conn, providerKey, token) {
+  if (providerKey !== "google" || !conn.calendar_read_from) return false;
+  if (Date.now() - new Date(conn.calendar_read_from).getTime() > CAL_FULL_EVERY_MS) return false;
+  const q = new URLSearchParams({ updatedMin: new Date(conn.calendar_read_from).toISOString(), showDeleted: "true",
+    singleEvents: "true", maxResults: "1", fields: "items(id)" });
+  const r = await providerFetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
+    { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+  if (!r) return false;
+  if (!r.ok) { if (r.status === 429) throw await calRefusal(r, "google"); return false; }
+  const body = await r.json().catch(() => null);
+  return !!body && Array.isArray(body.items) && body.items.length === 0;
 }
 
 // A mailbox token, refreshed through the same seam every other connection
@@ -9355,7 +9441,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
   const out = [];
   const seen = new Set();
   const CHUNK = 15, CAP = 120;
-  let asked = 0, refused = 0;
+  let asked = 0, refused = 0, lastStatus = null, lastBody = null;
   const auth = { headers: { Authorization: "Bearer " + token } };
   // One request, counted: a refusal is a number the caller can act on, not a
   // null that reads as an empty mailbox.
@@ -9363,9 +9449,19 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
     asked++;
     try {
       const r = await providerFetch(url, auth);
-      if (!r.ok) { refused++; console.error(`[mailbox] ${providerKey} answered ${r.status}`); return null; }
+      if (!r.ok) {
+        refused++; lastStatus = r.status; lastBody = await r.json().catch(() => null);
+        console.error(`[mailbox] ${providerKey} answered ${r.status}`);
+        // FIX-34: a 429 stops the run and the connection waits as long as it was told.
+        if (r.status === 429) throw APIC.providerError(providerKey, "mail", 429, lastBody,
+          APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+        return null;
+      }
       return await r.json();
-    } catch (e) { refused++; console.error(`[mailbox] ${providerKey} fetch:`, e.message); return null; }
+    } catch (e) {
+      if (e && e.reason) throw e;
+      refused++; lastStatus = null; console.error(`[mailbox] ${providerKey} fetch:`, e.message); return null;
+    }
   };
   const keep = m => { if (m && m.id && !seen.has(String(m.id)) && out.length < CAP) { seen.add(String(m.id)); out.push(m); } };
   const GRAPH_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink,conversationId,internetMessageHeaders";
@@ -9395,7 +9491,7 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
       for (const m of (sent?.value || [])) keep({ ...graphToMessage(m), sent: true });
     }
   }
-  return { messages: out, asked, refused };
+  return { messages: out, asked, refused, lastStatus, lastBody };
 }
 
 const addrOf = s => { const m = String(s || "").match(/<([^>]+)>/); return (m ? m[1] : String(s || "")).trim().toLowerCase(); };

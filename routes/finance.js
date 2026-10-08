@@ -744,6 +744,12 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
     // The first sync runs now, so the connect page can show what it found.
     // It never blocks the answer: a slow mailbox is a later number, not a
     // failed connection.
+    // FIX-34: each API this connection needs is asked one cheap question now,
+    // so a switched-off API is named on the card instead of a silent nothing.
+    const [made] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+      [req.user.userId, req.user.orgId, key]);
+    const apis = made ? await runApiCheck(made).catch(() => null) : null;
+    const apiRefused = (apis || []).filter(a => !a.ok).map(a => a.sentence);
     const first = await Promise.race([
       (async () => { const m = await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => null);
                      const c = calendarOk ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => null) : null;
@@ -751,8 +757,9 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
       new Promise(r => setTimeout(() => r(null), 20000)),
     ]);
     return res.json({ ok: true, provider: key, account: address, needsTenantChoice: false, tenants: null,
-      calendarGranted: calendarOk, firstSync: !!first,
+      calendarGranted: calendarOk, firstSync: !!first, apis,
       sentence: `${address} is connected, and Steward holds the permission encrypted. ${ML.FIELDS_SENTENCE}`
+        + (apiRefused.length ? " " + apiRefused.join(" ") : "")
         + (calendarOk ? "" : " The calendar was not included, so meetings will not appear until you add it.") });
   }
   if (O.PROVIDERS[key].kind === "email") {
@@ -1065,6 +1072,22 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdminUnlessMailbox, 
 // WHAT IS NEVER HERE: a send. There is no route below that writes a message,
 // and the scopes in shared/oauth.js could not authorise one if there were.
 
+// FIX-34 · ASK EACH API ONE CHEAP QUESTION (apiCheck.js) and keep the answer
+// on the connection, so the card names the one that is off.
+async function runApiCheck(conn) {
+  const APIC = require("../apiCheck");
+  const token = await mailboxAccessToken(conn, conn.org_id, conn.provider);
+  if (!token) return null;
+  const apis = await APIC.checkApis(conn.provider, token, { calendarGranted: conn.calendar_granted === true });
+  await run(`UPDATE mailbox_connections SET api_check=?, api_checked_at=NOW() WHERE id=?`, [JSON.stringify(apis), conn.id]);
+  conn.api_check = apis;
+  return apis;
+}
+const apiRefusals = conn => {
+  const a = typeof conn.api_check === "string" ? JSON.parse(conn.api_check || "null") : conn.api_check;
+  return Array.isArray(a) ? a.filter(x => x && x.ok === false) : [];
+};
+
 // FIX-33 · ONE CONNECTION'S HEALTH, from its own run rows. Every number here
 // is one person's own mailbox; nothing about a colleague's is ever read.
 const STALE_MS = 2 * 3600e3;
@@ -1090,7 +1113,9 @@ async function mailboxHealth(conn) {
   const refused = conn.status === "error";
   // The newest failure counts only if nothing has succeeded since.
   const failNewer = lastFail.finished_at && (!mailOk || new Date(lastFail.finished_at) > new Date(mailOk));
+  const apisOff = apiRefusals(conn);
   const lastError = refused ? (conn.last_error || `${label} refused Steward's permission. Reconnect to keep it working.`)
+    : apisOff.length ? apisOff.map(a => a.sentence).join(" ")
     : failNewer ? lastFail.error : (conn.calendar_granted && conn.calendar_error) || null;
   const since = new Date(conn.created_at || Date.now()).getTime();
   const stale = !conn.paused && (refused || (mailOk ? Date.now() - new Date(mailOk).getTime() > STALE_MS : Date.now() - since > STALE_MS));
@@ -1101,7 +1126,8 @@ async function mailboxHealth(conn) {
     lastMailReadAt: mailOk, lastCalendarReadAt: conn.calendar_granted ? calOk : null,
     loggedToday: counts.today || 0, loggedWeek: counts.week || 0,
     meetingsFound: meetings.n || 0, eventsPushed: pushed.n || 0,
-    lastError, lastErrorAt: refused ? conn.last_error_at : failNewer ? lastFail.finished_at : null,
+    lastError, lastErrorAt: refused ? conn.last_error_at : apisOff.length ? conn.api_checked_at : failNewer ? lastFail.finished_at : null,
+    apis: apisOff.map(a => ({ api: a.api, label: a.label, reason: a.reason, sentence: a.sentence })),
     stale, banner,
     definition: "From Steward's own record of every read. Messages logged counts emails with people on file that this connection added to their records; meetings found counts calendar events with someone on file.",
   };
@@ -1272,15 +1298,21 @@ app.post("/mailbox/:provider/sync", requireAuth, checkWriteAccess, wrap(async (r
   const key = String(req.params.provider || "");
   if (!O.isProvider(key) || O.PROVIDERS[key].kind !== "mailbox") return res.status(404).json({ error: "unknown_provider" });
   const what = ["mail", "calendar"].includes(req.body?.what) ? req.body.what : "both";
+  // FIX-34: Check again: each API is asked first, so a switched-off one is named.
+  const [c0] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+    [req.user.userId, req.user.orgId, key]);
+  const apis = c0 && c0.credentials_sealed ? await runApiCheck(c0).catch(() => null) : null;
+  const apiOff = (apis || []).filter(a => !a.ok).map(a => a.sentence);
   // FIX-33: "Read now" on the card. Same runs as the tick, recorded as hers.
   const mail = what !== "calendar" ? await syncMailbox(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ logged: 0 })) : null;
   const calendar = what !== "mail" ? await syncCalendar(req.user.userId, req.user.orgId, key, { trigger: "read_now" }).catch(() => ({ kept: 0 })) : null;
-  const error = (mail && mail.error) || (calendar && calendar.error) || null;
+  const running = (mail && mail.reason === "running") || (calendar && calendar.reason === "running");
+  const error = apiOff.length ? apiOff.join(" ") : (mail && mail.error) || (calendar && calendar.error) || null;
   const [conn] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status <> 'disconnected'`,
     [req.user.userId, req.user.orgId, key]);
   res.json({ ok: !error, error, mail: mail ? { logged: mail.logged || 0 } : null, calendar: calendar ? { kept: calendar.kept || 0 } : null,
-    health: conn ? await mailboxHealth(conn) : null,
-    sentence: error || `Read just now. ${mail ? `${mail.logged || 0} new ${mail.logged === 1 ? "message" : "messages"} logged` : ""}${mail && calendar ? ", " : ""}${calendar ? `${calendar.kept || 0} ${calendar.kept === 1 ? "meeting" : "meetings"} on your calendar with people on file` : ""}.` });
+    health: conn ? await mailboxHealth(conn) : null, apis, running: !!running,
+    sentence: error || (running ? "Steward is reading it right now. The numbers update when that read finishes." : "") || `Read just now. ${mail ? `${mail.logged || 0} new ${mail.logged === 1 ? "message" : "messages"} logged` : ""}${mail && calendar ? ", " : ""}${calendar ? `${calendar.kept || 0} ${calendar.kept === 1 ? "meeting" : "meetings"} on your calendar with people on file` : ""}.` });
 }));
 
 const meetingTz = async orgId => { const org = await orgTz(orgId); return { org, tz: org.timezone || "America/New_York", today: orgToday(org) }; };   // ORG_TZ_SEAM_OK

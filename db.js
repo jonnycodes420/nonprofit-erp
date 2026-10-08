@@ -144,6 +144,23 @@ async function withAdvisoryLock(key, fn) {
   }
 }
 
+// FIX-34 · NEVER TWO RUNS AT ONCE. Like withAdvisoryLock, but it does not
+// wait: when another run (this instance or another one on the same database)
+// holds the key, fn is not called and { skipped: true } comes back.
+async function withTryAdvisoryLock(key, fn) {
+  const client = await pool.connect();
+  let got = false;
+  try {
+    const r = await client.query("SELECT pg_try_advisory_lock(hashtext($1)) AS ok", [String(key)]);
+    got = r.rows[0] && r.rows[0].ok === true;
+    if (!got) return { skipped: true };
+    return await fn();
+  } finally {
+    if (got) { try { await client.query("SELECT pg_advisory_unlock(hashtext($1))", [String(key)]); } catch {} }
+    client.release();
+  }
+}
+
 // Like query() / run() but bound to a specific pg client (for use inside withTransaction)
 function queryTx(client, sql, params = []) {
   let i = 0;
@@ -7348,6 +7365,16 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_sync_runs_org ON mailbox_sync_runs (org_id, started_at DESC)`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_error TEXT`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_tried_at TIMESTAMPTZ`);
+  // FIX-34 · each API the connection needs, as last checked (apiCheck.js);
+  // a 429 skips the connection until retry_after; the Gmail history id and
+  // the calendar's last read time make a run with nothing new one small call;
+  // the calendar a visit was last booked on, per person.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS api_check JSONB`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS api_checked_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS retry_after TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS gmail_history_id TEXT`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_read_from TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_booking_provider TEXT`);
 
   // ── FIX-33 · A CALENDAR EVENT STEWARD IS NOT SURE ABOUT ───────────────────
   // A title that names somebody on file ("Visit with Christine") with two
@@ -8235,4 +8262,4 @@ async function seedOrgData(orgId) {
   );
 }
 
-module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx, backfillLinkedTasks };
+module.exports = { withClient, getDb, query, querySetwise, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, withTryAdvisoryLock, queryTx, runTx, backfillLinkedTasks };
