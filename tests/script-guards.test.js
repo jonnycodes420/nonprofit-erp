@@ -92,6 +92,8 @@ const SELF_REFUSING = [
   "fix34d-capture",
   // FIX-34 E — the Tasks walk (thank-you draft, select mode at 390, morning email) on the LOCAL stack.
   "fix34e-capture",
+  // FIX-34 C — Book a visit with two calendars and a refused Google API, on the LOCAL stack.
+  "fix34c-capture",
   // FIX-2 B — captures every Reports export on the LOCAL stack (seeds a fixture org).
   "fix2-b-capture-exports",
   // FIX-3 D — captures the donor profile and its mockups on the LOCAL stack (seeds a fixture org).
