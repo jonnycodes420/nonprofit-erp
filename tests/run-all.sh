@@ -35,6 +35,7 @@
 #        RESEND_RECEIVING_BASE_URL=http://localhost:5612 \
 #        GOOGLE_CALENDAR_API_BASE=http://localhost:5618 \
 #        GMAIL_API_BASE=http://localhost:5618 GRAPH_API_BASE=http://localhost:5618 \
+#        MAILCHIMP_API_BASE=http://localhost:5618/mailchimp/3.0 \
 #        node server.js
 #      (FIX-11 Part 5: the three INBOUND_EMAIL_* values turn the BCC webhook on;
 #      without them fix11-inbound-resend SKIPS, and a suite that skips is
@@ -139,6 +140,7 @@ CORE=(
   fix20-qbo-realm-switch
   oauth-state
   int3-optout
+  mailchimp1-sync
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof

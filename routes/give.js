@@ -663,6 +663,9 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       const mapping = row && row.mapping
         ? (typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping) : null;
       const mapped = !!(mapping && mapping.audienceId);
+      const refusedRaw = row?.last_refused
+        ? (typeof row.last_refused === "string" ? JSON.parse(row.last_refused || "[]") : row.last_refused) : [];
+      const refusedList = Array.isArray(refusedRaw) ? refusedRaw : [];
       const dates = campaignDates.filter(c => c.provider === key).map(c => c.d);
       const last = dates.length ? dates.slice().sort().at(-1) : null;
       const connected = !!row;
@@ -694,11 +697,19 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       cards.push({
         id: "email:" + key, kind: "email_marketing", provider: key, label: p.label,
         money: false,
-        subtitle: "Your own newsletter tool. Steward reads who opened, who clicked and who asked to stop. It never sends the email.",
+        subtitle: "Your own newsletter tool. Steward reads who opened, who clicked and who asked to stop. It adds people to your list only if you turn that on, and it never sends the email.",
         connected, canDisconnect: connected,
         action: connected ? null : "connect", actionLabel: connected ? null : "Connect",
         oauthProvider: p.oauthKey,
         lastSyncedAt: row?.last_synced_at || null,
+        // MAILCHIMP-1: WHAT THE LAST READ DID, said on the card. The records it
+        // changed, and the addresses the tool refused, each with its own reason.
+        // A refusal never makes the card broken; only a dead connection does.
+        lastUpdatedCount: row?.last_updated_count ?? null,
+        pushOn: mapping?.push === true,
+        refused: refusedList,
+        refusedSentence: refusedList.length ? EM.refusedSentence(refusedList.length, key) : null,
+        lastErrorAt: row?.last_error_at || null,
         mapped, audienceNoun: p.audienceNoun,
         audienceName: row?.audience_name || null,
         needsMapping: connected && !mapped,
@@ -712,7 +723,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
         sentence: !connected
           ? `Steward is not reading this one. Who opened, who clicked and who asked to stop is only in ${p.label}.`
           : row.last_error ? String(row.last_error)
-          : !mapped ? `Connected, and sending nothing yet. Choose which ${p.audienceNoun} to keep in step.`
+          : !mapped ? `Connected, and reading nothing yet. Choose which ${p.audienceNoun} to read from.`
           : campaignSentence,
         // The rhythm sentence is money-shaped too, so it does not travel here.
         rhythmSentence: null,

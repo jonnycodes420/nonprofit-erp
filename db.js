@@ -4129,6 +4129,10 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS emc_one_live
                     ON email_marketing_connections (org_id, provider) WHERE status <> 'disconnected'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_emc_org ON email_marketing_connections (org_id, status)`);
+  // MAILCHIMP-1: what the last read changed, and the addresses the tool
+  // refused on it. A refusal is a row on the card, never the connection's status.
+  await pool.query(`ALTER TABLE email_marketing_connections ADD COLUMN IF NOT EXISTS last_updated_count INTEGER`);
+  await pool.query(`ALTER TABLE email_marketing_connections ADD COLUMN IF NOT EXISTS last_refused JSONB`);
 
   // The campaigns the org sent FROM THE TOOL. Steward did not send these and
   // must never be able to: there is no body column, no recipient list and no

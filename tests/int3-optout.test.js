@@ -78,10 +78,10 @@ async function reset() {
   // Four donors in org A, all reachable to begin with, all with gifts so they
   // are in "All donors".
   const people = [
-    ["d_a_unsub", "Marion Reed", "marion.int3@example.com"],
-    ["d_a_clean", "Rita Bounce", "rita.int3@example.com"],
-    ["d_a_resub", "Paul Steady", "paul.int3@example.com"],
-    ["d_a_ok", "Nora Fine", "nora.int3@example.com"],
+    ["d_a_unsub", "Marion Reed", "marion.int3@int3-fixture.org"],
+    ["d_a_clean", "Rita Bounce", "rita.int3@int3-fixture.org"],
+    ["d_a_resub", "Paul Steady", "paul.int3@int3-fixture.org"],
+    ["d_a_ok", "Nora Fine", "nora.int3@int3-fixture.org"],
   ];
   for (const [id, name, email] of people) {
     await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name)
@@ -93,7 +93,7 @@ async function reset() {
   // what makes §7 mean something: one person may be on two organisations'
   // lists, and an unsubscribe from one is not an unsubscribe from the other.
   await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name)
-           VALUES ($1,$2,'Marion Reed','marion.int3@example.com','active',100,'system:test','test')`,
+           VALUES ($1,$2,'Marion Reed','marion.int3@int3-fixture.org','active',100,'system:test','test')`,
     ["d_b_same", B]);
 }
 
@@ -122,9 +122,9 @@ const timeline = id => q(
   const EM = await import("../shared/emailMarketing.js");
 
   // ── §1 · AN UNSUBSCRIBE IN THE TOOL IS AN OPT-OUT IN STEWARD ────────────
-  const w1 = await webhook(SECRET_A, "unsubscribe", "marion.int3@example.com");
+  const w1 = await webhook(SECRET_A, "unsubscribe", "marion.int3@int3-fixture.org");
   ok("§1 the webhook is accepted", w1.status === 200, `status ${w1.status}`);
-  const s1 = await suppressions(A, "marion.int3@example.com");
+  const s1 = await suppressions(A, "marion.int3@int3-fixture.org");
   ok("§1 a suppression row exists, which is the ONE opt-out path",
     s1.length === 1 && s1[0].reason === "unsubscribed", JSON.stringify(s1));
   const d1 = await donorRow("d_a_unsub");
@@ -137,7 +137,7 @@ const timeline = id => q(
     t1.every(r => String(r.created_by || "").startsWith("system:email-marketing/")), JSON.stringify(t1));
 
   // ── §2 · CLEANED IS UNREACHABLE, NOT UNSUBSCRIBED ───────────────────────
-  await webhook(SECRET_A, "cleaned", "rita.int3@example.com");
+  await webhook(SECRET_A, "cleaned", "rita.int3@int3-fixture.org");
   const d2 = await donorRow("d_a_clean");
   ok("§2 a cleaned address is marked unreachable", d2.email_unreachable === true,
     `email_unreachable=${d2.email_unreachable}`);
@@ -147,10 +147,10 @@ const timeline = id => q(
   // ── §3 · STEWARD NEVER RE-SUBSCRIBES ANYBODY ────────────────────────────
   // Paul is suppressed in Steward already. Mailchimp says he is subscribed.
   await q(`INSERT INTO email_suppressions (id,org_id,email,reason,source)
-           VALUES ('sup_int3_paul',$1,'paul.int3@example.com','unsubscribed','campaign')`, [A]);
-  const w3 = await webhook(SECRET_A, "subscribe", "paul.int3@example.com");
+           VALUES ('sup_int3_paul',$1,'paul.int3@int3-fixture.org','unsubscribed','campaign')`, [A]);
+  const w3 = await webhook(SECRET_A, "subscribe", "paul.int3@int3-fixture.org");
   ok("§3 a subscribe event is accepted and ignored", w3.status === 200, `status ${w3.status}`);
-  const s3 = await suppressions(A, "paul.int3@example.com");
+  const s3 = await suppressions(A, "paul.int3@int3-fixture.org");
   ok("§3 the suppression is STILL there: the more restrictive answer wins",
     s3.length === 1, JSON.stringify(s3));
   ok("§3 and the module agrees unsubscribed outranks subscribed",
@@ -172,12 +172,12 @@ const timeline = id => q(
   // And the pure decision, directly, because that is the function the push
   // walks and it must refuse without anybody remembering to filter.
   ok("§4 pushDecision refuses an opted-out person",
-    EM.pushDecision({ email: "x@example.com", optedOut: true }).push === false,
-    JSON.stringify(EM.pushDecision({ email: "x@example.com", optedOut: true })));
+    EM.pushDecision({ email: "x@int3-fixture.org", optedOut: true }).push === false,
+    JSON.stringify(EM.pushDecision({ email: "x@int3-fixture.org", optedOut: true })));
   ok("§4 …and refuses a bounced one",
-    EM.pushDecision({ email: "x@example.com", emailUnreachable: true }).push === false, "pushed");
+    EM.pushDecision({ email: "x@int3-fixture.org", emailUnreachable: true }).push === false, "pushed");
   ok("§4 …and allows a reachable one",
-    EM.pushDecision({ email: "x@example.com" }).push === true, "refused");
+    EM.pushDecision({ email: "x@int3-fixture.org" }).push === true, "refused");
 
   // ── §5 · THE PREVIEW SAYS WHY, NOT JUST HOW MANY ────────────────────────
   ok("§5 every held-back group carries the sentence a person reads",
@@ -188,7 +188,7 @@ const timeline = id => q(
 
   // ── §6 · A WRONG SECRET WRITES NOTHING AND GIVES NOTHING AWAY ───────────
   const before = (await q(`SELECT COUNT(*)::int n FROM email_suppressions WHERE org_id=$1`, [A]))[0].n;
-  const bad = await webhook("wrongsecretwrongsecretwrong", "unsubscribe", "nora.int3@example.com");
+  const bad = await webhook("wrongsecretwrongsecretwrong", "unsubscribe", "nora.int3@int3-fixture.org");
   ok("§6 a wrong secret answers the same flat 200", bad.status === 200, `status ${bad.status}`);
   const after = (await q(`SELECT COUNT(*)::int n FROM email_suppressions WHERE org_id=$1`, [A]))[0].n;
   ok("§6 …and wrote nothing", after === before, `${before} -> ${after}`);
@@ -201,10 +201,10 @@ const timeline = id => q(
   // B and never touch org A's already-separate row, and vice versa.
   const bBefore = (await q(`SELECT COUNT(*)::int n FROM email_suppressions WHERE org_id=$1`, [B]))[0].n;
   ok("§7 org B starts with no suppressions", bBefore === 0, `n=${bBefore}`);
-  await webhook(SECRET_B, "unsubscribe", "marion.int3@example.com");
-  const sB = await suppressions(B, "marion.int3@example.com");
+  await webhook(SECRET_B, "unsubscribe", "marion.int3@int3-fixture.org");
+  const sB = await suppressions(B, "marion.int3@int3-fixture.org");
   ok("§7 org B's secret writes onto org B", sB.length === 1, JSON.stringify(sB));
-  const sAstill = await suppressions(A, "marion.int3@example.com");
+  const sAstill = await suppressions(A, "marion.int3@int3-fixture.org");
   ok("§7 …and org A still has exactly its own one row, not two",
     sAstill.length === 1, JSON.stringify(sAstill));
   const crossTimeline = await q(

@@ -82,6 +82,9 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   prefetch; `/unsubscribe` names the org on GET, and the RFC 8058 one-click POST gets a bare 200. (BUILD-94, BUILD-90)
 - **Write an unsubscribe to `email_suppressions` as well as `do_not_email`, imports included.** The decision
   reads suppressions; a Mailchimp unsubscribed contact imports as unsubscribed, never reachable. (BUILD-94)
+- **The email tool connection reads by default and adds people only when `mapping.push` is true.** One address
+  the tool refuses is listed on the card with its reason and skipped; BROKEN is for a dead connection only. Demo,
+  sample and not-real addresses are never pushed. Read-back lands only on people already in Steward. (MAILCHIMP-1)
 - **A hard bounce sets `email_unreachable` with date and reason; a complaint unsubscribes; both write a
   timeline line.** (BUILD-94)
 - **Map a Resend webhook event to an org only by the From address matching exactly one verified sending
