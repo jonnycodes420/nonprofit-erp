@@ -148,21 +148,27 @@ export function guessMapping(headers) {
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'", rsquo: "'", lsquo: "'",
   rdquo: '"', ldquo: '"', ndash: "-", mdash: "-", hellip: "..." };
 export const looksLikeHtml = s => /<\/?(p|br|div|b|i|u|em|strong|span|ul|ol|li|font|table|tr|td|h\d|a)\b[^>]*>/i.test(String(s || ""));
+// Applied until nothing changes, so a tag rebuilt from the pieces of another
+// ("<scr<script>ipt>") cannot survive one pass.
+const untilStable = (s, f) => { let prev; do { prev = s; s = f(s); } while (s !== prev); return s; };
+const stripTags = s => untilStable(s, x => x
+  .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
+  .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+  .replace(/<\s*li[^>]*>/gi, "\n- ")
+  .replace(/<\s*\/\s*li\s*>/gi, "")
+  .replace(/<\s*\/\s*(p|div|ul|ol|h\d|tr|table)\s*>/gi, "\n")
+  .replace(/<[^>]*>/g, ""));
 export function cleanText(raw) {
   let s = String(raw ?? "").replace(/\r\n?/g, "\n");
-  if (looksLikeHtml(s)) {
-    s = s.replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
-         .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-         .replace(/<\s*li[^>]*>/gi, "\n- ")
-         .replace(/<\s*\/\s*li\s*>/gi, "")
-         .replace(/<\s*\/\s*(p|div|ul|ol|h\d|tr|table)\s*>/gi, "\n")
-         .replace(/<[^>]+>/g, "");
-  }
+  const html = looksLikeHtml(s);
+  if (html) s = stripTags(s);
   s = s.replace(/&(#?\w+);/g, (m, e) => {
     if (ENTITIES[e.toLowerCase()] !== undefined) return ENTITIES[e.toLowerCase()];
     if (/^#\d+$/.test(e)) return String.fromCharCode(Number(e.slice(1)));
     return m;
   });
+  // An HTML note's encoded "&lt;b&gt;" decodes to a tag; it goes the same way.
+  if (html) s = stripTags(s);
   return s.split("\n").map(l => l.replace(/[ \t]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
