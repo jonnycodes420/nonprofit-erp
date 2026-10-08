@@ -573,6 +573,8 @@ const { BILLING_PLAN_VALUES, planFromSubscription } = require("./billingPlans");
 // BUILD-82 — a whole workbook (25,300 donors + 92,682 gift rows) arrives as ONE
 // request so the existing one-transaction wrapper makes the import all-or-nothing.
 app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "64mb" }));
+// IMPORT-2: a history file of up to 25 MB arrives as rows, which is larger as JSON.
+app.use(["/history-import/preview", "/history-import/commit"], express.json({ limit: "64mb" }));
 // BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
 // image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
 // other route. Without this a phone photo is rejected by the body parser
@@ -3988,6 +3990,7 @@ app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templat
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/search").routers.r0);        // WIRE-1 the one search
+app.use(require("./routes/historyImport").routers.r0); // IMPORT-2 notes and history
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
@@ -11426,6 +11429,8 @@ const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, norm
 require("./routes/media").mount(EMAIL1_CTX);
 require("./routes/emailTemplates").mount(EMAIL1_CTX);
 require("./routes/search").mount({ query, requireAuth, wrap, VOLUNTEER_COORDINATOR: require("./auth").VOLUNTEER_COORDINATOR });
+require("./routes/historyImport").mount({ query, run, runTx, withTransaction, requireAuth, checkWriteAccess, wrap, uuid,
+  recomputeScoresForOrg, orgToday, orgTz });
 require("./routes/groups").mount({
   actor, checkWriteAccess, maybeStartJourneyFromServer, orgTime, orgTz, query, requireAuth, run, uuid, wrap,
 });

@@ -46,6 +46,9 @@ function callsSql(orgId, today, floorCents) {
               FROM gifts g
               JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id AND d.deleted_at IS NULL
                    AND COALESCE(d.deceased,false) = false AND COALESCE(d.do_not_contact,false) = false
+                   -- IMPORT-2: an imported "do not solicit" or "no phone calls" keeps
+                   -- a person off the call list as surely as do not contact does.
+                   AND COALESCE(d.do_not_solicit,false) = false AND COALESCE(d.do_not_call,false) = false
                    AND COALESCE(d.kind,'') <> 'anonymous'
               JOIN firsts f ON f.donor_id = g.donor_id
              WHERE g.org_id = ? AND g.amount > 0 AND LEFT(g.date,10) <= ?

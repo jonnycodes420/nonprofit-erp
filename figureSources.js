@@ -195,7 +195,9 @@ function giftStartOpenSql(a) {
 const STATUS_WORD = `CASE s.status WHEN 'active' THEN 'Giving' WHEN 'recovered' THEN 'Giving again after a failed card'
   WHEN 'past_due' THEN 'Card failing' WHEN 'recovering' THEN 'Card being retried' WHEN 'paused' THEN 'Paused'
   WHEN 'canceled' THEN 'Ended' WHEN 'cancelled' THEN 'Ended' ELSE INITCAP(REPLACE(s.status,'_',' ')) END`;
-const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
+// IMPORT-2: letters, texts and event conversations are conversations too; an
+// imported history carries them with their original dates.
+const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship", "letter", "text", "event"];
 // PROFILE-1 — how much conversation history the "last contact" figure opens.
 // The figure is ONE number (days since the most recent one); the rows are the
 // history behind it, and a record with hundreds of them does not need to send

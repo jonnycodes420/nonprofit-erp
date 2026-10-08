@@ -157,4 +157,15 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   opens and foots, and every screen labels it "from your old system". It sits beside Steward's numbers, or stands in
   for an empty period; it is never added to them.
 - One import is one batch, and undoes in one step: files and totals together.
-
+- **Notes and history come in through one wizard (IMPORT-2).** `shared/historyImport.js` judges every row (kind,
+  date, author, task, preference, match) and `routes/historyImport.js` previews and writes from that one plan. Match
+  by the old system's id, then email, then name; more than one person or nobody waits for a person. A preference
+  found in a note is proposed and set only when confirmed. Every row carries the run (`interactions.import_id`,
+  `tasks.import_id`, `donor_relationships.import_id`), and `/imports/:id/reverse` undoes the `history` shape whole.
+- **In a history file, read a date month first, and day first only when it cannot be month first (20/10/2023).**
+  Every such row is listed in the preview. This is Jonathan's rule (8 Oct 2026) and is per row, unlike the gift
+  importer's per-column evidence rule above, because notes files mix exports from years of different settings.
+- **A folded person keeps every old id.** Two rows of one person under two ids keep both: the first in
+  `external_donor_id`, every id in `external_donor_ids`. A history file naming the second id must find them. (IMPORT-2)
+- **A Notes, Comments or Background column in a donor file becomes a dated note on the person**, once per person per
+  wording, dated by its gift row, tagged with the run so the run's undo removes it. (IMPORT-2)

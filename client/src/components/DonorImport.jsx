@@ -45,7 +45,7 @@ const CSV_FIELDS = [
   // has to be able to carry one.
   { key:"address",   labels:["address","street","street address","address 1","address line 1","mailing address"] },
   { key:"zip",       labels:["zip","zip code","postal","postal code","postcode","zipcode"] },
-  { key:"notes",     labels:["notes","note","comments","memo"] },
+  { key:"notes",     labels:["notes","note","comments","memo","background"] },
   // owner = the gift officer this donor is assigned to (Team import routing). The
   // raw cell value is matched to an org user (email→name) before submit; on Core
   // it's ignored server-side. Labels mirror importShape.js's OWNER_HDR_PAT.
@@ -2452,6 +2452,8 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
+          {/* IMPORT-2: the people are in; what was written about them comes next. */}
+          <button data-testid="import-bring-notes" onClick={()=>{onImported&&onImported();setTimeout(()=>window.dispatchEvent(new Event("steward:history-import")),0);}} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 18px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer",marginRight:8}}>Bring your notes and history</button>
           <button onClick={onImported} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"12px 28px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </Modal>

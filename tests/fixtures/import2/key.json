@@ -1,0 +1,40 @@
+{
+  "anchorDate": "2026-10-08",
+  "rows": 2420,
+  "matchedById": 1910,
+  "matchedByEmail": 239,
+  "matchedByName": 251,
+  "matchNobody": 20,
+  "openTasks": 143,
+  "openTasksOverdue": 51,
+  "completedTasks": 60,
+  "doNotSolicit": 117,
+  "doNotSolicitPeople": 112,
+  "html": 120,
+  "emptyNote": 129,
+  "emptyNoteRefused": 6,
+  "attachments": 100,
+  "dayFirstRows": 484,
+  "formats": [
+    484,
+    484,
+    484,
+    484,
+    484
+  ],
+  "byKind": {
+    "Text Message": 252,
+    "Comment": 247,
+    "Site Visit": 237,
+    "Phone Call": 257,
+    "To Do": 69,
+    "Event Conversation": 249,
+    "Note": 264,
+    "Task": 68,
+    "Meeting": 219,
+    "Email": 245,
+    "Letter": 247,
+    "Action": 66
+  },
+  "refused": 0
+}

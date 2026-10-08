@@ -550,6 +550,7 @@ async function personAnswer(req, res, { donor, intent, campaign, typed }) {
   const orgId = req.user.orgId;
   if (intent === "stopped") { req.body = { key: "stopped", donor, ...(typed ? { text: typed } : {}) }; return whyAskHandler(req, res); }
   if (intent === "done") return personActivity(req, res, { donor, typed });
+  if (intent === "talked") return personTalked(req, res, { donor, typed });
   const a = await WHY.answer(orgId, "person", { donor, intent, campaign, user: req.user.userId }, { computeDriftForDonors });
   if (!a) return res.status(404).json({ error: "Donor not found" });
   a.key = "person";
@@ -633,6 +634,60 @@ async function personActivity(req, res, { donor, typed }) {
     sentence, sentenceSource: "template", template: sentence, aiOff: false,
     reasons: lines, who: [{ donorId: d.id, name: d.name, cents: null, reason: `Open ${f}'s record for the whole timeline.` }],
     cantSee: "This reads what is on their record in Steward. Time they gave that nobody logged is not here.",
+    step: null, alsoSteps: [],
+  };
+  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+}
+
+// IMPORT-2 · "What did we talk about with Christine in 2024?" The
+// conversations on her record in that period, newest first: the count is the
+// donor-activity figure (it opens its rows), and the sentence quotes the
+// latest few from the same rows. A template, so the words are the record's own
+// and nothing in it can be made up.
+async function personTalked(req, res, { donor, typed }) {
+  const G = await guide();
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [donor, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = orgToday(await orgTz(orgId));
+  const y = today.slice(0, 4);
+  const t = String(typed || "");
+  const yr = t.match(/\b(19|20)\d{2}\b/);
+  const period = yr ? { from: `${yr[0]}-01-01`, to: `${yr[0]}-12-31`, words: `in ${yr[0]}` }
+    : /\blast year\b/i.test(t) ? { from: `${+y - 1}-01-01`, to: `${+y - 1}-12-31`, words: "last year" }
+    : /\bthis year\b/i.test(t) ? { from: `${y}-01-01`, to: today, words: "this year" }
+    : { from: "1900-01-01", to: today, words: "in all their history with you" };
+  const source = { key: "donor-activity", params: { donor: d.id, from: period.from, to: period.to, part: "conversations" } };
+  const f = await FS.figure(orgId, source, {}, { rows: false });
+  const n = f ? f.totalRows : 0;
+  const rows = n ? await query(
+    `SELECT i.type, LEFT(i.date::text, 10) AS date, i.note, i.logged_by_name AS who, i.metadata->>'kind' AS kind
+       FROM interactions i WHERE i.org_id = ? AND i.donor_id = ? AND i.type = ANY(?)
+        AND LEFT(i.date::text, 10) >= ? AND LEFT(i.date::text, 10) <= ? AND COALESCE(i.note, '') <> ''
+      ORDER BY i.date DESC, i.id DESC LIMIT 3`,
+    [orgId, d.id, ["call", "meeting", "email", "ask", "note", "stewardship", "letter", "text", "event"], period.from, period.to]) : [];
+  const word = r => r.kind === "visit" ? "a visit" : ({ call: "a call", meeting: "a meeting", email: "an email", ask: "an ask", note: "a note",
+    stewardship: "a thank-you", letter: "a letter", text: "a text", event: "a conversation at an event" })[r.type] || "a conversation";
+  const said = r => String(r.note).replace(/([^.!?:;])\s*\n+\s*/g, "$1. ").replace(/\s+/g, " ").trim();
+  const quote = r => { const x = said(r); return `${word(r)} on ${r.date}${r.who ? ` (${r.who})` : ""}: "${x.slice(0, 160)}${x.length > 160 ? "…" : ""}"`; };
+  // A quote that already ends in its own full stop is not given a second one.
+  const stop = r => (/[.!?]$/.test(said(r).slice(0, 160)) && said(r).length <= 160 ? "" : ".");
+  const sentence = !n
+    ? `There is nothing on ${d.name}'s record ${period.words}: no conversations, notes or meetings. If they are in your old system, bring your notes in and ask again.`
+    : `${period.words[0].toUpperCase() + period.words.slice(1)}, you had ${spellN(n)} ${n === 1 ? "conversation" : "conversations"} with ${d.name}.`
+      + (rows.length ? ` The latest was ${quote(rows[0])}${stop(rows[0])}` : "")
+      + (rows.length > 1 ? ` Before that, ${rows.slice(1).map(quote).join("; and ")}${stop(rows[rows.length - 1])}` : "");
+  await logQuestion(orgId, typed || "What did we talk about with this person?", "person: talked", true);
+  const def = await FS.figureSentence(source);
+  const out = {
+    answered: true, question: { key: "person", text: typed || `What did we talk about with ${d.name}?` }, donor: { id: d.id, name: d.name },
+    campaign: null, compare: null, person: { id: d.id, name: d.name, intent: "talked" },
+    readAs: `${d.name} · what you talked about, ${period.words}`,
+    sentence, sentenceSource: "template", template: sentence, aiOff: false,
+    reasons: n ? [{ key: "conversations", label: "Conversations and meetings", count: n, cents: 0, hours: null, measure: "count",
+      unit: n === 1 ? "conversation" : "conversations", definition: def, source }] : [],
+    who: [{ donorId: d.id, name: d.name, cents: null, reason: `Open ${firstName(d.name)}'s record for every line in full.` }],
+    cantSee: "This reads the conversations and notes on their record in Steward, including any brought in from your old system. What was said and never written down is not here.",
     step: null, alsoSteps: [],
   };
   res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
@@ -756,7 +811,7 @@ async function askHandler(req, res) {
     if (!d) return res.status(404).json({ error: "Donor not found" });
     const intent = String(body.person.intent || "");
     const campaign = body.person.campaign ? String(body.person.campaign) : null;
-    if (["ask", "next", "changed", "stopped", "done"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
+    if (["ask", "next", "changed", "stopped", "done", "talked"].includes(intent)) return personAnswer(req, res, { donor: d.id, intent, campaign, typed });
     if (intent !== "given") return askRefuse(req, res, typed || "(person)", "that question about one person", C);
     raw = { kind: "metric", metric: "raised", period: { kind: "all_time" }, groupBy: "campaign", filters: { donor: d.id } };
     source = "guided"; person = { id: d.id, name: d.name, intent };

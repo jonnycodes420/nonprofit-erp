@@ -24,10 +24,36 @@ export function useScores(donorId) {
   return s;
 }
 
-export function ScoreCard({ donorId, scores, children }) {
+export function ScoreCard({ donorId, scores, children, onLog }) {
   const [why, setWhy] = useState(false);
   const s = scores;
   if (!s) return null;
+  // IMPORT-2: NO HISTORY YET IS NOT A ZERO. A person with no conversation,
+  // note or meeting on file reads "No history yet", never "0, Distant": the
+  // second tells a new customer their donors are cold when Steward simply has
+  // not been told anything yet.
+  if (s.noHistory) return (
+    <div data-testid="dp-scores" data-no-history="true" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Engagement</span>
+        <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>No history yet</span>
+      </div>
+      <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginTop: 4 }}>
+        Steward has no conversations, notes or meetings on file for this person yet, so it cannot say how close they are.
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <button type="button" data-testid="dp-bring-notes" onClick={() => window.dispatchEvent(new Event("steward:history-import"))}
+          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontWeight: 700, fontSize: 12.5, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
+          Bring in your notes
+        </button>
+        {onLog && <button type="button" data-testid="dp-log-first" onClick={onLog}
+          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontWeight: 700, fontSize: 12.5, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
+          Log a conversation
+        </button>}
+      </div>
+      {children}
+    </div>
+  );
   return (
     <div data-testid="dp-scores" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "14px 16px", color: T.ink }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>

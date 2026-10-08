@@ -356,3 +356,7 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   with a "Missed you at" draft per person with an email in Drafts. Nothing is sent.
 - **The calendar never shows one entry per plan.** Monthly gifts are one line a day from Stripe's `current_period_end`
   forward; a plan with no date is left off, never guessed. Failed charges and cards expiring this month show one by one.
+- **No history yet is not cold.** A person with no conversation, note or meeting on file (gift lines do not count)
+  reads "No history yet" on the profile, never "Engagement 0, Distant", and Home's "no recent contact" list skips
+  them. `NOT_HISTORY_TYPES` in routes/crm.js is the one list of interaction types that are not history. (IMPORT-2)
+- **Calls to make skips do not solicit and no phone calls**, as well as deceased and do not contact. (IMPORT-2)

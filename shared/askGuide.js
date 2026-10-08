@@ -146,6 +146,8 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
 // What a question about one person is asking. null: not a question about a
 // person at all (the catalog and the eight questions take it).
 const INTENTS = [
+  // IMPORT-2: what was said, from the notes and conversations on their record.
+  ["talked", /\bwhat (did|have|has) (we|i|you|they|she|he)\b.*\b(talk(ed)?|spoke|speak|discuss(ed)?|say|said|chat(ted)?)\b|\b(notes?|conversations?) (with|about|on)\b|\bwhat (do|did) (we|our notes) (say|know) about\b/i],
   ["stopped", /\bwhy (did|has|have|is)\b.*\b(stop(ped)?|quit|laps(e|ed)|leave|left|go(ne)? quiet)\b|\bwhy (hasn't|has not|hasnt|haven't|didn't|did not)\b.*\b(give|given|giving|donat)/i],
   // WIRE-1: everything one person has done with the org, not only their gifts.
   ["done", /\bwhat (has|have|did)\b.*\b(done|been doing|been up to|been involved)\b|\b(involvement|activity|everything)\b.*\bwith us\b|\bdone with us\b|\bhow (has|is)\b.*\binvolved\b/i],

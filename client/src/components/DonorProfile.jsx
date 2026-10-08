@@ -3448,7 +3448,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               )}
               {/* ENGAGE-1 — how close they are, and how much they give. Inside
                   the Next step panel: no new layout. */}
-              <ScoreCard donorId={donor.id} scores={scores}>
+              <ScoreCard donorId={donor.id} scores={scores} onLog={isReadOnly?null:()=>setConvoOpen(true)}>
                 {canMajorGifts&&<RoomToGiveBlock donorId={donor.id} isReadOnly={isReadOnly}/>}
                 {canMajorGifts&&donor.kind==="organisation"&&<PublicFilingBlock data={publicFiling}/>}
               </ScoreCard>

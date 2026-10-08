@@ -4678,6 +4678,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   const matchedBirthdayFills = []; // PARITY-3 6a: matched people with no birthday on file yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
+  // IMPORT-2 item 4: every Notes / Comments / Background cell becomes a dated
+  // note on the person, once per person per wording, tagged with this run so
+  // the run's undo removes it. It used to ride only on the gift line.
+  const importNoteSeen = new Set();
+  let importNotesCreated = 0;
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
   const affectedDonorIds = new Set();
@@ -5027,6 +5032,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     await runTx(txc,
       `UPDATE donors SET external_donor_id = ? WHERE id=? AND org_id=? AND external_donor_id IS NULL`,
       [f.externalDonorId, f.donorId, orgId]);
+    // IMPORT-2: a record that already answers to one id still learns this one
+    // as an id it ALSO answers to, never in place of the first. A history file
+    // that names the second id then finds the person.
+    await runTx(txc,
+      `UPDATE donors SET external_donor_ids = COALESCE(external_donor_ids, '[]'::jsonb) || jsonb_build_array(?::text)
+        WHERE id=? AND org_id=? AND external_donor_id IS NOT NULL AND external_donor_id <> ?
+          AND NOT (COALESCE(external_donor_ids, '[]'::jsonb) @> jsonb_build_array(?::text))`,
+      [f.externalDonorId, f.donorId, orgId, f.externalDonorId, f.externalDonorId]);
   }
   if (matchedBirthdayFills.length) {
     const _B = await birthdayMod();
@@ -5319,6 +5332,24 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           intParams
         );
       }
+      const noteParams = [], noteTuples = [];
+      for (const r of kept) {
+        const g = rowByGid.get(r.id);
+        const text = g && String(g.notes || "").trim();
+        if (!text || !g.date) continue;
+        const k = g.donorId + "\u0000" + text.toLowerCase();
+        if (importNoteSeen.has(k)) continue;
+        importNoteSeen.add(k);
+        noteParams.push(importId("int_"), orgId, g.donorId, "note", text, g.date, importerId, importerName, runId,
+          JSON.stringify({ source: "donor-import", from: "notes column" }));
+        noteTuples.push("(?,?,?,?,?,?,?,?,?,?::jsonb)");
+      }
+      if (noteTuples.length) {
+        await runTx(txc,
+          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,import_id,metadata) VALUES ${noteTuples.join(",")}`,
+          noteParams);
+        importNotesCreated += noteTuples.length;
+      }
       // One bulk INSERT for FY fin_transactions — same tx as gifts, rolls back together
       if (ftTuples.length) {
         await runTx(txc,
@@ -5551,7 +5582,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     catch (e) { console.error("[combined-import] memberships failed:", e.message); membershipsImported = { error: e.message }; }
   }
 
-  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
+  res.json({ created, giftsInserted, importNotesCreated, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              memberships: membershipsImported, // BUILD-101 Part 6
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
@@ -8740,8 +8771,11 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // stays, and so do their gifts.
 // WIRE-1: "gifts" is the gift-history file matched to people already on file;
 // its gifts carry the run id, so it reverses as a whole like the others.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7 };
+// IMPORT-2: "history" is a notes and history file. It has no gifts; it undoes
+// by its interactions, tasks and relationships, and by the flags and tags it
+// set, all recorded on the run.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -8795,6 +8829,33 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   // a person created by a reversed deposit has no gift and no history, so
   // leaving them behind is leaving a record nobody asked for.
   await run("DELETE FROM interactions WHERE org_id=? AND import_id=? AND type='payment'", [orgId, req.params.id]);
+  // IMPORT-2: everything else the run wrote and tagged. The notes a donor file
+  // brought in (its Notes column) and a history file's whole timeline, its
+  // tasks, its relationships, and the attachments put on its lines.
+  const ixIds = (await query("SELECT id, donor_id FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]));
+  if (ixIds.length) {
+    await run("UPDATE interaction_attachments SET deleted_at=NOW(), deleted_by=? WHERE org_id=? AND interaction_id = ANY(?) AND deleted_at IS NULL",
+      [actor(req).name || actor(req).id, orgId, ixIds.map(i => i.id)]).catch(() => {});
+    await run("DELETE FROM interactions WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+    for (const i of ixIds) if (i.donor_id && !donorIds.includes(i.donor_id)) donorIds.push(i.donor_id);
+  }
+  const tasksRemoved = (await query("DELETE FROM tasks WHERE org_id=? AND import_id=? RETURNING id", [orgId, req.params.id])).length;
+  await run("DELETE FROM donor_relationships WHERE org_id=? AND import_id=?", [orgId, req.params.id]).catch(() => {});
+  // Flags and tags are reverted only where this run turned them on and they
+  // are still on: a flag somebody set by hand afterwards is not this run's.
+  const sj = imp.summary_json ? (typeof imp.summary_json === "string" ? JSON.parse(imp.summary_json) : imp.summary_json) : {};
+  const HISTORY_FLAGS = new Set(["do_not_solicit", "do_not_contact", "do_not_mail", "do_not_email", "do_not_call"]);
+  for (const f of (sj.flagsSet || [])) {
+    if (!HISTORY_FLAGS.has(f.flag)) continue;
+    await run(`UPDATE donors SET ${f.flag}=false WHERE org_id=? AND id=?`, [orgId, f.donorId]);
+  }
+  for (const t of (sj.tagsAdded || [])) {
+    const [d] = await query("SELECT tags FROM donors WHERE org_id=? AND id=?", [orgId, t.donorId]);
+    if (!d) continue;
+    let tags = []; try { tags = JSON.parse(d.tags || "[]"); } catch { tags = []; }
+    const drop = new Set((t.tags || []).map(x => String(x).toLowerCase()));
+    await run("UPDATE donors SET tags=? WHERE org_id=? AND id=?", [JSON.stringify(tags.filter(x => !drop.has(String(x).toLowerCase()))), orgId, t.donorId]);
+  }
   const orphans = await query(
     `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
@@ -8804,6 +8865,13 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
   for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
   await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [actor(req).name || actor(req).id, req.params.id, orgId]);
+  if (imp.shape === "history") {
+    await recomputeScoresForOrg(orgId).catch(() => {});
+    return res.json({ reversed: true, gifts: 0, interactions: ixIds.length, tasks: tasksRemoved, donorsRemoved: orphans.length,
+      sentence: `Undone. ${ixIds.length.toLocaleString()} history ${ixIds.length === 1 ? "line" : "lines"}, ${tasksRemoved} ${tasksRemoved === 1 ? "task" : "tasks"}`
+        + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
+        + " removed, and the preferences it set turned back off. Nothing else was touched." });
+  }
   res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length,
     sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"} removed`
       + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
@@ -13599,6 +13667,19 @@ app.delete("/donor-relationships/:id", requireAuth, checkWriteAccess, wrap(async
   res.json({ success: true, deleted: 1, undoId, undoSeconds: UNDO_SECONDS });
 }));
 
+// IMPORT-2: the interaction types that are records of money or machinery, not
+// of anybody talking to anybody. A person with nothing but these has no
+// history yet, which is a different fact from being distant.
+const NOT_HISTORY_TYPES = ["gift", "payment", "email_open", "stage_change", "activity", "in_kind", "material"];
+async function hasHistory(orgId, donorId) {
+  const [r] = await query(
+    `SELECT (EXISTS (SELECT 1 FROM interactions i WHERE i.org_id=? AND i.donor_id=? AND i.type <> ALL(?::text[])
+                       AND COALESCE(i.created_by, '') NOT LIKE 'system:email-marketing%')
+          OR EXISTS (SELECT 1 FROM calendar_events c WHERE c.org_id=? AND ? = ANY(c.person_ids))) AS has`,
+    [orgId, donorId, NOT_HISTORY_TYPES, orgId, donorId]);
+  return !!(r && r.has);
+}
+
 // ── ENGAGE-1 — A DONOR'S TWO SCORES ────────────────────────────────────────
 // What the profile rail shows: engagement with its band and reason, generosity,
 // every part with its points (they add to the score), the explanation from the
@@ -13622,6 +13703,10 @@ app.get("/donors/:id/scores", requireAuth, wrap(async (req, res) => {
   res.json({
     donorId: d.id,
     engagement: row ? row.engagement : 0, generosity: row ? row.generosity : 0,
+    // IMPORT-2: no conversation, note or meeting on file. The screen says "No
+    // history yet" here, never "0, Distant", which would call a person Steward
+    // knows nothing about cold.
+    noHistory: !(await hasHistory(orgId, d.id)),
     // FIX-24 2b: "the most recent touch N days ago" said for today, not for the day the scores ran.
     band: band.key, bandLabel: band.label, reason: row ? engagementMod.reasonFor(row, orgToday(await orgTz(orgId))) : null,   // ORG_TZ_SEAM_OK
     computedFor: row ? row.computed_for : null, computedAt: row ? row.computed_at : null,
@@ -17583,14 +17668,18 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
            MAX(i.date) AS last_contact
     FROM donors d
-    LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
+    LEFT JOIN interactions i ON i.donor_id = d.id AND i.type <> ALL(?::text[])
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
       AND ${solicitableSql("d")} AND ${donorOnly("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
-    HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
+    -- IMPORT-2: NO HISTORY YET IS NOT COLD. A person with no conversation on
+    -- file at all is somebody Steward knows nothing about, not somebody gone
+    -- quiet; a gift line is not a conversation. Only a real last contact older
+    -- than ninety days puts somebody here.
+    HAVING MAX(i.date) < ?
     ORDER BY COALESCE(d.total_giving, 0) DESC
     LIMIT 20
-  `, [orgId, ...scopeParams, ninetyDaysAgo]),
+  `, [NOT_HISTORY_TYPES, orgId, ...scopeParams, ninetyDaysAgo]),
     // Lapsed donors
     query(`
     SELECT id, name, total_giving, last_gift_date

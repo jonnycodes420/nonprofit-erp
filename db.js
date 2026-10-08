@@ -4134,6 +4134,13 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE email_marketing_connections ADD COLUMN IF NOT EXISTS last_updated_count INTEGER`);
   await pool.query(`ALTER TABLE email_marketing_connections ADD COLUMN IF NOT EXISTS last_refused JSONB`);
 
+  // IMPORT-2: history import. Tasks and relationships carry the run that made
+  // them so the run undoes in one step; "no phone calls" is its own flag.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE donor_relationships ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS do_not_call BOOLEAN DEFAULT false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_import ON interactions (org_id, import_id) WHERE import_id IS NOT NULL`);
+
   // The campaigns the org sent FROM THE TOOL. Steward did not send these and
   // must never be able to: there is no body column, no recipient list and no
   // send path anywhere near this table. Counts only, plus the id that opens
