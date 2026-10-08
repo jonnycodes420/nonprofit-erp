@@ -36,6 +36,10 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **A Group is an `audiences` row.** `kind` 'dynamic' keeps `rules` (the donor list filters, evaluated
   live by `groups.js buildDonorFilter`, so membership is never stored); 'static' keeps its people in
   `group_members`. No second list table. (PARITY-1)
+- **A starter group reads a definition that already exists.** `groups.js STARTERS` names the rule;
+  each rule key reads the Reports, Home or Ask definition (`reportHooks.buntPredicate`, `yearWindows`,
+  `thanksSince`), never a copy. A starter meant for asking carries `solicitable` and says how many it
+  leaves out. A new starter needs a rule key that reuses a definition, not a new one. (GROUPS-2)
 - **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
   night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
   registration sets. Before this the only link was the campaign NAME, so a renamed event lost its

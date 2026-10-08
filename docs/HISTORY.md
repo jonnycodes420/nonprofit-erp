@@ -46,6 +46,15 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 - **Walk:** `docs/import-2/walk.js`, 1440 and 390, all pass; screenshots beside it. The 503s on `/ai/stream` in a
   local walk are the missing model key, not this build.
 
+## GROUPS-2 · Starter groups so the page is never empty (2026-10-08)
+
+Jonathan imported 1,000 donors and Groups said "No groups yet". Twelve starters (`groups.js STARTERS`) now show on the empty page and under New group, each a group by rule with its live count; zero-count starters are hidden and counted. `GET /groups/starters`, `GET /groups/starters/:key` (the preview, writes nothing), `POST /groups/starters/:key` (the server owns the rule). A rule-kept group's page gained Edit the rule, with Undo.
+
+- **One definition each.** LYBUNT and SYBUNT read `reportHooks.buntPredicate`, which the Reports tab now calls too; "this year" is `reportHooks.yearWindows`, the fiscal year Reports and Ask default to. First gift this year is the giving summary's "new". Gifts waiting for a thank-you is Home's figure (`reportHooks.thanksSince`), not ASK-2's all-time `unthankedOver`, which on an imported file holds nearly everyone. Top tenth is Reports' lifetime ranking at a tenth of everyone who gave.
+- **Reconciled.** Reports' SYBUNT is "gave before this year, nothing this year" and so holds every LYBUNT person; the starter is the usual SYBUNT (Reports' SYBUNT minus LYBUNT). Asking starters (LYBUNT, SYBUNT, top tenth) carry `solicitable` and say how many they leave out, so their count plus the left-out number is the Reports figure.
+- **Walk defect.** Adding a starter from the empty page hid the rest, because starters showed only while the page was empty; once shown they now stay for the visit.
+- **Seed changed.** Harborlight gets four starters already added (LYBUNT, thank-you, monthly, top tenth).
+
 ## FIX-34 · TASKS-2's loose ends before the Monday demo (2026-10-08)
 
 Built in five parallel worktrees (A calendar and Thread, B profile status and goal, C Google checks and reads, D QuickBooks and PayPal, E task actions and the morning email), merged into one branch. One test, `fix34-thanks`, runs a part file per worktree (`tests/fix34/*.js`) plus the CI ceiling check.

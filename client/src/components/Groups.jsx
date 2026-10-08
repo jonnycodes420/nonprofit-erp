@@ -55,7 +55,13 @@ const PICK_FIELDS = [
 const YES_FIELDS = [
   ["hasPledge", "Has an open pledge"], ["recurring", "Has a recurring gift running"], ["fundraiser", "Runs a peer-to-peer page"],
   ["funder", "Funds a grant"], ["openTask", "Has an open task"],
+  // GROUPS-2: the starters' rules, so a starter edits like any group.
+  ["monthly", "Gives monthly"], ["volunteer", "Has volunteered"], ["firstGiftThisYear", "First gift this fiscal year"],
+  ["gaveMore", "Gave more this year than last"], ["topTenth", "Top tenth by lifetime giving"],
+  ["awaitingThanks", "Has a gift waiting for a thank-you"], ["noHistory", "No history yet"], ["boardMember", "Board member"],
+  ["doNotSolicit", "Marked do not solicit"], ["solicitable", "Leave out do not solicit"],
 ];
+const BUNT_FIELD = { key: "bunt", label: "Gave before", options: [["", "Either"], ["lybunt", "Last year, not yet this year"], ["sybunt", "Some year before, not last or this year"]] };
 // The lists the pickers read, each as [id, name] pairs. A list that does not
 // load is an empty picker, never a broken form.
 function loadPickLists() {
@@ -78,6 +84,43 @@ export function LightningMark({ size = 14 }) {
       style={{ display: "inline-flex", verticalAlign: "-2px", marginLeft: 6 }}>
       <Zap size={size} color={T.gold} aria-hidden="true" />
     </span>
+  );
+}
+
+// The rule's controls, shared by New group and a group's Edit the rule.
+function RuleFields({ rules, setRules, retained, setRetained, lists }) {
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      {[...RULE_FIELDS, BUNT_FIELD].map(f => (
+        <select key={f.key} aria-label={f.label} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={field}>
+          {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
+        </select>
+      ))}
+      <label style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
+        <input type="checkbox" checked={retained} onChange={e => setRetained(e.target.checked)} /> Retained only
+      </label>
+      {[KIND_FIELD, MEMBER_FIELD].map(f => (
+        <select key={f.key} aria-label={f.label} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={field}>
+          {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
+        </select>
+      ))}
+      {PICK_FIELDS.map(f => {
+        const items = (lists && lists[f.list]) || [];
+        if (!items.length && !rules[f.key]) return null;
+        return (
+          <select key={f.key} aria-label={f.label} data-testid={`group-rule-${f.key}`} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={{ ...field, maxWidth: 260 }}>
+            <option value="">{`${f.label}: anyone`}</option>
+            {!f.noAny && <option value="any">{`${f.label}: any of them`}</option>}
+            {items.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        );
+      })}
+      {YES_FIELDS.map(([k, l]) => (
+        <label key={k} style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="checkbox" checked={rules[k] === "1"} onChange={e => setRules({ ...rules, [k]: e.target.checked ? "1" : "" })} /> {l}
+        </label>
+      ))}
+    </div>
   );
 }
 
@@ -113,39 +156,7 @@ function NewGroup({ onMade, onCancel }) {
           <input type="radio" name="group-kind" checked={kind === "dynamic"} onChange={() => setKind("dynamic")} /> By a rule <LightningMark size={13} />
         </label>
       </div>
-      {kind === "dynamic" && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {RULE_FIELDS.map(f => (
-            <select key={f.key} aria-label={f.label} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={field}>
-              {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
-            </select>
-          ))}
-          <label style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
-            <input type="checkbox" checked={retained} onChange={e => setRetained(e.target.checked)} /> Retained only
-          </label>
-          {[KIND_FIELD, MEMBER_FIELD].map(f => (
-            <select key={f.key} aria-label={f.label} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={field}>
-              {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
-            </select>
-          ))}
-          {PICK_FIELDS.map(f => {
-            const items = (lists && lists[f.list]) || [];
-            if (!items.length && !rules[f.key]) return null;
-            return (
-              <select key={f.key} aria-label={f.label} data-testid={`group-rule-${f.key}`} value={rules[f.key] || ""} onChange={e => setRules({ ...rules, [f.key]: e.target.value })} style={{ ...field, maxWidth: 260 }}>
-                <option value="">{`${f.label}: anyone`}</option>
-                {!f.noAny && <option value="any">{`${f.label}: any of them`}</option>}
-                {items.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-              </select>
-            );
-          })}
-          {YES_FIELDS.map(([k, l]) => (
-            <label key={k} style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 6, alignItems: "center" }}>
-              <input type="checkbox" checked={rules[k] === "1"} onChange={e => setRules({ ...rules, [k]: e.target.checked ? "1" : "" })} /> {l}
-            </label>
-          ))}
-        </div>
-      )}
+      {kind === "dynamic" && <RuleFields rules={rules} setRules={setRules} retained={retained} setRetained={setRetained} lists={lists} />}
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
         {kind === "dynamic"
           ? "Every rule you set must hold. Who is in it is worked out fresh each time, so a gift that moves somebody across a rule moves them in or out on its own."
@@ -160,10 +171,121 @@ function NewGroup({ onMade, onCancel }) {
   );
 }
 
+// GROUPS-2 · Edit the rule of a group kept by a rule, starters included. Keys
+// the form has no control for are kept as they were. Undo puts the old rule back.
+function EditRule({ group, onSaved, onCancel }) {
+  const [rules, setRules] = useState(() => ({ ...(group.rules || {}) }));
+  const [retained, setRetained] = useState(() => (group.rules || {}).retained === "1");
+  const [lists, setLists] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { loadPickLists().then(setLists); }, []);
+  const save = () => {
+    setBusy(true); setErr("");
+    const before = group.rules || {};
+    const r = { ...rules, retained: retained ? "1" : "" };
+    apiFetch(`/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ rules: r }) })
+      .then(g => {
+        setBusy(false); onSaved(g);
+        offerUndo({ message: `The rule for ${group.name} changed.`,
+          undoAction: async () => { const back = await apiFetch(`/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ rules: before }) }); onSaved(back); return back; } }, "group");
+      })
+      .catch(e => { setBusy(false); setErr(e?.body?.error || errorMessage(e, "That rule did not save.")); });
+  };
+  return (
+    <div style={{ ...card, display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }} data-testid="group-edit-rule">
+      <RuleFields rules={rules} setRules={setRules} retained={retained} setRetained={setRetained} lists={lists} />
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>Every rule you set must hold. Who is in it is worked out fresh each time.</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button type="button" style={primary} disabled={busy} onClick={save}>{busy ? "Saving…" : "Save the rule"}</button>
+        <button type="button" style={quiet} onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// GROUPS-2 · STARTER GROUPS. The lists a new director needs, each shown with
+// its count from her own records before she makes it. One click makes a group
+// by rule that keeps itself up to date; her name opens its people first.
+function Starters({ onAdded, onOpenGroup, isReadOnly }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [preview, setPreview] = useState(null);
+  const [busyKey, setBusyKey] = useState("");
+  const load = useCallback(() => {
+    apiFetch("/groups/starters").then(d => { setData(d); setErr(""); }).catch(() => setErr("The starter groups did not load just now."));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const open = key => {
+    if (preview && preview.key === key) { setPreview(null); return; }
+    setPreview({ key, loading: true });
+    apiFetch(`/groups/starters/${key}`).then(setPreview).catch(() => setPreview({ key, error: true }));
+  };
+  const add = key => {
+    setBusyKey(key);
+    apiFetch(`/groups/starters/${key}`, { method: "POST" })
+      .then(g => {
+        setBusyKey(""); load(); onAdded && onAdded(g);
+        offerUndo({ message: `Added ${g.name}. It keeps itself up to date.`,
+          undoAction: async () => { const r = await apiFetch(`/groups/${g.id}`, { method: "DELETE" }); load(); onAdded && onAdded(null); return r; } }, "group");
+      })
+      .catch(e => { setBusyKey(""); setErr(e?.body?.error || e?.error || errorMessage(e, "That group did not save.")); });
+  };
+  if (err && !data) return <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>;
+  if (!data) return <div style={{ fontSize: 13, color: T.ink3 }}>Finding the lists your records already hold…</div>;
+  return (
+    <div style={{ ...card, marginBottom: 16 }} data-testid="group-starters">
+      <div style={{ fontSize: 15, fontWeight: 600, color: T.ink, marginBottom: 2 }}>Start from a list Steward already sees</div>
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 8 }}>{data.countSentence} {data.leftOutSentence}</div>
+      {err && <div role="alert" style={{ fontSize: 13, color: T.ink, marginBottom: 6 }}>{err}</div>}
+      {data.starters.map(st => (
+        <div key={st.key} data-testid={`starter-${st.key}`} style={{ borderTop: "1px solid " + T.bg2, padding: "8px 0" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", minHeight: 44 }}>
+            <button type="button" aria-expanded={!!(preview && preview.key === st.key)} onClick={() => open(st.key)}
+              style={{ background: "none", border: "none", padding: "6px 0", font: "inherit", textAlign: "left", cursor: "pointer", color: T.ink, fontSize: 14, fontWeight: 600, flex: "1 1 220px", minWidth: 0 }}>
+              {st.name}{st.term && <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 6 }}>{st.term}</span>}
+            </button>
+            <span data-testid="starter-count" style={{ fontSize: 13, color: T.ink2, whiteSpace: "nowrap" }}>{st.count.toLocaleString("en-US")} {st.count === 1 ? "person" : "people"}</span>
+            {st.addedGroupId
+              ? <button type="button" style={{ ...quiet, minHeight: 44 }} onClick={() => onOpenGroup && onOpenGroup(st.addedGroupId)}>Added, open it</button>
+              : !isReadOnly && <button type="button" data-testid="starter-add" style={{ ...quiet, color: ACTION, borderColor: ACTION, fontWeight: 600, minHeight: 44, minWidth: 64 }} disabled={busyKey === st.key} onClick={() => add(st.key)}>{busyKey === st.key ? "Adding…" : "Add"}</button>}
+          </div>
+          {st.asking && st.leftOut > 0 && (
+            <div data-testid="starter-left-out" style={{ fontSize: 12, color: T.ink3 }}>Leaves out {st.leftOut.toLocaleString("en-US")} marked do not solicit, do not contact or deceased.</div>
+          )}
+          {preview && preview.key === st.key && (
+            <div data-testid="starter-preview" style={{ background: T.bg, borderRadius: 8, padding: "10px 12px", marginTop: 6 }}>
+              {preview.loading && <div style={{ fontSize: 13, color: T.ink3 }}>Reading who fits…</div>}
+              {preview.error && <div role="alert" style={{ fontSize: 13, color: T.ink }}>This list did not load just now.</div>}
+              {preview.sentence && <>
+                <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginBottom: 6 }}>{preview.sentence}</div>
+                {preview.people.map(p => (
+                  <div key={p.id} style={{ display: "flex", gap: 10, fontSize: 13, padding: "3px 0" }}>
+                    <span style={{ flex: "1 1 auto", color: T.ink, minWidth: 0 }}>{p.name}</span>
+                    <span style={{ color: T.ink3 }}>${Math.round(p.lifetime).toLocaleString("en-US")} lifetime</span>
+                  </div>
+                ))}
+                {preview.count > preview.people.length && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>And {(preview.count - preview.people.length).toLocaleString("en-US")} more, all in the group once you add it.</div>}
+              </>}
+            </div>
+          )}
+        </div>
+      ))}
+      {data.hidden > 0 && (
+        <div data-testid="starters-hidden" style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 8 }}>
+          {data.hidden === 1 ? "One more starter is hidden because nobody in your records fits it yet." : `${data.hidden} more starters are hidden because nobody in your records fits them yet.`}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigate }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [level, setLevel] = useState("all");
+  const [editing, setEditing] = useState(false);
   const load = useCallback(() => {
     apiFetch(`/groups/${groupId}`).then(d => { setData(d); setErr(""); }).catch(e => setErr(errorMessage(e, "This group did not load.")));
   }, [groupId]);
@@ -189,6 +311,10 @@ export function GroupPage({ groupId, onBack, onOpenPerson, isReadOnly, onNavigat
         </h2>
         {g.description && <p style={{ fontSize: 14, color: T.ink2, margin: "0 0 4px" }}>{g.description}</p>}
         <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px", lineHeight: 1.55 }}>{g.sentence}</p>
+        {g.kind === "dynamic" && !isReadOnly && !editing && (
+          <button type="button" data-testid="group-edit-rule-open" style={{ ...quiet, marginBottom: 12 }} onClick={() => setEditing(true)}>Edit the rule</button>
+        )}
+        {editing && <EditRule group={g} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); load(); }} />}
         {/* WIRE-1: every Group can feed a Communication and a Journey. Both
             open a draft that arrives off; nothing is sent or started here. */}
         {!isReadOnly && onNavigate && (
@@ -252,11 +378,14 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
   const [list, setList] = useState(null);
   const [err, setErr] = useState("");
   const [making, setMaking] = useState(false);
+  // GROUPS-2: the starters show on an empty page and under New group, and once
+  // shown they stay for the visit, so adding one never hides the rest.
+  const [starters, setStarters] = useState(false);
   // WIRE-1: /app/groups?group=<id> opens that group (a group just saved from
   // a guest list, a campaign or the donor list lands on its own page).
   const [open, setOpen] = useState(() => initialGroupId || urlParam("groups", "group") || null);
   const load = useCallback(() => {
-    apiFetch("/groups").then(r => { setList(r); setErr(""); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
+    apiFetch("/groups").then(r => { setList(r); setErr(""); if (!r.groups.length) setStarters(true); }).catch(() => setErr("Your groups did not load just now. Reload the page to try again."));
   }, []);
   useEffect(() => { load(); }, [load]);
   const openPerson = id => onNavigate && onNavigate("donors", { selectDonorId: id });
@@ -276,10 +405,11 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
           campaigns, your email tool's tags, journeys, surveys and the board pack.
         </p>
         {making && <NewGroup onCancel={() => setMaking(false)} onMade={g => { setMaking(false); load(); if (g && g.id) setOpen(g.id); }} />}
+        {list && (making || starters || !list.groups.length) && <Starters isReadOnly={isReadOnly} onAdded={() => load()} onOpenGroup={id => setOpen(id)} />}
         {err && <div role="alert" style={{ ...card, color: T.ink }}>{err}</div>}
         {!list && !err && <div data-testid="groups-loading"><div style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Loading your groups…</div><SkeletonCards count={4} label="Loading groups" /></div>}
         {list && !list.groups.length && (
-          <div style={{ ...card, color: T.ink3, fontSize: 14 }}>No groups yet. Make one for the people you think of together: table hosts, board prospects, or warm volunteers who have never given.</div>
+          <div style={{ fontSize: 13, color: T.ink3, margin: "0 0 12px" }}>No groups yet. Add one of the lists above, or press New group to make your own.</div>
         )}
         {list && list.groups.length > 0 && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>

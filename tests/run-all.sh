@@ -187,6 +187,7 @@ CORE=(
   fix31-one-record
   tasks2-thread
   fix34-thanks
+  groups2-starters
   search2-everything
   reports4-foot
   reports5-import
