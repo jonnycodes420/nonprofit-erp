@@ -13,6 +13,13 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   days). The list, `GET /tasks/counts` and Home's "Due today" read it; `tasks2-thread` §6 checks they agree.
   A call or meeting task with a person finishes only with an `interactionId` from
   `POST /donors/:id/conversations` (a next step or "No next step"); a linked next step still ticks as FIX-31.
+- **A Thank-you or Email task does the thing (FIX-34).** Its button opens the draft in Tasks, from the org's
+  template (Templates), for that person and, for a thank-you, THAT gift (`source_gift_id`, else the latest
+  unthanked). `POST /tasks/:id/thank` (Send or Mark sent) thanks the gift as `/acknowledgments/mark` does,
+  takes its drafted thank-you out of the queue and closes the task; `/thank/undo` puts all three back.
+  `POST /tasks/:id/email` sends through `sendMilestoneDraft` and leaves the task open: it finishes through
+  `/tasks/:id/complete` with that email's `interactionId` and a next step or "No next step". Select boxes
+  show only after "Select" (or a long press); every row tap target is 44 x 44 px.
 - **First thing speaks in one subject (`shared/firstThing.js`).** The logged line's pronoun becomes the first
   name, and the step says its day ("Christine asked for the impact report. Send it today.").
 - **Last conversation has one rule: `meetings.js conversationsWith`.** A held meeting (logged or on
