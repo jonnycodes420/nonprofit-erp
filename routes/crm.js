@@ -17031,7 +17031,8 @@ app.get("/tasks/:id/thank", requireAuth, wrap(async (req, res) => {
   if (!t || !t.donor_id) return res.status(404).json({ error: "Task not found" });
   const g = await taskGiftToThank(req.user.orgId, t, req.query.giftId);
   const [d] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [t.donor_id, req.user.orgId]);
-  res.json({ gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.acknowledgement_sent === true } : null,
+  const [gc] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND amount > 0", [req.user.orgId, t.donor_id]);
+  res.json({ giftCount: gc ? gc.n : 0, gift: g ? { id: g.id, amount: Number(g.amount), date: String(g.date || "").slice(0, 10), thanked: g.acknowledgement_sent === true } : null,
              donor: d ? { id: d.id, name: d.name, email: d.email || null } : null });
 }));
 app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res) => {
