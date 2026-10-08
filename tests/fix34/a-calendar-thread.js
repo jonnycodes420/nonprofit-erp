@@ -10,6 +10,8 @@
 //      other two steps as moreSteps; the Thread's count is donors, not steps.
 //   §3 a bare tick of a call next step (the Calendar's Mark done) is refused
 //      with needs_outcome; logged with a next step, the same tick finishes it.
+//   §2b Done on that row (a prep task) finishes that task only, through its
+//      own route (doneRoute), and the row moves to the meeting step.
 //   §4 the same for the meeting step itself.
 // What would make it fail: drop foldMeetingSteps (calendar.js) → §1 red; drop
 // the per-donor grouping in composeThreads → §2 red; restore `!t.link_kind`
@@ -81,6 +83,19 @@ async function run() {
     const tasks = await api("GET", "/tasks?scope=all", T);
     ok("FIX-34 A §2 Tasks still lists every step (prep and how did it go)",
       tasks.status === 200 && tasks.body.filter(t => t.donor_id === "d_f34a_chris" && /^(Prep for Christopher|How did it go with Christopher)/.test(t.title)).length === 2, tasks.body.map(t => t.title));
+
+    // §2b DONE ON THE FOLDED ROW FINISHES THAT TASK ONLY, AND THE ROW MOVES ON.
+    // The row's Done follows its doneRoute; logging a conversation instead
+    // would close the meeting step the prep task belongs to.
+    const head = rows[0];
+    ok("FIX-34 A §2b the prep row's Done is that task's own route", !!head && head.kind === "task" && head.doneRoute === `/tasks/${encodeURIComponent(head.id)}/complete`, head && { kind: head.kind, doneRoute: head.doneRoute });
+    const dn = head && head.doneRoute ? await api("POST", head.doneRoute, T, { done: true }) : { status: 0 };
+    const [thOpen] = await q(`SELECT closed_at FROM threads WHERE id=$1`, [th && th.id]);
+    const thr2 = await api("GET", "/threads?scope=all", T);
+    const rows2 = ((thr2.body && thr2.body.list) || []).filter(r => r.donorId === "d_f34a_chris");
+    ok("FIX-34 A §2b Done closed the prep only: the meeting step is still open, and the row now shows it (1 more)",
+      dn.status === 200 && !!thOpen && !thOpen.closed_at && rows2.length === 1 && rows2[0].id === (th && th.id) && rows2[0].moreSteps.length === 1,
+      [dn.status, thOpen, rows2.map(r => ({ id: r.id, label: r.nextStep.label, more: r.moreSteps && r.moreSteps.length }))]);
 
     // §3 A CALL STEP TICKED FROM THE CALENDAR NEEDS AN OUTCOME.
     const plan = await api("POST", "/donors/d_f34a_bo/threads", T, { label: "Call about the spring visit", due: nyDay(Date.now() + 2 * 864e5) });

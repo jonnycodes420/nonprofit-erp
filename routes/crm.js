@@ -18190,6 +18190,10 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
       // FIX-33: a meeting's prep and after tasks open the meeting they belong to.
       calendarEventId: k.calendar_event_id || null,
+      // FIX-34: Done on a task row finishes THAT task, through its own route,
+      // never the donor's open thread (logging a conversation would close the
+      // meeting step a prep task belongs to). The row then shows the next step.
+      doneRoute: `/tasks/${encodeURIComponent(k.id)}/complete`,
       overdue: due < today,
       overdueDays: due < today ? (orgTime.daysBetween(due, today) ?? 0) : 0,
       daysOpen: Math.max(0, daysOpen), openedOn,
