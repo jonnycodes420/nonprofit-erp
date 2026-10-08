@@ -109,6 +109,19 @@ function buildUnsubscribeUrl(email, orgId, source) {
   return `${publicAppUrl()}/unsubscribe?token=${signUnsubscribeToken(email, orgId, source)}`;
 }
 
+// FIX-34 · THE MORNING EMAIL'S OWN UNSUBSCRIBE LINE. A staff member's token
+// carries her user id and kind "morning_brief"; the same /unsubscribe page
+// renders on GET (and HEAD) and changes nothing, and its one POST turns off
+// the morning email's two settings (Settings > Account, notify_daily_tasks and
+// notify_thread_nudge). It never touches the donor suppression list.
+function staffUnsubscribeUrl(user, orgId) {
+  const payload = Buffer.from(JSON.stringify({
+    email: String(user.email || "").toLowerCase(), orgId: orgId || null, staff: "morning_brief", userId: user.id,
+  })).toString("base64url");
+  const sig = crypto.createHmac("sha256", UNSUB_SECRET).update(payload).digest("base64url");
+  return `${publicAppUrl()}/unsubscribe?token=${payload}.${sig}`;
+}
+
 async function unsubscribeEmailFooterHtml(email, orgId, source) {
   const url = buildUnsubscribeUrl(email, orgId, source);
   let addressLine = "";
@@ -776,5 +789,5 @@ module.exports = {
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendBoardPackEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
-  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
+  trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail, staffUnsubscribeUrl,
 };
