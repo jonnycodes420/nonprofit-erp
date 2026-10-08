@@ -16936,14 +16936,24 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   // POST /donors/:id/conversations (which requires a next step or an explicit
   // "No next step") and its id comes here. A bare tick is refused, so the
   // thread never ends without a decision.
+  // FIX-34: a next step's own task (link_kind next_step) that is a call or a
+  // meeting is finished the same way: the Calendar's Mark done used to close
+  // it with no "How did it go?" and no "What's next?". A deadline's task keeps
+  // its plain tick.
   let viaConversation = false;
-  if (done === 1 && !t.done && t.donor_id && !t.link_kind && ts.NEEDS_OUTCOME.has(ts.kindOf(t))) {
+  let outcomeKind = !t.link_kind ? ts.kindOf(t) : null;
+  if (t.link_kind === "next_step" && t.thread_id) {
+    const [th] = await query("SELECT next_step_type FROM threads WHERE id=? AND org_id=?", [t.thread_id, orgId]);
+    outcomeKind = th && ts.NEEDS_OUTCOME.has(th.next_step_type) ? th.next_step_type : ts.kindOf(t);
+  }
+  if (done === 1 && !t.done && t.donor_id && outcomeKind && ts.NEEDS_OUTCOME.has(outcomeKind)) {
     const iid = String(req.body.interactionId || "");
     const [i] = iid ? await query(
       `SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'next_step' IN ('set','skipped')`,
       [iid, orgId, t.donor_id]) : [];
     if (!i) return res.status(422).json({ error: "needs_outcome",
-      sentence: `Say how the ${ts.kindOf(t) === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
+      kind: outcomeKind,
+      sentence: `Say how the ${outcomeKind === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
     viaConversation = true;
   }
   // FIX-31: a next step's or a deadline's task is ticked through that record,

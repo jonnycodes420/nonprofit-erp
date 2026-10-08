@@ -422,7 +422,7 @@ function TaskSheet({ t, team, onClose, onChanged, onError, onFinish, isReadOnly 
 }
 
 // ── Done properly: how did it go, and what's next ────────────────────────
-function FinishSheet({ t, today, onClose, onDone }) {
+export function FinishSheet({ t, today, onClose, onDone }) {
   const [line, setLine] = useState("");
   const [reached, setReached] = useState(true);
   const [next, setNext] = useState({ label: "", due: addDays(today, 7) });

@@ -76,7 +76,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
   }
   if (want.has("step")) {
     jobs.push(query(
-      `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name,
+      `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time, t.calendar_event_id, t.owner_id, t.owner_name, d.id AS donor_id, d.name AS donor_name,
               (SELECT k.id FROM tasks k WHERE k.thread_id = t.id AND k.org_id = t.org_id) AS task_id
          FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id AND d.deleted_at IS NULL
         WHERE t.org_id = ? AND t.closed_at IS NULL AND t.due_date IS NOT NULL AND LEFT(t.due_date::text, 10) >= ? AND LEFT(t.due_date::text, 10) <= ?
@@ -89,7 +89,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
           ownerId: r.owner_id, ownerName: r.owner_name || "", donorId: r.donor_id, donorName: r.donor_name, detail: r.next_step_label || "",
           // FIX-33: a meeting step moves by moving the meeting, never on its own.
           stepType: r.next_step_type || null,
-          editable: { move: r.next_step_type !== "meeting", resize: false }, ref: { threadId: r.id, taskId: r.task_id || null } });
+          editable: { move: r.next_step_type !== "meeting", resize: false }, ref: { threadId: r.id, taskId: r.task_id || null, calendarEventId: r.calendar_event_id || null } });
       })));
     jobs.push(query(
       `SELECT t.id, t.title, t.due, t.assigned_to, t.assigned_to_name, d.id AS donor_id, d.name AS donor_name
@@ -333,7 +333,7 @@ async function calendarItems(orgId, { from, to, tz, userId, scope = "everyone", 
       }));
   }
   await Promise.all(jobs);
-  const items = dedupeOpenedSteps(out);
+  const items = foldMeetingSteps(dedupeOpenedSteps(out));
   markConflicts(items);
   items.sort((a, b) => String(a.start).localeCompare(String(b.start)) || a.type.localeCompare(b.type));
   return items;
@@ -375,6 +375,25 @@ function dedupeOpenedSteps(items) {
   });
 }
 
+// FIX-34: A BOOKED MEETING IS ONE THING. When a next step IS a meeting
+// (meetingEffects.js points the thread at the calendar event), the day showed
+// the meeting block and, beside it, the step that points at it. The meeting is
+// kept and carries the step (its thread and task) so its card offers the
+// step's own actions; the step item is dropped. A step whose meeting is not in
+// this read (meetings toggled off, another owner) is kept as it was.
+function foldMeetingSteps(items) {
+  const byEvent = new Map();
+  for (const i of items) if (i.type === "meeting" && i.ref && i.ref.calendarEventId) byEvent.set(String(i.ref.calendarEventId), i);
+  if (!byEvent.size) return items;
+  return items.filter(i => {
+    if (i.type !== "step" || !i.ref || !i.ref.calendarEventId || !i.ref.threadId) return true;
+    const m = byEvent.get(String(i.ref.calendarEventId));
+    if (!m) return true;
+    m.step = { threadId: i.ref.threadId, taskId: i.ref.taskId || null, label: i.detail || "", stepType: i.stepType || "meeting" };
+    return false;
+  });
+}
+
 // Two of one person's meetings at once; an event and a shift on top of each
 // other. A shift short of people already says so. Quiet markers only.
 function markConflicts(items) {
@@ -392,4 +411,4 @@ function markConflicts(items) {
   }
 }
 
-module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays };
+module.exports = { calendarItems, TYPES, DEFAULT_ON, markConflicts, chargeDays, foldMeetingSteps };
