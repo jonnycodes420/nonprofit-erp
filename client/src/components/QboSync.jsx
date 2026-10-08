@@ -174,7 +174,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
           textTransform: "uppercase", color: T.gold700 }}>Intuit sandbox</span>}
         {can && <button type="button" data-testid="qbo-auto" disabled={busy === "auto" || d.demo || (!d.autoSync && d.mappingReady === false)}
           title={!d.autoSync && d.mappingReady === false ? "Map every fund first" : ""} onClick={toggleAuto}
-          style={{ ...btn(false), marginLeft: "auto" }}>{d.autoSync ? "Turn auto-sync off" : "Turn auto-sync on"}</button>}
+          style={{ ...btn(false), marginLeft: "auto", ...(!d.autoSync && d.mappingReady === false ? { opacity: 0.5, cursor: "not-allowed" } : {}) }}>{d.autoSync ? "Turn auto-sync off" : "Turn auto-sync on"}</button>}
         {can && !d.demo && <button type="button" data-testid="qbo-disconnect" disabled={busy === "disconnect"} onClick={disconnect}
           style={btn(false)}>Disconnect</button>}
       </div>
@@ -228,7 +228,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
         {!mapOpen && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
           {Object.values(m.funds || {}).filter(x => x.accountId).length} of {(d.funds || []).length} funds mapped,
           {" "}{Object.values(m.campaigns || {}).filter(x => x.accountId).length} campaigns mapped.
-          {m.depositAccount ? <>Money lands in {m.depositAccount.name || m.depositAccount.id}.</> : "No account for the money to land in is chosen yet."}
+          {" "}          {m.depositAccount ? <>Money lands in {m.depositAccount.name || m.depositAccount.id}.</> : "No account for the money to land in is chosen yet."}
         </div>}
         {mapOpen && <div data-testid="qbo-mapping" style={{ marginTop: 6 }}>
           {listNote && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginBottom: 6 }}>{listNote}</div>}
