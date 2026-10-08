@@ -275,12 +275,12 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
             <Figure variant="inline" figureKey="qbo-pending" value={p.total.value} kind="money" label={p.total.label}
               definition={p.total.definition} source={p.total.source} />
           </span>
-          {can && p.count > 0 && d.mappingReady !== false && <button type="button" data-testid="qbo-sync-all" disabled={!!busy || d.demo}
+          {can && p.count > 0 && d.canSync !== false && <button type="button" data-testid="qbo-sync-all" disabled={!!busy || d.demo}
             style={{ ...btn(true), marginLeft: "auto" }} onClick={() => sync({ all: true })}>
             {busy === "all" ? "Sending…" : p.count > (d.batchSize || 100) ? `Sync all ${p.count}, ${d.batchSize || 100} at a time` : "Sync all"}</button>}
         </div>
         <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{p.total.definition}</div>
-        {can && p.count > 0 && d.mappingReady === false && d.mappingGaps && <div data-testid="qbo-sync-needs-mapping"
+        {can && p.count > 0 && d.canSync === false && d.mappingGaps && <div data-testid="qbo-sync-needs-mapping"
           style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>Sync waits for the mapping. {d.mappingGaps.sentence}</div>}
         {!p.rows.length && <div style={{ fontSize: 13, color: T.ink3, marginTop: 6 }}>Nothing is waiting. Every gift since {p.since} is in QuickBooks or skipped.</div>}
         {p.rows.map(r => (
@@ -296,7 +296,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
               {r.problem && <div data-testid="qbo-problem" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 2 }}>{r.problem}</div>}
             </div>
             {can && <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              {d.mappingReady !== false && <button type="button" data-testid="qbo-sync-one" disabled={!!busy || d.demo} style={btn(false)}
+              {d.canSync !== false && <button type="button" data-testid="qbo-sync-one" disabled={!!busy || d.demo} style={btn(false)}
                 onClick={() => sync({ giftIds: [r.giftId] })}>{busy === "g:" + r.giftId ? "Sending…" : r.tried ? "Retry" : "Sync"}</button>}
               <button type="button" data-testid="qbo-skip" disabled={!!busy} style={btn(false)} onClick={() => skip(r.giftId)}>Skip</button>
             </div>}

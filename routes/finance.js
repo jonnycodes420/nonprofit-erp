@@ -2934,7 +2934,8 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
   const sent = c ? await QS.sentSummary(orgId, "1970-01-01") : null;
   res.json({
     enabled: true, autoSync: org.qbo_auto_sync === true, demo, companySentence,
-    mappingReady: gaps.ok, mappingGaps: gaps.ok ? null : { funds: gaps.funds, depositAccount: gaps.depositAccount, sentence: gaps.sentence },
+    mappingReady: gaps.ok, canSync: !!gaps.canSync,
+    mappingGaps: gaps.ok ? null : { funds: gaps.funds, depositAccount: gaps.depositAccount, sentence: gaps.sentence },
     sent,
     mappingOtherCompany: map.otherCompany === true,
     batchSize: QS.RUN_LIMIT,
@@ -3173,7 +3174,8 @@ sharedProcessQboAutoSync = async function processQboAutoSync() {
   const touched = [];
   let sent = 0, waiting = 0;
   for (const { id } of orgs) {
-    const r = await QS.syncGifts({ orgId: id, all: true, limit: 50, tokenFor: qboTokenFor(id),
+    // FIX-34 Q: the tick sends nothing while any fund is unmapped.
+    const r = await QS.syncGifts({ orgId: id, all: true, limit: 50, tokenFor: qboTokenFor(id), everyFundMapped: true,
       who: { id: "system:qbo/auto-sync", name: "Steward (QuickBooks auto-sync)" } })
       .catch(e => { console.error("[qbo-auto-sync]", id, e.message); return null; });
     if (r && r.ok && (r.synced || r.failed)) { touched.push(id); sent += r.synced; waiting += r.failed; }

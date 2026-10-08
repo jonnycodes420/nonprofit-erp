@@ -162,13 +162,21 @@ async function mappingGaps(orgId, map) {
     `SELECT id, name FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
   const unmapped = funds.filter(f => !(map.funds[f.id] && map.funds[f.id].accountId)).map(f => f.name);
   const noDeposit = !map.depositAccount;
-  if (!unmapped.length && !noDeposit) return { ok: true, funds: [], depositAccount: true, sentence: null };
+  // A press of Sync may go once SOMETHING can land (the deposit account and
+  // at least one account chosen); a gift on a fund still unmapped then waits
+  // in Pending with its own sentence and nothing is sent for it. The hourly
+  // tick asks more: EVERY fund mapped.
+  const anyMapped = [...Object.values(map.funds), ...Object.values(map.campaigns)].some(x => x && x.accountId);
+  const canSync = !noDeposit && anyMapped && !map.otherCompany;
+  if (!unmapped.length && !noDeposit) return { ok: true, canSync: !map.otherCompany, funds: [], depositAccount: true, sentence: null };
   const list = xs => xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
   const parts = [];
   if (unmapped.length) parts.push(`a QuickBooks income account for ${list(unmapped.map(n => `"${n}"`))}`);
   if (noDeposit) parts.push("the account the money lands in");
-  return { ok: false, funds: unmapped, depositAccount: !noDeposit,
-    sentence: `Before anything is sent, choose ${parts.join(", and ")} in the mapping. Nothing has been sent.` };
+  return { ok: false, canSync, funds: unmapped, depositAccount: !noDeposit,
+    sentence: canSync
+      ? `Choose ${parts.join(", and ")} in the mapping. Until then those gifts wait in Pending and auto-sync stays off.`
+      : `Before anything is sent, choose ${parts.join(", and ")} in the mapping. Nothing has been sent.` };
 }
 
 // ── PENDING: THE ONE DEFINITION ───────────────────────────────────────────
@@ -594,7 +602,7 @@ async function syncPayout(ctx, payoutRef, gifts) {
 // `giftIds` null with `all` true is Sync all; otherwise only those gifts. The
 // caller is a person (routes/finance.js) or the org's own auto-sync tick, and
 // `who` is stamped on every row either way.
-async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null }) {
+async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, limit = RUN_LIMIT, runStartedAt = null, everyFundMapped = false }) {
   const refuse = (error, sentence, status = 409) => ({ ok: false, status, error, sentence });
   const [org] = await query(`SELECT id, is_demo_org, qbo_sync_enabled FROM orgs WHERE id=?`, [orgId]);
   if (!org || org.qbo_sync_enabled !== true)
@@ -612,7 +620,7 @@ async function syncGifts({ orgId, giftIds = null, all = false, who, tokenFor, li
     return refuse("nothing_chosen", "Choose the gifts to send, or press Sync all.", 400);
   // FIX-34 Q: refused here, for the button and the hourly tick alike.
   const gaps = await mappingGaps(orgId, map);
-  if (!gaps.ok) return refuse("needs_mapping", gaps.sentence);
+  if (!gaps.ok && (everyFundMapped || !gaps.canSync)) return refuse("needs_mapping", gaps.sentence);
 
   // ONE RUN PER ORG AT A TIME. A lease on the connection row, taken with a
   // conditional UPDATE, so a second press waits for nothing and holds no
