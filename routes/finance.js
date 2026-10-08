@@ -1950,8 +1950,18 @@ async function audienceMembership(orgId, audienceIds) {
   const A = await import("../shared/audiences.js");
   const donors = await query(
     `SELECT id, name, email, deceased, do_not_contact, do_not_email, email_unreachable, is_sample,
-            stage, capacity_tier, total_giving, person_types
+            stage, capacity_tier, total_giving, person_types, tags
        FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
+  // MAILCHIMP-1: DEMO PEOPLE NEVER LEAVE STEWARD. The sample rows carry
+  // `is_sample`; the 1,000-donor demonstration file carries the tag
+  // `demo-file` instead (scripts/build89-demo-seed.js), and a demonstration
+  // org is demonstration through and through. All three are sample here.
+  const [orgFlags] = await query(`SELECT is_demo_org FROM orgs WHERE id=?`, [orgId]);
+  const demoOrg = orgFlags?.is_demo_org === true;
+  const isDemoTagged = t => {
+    try { const a = Array.isArray(t) ? t : JSON.parse(t || "[]"); return Array.isArray(a) && a.includes("demo-file"); }
+    catch { return false; }
+  };
   // BUILD-94's opt-out truth, read once: `do_not_email` on the record OR a row
   // in `email_suppressions`. One definition, asked here, passed to the pure
   // module. INT-3 adds no second flag.
@@ -1985,7 +1995,7 @@ async function audienceMembership(orgId, audienceIds) {
       doNotContact: d.do_not_contact === true,
       optedOut: d.do_not_email === true || suppressed.has(String(d.email || "").toLowerCase()),
       emailUnreachable: d.email_unreachable === true,
-      isSample: d.is_sample === true,
+      isSample: d.is_sample === true || demoOrg || isDemoTagged(d.tags),
       memberOf: memberOf.get(d.id),
     }));
 }
@@ -1999,7 +2009,9 @@ async function audienceMembership(orgId, audienceIds) {
 // bookkeeping path uses, so a Constant Contact token refreshes five minutes
 // before expiry and once more on a 401, and Mailchimp's never-expiring token
 // simply never triggers it.
-const mailchimpBase = row => `https://${row.server_prefix}.api.mailchimp.com/3.0`;
+// MAILCHIMP_API_BASE is the stand-in seam (tests/mailchimp1-sync.test.js), the
+// same shape as INTUIT_API_BASE. Unset in production, where the data centre wins.
+const mailchimpBase = row => process.env.MAILCHIMP_API_BASE || `https://${row.server_prefix}.api.mailchimp.com/3.0`;
 const CC_BASE = "https://api.cc.email/v3";
 
 async function emailToolFetch(orgId, provider, row, path, { method = "GET", body = null } = {}) {
@@ -2027,6 +2039,7 @@ async function emailToolFetch(orgId, provider, row, path, { method = "GET", body
     console.error(`[email-marketing] ${provider} ${path} answered ${r.status}`);
     const err = new Error(providerErrorSentence(provider, r.status, text));
     err.status = r.status;
+    err.providerBody = text;
     throw err;
   }
   return r.json().catch(() => ({}));
@@ -2116,6 +2129,8 @@ app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
       webhookConfigured: !!row?.webhook_secret,
       lastSyncedAt: row?.last_synced_at || null,
       lastPushedCount: row?.last_pushed_count ?? null,
+      lastUpdatedCount: row?.last_updated_count ?? null,
+      pushOn: mapping?.push === true,
       lastError: row?.last_error || null,
       lastErrorAt: row?.last_error_at || null,
       sentence: !missing.length ? null
@@ -2132,7 +2147,7 @@ app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
              ...saved.map(a => ({ id: a.id, name: a.name, description: a.description || null, kind: a.kind || null }))],
     fieldsPushed: EM.FIELDS_PUSHED, fieldsSentence: EM.FIELDS_PUSHED_SENTENCE,
     restrictiveSentence: EM.RESTRICTIVE_SENTENCE,
-    definition: "The email tool your organisation sends from. Steward reads what it reports and writes the people you map. It never sends the email.",
+    definition: "The email tool your organisation sends from. Steward reads who opened, clicked and asked to stop. It adds people to your list only if you turn that on. It never sends the email.",
   });
 }));
 
@@ -2182,9 +2197,11 @@ app.post("/email-marketing/:provider/mapping", requireAuth, requireAdmin, checkW
     [JSON.stringify(v.value), v.value.audienceId, v.value.audienceName, row.id, req.user.orgId]);
   await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name,
     "email_marketing_mapping_saved", "connection", provider,
-    { audienceId: v.value.audienceId, groups: Object.keys(v.value.groups).length }).catch(() => {});
+    { audienceId: v.value.audienceId, push: v.value.push, groups: Object.keys(v.value.groups).length }).catch(() => {});
   res.json({ ok: true,
-    sentence: `Saved. Steward will keep that ${EM.audienceNoun(provider)} in step from now on, and send nothing else.` });
+    sentence: v.value.push
+      ? `Saved. Steward will read that ${EM.audienceNoun(provider)} and add the people you chose to it. It never sends the email.`
+      : `Saved. Steward will read who opened, clicked and asked to stop. It adds nobody to that ${EM.audienceNoun(provider)}.` });
 }));
 
 // THE TOOL'S OWN AUDIENCES OR LISTS, for the mapping screen to choose from.
@@ -2227,7 +2244,8 @@ app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWrit
 
   const out = await runEmailSync(orgId, provider, row, mapping);
   if (!out.ok) return res.status(502).json({ error: "sync_failed", sentence: out.sentence });
-  res.json({ ok: true, pushed: out.pushed, campaigns: out.campaigns, optOuts: out.optOuts, sentence: out.sentence });
+  res.json({ ok: true, pushed: out.pushed, campaigns: out.campaigns, optOuts: out.optOuts,
+             updated: out.updated, refused: out.refused, sentence: out.sentence });
 }));
 
 /**
@@ -2243,17 +2261,27 @@ app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWrit
 async function runEmailSync(orgId, provider, row, mapping) {
   const EM = await emailMarketingMod();
   await run(`UPDATE email_marketing_connections SET last_tried_at=NOW() WHERE id=?`, [row.id]).catch(() => {});
+  // MAILCHIMP-1: THE RECORDS THIS RUN CHANGED, counted once each however
+  // many things it learned about them.
+  const touched = new Set();
   try {
-    const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId);
-    const campaigns = await pullCampaigns(orgId, provider, row);
-    const pushed = await pushAudience(orgId, provider, row, mapping);
+    const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId, touched);
+    const campaigns = await pullCampaigns(orgId, provider, row, touched);
+    const { pushed, refused } = await pushAudience(orgId, provider, row, mapping);
+    // ONE REFUSED ADDRESS IS A ROW, NOT AN OUTAGE. Before MAILCHIMP-1 the first
+    // address Mailchimp refused threw out of the push, this whole run was
+    // recorded as an error, and the card read BROKEN with "Please provide a
+    // valid email address" while the connection itself was fine. The refusals
+    // are kept on the connection, listed on the card, and the status stays
+    // active. BROKEN is for a dead connection only.
     await run(
       `UPDATE email_marketing_connections
-          SET status='active', last_synced_at=NOW(), last_pushed_count=?,
-              last_error=NULL, last_error_at=NULL, updated_at=NOW()
-        WHERE id=?`, [pushed, row.id]);
-    return { ok: true, pushed, campaigns, optOuts,
-             sentence: EM.syncSentence({ provider, pushed, campaigns, optOuts }) };
+          SET status='active', last_synced_at=NOW(), last_pushed_count=?, last_updated_count=?,
+              last_refused=?::jsonb, last_error=NULL, last_error_at=NULL, updated_at=NOW()
+        WHERE id=?`, [pushed, touched.size, JSON.stringify(refused.slice(0, REFUSED_KEPT)), row.id]);
+    return { ok: true, pushed, campaigns, optOuts, updated: touched.size, refused,
+             sentence: EM.syncSentence({ provider, pushed, campaigns, optOuts,
+                                         updated: touched.size, refused: refused.length }) };
   } catch (e) {
     await noteEmailToolError(orgId, row.id, e.message, e.status);
     return { ok: false, sentence: e.message };
@@ -2291,6 +2319,8 @@ sharedProcessEmailMarketing = async function processEmailMarketing() {
 // the mapping panel, and left it that way. A missing credential is a state, not
 // an incident.
 const NOT_AN_INCIDENT = [409, 503];
+// How many refused addresses a connection keeps for the card to list.
+const REFUSED_KEPT = 500;
 async function noteEmailToolError(orgId, id, sentence, status) {
   if (status && NOT_AN_INCIDENT.includes(status)) return;
   await run(
@@ -2309,13 +2339,19 @@ async function noteEmailToolError(orgId, id, sentence, status) {
  */
 async function pushAudience(orgId, provider, row, mapping) {
   const EM = await emailMarketingMod();
+  // MAILCHIMP-1: NOTHING IS ADDED UNLESS SHE TURNED ADDING ON. A mapping saved
+  // before this build has no `push` and so pushes nothing: choosing an
+  // audience to read from was never the same decision as filling it.
+  if (mapping.push !== true) return { pushed: 0, refused: [] };
   const people = await audienceMembership(orgId, Object.keys(mapping.groups || {}));
   const counts = EM.previewCounts(people, { mapping: mapping.groups });
   const byId = new Map(people.map(p => [p.id, p]));
   let pushed = 0;
+  const refused = [];
   for (const p of counts.people) {
     const person = byId.get(p.id);
     const [firstName, ...rest] = String(person.name || "").trim().split(/\s+/);
+    try {
     if (provider === "mailchimp") {
       // Mailchimp keys a member by the MD5 of the lowercased address, and PUT
       // is an upsert. `status_if_new: subscribed` is deliberate: it sets the
@@ -2340,9 +2376,18 @@ async function pushAudience(orgId, provider, row, mapping) {
           list_memberships: [mapping.audienceId],
         } });
     }
+    } catch (e) {
+      // A 400 or 422 is the tool refusing THIS address. Anything else (a
+      // revoked token, a deleted list, the tool down or rate-limiting) is
+      // about the connection, and stops the run as it always did.
+      if (e.status !== 400 && e.status !== 422) throw e;
+      refused.push({ donorId: p.id, name: person.name || null, email: p.email,
+                     reason: EM.refusalReason(e.providerBody) });
+      continue;
+    }
     pushed++;
   }
-  return pushed;
+  return { pushed, refused };
 }
 
 /**
@@ -2352,7 +2397,7 @@ async function pushAudience(orgId, provider, row, mapping) {
  * says is subscribed does NOT un-suppress anybody here, because the more
  * restrictive answer wins and Steward never re-subscribes.
  */
-async function pullOptOuts(orgId, provider, row, audienceId) {
+async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()) {
   const EM = await emailMarketingMod();
   let statuses = [];
   if (provider === "mailchimp") {
@@ -2373,6 +2418,12 @@ async function pullOptOuts(orgId, provider, row, audienceId) {
     if (!email) continue;
     const decision = EM.optOutFromStatus(s.status);
     if (!decision.optOut) continue;
+    // MAILCHIMP-1: ONLY PEOPLE STEWARD ALREADY HAS, the same rule the activity
+    // read keeps. An address on her newsletter list that is nobody on file is
+    // not written into Steward at all.
+    const [d] = await query(`SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL LIMIT 1`,
+      [orgId, email]);
+    if (!d) continue;
     // A BOUNCE IS NOT AN UNSUBSCRIBE. The same split the webhook makes, for
     // the same reason: `cleaned` is a mailbox that stopped working and
     // `unsubscribed` is a person who asked to stop, and recording either as
@@ -2391,19 +2442,18 @@ async function pullOptOuts(orgId, provider, row, audienceId) {
         `SELECT 1 FROM email_suppressions WHERE LOWER(email)=? AND (org_id=? OR org_id IS NULL) LIMIT 1`,
         [email, orgId]);
       if (already.length) continue;
-      // The ONE unsubscribe write, BUILD-94's. No second flag.
+      // The ONE unsubscribe write, BUILD-94's, and the record's own flag beside
+      // it as the mail decisions file asks.
       await recordUnsubscribe(email, orgId, "campaign");
+      await run(`UPDATE donors SET do_not_email=true WHERE id=? AND org_id=?`, [d.id, orgId]);
     }
-    const [d] = await query(`SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL LIMIT 1`,
-      [orgId, email]);
-    if (d) {
-      await run(
-        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
-         VALUES (?,?,?,?,?,?,?)`,
-        ["int_" + uuid().slice(0, 8), orgId, d.id, "email",
-         `${decision.kind === "unreachable" ? "Email stopped working" : "Unsubscribed"} in ${EM.providerLabel(provider)}.`,
-         String(s.at || new Date().toISOString()).slice(0, 10), `system:email-marketing/${provider}`]).catch(() => {});
-    }
+    touched.add(d.id);
+    await run(
+      `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
+       VALUES (?,?,?,?,?,?,?)`,
+      ["int_" + uuid().slice(0, 8), orgId, d.id, "email",
+       `${decision.kind === "unreachable" ? "Email stopped working" : "Unsubscribed"} in ${EM.providerLabel(provider)}.`,
+       String(s.at || new Date().toISOString()).slice(0, 10), `system:email-marketing/${provider}`]).catch(() => {});
     written++;
   }
   return written;
@@ -2414,7 +2464,7 @@ async function pullOptOuts(orgId, provider, row, audienceId) {
  * person per campaign. Counts only: no body, no recipient list, nothing that
  * could be mistaken for something Steward could send.
  */
-async function pullCampaigns(orgId, provider, row) {
+async function pullCampaigns(orgId, provider, row, touched = new Set()) {
   let campaigns = [];
   if (provider === "mailchimp") {
     const body = await emailToolFetch(orgId, provider, row,
@@ -2450,7 +2500,7 @@ async function pullCampaigns(orgId, provider, row) {
     // The per-person activity, for the most recent campaigns only. Every
     // campaign ever sent would be one call each on every daily run, against
     // somebody else's rate limit, to re-learn something that cannot change.
-    if (n <= ACTIVITY_CAMPAIGN_LIMIT) await pullActivity(orgId, provider, row, id, c);
+    if (n <= ACTIVITY_CAMPAIGN_LIMIT) await pullActivity(orgId, provider, row, id, c, touched);
   }
   return n;
 }
@@ -2467,7 +2517,7 @@ const ACTIVITY_CAMPAIGN_LIMIT = 10;
  * newsletter list into a donor file behind somebody's back. It is skipped, and
  * the campaign's counts still report the whole send.
  */
-async function pullActivity(orgId, provider, row, campaignRowId, campaign) {
+async function pullActivity(orgId, provider, row, campaignRowId, campaign, touched = new Set()) {
   if (provider !== "mailchimp") return;   // Constant Contact's per-person activity lands with its own build
   const EM = await emailMarketingMod();
   let members = [];
@@ -2496,6 +2546,26 @@ async function pullActivity(orgId, provider, row, campaignRowId, campaign) {
     if (!opened && !clicked && !unsubscribed) continue;
     const clickedLabel = (acts.find(a => a.action === "click" && a.url) || {}).url || null;
     const occurred = (acts.find(a => a.timestamp) || {}).timestamp || campaign.sentAt || null;
+    // A RE-READ THAT LEARNS NOTHING NEW CHANGES NO RECORD, so it is not counted.
+    const [prior] = await query(
+      `SELECT opened, clicked, unsubscribed FROM email_marketing_activity WHERE campaign_id=? AND donor_id=?`,
+      [campaignRowId, donorId]);
+    if (!prior || prior.opened !== opened || prior.clicked !== clicked || prior.unsubscribed !== unsubscribed)
+      touched.add(donorId);
+    // MAILCHIMP-1: AN UNSUBSCRIBE IN THE CAMPAIGN REPORT IS STEWARD'S OPT-OUT
+    // TOO, through the one write BUILD-94 owns, so Steward's own donor mail
+    // stops for that address the same run, not only when the member listing
+    // catches up.
+    if (unsubscribed) {
+      const already = await query(
+        `SELECT 1 FROM email_suppressions WHERE LOWER(email)=? AND (org_id=? OR org_id IS NULL) LIMIT 1`,
+        [email, orgId]);
+      if (!already.length) {
+        await recordUnsubscribe(email, orgId, "campaign");
+        await run(`UPDATE donors SET do_not_email=true WHERE id=? AND org_id=?`, [donorId, orgId]);
+        touched.add(donorId);
+      }
+    }
     await run(
       `INSERT INTO email_marketing_activity
          (id,org_id,campaign_id,donor_id,email,opened,clicked,clicked_label,unsubscribed,occurred_at)

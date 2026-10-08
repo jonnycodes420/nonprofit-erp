@@ -115,7 +115,12 @@ export const EXCLUSIONS = {
   unreachable: { key: "unreachable", label: "Email bounced",
     sentence: "Email has hard bounced, so the address does not work. Pushing it would hurt the sending reputation of every other send." },
   sample: { key: "sample", label: "Sample data",
-    sentence: "Part of the sample data Steward created to show the screens. It is never pushed anywhere." },
+    sentence: "Part of the sample data Steward created to show the screens, or a record tagged demo-file. It is never pushed anywhere." },
+  // MAILCHIMP-1. An address Steward can already see is not real is never
+  // offered to the tool. Sending it only earns a refusal, and before this build
+  // one refusal stopped the whole run and turned the card BROKEN.
+  bad_address: { key: "bad_address", label: "Not a real address",
+    sentence: "The address is malformed, or on a domain kept for examples and tests, so the email tool would refuse it." },
 };
 export const EXCLUSION_KEYS = Object.keys(EXCLUSIONS);
 
@@ -135,12 +140,47 @@ export function pushDecision(p) {
   const no = k => ({ push: false, reason: k, sentence: EXCLUSIONS[k].sentence });
   const email = String(person.email || "").trim();
   if (person.isSample === true) return no("sample");
-  if (!email || !email.includes("@")) return no("no_email");
+  if (!email) return no("no_email");
+  if (addressProblem(email)) return no("bad_address");
   if (person.deceased === true) return no("deceased");
   if (person.doNotContact === true) return no("do_not_contact");
   if (person.optedOut === true) return no("opted_out");
   if (person.emailUnreachable === true) return no("unreachable");
   return { push: true, reason: null, sentence: null };
+}
+
+// ── AN ADDRESS STEWARD ALREADY KNOWS IS NOT REAL ───────────────────────────
+// Deliberately narrow. This is not Mailchimp's validator and does not try to
+// be: it catches the shapes no mailbox can have, and the domains RFC 2606 and
+// RFC 6761 set aside so they can never receive mail. Anything subtler is left
+// to the tool, whose refusal is now listed rather than fatal.
+const RESERVED_DOMAIN = /(^|\.)(example\.(com|org|net)|example|test|invalid|localhost|local)$/i;
+export function addressProblem(email) {
+  const e = String(email || "").trim();
+  if (!e) return "empty";
+  if (/\s/.test(e)) return "malformed";
+  const at = e.lastIndexOf("@");
+  if (at < 1 || e.indexOf("@") !== at) return "malformed";
+  const local = e.slice(0, at), domain = e.slice(at + 1).toLowerCase();
+  if (local.startsWith(".") || local.endsWith(".") || local.includes("..")) return "malformed";
+  if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) && !RESERVED_DOMAIN.test(domain)) return "malformed";
+  if (domain.includes("..") || domain.startsWith(".") || domain.startsWith("-")) return "malformed";
+  if (RESERVED_DOMAIN.test(domain)) return "reserved";
+  return null;
+}
+
+/**
+ * MAILCHIMP'S REFUSAL OF ONE ADDRESS, IN ITS OWN WORDS. Mailchimp answers a
+ * refused member with a problem document whose `detail` is already a sentence
+ * ("Please provide a valid email address."). That sentence is what a person
+ * reads beside the address; the JSON around it is not.
+ */
+export function refusalReason(text) {
+  let detail = "";
+  try { const b = JSON.parse(String(text || "")); detail = b.detail || b.title || ""; }
+  catch { detail = String(text || ""); }
+  detail = String(detail).replace(/\s+/g, " ").trim().slice(0, 200);
+  return detail || "The email tool refused this address and gave no reason.";
 }
 
 /**
@@ -348,8 +388,17 @@ export function syncSentence(run) {
   if (r.pushed) bits.push(`${r.pushed.toLocaleString()} ${r.pushed === 1 ? "person" : "people"} sent to ${label}`);
   if (r.campaigns) bits.push(`${r.campaigns.toLocaleString()} ${r.campaigns === 1 ? "campaign" : "campaigns"} read back`);
   if (r.optOuts) bits.push(`${r.optOuts.toLocaleString()} ${r.optOuts === 1 ? "unsubscribe" : "unsubscribes"} brought in`);
-  if (!bits.length) return `Checked ${label}. Nothing had changed.`;
-  return bits.join(", ") + ".";
+  if (r.updated) bits.push(`${r.updated.toLocaleString()} ${r.updated === 1 ? "record" : "records"} updated`);
+  const refused = Number(r.refused) || 0;
+  const tail = refused ? ` ${refusedSentence(refused, r.provider)}` : "";
+  if (!bits.length) return `Checked ${label}. Nothing had changed.${tail}`;
+  return bits.join(", ") + "." + tail;
+}
+
+/** "3 addresses Mailchimp refused": the count the healthy card carries. */
+export function refusedSentence(n, providerKey) {
+  const c = Number(n) || 0;
+  return `${c.toLocaleString()} ${c === 1 ? "address" : "addresses"} ${providerLabel(providerKey)} refused.`;
 }
 
 /**
@@ -368,10 +417,16 @@ export function validateMapping(input) {
     if (!t.ok) { errors.push(t.error); continue; }
     groups[String(k)] = t.value;
   }
-  if (!Object.keys(groups).length) errors.push("Choose at least one group to send, and the tag it should carry.");
+  // MAILCHIMP-1. READING IS THE DEFAULT; ADDING PEOPLE IS A SECOND, DELIBERATE
+  // YES. Choosing an audience is enough for Steward to read who opened,
+  // clicked and asked to stop. Steward adds or updates contacts in that
+  // audience only when `push` is literally true, and then it needs the groups.
+  const push = m.push === true;
+  if (push && !Object.keys(groups).length) errors.push("Choose at least one group to send, and the tag it should carry.");
   return errors.length
     ? { ok: false, errors }
-    : { ok: true, value: { audienceId, audienceName: String(m.audienceName || "").trim() || null, groups } };
+    : { ok: true, value: { audienceId, audienceName: String(m.audienceName || "").trim() || null,
+                           push, groups: push ? groups : {} } };
 }
 
 export default {
@@ -380,5 +435,5 @@ export default {
   pushDecision, tagsFor, validTagName, previewCounts, previewSentence, PREVIEW_DEFINITION,
   moreRestrictive, RESTRICTIVE_SENTENCE, optOutFromStatus, STATUSES,
   activitySentence, giftsNearSend, campaignRow, GIFT_WINDOW_DAYS, GIFT_WINDOW_SENTENCE,
-  syncSentence, validateMapping,
+  syncSentence, validateMapping, addressProblem, refusalReason, refusedSentence,
 };

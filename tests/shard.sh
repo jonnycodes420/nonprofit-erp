@@ -100,6 +100,7 @@ start_server() {
   RESEND_RECEIVING_BASE_URL="http://localhost:$recv" \
   GOOGLE_CALENDAR_API_BASE="http://localhost:$cal" \
   GMAIL_API_BASE="http://localhost:$cal" GRAPH_API_BASE="http://localhost:$cal" \
+  MAILCHIMP_API_BASE="http://localhost:$cal/mailchimp/3.0" \
   node server.js >"$SERVER_LOG" 2>&1 &
   echo $!
 }
@@ -161,6 +162,9 @@ export BILLING_MOCK_PORT="$billing"
 export BOOKKEEPING_MOCK_PORT="$((api + 5))"
 export XERO_MOCK_PORT="$((api + 6))"
 export CALENDAR_MOCK_PORT="$cal"
+# MAILCHIMP-1: the Mailchimp stand-in shares the calendar mock's port (suites
+# in a shard run one at a time) under its own /mailchimp path.
+export MAILCHIMP_MOCK_PORT="$cal"
 # FIX-15 — the two suites that boot server.js IN-PROCESS (tenant-matrix,
 # fix11-audit-trail) used fixed ports, :5697 and :5698, which two worktrees'
 # batteries both bound. Suites run serially inside a shard, so both share the
