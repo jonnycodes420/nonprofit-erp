@@ -3165,12 +3165,14 @@ app.put("/qbo/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
 
 // THE HOURLY TICK, published to routes/jobs.js. The same engine as the
 // button, for every org whose admin turned auto-sync on, as a system actor.
-sharedProcessQboAutoSync = async function processQboAutoSync() {
+// `onlyOrgId` narrows it to one org: the ops/test door below.
+sharedProcessQboAutoSync = async function processQboAutoSync(onlyOrgId = null) {
   const QS = qboSyncMod();
   const orgs = await query(
     `SELECT o.id FROM orgs o
        JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='quickbooks' AND c.status <> 'disconnected'
-      WHERE o.qbo_sync_enabled = true AND o.qbo_auto_sync = true AND COALESCE(o.is_demo_org, false) = false`, []);
+      WHERE o.qbo_sync_enabled = true AND o.qbo_auto_sync = true AND COALESCE(o.is_demo_org, false) = false
+        AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
   const touched = [];
   let sent = 0, waiting = 0;
   for (const { id } of orgs) {
@@ -3183,6 +3185,14 @@ sharedProcessQboAutoSync = async function processQboAutoSync() {
   return { detail: `${orgs.length} org(s) with auto-sync on; ${sent} sent, ${waiting} left in Pending`, orgs: touched,
            summary: `QuickBooks auto-sync sent ${sent} and left ${waiting} in Pending.` };
 };
+
+// FIX-34 Q: the ops/test door onto the hourly QuickBooks tick, this org
+// only (the /auctions/run-unpaid-sweep shape). It is the same engine and the
+// same rules as the tick: it sends nothing unless auto-sync is on and every
+// fund is mapped.
+app.post("/qbo/auto-sync/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  res.json(await sharedProcessQboAutoSync(req.user.orgId));
+}));
 
 // Disconnecting stops the sending and DELETES NOTHING, in Steward or in the
 // accounting system. What was sent was sent.

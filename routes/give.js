@@ -877,6 +877,13 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
     // no credential, no claim: a name, so the page can say it back and the
     // product knows what it keeps being asked for.
     otherSources: readOtherSources(orgRow[0] && orgRow[0].other_giving_sources),
+    // FIX-34 Y · THE FUNDS THE "GIFTS GO TO" PICKER OFFERS, from the same
+    // answer as the sources. The picker read `r.funds` off /finance/funds,
+    // which answers with a bare array, so it offered no fund at all.
+    funds: (await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false
+                          ORDER BY restricted ASC, name ASC`, [req.user.orgId]))
+      .map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+    obviousFundId: await soleGeneralFundId(req.user.orgId),
   });
 }));
 

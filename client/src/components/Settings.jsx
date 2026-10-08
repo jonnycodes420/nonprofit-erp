@@ -2125,6 +2125,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
   // connection never shows two states at once.
   const load=(changed=true)=>apiFetch("/giving-sources")
     .then(r=>{setSources(Array.isArray(r.sources)?r.sources:[]);setOtherSources(Array.isArray(r.otherSources)?r.otherSources:[]);
+      if(Array.isArray(r.funds)) setFunds(r.funds);
       if(changed&&onChanged) onChanged();})
     .catch(e=>{setSources([]);setErr(errorMessage(e,"Could not load your giving sources."));});
 
@@ -2134,9 +2135,9 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
       setProviders(Array.isArray(r.providers)?r.providers:[]);
       setCredState({ready:r.credentialsReady!==false,problem:r.credentialsProblem||null});
     }).catch(()=>{});
-    // FIX-34 Y: /finance/funds answers with the ARRAY itself. Reading `r.funds`
-    // off it gave an empty list, so the picker offered no fund at all.
-    apiFetch("/finance/funds").then(r=>setFunds(Array.isArray(r)?r:Array.isArray(r&&r.funds)?r.funds:[])).catch(()=>{});
+    // FIX-34 Y: the funds come with /giving-sources now. /finance/funds
+    // answers with a bare array and this read `r.funds` off it, so the
+    // picker offered no fund at all.
   },[]);
 
   const checkNow=async(id)=>{
