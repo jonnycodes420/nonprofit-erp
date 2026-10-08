@@ -249,7 +249,7 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method)
            VALUES ('g_p2_second',$1,'d_p2_wren',60,'2026-09-20','online','fnd_p2_youth','card')`, [ORG]);
   const burst = await Promise.all(Array.from({ length: 5 }, () => sync(tok, { all: true })));
-  const forSecond = store.receipts.filter(r => r.PrivateNote === "Steward gift g_p2_second");
+  const forSecond = store.receipts.filter(r => (r.DocNumber === "g_p2_second" || r.PrivateNote === "Steward gift g_p2_second"));
   ok("§5 five simultaneous Sync alls create ONE receipt for the new gift", forSecond.length === 1,
      { receipts: forSecond.length, answers: burst.map(b => b.status + ":" + (b.body?.error || b.body?.synced)) });
   ok("§5 …and the same donor is one QuickBooks customer, not two",
@@ -257,7 +257,7 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
 
   // ── §6 · THE UNMAPPED FUND WAITS, AND SAYS WHY ──────────────────────────
   ok("§6 nothing was ever sent for the unmapped gift",
-     !store.receipts.some(r => r.PrivateNote === "Steward gift g_p2_unmapped"), store.receipts.map(r => r.PrivateNote));
+     !store.receipts.some(r => (r.DocNumber === "g_p2_unmapped" || r.PrivateNote === "Steward gift g_p2_unmapped")), store.receipts.map(r => r.DocNumber));
   const p3 = await pending(tok);
   const un = (p3.body?.rows || []).find(r => r.giftId === "g_p2_unmapped");
   ok("§6 it is still in Pending", !!un, p3.body?.rows);
@@ -267,7 +267,7 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
   const unSync = await sync(tok, { giftIds: ["g_p2_unmapped"] });
   ok("§6 pressing Sync on it answers the same sentence and sends nothing",
      (unSync.body?.results || []).some(r => r.giftId === "g_p2_unmapped" && r.status === "needs_mapping" && /Roof Appeal/.test(r.sentence))
-     && !store.receipts.some(r => r.PrivateNote === "Steward gift g_p2_unmapped"), unSync.body);
+     && !store.receipts.some(r => (r.DocNumber === "g_p2_unmapped" || r.PrivateNote === "Steward gift g_p2_unmapped")), unSync.body);
 
   // ── §7 · DEPOSIT PER PAYOUT: ONE PAYOUT, ONE DEPOSIT, ONCE ─────────────
   await q(`UPDATE bookkeeping_connections SET mapping = jsonb_set(mapping, '{qbo}',

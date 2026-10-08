@@ -94,7 +94,8 @@ async function clean() {
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
 }
 
-const receiptsFor = (realm, gid) => books[realm].receipts.filter(r => r.PrivateNote === `Steward gift ${gid}`).length;
+// FIX-34: the gift id rides in DocNumber; the memo is a sentence for the bookkeeper.
+const receiptsFor = (realm, gid) => books[realm].receipts.filter(r => r.DocNumber === gid || r.PrivateNote === `Steward gift ${gid}`).length;
 
 (async () => {
   console.log("FIX-20 Test 2: a different QuickBooks company gets a sent gift once, and neither company gets it twice\n");
@@ -137,8 +138,10 @@ const receiptsFor = (realm, gid) => books[realm].receipts.filter(r => r.PrivateN
   // ── §3 · A'S ACCOUNT NUMBERS ARE NOT USED IN B ──────────────────────────
   ok("§3 the screen says the mapping was chosen in a different company", g1.body?.mappingOtherCompany === true, g1.body?.mappingOtherCompany);
   const s3 = await sync({ all: true });
-  ok("§3 Sync all sends nothing to B on A's mapping", receiptsFor(REALM_B, "g_f20r") === 0 && s3.body?.synced === 0, s3.body);
-  ok("§3 …and the gift says why", (s3.body?.results || []).some(r => r.giftId === "g_f20r" && /different QuickBooks company/.test(r.sentence)), s3.body?.results);
+  // FIX-34: an unmapped company is refused whole, before anything is claimed.
+  ok("§3 Sync all sends nothing to B on A's mapping", receiptsFor(REALM_B, "g_f20r") === 0 && s3.status === 409 && s3.body?.error === "needs_mapping", s3.body);
+  const p3 = await api("GET", "/qbo/pending", tok);
+  ok("§3 …and the gift says why", (p3.body?.rows || []).some(r => r.giftId === "g_f20r" && /different QuickBooks company/.test(r.problem || "")), p3.body?.rows);
 
   // ── §4 · B'S OWN MAPPING: ONCE, AND ONLY ONCE ───────────────────────────
   await api("PUT", "/qbo/mapping", tok, mappingBody("Contributions (B)"));
