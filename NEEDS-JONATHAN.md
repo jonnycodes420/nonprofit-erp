@@ -21,6 +21,16 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-INT-PROD-1 · PAYPAL AND QUICKBOOKS ON PRODUCTION, IN THIS ORDER (2026-10-07)
+
+1. **PayPal:** `railway run node scripts/verify-paypal.js --i-know-this-is-prod`. It prints the base, a token line,
+   then counts and totals for the last 30 days. If it says Transaction Search was refused: developer.paypal.com,
+   Apps & Credentials, Live, the Steward app, Features, tick **Transaction search**, Save, wait, and run it again.
+2. **QuickBooks:** the ten-minute walk in `docs/int-prod-1/qb-walk.md` (turn sync on for TEST STEWARD in /admin,
+   Connect, Read from QuickBooks, Disconnect). Do not press Sync.
+3. **Xero (when you build the app):** request `accounting.banktransactions` and `accounting.settings.read`. Nothing
+   to set today: Xero stays held and no org has ever connected it, so nobody has to reconnect.
+
 ## 0-FIX-31 · RE-SEED THE PROD DEMO (2026-10-07)
 
 - **Re-seed Harborlight.** The seed changed: every grant's deadlines now run LOI, proposal, decision, report with the
@@ -385,8 +395,9 @@ Two more, both optional: **`APP_URL`** on Railway if the app ever moves off
 
 What Steward will ask each provider for is fixed in `shared/oauth.js` and a
 request cannot widen it. Square is **five read-only scopes** and nothing with
-WRITE in its name. Xero is `accounting.transactions` plus
-`accounting.settings.read`, which cannot read a contact or a bank feed.
+WRITE in its name. Xero is `accounting.banktransactions` plus
+`accounting.settings.read` (INT-PROD-1: Xero retired `accounting.transactions`
+for new apps), which cannot read a contact, an invoice or a report.
 
 ## 0-KEYS · THE DEVELOPER ACCOUNTS THESE THREE BUILDS WAIT ON (2026-09-28)
 
@@ -427,17 +438,14 @@ accounts, Pending with Sync / Sync all / Skip, and auto-sync are built and
 proven against a stub. Shown only to orgs you turn on in /admin (QuickBooks
 sync toggle). Every assessment answer is in `docs/integrations/quickbooks.md`.
 One line per step:
-  · Walk the sandbox once with the development keys: connect a sandbox company, map, Sync one gift, Disconnect.
-  · Submit Intuit's app assessment (production keys) with the answers in `docs/integrations/quickbooks.md`.
-  · In the Intuit app, register the redirect URI `https://www.stewardapp.dev/oauth/intuit/callback`.
-  · Railway, sandbox now: **`INTUIT_CLIENT_ID`**, **`INTUIT_CLIENT_SECRET`** (development keys), **`INTUIT_REDIRECT_URI`**=`https://www.stewardapp.dev/oauth/intuit/callback`, **`INTUIT_API_BASE`**=`https://sandbox-quickbooks.api.intuit.com`.
-  · Railway, after approval: swap in the production **`INTUIT_CLIENT_ID`** / **`INTUIT_CLIENT_SECRET`** and set **`INTUIT_API_BASE`**=`https://quickbooks.api.intuit.com`.
-  · Turn QuickBooks sync on per org in /admin once production keys are live.
+  · DONE 2026-10-07: Intuit approved the app; the production keys, redirect URI and `INTUIT_API_BASE` are on Railway.
+  · Turn QuickBooks sync on per org in /admin. First walk: `docs/int-prod-1/qb-walk.md`.
 
 **Xero** (INT-2). Same code, same mapping, tracking categories instead of
 classes.
-  · a Xero developer account and an app with `accounting.transactions` and
-    `accounting.settings`, plus Xero's app review for production
+  · a Xero developer account and an app (it will request
+    `accounting.banktransactions` and `accounting.settings.read`), plus Xero's
+    app review for production
   · Railway variables: **`XERO_CLIENT_ID`**, **`XERO_CLIENT_SECRET`**,
     **`XERO_REDIRECT_URI`**, **`XERO_API_BASE`**
 
@@ -606,7 +614,6 @@ Nothing but a real charge proves the path.
 | Paste | Where | What is dead without it |
 |---|---|---|
 | `GEOCODIO_API_KEY` | Railway → nonprofit-erp → Variables | the donor Map shows **no pins at all**. Provider already decided (Geocodio: US+Canada, 2,500 free lookups/day). |
-| `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET` | developer.intuit.com → create an app named Steward with the Accounting scope → hand over the **development** Client ID and Secret | QuickBooks reading (91f) and sending (91g). Nothing was built blind; there is no adapter to break. |
 
 ## 3 · A spend cap, before anything reads a cheque
 

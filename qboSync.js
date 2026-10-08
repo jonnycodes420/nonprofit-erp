@@ -722,8 +722,34 @@ async function fetchLists(ctx) {
     expense: accounts.filter(x => /expense|cost of goods/i.test(x.type || "")).sort(byName) };
 }
 
+// ── WHAT STEWARD CAN SEE ──────────────────────────────────────────────────
+// INT-PROD-1: right after a connect, the proof that it is the right company
+// and that reading works: the company's name, how many customers and payments
+// it holds, and the latest five of each. Four GETs; nothing is written to
+// QuickBooks and nothing is stored in Steward.
+async function fetchPreview(ctx) {
+  const info = await qboCall(ctx, "GET", `companyinfo/${encodeURIComponent(ctx.realmId)}`);
+  if (!info.ok) return { ok: false, sentence: plainError(info) };
+  const ci = (info.body && info.body.CompanyInfo) || {};
+  const count = async entity => {
+    const r = await qboQuery(ctx, `select count(*) from ${entity}`);
+    return r.ok && Number.isFinite(Number(r.rows.totalCount)) ? Number(r.rows.totalCount) : null;
+  };
+  const cust = await qboQuery(ctx, "select Id, DisplayName, MetaData from Customer orderby MetaData.LastUpdatedTime desc maxresults 5");
+  const pay = await qboQuery(ctx, "select Id, TxnDate, TotalAmt, CustomerRef from Payment orderby TxnDate desc maxresults 5");
+  return {
+    ok: true,
+    company: { name: ci.CompanyName || ci.LegalName || null, country: ci.Country || null },
+    customerCount: await count("Customer"),
+    paymentCount: await count("Payment"),
+    customers: cust.ok ? (cust.rows.Customer || []).map(x => ({ id: String(x.Id), name: x.DisplayName || null })) : [],
+    payments: pay.ok ? (pay.rows.Payment || []).map(x => ({ id: String(x.Id), date: x.TxnDate || null,
+      amount: x.TotalAmt != null ? Number(x.TotalAmt) : null, customer: (x.CustomerRef && x.CustomerRef.name) || null })) : [],
+  };
+}
+
 module.exports = {
   VENDOR, NO_FUND, MINOR_VERSION, apiBase, environment, appHost, txnLink,
   RUN_LIMIT, readMapping, startDateOf, landingFor, pendingWhere, pendingRowsSql, plainError, requestId,
-  buildSalesReceipt, buildPayoutDeposit, syncGifts, fetchLists, qboCall, qboQuery, safeName,
+  buildSalesReceipt, buildPayoutDeposit, syncGifts, fetchLists, fetchPreview, qboCall, qboQuery, safeName,
 };

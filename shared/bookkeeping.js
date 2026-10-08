@@ -50,7 +50,7 @@ export const VENDORS = {
   xero: {
     key: "xero", label: "Xero",
     secondAxis: "tracking", secondAxisLabel: "Tracking category",
-    authNote: "Connect with Xero's OAuth 2.0. Steward asks for accounting transactions and settings, and nothing else.",
+    authNote: "Connect with Xero's OAuth 2.0. Steward asks to record bank transactions and to read your account settings, and nothing else.",
     // FIX-20 Part 4: the Xero send was a stub that posted to an endpoint Xero
     // does not have. Until a real one exists (bank transactions from the
     // org's own accounts and tracking categories, a Pending list, sent once),

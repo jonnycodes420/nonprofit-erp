@@ -123,7 +123,7 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
     return { id, path: assetPath(id) };
   }
   const cfg = s3Config();
-  let storage = "db", s3Key = null, data = null;
+  let storage = "db", s3Key = null, data = null, s3Fallback = false;
   if (cfg) {
     try {
       s3Key = `${orgId}/${kind}/${id}`;
@@ -138,14 +138,14 @@ async function putThemeAsset({ orgId, kind, buffer, contentType, width, height, 
       console.error("[assetStore] CRITICAL: S3 put failed — falling back to DB storage:", e.message);
       dbFallbackSinceBoot++;
       try { Sentry.captureException(e, { tags: { area: "assetStore" }, extra: { orgId, kind, note: "S3 put failed; asset stored in Postgres" } }); } catch { /* Sentry not init'd */ }
-      storage = "db"; s3Key = null;
+      storage = "db"; s3Key = null; s3Fallback = true;
     }
   }
   if (storage === "db") data = buffer.toString("base64");
   await run(
-    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
-    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true]);
+    `INSERT INTO portal_assets (id, org_id, kind, content_type, bytes, width, height, storage, s3_key, data, is_public, s3_fallback)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING`,
+    [id, orgId, kind, contentType, buffer.length, width || null, height || null, storage, s3Key, data, isPublic === true, s3Fallback]);
   return { id, path: assetPath(id) };
 }
 
@@ -365,8 +365,11 @@ async function purgeExpiredAssets({ orgId = null } = {}) {
 }
 
 // BUILD-51b — fallback visibility for /health. dbFallbackRows counts assets
-// sitting in Postgres WHILE S3 is configured (each one is a failed S3 put);
-// null when S3 isn't configured (DB storage is then by design, not a fault).
+// that landed in Postgres because an S3 put FAILED (s3_fallback, set only by
+// the catch above); null when S3 isn't configured (DB storage is then by
+// design, not a fault). INT-PROD-1: it used to count every storage='db' row,
+// and the demo seed writes 28 of those on purpose, so every prod re-seed held
+// guardsOk false with no failed put anywhere.
 // Cached so /health stays synchronous; refreshed on boot + the 5-min tick +
 // bumped live by the fallback path above.
 let dbFallbackSinceBoot = 0;
@@ -378,7 +381,7 @@ async function refreshAssetFallbackCount() {
   // BUILD-92 A1 — same fresh-database rule as refreshRetentionCounts below.
   let r;
   try {
-    [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db' AND deleted_at IS NULL`);
+    [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db' AND s3_fallback AND deleted_at IS NULL`);
   } catch (e) {
     if (e && e.code === "42P01") { dbFallbackRows = null; return null; }
     throw e;

@@ -35,6 +35,9 @@
 //       negative line, and syncing again (all, and by id) sends nothing new.
 //       Planted 2026-10-03: letting Pending and the claim take a synced row
 //       again sent three deposits for one payout, and §7 went red.
+//   §8  INT-PROD-1: "What Steward can see" reads the company's name and its
+//       latest customers and payments, and sends QuickBooks nothing. Planted
+//       2026-10-07: a POST inside fetchPreview turned §8 red.
 //
 // HOW IT WOULD GO RED, each one planted and watched (2026-10-02):
 //   · the once-only rule has TWO belts, the Pending filter (a synced gift is
@@ -61,7 +64,9 @@ const SINCE = "2026-09-01";
 const ACCT_DONATIONS = "81", ACCT_PROGRAMS = "82", ACCT_BANK = "35", CLASS_YOUTH = "5000000000000071234";
 
 // ── THE STUB ───────────────────────────────────────────────────────────────
-const store = { customers: [], items: [], receipts: [], requestIds: [], deposits: [] };
+const store = { customers: [], items: [], receipts: [], requestIds: [], deposits: [], writes: [] };
+const COMPANY = "Ridgeview Pantry Books";
+const PAYMENTS = [{ Id: "7001", TxnDate: "2026-10-01", TotalAmt: 125.5, CustomerRef: { value: "1", name: "Ada Okafor" } }];
 const ACCOUNTS = [
   { Id: ACCT_DONATIONS, Name: "Donations", FullyQualifiedName: "Donations", AccountType: "Income", Active: true },
   { Id: ACCT_PROGRAMS, Name: "Program Income", FullyQualifiedName: "Program Income", AccountType: "Income", Active: true },
@@ -71,6 +76,10 @@ const CLASSES = [{ Id: CLASS_YOUTH, Name: "Youth Arts", FullyQualifiedName: "You
 const unq = s => String(s).replace(/\\'/g, "'").replace(/\\\\/g, "\\");
 function runQuery(stmt) {
   let m;
+  if (/^select count\(\*\) from Customer/i.test(stmt)) return { totalCount: store.customers.length };
+  if (/^select count\(\*\) from Payment/i.test(stmt)) return { totalCount: PAYMENTS.length };
+  if (/from Payment/i.test(stmt)) return { Payment: PAYMENTS };
+  if (/from Customer orderby/i.test(stmt)) return { Customer: store.customers.slice(0, 5) };
   if (/from Account/i.test(stmt)) return { Account: ACCOUNTS };
   if (/from Class/i.test(stmt)) return { Class: CLASSES };
   if ((m = stmt.match(/from Customer where PrimaryEmailAddr = '((?:[^'\\]|\\.)*)'/i)))
@@ -89,6 +98,10 @@ function startStub() {
       req.on("end", () => {
         res.setHeader("Content-Type", "application/json");
         const u = new URL(req.url, "http://stub");
+        if (req.method !== "GET") store.writes.push(req.method + " " + u.pathname);
+        if (req.method === "GET" && u.pathname === `/v3/company/${REALM}/companyinfo/${REALM}`) {
+          res.end(JSON.stringify({ CompanyInfo: { CompanyName: COMPANY, Country: "US" } })); return;
+        }
         const m = u.pathname.match(/^\/v3\/company\/([^/]+)\/(query|customer|item|salesreceipt|deposit)$/);
         if (!m || m[1] !== REALM) { res.statusCode = 404; res.end(JSON.stringify({ Fault: { Error: [{ code: "404", Message: "not here" }] } })); return; }
         const kind = m[2];
@@ -173,6 +186,15 @@ const sync = (tok, body) => api("POST", "/qbo/sync", tok, body);
      reachable, { status: lists.status, body: lists.body });
   if (!reachable) { await closeDb(); if (stub) stub.close(); summary(); return; }
   ok("§0 …with the classes too", (lists.body.classes || []).some(c => c.id === CLASS_YOUTH), lists.body.classes);
+
+  // ── §8 · WHAT STEWARD CAN SEE, AND IT SENDS NOTHING ────────────────────
+  const writes0 = store.writes.length;
+  const seen = await api("POST", "/qbo/preview", tok);
+  ok("§8 the preview names the connected company", seen.status === 200 && seen.body?.company?.name === COMPANY, seen.body);
+  ok("§8 …with its payments read from QuickBooks", seen.body?.paymentCount === 1 && seen.body?.payments?.[0]?.amount === 125.5
+     && seen.body?.payments?.[0]?.customer === "Ada Okafor", seen.body);
+  ok("§8 …and QuickBooks received no write at all", store.writes.length === writes0, store.writes.slice(writes0));
+  ok("§8 …and says so in its sentence", /nothing was sent to QuickBooks/i.test(seen.body?.sentence || ""), seen.body?.sentence);
 
   // ── §1 · PENDING, AND ITS TOTAL FOOTS ───────────────────────────────────
   const p1 = await pending(tok);

@@ -182,7 +182,7 @@ const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
 // BUILD-94 Part 1 — the signed, expiring front door for a donor photograph
 // (a person's face is not theme imagery; see personPhoto.js's header).
 const personPhoto = require("./personPhoto");
-const { computeGuardsOk } = require("./guards");
+const { computeGuardsOk, guardFailures } = require("./guards");
 // BUILD-96 Part 2 — the ONE definition of what sample data is. The guard, the
 // counts and the delete all read from it; three lists would disagree, and the
 // way they would disagree is by deleting something real.
@@ -849,16 +849,17 @@ function reconciliationHealth() {
 // The decision logic is the pure computeGuardsOk (guards.js), unit-tested for
 // the boot-grace and dead-tick cases in tests/guards.test.js.
 const guardBootAt = Date.now();
-function guardsOk() {
-  return computeGuardsOk({
+function guardState() {
+  return {
     bootAt: guardBootAt,
     reconciliation,
     webhook: webhookSubStatus,
     chartSelfHeals: ledgerChartSelfHeals,
     dbFallbackRows: assetHealth().dbFallbackRows,
     failedPending: notifyFailedPending,
-  });
+  };
 }
+function guardsOk() { return computeGuardsOk(guardState()); }
 
 // ── BUILD-63 Part 2 — the event-manifest vs live-subscription diff ───────────
 // A handler that grows a `case` nobody subscribed becomes SILENT working code
@@ -2717,6 +2718,9 @@ app.get("/health", (req, res) => {
     // BUILD-65 Part 6: the aggregate. true ONLY when every guard above is both
     // clean AND fresh (a null/stale counter fails it). One field to page on.
     guardsOk: guardsOk(),
+    // INT-PROD-1: which guard failed, by name only (never a value), so a
+    // false guardsOk never needs a hunt again. [] when guardsOk is true.
+    guardsFailed: guardFailures(guardState()),
     // FIX-33: every live mailbox connection, and how many have not read
     // successfully in two hours. Counts only, no address, no org. The prod
     // smoke fails on stale > 0; checkedAt null = no sync run since boot.

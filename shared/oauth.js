@@ -37,11 +37,16 @@ export const PROVIDERS = {
     tokenUrl: "https://identity.xero.com/connect/token",
     // Xero's NEW apps use granular scopes. These are the minimum INT-2 needs:
     // write the deposits it builds, and read the chart of accounts and the
-    // tracking categories the mapping screen offers. `offline_access` is what
+    // tracking categories the mapping screen offers. INT-PROD-1: Xero split
+    // accounting.transactions into invoices, payments, banktransactions,
+    // manualjournals and classicexpenses. A deposit of received money is a
+    // BankTransaction (type RECEIVE), so accounting.banktransactions is the
+    // whole of the write; accounting.settings.read is unchanged by Xero. `offline_access` is what
     // makes a refresh token exist at all; `openid profile email` is Xero's
-    // required identity trio. Nothing here can read a contact or a bank feed.
+    // required identity trio. Nothing here can read a contact, an invoice or a
+    // report; banktransactions does read the bank transactions it can write.
     scopes: ["openid", "profile", "email", "offline_access",
-             "accounting.transactions", "accounting.settings.read"],
+             "accounting.banktransactions", "accounting.settings.read"],
     pkce: true,
     // A Xero login can hold several organisations. Which one is chosen after
     // consent, from the connections endpoint, never guessed.
@@ -49,8 +54,8 @@ export const PROVIDERS = {
     sandboxNote: "Connect the Xero demo company first: it is a real tenant with fake books.",
     // FIX-22: Connect landed on Xero's invalid_scope page. Xero apps made
     // after 2 March 2026 take only granular scopes, and accounting.transactions
-    // is not one of them. Until the scope list is proved against a real Xero
-    // app, the card says so and offers no button (routes/finance.js reads it).
+    // is not one of them (INT-PROD-1 replaced it). Until the scope list is
+    // proved against a real Xero app, the card says so and offers no button (routes/finance.js reads it).
     held: "Xero isn't available yet.",
   },
   intuit: {
