@@ -1498,6 +1498,9 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     today, upcoming, past, meetings, nextMeeting, rhythm, thisYear, matchedGifts,
     emailThreads: [...threads.values()],
     nextStep: thread ? { id: thread.id, label: thread.next_step_label, due: thread.due_date } : null,
+    // FIX-34: the calendars a visit can be booked on, for "Add to:".
+    calendars: await bookingCalendars(req.user.userId, orgId).then(b => ({ defaultProvider: b.defaultProvider,
+      list: b.list.map(c => ({ provider: c.provider, label: c.label, healthy: c.healthy })) })).catch(() => null),
     rhythmSentence: "Each cell is a calendar month, this one last. Brass means at least one meeting with them that month; a dashed cell is a meeting still to come.",
   });
 }));
@@ -1706,13 +1709,34 @@ app.post("/calendar/events/:id/dismiss", requireAuth, wrap(async (req, res) => {
 // BOOK A VISIT and MOVE IT. Both write to HER OWN calendar through her own
 // connection. The donor is invited only if she ticked the box (off by
 // default), because an invite is mail from her calendar to the donor.
-async function myCalendarConn(req, res) {
+// FIX-34 · WHICH CALENDAR. With more than one connected, the booking goes on
+// the one she picks ("Add to:"), defaulting to the one she used last, but
+// never by default onto a calendar whose last read failed while another is
+// healthy. She can still pick the failing one explicitly.
+const CAL_LABEL = { google: "Google", microsoft: "Outlook" };
+async function bookingCalendars(userId, orgId) {
+  const rows = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
+      ORDER BY provider`, [userId, orgId]);
+  const [u] = await query(`SELECT last_booking_provider FROM users WHERE id=?`, [userId]);
+  const list = rows.map(c => {
+    const off = apiRefusals(c).some(a => a.what === "calendar" || a.api === "calendar");
+    return { provider: c.provider, label: CAL_LABEL[c.provider] || c.provider, address: c.address,
+             healthy: !c.calendar_error && !off, conn: c };
+  });
+  const healthy = list.filter(c => c.healthy);
+  const last = list.find(c => c.provider === (u && u.last_booking_provider));
+  const def = (last && (last.healthy || !healthy.length)) ? last : (healthy[0] || list[0] || null);
+  return { list, defaultProvider: def ? def.provider : null };
+}
+async function myCalendarConn(req, res, { provider = null } = {}) {
   const ML = await mailboxMod();
   const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
   if (ML.isDemoMailboxOrg(org)) { res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE }); return null; }
-  const [conn] = await query(
-    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
-      ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
+  const cals = await bookingCalendars(req.user.userId, req.user.orgId);
+  const want = provider || cals.defaultProvider;
+  const conn = (cals.list.find(c => c.provider === want) || {}).conn || null;
+  if (provider && !conn) { res.status(409).json({ error: "no_such_calendar", sentence: `Your ${CAL_LABEL[provider] || provider} calendar is not connected. Choose another one.` }); return null; }
   if (!conn) { res.status(409).json({ error: "no_calendar", sentence: "Connect your calendar first. Settings, Connections, Email and calendar." }); return null; }
   const token = await mailboxAccessToken(conn, req.user.orgId, conn.provider);
   if (!token) { res.status(409).json({ error: "calendar_broken", sentence: "Your calendar needs connecting again before Steward can add to it." }); return null; }
@@ -1728,7 +1752,8 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
   if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
   const invite = req.body?.inviteDonor === true;
   if (invite && !d.email) return res.status(400).json({ error: "no_email", sentence: `${d.name} has no email on file, so there is nobody to invite.` });
-  const got = await myCalendarConn(req, res); if (!got) return;
+  const chosen = ["google", "microsoft"].includes(req.body?.provider) ? req.body.provider : null;
+  const got = await myCalendarConn(req, res, { provider: chosen }); if (!got) return;
   const CL = await calendarMod();
   const title = String(req.body?.title || `Visit with ${d.name}`).trim().slice(0, 200);
   const location = String(req.body?.location || "").trim().slice(0, 200) || null;
@@ -1746,6 +1771,8 @@ app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (re
     `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,booked_in_steward,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
     [id, orgId, req.user.userId, got.conn.provider, String(made.id), title, startsAt, endsAt, location, [d.id], who.id, who.name]);
+  // The one she used is the one offered first next time.
+  await run(`UPDATE users SET last_booking_provider=? WHERE id=? AND org_id=?`, [got.conn.provider, req.user.userId, orgId]);
   // FIX-33 Part 3: the booking reaches the whole record, not only Coming up.
   // The step and tasks carry her NAME (the walk showed her email address there).
   const [me] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
@@ -1760,7 +1787,7 @@ app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async 
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can move it." });
   const startsAt = validInstant(req.body?.startsAt), endsAt = validInstant(req.body?.endsAt);
   if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
-  const got = await myCalendarConn(req, res); if (!got) return;
+  const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const google = c.provider === "google";
   const url = google
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
@@ -1782,7 +1809,7 @@ app.post("/calendar/events/:id/cancel", requireAuth, checkWriteAccess, wrap(asyn
   const c = await ownMeeting(req, res); if (!c) return;
   if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can cancel it." });
   if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting has a note, so it happened. It stays on the record." });
-  const got = await myCalendarConn(req, res); if (!got) return;
+  const got = await myCalendarConn(req, res, { provider: c.provider }); if (!got) return;
   const url = c.provider === "google"
     ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
     : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events/${encodeURIComponent(c.provider_event_id)}`;
