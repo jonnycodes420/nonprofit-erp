@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
+import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
@@ -1894,6 +1895,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [threadAllOpen,setThreadAllOpen]=useState(false);
   // FIX-34 — one row per donor; "2 more for Christopher" opens the rest IN the row.
   const [moreOpen,setMoreOpen]=useState(null);
+  // FIX-34 — Done on a TASK row (a meeting's prep, "How did it go?") finishes
+  // that task only, with Undo, and the row moves to the donor's next step. A
+  // thread row, or a task that needs an outcome (422), logs the conversation.
+  const finishRow=async t=>{
+    const convo=()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t});
+    if(t.kind!=="task"||!t.doneRoute) return convo();
+    try{
+      await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:true})});
+      loadThreads();
+      offerUndo({message:`Done: ${t.nextStep.label}`,undoAction:async()=>{const r=await apiFetch(t.doneRoute,{method:"POST",body:JSON.stringify({done:false})});loadThreads();return r;}},t.nextStep.label);
+    }catch(e){ if(e&&e.error==="needs_outcome") convo(); }
+  };
 
   // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
   // First thing takes threadList[0] and says it properly, so the rest of the
@@ -2037,7 +2050,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       </a>
       <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
-        <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
+        <button className="attn-row-action" onClick={()=>finishRow(t)} disabled={isReadOnly}
           title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
           style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
         {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
