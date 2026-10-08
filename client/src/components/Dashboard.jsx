@@ -1890,6 +1890,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Home and "Cannot access 'ys' before initialization" in a minified bundle,
   // not a lint error. A const is declared above every line that reads it.
   const [threadAllOpen,setThreadAllOpen]=useState(false);
+  // FIX-34 — one row per donor; "2 more for Christopher" opens the rest IN the row.
+  const [moreOpen,setMoreOpen]=useState(null);
 
   // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
   // First thing takes threadList[0] and says it properly, so the rest of the
@@ -1980,8 +1982,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}.</span>
+            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
+            {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-more" aria-expanded={moreOpen===t.donorId}
+              onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
+              onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}
+              style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",cursor:"pointer",whiteSpace:"nowrap"}}>{t.moreSteps.length} more for {firstNameOf(t.donorName)||t.donorName}</span></>}
           </div>
+          {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
+            <ul data-testid="thread-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
+              {t.moreSteps.map(m=><li key={m.id}>{m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
+            </ul>)}
           {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
           {t.suggestedAsk&&<SuggestedAskLine ask={t.suggestedAsk} style={{marginTop:3,fontSize:12.5}}/>}
           {/* BUILD-85 — the row still answers "why this one first?", and F.3.3's

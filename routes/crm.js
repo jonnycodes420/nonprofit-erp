@@ -18207,26 +18207,47 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
     });
   }
 
+  // FIX-34 · ONE ROW PER DONOR. A booked meeting put three rows on the Thread
+  // for one person (the prep, the meeting, "How did it go?"). The Thread is a
+  // list of PEOPLE: each donor shows once, as the soonest open step, carrying
+  // the rest as `moreSteps` (the row opens them in place). Done on that row
+  // leaves the next one soonest. Tasks still lists every step; a profile read
+  // (donorId) keeps every row. Counts below are donors, not steps.
+  let shownList = list;
+  if (!donorId) {
+    const soon = (a, b) => String(a.nextStep.due || "9999").localeCompare(String(b.nextStep.due || "9999"))
+      || (a.kind === b.kind ? 0 : a.kind === "thread" ? -1 : 1) || String(a.nextStep.time || "").localeCompare(String(b.nextStep.time || ""));
+    const byDonor = new Map();
+    for (const r of list) { if (!byDonor.has(r.donorId)) byDonor.set(r.donorId, []); byDonor.get(r.donorId).push(r); }
+    shownList = [];
+    for (const rs of byDonor.values()) {
+      rs.sort(soon);
+      const [head, ...rest] = rs;
+      head.moreSteps = rest.map(r => ({ id: r.id, kind: r.kind, label: r.nextStep.label, due: r.nextStep.due, time: r.nextStep.time || null,
+        overdue: r.overdue, calendarEventId: r.calendarEventId || null }));
+      shownList.push(head);
+    }
+  }
   // Rank + band + cap in the ONE place that decides it.
-  const forRank = list.map(t => ({ ...t, ...t.signals }));
+  const forRank = shownList.map(t => ({ ...t, ...t.signals }));
   const q = rank.buildQueue(forRank, today, { cap: donorId ? 0 : (cap == null ? rank.QUEUE_CAP : cap) });
   const ranked = q.list.map(r => {
     const { signals, ...rest } = r;
     return { ...rest, rank: r.rank, band: r.band };
   });
 
-  const overdue = list.filter(t => t.overdue).length;
+  const overdue = shownList.filter(t => t.overdue).length;
   // FIX-1 §9 — "oldest" is the oldest ROW, by the one figure its badge and the
   // Home sentence also read (shared/threadFigures.js), over the whole list, not
   // the capped one. It used to be max(daysOpen) while the badges said overdue.
   const { threadFigures } = await import("../shared/threadFigures.js");
-  const figures = threadFigures(list);
+  const figures = threadFigures(shownList);
   const oldestDays = figures.oldest ? figures.oldest.days : 0;
   const oldest = figures.oldest && figures.oldest.days > 0 ? figures.oldest : null;
   const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
   return {
     list: ranked, bands: q.bands, more: q.more,
-    stat: { open: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
+    stat: { open: shownList.length, steps: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
     scope: effScope, canViewAll: isAdmin, hasAny: everCount > 0, today,
   };
 }
