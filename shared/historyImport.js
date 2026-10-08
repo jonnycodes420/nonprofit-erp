@@ -148,16 +148,21 @@ export function guessMapping(headers) {
 const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'", rsquo: "'", lsquo: "'",
   rdquo: '"', ldquo: '"', ndash: "-", mdash: "-", hellip: "..." };
 export const looksLikeHtml = s => /<\/?(p|br|div|b|i|u|em|strong|span|ul|ol|li|font|table|tr|td|h\d|a)\b[^>]*>/i.test(String(s || ""));
-// Applied until nothing changes, so a tag rebuilt from the pieces of another
-// ("<scr<script>ipt>") cannot survive one pass.
-const untilStable = (s, f) => { let prev; do { prev = s; s = f(s); } while (s !== prev); return s; };
-const stripTags = s => untilStable(s, x => x
-  .replace(/<\s*(script|style)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
-  .replace(/<\s*br\s*\/?\s*>/gi, "\n")
-  .replace(/<\s*li[^>]*>/gi, "\n- ")
-  .replace(/<\s*\/\s*li\s*>/gi, "")
-  .replace(/<\s*\/\s*(p|div|ul|ol|h\d|tr|table)\s*>/gi, "\n")
-  .replace(/<[^>]*>/g, ""));
+// Line structure first (a break, a list item, the end of a paragraph become
+// line breaks), then every remaining tag is dropped by splitting on "<", and
+// any stray angle bracket goes with it. No regex removes a tag, so nothing a
+// pass leaves behind can recombine into one (CodeQL's incomplete sanitization).
+const stripTags = x => {
+  const lined = x
+    .replace(/<\s*br\s*\/?\s*>/gi, "\n")
+    .replace(/<\s*li[^>]*>/gi, "\n- ")
+    .replace(/<\s*\/\s*(p|div|ul|ol|h\d|tr|table)\s*>/gi, "\n");
+  return lined.split("<").map((part, i) => {
+    if (i === 0) return part;
+    const close = part.indexOf(">");
+    return close === -1 ? part : part.slice(close + 1);
+  }).join("").replace(/[<>]/g, "");
+};
 export function cleanText(raw) {
   let s = String(raw ?? "").replace(/\r\n?/g, "\n");
   const html = looksLikeHtml(s);
