@@ -8,6 +8,12 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   "<label>: done." and closes the thread on that line; Undo deletes the line and reopens it. The Calendar draws
   the step, never its task; Home's queue, the daily task email and the digest skip next-step tasks because the
   thread already carries them. `backfillLinkedTasks()` (db.js) runs with the schema and is safe twice.
+- **A booked meeting is one thing (FIX-34).** When a next step IS a meeting, `calendar.js foldMeetingSteps`
+  keeps the meeting item and hangs the step on it (`item.step`); the card offers Prep, Reschedule, Mark done.
+  The Thread (`composeThreads`, no `donorId`) is one row per donor: the soonest open step, the rest as
+  `moreSteps`, and `stat.open` counts donors. Tasks and a profile read keep every step. A call or meeting
+  next step is finished through how it went and what's next: `/tasks/:id/complete` refuses a bare tick
+  (422 `needs_outcome`) and the Calendar opens Tasks' `FinishSheet`. A deadline's task keeps its plain tick.
 - **A task is in exactly one view, by one rule (TASKS-2).** `shared/taskShape.js viewOf` and `taskViewSql`
   (routes/crm.js) say the same thing: today, upcoming (next 7 days), overdue, later, no date, done (last 30
   days). The list, `GET /tasks/counts` and Home's "Due today" read it; `tasks2-thread` §6 checks they agree.
