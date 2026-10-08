@@ -467,7 +467,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     if (!x.last || r.occurred_on > x.last) x.last = r.occurred_on;
   }
 
-  const byProvider = new Map(sources.filter(s => s.status !== "disconnected").map(s => [s.provider, s]));
+  const byProvider = new Map(sources.filter(sourceIsConnected).map(s => [s.provider, s]));
   // FIX-10 D — what the SECOND half of the Stripe card says, built from the
   // same row every other API source is built from.
   const stripePart = card => ({
@@ -483,7 +483,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   for (const key of Object.keys(PROVIDERS)) {
     const s = byProvider.get(key);
     const b = (s && bucket.get(s.id)) || empty;
-    const connected = !!s && s.status !== "disconnected";
+    const connected = sourceIsConnected(s);
     const isFile = PROVIDERS[key].mode === "file";
     const isPos = PROVIDERS[key].pos === true;
     const pos = (s && posBy.get(s.id)) || null;
@@ -809,6 +809,19 @@ app.get("/connections/:id/log", requireAuth, wrap(async (req, res) => {
     definition: "Every time Steward checked this connection, newest first, in plain sentences. What came in, what was skipped and why, and what failed." });
 }));
 
+// FIX-34 Y · THE ONE OBVIOUS FUND. An org with exactly one unrestricted,
+// non-sample fund (General Operating, as a rule) has one obvious place for a
+// source's gifts; with two or more it is the person's choice, never a guess.
+async function soleGeneralFundId(orgId) {
+  const rows = await query(
+    `SELECT id FROM fin_funds WHERE org_id=? AND COALESCE(restricted,false)=false AND COALESCE(is_sample,false)=false`, [orgId]);
+  return rows.length === 1 ? rows[0].id : null;
+}
+// FIX-34 Y · ONE CONNECTION, ONE STATUS. A giving source is connected when its
+// row is not disconnected. The Connections card and the "Connects directly"
+// tile both read THIS, so the two can never disagree about one row.
+function sourceIsConnected(s) { return !!s && s.status !== "disconnected"; }
+
 app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   const { providerLabel } = await import("../shared/givingSources.js");
   const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
@@ -825,7 +838,7 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   res.json({
     sources: rows.map(r => ({
       id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
-      displayName: r.display_name, status: r.status,
+      displayName: r.display_name, status: r.status, connected: sourceIsConnected(r),
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
       sitsOnTopOf: r.sits_on_top_of || null,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
@@ -1101,6 +1114,9 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
     const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
     if (!f) return res.status(400).json({ error: "unknown_fund" });
   }
+  // FIX-34 Y: with one obvious choice (the org's only unrestricted fund),
+  // gifts from a new source go there instead of being a question each time.
+  if (!fundId) fundId = await soleGeneralFundId(orgId);
 
   let sealed = null;
   if (spec.credentialFields.length) {

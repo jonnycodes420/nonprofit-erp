@@ -2030,7 +2030,7 @@ function triedPhrase(at){
 // one: an absent field must never turn a working page into a broken one.
 const WAITING_RE=/not (yet )?(allowed|enabled|approved|permitted)|no permission|permission is not|still switching|not authorized yet/i;
 function sourceState(s){
-  if(!s||s.status==="disconnected") return "none";
+  if(!s||s.connected===false||s.status==="disconnected") return "none";
   if(s.waiting===true) return "waiting";
   if(s.lastError) return WAITING_RE.test(s.lastError)?"waiting":"failed";
   return "connected";
@@ -2107,7 +2107,7 @@ function GivingSourceTile({title,logoKey,state,statusLine,note,error,actions,onO
   );
 }
 
-export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect}){
+export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onChanged}){
   const [sources,setSources]=useState(null);
   const [providers,setProviders]=useState([]);
   const [credState,setCredState]=useState({ready:true,problem:null});
@@ -2120,17 +2120,23 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect}){
   const [otherName,setOtherName]=useState("");
   const [showImport,setShowImport]=useState(false);
 
-  const load=()=>apiFetch("/giving-sources")
-    .then(r=>{setSources(Array.isArray(r.sources)?r.sources:[]);setOtherSources(Array.isArray(r.otherSources)?r.otherSources:[]);})
+  // FIX-34 Y: after a connect, a disconnect or a check, the page around this
+  // panel (the Connections card above it) reads the same row again, so one
+  // connection never shows two states at once.
+  const load=(changed=true)=>apiFetch("/giving-sources")
+    .then(r=>{setSources(Array.isArray(r.sources)?r.sources:[]);setOtherSources(Array.isArray(r.otherSources)?r.otherSources:[]);
+      if(changed&&onChanged) onChanged();})
     .catch(e=>{setSources([]);setErr(errorMessage(e,"Could not load your giving sources."));});
 
   useEffect(()=>{
-    load();
+    load(false);
     apiFetch("/giving-sources/providers").then(r=>{
       setProviders(Array.isArray(r.providers)?r.providers:[]);
       setCredState({ready:r.credentialsReady!==false,problem:r.credentialsProblem||null});
     }).catch(()=>{});
-    apiFetch("/finance/funds").then(r=>setFunds(Array.isArray(r.funds)?r.funds:[])).catch(()=>{});
+    // FIX-34 Y: /finance/funds answers with the ARRAY itself. Reading `r.funds`
+    // off it gave an empty list, so the picker offered no fund at all.
+    apiFetch("/finance/funds").then(r=>setFunds(Array.isArray(r)?r:Array.isArray(r&&r.funds)?r.funds:[])).catch(()=>{});
   },[]);
 
   const checkNow=async(id)=>{
@@ -2283,7 +2289,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect}){
                       <select data-testid="gs-fund" value={s.defaultFundId||""} disabled={isReadOnly||!isAdmin}
                         onChange={e=>setFund(s.id,e.target.value)}
                         style={{font:"inherit",fontSize:11.5,padding:"2px 4px",border:"1px solid "+T.bg3,borderRadius:6,background:T.bgCard,color:T.ink}}>
-                        <option value="">a question for you</option>
+                        <option value="">Ask me each time</option>
                         {funds.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
                     </div>
@@ -3421,7 +3427,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         )}
       </div>
         </>}
-        renderGivingSources={(k,n)=><GivingSourcesManager key={n} isReadOnly={isReadOnly} isAdmin={isAdmin} autoConnect={k}/>}
+        renderGivingSources={(k,n,onChanged)=><GivingSourcesManager key={n} isReadOnly={isReadOnly} isAdmin={isAdmin} autoConnect={k} onChanged={onChanged}/>}
         bccPanel={<InboundEmailCard isReadOnly={isReadOnly}/>}
         apiKeysPanel={<ApiKeysPanel isReadOnly={isReadOnly}/>}/>}
 
