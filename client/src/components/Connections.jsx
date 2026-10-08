@@ -301,6 +301,8 @@ function EmailToolMapping({ card, onSaved, onError }) {
   // into another company's settings to fix something that is not broken there.
   const [askFailed, setAskFailed] = useState("");
   const [groups, setGroups] = useState({});          // audienceId -> tag name
+  // MAILCHIMP-1: adding people is its own yes, off until she turns it on.
+  const [push, setPush] = useState(!!card.pushOn);
   const [audienceId, setAudienceId] = useState("");
   const [meta, setMeta] = useState(null);            // /email-marketing
   const [preview, setPreview] = useState(null);
@@ -317,6 +319,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
   }, [provider]);
 
   const chosen = Object.entries(groups).filter(([, t]) => String(t || "").trim());
+  const canSave = !!audienceId && (!push || chosen.length > 0);
   const runPreview = () => {
     setBusy("preview");
     apiFetch(`/email-marketing/${provider}/preview`, { method: "POST", body: JSON.stringify({ groups }) })
@@ -327,7 +330,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
     setBusy("save");
     const a = (audiences || []).find(x => x.id === audienceId);
     apiFetch(`/email-marketing/${provider}/mapping`, { method: "POST",
-      body: JSON.stringify({ audienceId, audienceName: a ? a.name : null, groups }) })
+      body: JSON.stringify({ audienceId, audienceName: a ? a.name : null, push, groups: push ? groups : {} }) })
       .then(r => { setBusy(""); onSaved(r.sentence); })
       .catch(e => { setBusy(""); onError(e?.sentence || e?.body?.sentence || errorMessage(e, "That did not save.")); });
   };
@@ -337,7 +340,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
     <div data-testid="email-mapping" style={{ marginTop: 12, padding: 14, background: T.bg2,
       border: "1px solid " + T.bg3, borderRadius: 10 }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
-        Choose the {noun} to keep in step
+        Choose the {noun} to read from
       </div>
       {audiences === null ? (
         <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>Asking {card.label}…</div>
@@ -363,6 +366,19 @@ function EmailToolMapping({ card, onSaved, onError }) {
         </select>
       )}
 
+      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 8 }}>
+        Steward reads who opened, who clicked and who asked to stop, and puts it on the people already in Steward. Anybody else on the {noun} is left alone.
+      </div>
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 14, fontSize: 13, color: T.ink, fontWeight: 700 }}>
+        <input type="checkbox" data-testid="email-push" checked={push} onChange={e => setPush(e.target.checked)}
+          style={{ marginTop: 3 }} />
+        <span>Also add people from Steward to this {noun}
+          <span style={{ display: "block", fontWeight: 400, fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
+            Off unless you turn it on. Sample and demo records, and addresses Steward knows are not real, are never added.
+          </span>
+        </span>
+      </label>
+      {push && <>
       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 14 }}>
         Which groups go, and the tag each one carries
       </div>
@@ -395,25 +411,27 @@ function EmailToolMapping({ card, onSaved, onError }) {
         ))}
       </div>
 
+      </>}
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-        <button data-testid="email-preview" disabled={!chosen.length || busy === "preview"}
+        {push && <button data-testid="email-preview" disabled={!chosen.length || busy === "preview"}
           onClick={runPreview}
           style={{ background: "#fff", color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8,
                    padding: "8px 14px", fontWeight: 600, fontSize: 12.5,
                    cursor: chosen.length ? "pointer" : "not-allowed", opacity: chosen.length ? 1 : 0.5 }}>
           {busy === "preview" ? "Counting…" : "Preview"}
-        </button>
-        <button data-testid="email-save" disabled={!audienceId || !chosen.length || busy === "save"}
+        </button>}
+        <button data-testid="email-save" disabled={!canSave || busy === "save"}
           onClick={save}
           style={{ background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
                    padding: "8px 14px", fontWeight: 700, fontSize: 12.5,
-                   cursor: audienceId && chosen.length ? "pointer" : "not-allowed",
-                   opacity: audienceId && chosen.length ? 1 : 0.5 }}>
-          {busy === "save" ? "Saving…" : "Save and keep in step"}
+                   cursor: canSave ? "pointer" : "not-allowed",
+                   opacity: canSave ? 1 : 0.5 }}>
+          {busy === "save" ? "Saving…" : push ? "Save, read and add people" : "Save and read"}
         </button>
       </div>
 
-      {preview && (
+      {push && preview && (
         <div data-testid="email-preview-result" style={{ marginTop: 12, paddingTop: 10,
              borderTop: "1px solid " + T.bg3 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{preview.sentence}</div>
@@ -671,18 +689,52 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button data-testid="email-choose" style={btn(false)}
                   onClick={() => setMapOpen(m => ({ ...m, [c.id]: !(m[c.id] ?? c.needsMapping) }))}>
-                  {c.mapped ? "Change what is sent" : `Choose the ${c.audienceNoun || "audience"}`}
+                  {c.mapped ? "Change settings" : `Choose the ${c.audienceNoun || "audience"}`}
                 </button>
                 {c.mapped && (
                   <button data-testid="email-sync" style={btn(false)} disabled={busy === "sync:" + c.id}
                     onClick={() => syncEmail(c)}>
-                    {busy === "sync:" + c.id ? "Checking…" : "Check now"}
+                    {busy === "sync:" + c.id ? "Reading…" : "Read now"}
                   </button>)}
               </div>
               {(mapOpen[c.id] ?? c.needsMapping) && (
                 <EmailToolMapping card={c}
                   onSaved={s => { setMsg(s); setMapOpen(m => ({ ...m, [c.id]: false })); load(); }}
                   onError={setMsg} />)}
+            </div>)}
+          {/* MAILCHIMP-1: A REFUSED ADDRESS IS A LINE ON A HEALTHY CARD. Each one
+              opens to the person, the address and the tool's own reason. */}
+          {c.kind === "email_marketing" && c.refusedSentence && (
+            <div data-testid="email-refused" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 8 }}>
+              {c.refusedSentence.replace(/\.$/, "")}
+              {" · "}
+              <button data-testid="email-refused-open" aria-expanded={openId === c.id + ":refused"}
+                onClick={() => setOpenId(openId === c.id + ":refused" ? "" : c.id + ":refused")}
+                style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700,
+                  textDecoration: "underline dotted", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5 }}>
+                {openId === c.id + ":refused" ? "Hide them" : "See them"}
+              </button>
+              {openId === c.id + ":refused" && (
+                <div data-testid="email-refused-rows" style={{ marginTop: 8, background: T.bg2, border: "1px solid " + T.bg3,
+                  borderRadius: 10, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginBottom: 6 }}>
+                    {c.label} would not take these addresses on the last read, so they were skipped and everything else carried on.
+                    Fix the address on the person and the next read tries again.
+                  </div>
+                  {(c.refused || []).slice(0, 100).map(r => (
+                    <div key={r.email + (r.donorId || "")} style={{ display: "flex", gap: 10, flexWrap: "wrap",
+                      fontSize: 12.5, color: T.ink, padding: "4px 0", borderTop: "1px solid " + T.bg3 }}>
+                      <span style={{ flex: "1 1 160px", minWidth: 0 }}>
+                        {r.donorId && onNavigate
+                          ? <button onClick={() => onNavigate("donors", { selectDonorId: r.donorId })}
+                              style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700,
+                                cursor: "pointer", fontFamily: "inherit", fontSize: 12.5 }}>{r.name || r.email}</button>
+                          : (r.name || r.email)}
+                      </span>
+                      <span style={{ flex: "1 1 180px", minWidth: 0, color: T.ink3, overflowWrap: "anywhere" }}>{r.email}</span>
+                      <span style={{ flex: "2 1 220px", minWidth: 0 }}>{r.reason}</span>
+                    </div>))}
+                </div>)}
             </div>)}
           {c.connected && c.kind === "source" && c.provider !== "stripe" && (
             <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
@@ -728,8 +780,16 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               </div>
               <div>
                 <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSyncedAt)}</div>
-                <div style={{ fontSize: 11.5, color: T.ink3 }}>last checked</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>last read</div>
               </div>
+              {c.lastSyncedAt && <div>
+                <div data-testid="email-updated" style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{(c.lastUpdatedCount ?? 0).toLocaleString()}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.lastUpdatedCount === 1 ? "record updated" : "records updated"} on that read</div>
+              </div>}
+              {c.connected && c.mapped && <div>
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{c.pushOn ? "On" : "Off"}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>adding people from Steward</div>
+              </div>}
             </> : c.kind === "pos" ? <>
               <div>
                 <button data-testid="connection-sales-figure" onClick={() => openSales(c)}
