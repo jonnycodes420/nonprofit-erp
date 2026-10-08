@@ -40,6 +40,8 @@ const todayCivil=()=>new Date().toISOString().split("T")[0];
 // heading ("Send the proposal"); inside a sentence it is mid-sentence. Only the
 // first letter moves, and only when the word is not already a name or an
 // acronym — "Send the LOI" keeps its LOI.
+// FIX-34: "2 more for Christopher", but an organisation keeps its whole name.
+const ORG_NAME_RE=/\b(foundation|trust|fund|church|inc|llc|ltd|company|corporation|association|society|club|group|bank|school|university|council|collective|partners|ministries)\b/i;
 const lowerFirst=s=>{
   const str=String(s||"").trim();
   if(!str)return str;
@@ -1983,13 +1985,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
             {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
-            {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-more" aria-expanded={moreOpen===t.donorId}
+            {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-steps-more" aria-expanded={moreOpen===t.donorId}
               onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
               onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}
-              style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",cursor:"pointer",whiteSpace:"nowrap"}}>{t.moreSteps.length} more for {firstNameOf(t.donorName)||t.donorName}</span></>}
+              style={{color:T.greenDk,fontWeight:700,textDecoration:"underline",cursor:"pointer"}}>{t.moreSteps.length} more for {ORG_NAME_RE.test(String(t.donorName||""))?t.donorName:(firstNameOf(t.donorName)||t.donorName)}</span></>}
           </div>
           {moreOpen===t.donorId&&t.moreSteps?.length>0&&(
-            <ul data-testid="thread-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
+            <ul data-testid="thread-steps-more-list" style={{listStyle:"none",margin:"4px 0 0",padding:0,fontSize:12.5,color:T.ink2,lineHeight:1.6}}>
               {t.moreSteps.map(m=><li key={m.id}>{m.label}{m.due?` · ${displayDateShort(String(m.due).slice(0,10),new Date())}`:""}</li>)}
             </ul>)}
           {/* ENGAGE-1 §3 — when the step is an ask, the amount and its math. */}
