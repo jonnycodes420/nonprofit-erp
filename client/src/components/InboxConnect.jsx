@@ -81,7 +81,7 @@ export function SyncHealth({ h, calendar, onRetry, busy }) {
       </div>
       {h.lastError && <div data-testid="health-error" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: T.gold700 }}>
         <span>{h.lastError}</span>
-        <button type="button" onClick={onRetry} disabled={busy} style={quiet}>Try again</button>
+        <button type="button" onClick={onRetry} disabled={busy} style={quiet}>Check again</button>
       </div>}
     </div>
   );

@@ -567,8 +567,12 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
   const [place, setPlace] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // FIX-34: with more than one calendar connected, "Add to:" picks which one.
+  const [calPick, setCalPick] = useState(null);
   if (!rel) return null;
   const first = firstNameOf(donor?.name) || "them";
+  const cals = (rel.calendars && rel.calendars.list) || [];
+  const calChoice = calPick || (rel.calendars && rel.calendars.defaultProvider) || null;
   const y = rel.thisYear || {};
   const n = y.meetings?.value || 0;
   const monthsElapsed = Math.max(1, Number(String(rel.today || "").slice(5, 7)) || new Date().getMonth() + 1);
@@ -577,7 +581,8 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
     setBusy(true); setMsg("");
     try {
       const r = await apiFetch(`/donors/${donor.id}/book-visit`, { method: "POST",
-        body: JSON.stringify({ ...body, title: title.trim() || `Visit with ${donor.name}`, location: place.trim() || undefined, inviteDonor: invite }) });
+        body: JSON.stringify({ ...body, title: title.trim() || `Visit with ${donor.name}`, location: place.trim() || undefined, inviteDonor: invite,
+          ...(cals.length > 1 && calChoice ? { provider: calChoice } : {}) }) });
       setMsg(r.sentence); setBooking(false); onReload && onReload();
     } catch (e) { setMsg(e?.sentence || errorMessage(e, "Nothing was added to your calendar.")); }
     setBusy(false);
@@ -628,10 +633,18 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Visit with ${donor.name}`} aria-label="Title" style={{ ...input, padding: 8 }}/>
           <input value={place} onChange={e => setPlace(e.target.value)} placeholder="Where (optional)" aria-label="Where" style={{ ...input, padding: 8 }}/>
           <TimeForm initialStart={Date.now() + 7 * 864e5} onSubmit={book} submitLabel="Add to my calendar" busy={busy}
-            extra={<label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, width: "100%" }}>
-              <input type="checkbox" checked={invite} onChange={e => setInvite(e.target.checked)}/>
-              Also invite {first}. Their invitation comes from your calendar.
-            </label>}/>
+            extra={<>
+              {cals.length > 1 && <label data-testid="dp-book-calendar" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, width: "100%" }}>
+                Add to:
+                <select value={calChoice || ""} onChange={e => setCalPick(e.target.value)} aria-label="Add to which calendar"
+                  style={{ ...input, width: "auto", padding: "4px 8px" }}>
+                  {cals.map(c => <option key={c.provider} value={c.provider}>{c.label}{c.healthy ? "" : " (last read failed)"}</option>)}
+                </select>
+              </label>}
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, width: "100%" }}>
+                <input type="checkbox" checked={invite} onChange={e => setInvite(e.target.checked)}/>
+                Also invite {first}. Their invitation comes from your calendar.
+              </label></>}/>
           <button type="button" onClick={() => setBooking(false)} style={{ background: "none", border: "none", color: T.sage400, cursor: "pointer", fontSize: 14, alignSelf: "flex-start" }}>Cancel</button>
         </div>
       )}
