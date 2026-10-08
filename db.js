@@ -7375,6 +7375,7 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS gmail_history_id TEXT`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_read_from TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_booking_provider TEXT`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS graph_delta JSONB`);
 
   // ── FIX-33 · A CALENDAR EVENT STEWARD IS NOT SURE ABOUT ───────────────────
   // A title that names somebody on file ("Visit with Christine") with two

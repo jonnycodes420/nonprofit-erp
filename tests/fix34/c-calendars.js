@@ -18,6 +18,7 @@
 //   §4 two overlapping reads of one connection: only one runs
 //   §5 a 429 with Retry-After: the connection waits, and no run is started
 //   §6 a Gmail read with nothing new is one history call, no message fetches
+//   §7 an Outlook read with nothing new is one Graph delta call per folder
 //
 // HOW IT WOULD GO RED (run against c4be904, before the fix; see the report):
 //   §1 provider ignored, first connection by name   §2 "did not answer" for a 403
@@ -34,7 +35,7 @@ const PW = bcrypt.hashSync("loadtest1234", 10);
 const ANN = `ann@${ORG}.local`, UID = "u_fix34c_ann", DONOR = "d_fix34c_rosa";
 process.env.STEWARD_CREDENTIAL_KEY = process.env.STEWARD_CREDENTIAL_KEY || "local-scratch-credential-key-0123456789";
 
-const S = { calls: [], calendarOff: false, gmailDelay: 0, graph429: false, historyId: "500" };
+const S = { calls: [], calendarOff: false, gmailDelay: 0, graph429: false, historyId: "500", delta: { inbox: [], sent: [], calendar: [] } };
 const SERVICE_DISABLED = { error: { code: 403, status: "PERMISSION_DENIED",
   message: "Google Calendar API has not been used in project 123 before or it is disabled.",
   errors: [{ reason: "accessNotConfigured", domain: "usageLimits" }],
@@ -50,6 +51,13 @@ const mock = http.createServer((req, res) => {
     const send = (code, obj, headers = {}) => { res.writeHead(code, { "Content-Type": "application/json", ...headers }); res.end(obj == null ? "" : JSON.stringify(obj)); };
     if (p.startsWith("/v1.0/")) {
       if (S.graph429 && req.method === "GET") return send(429, { error: { code: "TooManyRequests" } }, { "Retry-After": "120" });
+      // Graph delta: a fresh delta hands back a link; the link answers what changed since.
+      const dp = decodeURIComponent(p);
+      const fresh = dp.match(/^\/v1\.0\/me\/mailFolders\('(Inbox|SentItems)'\)\/messages\/delta$/) || (dp === "/v1.0/me/calendarView/delta" ? [0, "calendar"] : null);
+      const base = `http://localhost:${PORT}/v1.0/me/deltalink/`;
+      if (fresh) { const k = fresh[1] === "Inbox" ? "inbox" : fresh[1] === "SentItems" ? "sent" : "calendar"; return send(200, { value: [], "@odata.deltaLink": base + k }); }
+      const dl = dp.match(/^\/v1\.0\/me\/deltalink\/(inbox|sent|calendar)$/);
+      if (dl) { const v = S.delta[dl[1]]; S.delta[dl[1]] = []; return send(200, { value: v, "@odata.deltaLink": base + dl[1] }); }
       if (p === "/v1.0/me/events" && req.method === "POST") return send(201, { id: "ms_ev_" + S.calls.length });
       if (p === "/v1.0/me/mailFolders/inbox" || p === "/v1.0/me/calendar") return send(200, { id: "x" });
       if (p === "/v1.0/me/messages" || p === "/v1.0/me/mailFolders/sentitems/messages" || p === "/v1.0/me/calendarView") return send(200, { value: [] });
@@ -178,6 +186,22 @@ async function run() {
     const mailCalls = S.calls.slice(mark).filter(c => c.path.startsWith("/gmail/") && c.path !== "/gmail/v1/users/me/profile");
     ok("§6 a read with nothing new is one history call and no message search", again.status === 200 && mailCalls.length === 1 && mailCalls[0].path === "/gmail/v1/users/me/history",
       `${mailCalls.map(c => c.path).join(" ")} (${ms}ms)`);
+
+    // §7
+    await q(`UPDATE mailbox_connections SET retry_after=NULL WHERE id='mbx_fix34c_m'`);
+    const graphRead = cs => cs.filter(c => c.path.startsWith("/v1.0/") && !/mailFolders\/inbox$|\/me\/calendar$/.test(c.path) && c.method === "GET");
+    await api("POST", "/mailbox/microsoft/sync", tok, {});                       // full read, links made
+    mark = S.calls.length;
+    const quiet = await api("POST", "/mailbox/microsoft/sync", tok, {});
+    const qc = graphRead(S.calls.slice(mark));
+    const mailQ = qc.filter(c => /deltalink\/(inbox|sent)$/.test(c.path)), calQ = qc.filter(c => /deltalink\/calendar$/.test(c.path));
+    ok("§7 an Outlook read with nothing new is one delta call per folder, and nothing else",
+      quiet.status === 200 && mailQ.length === 2 && calQ.length === 1 && qc.length === 3, qc.map(c => c.path).join(" "));
+    S.delta.inbox = [{ id: "new_msg" }];
+    mark = S.calls.length;
+    await api("POST", "/mailbox/microsoft/sync", tok, { what: "mail" });
+    ok("§7 …and a change in the Inbox brings the full read back", graphRead(S.calls.slice(mark)).some(c => c.path === "/v1.0/me/messages"),
+      graphRead(S.calls.slice(mark)).map(c => c.path).join(" "));
   } finally {
     await clean();
     await new Promise(r => mock.close(r));
