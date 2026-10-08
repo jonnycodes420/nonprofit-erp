@@ -9027,12 +9027,27 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
     }
     historyId = await gmailHistoryNow(token);   // taken BEFORE the read, so nothing that lands during it is skipped next time
   }
+  // FIX-34 · OUTLOOK MAIL THROUGH GRAPH DELTA: one small call per folder
+  // (Inbox, Sent Items) when nothing changed. Any change, a lost link (410) or
+  // a link older than 6 hours means the full read below, as before.
+  let graphLinks = null;
+  if (providerKey === "microsoft") {
+    const [inbox, sent] = [await graphDeltaGate(conn, "inbox", token), await graphDeltaGate(conn, "sent", token)];
+    graphLinks = { inbox, sent };
+    if (inbox.unchanged && sent.unchanged) {
+      await saveGraphDelta(conn, graphLinks);
+      await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0,
+                        last_error=NULL, last_error_at=NULL, retry_after=NULL, updated_at=NOW() WHERE id=?`, [conn.id]);
+      return { logged: 0, found: 0, unchanged: true };
+    }
+  }
 
   const donors = await query(
     `SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email <> '' AND deleted_at IS NULL`,
     [orgId]);
   if (!donors.length) {
     // Nobody on file with an email is a finished read, not a silent one.
+    if (graphLinks) await saveGraphDelta(conn, graphLinks);
     await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_logged_count=0, last_error=NULL, last_error_at=NULL,
                       updated_at=NOW() WHERE id=?`, [conn.id]);
     return { logged: 0, found: 0, reason: "no_people" };
@@ -9123,6 +9138,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
     `UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=?,
             last_error=NULL, last_error_at=NULL, retry_after=NULL, gmail_history_id=COALESCE(?, gmail_history_id), updated_at=NOW() WHERE id=?`,
     [logged, historyId, conn.id]);
+  if (graphLinks) await saveGraphDelta(conn, graphLinks);
   // THREAD-3: an email from a donor nobody has answered becomes a step.
   const replies = await processUnansweredMail(orgId).catch(e => { console.error("[mailbox] needs reply:", e.message); return null; });
   return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0 };
@@ -9170,6 +9186,17 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   if (await calendarUnchanged(conn, providerKey, token)) {
     await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
     return { kept: 0, found: 0, unchanged: true };
+  }
+  // FIX-34 · OUTLOOK CALENDAR THROUGH calendarView/delta, the same way.
+  let calLinks = null;
+  if (providerKey === "microsoft") {
+    const g = await graphDeltaGate(conn, "calendar", token);
+    calLinks = { calendar: g };
+    if (g.unchanged) {
+      await saveGraphDelta(conn, calLinks);
+      await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+      return { kept: 0, found: 0, unchanged: true };
+    }
   }
 
   const people = await query(
@@ -9236,6 +9263,7 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   if (gone.length) await run(`DELETE FROM calendar_events WHERE id = ANY(?)`, [gone.map(g => g.id)]);
   await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), calendar_read_from=?, retry_after=NULL WHERE id=?`,
     [readStartedAt.toISOString(), conn.id]);
+  if (calLinks) await saveGraphDelta(conn, calLinks);
   // KEPT only: how many events she has that are not meetings is not Steward's to know.
   return { kept, found: kept };
 }
@@ -9375,6 +9403,60 @@ async function calRefusal(r, providerKey) {
 // nothing did, the run stops there. A full read still happens at least every
 // 6 hours so events sliding into the window are picked up.
 const CAL_FULL_EVERY_MS = 6 * 3600e3;
+// FIX-34 · GRAPH DELTA AS THE "ANYTHING NEW?" QUESTION. Each folder keeps its
+// deltaLink on the connection (graph_delta: { inbox, sent, calendar } each
+// { link, at }). A stored link younger than 6 hours is asked once: no changes
+// is one small call and the run stops. Otherwise the link is (re)made by
+// paging a delta from now (mail) or over the calendar window, and the full
+// read runs. A 410 (link gone) or any other refusal is a full read; a 429 waits.
+const GRAPH_DELTA_FULL_MS = 6 * 3600e3;
+const graphDeltaStart = (key) => {
+  const g = GRAPH_BASE() + "/v1.0/me";
+  if (key === "calendar") {
+    const CLW = { past: 30, ahead: 60 };   // shared/calendarLog.js WINDOW_PAST_DAYS / WINDOW_AHEAD_DAYS
+    return `${g}/calendarView/delta?` + new URLSearchParams({ startDateTime: new Date(Date.now() - CLW.past * 864e5).toISOString(),
+      endDateTime: new Date(Date.now() + CLW.ahead * 864e5).toISOString() });
+  }
+  const folder = key === "inbox" ? "Inbox" : "SentItems";
+  return `${g}/mailFolders('${folder}')/messages/delta?` + new URLSearchParams({ $select: "id",
+    $filter: `receivedDateTime ge ${new Date(Date.now() - 5 * 60e3).toISOString()}` });
+};
+async function graphDeltaWalk(url, token, pages, what = "mail") {
+  let changed = 0;
+  for (let i = 0; i < pages && url; i++) {
+    const r = await providerFetch(url, { headers: { Authorization: "Bearer " + token, Prefer: "odata.maxpagesize=50" } }).catch(() => null);
+    if (!r) return null;
+    if (!r.ok) {
+      if (r.status === 429) throw APIC.providerError("microsoft", what, 429, await r.json().catch(() => null),
+        APIC.retryAfterDate(r.headers.get("retry-after")) || new Date(Date.now() + 5 * 60e3));
+      return null;                                   // 410 and the rest: no link, full read
+    }
+    const b = await r.json().catch(() => null);
+    if (!b) return null;
+    changed += (b.value || []).length;
+    if (b["@odata.deltaLink"]) return { link: b["@odata.deltaLink"], changed };
+    url = b["@odata.nextLink"] || null;
+  }
+  return null;
+}
+async function graphDeltaGate(conn, key, token) {
+  const stored = (conn.graph_delta || {})[key];
+  if (stored && stored.link && Date.now() - new Date(stored.at).getTime() < GRAPH_DELTA_FULL_MS) {
+    const what = key === "calendar" ? "calendar" : "mail";
+    const w = await graphDeltaWalk(stored.link, token, 20, what);
+    if (w) return { unchanged: w.changed === 0, link: w.link, at: stored.at };
+  }
+  // No usable link: make one now (before the full read, so nothing that lands during it is missed).
+  const fresh = await graphDeltaWalk(graphDeltaStart(key), token, 40, key === "calendar" ? "calendar" : "mail");
+  return { unchanged: false, link: fresh ? fresh.link : null, at: new Date().toISOString() };
+}
+async function saveGraphDelta(conn, parts) {
+  const cur = { ...(conn.graph_delta || {}) };
+  for (const [k, v] of Object.entries(parts)) cur[k] = v && v.link ? { link: v.link, at: v.at } : null;
+  conn.graph_delta = cur;
+  await run(`UPDATE mailbox_connections SET graph_delta=? WHERE id=?`, [JSON.stringify(cur), conn.id]).catch(() => {});
+}
+
 async function calendarUnchanged(conn, providerKey, token) {
   if (providerKey !== "google" || !conn.calendar_read_from) return false;
   if (Date.now() - new Date(conn.calendar_read_from).getTime() > CAL_FULL_EVERY_MS) return false;
