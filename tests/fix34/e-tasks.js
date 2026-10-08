@@ -128,12 +128,13 @@ async function run() {
     const brief = captured.find(c => c.path === "/emails" && JSON.stringify(c.body.to || "").includes("dana@fix34e.local"));
     const html = (brief && brief.body.html) || "";
     ok("§3 the morning email reached her at the sink", !!brief, captured.map(c => c.body && c.body.to));
+    if (process.env.FIX34E_DUMP && html) require("fs").writeFileSync(process.env.FIX34E_DUMP, html);
     ok("§3 it carries today's task", /Ring the hall about chairs/.test(html), html.slice(0, 300));
     ok("§3 it carries today's meeting", /Your meetings today/.test(html) && /Coffee with Christine/.test(html));
     const link = (/href="[^"]*\/unsubscribe\?token=([^"&]+)"/.exec(html) || [])[1];
     ok("§3 it has an unsubscribe line", !!link);
     const pref = async () => (await q(`SELECT notify_daily_tasks, notify_thread_nudge FROM users WHERE id='u_f34e'`))[0];
-    const auditN = async () => (await q(`SELECT COUNT(*)::int AS n FROM audit_log WHERE org_id=$1`, [ORG]).catch(() => [{ n: -1 }]))[0].n;
+    const auditN = async () => (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1`, [ORG]).catch(() => [{ n: -1 }]))[0].n;
     const a0 = await auditN();
     const gGet = await fetch(`${BASE}/unsubscribe?token=${link}`);
     const gHead = await fetch(`${BASE}/unsubscribe?token=${link}`, { method: "HEAD" });

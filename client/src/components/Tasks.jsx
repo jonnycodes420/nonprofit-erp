@@ -554,7 +554,7 @@ function BulkBar({ n, team, today, allPicked, onAll, onClear, onBulk }) {
       <button onClick={() => onBulk("move", { due: day })} data-testid="bulk-move" style={barBtn}>Move</button>
       <button onClick={() => onBulk("done")} data-testid="bulk-done" style={barBtn}>Mark done</button>
       <button onClick={() => onBulk("delete")} data-testid="bulk-delete" style={barBtn}>Delete</button>
-      <button onClick={onClear} style={{ ...barBtn, background: "transparent", border: "none", textDecoration: "underline" }}>Clear</button>
+      <button onClick={onClear} data-testid="bulk-cancel" style={{ ...barBtn, background: "transparent", border: "none", color: T.white, textDecoration: "underline" }}>Cancel</button>
     </div>
   );
 }
