@@ -96,6 +96,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   Run a task's `donorId` and `assignedTo` through `orgOwns`. (BUILD-46, BUILD-13)
 - **Goal roll-ups are derived live and never stored, and children are not double-counted.** Every surface reads
   `fundraisingGoalsPortfolio` via `/fundraising/overview`, never flat `/fundraising/campaigns`. (BUILD-16, FIX 2026-07-19)
+- **The org goal bar counts the Raised card's gifts.** On Fundraising, a `total_raised` goal with no campaign shows the
+  same figure as "Raised · FY" (one query, `curRows`), paced over that year, and says so under the bar. A label that is
+  only the amount is not shown as a name, and no pace badge rides a bar at $0. (FIX-34)
 - **A beaten goal reads as a win.** The headline shows `rawPercent` and `goalHeadSub` reads "Goal met · $X over".
   Only the bar uses the capped `percent`. (FIX 2026-07-19)
 - **Impact and ROI count attributable money only.** Never present total giving as "Steward raised", and an
