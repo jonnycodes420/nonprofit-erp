@@ -564,7 +564,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   {
     const BK = await import("../shared/bookkeeping.js");
     const books = await query(
-      `SELECT id, vendor, status, last_sent_at, last_error FROM bookkeeping_connections
+      `SELECT id, vendor, status, last_sent_at, last_error, mapping, realm_id FROM bookkeeping_connections
         WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
     const byVendor = new Map(books.map(b => [b.vendor, b]));
     // PARITY-2 Part 5: QuickBooks is offered only where the founder turned
@@ -586,7 +586,21 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
                 COUNT(*) FILTER (WHERE status <> 'sent')::int AS held
            FROM bookkeeping_deposits WHERE org_id=? AND vendor=? AND deposit_on >= ?`,
         [orgId, key, since30]) : [{ sent: 0, cents: 0, held: 0 }];
-      const sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      let sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
+      let sentCents = Number(sentRow.cents) || 0, lastSent = b ? b.last_sent_at : null;
+      // FIX-34 Q · QUICKBOOKS COUNTS WHAT ITS SYNC SENT. Where the org's
+      // QuickBooks sync is on, the gifts go through qboSync.js, which never
+      // writes bookkeeping_deposits: this card read "0 deposits sent, $0,
+      // never" beside "1 sent to QuickBooks". It reads the sync's own count
+      // now, the same one the sync panel shows.
+      const QSm = key === "quickbooks" && b && qboFlag && qboFlag.qbo_sync_enabled === true ? require("../qboSync") : null;
+      const qMap = QSm ? QSm.readMapping(b) : null;
+      if (QSm) {
+        const q = await QSm.sentSummary(orgId, since30);
+        sentN = qMap.mode === "deposit" ? q.entries : q.gifts; sentCents = q.cents; heldN = 0;
+        lastSent = q.lastAt || null;
+      }
+      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : "deposit";
       // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
       // rather than counting deposits that cannot have happened.
       if (BK.VENDORS[key].sends === false) {
@@ -608,19 +622,20 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
-        subtitle: "Steward sends one deposit per payout. It never sends the same payout twice.",
+        subtitle: QSm ? QSm.sendsSentence(qMap) : "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
         oauthProvider: OAUTH_BY_VENDOR[key] || null,
-        lastSentAt: b ? b.last_sent_at : null,
-        lastSyncedAt: b ? b.last_sent_at : null,
+        lastSentAt: lastSent,
+        lastSyncedAt: lastSent,
         status: !b ? "not_connected" : b.last_error ? "broken" : "healthy",
         sentence: !b ? C.STATUSES.not_connected.definition
           : b.last_error ? String(b.last_error)
           : sentN
-            ? `${sentN} deposit${sentN === 1 ? "" : "s"} sent this month, ${C.money(Number(sentRow.cents))} in all.`
+            ? `${sentN} ${sentNoun}${sentN === 1 ? "" : "s"} sent this month, ${C.money(sentCents)} in all.`
             : "Connected. Nothing has been sent this month yet.",
-        deposits30: sentN, deposits30Cents: Number(sentRow.cents) || 0, held30: heldN,
+        deposits30: sentN, deposits30Cents: sentCents, held30: heldN,
+        sentLabel: sentN === 1 ? `${sentNoun} sent` : `${sentNoun}s sent`,
         heldSentence: heldN ? `${heldN} ${heldN === 1 ? "deposit is" : "deposits are"} held and not sent.` : null,
       });
     }

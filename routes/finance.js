@@ -614,7 +614,7 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
     [state, req.user.orgId, req.user.userId, key, verifier, values.redirectUri]);
   res.json({ url: O.authorizeUrl(key, { clientId: values.clientId, redirectUri: values.redirectUri,
     state, codeChallenge: challenge }), provider: key,
-    sentence: `You will be asked to approve ${O.PROVIDERS[key].scopes.length} permissions and nothing else.` });
+    sentence: `You will be asked to approve ${O.PROVIDERS[key].scopes.length} ${O.PROVIDERS[key].scopes.length === 1 ? "permission" : "permissions"} and nothing else.` });
 }));
 
 // THE LANDING, AND WHY IT IS NOT WHERE THE TOKEN IS STORED.
@@ -798,6 +798,10 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
                 WHERE org_id=? AND vendor=? AND status <> 'disconnected' AND realm_id IS NOT NULL
                   AND realm_id IS DISTINCT FROM ? AND mapping->'qbo' IS NOT NULL AND mapping->'qbo'->'realmId' IS NULL`,
       [req.user.orgId, vendorKey, account]);
+    // FIX-34 Q: AUTO-SYNC STARTS OFF ON EVERY NEW CONNECTION. A connect is
+    // not consent to send; turning auto-sync on is a separate, later choice,
+    // and it cannot be made until every fund is mapped.
+    if (vendorKey === "quickbooks") await run("UPDATE orgs SET qbo_auto_sync=false WHERE id=?", [req.user.orgId]);
     await run(
       `INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,credentials_sealed,token_expires_at,
                                             mapping,connected_by,connected_by_name,created_by,created_by_name)
@@ -838,7 +842,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
   res.json({ ok: true, provider: key, account, needsTenantChoice, tenants,
     sentence: needsTenantChoice
       ? `${O.PROVIDERS[key].label} is connected. It holds ${tenants ? tenants.length : "several"} organisations, so choose which one Steward should post to before anything is sent.`
-      : `${O.PROVIDERS[key].label} is connected. Steward asked for ${O.PROVIDERS[key].scopes.length} permissions and holds the tokens encrypted.` });
+      : `${O.PROVIDERS[key].label} is connected. Steward asked for ${O.PROVIDERS[key].scopes.length} ${O.PROVIDERS[key].scopes.length === 1 ? "permission" : "permissions"} and holds the tokens encrypted.` });
 }));
 
 // The OAuth provider a stored vendor key came from: the reverse of
@@ -2924,8 +2928,14 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
     if (n && n.here === 0 && n.elsewhere > 0)
       companySentence = `This is a different QuickBooks company from the one Steward sent ${n.elsewhere} ${n.elsewhere === 1 ? "gift" : "gifts"} to before, so nothing has been sent here yet and every gift in Pending goes to this company once, including ones already in the other company.`;
   }
+  // FIX-34 Q: what is still to map, and what has been sent (the one count the
+  // Connections card reads too).
+  const gaps = c ? await QS.mappingGaps(orgId, map) : { ok: false, funds: [], sentence: null };
+  const sent = c ? await QS.sentSummary(orgId, "1970-01-01") : null;
   res.json({
     enabled: true, autoSync: org.qbo_auto_sync === true, demo, companySentence,
+    mappingReady: gaps.ok, mappingGaps: gaps.ok ? null : { funds: gaps.funds, depositAccount: gaps.depositAccount, sentence: gaps.sentence },
+    sent,
     mappingOtherCompany: map.otherCompany === true,
     batchSize: QS.RUN_LIMIT,
     environment: QS.environment(),
@@ -2936,7 +2946,9 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
     funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
             { id: QS.NO_FUND, name: "No fund named", restricted: false }],
     campaigns: campaigns.map(x => ({ id: x.id, name: x.name, type: x.type || null })),
-    definition: "Each gift becomes one sales receipt in QuickBooks, on the account its campaign or fund is mapped to, with the donor as the customer. Nothing is sent until somebody presses Sync, and a gift is never sent twice.",
+    definition: map.mode === "deposit"
+      ? "Each payout becomes one deposit in QuickBooks, a line per gift on the account its campaign or fund is mapped to, with the processing fee as one negative line. Nothing is sent until somebody presses Sync, and a payout is never sent twice."
+      : "Each gift becomes one sales receipt in QuickBooks, on the account its campaign or fund is mapped to, with the donor as the customer. Nothing is sent until somebody presses Sync, and a gift is never sent twice.",
     demoSentence: demo ? "This is the demonstration file's example connection. It shows what would be sent, and sends nothing." : null,
   });
 }));
@@ -3136,6 +3148,14 @@ app.put("/qbo/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const org = await qboEnabled(orgId);
   if (!org || org.qbo_sync_enabled !== true) return qboOff(res);
   const on = req.body?.on === true;
+  // FIX-34 Q: auto-sync cannot be turned on while anything is unmapped.
+  if (on) {
+    const QS = qboSyncMod();
+    const c = await qboConnection(orgId);
+    if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first." });
+    const gaps = await QS.mappingGaps(orgId, QS.readMapping(c));
+    if (!gaps.ok) return res.status(409).json({ error: "needs_mapping", sentence: gaps.sentence });
+  }
   await run("UPDATE orgs SET qbo_auto_sync=? WHERE id=?", [on, orgId]);
   res.json({ ok: true, autoSync: on, sentence: on
     ? "Auto-sync is on. Once an hour Steward sends whatever is waiting, as Steward's own entry in the log."

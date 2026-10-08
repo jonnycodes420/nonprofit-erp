@@ -700,7 +700,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               : c.kind === "bookkeeping" ? <>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.deposits30 ?? 0}</div>
-                <div style={{ fontSize: 11.5, color: T.ink3 }}>{(c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent"}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.sentLabel || ((c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent")}</div>
               </div>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{money(c.deposits30Cents)}</div>
