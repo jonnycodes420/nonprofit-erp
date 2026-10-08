@@ -83,6 +83,9 @@ async function checkApis(providerKey, token, opts = {}) {
     try {
       const r = await fetch(spec.url, { headers: { Authorization: "Bearer " + token }, signal: AbortSignal.timeout(opts.timeoutMs || CHECK_TIMEOUT_MS) });
       if (r.ok) { out.push({ api: spec.api, label: spec.label, ok: true, status: r.status }); continue; }
+      // A 404 on these fixed paths says nothing about whether the API is on
+      // (a stand-in that does not serve them); it is "not checked", not a refusal.
+      if (r.status === 404) { out.push({ api: spec.api, label: spec.label, ok: null, status: 404 }); continue; }
       const body = await r.json().catch(() => null);
       const reason = refusalReason(r.status, body);
       out.push({ api: spec.api, label: spec.label, what: spec.what, ok: false, status: r.status, reason, sentence: refusalSentence(spec, reason, r.status) });

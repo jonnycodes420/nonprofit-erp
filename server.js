@@ -9009,7 +9009,8 @@ async function gmailUnchanged(conn, token) {
     return null;
   }
   const b = await r.json().catch(() => null);
-  return b && !(b.history && b.history.length) ? { historyId: b.historyId ? String(b.historyId) : conn.gmail_history_id } : null;
+  // Only a real history answer (it always carries the mailbox's historyId) can say "nothing new".
+  return b && b.historyId && !(b.history && b.history.length) ? { historyId: String(b.historyId) } : null;
 }
 
 async function syncMailboxRun(conn, userId, orgId, providerKey) {
@@ -9378,13 +9379,14 @@ async function calendarUnchanged(conn, providerKey, token) {
   if (providerKey !== "google" || !conn.calendar_read_from) return false;
   if (Date.now() - new Date(conn.calendar_read_from).getTime() > CAL_FULL_EVERY_MS) return false;
   const q = new URLSearchParams({ updatedMin: new Date(conn.calendar_read_from).toISOString(), showDeleted: "true",
-    singleEvents: "true", maxResults: "1", fields: "items(id)" });
+    singleEvents: "true", maxResults: "1", fields: "kind,items(id)" });
   const r = await providerFetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
     { headers: { Authorization: "Bearer " + token } }).catch(() => null);
   if (!r) return false;
   if (!r.ok) { if (r.status === 429) throw await calRefusal(r, "google"); return false; }
   const body = await r.json().catch(() => null);
-  return !!body && Array.isArray(body.items) && body.items.length === 0;
+  // Only a real events list (kind calendar#events) can say "nothing changed".
+  return !!body && body.kind === "calendar#events" && Array.isArray(body.items) && body.items.length === 0;
 }
 
 // A mailbox token, refreshed through the same seam every other connection

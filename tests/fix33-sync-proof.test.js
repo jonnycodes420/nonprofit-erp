@@ -356,7 +356,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   const r10 = await api("POST", "/mailbox/microsoft/sync", dana.token, { what: "mail" });
   const h2 = ((await api("GET", "/mailbox", dana.token)).body.providers || []).find(p => p.key === "microsoft").health;
   ok("§10 a provider that refuses every request is a failed read with a Try again sentence, not 'nothing new'",
-    r10.body.ok === false && /did not answer/.test(h2.lastError || ""), JSON.stringify([r10.body.error, h2.lastError]));
+    r10.body.ok === false && /fault on its side/.test(h2.lastError || "") && !/did not answer/.test(h2.lastError || ""), JSON.stringify([r10.body.error, h2.lastError]));
   S.graphStatus = 200;
 
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
