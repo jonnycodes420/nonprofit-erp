@@ -272,6 +272,59 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
                               AND ix.type = 'ask' AND LEFT(ix.date,10) > ?)`);
     params.push(PS.OPEN_STAGE_KEYS, yearAgo, yearAgo);
   }
+  // ── GROUPS-2 · THE STARTER RULES ─────────────────────────────────────────
+  // Each reads a definition that already exists, so a starter's count is the
+  // number Reports, Home or Ask shows for the same question. "This year" is the
+  // fiscal year Reports and Ask default to (reportHooks.yearWindows).
+  if (q.bunt || q.firstGiftThisYear === "1" || q.gaveMore === "1") {
+    const RH = require("./routes/crm").reportHooks;
+    const { cur, prior } = await RH.yearWindows(orgId);
+    if (q.bunt) {
+      if (!["lybunt", "sybunt"].includes(String(q.bunt))) return { badStatus: true };
+      const b = RH.buntPredicate(String(q.bunt), cur, prior, "donors");
+      where.push(b.sql); params.push(...b.args);
+      // Reports' SYBUNT is "gave before this year, nothing this year", which
+      // holds every LYBUNT person too. The starter is the usual SYBUNT: that
+      // list without anyone who gave last year (Reports' SYBUNT minus LYBUNT).
+      if (q.bunt === "sybunt") {
+        where.push("NOT EXISTS (SELECT 1 FROM gifts gy WHERE gy.org_id = donors.org_id AND gy.donor_id = donors.id AND gy.date >= ? AND gy.date <= ?)");
+        params.push(prior.from, prior.to);
+      }
+    }
+    // The giving summary's "new" (figureSources givers, first: new).
+    if (q.firstGiftThisYear === "1") {
+      where.push(`EXISTS (SELECT 1 FROM gifts gf WHERE gf.org_id = donors.org_id AND gf.donor_id = donors.id AND gf.date >= ? AND gf.date <= ?)
+              AND (SELECT MIN(g2.date) FROM gifts g2 WHERE g2.org_id = donors.org_id AND g2.donor_id = donors.id) >= ?`);
+      params.push(cur.from, cur.to, cur.from);
+    }
+    if (q.gaveMore === "1") {
+      const sum = `(SELECT COALESCE(SUM(gm.amount),0) FROM gifts gm WHERE gm.org_id = donors.org_id AND gm.donor_id = donors.id AND gm.date >= ? AND gm.date <= ?)`;
+      where.push(`${sum} > 0 AND ${sum} > ${sum}`);
+      params.push(prior.from, prior.to, cur.from, cur.to, prior.from, prior.to);
+    }
+  }
+  // The top tenth of everyone with lifetime giving, by the lifetime total
+  // Reports' "Top donors, lifetime" ranks (imported totals included).
+  if (q.topTenth === "1") {
+    where.push(`id IN (SELECT t.id FROM (SELECT x.id, ROW_NUMBER() OVER (ORDER BY COALESCE(x.total_giving,0) DESC, x.id) AS rn, COUNT(*) OVER () AS n
+                         FROM donors x WHERE x.org_id = ? AND x.deleted_at IS NULL AND COALESCE(x.total_giving,0) > 0) t
+                 WHERE t.rn <= CEIL(t.n / 10.0))`);
+    params.push(orgId);
+  }
+  // Home's "gifts not yet thanked": from the day she started with Steward.
+  if (q.awaitingThanks === "1") {
+    const since = await require("./routes/crm").reportHooks.thanksSince(orgId);
+    where.push(`EXISTS (SELECT 1 FROM gifts gt WHERE gt.org_id = donors.org_id AND gt.donor_id = donors.id AND gt.date >= ?
+                         AND COALESCE(gt.is_sample,false) = false AND COALESCE(gt.acknowledgement_sent,false) = false)`);
+    params.push(since);
+  }
+  // No history yet: nothing on the timeline at all, logged, synced or imported.
+  if (q.noHistory === "1") where.push("NOT EXISTS (SELECT 1 FROM interactions ih WHERE ih.org_id = donors.org_id AND ih.donor_id = donors.id)");
+  if (q.boardMember === "1") where.push("board_member IS TRUE");
+  // Do not solicit, and its opposite for the asking starters: the same three
+  // flags as server.js solicitableSql, the one gate Drift and the day list use.
+  if (q.doNotSolicit === "1") where.push("(do_not_solicit IS TRUE OR do_not_contact IS TRUE)");
+  if (q.solicitable === "1") where.push("deceased IS NOT TRUE AND do_not_contact IS NOT TRUE AND do_not_solicit IS NOT TRUE");
   // ── WIRE-1 · EVERY LIST CAN BECOME A GROUP ───────────────────────────────
   // A guest list, a campaign's donors, members, fundraisers, bidders, funders,
   // the people in a journey, an import: each is a rule here, so the Donors
@@ -411,7 +464,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   "attendedEvent", "registeredEvent", "member", "memberLevel", "hasPledge", "recurring", "fundraiser", "gavePage",
   "auctionBidder", "funder", "inJourney", "openTask", "kind", "fromImport", "groupId",
   // AGENT-3: grant reports due, memberships ending, auction winners.
-  "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner"];
+  "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner",
+  // GROUPS-2: the starters' rules, each a definition that already exists.
+  "bunt", "firstGiftThisYear", "gaveMore", "topTenth", "awaitingThanks", "noHistory", "boardMember", "doNotSolicit", "solicitable"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -437,7 +492,9 @@ function normalizeRules(raw) {
   // PARITY-3 — the volunteer rules, checked the same way: wrong is refused.
   if (rules.volActive !== undefined && rules.volActive !== "1") delete rules.volActive;
   if (rules.volunteer !== undefined) { if (rules.volunteer === "true") rules.volunteer = "1"; if (rules.volunteer !== "1") delete rules.volunteer; }
-  for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "funder", "openTask", ...(rules.fundraiser === "pending" ? [] : ["fundraiser"])]) {
+  if (rules.bunt && !["lybunt", "sybunt"].includes(rules.bunt)) errors.push("Gave before is lybunt or sybunt.");
+  for (const k of ["notDeceased", "monthly", "noAsk", "hasPledge", "recurring", "funder", "openTask",
+                   "firstGiftThisYear", "gaveMore", "topTenth", "awaitingThanks", "noHistory", "boardMember", "doNotSolicit", "solicitable", ...(rules.fundraiser === "pending" ? [] : ["fundraiser"])]) {
     if (rules[k] === undefined) continue;
     if (rules[k] === "true") rules[k] = "1";
     if (rules[k] !== "1") delete rules[k];
@@ -519,6 +576,16 @@ function rulesSentence(rules = {}) {
   if (rules.fromImport) parts.push("added by one import");
   if (rules.groupId) parts.push("in another group");
   if (rules.notDeceased) parts.push("not deceased");
+  if (rules.bunt === "lybunt") parts.push("who gave last year and not yet this year (fiscal years)");
+  if (rules.bunt === "sybunt") parts.push("who gave some year before last and not last year or this year (fiscal years)");
+  if (rules.firstGiftThisYear) parts.push("whose first gift ever came this fiscal year");
+  if (rules.gaveMore) parts.push("who have given more this fiscal year than all of last");
+  if (rules.topTenth) parts.push("in the top tenth by lifetime giving");
+  if (rules.awaitingThanks) parts.push("with a gift since you started with Steward that is not yet thanked");
+  if (rules.noHistory) parts.push("with nothing on their timeline yet (no logged, synced or imported conversation, email or note)");
+  if (rules.boardMember) parts.push("marked as board members");
+  if (rules.doNotSolicit) parts.push("marked do not solicit or do not contact");
+  if (rules.solicitable) parts.push("leaving out anyone marked do not solicit, do not contact or deceased");
   if (rules.volQual) parts.push(`with ${rules.volQual.replace(/_/g, " ")}`);
   if (rules.volAnswer) parts.push("who gave one answer on their application");
   if (rules.volAvail) parts.push(`free on ${rules.volAvail}`);
@@ -583,6 +650,47 @@ async function memberCounts(orgId, groups) {
   const [row] = await querySetwise(`SELECT ${cols.join(", ")}`, ms.flatMap(m => m.args));
   return ms.map((_, i) => Number(row[`n${i}`]) || 0);
 }
+// ── GROUPS-2 · STARTER GROUPS ──────────────────────────────────────────────
+// The lists a new director needs, each a rule-kept group shown with its count
+// from her own data before she makes it. Asking starters leave out anyone
+// marked do not solicit, do not contact or deceased, and say how many.
+const STARTERS = [
+  { key: "lybunt", name: "Gave last year, not yet this year", term: "LYBUNT", rules: { bunt: "lybunt", solicitable: "1" }, asking: true },
+  { key: "sybunt", name: "Gave some year before, not last year or this year", term: "SYBUNT", rules: { bunt: "sybunt", solicitable: "1" }, asking: true },
+  { key: "first_gift", name: "First gift this year", rules: { firstGiftThisYear: "1" } },
+  { key: "monthly", name: "Monthly givers", rules: { monthly: "1" } },
+  { key: "gave_more", name: "Gave more this year than last", rules: { gaveMore: "1" } },
+  { key: "top_tenth", name: "Top tenth by lifetime giving", rules: { topTenth: "1", solicitable: "1" }, asking: true },
+  { key: "awaiting_thanks", name: "Gifts waiting for a thank-you", rules: { awaitingThanks: "1" } },
+  { key: "no_history", name: "No history yet", rules: { noHistory: "1" } },
+  { key: "volunteers_never_gave", name: "Volunteers who have never given", rules: { volunteer: "1", given: "never" } },
+  { key: "guests_never_gave", name: "Event guests who have never given", rules: { attendedEvent: "any", given: "never" } },
+  { key: "board", name: "Board members", rules: { boardMember: "1" } },
+  { key: "do_not_solicit", name: "Do not solicit", rules: { doNotSolicit: "1" } },
+];
+const sameRules = (a, b) => JSON.stringify(normalizeRules(a).rules) === JSON.stringify(normalizeRules(b).rules);
+function starterGroup(st, { withAll = false } = {}) {
+  const rules = { ...st.rules };
+  if (withAll) delete rules.solicitable;
+  return { kind: "dynamic", rules: normalizeRules(rules).rules };
+}
+// Every starter with its count (and, for an asking one, how many it leaves
+// out), all in one statement; a starter at 0 is hidden and counted as hidden.
+async function starterList(orgId, groups = []) {
+  const asking = STARTERS.filter(st => st.asking);
+  const counts = await memberCounts(orgId, [...STARTERS.map(st => starterGroup(st)), ...asking.map(st => starterGroup(st, { withAll: true }))]);
+  const all = STARTERS.map((st, i) => {
+    const count = counts[i];
+    const leftOut = st.asking ? Math.max(0, counts[STARTERS.length + asking.indexOf(st)] - count) : 0;
+    const added = groups.find(g => g.kind === "dynamic" && sameRules(g.rules || {}, st.rules));
+    return { key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count, leftOut,
+      sentence: rulesSentence(starterGroup(st).rules), addedGroupId: added ? added.id : null };
+  });
+  const shown = all.filter(s => s.count > 0);
+  return { starters: shown, hidden: all.length - shown.length };
+}
+const starterByKey = key => STARTERS.find(st => st.key === key) || null;
+
 async function isMember(orgId, group, donorId) {
   const m = await memberSql(orgId, group);
   const rows = await query(`SELECT 1 FROM (${m.sql}) gx WHERE gx.id = ? LIMIT 1`, [...m.args, donorId]);
@@ -664,5 +772,6 @@ async function dynamicJoins(orgId, { donorId = null, today = "", fire } = {}) {
 module.exports = {
   baselineGroup, dynamicJoins, watchedDynamicGroups,
   DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS, ACTIVE_RECURRING_STATUSES,
+  STARTERS, starterList, starterByKey, starterGroup,
   buildDonorFilter, normalizeRules, rulesSentence, groupById, listGroups, memberSql, memberIds, memberCounts, isMember, groupsFor, shapeGroup,
 };

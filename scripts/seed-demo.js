@@ -1873,6 +1873,19 @@ async function main() {
     await q(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
              VALUES ('grp_b72_volunteers',$1,'Volunteers','Everyone with a logged volunteer hour or an approved application. Kept by Steward.','{"mode":"group"}'::jsonb,'dynamic','{"volunteer":"1"}'::jsonb,'u_b72demo','Dana Reyes')
              ON CONFLICT DO NOTHING`, [ORG]);
+    // GROUPS-2: four starter groups already added, so the demo's Groups page
+    // shows what a director gets in one click. The rules are the starters'
+    // own (groups.js STARTERS), so each card reads "Added, open it".
+    for (const [id, name, desc, rules] of [
+      ["grp_b72_lybunt", "Gave last year, not yet this year", "A starter group, known in the sector as LYBUNT.", { bunt: "lybunt", solicitable: "1" }],
+      ["grp_b72_thanks", "Gifts waiting for a thank-you", "A starter group.", { awaitingThanks: "1" }],
+      ["grp_b72_monthly", "Monthly givers", "A starter group.", { monthly: "1" }],
+      ["grp_b72_toptenth", "Top tenth by lifetime giving", "A starter group.", { topTenth: "1", solicitable: "1" }],
+    ]) {
+      await q(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
+               VALUES ($1,$2,$3,$4,'{"mode":"group"}'::jsonb,'dynamic',$5::jsonb,'u_b72demo','Dana Reyes')
+               ON CONFLICT DO NOTHING`, [id, ORG, name, desc, JSON.stringify(rules)]);
+    }
     console.log(`[seed] recruitment page with two photos and a video; ${na} pending applications (${giver ? giver.name + " already gives" : "none already on file"}); the Volunteers group`);
   }
 

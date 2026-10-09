@@ -77,6 +77,58 @@ app.get("/groups", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// GROUPS-2 · STARTER GROUPS. Before /groups/:id so "starters" is never an id.
+// GET /groups/starters: each starter with its live count, the zero ones hidden.
+app.get("/groups/starters", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const list = await GR.starterList(orgId, await GR.listGroups(orgId));
+  res.json({ ...list,
+    countSentence: "Everyone the rule finds in your records today. A starter you add keeps itself up to date.",
+    leftOutSentence: "Lists for asking leave out anyone marked do not solicit, do not contact or deceased." });
+}));
+
+// GET /groups/starters/:key: see before you add. The rule in words and its
+// people, read now. A GET, and it writes nothing.
+app.get("/groups/starters/:key", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const st = GR.starterByKey(req.params.key);
+  if (!st) return res.status(404).json({ error: "Not found" });
+  const g = GR.starterGroup(st);
+  const m = await GR.memberSql(orgId, g);
+  const [people, [{ n }], list] = await Promise.all([
+    query(`SELECT d.id, d.name, d.last_gift_date, COALESCE(d.total_giving,0) AS total_giving FROM donors d
+            WHERE d.org_id = ? AND d.id IN (${m.sql}) ORDER BY COALESCE(d.total_giving,0) DESC, d.name LIMIT 12`, [orgId, ...m.args]),
+    query(`SELECT COUNT(*)::int AS n FROM (${m.sql}) x`, m.args),
+    GR.starterList(orgId, await GR.listGroups(orgId)),
+  ]);
+  const row = [...list.starters].find(s => s.key === st.key);
+  res.json({ key: st.key, name: st.name, term: st.term || null, asking: !!st.asking, count: n,
+    leftOut: row ? row.leftOut : 0, addedGroupId: row ? row.addedGroupId : null,
+    sentence: GR.rulesSentence(g.rules), rules: g.rules,
+    people: people.map(p => ({ id: p.id, name: p.name, lastGiftDate: p.last_gift_date, lifetime: Number(p.total_giving) })) });
+}));
+
+// POST /groups/starters/:key: one click makes it a group by rule. The server
+// owns the rule, so the group is exactly the starter she previewed.
+app.post("/groups/starters/:key", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const st = GR.starterByKey(req.params.key);
+  if (!st) return res.status(404).json({ error: "Not found" });
+  const id = "grp_" + uuid().slice(0, 10);
+  const a = actor(req);
+  const g = GR.starterGroup(st);
+  const description = st.term ? `A starter group, known in the sector as ${st.term}.` : "A starter group.";
+  try {
+    await run(`INSERT INTO audiences (id, org_id, name, description, segment, kind, rules, created_by, created_by_name)
+               VALUES (?,?,?,?,?::jsonb,'dynamic',?::jsonb,?,?)`,
+      [id, orgId, st.name, description, JSON.stringify({ mode: "group" }), JSON.stringify(g.rules), a.id, a.name]);
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "You already have a group or an audience called that." });
+    throw err;
+  }
+  res.status(201).json(await GR.groupById(orgId, id));
+}));
+
 app.post("/groups", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const v = validate(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });

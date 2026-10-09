@@ -21837,13 +21837,32 @@ async function reportByGroup(orgId, p) {
 // LYBUNT = gift in the prior year, none in the selected year.
 // SYBUNT = any gift ever before the selected year, none in the selected year.
 // Both predicates live here in SQL and nowhere else.
+// GROUPS-2: the predicate on its own, for a person alias, so a Groups starter
+// ("Gave last year, not yet this year") is this list and never a second guess.
+function buntPredicate(kind, cur, prior, a = "d") {
+  const before = kind === "lybunt"
+    ? `EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date >= ? AND g.date <= ?)`
+    : `EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date < ?)`;
+  return {
+    sql: `${before} AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = ${a}.org_id AND g.donor_id = ${a}.id AND g.date >= ? AND g.date <= ?)`,
+    args: [...(kind === "lybunt" ? [prior.from, prior.to] : [cur.from]), cur.from, cur.to],
+  };
+}
+reportHooks.buntPredicate = buntPredicate;
+// The year a starter group means by "this year" and "last year": the fiscal
+// year the Reports tab and Ask default to, at the org's own fiscal start.
+reportHooks.yearWindows = async orgId => {
+  const p = parseReportParams({ yearMode: "fiscal" }, await orgForYears(orgId));
+  return { cur: reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth), prior: reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth), year: p.year };
+};
+// The day Home's "gifts not yet thanked" counts from (its first import, else
+// the fiscal year's start), so the thank-you starter is Home's own count.
+reportHooks.thanksSince = async orgId => (await orgStewardStart(orgId)) || (await reportHooks.yearWindows(orgId)).cur.from;
+
 async function reportBuntList(orgId, p, kind) {
   const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
   const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
-  const gaveBeforeSql = kind === "lybunt"
-    ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)"
-    : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date < ?)";
-  const gaveBeforeParams = kind === "lybunt" ? [prior.from, prior.to] : [cur.from];
+  const bp0 = buntPredicate(kind, cur, prior, "d");
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
             COALESCE(d.total_giving, 0) AS total_giving, d.last_gift_date, d.last_gift_amount,
@@ -21851,10 +21870,9 @@ async function reportBuntList(orgId, p, kind) {
               WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?) AS prior_year_total
      FROM donors d
      WHERE d.org_id = ? AND d.deleted_at IS NULL
-       AND ${gaveBeforeSql}
-       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)
+       AND ${bp0.sql}
      ORDER BY COALESCE(d.total_giving, 0) DESC`,
-    [prior.from, prior.to, orgId, ...gaveBeforeParams, cur.from, cur.to]);
+    [prior.from, prior.to, orgId, ...bp0.args]);
   // REPORTS-4: the count and the prior-year giving at stake, through the
   // `bunt` source (the same predicates, moved there).
   const bp = { kind, from: cur.from, to: cur.to, prevFrom: prior.from, prevTo: prior.to };
