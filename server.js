@@ -8793,7 +8793,9 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
         -- subscription behind it — a manual super-admin grant, a demo org, a
         -- legacy trial that never went through Checkout — has nothing coming,
         -- and telling it otherwise would be a lie about money.
-        AND stripe_subscription_id IS NOT NULL`, []);
+        AND stripe_subscription_id IS NOT NULL
+        -- ADMIN-CLEAN: nobody at a demo, internal test or fixture org is charged.
+        AND COALESCE(org_kind, '') NOT IN ('demo', 'internal_test', 'fixture')`, []);
   for (const org of orgs) {
     if (!isReminderDue(org.trial_ends_at, now)) continue;
     out.considered++;

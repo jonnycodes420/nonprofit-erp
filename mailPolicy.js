@@ -30,6 +30,8 @@
 //   4. billing: on before onboarding too, so nobody is charged by surprise.
 //      Jonathan can turn that exception off with MAIL_BILLING_BEFORE_ONBOARDING=0.
 //   5. a demo org sends nothing but account mail to its own logins (as before).
+//   5a. an org whose kind is set to demo, internal_test or fixture (ADMIN-CLEAN,
+//       orgKind.js) gets no billing mail: nobody there is being charged.
 //   6. an UNKNOWN kind on an org's send is treated as donor mail: it waits for
 //      onboarding and the org switch. Mail fails closed.
 //
@@ -74,6 +76,9 @@ function categoryOf(kind) {
   return KIND_CATEGORY[String(kind || "")] || CATEGORY.DONOR;
 }
 
+// ADMIN-CLEAN: kinds Steward never bills (orgKind.js names all five).
+const NOT_BILLED_KINDS = new Set(["demo", "internal_test", "fixture"]);
+
 const waitsForOnboarding = () => process.env.MAIL_WAIT_FOR_ONBOARDING !== "0";
 const billingBeforeOnboarding = () => process.env.MAIL_BILLING_BEFORE_ONBOARDING !== "0";
 
@@ -86,6 +91,7 @@ function orgMailDecision(org, category) {
   if (category === CATEGORY.ACCOUNT) return { send: true, reason: null };
   if (isDemoOrg(org)) return { send: false, reason: "demo_org" };
   if (category === CATEGORY.BILLING) {
+    if (NOT_BILLED_KINDS.has(org.org_kind)) return { send: false, reason: "not_a_customer" };
     if (billingBeforeOnboarding() || org.onboarded_at) return { send: true, reason: null };
     return { send: false, reason: "not_onboarded" };
   }
@@ -101,9 +107,10 @@ const REASON_SENTENCE = {
   not_onboarded: "Email turns on once your donor file is in.",
   org_emails_disabled: "Email is switched off for this organization.",
   demo_org: "This is a demonstration organization, so it never sends email.",
+  not_a_customer: "This organization is a demo, an internal test or a fixture, so Steward sends it no billing mail.",
   org_not_found: "This organization could not be found, so nothing was sent.",
   org_gate_unreadable: "Steward could not check this organization's email setting, so nothing was sent.",
 };
 
 module.exports = { CATEGORY, KIND_CATEGORY, categoryOf, orgMailDecision, waitsForOnboarding, isDemoOrg,
-  billingBeforeOnboarding, REASON_SENTENCE };
+  billingBeforeOnboarding, REASON_SENTENCE, NOT_BILLED_KINDS };

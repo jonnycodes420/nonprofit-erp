@@ -7569,6 +7569,44 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE TRIGGER trg_grant_task_touch AFTER UPDATE ON grants FOR EACH ROW EXECUTE FUNCTION steward_grant_task_touch()`);
   await backfillLinkedTasks();
 
+  // ── ADMIN-CLEAN · WHAT AN ORG IS, AND WHAT IT REALLY PAYS ───────────────
+  // org_kind: customer | prospect_trial | demo | internal_test | fixture.
+  // NULL means nobody has said, and orgKind.js infers it from facts. Only
+  // customer and prospect_trial count in the console's Metrics (orgKind.js).
+  // archived_at hides an org from the console, reversibly; nothing else reads it.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS org_kind TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS org_kind_set_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS org_kind_set_by TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS archived_by TEXT`);
+  // The monthly amount of the org's live Stripe subscription, in cents, as the
+  // billing webhook last read it. MRR is this, never a plan's list price.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mrr_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_mrr_at TIMESTAMPTZ`);
+  // One row per paid Steward invoice (amount_paid > 0). MRR by month and the
+  // "has a real payment" delete guard both read it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS platform_payments (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      stripe_invoice_id TEXT UNIQUE NOT NULL,
+      amount_paid_cents INTEGER NOT NULL,
+      monthly_cents INTEGER NOT NULL,
+      period_start TIMESTAMPTZ,
+      period_end TIMESTAMPTZ,
+      paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_platform_payments_org ON platform_payments (org_id, paid_at)`);
+  // Console settings that belong to Steward, not to any org (the MRR target).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admin_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_by TEXT)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
