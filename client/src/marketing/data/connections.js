@@ -29,7 +29,7 @@ export const CONNECTIONS = [
   ["PayPal", "Gifts come in and are watched for gaps.", "Live"],
   ["Givebutter", "Campaign gifts pulled in.", "Live"],
   ["Square", "Sales and donations read in.", "Live"],
-  ["Xero", "Sending gifts to your books. Connects today; sending is not available yet.", "Coming"],
+  ["Xero", "Each gift sent to your books as one bank transaction when you press Sync. Being verified with a first organization.", "Coming"],
   ["Donorbox", "Gifts and recurring plans pulled in.", "Coming"],
   ["QuickBooks Online", "Direct connection.", "Coming"],
   ["Zapier", "Connect hundreds of other tools.", "Coming"],

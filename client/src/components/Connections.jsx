@@ -22,6 +22,7 @@ import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { InboxConnectCard, useMailbox } from "./InboxConnect";
 import QboSync from "./QboSync";
+import XeroSync from "./XeroSync";
 import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send, BookOpen, FileText, Store,
   KeyRound, Webhook, Zap } from "lucide-react";
 
@@ -153,8 +154,10 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
   // PARITY-2 Part 5: where QuickBooks sync is on, QboSync's own panel (chosen
   // from the company's chart of accounts) is QuickBooks' mapping; this one
   // stays for Xero.
-  const d = loaded && loaded.qboSyncEnabled
-    ? { ...loaded, connections: (loaded.connections || []).filter(c => c.vendor !== "quickbooks") } : loaded;
+  // CONNECT-2: Xero has its own panel too (XeroSync), so it never appears here.
+  const d = loaded
+    ? { ...loaded, connections: (loaded.connections || []).filter(c => c.vendor !== "xero"
+        && !(loaded.qboSyncEnabled && c.vendor === "quickbooks")) } : loaded;
   if (!d || !(d.connections || []).length) return null;
   // FIX-9 Part A.2 — ONE CARD PER ACCOUNTING CONNECTION. QuickBooks appeared
   // twice on this screen: once as this panel's own heading and again as a
@@ -899,6 +902,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
       {(!bare || mappings === "pos") && <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
       {(!bare || mappings === "books") && <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />}
       {mappings === "books" && <QboSync connectionId={onlyIds && onlyIds[0]} isReadOnly={isReadOnly} isAdmin={isAdmin} />}
+      {mappings === "books" && <XeroSync connectionId={onlyIds && onlyIds[0]} isReadOnly={isReadOnly} isAdmin={isAdmin} />}
     </div>
   );
 }

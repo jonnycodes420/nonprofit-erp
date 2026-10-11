@@ -3360,7 +3360,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
   const pending = c.realm_id ? await query(pq.sql, pq.args) : [];
   const pendingCents = pending.reduce((t, r) => t + Number(r.cents), 0);
   res.json({
-    connected: true, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
+    connected: true, id: c.id, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
     tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: !!(org && org.is_demo_org === true),
     mappingReady: gaps.ok, canSync: !!gaps.canSync && !!c.realm_id,
     mappingGaps: gaps.ok ? null : { funds: gaps.funds, bankAccount: gaps.bankAccount, sentence: gaps.sentence },
