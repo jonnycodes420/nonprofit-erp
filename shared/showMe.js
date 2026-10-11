@@ -36,7 +36,11 @@ export const SHOW_KEYS = [
   // AGENT-3: past their own pattern, a grant report due, a membership ending,
   // an auction winner, a giving page, an auction's bidders.
   "closeness", "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner", "gavePage", "auctionBidder",
+  // JOURNEYS-4: event guests, four ways (groups.js eventGuestSql).
+  "eventGuest",
 ];
+const EVENT_GUEST_WORDS = { registered: "registered for an event", attended: "came to an event",
+  no_show: "registered for an event but did not come", brought_guest: "came to an event as somebody's guest and has not given yet" };
 export const CANT_FILTER = "Steward can't filter by that yet";
 
 // A typed question is a "show me" question when it asks for a list.
@@ -197,6 +201,8 @@ export function templateSpec(text, ctx = {}) {
   // who gave more than $5,000 this year" lost "in Marblehead" without a word
   // and the Agent planned for 76 people instead of 9.
   if (rules.gaveOver !== undefined) s = s.replace(new RegExp(`^(.*?)\\b(in |during )?${YEAR}\\b`), (m, pre, i, y) => { const r = yearRange(yearOf(y)); rules.gaveFrom = r[0]; rules.gaveTo = r[1]; return pre + " "; });
+  // JOURNEYS-4: the people who meant to come and did not.
+  take(/\b(?:event )?no[- ]shows?\b|\b(?:who )?registered but (?:didn't|did not|never) (?:come|show up|attend)\b/g, () => { rules.eventGuest = "no_show"; });
   take(/\b(?:who )?(?:came to|attended|were at|went to) (?:an|any) event\b/g, () => { rules.attendedEvent = "any"; });
   take(/\b(?:who )?(?:came to|attended|were at|went to) (?:the |our )?([a-z0-9' -]{3,60}?)(?= (?:in|this|last|and|but|who|with|over|more)\b| $)/g, (m, name) => {
     const ev = matchEvent(name.trim(), ctx.events || []);
@@ -294,6 +300,7 @@ const KEY_HELP = {
   state: "a US state's two-letter postal code (NC for North Carolina): the state on their address",
   attendedEvent: "any, or the id of one of the org's events listed below: came to that event (attended or checked in)",
   registeredEvent: "any, or the id of one of the org's events listed below: registered for that event",
+  eventGuest: "registered, attended, no_show or brought_guest: on an event guest list that way, at any event (no_show: registered but did not come; brought_guest: came as somebody's guest and has not given)",
   member: "current, active, grace, lapsed or any: holds a membership in that state (current is active or in grace)",
   hasPledge: "1: has an open pledge",
   recurring: "1: has a recurring gift running at any interval",
@@ -382,6 +389,7 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaig
     if (raw[k] && !campaigns.some(c => c.id === raw[k])) return { ok: false, refused: "a campaign Steward does not have" };
   // AGENT-3: a page or an auction by kind only; the model is shown no list of them.
   for (const k of ["gavePage", "auctionBidder"]) if (raw[k] && raw[k] !== "any") return { ok: false, refused: k };
+  if (raw.eventGuest && !EVENT_GUEST_WORDS[raw.eventGuest]) return { ok: false, refused: "eventGuest" };
   const meaningful = Object.keys(raw).filter(k => k !== "notDeceased");
   if (!meaningful.length && spec.withAsk) return { ok: false, refused: "who to ask" };
   if (!meaningful.length) return { ok: false, refused: "nothing Steward recognised" };
@@ -427,6 +435,7 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.kind) w.push(rules.kind === "organization" ? "organizations" : "people, not organizations");
   if (rules.attendedEvent) w.push(rules.attendedEvent === "any" ? "came to an event" : `came to ${evName(rules.attendedEvent)}`);
   if (rules.registeredEvent) w.push(rules.registeredEvent === "any" ? "registered for an event" : `registered for ${evName(rules.registeredEvent)}`);
+  if (rules.eventGuest && EVENT_GUEST_WORDS[rules.eventGuest]) w.push(EVENT_GUEST_WORDS[rules.eventGuest]);
   if (rules.member) w.push({ current: "a member now", active: "an active member", grace: "a member in grace", lapsed: "a lapsed member", any: "a member, now or before" }[rules.member] || "a member");
   if (rules.hasPledge) w.push("an open pledge");
   if (rules.recurring) w.push("a recurring gift running");

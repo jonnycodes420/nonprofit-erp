@@ -3725,6 +3725,7 @@ async function main() {
     if (bday) await q(`UPDATE donors SET birth_month=$1, birth_day=$2 WHERE id=$3 AND org_id=$4`, [Number(fri.slice(5, 7)), Number(fri.slice(8, 10)), bday.id, ORG]);
     console.log(`[seed] CAL-1: the week of ${W0} has ${haveMeet + made} meetings, ${haveSteps + stepsMade} next steps, ${Math.max(2, shifts.length)} shifts, a journey step and a birthday`);
   }
+  await require("./seed/journeys4-demo").seedJourneys4(q, ORG, { TODAY });   // JOURNEYS-4: a recent win and a recent no-show, in two journeys
   await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
   await require("./seed/prospect1-prospects").checkKnowsBest(q, ORG);   // FIX-22: a name under who knows them best
 

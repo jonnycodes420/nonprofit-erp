@@ -13,6 +13,7 @@ import {
   sanitizeStepTime, formatStepTime,
 } from "../../../shared/threadShape";
 import { displayDate } from "../../../shared/displayDate";
+import { TASK_OUTCOMES } from "../../../shared/taskShape.js";
 import { NavIcon } from "./NavIcon";
 import { orgTodayCivil } from "../lib/orgToday";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
@@ -51,6 +52,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const [fundId, setFundId] = useState("");
   const [method, setMethod] = useState("");
   const [funds, setFunds] = useState([]);
+  const [outcome, setOutcome] = useState("");   // JOURNEYS-4: how a call or meeting ended, optional
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // PARITY-1 Part B — an optional file, attached once the entry has an id.
@@ -115,6 +117,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         body: JSON.stringify({
           touch, line: line.trim(), date,
           ...((touch === "meeting" || touch === "visit") && place.trim() ? { place: place.trim() } : {}),
+          ...(outcome && ["call_reached", "call_no_answer", "meeting", "visit"].includes(touch) ? { outcome } : {}),
           ...(amountTyped ? { gift: { amount: String(amount).trim(),
                                       fundId: fundId || (defaultFund ? defaultFund.id : null),
                                       paymentMethod: method || undefined } } : {}),
@@ -169,6 +172,20 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
             placeholder="She asked for the impact report." data-testid="conv-line"
             style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
+        {!editing && ["call_reached", "meeting", "visit"].includes(touch) && (
+          <div style={{ marginBottom: 12 }}>
+            <span style={lbl}>How did it end? (optional)</span>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {TASK_OUTCOMES.filter(o => o.key !== "no_answer").map(o => (
+                <button key={o.key} type="button" aria-pressed={outcome === o.key} data-testid={"conv-outcome-" + o.key}
+                  onClick={() => setOutcome(outcome === o.key ? "" : o.key)}
+                  style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 12px", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer", ...activeMark(outcome === o.key, "bottom") }}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {(touch === "meeting" || touch === "visit") && (
           <div style={{ marginBottom: 12 }}>
             <span style={lbl}>Where (optional)</span>

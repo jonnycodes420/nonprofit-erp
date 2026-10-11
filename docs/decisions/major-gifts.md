@@ -56,6 +56,28 @@ Read this when you touch the pipeline, stage or status, moves, opportunities, po
   to server.js at mount time (`registerJourneyEngine`) because `recordGift` lives there and
   requiring crm.js from server.js would be a cycle; a null engine is a no-op, never a throw, so a
   broken journey can never refuse somebody's donation. (THREAD-2a)
+- **Who is never entered, and who an ask skips (JOURNEYS-4).** `maybeStartJourney` refuses a
+  deceased or do-not-contact person by every door, a rule or a button, and names the reason. A
+  journey that ASKS (any step of type `check_in_ask` or with the `the_ask` draft, read from its
+  steps by `journeyAsks`, never a checkbox) skips a do-not-solicit person; a thank-you journey
+  still reaches them (the FIX-35 rule). The "who qualifies" preview (`applySplit`) applies the same
+  two rules, so its count is the number the apply puts in.
+- **Every trigger that reads a row is one definition in `lifecycleRows` (JOURNEYS-4).** The hourly
+  sweep, the 90-day "who would have entered" preview and "apply to who qualifies" all read it, so
+  they cannot disagree. Each row carries an event key (`pledge:<id>`, `auction_won:<item>`,
+  `event_no_show:<event>`, `task_outcome:<task>`, `email_engaged:s|m:<campaign>`, ...) and the
+  unique index on `cultivation_plans.trigger_event` enters a person once per thing. Besides the
+  hour, a successful staff write runs the armed sweep triggers for that org about a second later
+  (`registerJourneyNudge`, mounted beside the audit write in server.js), so recording an auction
+  winner puts the first step on the Thread at once. A no-show is marked `no_show`, or registered
+  for an event that has passed where the door kept a list and never checked in; an event nobody
+  took attendance at has no no-shows. The email trigger reads Steward's own opens
+  (`campaign_recipients.opened_at`) and Mailchimp's (`email_marketing_activity`); an org with
+  neither cannot switch it on (409 `no_open_data`, with the sentence).
+- **Event guests are one definition (JOURNEYS-4).** `groups.js eventGuestSql` (registered, came,
+  no_show, brought_guest) is the Group rule `eventGuest`, a journey audience `eventGuests` and a
+  Show me key. A guest named on somebody's registration is a person record of their own
+  (`personMatch.findOrCreateGuest`, typed "other").
 - **A person can be in several journeys at once; exclusive ones still replace (JOURNEYS-3).**
   One active plan per person PER JOURNEY (`cultivation_plans_one_active_per_journey`). A journey
   marked "Only one of these at a time" (`cultivation_templates.exclusive`) keeps the old rule

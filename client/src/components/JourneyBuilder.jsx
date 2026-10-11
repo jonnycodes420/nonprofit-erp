@@ -346,7 +346,7 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
 
       {/* PARITY-1 Part D — what narrows the trigger: a floor on any gift
           trigger, a fund or a campaign, and the group "joins a group" watches. */}
-      {trigger && (trigger.gift || trigger.needsGroup || trigger.needsHours) && (
+      {trigger && (trigger.gift || trigger.needsGroup || trigger.needsHours || trigger.needsOutcome) && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: 12, marginTop: 12 }}>
           {trigger.gift && !trigger.needsAmount && (
             <label style={{ display: "block" }}>
@@ -386,6 +386,15 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
               </select>
             </label>
           )}
+          {trigger.needsOutcome && (
+            <label style={{ display: "block" }}>
+              <span style={LBL}>When it ends with</span>
+              <select data-testid={tid + "-outcome"} value={tf.outcome || ""} style={INP} onChange={e => setTf("outcome", e.target.value)}>
+                <option value="">Pick an outcome</option>
+                {(data.taskOutcomes || []).map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+              </select>
+            </label>
+          )}
           {trigger.needsGroup && (
             <label style={{ display: "block" }}>
               <span style={LBL}>The group</span>
@@ -400,6 +409,13 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
 
       {trigger && (
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, marginTop: 10 }}>{trigger.sentence}</div>
+      )}
+      {/* JOURNEYS-4 — a trigger with nothing to read says so, and stays off. */}
+      {trigger && trigger.needsOpenData && (data.triggerAvailability || {})[trigger.key] && (
+        <div data-testid={tid + "-availability"} style={{ fontSize: 12.5, lineHeight: 1.55, marginTop: 6,
+             color: data.triggerAvailability[trigger.key].ok ? T.ink3 : T.ink, fontWeight: data.triggerAvailability[trigger.key].ok ? 400 : 600 }}>
+          {data.triggerAvailability[trigger.key].sentence}
+        </div>
       )}
 
       <div style={{ borderTop: "1px solid " + T.bg3, marginTop: 14, paddingTop: 12 }}>
@@ -434,6 +450,16 @@ function TriggerFields({ data, value, onChange, onAskAmount, amountSuggestion, t
               </select>
             </label>
           )}
+          {/* JOURNEYS-4 — event guests are an audience anywhere a list works. */}
+          <label style={{ display: "block" }}>
+            <span style={LBL}>Event guests</span>
+            <select data-testid={tid + "-cond-event-guests"} value={aud.eventGuests || ""} style={INP}
+              onChange={e => setAud("eventGuests", e.target.value)}>
+              <option value="">Anyone</option>
+              {(((data.audienceFilters || []).find(f => f.key === "eventGuests") || {}).options || [])
+                .map(o => <option key={o.key} value={o.key} title={o.sentence}>{o.label}</option>)}
+            </select>
+          </label>
           <label style={{ display: "block" }}>
             <span style={LBL}>Tag</span>
             <select data-testid={tid + "-cond-tag"} value={aud.tag || ""} style={INP}
@@ -1042,7 +1068,10 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, ini
                     </button>
                     <button data-testid="jb-toggle" style={BTN}
                       onClick={async () => {
-                        await apiFetch(`/journeys/${current.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !current.enabled }) });
+                        // JOURNEYS-4: a trigger with nothing to read is refused with its sentence.
+                        setErr("");
+                        try { await apiFetch(`/journeys/${current.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !current.enabled }) }); }
+                        catch (e) { setErr(e?.message || "Could not turn it on."); return; }
                         const d = await load();
                         const fresh = (d?.journeys || []).find(x => x.id === current.id);
                         if (fresh) setMeta(m => ({ ...m, enabled: !!fresh.enabled }));
