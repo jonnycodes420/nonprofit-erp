@@ -135,7 +135,7 @@ async function run({ ok, login, api, q, mockPort }) {
     const zf = await connect("zeffy", { apiKey: "zf_test_key" });
     const sq = await connect("square", { accessToken: "sq_test_token" }, { locationIds: ["LOC_GIVING"] });
     ok("§0 all three connect", gb.id && zf.id && sq.id, JSON.stringify({ gb, zf, sq }));
-    // §5 — Zeffy is set to "Ask me each time".
+    // §5: Zeffy is set to "Ask me each time".
     await api("PATCH", `/giving-sources/${zf.id}`, tok, { defaultFundId: null });
 
     const check = async id => (await api("POST", `/giving-sources/${id}/sync`, tok, {})).body;

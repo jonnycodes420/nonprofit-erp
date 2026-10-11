@@ -66,7 +66,7 @@ function dropNotice(provider, drops) {
   return parts.length ? `${provider} rows not counted as gifts: ${parts.join(", ")}.` : null;
 }
 
-// CONNECT-2 — a row refused for a problem with the ROW itself (no id, a date
+// CONNECT-2: a row refused for a problem with the ROW itself (no id, a date
 // or an amount nobody can read) is LISTED, with the provider's id, so the
 // card can say which one and why. A payout or a pending payment is not a
 // problem and is only counted.

@@ -2061,7 +2061,7 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     // would hide which of the two happened, which is the only thing that
     // matters when the totals look wrong.
     duplicateQuestions: 0, ridesOnTop: 0,
-    // CONNECT-2 — every row that was skipped for a problem with the ROW (not
+    // CONNECT-2: every row that was skipped for a problem with the ROW (not
     // a payout or a pending payment, which are simply not gifts), with its
     // provider id and the reason in words. The card lists these.
     skipped: [],
@@ -2175,7 +2175,7 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
   });
 }
 
-// CONNECT-2 — the refusals that are about a broken ROW, and the words the
+// CONNECT-2: the refusals that are about a broken ROW, and the words the
 // card shows beside each one. Money going out, a pending payment and a
 // refund are not problems and are counted, not listed.
 const SKIP_LISTED_REASONS = {

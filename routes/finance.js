@@ -33,7 +33,7 @@ let sharedComposeTodayMeetings = null;
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
-// CONNECT-2 — the one token seam, published so the giving-source runner
+// CONNECT-2: the one token seam, published so the giving-source runner
 // (server.js syncSource) renews an OAuth Square token the same way.
 let sharedAccessTokenFor = null;
 let sharedProcessXeroAutoSync = null;

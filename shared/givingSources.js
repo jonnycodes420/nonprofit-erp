@@ -75,7 +75,7 @@ export const PROVIDERS = {
       "Open Integrations, then API.",
       "Create a key and copy it.",
     ],
-    // CONNECT-2 — Zeffy's API is labelled beta. Zeffy says every organisation
+    // CONNECT-2: Zeffy's API is labelled beta. Zeffy says every organisation
     // gets it, but an account that does not show API under Integrations yet
     // still has the export, and the import reads it (the Zeffy preset). Said
     // BEFORE the steps, so nobody hunts for a menu that is not there.
