@@ -50,6 +50,7 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
   logins, last sign-in and Stripe state until Jonathan names one with `--archive=`. It never writes the two demo orgs.
 - Test: `tests/adminclean-metrics.test.js` (43). Against main's routes it fails 18, including the demo org's $499 and
   a subscribed org that DELETE removed.
+
 ## FIX-35 · Harborlight shows real drift again, and thank-yous reach everyone (2026-10-11)
 
 - **Thank-you calls include do not solicit.** IMPORT-2 had taken do-not-solicit donors off Calls to make, which is entirely thank-you calls. `callsToMake.js` now keeps off only deceased, do not contact, no phone calls and anonymous. `tests/import2-history.test.js` §8 flipped: the flagged donor who gives is on Calls to make, a no-phone-calls donor is not, and the Top tenth asking starter still leaves the flagged donor out. Red on main's rule, green after.
