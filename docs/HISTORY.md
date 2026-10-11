@@ -25,6 +25,13 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-35 · Harborlight shows real drift again, and thank-yous reach everyone (2026-10-11)
+
+- **Thank-you calls include do not solicit.** IMPORT-2 had taken do-not-solicit donors off Calls to make, which is entirely thank-you calls. `callsToMake.js` now keeps off only deceased, do not contact, no phone calls and anonymous. `tests/import2-history.test.js` §8 flipped: the flagged donor who gives is on Calls to make, a no-phone-calls donor is not, and the Top tenth asking starter still leaves the flagged donor out. Red on main's rule, green after.
+- **Harborlight has three years of conversations.** After IMPORT-2, 1,153 of 1,222 people read "No history yet". The seed now gives everyone without a conversation on file a deterministic history (calls, meetings, emails, notes by Dana and Priya), heavier on major and mid donors and on repeat givers, with the quiet ones' last word six to eighteen months back. Nothing inside 35 days (Drift's handled window) and no call inside 62 days (Calls to make's window). Measured on a fresh local seed: No history yet 1,153 to 358; Home's no-recent-contact rule 7 to 493; Calls to make 103 to 103; Drift 14 high and 37 medium both before and after, with 49 of its 51 now carrying conversation history.
+- **Trap:** FNV-1a over `id:t1`, `id:t2`… draws nearly the same number for each salt, so one person got eight calls in a row. A murmur3 finaliser fixed it. Draw by hash, mix the hash.
+- **Not changed:** Home's day list is ranked and capped at ten, and tasks, unthanked gifts and lapsed donors outrank a no-contact row, so the no-contact rows exist but do not reach the ten. A ranking question for the next brief.
+
 ## IMPORT-2 · Bring their whole history: notes, conversations, tasks and files (2026-10-08)
 
 - **The wizard:** Donors, Import & tools, Bring your notes and history (also from a profile's "No history yet" and the

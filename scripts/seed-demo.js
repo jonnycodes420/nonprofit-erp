@@ -3421,6 +3421,133 @@ async function main() {
     console.log(`[seed] thanked: ${r.length} gifts older than ${cutoff}; ${open} still waiting for a thank-you`);
   }
 
+  // ── FIX-35 · THREE YEARS OF CONVERSATIONS, AND WHO HAS GONE QUIET ──────
+  // After IMPORT-2 taught the profile to say "No history yet", 1,153 of the
+  // demo's people said it, and Home's no-recent-contact list was nearly empty
+  // because a person with no conversation on file is not "gone quiet". A real
+  // office has history: calls, meetings, emails and notes Dana and Priya left
+  // over three years, heavier on the major and mid donors. A share of them
+  // heard from Harborlight often and then nothing for six to eighteen months:
+  // the people Drift exists to find. A clear group still has no history at
+  // all, so "No history yet" shows honestly.
+  //
+  // Only people with no conversation on file yet are given one, so every
+  // authored story above stays exactly as written. Deterministic: each draw is
+  // a hash of the person's id, never Math.random. Two dates are protected:
+  //   · nothing inside 35 days, so no drifting donor reads as handled
+  //     (drift.js HANDLED_SNOOZE_DAYS is 30);
+  //   · no call inside 62 days, so no gift on Calls to make reads as thanked
+  //     (callsToMake.js: a call on or after the gift, gifts up to 60 days old).
+  {
+    console.log("[seed] three years of conversations…");
+    const NOT_HISTORY = ["gift", "payment", "email_open", "stage_change", "activity", "in_kind", "material"];
+    const people = await q(
+      `SELECT d.id, d.assigned_to, LEFT(d.last_gift_date,10) AS last_gift, COALESCE(d.gift_count,0) AS gift_count
+         FROM donors d
+        WHERE d.org_id=$1 AND d.deleted_at IS NULL AND COALESCE(d.kind,'') <> 'anonymous'
+          AND COALESCE(d.total_giving,0) > 0 AND COALESCE(d.deceased,false) = false
+          AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.org_id=d.org_id AND i.donor_id=d.id AND i.type <> ALL($2::text[]))
+        ORDER BY COALESCE(d.total_giving,0) DESC, d.id`, [ORG, NOT_HISTORY]);
+    const draw = (id, salt) => {                       // FNV-1a over id+salt, then mixed, 0..1
+      let h = 2166136261;
+      for (const ch of `${id}:${salt}`) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) >>> 0; }
+      // FNV alone left "t1", "t2", "t3" drawing nearly the same number, so a
+      // person got eight calls in a row. murmur3's finaliser spreads them.
+      h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b) >>> 0; h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35) >>> 0; h ^= h >>> 16;
+      return (h >>> 0) / 4294967296;
+    };
+    const SAID = {
+      call: [
+        "Called to say thank you. Asked how the scholarship students were doing this term.",
+        "Left a voicemail thanking them for the spring gift.",
+        "Good call. Their niece went through the after-school program years ago and still talks about it.",
+        "Called about the showcase. They can't make it this year but asked for photos.",
+        "Quick call to confirm the gift was for the studio fund, not general operating.",
+        "Talked for twenty minutes about the summer intensive. Interested in what it costs per student.",
+        "Called back about the year-end statement. Sent a fresh copy the same day.",
+        "Asked whether we still need mentors on Thursdays. Passed it to the program team.",
+      ],
+      email: [
+        "Sent the fall newsletter with a personal note at the top.",
+        "Emailed photos from the spring showcase.",
+        "Sent the scholarship outcomes letter.",
+        "Replied to their question about matching gifts at work. Sent the form.",
+        "Emailed the invitation to the open studio night.",
+        "Sent a short update on the new teaching artist hired with last year's gifts.",
+        "Emailed a thank-you after the gala, with the table photo.",
+        "Sent the impact report and asked if they would like a tour.",
+      ],
+      meeting: [
+        "Coffee near the office. Wants to hear more about the mentoring program.",
+        "Toured the studio during a Thursday session. Stayed an hour.",
+        "Lunch with the family. They want to fund a student's full year.",
+        "Met at the showcase reception. Introduced them to two of the teaching artists.",
+        "Visited them at home to drop off the annual report. Long talk about why they give.",
+        "Met to review what their gift paid for last year.",
+      ],
+      note: [
+        "Prefers a phone call to email.",
+        "Gives in December most years, usually after the year-end letter.",
+        "Spouse is the one who decides on gifts; include both names on mail.",
+        "Mentioned they are downsizing and may give stock next year.",
+        "Asked to be left off the gala mailing but still wants the newsletter.",
+        "Came to the open studio with two friends who signed up for the newsletter.",
+        "Works at a company with a 1:1 match. Reminded them in the thank-you.",
+        "Handwritten card came back with the reply envelope: keep up the good work.",
+      ],
+    };
+    const TYPES_BIG = [["call", 0.32], ["email", 0.30], ["meeting", 0.16], ["note", 0.22]];
+    const TYPES_SMALL = [["call", 0.25], ["email", 0.45], ["note", 0.30]];
+    const pick = (table, r) => { let acc = 0; for (const [t, w] of table) { acc += w; if (r < acc) return t; } return table[table.length - 1][0]; };
+    const rows = [];
+    let quietN = 0, withN = 0;
+    people.forEach((p, rank) => {
+      const tier = rank < 80 ? "major" : rank < 320 ? "mid" : "small";
+      // A repeat giver is somebody the office has talked to; Drift reads
+      // exactly these people, so its list carries the conversations.
+      const regular = Number(p.gift_count) >= 2;
+      const keep = Math.max({ major: 0.93, mid: 0.80, small: 0.40 }[tier], regular ? 0.9 : 0);
+      if (draw(p.id, "has") >= keep) return;                        // stays "No history yet"
+      withN++;
+      // Gone quiet: the giving went quiet five months ago or more, so the
+      // conversations did too. Their last word from Harborlight is six to
+      // eighteen months back, and before that they heard from it often.
+      const lastGiftAgo = p.last_gift ? orgTime.daysBetween(p.last_gift, TODAY) : 9999;
+      const quiet = lastGiftAgo >= 150 && draw(p.id, "quiet") < (regular || tier !== "small" ? 0.85 : 0.5);
+      if (quiet) quietN++;
+      const lastAgo = quiet ? 180 + Math.floor(draw(p.id, "last") * 360) : 35 + Math.floor(draw(p.id, "last") * 140);
+      const span = quiet ? 360 + Math.floor(draw(p.id, "span") * 180) : 600 + Math.floor(draw(p.id, "span") * 450);
+      const firstAgo = Math.min(1095, lastAgo + span);
+      const n = ({ major: [8, 15], mid: [4, 9], small: [1, 4] })[tier];
+      const count = n[0] + Math.floor(draw(p.id, "n") * (n[1] - n[0] + 1)) + (quiet && tier !== "small" ? 2 : 0);
+      const by = p.assigned_to === "u_b72demo_off" ? ["u_b72demo_off", "Priya Raman"] : ["u_b72demo", "Dana Reyes"];
+      // Touches at least nine days apart, and nobody hears the same sentence
+      // twice: each person walks each list from their own starting point.
+      const used = [];
+      const next = {};
+      for (let k = 0; k < count; k++) {
+        let ago = k === 0 ? lastAgo : lastAgo + Math.floor(draw(p.id, `d${k}`) * (firstAgo - lastAgo + 1));
+        while (used.some(u => Math.abs(u - ago) < 9)) ago += 9;
+        if (ago > 1095) continue;
+        used.push(ago);
+        let type = pick(tier === "small" ? TYPES_SMALL : TYPES_BIG, draw(p.id, `t${k}`));
+        if (type === "call" && ago < 62) type = "email";
+        const said = SAID[type];
+        if (next[type] === undefined) next[type] = Math.floor(draw(p.id, `s${type}`) * said.length);
+        const note = said[next[type]++ % said.length];
+        const who = tier === "major" && draw(p.id, `w${k}`) < 0.3 ? ["u_b72demo", "Dana Reyes"] : by;
+        rows.push([`int_b72_hx${rows.length + 1}`, p.id, type, note, orgTime.addDays(TODAY, -ago), who[0], who[1]]);
+      }
+    });
+    const col = i => rows.map(r => r[i]);
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+             SELECT id, $1, donor_id, type, note, date, created_by, logged_by_name
+               FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[])
+                    AS x(id, donor_id, type, note, date, created_by, logged_by_name)`,
+            [ORG, col(0), col(1), col(2), col(3), col(4), col(5), col(6)]);
+    console.log(`[seed] history: ${rows.length} conversations for ${withN} people, ${quietN} of them gone quiet; ${people.length - withN} still have none`);
+  }
+
   // ENGAGE-1 — every person's two scores, computed LAST, from everything the
   // seed just wrote, by the same function the server runs nightly. It takes
   // `?` placeholders; this adapter numbers them for this client.
