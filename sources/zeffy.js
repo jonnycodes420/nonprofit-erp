@@ -51,33 +51,40 @@ const RATE_LIMIT_BACKOFF_MS = 2000;
 const PAGE_LIMIT = 100;
 // The request parameter that carries a cursor. NOT confirmed against the
 // interactive reference — one constant so the live walk is a one-line fix.
-const CURSOR_PARAM = "cursor";
+const CURSOR_PARAM = "starting_after";   // CONNECT-2: confirmed in Zeffy's spec
 
 // ── THE FIELD TABLE ────────────────────────────────────────────────────────
 // Candidate paths per contract field, most likely first. Dot paths; a path
 // that resolves to null/undefined/"" falls through to the next.
 const FIELD_MAP = {
+  // CONNECT-2: Zeffy's published OpenAPI spec (zeffy.com/api/docs, read 11
+  // October 2026) names these exactly. The first path in each list is the
+  // documented one; the rest are kept from 89c's declared table so a payload
+  // that differs still resolves.
   externalId: ["id", "paymentId", "payment_id"],
-  occurredAt: ["createdAtUtc", "created_at", "createdAt", "date", "paidAt", "paid_at"],
-  amount: ["amount", "totalAmount", "total_amount", "grossAmount", "gross_amount"],
-  // Zeffy takes no platform fee; a "fee" here is the card cost or the donor's
-  // optional tip, and only a real fee figure is ever stored as one.
-  fee: ["feeAmount", "fee_amount", "fees", "processingFee", "processing_fee"],
+  occurredAt: ["created", "createdAtUtc", "created_at", "createdAt", "date"],
+  // "Amount in cents". 89c read this as dollars, which would have put every
+  // Zeffy gift on the record at a hundred times its size.
+  amount: ["amount", "totalAmount", "total_amount"],
+  // Zeffy takes no fee and its payment object has no fee field. Only a real
+  // fee figure is ever stored as one, so this stays 0 on every documented row.
+  fee: ["fee", "feeAmount", "fee_amount"],
   currency: ["currency", "currencyCode", "currency_code"],
-  donorEmail: ["buyer.email", "contact.email", "donor.email", "email", "payer.email"],
-  donorFirst: ["buyer.firstName", "contact.firstName", "donor.firstName", "firstName", "first_name"],
-  donorLast: ["buyer.lastName", "contact.lastName", "donor.lastName", "lastName", "last_name"],
-  donorName: ["buyer.name", "contact.name", "donor.name", "name", "companyName", "company_name"],
-  recurringRef: [
-    "recurringPaymentId", "recurring_payment_id", "subscriptionId", "subscription_id",
-    "recurring.id", "subscription.id",
-  ],
-  recurringFlag: ["isRecurring", "is_recurring", "recurring"],
-  status: ["status", "paymentStatus", "payment_status", "state"],
-  refunded: ["refundedAt", "refunded_at", "isRefunded", "is_refunded", "refund.id", "refundedAmount"],
-  memo: ["campaignName", "campaign.name", "campaign_name", "note", "message", "description"],
+  donorEmail: ["buyer.email", "contact.email", "donor.email", "email"],
+  donorFirst: ["buyer.first_name", "buyer.firstName", "contact.firstName", "first_name", "firstName"],
+  donorLast: ["buyer.last_name", "buyer.lastName", "contact.lastName", "last_name", "lastName"],
+  donorName: ["buyer.company_name", "buyer.name", "contact.name", "name", "companyName"],
+  recurringRef: ["recurring.subscription_id", "recurringPaymentId", "subscriptionId", "subscription_id", "subscription.id"],
+  recurringFlag: ["recurring.is_recurring", "isRecurring", "is_recurring"],
+  status: ["status", "paymentStatus", "payment_status"],
+  // `refund_status` is none | partial | full. Only "full" means the gift is
+  // gone; a partial refund leaves a gift, and is said in the memo.
+  refundStatus: ["refund_status", "refundStatus"],
+  memo: ["description", "campaignName", "campaign.name", "campaign_name", "note"],
   type: ["type", "paymentType", "payment_type"],
 };
+// The unit Zeffy speaks in. One constant, so the live walk can close it.
+const AMOUNT_UNIT = "cents";
 
 const REFUNDED_STATUSES = ["refunded", "reversed", "chargeback", "charged_back"];
 const FAILED_STATUSES = ["failed", "declined", "error", "canceled", "cancelled"];
@@ -88,15 +95,15 @@ function mapPayment(p) {
   const id = String(firstOf(p, FIELD_MAP.externalId) ?? "").trim();
   if (!id) return { drop: "no_external_id" };
 
-  const cents = toCents(firstOf(p, FIELD_MAP.amount));
+  const cents = toCents(firstOf(p, FIELD_MAP.amount), { unit: AMOUNT_UNIT });
   if (cents == null) return { drop: "bad_amount", id };
   // Money out is not a gift, here as everywhere.
   if (cents <= 0) return { drop: "not_money_in", id };
 
   const raw = String(firstOf(p, FIELD_MAP.status) ?? "succeeded").toLowerCase();
-  const refundedMark = firstOf(p, FIELD_MAP.refunded);
+  const refund = String(firstOf(p, FIELD_MAP.refundStatus) ?? "none").toLowerCase();
   let status = "completed";
-  if (REFUNDED_STATUSES.includes(raw) || (refundedMark !== undefined && refundedMark !== false)) status = "refunded";
+  if (REFUNDED_STATUSES.includes(raw) || refund === "full") status = "refunded";
   else if (FAILED_STATUSES.includes(raw)) status = "failed";
   else if (PENDING_STATUSES.includes(raw)) return { drop: "pending", id };
 
@@ -117,7 +124,7 @@ function mapPayment(p) {
   const ref = firstOf(p, FIELD_MAP.recurringRef);
   const recurringRef = ref ? String(ref).trim() : null;
 
-  const feeCents = toCents(firstOf(p, FIELD_MAP.fee));
+  const feeCents = toCents(firstOf(p, FIELD_MAP.fee), { unit: AMOUNT_UNIT });
 
   return {
     row: {
@@ -130,10 +137,14 @@ function mapPayment(p) {
       donorEmail: String(firstOf(p, FIELD_MAP.donorEmail) ?? "").trim(),
       recurringRef,
       status,
-      memo: String(firstOf(p, FIELD_MAP.memo) ?? "").trim(),
+      memo: [String(firstOf(p, FIELD_MAP.memo) ?? "").trim(), refund === "partial" ? "Partly refunded in Zeffy" : ""]
+        .filter(Boolean).join(". "),
     },
   };
 }
+
+const unixOf = (civil, endOfDay) =>
+  Math.floor(Date.parse(`${String(civil).slice(0, 10)}T${endOfDay ? "23:59:59" : "00:00:00"}Z`) / 1000);
 
 // A paced GET. Zeffy's ceiling is 100 a minute; a 429 is retried with backoff
 // rather than surfaced, because the run should slow down, not stop.
@@ -188,8 +199,9 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   const qs = new URLSearchParams({ limit: String(PAGE_LIMIT) });
   // A backfill asks for everything and lets the cursor walk it; an
   // incremental read asks from the last sync, a few days back.
-  if (!backfill && since) qs.set("from", since);
-  if (!backfill && until) qs.set("to", until);
+  // Zeffy filters on `created[gte]` / `created[lte]`, in unix seconds.
+  if (!backfill && since) qs.set("created[gte]", String(unixOf(since, false)));
+  if (!backfill && until) qs.set("created[lte]", String(unixOf(until, true)));
   if (cursor) qs.set(CURSOR_PARAM, cursor);
 
   const res = await pacedGet(http, `${base}/payments?${qs}`, { key, sleep });
@@ -221,7 +233,7 @@ async function testCredentials({ credentials, http, today, sleep, env = process.
     return d.toISOString().slice(0, 10);
   })();
   const qs = new URLSearchParams({ limit: String(PAGE_LIMIT) });
-  if (from) { qs.set("from", from); qs.set("to", today); }
+  if (from) { qs.set("created[gte]", String(unixOf(from, false))); qs.set("created[lte]", String(unixOf(today, true))); }
   const res = await pacedGet(http, `${base}/payments?${qs}`, { key, sleep });
   assertOk(res);
   const money = readItems(res.body).map(mapPayment).filter(o => o.row && o.row.status === "completed").map(o => o.row);

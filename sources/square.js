@@ -247,8 +247,22 @@ async function testCredentials({ credentials, http, today, config, env = process
   };
 }
 
+// CONNECT-2 · THE LOCATIONS, so the organisation can say which take gifts.
+// GET /v2/locations (MERCHANT_PROFILE_READ) answers every location, inactive
+// ones included; the card shows them all and marks which are closed.
+async function listLocations({ credentials, http, env = process.env }) {
+  const token = credentials?.accessToken;
+  if (!token) throw Object.assign(new Error("Square: no access token"), { code: "NO_CREDENTIALS" });
+  const base = String(env.SQUARE_API_BASE || BASE).replace(/\/$/, "");
+  const body = await get(http, `${base}/locations`, token);
+  return (Array.isArray(body?.locations) ? body.locations : []).map(l => ({
+    id: String(l.id || ""), name: String(l.name || l.business_name || l.id || ""),
+    active: String(l.status || "ACTIVE").toUpperCase() === "ACTIVE",
+  })).filter(l => l.id);
+}
+
 module.exports = {
-  key: "square",
+  key: "square", listLocations,
   fetchRows,
   testCredentials,
   mapPayment, gateReason, items, nextCursor,

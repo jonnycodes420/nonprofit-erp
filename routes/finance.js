@@ -33,6 +33,9 @@ let sharedComposeTodayMeetings = null;
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
+// CONNECT-2 — the one token seam, published so the giving-source runner
+// (server.js syncSource) renews an OAuth Square token the same way.
+let sharedAccessTokenFor = null;
 
 function mount(ctx) {
 const {
@@ -1010,6 +1013,8 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
   await run(sql, [sealed, expiresAt, orgId, O.vendorKeyOf(providerKey)]);
   return { ok: true, accessToken: fresh.accessToken, refreshed: true };
 }
+
+sharedAccessTokenFor = accessTokenFor;
 
 // DISCONNECT. Revokes where the provider supports it, deletes the tokens, and
 // keeps every record already imported: what came in is the organisation's own
@@ -4106,6 +4111,10 @@ module.exports = {
   processEmailMarketing: (...args) => {
     if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
     return sharedProcessEmailMarketing(...args);
+  },
+  accessTokenFor: (...args) => {
+    if (!sharedAccessTokenFor) throw new Error("accessTokenFor called before routes/finance mount()");
+    return sharedAccessTokenFor(...args);
   },
   processQboAutoSync: (...args) => {
     if (!sharedProcessQboAutoSync) throw new Error("processQboAutoSync called before routes/finance mount()");

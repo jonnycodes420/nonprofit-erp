@@ -1314,6 +1314,39 @@ app.post("/giving-sources/:id/fund", requireAuth, requireAdmin, checkWriteAccess
   res.json({ ok: true, giftId, fundId: f.id, sentence: `That gift is now in ${f.name}.` });
 }));
 
+// CONNECT-2 · WHICH SQUARE LOCATIONS TAKE GIFTS. Square cannot tell a
+// donation from a lesson fee, so nothing is imported until the organisation
+// names its giving locations; this reads Square's own list of them for the
+// card to choose from. Reads only. A POST because asking may renew the token,
+// and a GET never changes state.
+app.post("/giving-sources/:id/square-locations", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=? AND provider='square' AND status <> 'disconnected'",
+    [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const http = sourceAdapters.readOnlyHttp("square");
+  try {
+    let credentials = {};
+    if (s.credentials_sealed) {
+      const { openBag } = await import("../shared/secretBox.js");
+      credentials = openBag(s.credentials_sealed, { aad: orgId });
+    }
+    if (s.token_expires_at && credentials.refreshToken) {
+      const tok = await require("./finance").accessTokenFor(orgId, s, "square");
+      if (!tok.ok) return res.status(tok.status).json(tok.body);
+      credentials = { ...credentials, accessToken: tok.accessToken };
+    }
+    const locations = await sourceAdapters.getAdapter("square").listLocations({ credentials, http });
+    const chosen = sourceConfig(s).locationIds || [];
+    res.json({ locations: locations.map(l => ({ ...l, chosen: chosen.includes(l.id) })),
+      sentence: chosen.length
+        ? `Steward imports payments from ${chosen.length} of your ${locations.length} Square location${locations.length === 1 ? "" : "s"}.`
+        : "Steward imports nothing from Square until you choose which locations take donations." });
+  } catch (e) {
+    res.status(502).json({ error: "square_unreachable", sentence: sourceErrorSentence(e, s) });
+  }
+}));
+
 // "Check now". Same function the schedule calls - there is no second path.
 app.post("/giving-sources/:id/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);

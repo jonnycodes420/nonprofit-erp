@@ -2075,7 +2075,17 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     try {
       const use = adapter || sourceAdapters.getAdapter(source.provider);
       if (!use) throw Object.assign(new Error(`no adapter for ${source.provider}`), { code: "NO_ADAPTER" });
-      const credentials = await openSourceCredentials(source);
+      let credentials = await openSourceCredentials(source);
+      // CONNECT-2 · A SQUARE CONNECTED BY OAUTH RENEWS ITS TOKEN. Square's
+      // access token lasts thirty days; a source that holds a refresh token
+      // and an expiry asks the one token seam (routes/finance.js
+      // accessTokenFor), which renews five minutes early and re-seals the
+      // bag. A pasted personal token has no expiry and is used as it is.
+      if (source.provider === "square" && source.token_expires_at && credentials.refreshToken) {
+        const tok = await require("./routes/finance").accessTokenFor(orgId, source, "square");
+        if (!tok.ok) throw Object.assign(new Error(tok.body.sentence), { status: 401, step: "auth" });
+        credentials = { ...credentials, accessToken: tok.accessToken };
+      }
       const http = sourceAdapters.readOnlyHttp(source.provider, fetchImpl ? { fetchImpl } : {});
 
       // The window. A backfill walks as far back as the provider allows (the
@@ -2315,6 +2325,22 @@ async function writeSourceRow(orgId, source, row, ctx) {
     `SELECT id FROM gifts WHERE org_id=? AND also_external_ids @> ?::jsonb LIMIT 1`,
     [orgId, JSON.stringify([key])]);
   if (answered) { summary.duplicates++; return; }
+  // CONNECT-2 · THE SAME PAYMENT FROM A FILE. An organisation that brought
+  // its history in from the provider's own export (Zeffy's Payments export,
+  // Givebutter's transactions file) has those gifts under the provider's BARE
+  // id, because the import keeps the id column as it was. The API names the
+  // same payment `zeffy:<id>`. Same bare id and the same amount to the cent is
+  // the same payment: the API's key goes onto the imported gift and nothing
+  // new is written.
+  const [fromFile] = await query(
+    `SELECT id FROM gifts WHERE org_id=? AND external_id=? AND giving_source_id IS NULL
+        AND ROUND(amount * 100) = ? LIMIT 1`, [orgId, String(row.externalId), row.amountCents]);
+  if (fromFile) {
+    await run(`UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+                WHERE id=? AND org_id=?`, [JSON.stringify([key]), fromFile.id, orgId]);
+    summary.duplicates++;
+    return;
+  }
   const [standing] = await query(
     `SELECT id, status FROM gift_duplicate_questions WHERE org_id=? AND external_key=?`, [orgId, key]);
   if (standing && standing.status === "open") { summary.duplicateQuestions++; return; }

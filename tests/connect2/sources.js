@@ -14,6 +14,8 @@
 //   §3  A gift already on file from Steward's own Stripe is never written a
 //       second time when it also arrives through Givebutter: it becomes the
 //       one question to answer.
+//       Nor is a payment already imported from the provider's own export
+//       file (bare id, same amount): the API's key joins that gift.
 //   §4  The donor is matched by email, then by name: a Zeffy row with no
 //       email lands on the one person of that name, not on a new record.
 //   §5  "Ask me each time" is real: a source with no fund leaves the gift
@@ -47,7 +49,8 @@ const GIVEBUTTER = [
   // failed the whole run, and every gift after it was never read.
   { id: "gbt_nul", amount: 30, fee: 1.17, donated: 28.83, status: "succeeded", created_at: ISO,
     first_name: "Nora", last_name: "Vance", email: E("nora"), campaign_title: "Fall\u0000drive" },
-  { id: "gbt_1", amount: 50, fee: 2.05, donated: 47.95, status: "succeeded", created_at: ISO,
+  { id: "gbt_1", amount: 50, fee: 2.05, fee_covered: 0, donated: 50, payout: 47.95, status: "succeeded",
+    transacted_at: ISO, created_at: ISO, transactions: [{ id: "gbt_1a", amount: 50, refunded: null, captured: true }],
     first_name: "Ada", last_name: "Brooks", email: E("ada"), campaign_title: "Fall drive" },
   // A date nobody can read: refused, never guessed.
   { id: "gbt_baddate", amount: 20, fee: 0.88, status: "succeeded", created_at: "10/05/2026",
@@ -56,9 +59,15 @@ const GIVEBUTTER = [
   { id: "gbt_stripe_copy", amount: 75, fee: 2.48, status: "succeeded", created_at: ISO,
     first_name: "Cleo", last_name: "Diaz", email: E("cleo") },
 ];
+// Zeffy's documented payment: `amount` in CENTS, `created` in unix seconds,
+// no fee field. Read as dollars this is a $4,000 gift.
 const ZEFFY = [
-  { id: "zf_1", amount: 40, feeAmount: 0, status: "succeeded", createdAtUtc: ISO,
-    buyer: { firstName: "Harriet", lastName: "Lowe" } },
+  { id: "zf_1", object: "payment", created: Math.floor(Date.parse(ISO) / 1000), amount: 4000, currency: "usd",
+    status: "succeeded", type: "online", refund_status: "none", description: "Fall drive",
+    buyer: { first_name: "Harriet", last_name: "Lowe" }, recurring: { is_recurring: false } },
+  // Already imported from Zeffy's Payments export, under the bare id.
+  { id: "zf_2", object: "payment", created: Math.floor(Date.parse(ISO) / 1000), amount: 3000, currency: "usd",
+    status: "succeeded", refund_status: "none", buyer: { email: E("ines"), first_name: "Ines", last_name: "Park" } },
 ];
 const SQUARE = [
   { id: "sq_1", location_id: "LOC_GIVING", status: "COMPLETED", created_at: ISO, source_type: "CARD",
@@ -79,7 +88,7 @@ function mock(req, res) {
   if (p === "/givebutter/v1/transactions")
     return send(200, { data: GIVEBUTTER, links: { next: null }, meta: { current_page: 1, last_page: 1, per_page: 100 } });
   if (p === "/givebutter/v1/plans") return send(200, { data: [], meta: { last_page: 1 } });
-  if (p === "/zeffy/api/v1/payments") return send(200, { payments: ZEFFY, has_more: false, next_cursor: null });
+  if (p === "/zeffy/api/v1/payments") return send(200, { object: "list", data: ZEFFY, has_more: false, next_cursor: null });
   if (p === "/square/v2/payments") return send(200, { payments: SQUARE });
   return null;
 }
@@ -112,6 +121,11 @@ async function run({ ok, login, api, q, mockPort }) {
                     ('d_c2_harriet',$1,'Harriet Lowe',NULL,'active','steward',0,0,'system:test','test')`, [ORG, E("cleo")]);
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,stripe_payment_id,created_by,created_by_name)
              VALUES ('g_c2_stripe',$1,'d_c2_cleo',75,$2,'cash','pi_c2_cleo','system:test','test')`, [ORG, DAY]);
+    // §3b's gift, as the file import leaves it: the provider's bare id.
+    await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,created_by,created_by_name)
+             VALUES ('d_c2_ines',$1,'Ines Park',$2,'active','steward',30,1,'system:test','test')`, [ORG, E("ines")]);
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,external_id,created_by,created_by_name)
+             VALUES ('g_c2_file',$1,'d_c2_ines',30,$2,'cash','zf_2','system:test','test')`, [ORG, DAY]);
     const tok = await login(ADMIN);
 
     // ── connect all three through the real route ───────────────────────────
@@ -165,6 +179,9 @@ async function run({ ok, login, api, q, mockPort }) {
     const [dq] = await q(`SELECT existing_gift_id, sentence FROM gift_duplicate_questions WHERE org_id=$1 AND external_key='givebutter:gbt_stripe_copy'`, [ORG]);
     ok("§3 it becomes the one question, naming Stripe", dq && dq.existing_gift_id === "g_c2_stripe" && /Stripe/.test(dq.sentence),
       JSON.stringify(dq));
+
+    const [{ n: inesGifts }] = await q(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=$1 AND donor_id='d_c2_ines'`, [ORG]);
+    ok("§3 a Zeffy payment already imported from Zeffy's export is not written again", inesGifts === 1, `Ines has ${inesGifts} gifts`);
 
     // ── §4 email, then name: one record per person ─────────────────────────
     const harriets = await q(`SELECT id FROM donors WHERE org_id=$1 AND lower(name)='harriet lowe' AND deleted_at IS NULL`, [ORG]);
