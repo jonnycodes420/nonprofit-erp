@@ -1554,6 +1554,7 @@ async function runVolunteerReminders(onlyOrgId = null) {
     try {
       const today = orgToday(await orgTz(org.id));                 // ORG_TZ_SEAM_OK
       out.drafted += await draftRemindersFor(org.id, today);
+      out.missYou = (out.missYou || 0) + await draftMissYouFor(org.id, today);   // VOL-PAGE-1: drafts only
     } catch (e) { console.error(`[volunteer] reminder drafts ${org.id}:`, e.message); }
   }
   return out;
@@ -1947,7 +1948,8 @@ app.post("/volunteer-hub/signups/:id/move", requireAuth, checkWriteAccess, wrap(
 // Reminders for tomorrow and thank-yous after a shift land in the one review
 // queue (milestone_drafts), keyed vol:<kind>:<signup>, so a sweep that runs
 // twice writes one draft. This is the list, and the one-tap send.
-const VOL_SOURCES = ["volunteer_reminder", "volunteer_thanks", "volunteer_message"];
+const VOL_SOURCES = ["volunteer_reminder", "volunteer_thanks", "volunteer_message",
+  "volunteer_confirm", "volunteer_miss_you", "volunteer_group_leader"];   // VOL-PAGE-1
 app.get("/volunteer-hub/drafts", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const kind = VOL_SOURCES.includes(String(req.query.kind || "")) ? String(req.query.kind) : null;
@@ -1958,7 +1960,8 @@ app.get("/volunteer-hub/drafts", requireAuth, wrap(async (req, res) => {
         ${kind ? "AND md.source = ?" : ""} ${req.query.slotId ? "AND md.slot_id = ?" : ""}
       ORDER BY md.source, md.created_at, md.id LIMIT 500`,
     [orgId, VOL_SOURCES, ...(kind ? [kind] : []), ...(req.query.slotId ? [String(req.query.slotId)] : [])]);
-  const label = { volunteer_reminder: "Reminder for tomorrow", volunteer_thanks: "Thank-you after a shift", volunteer_message: "Message about a shift" };
+  const label = { volunteer_reminder: "Reminder for tomorrow", volunteer_thanks: "Thank-you after a shift", volunteer_message: "Message about a shift",
+    volunteer_confirm: "Shift confirmation", volunteer_miss_you: "We miss you", volunteer_group_leader: "Group leader confirmation" };
   res.json({ drafts: rows.map(r => ({ id: r.id, personId: r.donor_id, name: r.name, email: r.email || null, subject: r.subject, body: r.body,
       kind: r.source, kindLabel: label[r.source], slotId: r.slot_id, createdAt: r.created_at })),
     sentence: "Steward wrote these. Nothing goes to a volunteer until you press Send, and each one is checked against the mail rules when you do." });
@@ -2009,22 +2012,16 @@ async function draftRemindersFor(orgId, today) {
       WHERE su.org_id=? AND su.status='confirmed' AND s.cancelled_at IS NULL AND s.date = ?
         AND d.deleted_at IS NULL AND d.email IS NOT NULL AND d.email <> ''`, [orgId, tomorrow]);
   if (!due.length) return 0;
-  const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
-  const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  // VOL-PAGE-1: the words are the org's "Volunteer reminder, the day before"
+  // template (EMAIL-1), else Steward's, which say what VOL-1's always did.
   let n = 0;
   for (const r of due) {
-    const first = String(r.name || "").split(/\s+/)[0] || "there";
-    const where = [r.venue, r.location_detail].filter(Boolean).join(", ");
-    const body = `Dear ${first},\n\nA reminder that you are on ${r.shift_name}${r.role_name ? ` (${r.role_name})` : ""} tomorrow, `
-      + `${dayWords(r.date)}, ${VS.timeRangeWords(r.start_time, r.end_time)}.${where ? `\n\nWhere: ${where}.` : ""}\n\n`
-      + `If you cannot make it, reply to this and we will find somebody.\n\nThank you,\n${orgName}`;
-    const ins = await query(
-      `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
-       VALUES (?,?,?,?,?,?,'pending_review','volunteer_reminder',?,?,?)
-       ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
-      ["md_" + uuid().slice(0, 12), orgId, r.person_id, `vol:reminder:${r.id}`, `Tomorrow: ${r.shift_name}`, body, r.slot_id,
-       "system:volunteer-reminders", "Steward, the day before a shift"]);
-    n += ins.length;
+    const id = await draftVolunteerEmail(orgId, "volunteer_reminder", { personId: r.person_id, name: r.name, slotId: r.slot_id, key: `vol:reminder:${r.id}`,
+      values: { shift_name: `${r.shift_name}${r.role_name ? ` (${r.role_name})` : ""}`,
+        shift_when: `${dayWords(r.date)}, ${VS.timeRangeWords(r.start_time, r.end_time)}`,
+        shift_where: [r.venue, r.location_detail].filter(Boolean).join(", ") },
+      by: { id: "system:volunteer-reminders", name: "Steward, the day before a shift" } });
+    if (id) n++;
   }
   return n;
 }
@@ -2374,6 +2371,159 @@ app.post("/volunteer-hub/applications/:id/decline", requireAuth, checkWriteAcces
                                   WHERE id=? AND org_id=? AND status='pending'`, [who.id, who.name, req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true, message: "Declined. Nothing is sent to them; if they should hear from you, that is yours to write." });
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VOL-PAGE-1 · SIGNING UP FROM A VOLUNTEER PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The page's form posts here. It is VOL-1's one path with the page's extras:
+// the person is matched or created once (findOrCreatePerson, WIRE-1 rule 1),
+// the shift is booked by signUp (the only place capacity and the waiting list
+// are decided), the sign-up lands on their timeline, the volunteer journey
+// starts if one is on, and the confirmation and group-leader emails are
+// DRAFTS a person sends. Nothing is sent from here.
+const SYS_VOLPAGE = { id: "system:volunteer-page", name: "The volunteer, from the volunteer page" };
+
+// One drafted volunteer email in the org's own words (their saved template of
+// that kind, else Steward's), on the volunteer drafts list for a person to send.
+async function draftVolunteerEmail(orgId, kind, { personId, name, slotId = null, key, values = {}, by }) {
+  const B = await import("../shared/brandKit.js");
+  const def = B.kindDef(kind);
+  const [tpl] = await query("SELECT subject, body FROM message_templates WHERE org_id=? AND kind=?", [orgId, kind]);
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, org.name || "").catch(() => org.name || "");
+  const signature = [org.receipt_signature_name, org.receipt_signature_title, org.brand_signature_extra].filter(Boolean).join("\n") || orgName;
+  const all = { first_name: String(name || "").split(/\s+/)[0] || "there", full_name: name, org_name: orgName, signature, ...values };
+  const subject = B.renderTemplate((tpl && tpl.subject) || def.subject, all).text;
+  let body = B.renderTemplate((tpl && tpl.body) || def.body, all).text;
+  // A shift with no place written down says nothing about where, rather than
+  // printing an empty "Where:".
+  if (!values.shift_where) body = body.replace(/\n\nWhere: \[shift where\]\.?/g, "");
+  const ins = await query(
+    `INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,slot_id,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,'pending_review',?,?,?,?)
+     ON CONFLICT (org_id, milestone_key) WHERE milestone_key LIKE 'vol:%' DO NOTHING RETURNING id`,
+    ["md_" + uuid().slice(0, 12), orgId, personId, key, subject, body, kind, slotId, by.id, by.name]);
+  return ins.length ? ins[0].id : null;
+}
+
+async function shiftValues(orgId, slotId) {
+  const [s] = await query(
+    `SELECT s.date, s.start_time, s.end_time, COALESCE(s.name, o.name) AS shift_name, COALESCE(s.venue, o.location) AS venue, s.location_detail
+       FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id = s.opportunity_id WHERE s.id=? AND s.org_id=?`, [slotId, orgId]);
+  if (!s) return {};
+  return { shift_name: s.shift_name, shift_when: `${dayWords(s.date)}, ${VS.timeRangeWords(s.start_time, s.end_time)}`,
+    shift_where: [s.venue, s.location_detail].filter(Boolean).join(", ") };
+}
+
+app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(async (req, res) => {
+  await READY;
+  const VP = require("../volunteerPage");
+  const [page] = await query(
+    `SELECT gp.id, gp.org_id, gp.title, gp.published FROM giving_pages gp JOIN orgs o ON o.id = gp.org_id
+      WHERE o.org_slug=? AND gp.slug=? AND gp.page_kind=? AND gp.status='active' AND gp.published IS NOT NULL`,
+    [req.params.orgSlug, req.params.pageSlug, VP.KIND]);
+  if (!page) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
+  // The honeypot: a bot is thanked and nothing is written.
+  if (String(req.body?.website || "").trim()) return res.json({ ok: true, status: null, message: "Thank you." });
+  const b = VP.cleanSignup(req.body || {});
+  if (b.error) return res.status(400).json({ error: "bad_input", message: b.error });
+  const orgId = page.org_id;
+  // A shift must be a published, public shift of this org's.
+  let slot = null;
+  if (b.slotId) {
+    [slot] = await query(
+      `SELECT s.id FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id = s.opportunity_id AND o.org_id = s.org_id
+        WHERE s.id=? AND s.org_id=? AND s.cancelled_at IS NULL AND s.published IS NOT FALSE AND o.is_public = TRUE AND o.archived_at IS NULL`,
+      [b.slotId, orgId]);
+    if (!slot) return res.status(404).json({ error: "slot_gone", message: "That shift is not open any more. Pick another one." });
+  }
+  const out = { created: 0 };
+  const pid = await findOrCreatePerson(orgId, { name: b.name, email: b.email }, SYS_VOLPAGE, out);
+  const matched = out.created === 0;
+  if (b.phone) await run("UPDATE donors SET phone = COALESCE(NULLIF(phone,''), ?) WHERE id=? AND org_id=?", [b.phone, pid, orgId]);
+  // A group is a label on sign-ups (VOL-1), led by the person who signed it up.
+  let groupId = null;
+  if (b.group) {
+    groupId = "vg_" + uuid().slice(0, 10);
+    await run(`INSERT INTO volunteer_groups (id,org_id,name,kind,contact_person_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
+      [groupId, orgId, b.group.name, b.group.kind, pid, SYS_VOLPAGE.id, SYS_VOLPAGE.name]);
+  }
+  let r = { status: null };
+  if (slot) {
+    r = await signUp(orgId, slot.id, pid, { source: "public", groupId, who: SYS_VOLPAGE, note: b.availability || null, roleId: b.roleId });
+    if (r.error) return res.status(409).json({ error: "closed", message: "That shift has just closed. Pick another one." });
+  }
+  const psId = "vps_" + uuid().slice(0, 12);
+  await run(`INSERT INTO volunteer_page_signups (id,org_id,page_id,person_id,signup_id,group_id,group_size,availability,interests,answers,matched,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?::jsonb,?::jsonb,?,?,?)`,
+    [psId, orgId, page.id, pid, r.already ? null : (r.signupId || null), groupId, b.group ? b.group.size : null, b.availability || null,
+     JSON.stringify(b.interests), JSON.stringify(b.answers), matched, SYS_VOLPAGE.id, SYS_VOLPAGE.name]);
+  // On their timeline, in words: what they signed up for and what they told us.
+  const sv = slot ? await shiftValues(orgId, slot.id) : {};
+  const lines = [`Signed up on the volunteer page "${page.title}"`
+    + (slot ? (r.status === "waitlisted" ? ` and joined the waiting list for ${sv.shift_name}, ${sv.shift_when}` : ` for ${sv.shift_name}, ${sv.shift_when}`) : ", asking to hear about the next shift")
+    + (b.group ? `, bringing ${b.group.name} (${b.group.size} people)` : "") + "."];
+  if (b.availability) lines.push(`Availability: ${b.availability}`);
+  if (b.interests.length) lines.push(`Interested in: ${b.interests.join(", ")}`);
+  for (const a of b.answers) lines.push(`${a.q} ${a.a}`);
+  // A second press for a shift they already hold is not a second event on
+  // their record.
+  if (!r.already) {
+    const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+               VALUES (?,?,?,'note',?,?,?,?,?)`,
+      ["int_" + uuid().slice(0, 12), orgId, pid, lines.join("\n"), today, SYS_VOLPAGE.id, SYS_VOLPAGE.name,
+       JSON.stringify({ volunteerPageId: page.id, volunteerPageSignupId: psId })]);
+  }
+  // Drafts, never sends: the confirmation for a booked place, and the group
+  // leader's confirmation for a group.
+  if (slot && r.status === "confirmed" && !r.already) {
+    await draftVolunteerEmail(orgId, "volunteer_confirm", { personId: pid, name: b.name, slotId: slot.id, key: `vol:confirm:${r.signupId}`, values: sv, by: SYS_VOLPAGE });
+  }
+  if (b.group) {
+    await draftVolunteerEmail(orgId, "volunteer_group_leader", { personId: pid, name: b.name, slotId: slot ? slot.id : null, key: `vol:group:${groupId}`,
+      values: { ...sv, group_name: b.group.name, group_size: String(b.group.size) }, by: SYS_VOLPAGE });
+  }
+  maybeStartJourneyFromServer(orgId, pid, "new_volunteer", {})
+    .catch(e => console.error("[journey] volunteer page signup trigger:", e.message));
+  const link = await issueMagicLink(orgId, pid);
+  const [o] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const orgName = await donorFacingOrgName(orgId, (o && o.name) || "").catch(() => (o && o.name) || "");
+  const message = !slot ? `Thank you. ${orgName} will be in touch about the next shift.`
+    : r.already ? `You were already ${r.status === "waitlisted" ? "on the waiting list" : "signed up"} for this one.`
+    : r.status === "waitlisted" ? `That shift is full, so you are on the waiting list. If somebody drops out, the first person waiting takes the place and ${orgName} will be in touch.`
+    : `You are signed up for ${sv.shift_name}, ${sv.shift_when}.`;
+  res.status(201).json({ ok: true, status: r.status || null, position: r.position || null, already: !!r.already, message, link });
+}));
+
+// "WE MISS YOU", DRAFTED: a volunteer whose last shift was 90 days to a year
+// ago and who has nothing coming up. Once per person per quarter; staff send.
+async function draftMissYouFor(orgId, today) {
+  const from = civilAdd(today, -365), to = civilAdd(today, -90);
+  const people = await query(
+    `SELECT d.id, d.name FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.email IS NOT NULL AND d.email <> ''
+        AND (SELECT MAX(v.date) FROM volunteer_shifts v WHERE v.org_id=d.org_id AND v.person_id=d.id) BETWEEN ? AND ?
+        AND NOT EXISTS (SELECT 1 FROM volunteer_signups su JOIN volunteer_slots s ON s.id=su.slot_id
+                         WHERE su.org_id=d.org_id AND su.person_id=d.id AND su.status IN ('confirmed','waitlisted') AND s.date >= ?)`,
+    [orgId, from, to, today]);
+  const quarter = `${today.slice(0, 4)}q${Math.floor((Number(today.slice(5, 7)) - 1) / 3) + 1}`;
+  let n = 0;
+  for (const p of people) {
+    if (await draftVolunteerEmail(orgId, "volunteer_miss_you", { personId: p.id, name: p.name, key: `vol:missyou:${p.id}:${quarter}`,
+      by: { id: "system:volunteer-miss-you", name: "Steward, 90 days after a last shift" } })) n++;
+  }
+  return n;
+}
+
+app.post("/volunteer-hub/drafts/miss-you", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId;
+  const n = await draftMissYouFor(orgId, orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  res.json({ drafted: n, message: n ? `${n} "we miss you" ${n === 1 ? "note" : "notes"} drafted. Nothing is sent until you press Send.`
+    : "Nobody's last shift was 90 days to a year ago, or their notes are already drafted." });
 }));
 
 ctx.registerVolunteerReminders && ctx.registerVolunteerReminders(runVolunteerReminders);

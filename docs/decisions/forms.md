@@ -3,6 +3,15 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **A volunteer page is a `giving_pages` row with `page_kind = 'volunteer'`** (VOL-PAGE-1). It uses the
+  "volunteer" surface of `shared/pageWidgets.js`, so the editor, brand, media library, publish, slug,
+  embed, Pages list and ⌘K are the giving page's. Every read that means "a page that takes gifts" filters
+  `COALESCE(page_kind,'give') = 'give'` (`volunteerPage.js` GIVE_KIND_SQL): the public giving read, the
+  donation paths by page id, the email's giving-page card, the overview counts. Its blocks read roles,
+  shifts and impact from records when the page opens (`volunteerPage.pageData`); a quote shows only with
+  the volunteer's permission and never leaves the server without it. A sign-up goes through VOL-1's
+  `findOrCreatePerson` and `signUp`, lands on the timeline as a note, and its emails are drafts. The
+  figures are `volpage-views|signups|shifts`, with param `vpage`: the drawer route keeps `page` for paging.
 - **A gift started and not finished is a `gift_starts` row, and "finished" is never stored** (PARITY-4).
   Steward's own forms write it (the three-step form's email step, by a page token, and every Checkout
   session for a gift); `checkout.session.expired` marks it. It is open while no gift from that email,

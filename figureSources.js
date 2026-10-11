@@ -534,6 +534,59 @@ const SOURCES = {
       args: [orgId, p.page],
     }),
   },
+  // VOL-PAGE-1 · A VOLUNTEER PAGE'S THREE NUMBERS, each opening its rows.
+  // Views are the page's own daily counter (form_events, the giving pages'
+  // table); a sign-up is each person who sent the page's form; a shift filled
+  // is each place on a shift that a page sign-up holds now.
+  "volpage-views": {
+    label: "Views of this volunteer page",
+    measure: () => "sum",
+    amountKind: "views",
+    params: { vpage: "id:required" },
+    sentence: () => "Every time the published volunteer page was opened, counted once per visit, by day.",
+    sql: (orgId, p) => ({
+      sql: `SELECT fe.id, 'day' AS type, NULL AS donor_id, fe.day AS name, fe.day AS date,
+                   fe.views::numeric AS amount, 'Views that day' AS detail
+              FROM form_events fe WHERE fe.org_id = ? AND fe.form_id = ? AND fe.views > 0`,
+      args: [orgId, p.vpage],
+      order: "date DESC, id",
+    }),
+  },
+  "volpage-signups": {
+    label: "Sign-ups from this volunteer page",
+    measure: () => "count",
+    params: { vpage: "id:required" },
+    sentence: () => "Each time somebody sent this page's sign-up form, with the shift they picked or that they asked to hear about the next one.",
+    sql: (orgId, p) => ({
+      sql: `SELECT ps.id, 'signup' AS type, ps.person_id AS donor_id, d.name, LEFT(ps.created_at::text, 10) AS date, NULL::numeric AS amount,
+                   COALESCE(CASE WHEN su.status = 'waitlisted' THEN 'Waiting list: ' ELSE '' END || COALESCE(sl.name, o.name) || ', ' || sl.date, 'Wants to hear about the next one') AS detail
+              FROM volunteer_page_signups ps JOIN donors d ON d.id = ps.person_id AND d.org_id = ps.org_id
+              LEFT JOIN volunteer_signups su ON su.id = ps.signup_id
+              LEFT JOIN volunteer_slots sl ON sl.id = su.slot_id
+              LEFT JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
+             WHERE ps.org_id = ? AND ps.page_id = ? AND d.deleted_at IS NULL`,
+      args: [orgId, p.vpage],
+      order: "date DESC, id DESC",
+    }),
+  },
+  "volpage-shifts": {
+    label: "Shift places filled from this volunteer page",
+    measure: () => "count",
+    params: { vpage: "id:required" },
+    sentence: () => "Each place on a shift held by somebody who signed up through this page, confirmed or already served; the waiting list is not counted.",
+    sql: (orgId, p) => ({
+      sql: `SELECT su.id, 'shift' AS type, su.person_id AS donor_id, d.name, sl.date, NULL::numeric AS amount,
+                   COALESCE(sl.name, o.name) || COALESCE(' (' || r.name || ')', '') AS detail
+              FROM volunteer_page_signups ps JOIN volunteer_signups su ON su.id = ps.signup_id AND su.org_id = ps.org_id
+              JOIN donors d ON d.id = su.person_id AND d.org_id = su.org_id
+              JOIN volunteer_slots sl ON sl.id = su.slot_id
+              JOIN volunteer_opportunities o ON o.id = sl.opportunity_id
+              LEFT JOIN volunteer_slot_roles r ON r.id = su.role_id
+             WHERE ps.org_id = ? AND ps.page_id = ? AND su.status IN ('confirmed','completed') AND d.deleted_at IS NULL`,
+      args: [orgId, p.vpage],
+      order: "date DESC, id",
+    }),
+  },
   // REPORTS-4 · Members by status: active, grace, lapsed (a PERSON whose
   // latest membership lapsed and who holds none now) or cancelled, and
   // optionally one level. A deleted person is not a member.

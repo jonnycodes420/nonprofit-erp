@@ -279,7 +279,9 @@ export function signStarterBlocks(blocks, { name, title } = {}) {
 // Pure: the routes read the org's current words and hand them in.
 export const PERSON_PREFIX = "person_";
 export const CAMPAIGN_PREFIX = "campaign_";
-export const PERSON_KINDS = ["thanks_monthly", "receipt", "year_end", "event_followup", "volunteer_thanks"];
+export const PERSON_KINDS = ["thanks_monthly", "receipt", "year_end", "event_followup", "volunteer_thanks",
+  // VOL-PAGE-1: the volunteer emails, on the same editor and brand.
+  "volunteer_confirm", "volunteer_reminder", "volunteer_miss_you", "volunteer_group_leader"];
 // The emails whose tax lines are required. Those lines are one locked block:
 // the editor shows it, its words come from the brand kit, and a save without it
 // is refused.

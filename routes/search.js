@@ -117,7 +117,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
         WHERE org_id = ? AND (name ILIKE ? ${E} OR location ILIKE ? ${E})
         ORDER BY date DESC NULLS LAST, id LIMIT ${L}`, args: [orgId, p, p] },
     pages: {
-      sql: `SELECT id, title, slug, status FROM giving_pages
+      sql: `SELECT id, title, slug, status, COALESCE(page_kind,'give') AS page_kind FROM giving_pages
         WHERE org_id = ? AND (title ILIKE ? ${E} OR slug ILIKE ? ${E})
         ORDER BY updated_at DESC NULLS LAST, id LIMIT ${L}`, args: [orgId, p, p] },
     p2p: {
@@ -304,7 +304,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
       fundraising: Number(c.goal_amount) > 0 });
   }
   for (const e of r.events) results.push({ kind: "event", id: e.id, title: e.name, date: day10(e.date), location: e.location || "" });
-  for (const g of r.pages) results.push({ kind: "page", id: g.id, title: g.title || g.slug, slug: g.slug || "", status: g.status || null });
+  for (const g of r.pages) results.push({ kind: "page", id: g.id, title: g.title || g.slug, slug: g.slug || "", status: g.status || null, page_kind: g.page_kind || "give" });
   for (const f of r.p2p) results.push({ kind: "p2p", id: f.id, title: f.name, pageTitle: f.page_title || "", status: f.status || null });
   for (const g of r.grants) results.push({ kind: "grant", id: g.id, title: g.funder, program: g.program || "", amount: Number(g.amount) || 0, status: g.status || null });
   for (const a of r.auctions) results.push({ kind: "auction", id: a.id, title: a.title, status: a.status || null, itemHits: a.item_hits || 0 });

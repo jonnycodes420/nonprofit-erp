@@ -2763,7 +2763,7 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     query(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND deleted_at IS NULL AND is_sample IS NOT TRUE`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`, [orgId]),
-    query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active'`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active' AND COALESCE(page_kind,'give') = 'give'`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
@@ -19791,7 +19791,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     query(
       `SELECT gp.id, gp.title, gp.slug, gp.goal_amount, gp.status,
               COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised
-         FROM giving_pages gp WHERE gp.org_id = ? ORDER BY gp.created_at DESC`,
+         FROM giving_pages gp WHERE gp.org_id = ? AND COALESCE(gp.page_kind,'give') = 'give' ORDER BY gp.created_at DESC`,
       [orgId]
     ),
     query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, l12Start, l12End]),
@@ -20507,6 +20507,35 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
     levels: out });
 }));
 
+// ── VOL-PAGE-1 · THE PUBLIC VOLUNTEER PAGE ─────────────────────────────────
+// The giving page's read for a page of kind volunteer: the same brand, the
+// same widget resolver, plus everything the volunteer blocks read (roles,
+// shifts with filled of needed, impact numbers), all from records. A GET, so
+// it writes nothing: the page counts its own view with POST /forms/:id/event.
+// A quote without its volunteer's permission never leaves the server.
+app.get("/org/:orgSlug/volunteer-page/:pageSlug/public", donateLimiter, wrap(async (req, res) => {
+  const VP = require("../volunteerPage");
+  const [org] = await query(`SELECT o.id, o.name, o.org_slug, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`,
+    [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
+  const [page] = await query(`SELECT id, title, slug, published FROM giving_pages
+     WHERE org_id = ? AND slug = ? AND page_kind = ? AND status = 'active' AND published IS NOT NULL`, [org.id, req.params.pageSlug, VP.KIND]);
+  if (!page || !Array.isArray(page.published) || !page.published.length) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
+  const widgets = (await resolveWidgetsPublic(org, page.published, { pageId: page.id, today: orgToday(await orgTz(org.id)) }))   // ORG_TZ_SEAM_OK
+    .filter(w => w.type !== "volquote" || (w.permission === true && w.text && w.name));
+  const data = await VP.pageData(org.id, page.published);
+  res.json({ org: { id: org.id, name: String(org.display_name || "").trim() || org.name, slug: org.org_slug },
+    theme: giveThemePayload(org), page: { id: page.id, title: page.title, slug: page.slug }, widgets, data });
+}));
+
+// The same data for the editor's live preview, before anything is published.
+app.get("/giving-pages/:id/volunteer-data", requireAuth, wrap(async (req, res) => {
+  const VP = require("../volunteerPage");
+  const [page] = await query("SELECT id, draft FROM giving_pages WHERE id = ? AND org_id = ? AND page_kind = ?", [req.params.id, req.user.orgId, VP.KIND]);
+  if (!page) return res.status(404).json({ error: "not_found" });
+  res.json(await VP.pageData(req.user.orgId, page.draft || []));
+}));
+
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents,
           o.form_upsell_monthly_cents,
@@ -20538,7 +20567,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
      FROM giving_pages gp
      LEFT JOIN fin_funds f ON f.id = gp.fund_id
      LEFT JOIN campaigns c ON c.id = gp.campaign_id AND c.org_id = gp.org_id
-     WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active'`,
+     WHERE gp.org_id = ? AND gp.slug = ? AND gp.status = 'active' AND COALESCE(gp.page_kind,'give') = 'give'`,
     [org.id, req.params.pageSlug]
   );
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });

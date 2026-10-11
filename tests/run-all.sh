@@ -189,6 +189,7 @@ CORE=(
   tasks2-thread
   fix34-thanks
   groups2-starters
+  volpage1-signup
   search2-everything
   reports4-foot
   reports5-import

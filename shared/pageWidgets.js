@@ -19,18 +19,21 @@
 // EMAIL-1: email is the third surface. The blocks a page and an email share
 // are the same widgets (same keys, same fields, same editor options); the few
 // only an email needs are listed below with surfaces ["email"].
-export const SURFACES = ["portal", "give", "email"];
+// VOL-PAGE-1: the volunteer page is the fourth. It is a giving_pages row with
+// page_kind 'volunteer', built in the same editor on the same brand, so it
+// takes the page blocks that make sense to a volunteer plus its own below.
+export const SURFACES = ["portal", "give", "email", "volunteer"];
 
 // `full` = spans both grid tracks on a wide screen (the old FULL_WIDTH_WIDGETS).
 // `defaults` = what the editor inserts. Both were separate literals before.
 export const WIDGETS = [
-  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give", "email"], full: true,
+  { key: "hero",     label: "Hero",             hint: "Big photo + headline",        surfaces: ["portal", "give", "email", "volunteer"], full: true,
     defaults: { heading: "", sub: "", image: null, alt: "", size: "standard" } },
-  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give", "email"], full: true,
+  { key: "richtext", label: "Rich text",        hint: "Paragraphs, headings, lists", surfaces: ["portal", "give", "email", "volunteer"], full: true,
     defaults: { blocks: [{ type: "p", text: "Write something in your own words." }] } },
-  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give", "email"], full: false,
+  { key: "image",    label: "Image + caption",  hint: "One photo",                   surfaces: ["portal", "give", "email", "volunteer"], full: false,
     defaults: { image: null, alt: "", caption: "" } },
-  { key: "gallery",  label: "Gallery",          hint: "Up to 8 photos",              surfaces: ["portal", "give"], full: false,
+  { key: "gallery",  label: "Gallery",          hint: "Up to 8 photos",              surfaces: ["portal", "give", "volunteer"], full: false,
     defaults: { images: [] } },
   { key: "stats",    label: "Stats",            hint: "Your own numbers",            surfaces: ["portal", "give", "email"], full: false,
     defaults: { items: [{ value: "", label: "" }] } },
@@ -42,11 +45,11 @@ export const WIDGETS = [
     defaults: { heading: "What your giving made possible" } },
   { key: "quote",    label: "Quote",            hint: "A voice from your community", surfaces: ["portal", "give", "email"], full: false,
     defaults: { text: "", attribution: "" } },
-  { key: "staff",    label: "People & contact", hint: "Faces + a way to reach you",  surfaces: ["portal", "give"], full: false,
+  { key: "staff",    label: "People & contact", hint: "Faces + a way to reach you",  surfaces: ["portal", "give", "volunteer"], full: false,
     defaults: { members: [{ name: "", role: "", photo: null }], contactEmail: "" } },
-  { key: "faq",      label: "FAQ",              hint: "Questions donors ask",        surfaces: ["portal", "give"], full: false,
+  { key: "faq",      label: "FAQ",              hint: "Questions donors ask",        surfaces: ["portal", "give", "volunteer"], full: false,
     defaults: { items: [{ q: "", a: "" }] } },
-  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give", "email"], full: true,
+  { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give", "email", "volunteer"], full: true,
     defaults: { url: "", caption: "" } },
 
   // ── EMAIL-1 · WHAT ONLY AN EMAIL NEEDS ───────────────────────────────────
@@ -93,6 +96,30 @@ export const WIDGETS = [
   // claim about somebody else's money.
   { key: "matchchallenge", label: "Matching challenge", hint: "Shown only when you have entered one", surfaces: ["give"], full: false,
     defaults: {} },
+
+  // ── VOL-PAGE-1 · WHAT ONLY A VOLUNTEER PAGE NEEDS ────────────────────────
+  // Every number and every place on these blocks is read from the volunteer
+  // programme when the page is opened: roles, shifts, spots, hours and the
+  // roster are never typed in, so the page cannot contradict Volunteers.
+  { key: "opportunities", label: "Opportunities", hint: "A card for each role, with Sign up", surfaces: ["volunteer"], full: true,
+    defaults: { heading: "Ways to help", opportunityIds: [] } },
+  { key: "shiftpicker", label: "Shift picker", hint: "Upcoming shifts with open spots", surfaces: ["volunteer"], full: true,
+    defaults: { heading: "Pick a shift", opportunityIds: [] } },
+  // The sign-up form creates or matches ONE person (WIRE-1 rule 1) through
+  // the same path as VOL-1's sign-up, and the org adds its own questions.
+  { key: "volsignup", label: "Sign-up form", hint: "Name, email, phone, availability, interests", surfaces: ["volunteer"], full: true,
+    defaults: { heading: "Sign up to help", askPhone: true, askAvailability: true, askInterests: true, questions: [] } },
+  // What VOL-1 already asks before a first shift, read from each role.
+  { key: "volwaiver", label: "Waiver and background check", hint: "What each role asks for first", surfaces: ["volunteer"], full: false,
+    defaults: { heading: "Before your first shift" } },
+  { key: "volimpact", label: "Impact numbers", hint: "Hours served and volunteers, from your records", surfaces: ["volunteer"], full: false,
+    defaults: { heading: "What our volunteers did this year" } },
+  // A quote shows only with the volunteer's permission ticked. Templates carry
+  // none: words in a volunteer's mouth are theirs to give.
+  { key: "volquote", label: "Volunteer quote", hint: "A real volunteer's words, with permission", surfaces: ["volunteer"], full: false,
+    defaults: { text: "", name: "", permission: false } },
+  { key: "groupsignup", label: "Group sign-up", hint: "For churches, schools and companies", surfaces: ["volunteer"], full: false,
+    defaults: { heading: "Bringing a group?", text: "Churches, schools and companies are welcome. Tell us about your group and we will be in touch to plan the day together." } },
 
   // PORTAL ONLY, and each for a reason a giving page cannot satisfy.
   //

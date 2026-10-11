@@ -66,7 +66,10 @@ const SEARCH_KINDS = [
       sub:[c.type?c.type.charAt(0).toUpperCase()+c.type.slice(1):null, c.status].filter(Boolean).join(" · "),
       ...(c.fundraising ? { tab:"fundraising", opts:{frSection:"campaigns",campaignId:c.id} } : { tab:"communications", opts:{campaignId:c.id} }) }) },
   { kind:"event", group:"Events", row:e=>({ sub:[e.date,e.location].filter(Boolean).join(" · "), tab:"events", opts:{eventId:e.id} }) },
-  { kind:"page", group:"Giving pages", row:g=>({ sub:g.slug?"/"+g.slug:"", tab:"fundraising", opts:{frSection:"pages"} }) },
+  // VOL-PAGE-1: a volunteer page is a page too, and opens in its editor.
+  { kind:"page", group:"Giving pages", row:g=>(g.page_kind==="volunteer"
+    ? { sub:"Volunteer page"+(g.slug?" · /"+g.slug:""), tab:"fundraising", opts:{frSection:"pages"}, url:"/portal-editor?page="+encodeURIComponent(g.id) }
+    : { sub:g.slug?"/"+g.slug:"", tab:"fundraising", opts:{frSection:"pages"} }) },
   { kind:"p2p", group:"Peer-to-peer pages", row:f=>({ sub:f.pageTitle, tab:"fundraising", opts:{frSection:"p2p"} }) },
   { kind:"grant", group:"Grants", row:g=>({ sub:[g.program,g.amount?fmtMoney(g.amount):null].filter(Boolean).join(" · "), tab:"grants", opts:{grantId:g.id} }) },
   { kind:"auction", group:"Auctions", row:a=>({ sub:[a.status, a.itemHits?`${a.itemHits} matching ${a.itemHits===1?"item":"items"}`:null].filter(Boolean).join(" · "), tab:"fundraising", opts:{frSection:"auctions"} }) },
@@ -192,7 +195,8 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
       kinds.forEach(k=>(((all?exp:byKind)[k.kind])||[]).forEach(r=>{
         const row = k.row(r);
         rows.push({ group:g, key:k.kind+"_"+r.id, title:r.title, ...row,
-          onSelect:()=>onNavigate(row.tab,row.opts), href:row.link===false?undefined:tabHref(row.tab,row.opts) });
+          onSelect:row.url?()=>window.location.assign(row.url):()=>onNavigate(row.tab,row.opts),
+          href:row.url||(row.link===false?undefined:tabHref(row.tab,row.opts)) });
       }));
       const shown = all ? rows : rows.slice(0, GROUP_TOP);
       out.push(...shown);
