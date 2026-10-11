@@ -2468,11 +2468,15 @@ app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(as
   if (b.availability) lines.push(`Availability: ${b.availability}`);
   if (b.interests.length) lines.push(`Interested in: ${b.interests.join(", ")}`);
   for (const a of b.answers) lines.push(`${a.q} ${a.a}`);
-  const today = orgToday(await orgTz(orgId));                     // ORG_TZ_SEAM_OK
-  await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
-             VALUES (?,?,?,'note',?,?,?,?,?)`,
-    ["int_" + uuid().slice(0, 12), orgId, pid, lines.join("\n"), today, SYS_VOLPAGE.id, SYS_VOLPAGE.name,
-     JSON.stringify({ volunteerPageId: page.id, volunteerPageSignupId: psId })]);
+  // A second press for a shift they already hold is not a second event on
+  // their record.
+  if (!r.already) {
+    const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+               VALUES (?,?,?,'note',?,?,?,?,?)`,
+      ["int_" + uuid().slice(0, 12), orgId, pid, lines.join("\n"), today, SYS_VOLPAGE.id, SYS_VOLPAGE.name,
+       JSON.stringify({ volunteerPageId: page.id, volunteerPageSignupId: psId })]);
+  }
   // Drafts, never sends: the confirmation for a booked place, and the group
   // leader's confirmation for a group.
   if (slot && r.status === "confirmed" && !r.already) {

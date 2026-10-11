@@ -83,7 +83,7 @@ const { ok, summary, api, q, closeDb } = require("./helpers");
   // ── §4 · the timeline, the draft, the figures ────────────────────────────
   console.log("\n§4 where it lands");
   const tl = await q(`SELECT note FROM interactions WHERE org_id=$1 AND donor_id=$2 AND note LIKE 'Signed up on the volunteer page%'`, [orgId, newRows.id]);
-  ok("§4 the sign-up is on the person's timeline, with what they told us", tl.length >= 1 && /Help at the food bank/.test(tl[0].note) && /Availability: Saturdays/.test(tl[0].note), tl);
+  ok("§4 the sign-up is on the person's timeline once, with what they told us", tl.length === 1 && /Help at the food bank/.test(tl[0].note) && /Availability: Saturdays/.test(tl[0].note), tl);
   const [dr] = await q(`SELECT COUNT(*)::int n, bool_and(status='pending_review') pending FROM milestone_drafts WHERE org_id=$1 AND source='volunteer_confirm'`, [orgId]);
   ok("§4 the confirmation is a draft waiting for a person, not a send", dr.n === 2 && dr.pending === true, dr);
   const list = await api("GET", "/giving-pages", tok);
