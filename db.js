@@ -7480,6 +7480,9 @@ async function runSchemaInit(pool) {
     await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS ${col}`);
   }
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_org_assignee ON tasks (org_id, assigned_to) WHERE voided_at IS NULL`);
+  // JOURNEYS-4 · HOW A CALL OR A MEETING ENDED, as one of the outcomes in
+  // shared/journeyShape.js TASK_OUTCOMES. A task_outcome journey watches it.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS outcome TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_milestone ON tasks (milestone_id, link_kind) WHERE milestone_id IS NOT NULL`);
   // The heads-up before a proposal, LOI or report: days ahead, 0 = off.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_headsup_days INTEGER DEFAULT 14`);

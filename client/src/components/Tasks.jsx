@@ -7,7 +7,7 @@ import { DonorLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
-import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
+import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -459,6 +459,7 @@ export function FinishSheet({ t, today, onClose, onDone }) {
   const [reached, setReached] = useState(true);
   const [next, setNext] = useState({ label: "", due: addDays(today, 7) });
   const [none, setNone] = useState(false);
+  const [outcome, setOutcome] = useState("");   // JOURNEYS-4: how it ended, optional
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const isCall = t.kind === "call";
@@ -475,7 +476,8 @@ export function FinishSheet({ t, today, onClose, onDone }) {
       }
       const touch = isCall ? (reached ? "call_reached" : "call_no_answer") : "meeting";
       const c = await apiFetch(`/donors/${t.donor_id}/conversations`, { method: "POST", body: JSON.stringify({
-        touch, line: line.trim(), nextStep: none ? { skipped: true } : { type: "follow_up", label: next.label.trim(), due: next.due } }) });
+        touch, line: line.trim(), ...(outcome ? { outcome } : {}),
+        nextStep: none ? { skipped: true } : { type: "follow_up", label: next.label.trim(), due: next.due } }) });
       const row = await apiFetch(`/tasks/${t.id}/complete`, { method: "POST", body: JSON.stringify({ done: true, interactionId: c.interactionId }) });
       await onDone(row);
     } catch (e) { setErr((e && e.sentence) || errorMessage(e, "That did not save.")); }
@@ -497,6 +499,16 @@ export function FinishSheet({ t, today, onClose, onDone }) {
         {!emailed && <label style={lbl}>How did it go?
           <textarea autoFocus value={line} onChange={e => setLine(e.target.value)} rows={2} data-testid="finish-line" placeholder="She will bring two tables to the gala." style={{ ...inp, resize: "vertical" }} />
         </label>}
+        {!emailed && <div style={lbl}>How did it end? <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(optional)</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {TASK_OUTCOMES.map(o => (
+              <button key={o.key} type="button" aria-pressed={outcome === o.key} data-testid={"finish-outcome-" + o.key}
+                onClick={() => setOutcome(outcome === o.key ? "" : o.key)}
+                style={{ ...outlineBtn, fontSize: 12, padding: "5px 10px", textTransform: "none", letterSpacing: 0,
+                         background: outcome === o.key ? T.bg2 : T.white, borderColor: outcome === o.key ? T.greenDk : T.bg3 }}>{o.label}</button>
+            ))}
+          </div>
+        </div>}
         <div style={lbl}>What's next?
           {!none && <div style={{ display: "flex", gap: 8 }}>
             <input value={next.label} onChange={e => setNext({ ...next, label: e.target.value })} data-testid="finish-next" placeholder="Send the table details" style={{ ...inp, flex: 2 }} />

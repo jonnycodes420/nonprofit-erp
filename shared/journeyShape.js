@@ -29,6 +29,7 @@
 import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
+import { TASK_OUTCOMES, TASK_OUTCOME_KEYS, taskOutcomeLabel } from "./taskShape.js";
 
 // ── THE TRIGGERS ──────────────────────────────────────────────────────────
 // Eight, and each one is an event Steward already observes. `needsAmount` marks
@@ -97,9 +98,70 @@ export const TRIGGERS = [
     sentence: "Starts on the funder when one of their grants is marked awarded, checked every hour. Once per grant." },
   { key: "p2p_goal", label: "Their fundraising page reaches its goal", sweep: true,
     sentence: "Starts on the fundraiser when their peer-to-peer page reaches its goal, checked every hour. Once per page." },
+  // JOURNEYS-4 — everything else a donor does in Steward. Each is checked every
+  // hour by the journey sweep AND at once after your team records something,
+  // and each enrols a person once per thing: this pledge, this instalment,
+  // this page, this item, this event, this task, this email.
+  { key: "pledge_made", label: "They make a pledge", sweep: true,
+    sentence: "Starts when somebody makes a pledge. Once per pledge." },
+  { key: "pledge_late", label: "A pledge instalment is 14 days late", sweep: true,
+    sentence: "Starts when an instalment on somebody's pledge is 14 days past its due date and still unpaid. Once per instalment." },
+  { key: "pledge_paid", label: "They pay a pledge in full", sweep: true,
+    sentence: "Starts when somebody's pledge is paid in full. Once per pledge." },
+  { key: "page_first_gift", label: "They give through a giving page for the first time", sweep: true,
+    sentence: "Starts on somebody's first gift through any of your giving pages. Once per person." },
+  { key: "p2p_created", label: "They create a fundraising page", sweep: true,
+    sentence: "Starts when somebody makes their own peer-to-peer page. Once per page." },
+  { key: "auction_won", label: "They win an auction item", sweep: true,
+    sentence: "Starts on the winner when an auction item they bid highest on closes. Once per item." },
+  { key: "auction_lost", label: "They bid but don't win", sweep: true,
+    sentence: "Starts when an auction closes and somebody who bid in it won nothing. Once per auction." },
+  { key: "auction_donated", label: "They donate an auction item", sweep: true,
+    sentence: "Starts when an item somebody gave is added to an auction. Once per item." },
+  { key: "event_registered", label: "They register for an event", sweep: true,
+    sentence: "Starts when somebody registers for one of your events. Once per event." },
+  { key: "event_no_show", label: "They register but don't come", sweep: true,
+    sentence: "Starts when somebody registered for an event is marked as not coming, or the event has passed and they were never checked in. Once per event." },
+  { key: "task_outcome", label: "A call or meeting ends with an outcome you pick", sweep: true, needsOutcome: true,
+    sentence: "Starts when a call or meeting task with somebody is finished with the outcome you pick. Once per task." },
+  { key: "email_engaged_no_gift", label: "They open or click an appeal but don't give", sweep: true, needsOpenData: true,
+    sentence: "Starts 14 days after somebody opened or clicked an appeal, from Steward or Mailchimp, if they have not given since. Once per appeal." },
   { key: "by_hand",        label: "You put them in it yourself",
     sentence: "Never starts on its own — you choose who goes in it." },
 ];
+// JOURNEYS-4 — attended_event is also read by the sweep (a check-in at the
+// door that no route announced), and so is first_event.
+for (const t of TRIGGERS) if (t.key === "attended_event") { t.sweep = true;
+  t.sentence = "Starts when somebody is marked as having attended an event or is checked in at the door. Once per event."; }
+
+// JOURNEYS-4 · THE OUTCOMES A CALL OR A MEETING CAN END WITH live with the
+// task (shared/taskShape.js); a task_outcome journey watches one of them.
+export { TASK_OUTCOMES, TASK_OUTCOME_KEYS, taskOutcomeLabel };
+
+// JOURNEYS-4 · THE EMAIL TRIGGER NEEDS OPENS. An org with no open or click on
+// file, from Steward's own appeals or from Mailchimp, cannot have this trigger
+// on: there is nothing for it to read, and a journey that can never start is a
+// promise the screen would be making falsely.
+export const EMAIL_WAIT_DAYS = 14;
+export function emailTriggerAvailability({ stewardOpens = 0, mailchimpOpens = 0 } = {}) {
+  const s = Number(stewardOpens) || 0, m = Number(mailchimpOpens) || 0;
+  if (s + m > 0) {
+    const from = [s ? "Steward's own appeals" : null, m ? "Mailchimp" : null].filter(Boolean).join(" and ");
+    return { ok: true, sentence: `Reads opens and clicks from ${from}.` };
+  }
+  return { ok: false, sentence: "Your organization has no email opens or clicks on file yet, from Steward or Mailchimp, so this trigger stays off until there are some." };
+}
+
+// JOURNEYS-4 · DOES THIS JOURNEY ASK FOR MONEY? Read from its steps, never a
+// box somebody ticks: a step that is the ask, or carries the ask's draft. A
+// journey that asks skips anybody marked do not solicit; a thank-you journey
+// still reaches them (the FIX-35 rule: do not solicit means no asks).
+export const ASK_STEP_TYPES = ["check_in_ask"];
+export const ASK_DRAFTS = ["the_ask"];
+export function journeyAsks(steps = []) {
+  return (Array.isArray(steps) ? steps : []).some(s =>
+    ASK_STEP_TYPES.includes(s && (s.type || s.step_type)) || ASK_DRAFTS.includes(s && (s.draft || s.draft_kind)));
+}
 // The triggers a gift fires. Each can be narrowed by an amount, a fund and a
 // campaign (gift_over needs the amount; the rest take it if you set one).
 const GIFT_ORIGINALS = ["first_gift", "gift_over", "lapsed_return"];
@@ -171,7 +233,23 @@ export const AUDIENCE_FILTERS = [
   // PARITY-1 Part D — a Group is an audience: only the people in it right now.
   { key: "groupId",       kind: "group", label: "Group",
     sentence: "Only people in the group you pick, at the moment the trigger happens." },
+  // JOURNEYS-4 — event guests are an audience anywhere a list works.
+  { key: "eventGuests",   kind: "choice", label: "Event guests",
+    sentence: "Only people on one of your event guest lists, in the way you pick." },
 ];
+// JOURNEYS-4 · THE FOUR WAYS SOMEBODY IS AN EVENT GUEST. One definition, read
+// by the journey audience here and the Group rule in groups.js (eventGuest).
+export const EVENT_GUEST_CHOICES = [
+  { key: "registered", label: "Registered",
+    sentence: "Registered for an event (not cancelled)." },
+  { key: "attended", label: "Came", sentence: "Marked as attended, or checked in at the door." },
+  { key: "no_show", label: "Registered but didn't come",
+    sentence: "Marked as not coming, or registered for an event that has passed with a check-in list and never checked in." },
+  { key: "brought_guest", label: "Came as someone's guest, not a donor yet",
+    sentence: "Named as a guest on somebody else's registration, with no gift of their own yet." },
+];
+export const EVENT_GUEST_KEYS = EVENT_GUEST_CHOICES.map(c => c.key);
+AUDIENCE_FILTERS.find(f => f.key === "eventGuests").options = EVENT_GUEST_CHOICES;
 export const AUDIENCE_KEYS = AUDIENCE_FILTERS.map(f => f.key);
 
 // Normalise whatever the page sent into the shape the query builder reads.
@@ -186,6 +264,7 @@ export function validateAudience(input = {}) {
     if (f.kind === "flag") { out[f.key] = true; continue; }
     if (f.kind === "choice" || f.kind === "text" || f.kind === "group") {
       const s = String(v).trim().slice(0, 80);
+      if (f.key === "eventGuests" && !EVENT_GUEST_KEYS.includes(s)) continue;
       if (s) out[f.key] = s;
       continue;
     }
@@ -214,6 +293,7 @@ export function audienceSentence(audience = {}) {
   const parts = set.map(f => {
     if (f.kind === "flag") return f.label.toLowerCase();
     if (f.kind === "group") return "membership of the group you picked";
+    if (f.key === "eventGuests") return `an event guest list: ${(EVENT_GUEST_CHOICES.find(c => c.key === audience.eventGuests) || {}).label || ""}`.toLowerCase();
     if (f.key === "giftSize") {
       const r = audience.giftSize || {};
       const d = c => "$" + Math.round(Number(c) / 100).toLocaleString("en-US");
@@ -380,6 +460,42 @@ PRESETS.push(
     steps: [
       { type: "thank", label: "Call to celebrate their page",     offsetDays: 1 },
       { type: "send",  label: "Send the thank-you",               offsetDays: 3, starter: "thank_you" },
+    ] },
+);
+// JOURNEYS-4 — the two the brief names, plus one per new trigger family, all
+// OFF until the org turns them on. None asks for money except where it says so.
+PRESETS.push(
+  { key: "auction_winner_thanks", name: "Auction winner thank-you", trigger: "auction_won", priority: 60,
+    blurb: "Thank them for the item, then invite them to the spring event.",
+    steps: [
+      { type: "thank",     label: "Call to thank them for bidding",  offsetDays: 2 },
+      { type: "send",      label: "Send the event invitation",       offsetDays: 21, draft: "event_invitation" },
+    ] },
+  { key: "event_no_show", name: "Event no-show follow-up", trigger: "event_no_show", priority: 45,
+    blurb: "They meant to come. Say they were missed, then share what they missed.",
+    steps: [
+      // No starter: the event thank-you thanks people for coming. She writes this one.
+      { type: "send",      label: "Send a we-missed-you note",       offsetDays: 1 },
+      { type: "follow_up", label: "Invite them to the next one",     offsetDays: 30, draft: "event_invitation" },
+    ] },
+  { key: "pledge_thanks", name: "Thank you for your pledge", trigger: "pledge_made", priority: 55,
+    blurb: "A promise is a gift already. Thank them for it.",
+    steps: [
+      { type: "thank", label: "Call to thank them for the pledge", offsetDays: 2 },
+      { type: "send",  label: "Send the pledge thank-you",         offsetDays: 5, starter: "thank_you" },
+    ] },
+  { key: "pledge_late", name: "Pledge instalment late", trigger: "pledge_late", priority: 70,
+    blurb: "A kind word, not a bill. Ask if anything has changed.",
+    steps: [
+      { type: "follow_up", label: "Call and ask how they are", offsetDays: 0 },
+    ] },
+  { key: "bigger_gift", name: "Interested in a bigger gift", trigger: "task_outcome", priority: 85,
+    triggerFilters: { outcome: "bigger_gift" },
+    blurb: "They said so. Visit, show them the plan, then ask.",
+    steps: [
+      { type: "follow_up",    label: "Ask them for a visit",      offsetDays: 7 },
+      { type: "send",         label: "Send what a bigger gift would do", offsetDays: 21, draft: "impact_report" },
+      { type: "check_in_ask", label: "Make the ask",              offsetDays: 45, draft: "the_ask" },
     ] },
 );
 // The EMAIL-1 starters a ready-made step may name.
@@ -549,6 +665,12 @@ export function validateJourney(input = {}) {
     const h = Number(rawF.hours);
     if (HOUR_MILESTONES.includes(h)) triggerFilters.hours = h;
     else errors.push({ field: "triggerFilters.hours", message: `Pick one of the milestones: ${HOUR_MILESTONES.join(", ")} hours.` });
+  }
+  // JOURNEYS-4 — a task-outcome journey names the outcome it watches.
+  if (t && t.needsOutcome) {
+    const o = String(rawF.outcome || "").trim();
+    if (TASK_OUTCOME_KEYS.includes(o)) triggerFilters.outcome = o;
+    else errors.push({ field: "triggerFilters.outcome", message: "Pick the outcome this journey watches for." });
   }
   if (t && t.needsGroup) {
     if (idOf(rawF.groupId)) triggerFilters.groupId = idOf(rawF.groupId);

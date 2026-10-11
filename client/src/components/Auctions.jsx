@@ -82,6 +82,8 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
   const [editing, setEditing] = useState(null);   // null | "new" | item id
+  const [winnerFor, setWinnerFor] = useState(null);   // JOURNEYS-4: the item whose winner is being recorded
+  const [wf, setWf] = useState({ name: "", amount: "" });
   const [saving, setSaving] = useState(false);
   const [times, setTimes] = useState(null);
   const load = () => apiFetch(`/auctions/${id}`).then(r => { setD(r); setTimes({ opensLocal: r.auction.opensLocal, closesLocal: r.auction.closesLocal }); })
@@ -121,6 +123,14 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
     load();
   };
   const copy = t => navigator.clipboard && navigator.clipboard.writeText(t).then(() => setMsg("Copied."));
+  // JOURNEYS-4 · a live auction or a paper bid sheet: the name and the number.
+  const saveWinner = async it => {
+    const name = wf.name.trim().toLowerCase();
+    const p = name ? donors.find(x => String(x.name || "").toLowerCase() === name) : null;
+    if (!p) { setMsg("Pick the winner's name from the list, or add the person first."); return; }
+    await act(() => apiFetch(`/auction-items/${it.id}/winner`, { method: "POST", body: JSON.stringify({ donorId: p.id, amount: wf.amount }) }), r => r.sentence);
+    setWinnerFor(null); setWf({ name: "", amount: "" });
+  };
 
   return (
     <FigureContext.Provider value={{ openPerson }}>
@@ -192,8 +202,22 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
                     title={!it.donorId ? "Say who donated it first." : !(it.fmv > 0) ? "Enter its fair market value first." : "Records the item as an in-kind gift on the donor's record, at its fair market value. Once."}
                     onClick={() => act(() => apiFetch(`/auction-items/${it.id}/in-kind`, { method: "POST" }), `Recorded ${money(it.fmv)} in-kind from ${it.donorName}.`)}>Record as in-kind gift</button>}
               {it.bidCount === 0 && <button style={btn(false)} disabled={isReadOnly} onClick={() => act(() => apiFetch(`/auction-items/${it.id}`, { method: "DELETE" }), "Item removed.")}>Remove</button>}
+              {!it.paidGiftId && winnerFor !== it.id && <button style={btn(false)} disabled={isReadOnly} data-testid={"auction-record-winner-" + it.id}
+                title="For a live auction or a paper bid sheet: who won it, and for how much. It closes the item."
+                onClick={() => { setWinnerFor(it.id); setWf({ name: "", amount: "" }); }}>Record the winner</button>}
             </div>
+            {winnerFor === it.id && (
+              <div data-testid="auction-winner-form" style={{ flex: "1 1 100%", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <label style={{ ...lab, flex: "2 1 200px" }}>Who won it<input style={inp} list="auction-winner-donors" value={wf.name} autoFocus
+                  onChange={e => setWf(x => ({ ...x, name: e.target.value }))} placeholder="Type a name on file" data-testid="auction-winner-name" /></label>
+                <label style={{ ...lab, flex: "1 1 120px" }}>Winning bid<input style={inp} inputMode="decimal" value={wf.amount}
+                  onChange={e => setWf(x => ({ ...x, amount: e.target.value }))} placeholder="450" data-testid="auction-winner-amount" /></label>
+                <button style={btn(true)} disabled={isReadOnly || !wf.name.trim() || !wf.amount.trim()} onClick={() => saveWinner(it)} data-testid="auction-winner-save">Save the winner</button>
+                <button style={btn(false)} onClick={() => setWinnerFor(null)}>Cancel</button>
+              </div>
+            )}
           </div>))}
+        {winnerFor && <datalist id="auction-winner-donors">{donors.slice(0, 2000).map(p => <option key={p.id} value={p.name} />)}</datalist>}
       </Card>
 
       <Card style={{ padding: "16px 18px" }}>

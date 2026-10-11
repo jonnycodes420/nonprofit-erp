@@ -37,6 +37,12 @@ source, tests and CI all name this file instead.
 3. **Apply:** `railway run -- node scripts/admin-clean.js --i-know-this-is-prod --apply --archive=<id>`. A second dry run
    should show nothing left to delete. Any archive is undone with Restore in /admin.
 
+## 0-JOURNEYS-4 · RE-SEED THE PROD DEMO (2026-10-11)
+
+- **Re-seed Harborlight** so the two new ready-made journeys have people in them: a closed Fall art auction (three
+  winners in "Auction winner thank-you") and a Family open studio four days ago (three no-shows in "Event no-show
+  follow-up"). Both arrive paused. Same command as the earlier re-seeds.
+
 ## 0-IMPORT-2 · YOUR NOTES FILE (2026-10-08)
 
 1. `steward-test-notes-messy.csv` was not on this machine, so IMPORT-2 was built and scored against a stand-in written

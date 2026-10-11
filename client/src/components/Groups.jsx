@@ -61,6 +61,9 @@ const YES_FIELDS = [
   ["awaitingThanks", "Has a gift waiting for a thank-you"], ["noHistory", "No history yet"], ["boardMember", "Board member"],
   ["doNotSolicit", "Marked do not solicit"], ["solicitable", "Leave out do not solicit"],
 ];
+// JOURNEYS-4 · event guests, four ways, at any event or the one picked beside it.
+const GUEST_FIELD = { key: "eventGuest", label: "Event guests", options: [["", "Anyone"], ["registered", "Registered"], ["attended", "Came"],
+  ["no_show", "Registered but didn't come"], ["brought_guest", "A guest, not a donor yet"]] };
 const BUNT_FIELD = { key: "bunt", label: "Gave before", options: [["", "Either"], ["lybunt", "Last year, not yet this year"], ["sybunt", "Some year before, not last or this year"]] };
 // The lists the pickers read, each as [id, name] pairs. A list that does not
 // load is an empty picker, never a broken form.
@@ -104,6 +107,17 @@ function RuleFields({ rules, setRules, retained, setRetained, lists }) {
           {f.options.map(([v, l]) => <option key={v} value={v}>{v ? l : `${f.label}: ${l}`}</option>)}
         </select>
       ))}
+      <select aria-label={GUEST_FIELD.label} data-testid="group-rule-eventGuest" value={rules.eventGuest || ""}
+        onChange={e => setRules({ ...rules, eventGuest: e.target.value, ...(e.target.value ? {} : { eventGuestEvent: "" }) })} style={{ ...field, maxWidth: "100%", minWidth: 0 }}>
+        {GUEST_FIELD.options.map(([v, l]) => <option key={v} value={v}>{v ? `Event guests: ${l}` : `${GUEST_FIELD.label}: ${l}`}</option>)}
+      </select>
+      {rules.eventGuest && ((lists && lists.events) || []).length > 0 && (
+        <select aria-label="At the event" data-testid="group-rule-eventGuestEvent" value={rules.eventGuestEvent || ""}
+          onChange={e => setRules({ ...rules, eventGuestEvent: e.target.value })} style={{ ...field, maxWidth: "min(260px, 100%)", minWidth: 0 }}>
+          <option value="">At any event</option>
+          {lists.events.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+        </select>
+      )}
       {PICK_FIELDS.map(f => {
         const items = (lists && lists[f.list]) || [];
         if (!items.length && !rules[f.key]) return null;

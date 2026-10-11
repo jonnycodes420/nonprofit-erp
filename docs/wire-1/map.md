@@ -66,6 +66,13 @@ first event, a grant awarded and a peer-to-peer page reaching its goal. The "Jou
 wired, 12 partly, 2 missing to 10 wired, 7 partly, 2 missing; all cells from 163 / 55 / 4 to 168 / 50 / 4. Pledges,
 giving pages, auctions, tasks and email opens still have no trigger and wait for JOURNEYS-4. The After section
 below is the state after JOURNEYS-3.
+**JOURNEYS-4 (11 Oct 2026)** gave journeys the rest of what a donor does: a pledge made, an instalment 14 days late
+and a pledge paid; a first gift through a giving page and a peer-to-peer page made; an auction item won, bid on and
+lost, or donated; an event registered for, come to, or missed; a call or meeting finished with an outcome she picks;
+and an appeal opened or clicked with no gift in 14 days (Steward's own opens and Mailchimp's). Event guests became an
+audience (registered, came, no-show, a guest not yet a donor) as a Group rule, a journey audience and in Show me. The
+"Journeys / Comms" column went from 10 wired, 7 partly, 2 missing to 16 wired, 2 partly, 1 missing; all cells from
+168 / 50 / 4 to 174 / 45 / 3. The After section below is the state after JOURNEYS-4.
 After was re-walked on 6 Oct against the merged branch: the four builders' API checks on their own seeded
 Harborlight copies, `tests/wire-journey.test.js` (63 checks, one person and one funder through every
 column), and the Muse walk below. Every cell still partly or missing names its reason and the build it
@@ -92,20 +99,20 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | organization / funder | W | W | · | W | W | P | P | W | · | W | W |
 | gift | W | W | · | W | W | W | W | W | P | W | W |
 | recurring plan | W | W | W | W | P | W | W | W | W | P | W |
-| pledge | W | W | W | W | W | P | W | W | W | W | W |
+| pledge | W | W | W | W | W | W | W | W | W | W | W |
 | campaign | W | W | P | W | W | W | W | W | · | W | W |
 | appeal | P | P | P | W | W | W | W | W | · | W | W |
-| giving page | P | P | W | W | W | P | W | W | · | W | W |
+| giving page | P | P | W | W | W | W | W | W | · | W | W |
 | peer-to-peer page | W | W | W | W | W | W | W | W | W | W | W |
-| event and ticket | W | W | P | W | W | P | P | W | W | P | W |
-| auction item | P | P | W | W | W | P | W | W | W | P | W |
+| event and ticket | W | W | P | W | W | W | P | W | W | P | W |
+| auction item | P | P | W | W | W | W | W | W | W | P | W |
 | membership | W | W | W | W | W | W | P | W | W | P | W |
 | grant | W | W | W | W | W | W | W | W | P | W | W |
 | volunteer shift and hours | W | P | P | P | W | W | P | W | W | W | W |
 | journey step | W | W | W | W | W | W | P | W | W | · | W |
-| task / next step | P | P | P | W | W | P | P | W | W | · | W |
+| task / next step | P | P | P | W | W | W | P | W | W | · | W |
 | meeting | W | W | W | W | P | · | W | P | · | P | W |
-| email | W | W | · | W | M | M | P | P | W | W | W |
+| email | W | W | · | W | M | W | P | P | W | W | W |
 | note | W | W | · | W | · | · | W | W | · | W | W |
 | document | P | W | · | W | · | · | · | W | · | P | P |
 | import | P | P | · | W | W | P | P | M | W | W | W |
@@ -120,13 +127,13 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 | Calendar + sync | 10 | 5 | 0 | 8 |
 | ⌘K | 22 | 1 | 0 | 0 |
 | Groups / Show me | 17 | 3 | 1 | 2 |
-| Journeys / Comms | 10 | 7 | 2 | 4 |
+| Journeys / Comms | 16 | 2 | 1 | 4 |
 | Reports, opens rows | 14 | 8 | 0 | 1 |
 | Ask + Agent | 19 | 3 | 1 | 0 |
 | Home / Thread | 11 | 2 | 0 | 10 |
 | Import / export | 14 | 7 | 0 | 2 |
 | Merge / delete / undo | 21 | 1 | 0 | 1 |
-| **all** | **168** | **50** | **4** | **31** |
+| **all** | **174** | **45** | **3** | **31** |
 
 **Every partly and missing cell, with what is wrong**
 
@@ -138,21 +145,17 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **gift × Home / Thread** (partly): a Thank step opens for manual and Stripe gifts; tickets, auction payments and synced-source gifts still open none. Next: THREAD-4
 - **recurring plan × Groups / Show me** (partly): any-active recurring rule now, one shared status list; no failed-plan rule yet. Next: GROUPS-2
 - **recurring plan × Import / export** (partly): an imported sustainer is a flag, not a plan, so it is missing from recurring figures. Next: IMPORT-RECURRING
-- **pledge × Journeys / Comms** (partly): a Group with an open pledge feeds a Communication or Journey; no pledge trigger. Next: JOURNEYS-4
 - **campaign × Calendar + sync** (partly): end dates are on it; start dates are not. Next: CAL-2
 - **appeal × Timeline** (partly): attribution shows as text on the gift. Next: PROFILE-2
 - **appeal × Org / funder record** (partly): as timeline. Next: PROFILE-2
 - **appeal × Calendar + sync** (partly): as campaign. Next: CAL-2
 - **giving page × Timeline** (partly): the gift shows; nothing page-specific (views, abandoned starts are on Gifts not finished). Next: PROFILE-2
 - **giving page × Org / funder record** (partly): as timeline. Next: PROFILE-2
-- **giving page × Journeys / Comms** (partly): a Group of page givers feeds a Communication or Journey; no trigger. Next: JOURNEYS-4
 - **event and ticket × Calendar + sync** (partly): on Steward's calendar; not pushed to Google or Outlook because an event has no owner (by design, FIX-28). Next: none planned
-- **event and ticket × Journeys / Comms** (partly): attended_event and first_event fire from the attendance list, check-in and scan; there is still no this-event's-guests audience except a Group. Next: COMMS-3
 - **event and ticket × Reports, opens rows** (partly): event rows open through a private endpoint, not the figure registry. Next: REPORTS-4
 - **event and ticket × Import / export** (partly): no attendee import and no guest CSV export. Next: EVENTS-3
 - **auction item × Timeline** (partly): donated items and paid wins show; bids write nothing (a bid war would flood the timeline). Next: none planned
 - **auction item × Org / funder record** (partly): as timeline
-- **auction item × Journeys / Comms** (partly): a Group of bidders feeds a Communication or Journey; no trigger. Next: JOURNEYS-4
 - **auction item × Import / export** (partly): no import; JSON export only. Next: EVENTS-3
 - **membership × Reports, opens rows** (partly): member counts by status open (REPORTS-4); the member reports (directory, by level, expiring, revenue) still return no sources. Next: REPORTS-6
 - **membership × Import / export** (partly): imported members carry no money, so they are missing from membership revenue (by design, no invented gifts)
@@ -165,13 +168,11 @@ failures are the same environment error at both widths (`/ai/stream` 503, no loc
 - **task / next step × Timeline** (partly): tasks show; an open Thread step does not, and a dismissal writes nothing. Next: PROFILE-2
 - **task / next step × Org / funder record** (partly): as timeline
 - **task / next step × Calendar + sync** (partly): on it; pushed only when someone owns it. Next: CAL-2
-- **task / next step × Journeys / Comms** (partly): a Group with open tasks feeds a Communication or Journey; no trigger. Next: JOURNEYS-4
 - **task / next step × Reports, opens rows** (partly): tasks have no figure source. Next: REPORTS-4
 - **meeting × Groups / Show me** (partly): counts toward no-contact-since only. Next: GROUPS-2
 - **meeting × Ask + Agent** (partly): Ask's conversations leave out calendar meetings (the person answer counts them). Next: ASK-5
 - **meeting × Import / export** (partly): calendar_events is not in the CSV export. Next: EXPORT-2
 - **email × Groups / Show me** (missing): no opened or clicked rule. Next: GROUPS-2
-- **email × Journeys / Comms** (missing): no email-opened trigger. Next: JOURNEYS-4
 - **email × Reports, opens rows** (partly): bulk email stats are computed in the browser. Next: REPORTS-4
 - **email × Ask + Agent** (partly): as conversations. Next: ASK-5
 - **document × Timeline** (partly): attachments show; grant documents only on the funder panel; receipt PDFs never. Next: PROFILE-2
