@@ -127,10 +127,12 @@ export const PROVIDERS = {
   constantcontact: {
     key: "constantcontact", label: "Constant Contact", kind: "email", vendor: "constantcontact",
     authorizeUrl: "https://authz.constantcontact.com/oauth2/default/v1/authorize",
-    // NOT the authz host. Constant Contact serves the token endpoint from a
-    // different domain, and pointing this at authz.constantcontact.com is a
-    // 404 that reads like a bad client id.
-    tokenUrl: "https://idfed.constantcontact.com/as/token.oauth2",
+    // CONNECT-2: the SAME authz host as the authorize step. The old
+    // idfed.constantcontact.com/as/token.oauth2 endpoint belongs to Constant
+    // Contact's retired authorization service, and a code issued by the authz
+    // host is not exchangeable there. Checked 11 Oct 2026 against
+    // developer.constantcontact.com/api_guide/server_flow.html.
+    tokenUrl: "https://authz.constantcontact.com/oauth2/default/v1/token",
     // The minimum for what INT-3 does: read and write contacts and lists,
     // read campaign activity, and a refresh token so a daily pull survives.
     // Nothing here can send a campaign.
