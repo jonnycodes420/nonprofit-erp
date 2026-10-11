@@ -419,6 +419,50 @@ app.put("/auction-items/:id", requireAuth, checkWriteAccess, wrap(async (req, re
   res.json({ ok: true });
 }));
 
+// JOURNEYS-4 · RECORD THE WINNER. A live auction or a paper bid sheet ends in
+// a name and a number on a clipboard, and that has to reach the record the
+// same way an online bid does: the person is registered as a bidder for this
+// auction (one paddle per person), the winning bid is written by the person
+// at the desk, and the item closes now. No money moves: the winner pays
+// through the pay link as any online winner does. A journey on "they win an
+// auction item" starts from this like any other win.
+app.post("/auction-items/:id/winner", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const item = await loadItem(orgId, req.params.id);
+  if (!item) return res.status(404).json({ error: "Not found" });
+  if (item.paid_at || item.paid_gift_id) return res.status(409).json({ error: "This item is already paid for, so its winner stays as it is." });
+  const [d] = await query(`SELECT id, name, email, phone FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [String(req.body?.donorId || ""), orgId]);
+  if (!d) return res.status(404).json({ error: "That person is not one of yours." });
+  const email = String(d.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: `${d.name} has no email on file. A winner needs one for the pay link; add it on their record first.` });
+  const amount = AC.cents(req.body?.amount);
+  if (!(amount > 0) || amount > AC.BID_MAX_CENTS) return res.status(400).json({ error: "Write the winning bid as an amount, like 450." });
+  const [st] = (await AC.itemStates(query, orgId, item.auction_id)).filter(x => x.id === item.id);
+  const start = AC.cents(item.starting_bid);
+  if (amount < start) return res.status(400).json({ error: `The winning bid is at least the starting bid, ${AC.fmtMoney(start)}.` });
+  if (st && st.high_amount != null && amount <= AC.cents(st.high_amount) && st.bidder_donor_id !== d.id)
+    return res.status(400).json({ error: `Somebody already bid ${AC.fmtMoney(AC.cents(st.high_amount))}. The winning bid is more than that.` });
+  const who = actor(req);
+  await withTransaction(async c => {
+    await queryTx(c, `SELECT pg_advisory_xact_lock(hashtext(?))`, [`auction-bidders:${item.auction_id}`]);
+    let [bidder] = await queryTx(c, `SELECT id FROM auction_bidders WHERE auction_id=? AND org_id=? AND (donor_id=? OR LOWER(email)=?)
+                                      ORDER BY (donor_id=?) DESC LIMIT 1`, [item.auction_id, orgId, d.id, email, d.id]);
+    if (!bidder) {
+      const [n] = await queryTx(c, `SELECT COALESCE(MAX(bidder_number),100)+1 AS n FROM auction_bidders WHERE auction_id=?`, [item.auction_id]);
+      bidder = { id: "aub_" + uuid().replace(/-/g, "").slice(0, 12) };
+      await runTx(c, `INSERT INTO auction_bidders (id,org_id,auction_id,donor_id,name,email,phone,bidder_number,token_hash,created_by,created_by_name)
+                      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [bidder.id, orgId, item.auction_id, d.id, d.name, email, d.phone || null, n.n, AC.hashToken(AC.randomToken()), who.id, who.name]);
+    }
+    await runTx(c, `INSERT INTO auction_bids (id,org_id,auction_id,item_id,bidder_id,amount,buy_now,created_by,created_by_name)
+                    VALUES (?,?,?,?,?,?,false,?,?)`,
+      ["abid_" + uuid().replace(/-/g, "").slice(0, 14), orgId, item.auction_id, item.id, bidder.id, AC.dollars(amount), who.id, who.name]);
+    await runTx(c, `UPDATE auction_items SET closed_at=COALESCE(closed_at, clock_timestamp()), updated_at=NOW() WHERE id=? AND org_id=?`, [item.id, orgId]);
+  });
+  if (req.audit) req.audit.entity("auction_items", item.id, `Auction item: ${item.title}`);
+  res.json({ ok: true, sentence: `${d.name} won ${item.title} at ${AC.fmtMoney(amount)}.` });
+}));
+
 app.delete("/auction-items/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const item = await loadItem(orgId, req.params.id);

@@ -216,6 +216,7 @@ CORE=(
   gtm1b-band-notice
   thread2a-no-send
   journeys3-triggers
+  journeys4-triggers
   fix6-approval
   import-reconciliation
   trans1-reimport

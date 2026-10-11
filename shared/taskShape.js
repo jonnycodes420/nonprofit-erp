@@ -18,6 +18,17 @@ const KIND_KEYS = new Set(TASK_KINDS.map(k => k.key));
 
 // A call or a meeting ends in "How did it go?" and "What's next?".
 export const NEEDS_OUTCOME = new Set(["call", "meeting"]);
+// JOURNEYS-4 · and, if she picks one, how it ended. Optional. A journey on
+// "a call or meeting ends with an outcome you pick" watches one of these.
+export const TASK_OUTCOMES = [
+  { key: "bigger_gift",    label: "Interested in a bigger gift" },
+  { key: "wants_visit",    label: "Wants to visit" },
+  { key: "wants_involved", label: "Wants to get involved" },
+  { key: "not_now",        label: "Not now" },
+  { key: "no_answer",      label: "Didn't reach them" },
+];
+export const TASK_OUTCOME_KEYS = TASK_OUTCOMES.map(o => o.key);
+export const taskOutcomeLabel = k => (TASK_OUTCOMES.find(o => o.key === k) || {}).label || null;
 
 const VERB_KIND = [
   [/^(call|ring|phone|try)\b/i, "call"],

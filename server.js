@@ -538,6 +538,23 @@ const invitationLimiter = rateLimit({
 // Everything about WHAT a row says lives in auditTrail.js and
 // middleware/auditTrail.js. Nothing about it lives in a route.
 app.use(require("./middleware/auditTrail").auditTrail());
+// JOURNEYS-4: after a staff write succeeds, the journey triggers that read
+// rows (an auction win, a no-show, a pledge, a finished call) are checked for
+// that org at once, rather than waiting for the hourly sweep. routes/crm.js
+// hands the checker back at mount time, like the journey engine below; a
+// null checker is a no-op. It runs after the response and never delays it.
+let _journeyNudge = null;
+function registerJourneyNudge(fn) { _journeyNudge = fn; }
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    res.on("finish", () => {
+      if (res.statusCode < 400 && req.user && req.user.orgId && typeof _journeyNudge === "function") {
+        try { _journeyNudge(req.user.orgId); } catch (e) { console.error("[journey] nudge:", e.message); }
+      }
+    });
+  }
+  next();
+});
 // PARITY-3 6b: an import that succeeds ends with ANALYZE (middleware/analyzeAfterImport.js).
 app.use(require("./middleware/analyzeAfterImport").analyzeAfterImport());
 
@@ -9947,9 +9964,11 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   // free registration page has always written them.
   for (const g of (guests || []).slice(0, 10)) {
     if (!g || g.toLowerCase() === String(donor.name || "").toLowerCase()) continue;
-    await run(`INSERT INTO event_attendees (id,event_id,org_id,name,status,level_id,quantity,source,guest_of,notes)
-               VALUES (?,?,?,?,'registered',?,0,'public',?,?)`,
-      ["att_" + uuid().slice(0, 10), event.id, orgId, String(g).slice(0, 200), level.id, attendee.id, `Guest of ${donor.name}.`]).catch(() => {});
+    // JOURNEYS-4 — the guest is a person record of their own (personMatch.js).
+    const gid = await require("./personMatch").findOrCreateGuest(orgId, String(g), who).catch(() => null);
+    await run(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,level_id,quantity,source,guest_of,notes)
+               VALUES (?,?,?,?,?,'registered',?,0,'public',?,?) ON CONFLICT (event_id, donor_id) DO NOTHING`,
+      ["att_" + uuid().slice(0, 10), event.id, orgId, gid, String(g).slice(0, 200), level.id, attendee.id, `Guest of ${donor.name}.`]).catch(() => {});
   }
   // EVENTS-2 — the confirmation, sent only when somebody paid on the public
   // page. It is transactional (they were just charged for a seat), and it
@@ -11544,7 +11563,7 @@ require("./routes/crm").mount({
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
   sendDonorLifecycleEmail, fromWithDisplayName,
-  checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,

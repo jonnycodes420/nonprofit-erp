@@ -25,6 +25,16 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## JOURNEYS-4 · Journeys start from everything a donor does (2026-10-11)
+
+- **Twelve new triggers, one definition each.** Pledge made, instalment 14 days late, pledge paid; first gift through a giving page, a peer-to-peer page made; auction won, bid but lost, item donated; event registered, no-show (and `attended_event` now also caught by the sweep for door check-ins); a call or meeting finished with an outcome; an appeal opened or clicked with no gift in 14 days. All are rows in `lifecycleRows` (routes/crm.js), read by the hourly sweep, the 90-day preview and the apply, with an event key so a person enters once per thing.
+- **At once, not in an hour.** A successful staff write runs that org's armed sweep triggers about a second later (`registerJourneyNudge`, beside the audit middleware). Recording an auction winner at the desk (new `POST /auction-items/:id/winner`) puts the first step on the Thread straight away.
+- **The entry rules moved into the engine.** Deceased and do-not-contact are refused by every door; an asking journey (read from its steps) skips do-not-solicit while a thank-you journey keeps them. Before this, a gift trigger could enrol a deceased donor; only the sweep triggers filtered them.
+- **Event guests are an audience** (Group rule `eventGuest`, journey audience `eventGuests`, Show me "no-shows"), and a named guest on a registration is now a person record of their own.
+- **Outcomes.** `tasks.outcome`, picked in the finish sheet and in Log a conversation (`TASK_OUTCOMES` in shared/taskShape.js).
+- **Seed changed:** a closed Fall art auction (three winners) and a Family open studio four days ago (three no-shows), each in a paused ready-made journey with step two open on the Thread (`scripts/seed/journeys4-demo.js`). Prod re-seed is Jonathan's.
+- Test: `tests/journeys4-triggers.test.js` (52). Proven able to fail: removing the do-not-solicit and deceased gates turns §2 red (2 failures).
+
 ## VOL-PAGE-1 · Volunteer pages built like giving pages (2026-10-11)
 
 - **One table of public pages.** A volunteer page is a `giving_pages` row with `page_kind = 'volunteer'` on a new "volunteer" surface of the one widget registry, so the editor, brand, media library, publish, slug, embed, Fundraising > Pages and ⌘K are shared. Every read that means "a page that takes gifts" now filters on the kind.

@@ -34,4 +34,20 @@ async function findPersonId(orgId, { email, name } = {}, q = query) {
   return null;
 }
 
-module.exports = { findPersonId };
+// JOURNEYS-4 · A GUEST IS ONE PERSON RECORD. A name on somebody else's
+// registration is matched like any other door (a unique name, no email to
+// disagree with), and is a new record only when nobody matches. The new one
+// is a person, not a donor: they have given nothing yet.
+async function findOrCreateGuest(orgId, name, who, q = query) {
+  const n = String(name || "").trim().slice(0, 200);
+  if (!n) return null;
+  const known = await findPersonId(orgId, { name: n }, q);
+  if (known) return known;
+  const id = "d_" + require("crypto").randomUUID().replace(/-/g, "").slice(0, 10);
+  await q(`INSERT INTO donors (id,org_id,name,stage,status,tags,person_types,created_by,created_by_name)
+           VALUES (?,?,?,'prospect','active','[]','["other"]'::jsonb,?,?)`,
+    [id, orgId, n, who.id, who.name]);
+  return id;
+}
+
+module.exports = { findPersonId, findOrCreateGuest };

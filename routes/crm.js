@@ -61,7 +61,7 @@ const {
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, registerJourneyEngine, registerJourneyNudge, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
@@ -11190,9 +11190,13 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
   if (!J.TRIGGER_KEYS.includes(triggerKey)) return { started: false, reason: "unknown_trigger" };
 
   const [donor] = await query(
-    `SELECT id, name, assigned_to, assigned_to_name FROM donors
+    `SELECT id, name, assigned_to, assigned_to_name, deceased, do_not_contact, do_not_solicit FROM donors
       WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!donor) return { started: false, reason: "donor_not_found" };
+  // JOURNEYS-4 · NEVER ENTERED, BY ANY DOOR. Somebody who has died, or who
+  // asked not to be contacted, is not put in a journey by a rule or a button.
+  if (donor.deceased === true) return { started: false, reason: "deceased" };
+  if (donor.do_not_contact === true) return { started: false, reason: "do_not_contact" };
 
   // A PERSON CHOOSING beats a rule picking. `forceJourneyId` is the by-hand
   // path (and the "apply to everyone who qualifies" button): it names the
@@ -11225,16 +11229,22 @@ async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
     if (triggerKey === "joined_group" && String(tf.groupId || "") !== String(opts.groupId || "")) return false;
     // JOURNEYS-3 — an hours journey that watches one milestone fires on that one.
     if (triggerKey === "volunteer_hours" && tf.hours && !(opts.crossed || []).includes(Number(tf.hours))) return false;
+    // JOURNEYS-4 — a task-outcome journey fires on the outcome it watches.
+    if (triggerKey === "task_outcome" && String(tf.outcome || "") !== String(opts.outcome || "")) return false;
     return true;
   });
   if (!filtered.length) return { started: false, reason: "below_threshold" };
+  // JOURNEYS-4 · DO NOT SOLICIT MEANS NO ASKS (the FIX-35 rule). A journey
+  // that asks for money skips them; a thank-you journey still reaches them.
+  const askable = donor.do_not_solicit === true ? filtered.filter(t => !J.journeyAsks(t.steps)) : filtered;
+  if (!askable.length) return { started: false, reason: "do_not_solicit" };
 
   // PARITY-1 Part D · WHO IT IS FOR, AT THE MOMENT IT FIRES. The audience was
   // only ever read by the "who already qualifies" offer; a live trigger
   // started the journey on anybody it touched. A journey narrowed to members
   // now starts only on a member, by either door.
   const audienceOk = [];
-  for (const t of filtered) {
+  for (const t of askable) {
     if (opts.forceJourneyId || await donorInAudience(orgId, donor.id, t.audience || {})) audienceOk.push(t);
   }
   if (!audienceOk.length) return { started: false, reason: "outside_audience" };
@@ -11454,6 +11464,15 @@ function journeyEventKey(triggerKey, opts = {}, today = "") {
     case "first_event": return "first_event";
     default: return null;
   }
+}
+
+// JOURNEYS-4 · A TRIGGER WITH NOTHING TO READ STAYS OFF. Only the email
+// trigger can be in this state: no opens or clicks on file, from Steward or
+// Mailchimp. Switching it on is refused with the sentence that says why.
+async function journeyCannotRun(orgId, trigger) {
+  if (trigger !== "email_engaged_no_gift") return null;
+  const a = await emailOpenAvailability(orgId);
+  return a.ok ? null : { error: "no_open_data", message: a.sentence };
 }
 
 // A journey may name a group, a fund or a campaign. Each must be this org's,
@@ -11694,10 +11713,9 @@ async function runJourneySweep(onlyOrgId = null) {
   const orgs = await query(
     `SELECT DISTINCT org_id FROM cultivation_templates
       WHERE journey_enabled=true AND archived_at IS NULL
-        AND trigger_key IN ('joined_group','giving_anniversary','birthday',
-                            'membership_ending','membership_lapsed','recurring_failed','recurring_cancelled',
-                            'card_expiring','volunteer_hours','grant_awarded','p2p_goal')
-        ${onlyOrgId ? "AND org_id = ?" : ""}`, onlyOrgId ? [onlyOrgId] : []);
+        AND trigger_key = ANY(?::text[])
+        ${onlyOrgId ? "AND org_id = ?" : ""}`,
+    [["joined_group", "giving_anniversary", "birthday", ...(await journeyMod()).SWEEP_TRIGGER_KEYS], ...(onlyOrgId ? [onlyOrgId] : [])]);
   let fired = 0;
   for (const { org_id: orgId } of orgs) {
     try {
@@ -11829,7 +11847,136 @@ async function lifecycleRows(orgId, key, today, windowDays = 14) {
                  AND EXISTS (SELECT 1 FROM gifts x WHERE x.org_id=f.org_id AND x.peer_fundraiser_id=f.id
                                AND COALESCE(x.date,'') <> '' AND x.date::date >= ?::date - ?::int)`, [orgId, today, w]);
   }
+  // ── JOURNEYS-4 · EVERYTHING ELSE A DONOR DOES ────────────────────────────
+  // Each one a row Steward already keeps, its date inside the window, and the
+  // thing it is about in the event key so it enrols a person once.
+  if (key === "pledge_made") {
+    return P(`SELECT p.donor_id, 'pledge:' || p.id AS event_key
+                FROM pledges p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id AND ${LIVE_PERSON}
+               WHERE p.org_id=? AND COALESCE(p.status,'open') NOT IN ('cancelled','canceled','written_off')
+                 AND p.is_shell IS NOT TRUE AND p.created_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "pledge_late") {
+    return P(`SELECT p.donor_id, 'pledge_late:' || i.id AS event_key
+                FROM pledge_installments i JOIN pledges p ON p.id=i.pledge_id AND p.org_id=i.org_id
+                JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id AND ${LIVE_PERSON}
+               WHERE i.org_id=? AND i.paid_gift_id IS NULL AND p.status='open' AND COALESCE(i.due_date,'') <> ''
+                 AND i.due_date::date <= ?::date - 14 AND i.due_date::date >= ?::date - 14 - ?::int`, [orgId, today, today, w]);
+  }
+  if (key === "pledge_paid") {
+    return P(`SELECT p.donor_id, 'pledge_paid:' || p.id AS event_key
+                FROM pledges p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id AND ${LIVE_PERSON}
+               WHERE p.org_id=? AND p.status='fulfilled' AND p.fulfilled_at IS NOT NULL
+                 AND p.fulfilled_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "page_first_gift") {
+    return P(`SELECT g.donor_id, 'page_first_gift' AS event_key
+                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND ${LIVE_PERSON}
+               WHERE g.org_id=? AND g.giving_page_id IS NOT NULL AND g.amount > 0 AND COALESCE(g.date,'') <> ''
+               GROUP BY g.donor_id HAVING MIN(LEFT(g.date,10))::date >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "p2p_created") {
+    return P(`SELECT f.person_id AS donor_id, 'p2p_created:' || f.id AS event_key
+                FROM peer_fundraisers f JOIN donors d ON d.id=f.person_id AND d.org_id=f.org_id AND ${LIVE_PERSON}
+               WHERE f.org_id=? AND f.created_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  // The winner is the top bid by the one ordering (auctionCore TOP_BIDS_SQL),
+  // and an item is closed when its own close or the auction's has passed.
+  const AUCTION_CLOSE = `LEAST(au.closes_at, COALESCE(ai.closed_at, au.closes_at))`;
+  if (key === "auction_won") {
+    return P(`SELECT bw.donor_id, 'auction_won:' || ai.id AS event_key
+                FROM auction_items ai JOIN auctions au ON au.id=ai.auction_id AND au.org_id=ai.org_id
+                JOIN LATERAL (SELECT b.bidder_id FROM auction_bids b WHERE b.org_id=ai.org_id AND b.item_id=ai.id
+                               ORDER BY b.amount DESC, b.created_at ASC, b.id ASC LIMIT 1) tb ON true
+                JOIN auction_bidders bw ON bw.id=tb.bidder_id AND bw.org_id=ai.org_id
+                JOIN donors d ON d.id=bw.donor_id AND d.org_id=ai.org_id AND ${LIVE_PERSON}
+               WHERE ai.org_id=? AND ${AUCTION_CLOSE} <= NOW() AND ${AUCTION_CLOSE} >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "auction_lost") {
+    return P(`SELECT DISTINCT bd.donor_id, 'auction_lost:' || au.id AS event_key
+                FROM auctions au JOIN auction_bids b ON b.auction_id=au.id AND b.org_id=au.org_id
+                JOIN auction_bidders bd ON bd.id=b.bidder_id AND bd.org_id=au.org_id
+                JOIN donors d ON d.id=bd.donor_id AND d.org_id=au.org_id AND ${LIVE_PERSON}
+               WHERE au.org_id=? AND au.closes_at <= NOW() AND au.closes_at >= ?::date - ?::int
+                 AND NOT EXISTS (SELECT 1 FROM auction_items ai
+                                   JOIN LATERAL (SELECT b2.bidder_id FROM auction_bids b2 WHERE b2.org_id=ai.org_id AND b2.item_id=ai.id
+                                                  ORDER BY b2.amount DESC, b2.created_at ASC, b2.id ASC LIMIT 1) tb ON true
+                                  WHERE ai.auction_id=au.id AND ai.org_id=au.org_id AND tb.bidder_id=bd.id)`, [orgId, today, w]);
+  }
+  if (key === "auction_donated") {
+    return P(`SELECT ai.donor_id, 'auction_donated:' || ai.id AS event_key
+                FROM auction_items ai JOIN donors d ON d.id=ai.donor_id AND d.org_id=ai.org_id AND ${LIVE_PERSON}
+               WHERE ai.org_id=? AND ai.created_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "event_registered") {
+    return P(`SELECT DISTINCT ea.donor_id, 'event_registered:' || ea.event_id AS event_key
+                FROM event_attendees ea JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
+               WHERE ea.org_id=? AND lower(coalesce(ea.status,'')) NOT IN ('cancelled','invited','declined')
+                 AND ea.created_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "attended_event") {
+    return P(`SELECT DISTINCT ea.donor_id, 'event:' || ea.event_id AS event_key
+                FROM event_attendees ea JOIN events e ON e.id=ea.event_id
+                JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
+               WHERE ea.org_id=? AND (lower(coalesce(ea.status,'')) = 'attended' OR ea.checked_in_at IS NOT NULL)
+                 AND COALESCE(ea.checked_in_at::date, e.date::date, ea.created_at::date) >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "event_no_show") {
+    return P(`SELECT DISTINCT ea.donor_id, 'event_no_show:' || ea.event_id AS event_key
+                FROM event_attendees ea JOIN events e ON e.id=ea.event_id AND e.org_id=ea.org_id
+                JOIN donors d ON d.id=ea.donor_id AND d.org_id=ea.org_id AND ${LIVE_PERSON}
+               WHERE ea.org_id=? AND ${EVENT_NO_SHOW_SQL("ea", "e", "?::date")}
+                 AND e.date::date >= ?::date - ?::int`, [orgId, today, today, w]);
+  }
+  if (key === "task_outcome") {
+    return P(`SELECT t.donor_id, 'task_outcome:' || t.id AS event_key, t.outcome
+                FROM tasks t JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id AND ${LIVE_PERSON}
+               WHERE t.org_id=? AND t.done=1 AND t.outcome IS NOT NULL AND t.voided_at IS NULL
+                 AND t.completed_at >= ?::date - ?::int`, [orgId, today, w]);
+  }
+  if (key === "email_engaged_no_gift") {
+    // Opened or clicked, 14 days ago or more (inside the window), and not a
+    // gift of any kind from them since the day they opened it.
+    const wait = (await journeyMod()).EMAIL_WAIT_DAYS;
+    const noGiftSince = col => `NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id=d.org_id AND g.donor_id=d.id AND g.amount > 0
+                                  AND COALESCE(g.date,'') <> '' AND LEFT(g.date,10)::date >= ${col})`;
+    const steward = await P(
+      `SELECT DISTINCT cr.donor_id, 'email_engaged:s:' || cr.campaign_id AS event_key
+         FROM campaign_recipients cr JOIN donors d ON d.id=cr.donor_id AND d.org_id=cr.org_id AND ${LIVE_PERSON}
+        WHERE cr.org_id=? AND cr.opened_at IS NOT NULL
+          AND cr.opened_at::date <= ?::date - ?::int AND cr.opened_at::date >= ?::date - ?::int - ?::int
+          AND ${noGiftSince("cr.opened_at::date")}`, [orgId, today, wait, today, wait, w]);
+    const mailchimp = await P(
+      `SELECT DISTINCT a.donor_id, 'email_engaged:m:' || a.campaign_id AS event_key
+         FROM email_marketing_activity a JOIN email_marketing_campaigns c ON c.id=a.campaign_id AND c.org_id=a.org_id
+         JOIN donors d ON d.id=a.donor_id AND d.org_id=a.org_id AND ${LIVE_PERSON}
+        WHERE a.org_id=? AND (a.opened OR a.clicked) AND COALESCE(a.occurred_at, c.sent_at) IS NOT NULL
+          AND COALESCE(a.occurred_at, c.sent_at)::date <= ?::date - ?::int
+          AND COALESCE(a.occurred_at, c.sent_at)::date >= ?::date - ?::int - ?::int
+          AND ${noGiftSince("COALESCE(a.occurred_at, c.sent_at)::date")}`, [orgId, today, wait, today, wait, w]);
+    return [...steward, ...mailchimp];
+  }
   return [];
+}
+// JOURNEYS-4 · WHO DIDN'T COME. Marked as not coming, or registered for an
+// event that has passed where the door kept a list (somebody was marked as
+// attended or checked in) and this person never was. An event nobody took
+// attendance at has no no-shows: Steward cannot see who came.
+function EVENT_NO_SHOW_SQL(ea, e, todayExpr) {
+  return `(lower(coalesce(${ea}.status,'')) = 'no_show'
+           OR (lower(coalesce(${ea}.status,'')) IN ('registered','confirmed') AND ${ea}.checked_in_at IS NULL
+               AND ${e}.date IS NOT NULL AND ${e}.date::date < ${todayExpr}
+               AND EXISTS (SELECT 1 FROM event_attendees x WHERE x.event_id=${ea}.event_id AND x.org_id=${ea}.org_id
+                             AND (lower(coalesce(x.status,'')) = 'attended' OR x.checked_in_at IS NOT NULL))))`;
+}
+// JOURNEYS-4 · DOES THIS ORG HAVE ANY OPENS TO READ?
+async function emailOpenAvailability(orgId) {
+  const J = await journeyMod();
+  const [r] = await query(
+    `SELECT (SELECT COUNT(*) FROM campaign_recipients WHERE org_id=? AND opened_at IS NOT NULL)::int AS steward,
+            (SELECT COUNT(*) FROM email_marketing_activity WHERE org_id=? AND (opened OR clicked))::int AS mailchimp`,
+    [orgId, orgId]).catch(() => [{ steward: 0, mailchimp: 0 }]);
+  return J.emailTriggerAvailability({ stewardOpens: r.steward, mailchimpOpens: r.mailchimp });
 }
 async function runLifecycleTriggers(orgId, today) {
   const J = await journeyMod();
@@ -11840,13 +11987,30 @@ async function runLifecycleTriggers(orgId, today) {
   let fired = 0;
   for (const { trigger_key: key } of armed) {
     for (const r of await lifecycleRows(orgId, key, today)) {
-      const out = await maybeStartJourney(orgId, r.donor_id, key, { today, eventKey: r.event_key, crossed: r.crossed })
+      const out = await maybeStartJourney(orgId, r.donor_id, key, { today, eventKey: r.event_key, crossed: r.crossed, outcome: r.outcome })
         .catch(e => { console.error(`[journey] ${key}:`, e.message); return null; });
       if (out && out.started) fired += 1 + (out.also || []).length;
     }
   }
   return fired;
 }
+
+// JOURNEYS-4 · AT ONCE, NOT AN HOUR LATER. A staff write (recording a winner,
+// marking a no-show, finishing a call) checks this org's armed sweep triggers
+// a moment later. Coalesced per org, so a burst of writes is one check. The
+// event keys make it safe beside the hourly sweep: nothing enrols twice.
+const _journeyNudges = new Map();
+function nudgeJourneys(orgId) {
+  if (!orgId || _journeyNudges.has(orgId)) return;
+  const t = setTimeout(async () => {
+    _journeyNudges.delete(orgId);
+    try { await runLifecycleTriggers(orgId, orgToday(await orgTz(orgId))); }   // ORG_TZ_SEAM_OK
+    catch (e) { console.error(`[journey] nudge ${orgId}:`, e.message); }
+  }, 1200);
+  if (t.unref) t.unref();
+  _journeyNudges.set(orgId, t);
+}
+registerJourneyNudge(nudgeJourneys);
 
 // PARITY-3 6a — the morning look, run now for the caller's own org only, so
 // a birthday or anniversary journey can be checked without waiting an hour.
@@ -11910,6 +12074,10 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
     touchGapDays: await journeyTouchGap(req.user.orgId),
     touchGap: { min: J.TOUCH_GAP_MIN, max: J.TOUCH_GAP_MAX, default: J.TOUCH_GAP_DEFAULT },
     hourMilestones: J.HOUR_MILESTONES,
+    // JOURNEYS-4 — the outcomes a call or meeting can end with, and whether the
+    // email trigger has anything to read in this org.
+    taskOutcomes: J.TASK_OUTCOMES,
+    triggerAvailability: { email_engaged_no_gift: await emailOpenAvailability(req.user.orgId) },
     groups: groupOpts,
     funds: fundOpts.map(f => ({ id: f.id, name: f.name })),
     campaigns: campaignOpts.map(c => ({ id: c.id, name: c.name })),
@@ -12048,7 +12216,7 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
     priority: b.priority !== undefined ? b.priority : (preset && preset.priority),
     amountCents: b.amountCents,
     audience: b.audience,
-    triggerFilters: b.triggerFilters,
+    triggerFilters: b.triggerFilters || (preset && preset.triggerFilters),
     steps: Array.isArray(b.steps) && b.steps.length ? b.steps : (preset && preset.steps),
     exclusive: b.exclusive !== undefined ? b.exclusive === true : !!(preset && preset.exclusive),
   };
@@ -12069,6 +12237,8 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
 
   const refused = await journeyRefsRefused(req.user.orgId, v);
   if (refused) return res.status(404).json(refused);
+  const offRefusal = b.enabled === true ? await journeyCannotRun(req.user.orgId, v.trigger) : null;
+  if (offRefusal) return res.status(409).json(offRefusal);
 
   const id = "ct_" + uuid().slice(0, 10);
   await run(
@@ -12208,6 +12378,8 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   if (refused) return res.status(404).json(refused);
   const enabledNow = b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled;
   const exclusiveNow = b.exclusive !== undefined ? b.exclusive === true : !!cur.exclusive;
+  const offRefusal = enabledNow ? await journeyCannotRun(req.user.orgId, v.trigger) : null;
+  if (offRefusal) return res.status(409).json(offRefusal);
   await run(
     `UPDATE cultivation_templates SET name=?, description=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
        priority=?, audience=?::jsonb, journey_enabled=?, trigger_filters=?::jsonb,
@@ -12267,21 +12439,29 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 // button's number and the result cannot disagree.
 async function applySplit(orgId, t, days, audience, joinOthers = true) {
   const ids = (await qualifyingDonors(orgId, t, days, audience)).map(r => r.id);
-  const out = { qualify: ids.length, willJoin: [], alreadyIn: [], blocked: [], inOthers: [] };
+  const out = { qualify: ids.length, willJoin: [], alreadyIn: [], blocked: [], inOthers: [], noContact: [], noAsk: [] };
   if (!ids.length) return out;
+  const J = await journeyMod();
+  const asks = J.journeyAsks(t.steps);
   const [people, plans] = await Promise.all([
-    query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL`, [orgId, ids]),
+    query(`SELECT id, name, deceased, do_not_contact, do_not_solicit FROM donors WHERE org_id=? AND id = ANY(?::text[]) AND deleted_at IS NULL`, [orgId, ids]),
     query(`SELECT p.donor_id, p.template_id, p.template_name, p.priority, COALESCE(ct.exclusive, false) AS exclusive
              FROM cultivation_plans p LEFT JOIN cultivation_templates ct ON ct.id = p.template_id AND ct.org_id = p.org_id
             WHERE p.org_id=? AND p.status='active' AND p.donor_id = ANY(?::text[])`, [orgId, ids]),
   ]);
   const nameOf = new Map(people.map(d => [d.id, d.name]));
+  const flagsOf = new Map(people.map(d => [d.id, d]));
   const byDonor = new Map();
   for (const p of plans) (byDonor.get(p.donor_id) || byDonor.set(p.donor_id, []).get(p.donor_id)).push(p);
   for (const id of ids) {
     if (!nameOf.has(id)) continue;
     const mine = byDonor.get(id) || [];
     const row = { id, name: nameOf.get(id), journeys: mine.map(p => p.template_name) };
+    // JOURNEYS-4 — the engine's own entry rules, so the preview counts the
+    // people the apply would actually put in.
+    const f = flagsOf.get(id) || {};
+    if (f.deceased === true || f.do_not_contact === true) { out.noContact.push(row); continue; }
+    if (asks && f.do_not_solicit === true) { out.noAsk.push(row); continue; }
     if (mine.some(p => p.template_id === t.id)) { out.alreadyIn.push(row); continue; }
     const higher = t.exclusive && mine.find(p => p.exclusive && Number(p.priority) >= Number(t.priority));
     if (higher) { out.blocked.push({ ...row, journeys: [higher.template_name] }); continue; }
@@ -12293,6 +12473,8 @@ async function applySplit(orgId, t, days, audience, joinOthers = true) {
 function applySentence(split, joinOthers) {
   const n = k => `${k} ${k === 1 ? "person" : "people"}`;
   const parts = [`${split.qualify} qualify.`, `${split.willJoin.length} will join.`];
+  if (split.noContact && split.noContact.length) parts.push(`${n(split.noContact.length)} ${split.noContact.length === 1 ? "is" : "are"} deceased or asked not to be contacted, and will not join.`);
+  if (split.noAsk && split.noAsk.length) parts.push(`${n(split.noAsk.length)} ${split.noAsk.length === 1 ? "is" : "are"} marked do not solicit, and this journey asks for money, so they will not join.`);
   if (split.alreadyIn.length) parts.push(`${n(split.alreadyIn.length)} ${split.alreadyIn.length === 1 ? "is" : "are"} already in it.`);
   if (split.blocked.length) parts.push(`${split.blocked.length} ${split.blocked.length === 1 ? "is" : "are"} already in a journey that ranks higher.`);
   if (split.inOthers.length) parts.push(joinOthers
@@ -12630,6 +12812,11 @@ function audienceClauses(audience = {}, alias = "d") {
                         AND rs.status = ANY(?::text[]))`);
     params.push(GR.ACTIVE_RECURRING_STATUSES);
   }
+  if (audience.eventGuests) {
+    // JOURNEYS-4 — the Group rule's own definition (groups.js eventGuestSql).
+    const g = GR.eventGuestSql(String(audience.eventGuests), alias);
+    if (g) sql.push(g);
+  }
   if (audience.stage) {
     sql.push(`lower(coalesce(${alias}.stage,'')) = lower(?)`);
     params.push(String(audience.stage));
@@ -12730,6 +12917,7 @@ async function qualifyingDonorsByTrigger(orgId, t, days, audience = {}) {
     const tf = t.trigger_filters || {};
     let ids = [...new Set((await lifecycleRows(orgId, trigger, today, days))
       .filter(r => trigger !== "volunteer_hours" || !tf.hours || (r.crossed || []).includes(Number(tf.hours)))
+      .filter(r => trigger !== "task_outcome" || String(r.outcome || "") === String(tf.outcome || ""))
       .map(r => r.donor_id))];
     if (ids.length && a.sql) {
       const keep = new Set((await query(`SELECT d.id FROM donors d WHERE d.org_id=? AND d.id = ANY(?::text[])${a.sql}`,
@@ -17072,12 +17260,18 @@ app.post("/tasks/:id/complete", requireAuth, checkWriteAccess, wrap(async (req, 
   if (done === 1 && !t.done && t.donor_id && outcomeKind && ts.NEEDS_OUTCOME.has(outcomeKind)) {
     const iid = String(req.body.interactionId || "");
     const [i] = iid ? await query(
-      `SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'next_step' IN ('set','skipped')`,
+      `SELECT id, metadata->>'outcome' AS outcome FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND metadata->>'next_step' IN ('set','skipped')`,
       [iid, orgId, t.donor_id]) : [];
     if (!i) return res.status(422).json({ error: "needs_outcome",
       kind: outcomeKind,
       sentence: `Say how the ${outcomeKind === "call" ? "call" : "meeting"} went and what's next (or "No next step") to finish it.` });
     viaConversation = true;
+    // JOURNEYS-4 — the outcome she picked rides onto the task, where a
+    // task_outcome journey reads it (lifecycleRows).
+    const J4 = await journeyMod();
+    const picked = J4.TASK_OUTCOME_KEYS.includes(String(i.outcome || "")) ? i.outcome
+      : (J4.TASK_OUTCOME_KEYS.includes(String(req.body.outcome || "")) ? String(req.body.outcome) : null);
+    if (picked) await run("UPDATE tasks SET outcome=? WHERE id=? AND org_id=?", [picked, t.id, orgId]);
   }
   // FIX-31: a next step's or a deadline's task is ticked through that record,
   // and the record's trigger ticks the task: one record, every view. When the
@@ -18615,6 +18809,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // Which rule produced the proposal — "note" or "touch" — recorded with the
   // conversation so a wrong guess can be found later, not just corrected once.
   const nsSource = ["note", "touch"].includes(String(req.body?.nextStep?.source || "")) ? req.body.nextStep.source : null;
+  // JOURNEYS-4 — how it ended, if she picked one. Anything else is dropped.
+  const outcome = (await journeyMod()).TASK_OUTCOME_KEYS.includes(String(req.body?.outcome || "")) ? String(req.body.outcome) : null;
 
   const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRow[0]?.name || "";
@@ -18653,7 +18849,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
        JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set", ...(place ? { location: place } : {}),
-                        ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}) })]);
+                        ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}),
+                        ...(outcome ? { outcome } : {}) })]);
 
     // An open thread on this donor closes on this conversation — the outcome.
     const closedRows = await queryTx(client,
@@ -18681,6 +18878,12 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   });
 
   calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
+  // JOURNEYS-4 — a call or meeting logged on the Thread closes its step's task
+  // (FIX-31), and that task is the one finished with this outcome.
+  if (outcome && out.closedThreadId && ["call", "meeting"].includes(touch.interactionType)) {
+    await run(`UPDATE tasks SET outcome=?, completed_at=COALESCE(completed_at, NOW()) WHERE thread_id=? AND org_id=? AND done=1`,
+      [outcome, out.closedThreadId, orgId]).catch(e => console.error("[journey] task outcome:", e.message));
+  }
   // FIX-14 Part 2 — the audit row names the conversation that was logged
   // (the response's first object is the thread, which is the wrong record),
   // and carries it, so the log can say "Logged a meeting with ...".
@@ -25848,10 +26051,12 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
   const guests = String(req.body?.guests || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, EV.MAX_QTY);
   for (const g of guests) {
     if (g.toLowerCase() === name.toLowerCase()) continue;
+    // JOURNEYS-4 — the guest is a person record of their own.
+    const gid = await PM.findOrCreateGuest(e.org_id, g, { id: "system:event-registration", name: "The registration page" }).catch(() => null);
     await run(
-      `INSERT INTO event_attendees (id,event_id,org_id,name,status,level_id,quantity,source,guest_of,notes)
-       VALUES (?,?,?,?,'registered',?,0,'public',?,?)`,
-      ["att_" + uuid().slice(0, 10), e.id, e.org_id, g.slice(0, 200), level.id, attId, `Guest of ${name}.`]).catch(() => {});
+      `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status,level_id,quantity,source,guest_of,notes)
+       VALUES (?,?,?,?,?,'registered',?,0,'public',?,?) ON CONFLICT (event_id, donor_id) DO NOTHING`,
+      ["att_" + uuid().slice(0, 10), e.id, e.org_id, gid, g.slice(0, 200), level.id, attId, `Guest of ${name}.`]).catch(() => {});
   }
 
   const deductible = (Number(level.price) - Number(level.fmv)) * (level.kind === "ticket" ? qty : 1);

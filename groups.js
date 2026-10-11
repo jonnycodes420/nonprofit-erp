@@ -343,6 +343,13 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
                             AND (lower(COALESCE(ea.status,'')) = 'attended' OR ea.checked_in_at IS NOT NULL)`, "ea.event_id");
   idRule("registeredEvent", `SELECT 1 FROM event_attendees er WHERE er.org_id = donors.org_id AND er.donor_id = donors.id
                             AND lower(COALESCE(er.status,'')) NOT IN ('cancelled','invited','declined')`, "er.event_id");
+  // JOURNEYS-4: event guests, four ways (shared/journeyShape EVENT_GUEST_CHOICES).
+  if (q.eventGuest) {
+    const g = eventGuestSql(String(q.eventGuest), "donors", q.eventGuestEvent ? "?" : null);
+    if (!g) return { badStatus: true };
+    where.push(g);
+    if (q.eventGuestEvent) params.push(String(q.eventGuestEvent));
+  }
   idRule("gavePage", `SELECT 1 FROM gifts gp WHERE gp.org_id = donors.org_id AND gp.donor_id = donors.id AND gp.amount > 0
                         AND gp.giving_page_id IS NOT NULL`, "gp.giving_page_id");
   // A bidder is a person registered to bid (auction_bidders, the paddle),
@@ -445,6 +452,30 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
   return { whereSql: where.join(" AND "), params, orderBy, selectCols, selectArgs };
 }
 
+// ── JOURNEYS-4 · EVENT GUESTS, ONE DEFINITION ─────────────────────────────
+// The four ways somebody is on a guest list. The Group rule (eventGuest), a
+// journey's audience and Communications built on a Group all read this. A
+// no-show is somebody marked as not coming, or registered for an event that
+// has passed where the door kept a list and they were never checked in. A
+// guest brought by somebody else is a person record of their own (matched
+// like any other) with no gift yet. `eventParam` is "?" to narrow to one event.
+const EVENT_GUEST_KINDS = ["registered", "attended", "no_show", "brought_guest"];
+function eventGuestSql(kind, alias, eventParam = null) {
+  if (!EVENT_GUEST_KINDS.includes(kind)) return null;
+  const one = eventParam ? ` AND eg.event_id = ${eventParam}` : "";
+  const base = `SELECT 1 FROM event_attendees eg JOIN events ev ON ev.id = eg.event_id AND ev.org_id = eg.org_id
+                 WHERE eg.org_id = ${alias}.org_id AND eg.donor_id = ${alias}.id${one}`;
+  if (kind === "registered") return `EXISTS (${base} AND lower(COALESCE(eg.status,'')) NOT IN ('cancelled','invited','declined'))`;
+  if (kind === "attended") return `EXISTS (${base} AND (lower(COALESCE(eg.status,'')) = 'attended' OR eg.checked_in_at IS NOT NULL))`;
+  if (kind === "no_show") return `EXISTS (${base} AND (lower(COALESCE(eg.status,'')) = 'no_show'
+      OR (lower(COALESCE(eg.status,'')) IN ('registered','confirmed') AND eg.checked_in_at IS NULL
+          AND ev.date IS NOT NULL AND ev.date < CURRENT_DATE
+          AND EXISTS (SELECT 1 FROM event_attendees x WHERE x.event_id = eg.event_id AND x.org_id = eg.org_id
+                        AND (lower(COALESCE(x.status,'')) = 'attended' OR x.checked_in_at IS NOT NULL)))))`;
+  return `(EXISTS (${base} AND eg.guest_of IS NOT NULL AND lower(COALESCE(eg.status,'')) NOT IN ('cancelled','declined'))
+           AND NOT EXISTS (SELECT 1 FROM gifts gg WHERE gg.org_id = ${alias}.org_id AND gg.donor_id = ${alias}.id AND gg.amount > 0))`;
+}
+
 // ── THE RULE ───────────────────────────────────────────────────────────────
 // The keys a dynamic group's rule may hold: exactly the list's own filters.
 const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "household", "search",
@@ -466,7 +497,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // AGENT-3: grant reports due, memberships ending, auction winners.
   "grantReportDue", "memberExpiresFrom", "memberExpiresTo", "auctionWinner",
   // GROUPS-2: the starters' rules, each a definition that already exists.
-  "bunt", "firstGiftThisYear", "gaveMore", "topTenth", "awaitingThanks", "noHistory", "boardMember", "doNotSolicit", "solicitable"];
+  "bunt", "firstGiftThisYear", "gaveMore", "topTenth", "awaitingThanks", "noHistory", "boardMember", "doNotSolicit", "solicitable",
+  // JOURNEYS-4: event guests, four ways, at any event or one.
+  "eventGuest", "eventGuestEvent"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -520,6 +553,8 @@ function normalizeRules(raw) {
   if (rules.member && !Object.prototype.hasOwnProperty.call(MEMBER_STATUSES, rules.member)) errors.push("A member is current, active, in grace, lapsed or any.");
   if (rules.memberLevel && !rules.member) rules.member = "current";
   if (rules.kind && !["person", "organization"].includes(rules.kind)) errors.push("A kind is a person or an organization.");
+  if (rules.eventGuest && !EVENT_GUEST_KINDS.includes(rules.eventGuest)) errors.push("An event guest is registered, attended, no_show or brought_guest.");
+  if (rules.eventGuestEvent && !rules.eventGuest) errors.push("An event goes with a kind of guest.");
   if (!Object.keys(rules).length) errors.push("A group by rule needs at least one rule, or it is everybody.");
   return { ok: errors.length === 0, rules, errors };
 }
@@ -559,6 +594,9 @@ function rulesSentence(rules = {}) {
   if (rules.unthankedOver !== undefined) parts.push(Number(rules.unthankedOver) > 0 ? `with a gift over $${Number(rules.unthankedOver).toLocaleString("en-US")} not yet thanked` : "with a gift not yet thanked");
   if (rules.noAsk) parts.push("with no ask this year (no proposal open, nothing asked in twelve months)");
   if (rules.kind) parts.push(rules.kind === "organization" ? "organizations" : "people, not organizations");
+  if (rules.eventGuest) parts.push(({ registered: "registered for", attended: "who came to", no_show: "who registered but did not come to",
+    brought_guest: "who came as somebody's guest to" })[rules.eventGuest] + (rules.eventGuestEvent ? " one event" : " an event")
+    + (rules.eventGuest === "brought_guest" ? " and have not given yet" : ""));
   if (rules.registeredEvent) parts.push(rules.registeredEvent === "any" ? "registered for an event" : "registered for one event");
   if (rules.attendedEvent) parts.push(rules.attendedEvent === "any" ? "who came to an event (attended or checked in)" : "who came to one event (attended or checked in)");
   if (rules.member) parts.push({ current: "members now (active or in grace)", active: "active members", grace: "members in their grace period", lapsed: "lapsed members", any: "members, now or before" }[rules.member] + (rules.memberLevel ? " at one level" : ""));
@@ -771,7 +809,7 @@ async function dynamicJoins(orgId, { donorId = null, today = "", fire } = {}) {
 
 module.exports = {
   baselineGroup, dynamicJoins, watchedDynamicGroups,
-  DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS, ACTIVE_RECURRING_STATUSES,
+  DONOR_SORTS, DONOR_SCORE_COLS, PEOPLE_ROLES, RULE_KEYS, KINDS, ACTIVE_RECURRING_STATUSES, eventGuestSql, EVENT_GUEST_KINDS,
   STARTERS, starterList, starterByKey, starterGroup,
   buildDonorFilter, normalizeRules, rulesSentence, groupById, listGroups, memberSql, memberIds, memberCounts, isMember, groupsFor, shapeGroup,
 };
