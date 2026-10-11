@@ -4397,6 +4397,8 @@ async function runSchemaInit(pool) {
   // off means nothing is sent until a person presses Sync.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS qbo_sync_enabled BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS qbo_auto_sync BOOLEAN NOT NULL DEFAULT false`);
+  // CONNECT-2: the Xero admin's own auto-sync switch. Off until every fund is mapped.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS xero_auto_sync BOOLEAN NOT NULL DEFAULT false`);
   // A lease, not a lock that holds a connection: one sync run per org at a
   // time, so two people pressing Sync all cannot create the same donor as two
   // QuickBooks customers. A run that dies leaves a lease that lapses itself.

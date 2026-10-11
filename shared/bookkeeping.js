@@ -51,12 +51,12 @@ export const VENDORS = {
     key: "xero", label: "Xero",
     secondAxis: "tracking", secondAxisLabel: "Tracking category",
     authNote: "Connect with Xero's OAuth 2.0. Steward asks to record bank transactions and to read your account settings, and nothing else.",
-    // FIX-20 Part 4: the Xero send was a stub that posted to an endpoint Xero
-    // does not have. Until a real one exists (bank transactions from the
-    // org's own accounts and tracking categories, a Pending list, sent once),
-    // every screen says plainly that nothing is sent, and the route refuses.
-    sends: false,
-    notSendingSentence: "Sending to Xero is not available yet. Steward has sent nothing to Xero, and the bookkeeper file on the Finance tab has the same gifts in Xero's columns.",
+    // CONNECT-2 Part 3: Xero sends through its own panel (xeroSync.js): one
+    // RECEIVE bank transaction per gift, only when somebody presses Sync.
+    // INT-2's deposit send (POST /bookkeeping/:id/send) posts to an endpoint
+    // Xero does not have, so `depositSend: false` keeps that route refusing.
+    sends: true, depositSend: false, panel: "xero",
+    notSendingSentence: "Xero is sent from its own panel: Sync sends one bank transaction per gift. The deposit-per-payout send is QuickBooks only.",
   },
 };
 export const VENDOR_KEYS = Object.keys(VENDORS);

@@ -90,6 +90,14 @@ if (!backgroundTicksDisabled()) {
     .catch(e => console.error("[qbo-auto-sync]", e.message)), 60 * 60 * 1000);
 }
 
+// CONNECT-2: XERO AUTO-SYNC, the same rule as QuickBooks. Hourly, only for
+// orgs whose admin turned it on, and never while a fund is unmapped.
+if (!backgroundTicksDisabled()) {
+  const runXeroAutoSync = () => require("./finance").processXeroAutoSync();
+  setInterval(() => recordTick("processXeroAutoSync", runXeroAutoSync)
+    .catch(e => console.error("[xero-auto-sync]", e.message)), 60 * 60 * 1000);
+}
+
 // Fires due scheduled campaigns (status='scheduled', scheduled_at passed)
 // through the exact same send path as the manual route. The claim UPDATE is
 // conditional on status so two overlapping ticks can't double-send. A
