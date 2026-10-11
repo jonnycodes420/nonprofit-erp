@@ -153,7 +153,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
   useEffect(() => { load(); }, []);
   // PARITY-2 Part 5: where QuickBooks sync is on, QboSync's own panel (chosen
   // from the company's chart of accounts) is QuickBooks' mapping; this one
-  // stays for Xero.
+  // stays for any other vendor.
   // CONNECT-2: Xero has its own panel too (XeroSync), so it never appears here.
   const d = loaded
     ? { ...loaded, connections: (loaded.connections || []).filter(c => c.vendor !== "xero"

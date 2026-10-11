@@ -293,7 +293,11 @@ async function syncOne(ctx, g) {
   const key = claimed.keepKey || idempotencyKey(ctx.orgId, ctx.tenantId, g.id, txn);
   const res = await xeroCall(ctx, "PUT", "/BankTransactions", { body: { BankTransactions: [txn] }, idempotencyKey: key });
   const made = res.ok && res.body && Array.isArray(res.body.BankTransactions) ? res.body.BankTransactions[0] : null;
-  if (!made || !made.BankTransactionID || made.HasValidationErrors === true) {
+  // Xero can answer 200 with the transaction carrying ValidationErrors: that is
+  // a refusal, never a send.
+  const refused = made && (made.HasValidationErrors === true
+    || (Array.isArray(made.ValidationErrors) && made.ValidationErrors.length > 0));
+  if (!made || !made.BankTransactionID || refused) {
     const failure = res.ok ? { kind: "fault", status: 400, body: { Elements: [made || {}] } } : res;
     const code = failure.kind === "network" || failure.kind === "server" ? "outcome_unknown"
       : failure.kind === "auth" ? "auth" : String(failure.status || "fault");
