@@ -36,6 +36,9 @@
 #        GOOGLE_CALENDAR_API_BASE=http://localhost:5618 \
 #        GMAIL_API_BASE=http://localhost:5618 GRAPH_API_BASE=http://localhost:5618 \
 #        MAILCHIMP_API_BASE=http://localhost:5618/mailchimp/3.0 \
+#        GIVEBUTTER_API_BASE=http://localhost:5618/givebutter/v1 \
+#        ZEFFY_API_BASE=http://localhost:5618/zeffy/api/v1 SQUARE_API_BASE=http://localhost:5618/square/v2 \
+#        CONSTANT_CONTACT_API_BASE=http://localhost:5618/constantcontact/v3 \
 #        node server.js
 #      (FIX-11 Part 5: the three INBOUND_EMAIL_* values turn the BCC webhook on;
 #      without them fix11-inbound-resend SKIPS, and a suite that skips is
@@ -141,6 +144,7 @@ CORE=(
   oauth-state
   int3-optout
   mailchimp1-sync
+  connect2-sources
   import2-history
   int4-mailbox
   intb1-calendar-store
