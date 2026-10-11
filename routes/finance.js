@@ -36,6 +36,7 @@ let sharedProcessQboAutoSync = null;
 // CONNECT-2 — the one token seam, published so the giving-source runner
 // (server.js syncSource) renews an OAuth Square token the same way.
 let sharedAccessTokenFor = null;
+let sharedProcessXeroAutoSync = null;
 
 function mount(ctx) {
 const {
@@ -3000,7 +3001,7 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
   if (!c) return res.status(404).json({ error: "Not found" });
   // FIX-20 Part 4: a vendor Steward cannot really send to is refused here,
   // before anything is claimed, so no row ever says a deposit went.
-  if (BK.VENDORS[c.vendor] && BK.VENDORS[c.vendor].sends === false)
+  if (BK.VENDORS[c.vendor] && (BK.VENDORS[c.vendor].sends === false || BK.VENDORS[c.vendor].depositSend === false))
     return res.status(409).json({ error: "send_not_available", sentence: BK.VENDORS[c.vendor].notSendingSentence });
   const mapping = { ...((typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping) || {}),
                     donorNames: c.donor_names === true };
@@ -3472,6 +3473,167 @@ sharedProcessQboAutoSync = async function processQboAutoSync(onlyOrgId = null) {
 // fund is mapped.
 app.post("/qbo/auto-sync/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   res.json(await sharedProcessQboAutoSync(req.user.orgId));
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONNECT-2 Part 3 · XERO SYNC
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The QuickBooks shape, for Xero. The connection is INT-OAUTH's (granular
+// scopes accounting.banktransactions and accounting.settings.read, and the
+// organisation chosen at /oauth/xero/tenant); these routes are what it is
+// for: "Read from Xero" to prove it is the right organisation and to list its
+// accounts, the mapping, and Sync. The engine is xeroSync.js. NOTHING IS SENT
+// UNTIL A PERSON PRESSES SYNC, unless the org admin turned on auto-sync, which
+// cannot be turned on while any fund is unmapped.
+//
+// One live Xero connection per org, so no route takes a row id in its path.
+const xeroSyncMod = () => require("../xeroSync");
+const xeroTokenFor = orgId => (conn, force) => accessTokenFor(orgId, conn, "xero", { force });
+const xeroCtx = (orgId, c) => ({ orgId, tenantId: String(c.realm_id || ""),
+  token: c.credentials_sealed ? force => accessTokenFor(orgId, c, "xero", { force }) : null });
+
+app.get("/xero", requireAuth, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  const [org] = await query("SELECT xero_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
+  if (!c) return res.json({ connected: false, autoSync: false, funds: [],
+    sentence: "Xero is not connected. Connect it, choose the organisation, and nothing is sent until you press Sync." });
+  const map = XS.readMapping(c);
+  const gaps = await XS.mappingGaps(orgId, map);
+  const sent = await XS.sentSummary(orgId, c.realm_id);
+  const since = XS.startDateOf(c, map);
+  const pq = XS.pendingRowsSql(orgId, since);
+  const pending = c.realm_id ? await query(pq.sql, pq.args) : [];
+  const pendingCents = pending.reduce((t, r) => t + Number(r.cents), 0);
+  res.json({
+    connected: true, id: c.id, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
+    tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: !!(org && org.is_demo_org === true),
+    mappingReady: gaps.ok, canSync: !!gaps.canSync && !!c.realm_id,
+    mappingGaps: gaps.ok ? null : { funds: gaps.funds, bankAccount: gaps.bankAccount, sentence: gaps.sentence },
+    mappingOtherTenant: map.otherTenant,
+    mapping: { startDate: since, bankAccount: map.bankAccount, feeAccount: map.feeAccount, funds: map.funds },
+    funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+            { id: XS.NO_FUND, name: "No fund named", restricted: false }],
+    pending: { count: pending.length, cents: pendingCents,
+      definition: `Every gift dated on or after ${since} that has not been sent to this Xero organisation. Real money only: never a sample, a refund, stock or in-kind.`,
+      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10),
+        cents: Number(r.cents), fund: r.fund_name || null, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : null })) },
+    sent,
+    lastSentAt: c.last_sent_at || null, lastError: c.last_error || null, lastErrorAt: c.last_error_at || null,
+    definition: "Each gift becomes one bank transaction in Xero (money received), on the income account its fund is mapped to, in the bank account you choose, with any processing fee as a negative line. Nothing is sent until somebody presses Sync, and a gift is never sent twice.",
+  });
+}));
+
+// READ FROM XERO. A POST because asking may renew the token, and a GET never
+// changes state. It reads the organisation's name and accounts and keeps only
+// the name, so the card can say which books it points at.
+app.post("/xero/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, and its organisation appears here." });
+  if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+  if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
+    return res.status(409).json({ error: "not_signed_in", sentence: "Xero is not signed in yet, so Steward cannot read it. Connect it again." });
+  const out = await XS.fetchPreview(xeroCtx(orgId, c));
+  if (!out.ok) return res.status(502).json({ error: "preview_failed", sentence: out.sentence });
+  if (out.organisation.name) {
+    await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{xero}',
+                 COALESCE(mapping->'xero', '{}'::jsonb) || ?::jsonb), updated_at=NOW() WHERE id=? AND org_id=?`,
+      [JSON.stringify({ tenantName: out.organisation.name }), c.id, orgId]);
+  }
+  res.json({ ...out,
+    sentence: `Steward can read ${out.organisation.name || "this Xero organisation"}: ${out.income.length} income account${out.income.length === 1 ? "" : "s"} and ${out.bank.length} bank account${out.bank.length === 1 ? "" : "s"}. It only read them; nothing was sent to Xero.` });
+}));
+
+// The mapping, saved as one document. Fund ids are checked against THIS org's
+// own funds; an id off a request body is never trusted.
+app.put("/xero/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, then choose where each gift lands." });
+  const b = req.body || {};
+  if (b.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate)))
+    return res.status(400).json({ error: "bad_date", sentence: "The start date must be written 2026-10-01." });
+  const mine = new Set((await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId])).map(f => f.id).concat([XS.NO_FUND]));
+  const str = (v, n) => (v === null || v === undefined || v === "") ? null : String(v).slice(0, n);
+  const acct = v => (v && typeof v === "object" && (str(v.code, 30) || str(v.id, 64)))
+    ? { code: str(v.code, 30), id: str(v.id, 64), name: str(v.name, 200) } : null;
+  const funds = {};
+  for (const [k, v] of Object.entries(b.funds && typeof b.funds === "object" ? b.funds : {})) {
+    if (!mine.has(k)) continue;
+    const a = acct(v);
+    if (a && a.code) funds[k] = a;
+  }
+  const prior = XS.readMapping(c);
+  const xero = { startDate: b.startDate ? String(b.startDate) : prior.startDate,
+    bankAccount: acct(b.bankAccount), feeAccount: acct(b.feeAccount), funds,
+    tenantId: c.realm_id ? String(c.realm_id) : null, tenantName: prior.tenantName };
+  await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{xero}', ?::jsonb),
+                    updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(xero), c.id, orgId]);
+  // A mapping that no longer covers every fund turns auto-sync off, so the
+  // switch can never be on while a gift has nowhere to land.
+  const gaps = await XS.mappingGaps(orgId, XS.readMapping({ ...c, mapping: { xero } }));
+  if (!gaps.ok) await run("UPDATE orgs SET xero_auto_sync=false WHERE id=?", [orgId]);
+  res.json({ ok: true, mapping: xero, mappingReady: gaps.ok,
+    sentence: "Saved. Nothing has been sent: gifts wait in Pending until somebody presses Sync." });
+}));
+
+app.post("/xero/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const all = req.body?.all === true;
+  const giftIds = Array.isArray(req.body?.giftIds) ? req.body.giftIds.map(String).filter(Boolean) : null;
+  const out = await XS.syncGifts({ orgId, giftIds, all, who: actor(req), tokenFor: xeroTokenFor(orgId) });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  res.json(out);
+}));
+
+// AUTO-SYNC, the org admin's own switch. Off by default, and it cannot be
+// turned on until every fund, and "No fund named", has a Xero account.
+app.put("/xero/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const on = req.body?.on === true;
+  if (on) {
+    const c = await XS.connection(orgId);
+    if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first." });
+    if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+    const gaps = await XS.mappingGaps(orgId, XS.readMapping(c));
+    if (!gaps.ok) return res.status(409).json({ error: "needs_mapping", sentence: gaps.sentence });
+  }
+  await run("UPDATE orgs SET xero_auto_sync=? WHERE id=?", [on, orgId]);
+  res.json({ ok: true, autoSync: on, sentence: on
+    ? "Auto-sync is on. Once an hour Steward sends whatever is waiting, as Steward's own entry in the log."
+    : "Auto-sync is off. Nothing goes to Xero until somebody presses Sync." });
+}));
+
+// THE HOURLY TICK, published to routes/jobs.js: the same engine as the
+// button, only for orgs whose admin turned auto-sync on, and only while every
+// fund is mapped.
+sharedProcessXeroAutoSync = async function processXeroAutoSync(onlyOrgId = null) {
+  const XS = xeroSyncMod();
+  const orgs = await query(
+    `SELECT o.id FROM orgs o
+       JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='xero' AND c.status <> 'disconnected'
+      WHERE o.xero_auto_sync = true AND COALESCE(o.is_demo_org, false) = false
+        AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
+  let sent = 0, waiting = 0;
+  for (const { id } of orgs) {
+    const r = await XS.syncGifts({ orgId: id, all: true, limit: 50, tokenFor: xeroTokenFor(id), everyFundMapped: true,
+      who: { id: "system:xero/auto-sync", name: "Steward (Xero auto-sync)" } })
+      .catch(e => { console.error("[xero-auto-sync]", id, e.message); return null; });
+    if (r && r.ok) { sent += r.synced; waiting += r.failed; }
+  }
+  return { detail: `${orgs.length} org(s) with Xero auto-sync on; ${sent} sent, ${waiting} left in Pending`,
+           summary: `Xero auto-sync sent ${sent} and left ${waiting} in Pending.` };
+};
+app.post("/xero/auto-sync/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  res.json(await sharedProcessXeroAutoSync(req.user.orgId));
 }));
 
 // Disconnecting stops the sending and DELETES NOTHING, in Steward or in the
@@ -4263,5 +4425,9 @@ module.exports = {
   processQboAutoSync: (...args) => {
     if (!sharedProcessQboAutoSync) throw new Error("processQboAutoSync called before routes/finance mount()");
     return sharedProcessQboAutoSync(...args);
+  },
+  processXeroAutoSync: (...args) => {
+    if (!sharedProcessXeroAutoSync) throw new Error("processXeroAutoSync called before routes/finance mount()");
+    return sharedProcessXeroAutoSync(...args);
   },
 };

@@ -601,7 +601,18 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
         sentN = qMap.mode === "deposit" ? q.entries : q.gifts; sentCents = q.cents; heldN = 0;
         lastSent = q.lastAt || null;
       }
-      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : "deposit";
+      // CONNECT-2: Xero counts what its own sync sent, the same count its panel shows.
+      const XSm = key === "xero" && b ? require("../xeroSync") : null;
+      if (XSm) {
+        const x = await XSm.sentSummary(orgId, b.realm_id);
+        const [m30] = await query(
+          `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount_cents),0)::bigint AS cents FROM gift_bookkeeping_syncs
+            WHERE org_id=? AND vendor='xero' AND realm_id=? AND status='synced' AND synced_at >= ?::date`,
+          [orgId, String(b.realm_id || ""), since30]);
+        sentN = Number(m30 && m30.n) || 0; sentCents = Number(m30 && m30.cents) || 0; heldN = 0;
+        lastSent = x.lastAt || null;
+      }
+      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : XSm ? "bank transaction" : "deposit";
       // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
       // rather than counting deposits that cannot have happened.
       if (BK.VENDORS[key].sends === false) {
@@ -623,7 +634,9 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
-        subtitle: QSm ? QSm.sendsSentence(qMap) : "Steward sends one deposit per payout. It never sends the same payout twice.",
+        subtitle: QSm ? QSm.sendsSentence(qMap)
+          : key === "xero" ? "Steward sends one bank transaction per gift when you press Sync. It never sends the same gift twice."
+          : "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
         oauthProvider: OAUTH_BY_VENDOR[key] || null,
