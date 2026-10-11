@@ -149,6 +149,7 @@ CORE=(
   int4-mailbox
   intb1-calendar-store
   fix33-sync-proof
+  push1-instant
   fix14-meeting-counts
   engage1-score-breakdown
   survey1-anonymous

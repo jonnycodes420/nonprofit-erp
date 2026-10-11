@@ -687,6 +687,11 @@ app.use("/inbound-email", express.raw({ type: "*/*", limit: "5mb" }), (req, res,
 
 app.use(express.json({ limit: "5mb" }));
 
+// PUSH-1 · Google and Microsoft tell Steward when a mailbox or calendar
+// changed (routes/push.js). The deps are read per notice: the sync functions
+// are declared further down this file.
+app.use(require("./routes/push").router(() => ({ query, run, syncMailbox, syncCalendar })));
+
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
 // donor-list family rather than app-wide so the SSE stream (/ai/stream) and
 // webhook routes are never buffered by the compressor. Mounting on "/donors"
@@ -9148,7 +9153,9 @@ async function gmailUnchanged(conn, token) {
   }
   const b = await r.json().catch(() => null);
   // Only a real history answer (it always carries the mailbox's historyId) can say "nothing new".
-  return b && b.historyId && !(b.history && b.history.length) ? { historyId: String(b.historyId) } : null;
+  // PUSH-1: and only a real answer with history in it says "something changed".
+  if (!b || !b.historyId) return null;
+  return b.history && b.history.length ? { changed: true } : { unchanged: true, historyId: String(b.historyId) };
 }
 
 async function syncMailboxRun(conn, userId, orgId, providerKey) {
@@ -9156,9 +9163,14 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
   let historyId = null;
+  // PUSH-1 · true only when the incremental check itself (history id, delta
+  // link) said something changed: the tick uses it to notice a push that
+  // stopped arriving. A first read, or a check that failed, is never one.
+  let gatedChange = false;
   if (providerKey === "google") {
     const same = await gmailUnchanged(conn, token);
-    if (same) {
+    gatedChange = !!(same && same.changed);
+    if (same && same.unchanged) {
       await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0, gmail_history_id=?,
                         last_error=NULL, last_error_at=NULL, retry_after=NULL, updated_at=NOW() WHERE id=?`, [same.historyId, conn.id]);
       return { logged: 0, found: 0, unchanged: true };
@@ -9172,6 +9184,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
   if (providerKey === "microsoft") {
     const [inbox, sent] = [await graphDeltaGate(conn, "inbox", token), await graphDeltaGate(conn, "sent", token)];
     graphLinks = { inbox, sent };
+    gatedChange = (inbox.gated && !inbox.unchanged) || (sent.gated && !sent.unchanged);
     if (inbox.unchanged && sent.unchanged) {
       await saveGraphDelta(conn, graphLinks);
       await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=0,
@@ -9188,7 +9201,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
     if (graphLinks) await saveGraphDelta(conn, graphLinks);
     await run(`UPDATE mailbox_connections SET last_synced_at=NOW(), last_logged_count=0, last_error=NULL, last_error_at=NULL,
                       updated_at=NOW() WHERE id=?`, [conn.id]);
-    return { logged: 0, found: 0, reason: "no_people" };
+    return { logged: 0, found: 0, reason: "no_people", gatedChange };
   }
   const donorsByEmail = new Map();
   for (const d of donors) donorsByEmail.set(String(d.email).trim().toLowerCase(), d.id);
@@ -9279,7 +9292,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
   if (graphLinks) await saveGraphDelta(conn, graphLinks);
   // THREAD-3: an email from a donor nobody has answered becomes a step.
   const replies = await processUnansweredMail(orgId).catch(e => { console.error("[mailbox] needs reply:", e.message); return null; });
-  return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0 };
+  return { logged, found: messages.length, dropped, replySteps: replies ? replies.opened + replies.tasks : 0, gatedChange };
 }
 
 // ── INT-BUILD-1 Part 1 · THE CALENDAR, ON THE SAME CONNECTION ──────────────
@@ -9321,8 +9334,12 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
   const readStartedAt = new Date();
-  if (await calendarUnchanged(conn, providerKey, token)) {
-    await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+  // PUSH-1 · Google's sync token first; the FIX-34 "updated since" question
+  // when there is none yet.
+  const gGate = providerKey === "google" ? await googleCalendarGate(conn, token) : null;
+  let gatedChange = !!(gGate && gGate.gated && gGate.changed);
+  if (gGate && gGate.unchanged) {
+    await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), gcal_sync_token=COALESCE(?, gcal_sync_token) WHERE id=?`, [gGate.syncToken || null, conn.id]);
     return { kept: 0, found: 0, unchanged: true };
   }
   // FIX-34 · OUTLOOK CALENDAR THROUGH calendarView/delta, the same way.
@@ -9330,6 +9347,7 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   if (providerKey === "microsoft") {
     const g = await graphDeltaGate(conn, "calendar", token);
     calLinks = { calendar: g };
+    gatedChange = !!(g.gated && !g.unchanged);
     if (g.unchanged) {
       await saveGraphDelta(conn, calLinks);
       await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
@@ -9399,11 +9417,12 @@ async function syncCalendarRun(conn, userId, orgId, providerKey) {
   for (const g of gone) await ME.revertMeeting(g.id, { actorId, actorName: "Calendar sync" })
     .catch(e => console.error("[calendar] meeting revert:", e.message));
   if (gone.length) await run(`DELETE FROM calendar_events WHERE id = ANY(?)`, [gone.map(g => g.id)]);
-  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), calendar_read_from=?, retry_after=NULL WHERE id=?`,
-    [readStartedAt.toISOString(), conn.id]);
+  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW(), calendar_read_from=?, retry_after=NULL,
+                    gcal_sync_token=CASE WHEN ? THEN ? ELSE gcal_sync_token END WHERE id=?`,
+    [readStartedAt.toISOString(), !!gGate, gGate ? gGate.syncToken || null : null, conn.id]);
   if (calLinks) await saveGraphDelta(conn, calLinks);
   // KEPT only: how many events she has that are not meetings is not Steward's to know.
-  return { kept, found: kept };
+  return { kept, found: kept, gatedChange };
 }
 
 // ── FIX-28 · STEWARD'S DATES ON HER OWN CALENDAR ───────────────────────────
@@ -9582,7 +9601,7 @@ async function graphDeltaGate(conn, key, token) {
   if (stored && stored.link && Date.now() - new Date(stored.at).getTime() < GRAPH_DELTA_FULL_MS) {
     const what = key === "calendar" ? "calendar" : "mail";
     const w = await graphDeltaWalk(stored.link, token, 20, what);
-    if (w) return { unchanged: w.changed === 0, link: w.link, at: stored.at };
+    if (w) return { unchanged: w.changed === 0, gated: true, link: w.link, at: stored.at };
   }
   // No usable link: make one now (before the full read, so nothing that lands during it is missed).
   const fresh = await graphDeltaWalk(graphDeltaStart(key), token, 40, key === "calendar" ? "calendar" : "mail");
@@ -9607,6 +9626,42 @@ async function calendarUnchanged(conn, providerKey, token) {
   const body = await r.json().catch(() => null);
   // Only a real events list (kind calendar#events) can say "nothing changed".
   return !!body && body.kind === "calendar#events" && Array.isArray(body.items) && body.items.length === 0;
+}
+// PUSH-1 · GOOGLE CALENDAR'S INCREMENTAL SYNC TOKEN. Asked with the stored
+// token, Google lists only what changed since (deletions included), and hands
+// back the next token. Recurring events are asked for as series
+// (singleEvents=false), so making the first token never expands a weekly
+// meeting into years of copies, and only event ids are returned: what is
+// read and stored is still decided by the window read below. An expired
+// token (410) is made again. The token is saved only after a read finishes,
+// and is taken BEFORE it, so nothing that lands during the read is skipped.
+async function gcalTokenWalk(params, token, pages) {
+  const base = `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?`;
+  let pageToken = "", changed = 0;
+  for (let i = 0; i < pages; i++) {
+    const q = new URLSearchParams({ ...params, singleEvents: "false", maxResults: "2500",
+      fields: "kind,nextPageToken,nextSyncToken,items(id)", ...(pageToken ? { pageToken } : {}) });
+    const r = await providerFetch(base + q, { headers: { Authorization: "Bearer " + token } }).catch(() => null);
+    if (!r) return null;
+    if (!r.ok) { if (r.status === 429) throw await calRefusal(r, "google"); return null; }
+    const b = await r.json().catch(() => null);
+    if (!b || b.kind !== "calendar#events") return null;
+    changed += (b.items || []).length;
+    if (b.nextSyncToken) return { changed, syncToken: String(b.nextSyncToken) };
+    if (!b.nextPageToken) return null;
+    pageToken = b.nextPageToken;
+  }
+  return null;
+}
+async function googleCalendarGate(conn, token) {
+  const recent = conn.calendar_read_from && Date.now() - new Date(conn.calendar_read_from).getTime() <= CAL_FULL_EVERY_MS;
+  if (conn.gcal_sync_token) {
+    const w = await gcalTokenWalk({ syncToken: conn.gcal_sync_token }, token, 10);
+    if (w) return { unchanged: !!recent && w.changed === 0, gated: true, changed: w.changed > 0, syncToken: w.syncToken };
+  }
+  if (await calendarUnchanged(conn, "google", token)) return { unchanged: true, gated: false };
+  const made = await gcalTokenWalk({}, token, 20);
+  return { unchanged: false, gated: false, syncToken: made ? made.syncToken : null };
 }
 
 // A mailbox token, refreshed through the same seam every other connection
@@ -11695,6 +11750,8 @@ require("./routes/jobs").mount({
   recomputeAllScores,
   // INT-BUILD-1 — every live mailbox, mail and calendar, on the 15-minute tick.
   syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth,
+  // PUSH-1: the tick keeps each connection's instant-update channels alive.
+  mailboxAccessToken,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,

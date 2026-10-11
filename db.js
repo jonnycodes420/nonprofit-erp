@@ -7419,6 +7419,44 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_booking_provider TEXT`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS graph_delta JSONB`);
 
+  // ── PUSH-1 · INSTANT UPDATES ──────────────────────────────────────────────
+  // One row per channel Google or Microsoft keeps for a connection: the Gmail
+  // watch, the Calendar channel, and Graph's Inbox, Sent Items and events
+  // subscriptions. The secret each notice must carry is stored only as its
+  // SHA-256. Nothing a notice says about a message or a meeting is kept here;
+  // only when the last one arrived.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_push (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      connection_id TEXT NOT NULL REFERENCES mailbox_connections(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      channel_id TEXT,
+      resource_id TEXT,
+      secret_hash TEXT,
+      expires_at TIMESTAMPTZ,
+      renewed_at TIMESTAMPTZ,
+      last_notified_at TIMESTAMPTZ,
+      notices INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'on',
+      paused_reason TEXT,
+      paused_at TIMESTAMPTZ,
+      retry_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT mailbox_push_kind CHECK (kind IN ('gmail','gcal','graph_inbox','graph_sent','graph_events')),
+      CONSTRAINT mailbox_push_status CHECK (status IN ('on','paused')),
+      UNIQUE (connection_id, kind)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_push_channel ON mailbox_push (channel_id)`);
+  // The calendar's incremental sync token (Google), so "anything new?" is one call.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS gcal_sync_token TEXT`);
+
   // ── FIX-33 · A CALENDAR EVENT STEWARD IS NOT SURE ABOUT ───────────────────
   // A title that names somebody on file ("Visit with Christine") with two
   // Christines on file is kept with both as CANDIDATES and nobody linked, so

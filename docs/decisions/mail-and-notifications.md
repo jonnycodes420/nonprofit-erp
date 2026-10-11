@@ -141,6 +141,18 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   meetings email. Its unsubscribe line is a staff token on `/unsubscribe` (`staff: "morning_brief"`): GET and
   HEAD render and write nothing; the POST turns off `notify_daily_tasks` and `notify_thread_nudge` for that
   user only and never touches donor suppression. A demo org sends nothing (`sendDigestEmail`'s org gate).
+- **Instant updates are a doorbell, never a delivery (PUSH-1).** A notice from Google or Microsoft only says
+  something changed; Steward answers it with the same incremental read the tick does (Gmail history id, the
+  Calendar sync token, Graph delta), under the same lock, so nothing a notice carries is ever stored. Every notice
+  is verified before anything is read: Gmail by the Pub/Sub OIDC token (signature, issuer, audience, service
+  account), Calendar by channel id + resource id + the channel's secret token, Graph by subscription id + its
+  clientState. Secrets are stored as SHA-256 only. Unverified is a 401 and one `[push] refused` log line.
+  `mailboxPush.js` holds the rules, `routes/push.js` the three endpoints, `mailbox_push` one row per channel.
+- **The tick is the safety net, not the schedule.** With push on for mail (or calendar) the tick reads every
+  30 minutes; otherwise every 5. A 30-minute read that finds a change no notice announced pauses push for that
+  connection ("Instant updates paused: Google stopped sending. Reading every 5 minutes."), and a paused or failed
+  channel is made again at most once an hour. Renewal: Gmail watch daily (lasts 7 days), Calendar channel with
+  2 of 7 days left, Graph subscriptions asked for 10,070 minutes and extended with 3 days left.
 
 ## Gotchas
 - **The Resend SDK silently drops `reply_to`.** Pass `replyTo`. (BUILD-88c)
@@ -199,6 +211,11 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 
 ### Env vars required
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+- PUSH-1 instant updates, all optional; with none set, push is off and the 5-minute read is unchanged:
+  `PUSH_BASE_URL` (the API's public https origin; turns Calendar and Outlook push on), `GMAIL_PUBSUB_TOPIC`
+  (`projects/<project>/topics/<topic>`) and `PUBSUB_PUSH_SERVICE_ACCOUNT` (the account the push subscription signs
+  as; both needed for Gmail push), `PUBSUB_PUSH_AUDIENCE` (defaults to `<PUSH_BASE_URL>/push/google/gmail`).
+  Test seams only: `GOOGLE_OIDC_CERTS_URL`, `MAILBOX_TICK_MS` + `MAILBOX_TICK_ORG` (TEST_MODE only), `PUSH_RETRY_MS`.
 
 ### Frontend pattern
 - Settings Integrations section calls `POST /gmail/auth-url` then redirects; reads `?gmailConnected` on return
