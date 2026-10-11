@@ -168,6 +168,7 @@ CORE=(
   ask2-plans
   ask2-refuse
   ask3-person-thread
+  adminclean-metrics
   ask3-sentence-check
   ask4-query-guard
   cal1-moves

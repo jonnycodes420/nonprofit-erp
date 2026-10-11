@@ -153,6 +153,19 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Make the first login a non-dead-end for every tier.** `tests/first-login-matrix.test.js` is a data
   table, and a plan literal without a row fails. (BUILD-58 W-2)
 
+### ADMIN-CLEAN: what an org is, and what it really pays
+
+- **Every org has one kind** (`orgKind.js`): customer, prospect_trial, demo, internal_test, fixture. A kind set in
+  /admin (`orgs.org_kind`) wins; otherwise `inferKind` reads it from facts and gives the reason. Read the kind from
+  that module; never re-derive "is this a real customer" from status or plan.
+- **The console counts customers and prospect trials only, never archived ones.** MRR is `orgs.billing_mrr_cents`
+  (the live Stripe subscription's monthly amount, written by the billing webhook), never a plan's list price.
+- **Delete is only for an org with nothing real in it**: no Stripe subscription, no `platform_payments` row, no
+  non-sample donor. Anything else is archived (`archived_at`), which is reversible. Delete asks twice.
+- **No billing mail to a demo, internal test or fixture org** (`mailPolicy.NOT_BILLED_KINDS`).
+- **Prod cleanup is `scripts/admin-clean.js`, run by Jonathan**, dry run first. It never merges duplicates and never
+  writes `org_b72demo` or `org_creo`.
+
 ### FIX-AUTH — a revoked session is refused, and the client acts on it
 - **A 401 on a request that CARRIED a token is an unusable token, whatever the server calls
   the reason.** `client/src/api.js` decides on the status and the token, never on a list of

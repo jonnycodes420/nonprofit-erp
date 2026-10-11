@@ -85,7 +85,6 @@ const A = {
   coral: "#e07a5f",
 };
 
-const PLAN_MRR   = { trial: 0, seed: 99, growth: 249, impact: 499 };
 const PLAN_COLOR = { trial: "#d97706", seed: "#3b82f6", growth: "#10b981", impact: "#8b5cf6" };
 // FIX-4 6 — the PLAN column names the tier, and says the size under it.
 // It printed the raw plan value, so a new org read as `t5000_monthly` in the
@@ -103,6 +102,7 @@ const STATUS_BADGE = {
   active:    { bg: A.greenChip, color: A.greenInk, label: "Active" },
   trialing:  { bg: A.amberWash, color: A.amberInk, label: "Trialing" },
   cancelled: { bg: A.redWash, color: A.redInk, label: "Churned" },
+  canceled:  { bg: A.redWash, color: A.redInk, label: "Churned" },
   past_due:  { bg: A.redWash, color: A.redInk, label: "Past Due" },
 };
 
@@ -150,9 +150,64 @@ function StatusBadge({ status }) {
   );
 }
 
-function MetricCard({ label, value, sub, valueColor, accentColor }) {
+// ADMIN-CLEAN: an org that is not a customer never wears a customer status.
+// Jonathan's own orgs read "Internal test", never "Churned" or "Canceled".
+const KIND_BADGE = {
+  customer:       { bg: A.greenChip, color: A.greenInk },
+  prospect_trial: { bg: A.amberWash, color: A.amberInk },
+  demo:           { bg: A.surface, color: A.secondary },
+  internal_test:  { bg: A.surface, color: A.secondary },
+  fixture:        { bg: A.surface, color: A.muted },
+};
+const KIND_OPTIONS = [["customer", "Customer"], ["prospect_trial", "Prospect trial"], ["demo", "Demo"], ["internal_test", "Internal test"], ["fixture", "Fixture"]];
+function KindBadge({ org }) {
+  const b = KIND_BADGE[org.kind] || KIND_BADGE.fixture;
   return (
-    <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "20px 24px", borderBottom: `3px solid ${accentColor || A.border}`, transition: "box-shadow 0.15s ease" }}
+    <span title={org.kind_reason ? `${org.kind_source === "set" ? "Set" : "Guessed"}: ${org.kind_reason}` : undefined}
+      data-testid={`org-kind-${org.id}`}
+      style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: b.color, background: b.bg, borderRadius: 99, padding: "3px 8px", whiteSpace: "nowrap" }}>
+      {org.kind_label || "Unknown"}{org.kind_source === "inferred" ? " ?" : ""}{org.archived ? " · archived" : ""}
+    </span>
+  );
+}
+function OrgStatus({ org }) {
+  if (org.kind && !["customer", "prospect_trial"].includes(org.kind)) return <span style={{ fontSize: 12, color: A.muted }}>Not billed</span>;
+  return <StatusBadge status={org.subscription_status} />;
+}
+
+// One number that opens: the label, the figure, the sentence, and the rows.
+function RowsDrawer({ title, sentence, rows, onClose }) {
+  const total = (rows || []).reduce((s, r) => s + Number(r.monthly_revenue_cents || 0), 0);
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", justifyContent: "flex-end" }} data-testid="metric-rows">
+      <div onClick={onClose} style={{ flex: 1, background: "rgba(0,0,0,0.3)" }} />
+      <div style={{ width: 520, background: A.card, borderLeft: `1px solid ${A.border}`, padding: "24px 28px", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: A.ink }}>{title}</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: A.muted, fontSize: 18, cursor: "pointer" }}>✕</button>
+        </div>
+        {sentence && <div style={{ fontSize: 12.5, color: A.secondary, marginBottom: 14, lineHeight: 1.5 }}>{sentence}</div>}
+        <div style={{ fontSize: 12, color: A.muted, marginBottom: 10 }}>{rows.length} org{rows.length === 1 ? "" : "s"}{total ? `, ${fmt$(total / 100)} a month` : ""}</div>
+        {rows.length === 0 && <div style={{ fontSize: 13, color: A.muted }}>No orgs.</div>}
+        {rows.map(r => (
+          <div key={r.id} style={{ borderTop: `1px solid ${A.borderSub}`, padding: "10px 0", display: "flex", gap: 10, alignItems: "baseline" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: A.ink }}>{r.name}</div>
+              <div style={{ fontSize: 11, color: A.muted }}>{r.id} · {r.kind_label} · {r.subscription_status || "no status"}{r.reason ? ` · ${r.reason}` : ""}</div>
+            </div>
+            <div style={{ fontSize: 13, fontFamily: "'JetBrains Mono','SF Mono',monospace", color: r.monthly_revenue_cents ? A.green : A.muted }}>{fmt$((r.monthly_revenue_cents || 0) / 100)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, sub, valueColor, accentColor, onOpen }) {
+  return (
+    <div role={onOpen ? "button" : undefined} tabIndex={onOpen ? 0 : undefined} onClick={onOpen}
+      onKeyDown={onOpen ? (e => { if (e.key === "Enter") onOpen(); }) : undefined}
+      style={{ cursor: onOpen ? "pointer" : "default", background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "20px 24px", borderBottom: `3px solid ${accentColor || A.border}`, transition: "box-shadow 0.15s ease" }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.08)"}
       onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}>
       <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: A.muted, marginBottom: 10 }}>{label}</div>
@@ -170,32 +225,37 @@ const SH = {
 
 // ── Overview page ──────────────────────────────────────────────────────────
 function Overview({ metrics, orgs }) {
+  const [open, setOpen] = useState(null);
   if (!metrics) return <div style={{ color: A.muted, padding: 40, fontSize: 13 }}>Loading metrics…</div>;
 
-  const recentOrgs = [...(orgs || [])].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
-  const planGroups = ["seed", "growth", "impact"].map(p => ({
-    plan: p,
-    count: (orgs || []).filter(o => o.plan === p && o.subscription_status === "active").length,
-    revenue: (orgs || []).filter(o => o.plan === p && o.subscription_status === "active").reduce((s) => s + PLAN_MRR[p], 0),
-  }));
+  const recentOrgs = [...(orgs || [])].filter(o => o.counted).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
+  const planGroups = (metrics.by_plan || []).map(g => ({ plan: g.plan, count: g.count, revenue: g.mrr_cents / 100 }));
   const maxRev = Math.max(...planGroups.map(g => g.revenue), 1);
+  const opener = (key, title) => () => setOpen({ title, rows: metrics.rows?.[key] || [], sentence: metrics.definitions?.[key === "paying" ? "paying" : key] });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {open && <RowsDrawer title={open.title} sentence={open.sentence} rows={open.rows} onClose={() => setOpen(null)} />}
+      <div data-testid="metrics-left-out" style={{ fontSize: 12.5, color: A.secondary }}>
+        {metrics.left_out_sentence}{" "}
+        {metrics.left_out_count > 0 && <button onClick={() => setOpen({ title: "Left out", rows: metrics.rows?.left_out || [], sentence: metrics.definitions?.left_out })}
+          style={{ background: "none", border: "none", color: A.green, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>See which</button>}
+      </div>
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12 }}>
-        <MetricCard label="MRR"         value={fmt$(metrics.mrr)}               valueColor={A.green}  accentColor={A.green} />
-        <MetricCard label="ARR"         value={fmt$(metrics.arr)}               valueColor={A.green}  accentColor={A.green} />
-        <MetricCard label="Active Orgs" value={metrics.active_subscriptions}                          accentColor={A.border} />
+        <MetricCard label="MRR"         value={fmt$(metrics.mrr)}               valueColor={A.green}  accentColor={A.green} onOpen={opener("mrr", "MRR")} />
+        <MetricCard label="ARR"         value={fmt$(metrics.arr)}               valueColor={A.green}  accentColor={A.green} onOpen={opener("mrr", "ARR (MRR times twelve)")} />
+        <MetricCard label="Paying customers" value={metrics.paying_customers}                         accentColor={A.border} onOpen={opener("paying", "Paying customers")} />
         <MetricCard label="Trialing"    value={metrics.trialing}                valueColor={A.amber}  accentColor={A.amber}
-          sub={`${metrics.avg_trial_days_remaining}d avg remaining`} />
-        <MetricCard label="Churned"     value={metrics.churned}                 valueColor={metrics.churned > 0 ? A.red : A.muted} accentColor={metrics.churned > 0 ? A.red : A.border} />
+          sub={`${metrics.avg_trial_days_remaining}d avg remaining`} onOpen={opener("trialing", "Trialing")} />
+        <MetricCard label="Churned"     value={metrics.churned}                 valueColor={metrics.churned > 0 ? A.red : A.muted} accentColor={metrics.churned > 0 ? A.red : A.border} onOpen={opener("churned", "Churned")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* MRR by Plan */}
         <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "24px 28px" }}>
           <div style={SH}>MRR by Plan</div>
+          {planGroups.length === 0 && <div style={{ fontSize: 13, color: A.muted, marginBottom: 16 }}>No paying customers yet.</div>}
           {planGroups.map(g => (
             <div key={g.plan} style={{ marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, alignItems: "center" }}>
@@ -206,12 +266,12 @@ function Overview({ metrics, orgs }) {
                 <span style={{ fontSize: 13, fontWeight: 600, color: A.ink, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmt$(g.revenue)}</span>
               </div>
               <div style={{ height: 6, background: A.borderSub, borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(g.revenue / maxRev) * 100}%`, background: PLAN_COLOR[g.plan], borderRadius: 99, transition: "width 0.5s ease" }} />
+                <div style={{ height: "100%", width: `${(g.revenue / maxRev) * 100}%`, background: PLAN_COLOR[g.plan] || A.green, borderRadius: 99, transition: "width 0.5s ease" }} />
               </div>
             </div>
           ))}
           <div style={{ borderTop: `1px solid ${A.borderSub}`, marginTop: 4, paddingTop: 16, textAlign: "center" }}>
-            <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: A.green, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+            <div role="button" tabIndex={0} onClick={opener("conversion", "Trial to paid")} style={{ cursor: "pointer", fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color: A.green, fontFamily: "'DM Serif Display',Georgia,serif" }}>
               {metrics.trial_conversion_rate}%
             </div>
             <div style={{ fontSize: 11, color: A.muted, marginTop: 4, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>Trial conversion rate</div>
@@ -232,7 +292,7 @@ function Overview({ metrics, orgs }) {
             </div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[["Total orgs", metrics.total_orgs], ["Total donors", metrics.total_donors?.toLocaleString()], ["Total grants", metrics.total_grants?.toLocaleString()], ["Total interactions", metrics.total_interactions?.toLocaleString()]].map(([k, v]) => (
+            {[["Counted orgs", metrics.counted_orgs], ["Total donors", metrics.total_donors?.toLocaleString()], ["Total grants", metrics.total_grants?.toLocaleString()], ["Total interactions", metrics.total_interactions?.toLocaleString()]].map(([k, v]) => (
               <div key={k} style={{ background: A.surface, borderRadius: 8, padding: "12px 14px" }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: A.ink, fontFamily: "'JetBrains Mono','SF Mono',monospace", marginBottom: 2 }}>{v}</div>
                 <div style={{ fontSize: 11, color: A.muted, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>{k}</div>
@@ -260,7 +320,7 @@ function Overview({ metrics, orgs }) {
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "14px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{o.name}</td>
                 <td style={{ padding: "14px 20px" }}><PlanBadge plan={o.plan} /></td>
-                <td style={{ padding: "14px 20px" }}><StatusBadge status={o.subscription_status} /></td>
+                <td style={{ padding: "14px 20px" }}><OrgStatus org={o} /></td>
                 <td style={{ padding: "14px 20px", fontSize: 13, color: A.secondary, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.donor_count}</td>
                 <td style={{ padding: "14px 20px", fontSize: 12, color: A.muted, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmtDate(o.created_at)}</td>
               </tr>
@@ -280,6 +340,10 @@ function OrgPanel({ org, onClose, onRefresh }) {
   const [working, setWorking] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [deleteInput, setDeleteInput] = useState("");
+  // ADMIN-CLEAN: delete asks twice. First "are you sure", then the org's name.
+  const [deleteStep, setDeleteStep] = useState(0);
+  const [kind, setKind] = useState(org.kind_source === "set" ? org.kind : "");
+  const [kindNote, setKindNote] = useState("");
 
   // MAIL-1: this org's mail, as the policy sees it.
   const [mail, setMail] = useState(null);
@@ -330,11 +394,32 @@ function OrgPanel({ org, onClose, onRefresh }) {
     if (deleteInput !== org.name) { alert("Type the org name exactly to confirm."); return; }
     setWorking(true);
     try {
-      await adminFetch("/admin/orgs/" + org.id, { method: "DELETE", body: JSON.stringify({ confirm: true }) });
+      await adminFetch("/admin/orgs/" + org.id, { method: "DELETE", body: JSON.stringify({ confirm: true, confirmName: deleteInput }) });
       onClose(); onRefresh();
     } catch (e) { alert(errorMessage(e)); }
     setWorking(false);
   }
+
+  async function saveKind(next) {
+    setWorking(true); setKindNote("");
+    try {
+      await adminFetch("/admin/orgs/" + org.id + "/kind", { method: "POST", body: JSON.stringify({ kind: next || null }) });
+      setKind(next); setKindNote(next ? "Saved." : "Back to Steward's guess.");
+      onRefresh(false);
+    } catch (e) { setKindNote(errorMessage(e)); }
+    setWorking(false);
+  }
+
+  // Archive hides the org from the console and Metrics. Restore is the undo.
+  async function setArchived(on) {
+    setWorking(true);
+    try {
+      await adminFetch("/admin/orgs/" + org.id + (on ? "/archive" : "/unarchive"), { method: "POST", body: "{}" });
+      onClose(); onRefresh();
+    } catch (e) { alert(errorMessage(e)); }
+    setWorking(false);
+  }
+  const blockers = detail?.delete_blockers || org.delete_blockers || [];
 
   const INP = {
     background: A.surface, border: `1px solid ${A.border}`, borderRadius: 8,
@@ -358,8 +443,19 @@ function OrgPanel({ org, onClose, onRefresh }) {
             <div style={{ fontSize: 18, fontWeight: 700, color: A.ink, marginBottom: 10 }}>{org.name}</div>
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <PlanBadge plan={org.plan} />
-              <StatusBadge status={org.subscription_status} />
+              <OrgStatus org={org} />
+              <KindBadge org={org} />
             </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+              <label style={{ fontSize: 12, color: A.secondary }}>Kind</label>
+              <select data-testid="admin-org-kind" value={kind} disabled={working} onChange={e => saveKind(e.target.value)}
+                style={{ fontSize: 12, border: `1px solid ${A.border}`, borderRadius: 6, padding: "4px 8px", background: A.surface, color: A.ink }}>
+                <option value="">Steward's guess ({org.kind_source === "inferred" ? org.kind_label : "none"})</option>
+                {KIND_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              {kindNote && <span style={{ fontSize: 11, color: A.muted }}>{kindNote}</span>}
+            </div>
+            {org.kind_reason && <div style={{ fontSize: 11, color: A.muted, marginBottom: 6 }}>Why: {org.kind_reason}</div>}
             <div style={{ fontSize: 12, color: A.muted }}>Created {fmtDate(org.created_at)}</div>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", color: A.muted, fontSize: 18, cursor: "pointer", padding: 4, lineHeight: 1, transition: "color 0.15s ease" }}
@@ -512,19 +608,37 @@ function OrgPanel({ org, onClose, onRefresh }) {
           {/* Danger zone */}
           <div style={{ marginTop: 8, border: `1px solid ${A.redEdge}`, borderRadius: 10, padding: "16px 20px", background: A.redTint }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: A.red, marginBottom: 12 }}>Danger Zone</div>
-            {!showDelete ? (
-              <button onClick={() => setShowDelete(true)} style={{ background: "transparent", border: `1px solid ${A.redEdge}`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
+            <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+              <button data-testid="admin-org-archive" onClick={() => setArchived(!org.archived)} disabled={working} style={{ ...PBTN }}>
+                {org.archived ? "Restore (un-archive)" : "Archive"}
+              </button>
+              <span style={{ fontSize: 11.5, color: A.secondary }}>{org.archived ? "Archived: hidden from the list and Metrics." : "Hides it from the list and Metrics. Restore undoes it."}</span>
+            </div>
+            {blockers.length > 0 ? (
+              <div data-testid="admin-delete-blocked" style={{ fontSize: 12, color: A.secondary, lineHeight: 1.5 }}>
+                Permanent delete is off because {blockers.join(" and ")}. Archive it instead.
+              </div>
+            ) : !showDelete ? (
+              <button onClick={() => { setShowDelete(true); setDeleteStep(0); }} style={{ background: "transparent", border: `1px solid ${A.redEdge}`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
                 onMouseEnter={e => { e.currentTarget.style.background = A.redWash; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                 Delete org permanently
               </button>
+            ) : deleteStep === 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ fontSize: 13, color: A.secondary }}>Delete {org.name} and everything in it? This cannot be undone. Archive can.</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button data-testid="admin-delete-step1" onClick={() => setDeleteStep(1)} style={{ flex: 1, background: A.red, border: "none", borderRadius: 6, padding: "9px", color: A.sidebar, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Yes, continue</button>
+                  <button onClick={() => setShowDelete(false)} style={{ ...PBTN }}>Cancel</button>
+                </div>
+              </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ fontSize: 13, color: A.secondary }}>Type <strong style={{ color: A.ink }}>{org.name}</strong> to confirm:</div>
                 <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)} placeholder={org.name} style={{ ...INP, width: "100%" }} />
                 <div style={{ display: "flex", gap: 8 }}>
                   <button onClick={deleteOrg} disabled={working} style={{ flex: 1, background: A.red, border: "none", borderRadius: 6, padding: "9px", color: A.sidebar, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Delete everything</button>
-                  <button onClick={() => { setShowDelete(false); setDeleteInput(""); }} style={{ ...PBTN }}
+                  <button onClick={() => { setShowDelete(false); setDeleteInput(""); setDeleteStep(0); }} style={{ ...PBTN }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor = A.ink; e.currentTarget.style.color = A.ink; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = A.border; e.currentTarget.style.color = A.secondary; }}>
                     Cancel
@@ -544,6 +658,9 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("created_at");
   const [statusFilter, setStatusFilter] = useState("all");
+  // ADMIN-CLEAN: the list opens on Customers and Prospect trials. Everything
+  // else is one pick away, and archived orgs only show when asked for.
+  const [kindFilter, setKindFilter] = useState("counted");
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [extendOrgId, setExtendOrgId] = useState(null);
   const [extDays, setExtDays] = useState("14");
@@ -554,7 +671,10 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
 
   const filtered = (orgs || [])
     .filter(o => !search || o.name.toLowerCase().includes(search.toLowerCase()))
-    .filter(o => statusFilter === "all" || o.subscription_status === statusFilter)
+    .filter(o => statusFilter === "all" || o.subscription_status === statusFilter
+      || (statusFilter === "cancelled" && o.subscription_status === "canceled"))
+    .filter(o => kindFilter === "archived" ? o.archived
+      : !o.archived && (kindFilter === "all" || (kindFilter === "counted" ? ["customer", "prospect_trial"].includes(o.kind) : o.kind === kindFilter)))
     .sort((a, b) => {
       if (sortBy === "mrr") return b.monthly_revenue - a.monthly_revenue;
       if (sortBy === "donors") return b.donor_count - a.donor_count;
@@ -627,6 +747,12 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
       {/* Toolbar */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search orgs…" style={{ ...INP, flex: 1, minWidth: 200 }} />
+        <select data-testid="admin-kind-filter" value={kindFilter} onChange={e => setKindFilter(e.target.value)} style={{ ...INP }}>
+          <option value="counted">Customers and prospect trials</option>
+          <option value="all">All kinds (not archived)</option>
+          {KIND_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <option value="archived">Archived</option>
+        </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ ...INP }}>
           <option value="all">All statuses</option>
           <option value="active">Active</option>
@@ -651,14 +777,14 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ background: A.surface }}>
-              {["Org", "Plan", "Status", "Donors", "Grants", "Users", "Last active", "MRR", "Actions"].map(h => (
+              {["Org", "Kind", "Plan", "Status", "Donors", "Grants", "Users", "Last active", "MRR", "Actions"].map(h => (
                 <th key={h} style={{ fontSize: 10, fontWeight: 700, color: A.muted, letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 16px", textAlign: "left", whiteSpace: "nowrap" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>Loading…</td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>No orgs found</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>Loading…</td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>No orgs found</td></tr>}
             {filtered.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
                 onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
@@ -667,8 +793,9 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</div>
                   <div style={{ fontSize: 10, color: A.muted, marginTop: 2, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.id}</div>
                 </td>
+                <td style={{ padding: "12px 16px" }}><KindBadge org={o} /></td>
                 <td style={{ padding: "12px 16px" }}><PlanBadge plan={o.plan} /></td>
-                <td style={{ padding: "12px 16px" }}><StatusBadge status={o.subscription_status} /></td>
+                <td style={{ padding: "12px 16px" }}><OrgStatus org={o} /></td>
                 <td style={{ padding: "12px 16px", fontSize: 13, color: A.secondary, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.donor_count}</td>
                 <td style={{ padding: "12px 16px", fontSize: 13, color: A.secondary, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.grant_count}</td>
                 <td style={{ padding: "12px 16px", fontSize: 13, color: A.secondary, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{o.user_count}</td>
@@ -752,86 +879,123 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
         </table>
       </div>
 
-      {selectedOrg && <OrgPanel org={selectedOrg} onClose={() => setSelectedOrg(null)} onRefresh={() => { onRefresh(); setSelectedOrg(null); }} />}
+      {selectedOrg && <OrgPanel org={selectedOrg} onClose={() => setSelectedOrg(null)} onRefresh={(close = true) => { onRefresh(); if (close) setSelectedOrg(null); }} />}
     </div>
   );
 }
 
 // ── Metrics page ────────────────────────────────────────────────────────────
-function Metrics({ metrics, orgs }) {
+// ADMIN-CLEAN: customers only. Every number opens its rows, MRR is what Stripe
+// says each subscription charges, and the plan line shows whether Steward is
+// on pace (default: 8 paying customers by 31 Dec 2026, then 5 net new a month).
+function Metrics({ metrics, orgs, onRefresh }) {
+  const [open, setOpen] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(null);
+  const [note, setNote] = useState("");
   if (!metrics || !orgs) return <div style={{ color: A.muted, padding: 40, fontSize: 13 }}>Loading…</div>;
 
-  const monthCounts = {};
-  orgs.filter(o => o.subscription_status === "active").forEach(o => {
-    const m = o.created_at?.slice(0, 7);
-    if (m) monthCounts[m] = (monthCounts[m] || 0) + (PLAN_MRR[o.plan] || 0);
-  });
-  const months = Object.keys(monthCounts).sort().slice(-8);
-  const maxMRR = Math.max(...months.map(m => monthCounts[m]), 1);
+  const opener = (key, title, defKey = key) => () => setOpen({ title, rows: metrics.rows?.[key] || [], sentence: metrics.definitions?.[defKey] });
+  const months = metrics.by_month || [];
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const now = months.find(m => m.month === thisMonth) || {};
+  const pace = now.target == null ? null : (metrics.paying_customers >= now.target ? "on pace" : `${Math.ceil(now.target - metrics.paying_customers)} behind`);
+  const maxY = Math.max(1, ...months.map(m => Math.max(m.customers || 0, m.target || 0)));
+  const W = 640, H = 180, bw = W / Math.max(1, months.length);
+  const y = v => H - (v / maxY) * (H - 16);
+  const targetPts = months.map((m, i) => m.target == null ? null : `${i * bw + bw / 2},${y(m.target)}`).filter(Boolean).join(" ");
+  const t = metrics.target || {};
 
-  const total = metrics.total_orgs;
+  async function saveTarget() {
+    setNote("");
+    try {
+      await adminFetch("/admin/metrics/target", { method: "POST", body: JSON.stringify(form) });
+      setEditing(false); onRefresh && onRefresh();
+    } catch (e) { setNote(errorMessage(e)); }
+  }
+
+  const total = metrics.counted_orgs;
   const funnel = [
-    { label: "Signed up", count: total, pct: 100, borderColor: A.secondary },
-    { label: "Still trialing", count: metrics.trialing, pct: total ? Math.round((metrics.trialing / total) * 100) : 0, borderColor: A.amber },
-    { label: "Converted", count: metrics.active_subscriptions, pct: total ? Math.round((metrics.active_subscriptions / total) * 100) : 0, borderColor: A.green },
-    { label: "Churned", count: metrics.churned, pct: total ? Math.round((metrics.churned / total) * 100) : 0, borderColor: A.red },
+    { label: "Signed up", key: "counted", count: total, pct: 100, borderColor: A.secondary },
+    { label: "Still trialing", key: "trialing", count: metrics.trialing, pct: total ? Math.round((metrics.trialing / total) * 100) : 0, borderColor: A.amber },
+    { label: "Paying", key: "paying", count: metrics.paying_customers, pct: total ? Math.round((metrics.paying_customers / total) * 100) : 0, borderColor: A.green },
+    { label: "Churned", key: "churned", count: metrics.churned, pct: total ? Math.round((metrics.churned / total) * 100) : 0, borderColor: A.red },
   ];
-
-  const topOrgs = [...orgs].sort((a, b) => (b.donor_count + b.grant_count) - (a.donor_count + a.grant_count)).slice(0, 10);
+  const topOrgs = [...orgs].filter(o => o.counted).sort((a, b) => (b.donor_count + b.grant_count) - (a.donor_count + a.grant_count)).slice(0, 10);
+  const INP = { border: `1px solid ${A.border}`, borderRadius: 6, padding: "5px 8px", fontSize: 12, width: 90, background: A.surface, color: A.ink };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {/* MRR by month */}
-        <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "24px 28px" }}>
-          <div style={SH}>MRR by Cohort Month</div>
-          {months.length === 0 ? (
-            <div style={{ fontSize: 13, color: A.muted }}>No active subscriptions yet.</div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {months.map(m => (
-                <div key={m}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, color: A.secondary }}>{m}</span>
-                    <span style={{ fontSize: 13, color: A.green, fontWeight: 700, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmt$(monthCounts[m])}</span>
-                  </div>
-                  <div style={{ height: 6, background: A.borderSub, borderRadius: 99 }}>
-                    <div style={{ height: "100%", width: `${(monthCounts[m] / maxMRR) * 100}%`, background: A.greenLight, borderRadius: 99 }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {open && <RowsDrawer title={open.title} sentence={open.sentence} rows={open.rows} onClose={() => setOpen(null)} />}
+      <div data-testid="metrics-left-out" style={{ fontSize: 12.5, color: A.secondary }}>
+        {metrics.left_out_sentence}{" "}
+        {metrics.left_out_count > 0 && <button onClick={opener("left_out", "Left out")}
+          style={{ background: "none", border: "none", color: A.green, cursor: "pointer", fontSize: 12.5, padding: 0, textDecoration: "underline" }}>See which</button>}
+      </div>
 
-        {/* Plan distribution */}
-        <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "24px 28px" }}>
-          <div style={SH}>Plan Distribution</div>
-          {["trial", "seed", "growth", "impact"].map(p => {
-            const count = metrics.plan_breakdown?.[p] ?? orgs.filter(o => o.plan === p).length;
-            const pct = total ? Math.round((count / total) * 100) : 0;
-            return (
-              <div key={p} style={{ marginBottom: 16 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "center" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}><PlanBadge plan={p} /><span style={{ fontSize: 12, color: A.secondary }}>{count} orgs</span></div>
-                  <span style={{ fontSize: 12, color: A.ink, fontWeight: 600, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{pct}%</span>
-                </div>
-                <div style={{ height: 6, background: A.borderSub, borderRadius: 99 }}>
-                  <div style={{ height: "100%", width: `${pct}%`, background: PLAN_COLOR[p], borderRadius: 99 }} />
-                </div>
-              </div>
-            );
-          })}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+        <MetricCard label="Paying customers" value={metrics.paying_customers} accentColor={A.green} onOpen={opener("paying", "Paying customers")}
+          sub={pace ? `Plan says ${Math.round(now.target * 10) / 10} by this month's end: ${pace}` : undefined} />
+        <MetricCard label="MRR" value={fmt$(metrics.mrr)} valueColor={A.green} accentColor={A.green} onOpen={opener("mrr", "MRR")} />
+        <MetricCard label="ARR" value={fmt$(metrics.arr)} valueColor={A.green} accentColor={A.green} onOpen={opener("mrr", "ARR (MRR times twelve)", "arr")} />
+        <MetricCard label="Trial to paid" value={`${metrics.trial_conversion_rate}%`} accentColor={A.border} onOpen={opener("conversion", "Trial to paid")} />
+      </div>
+
+      {/* Paying customers and MRR by month, against the plan */}
+      <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "24px 28px" }} data-testid="metrics-by-month">
+        <div style={{ ...SH, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Paying customers by month, against the plan</span>
+          <button onClick={() => { setEditing(!editing); setForm({ startMonth: t.start?.month || "2026-12", startCustomers: t.start?.customers ?? 8, monthlyNet: t.monthlyNet ?? 5, through: t.through || "2027-12" }); }}
+            style={{ background: "none", border: `1px solid ${A.border}`, borderRadius: 6, padding: "4px 10px", fontSize: 11, color: A.secondary, cursor: "pointer" }}>
+            {editing ? "Close" : "Set the plan"}
+          </button>
         </div>
+        <div style={{ fontSize: 12, color: A.secondary, marginBottom: 12 }}>
+          The plan: {t.start?.customers} paying customers by the end of {t.start?.month}, then {t.monthlyNet} net new a month through {t.through}.
+          Bars are paying customers at each month's end, from paid Steward invoices; the line is the plan.
+        </div>
+        {editing && form && (
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14, fontSize: 12, color: A.secondary }}>
+            <label>Customers <input type="number" min="0" value={form.startCustomers} onChange={e => setForm({ ...form, startCustomers: e.target.value })} style={INP} /></label>
+            <label>by <input value={form.startMonth} onChange={e => setForm({ ...form, startMonth: e.target.value })} style={INP} placeholder="YYYY-MM" /></label>
+            <label>then net new a month <input type="number" min="0" value={form.monthlyNet} onChange={e => setForm({ ...form, monthlyNet: e.target.value })} style={INP} /></label>
+            <label>through <input value={form.through} onChange={e => setForm({ ...form, through: e.target.value })} style={INP} placeholder="YYYY-MM" /></label>
+            <button onClick={saveTarget} style={{ background: A.green, color: A.sidebar, border: "none", borderRadius: 6, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+            {note && <span>{note}</span>}
+          </div>
+        )}
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: "100%", height: 160, display: "block" }} role="img" aria-label="Paying customers by month against the plan">
+          {months.map((m, i) => m.customers != null && (
+            <rect key={m.month} x={i * bw + bw * 0.2} y={y(m.customers)} width={bw * 0.6} height={H - y(m.customers)} fill={A.green} />
+          ))}
+          {targetPts && <polyline points={targetPts} fill="none" stroke={A.amber} strokeWidth="2" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: A.muted, marginTop: 4 }}>
+          {months.filter((m, i) => i % 3 === 0).map(m => <span key={m.month}>{m.month}</span>)}
+        </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+          <thead><tr>{["Month", "Paying customers", "MRR", "Plan"].map(h => <th key={h} style={{ fontSize: 10, color: A.muted, textAlign: "left", padding: "6px 8px", textTransform: "uppercase", letterSpacing: "0.08em" }}>{h}</th>)}</tr></thead>
+          <tbody>
+            {months.filter(m => m.customers != null || m.month <= (t.start?.month || thisMonth)).map(m => (
+              <tr key={m.month} style={{ borderTop: `1px solid ${A.borderSub}` }}>
+                <td style={{ padding: "6px 8px", fontSize: 12, color: A.secondary }}>{m.month}</td>
+                <td style={{ padding: "6px 8px", fontSize: 12, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{m.customers ?? "Not yet"}</td>
+                <td style={{ padding: "6px 8px", fontSize: 12, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{m.mrr_cents == null ? "Not yet" : fmt$(m.mrr_cents / 100)}</td>
+                <td style={{ padding: "6px 8px", fontSize: 12, color: A.muted }}>{m.target ?? "Not set"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {/* Funnel */}
       <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "24px 28px" }}>
-        <div style={SH}>Trial Conversion Funnel</div>
+        <div style={SH}>Trial Conversion Funnel (customers and prospect trials)</div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {funnel.map((f, i) => (
             <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 8, flex: i === 0 ? 2 : 1 }}>
-              <div style={{ flex: 1, background: A.card, border: `1px solid ${A.border}`, borderLeft: `4px solid ${f.borderColor}`, borderRadius: 8, padding: "14px 16px" }}>
+              <div role="button" tabIndex={0} onClick={opener(f.key, f.label)}
+                style={{ cursor: "pointer", flex: 1, background: A.card, border: `1px solid ${A.border}`, borderLeft: `4px solid ${f.borderColor}`, borderRadius: 8, padding: "14px 16px" }}>
                 <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", color: A.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>{f.count}</div>
                 <div style={{ fontSize: 12, color: A.secondary, marginTop: 4 }}>{f.label}</div>
                 <div style={{ fontSize: 11, color: A.muted, marginTop: 2 }}>{f.pct}%</div>
@@ -1511,7 +1675,7 @@ export default function AdminDashboard() {
           {page === "close"     && <CloseDeal target={closeTarget} onClearTarget={() => setCloseTarget(null)} />}
           {page === "orgs"      && <Organizations orgs={orgs} loading={loadingOrgs} onRefresh={load}
                                      onCloseOrg={o => { setCloseTarget(o); setPage("close"); }} />}
-          {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
+          {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} onRefresh={load} />}
           {page === "network"   && <NetworkReview />}
           {page === "trust"     && <TrustAdmin />}
           {page === "support"   && <SupportAdmin />}

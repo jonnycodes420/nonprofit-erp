@@ -2057,27 +2057,76 @@ app.post("/billing/trial-reminders/run", requireAuth, requireSuperAdmin, wrap(as
 }));
 
 // ── Admin (super admin only) ───────────────────────────────────────────────
-// BUILD-90: the live commercial model — Founding $199, Core $249, Team $499.
-// These superseded the lower three-price set BUILD-24 shipped; closeLink.js is the
-// source of truth for the three a close link may sell, and this table exists
-// only so the super-admin dashboard can add up MRR. seed/growth/impact are
-// legacy prices no org is on.
-const PLAN_MRR = { core: 249, team: 499, founding: 199, seed: 99, growth: 249, impact: 499, trial: 0 };
+// ADMIN-CLEAN: WHAT EACH ORG IS AND WHAT IT REALLY PAYS. MRR used to be a
+// plan's list price for any org whose status read "active", so the two demo
+// orgs counted as $998 of revenue while Steward had no paying customer. Now
+// every org has a kind (orgKind.js), only customers and prospect trials count,
+// and MRR is the amount on the org's live Stripe subscription
+// (`billing_mrr_cents`, written by the billing webhook), never a list price.
+const ORG_KIND = require("../orgKind");
+
+// Facts orgKind.inferKind reads, for every org at once: one grouped query each.
+async function orgKindFacts() {
+  const [users, payments, realDonors] = await Promise.all([
+    query("SELECT org_id, email FROM users WHERE deactivated_at IS NULL", []),
+    query("SELECT org_id, COUNT(*) AS c, COALESCE(SUM(amount_paid_cents),0) AS cents FROM platform_payments GROUP BY org_id", []),
+    query("SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL AND COALESCE(is_sample,false) = false GROUP BY org_id", []),
+  ]);
+  const u = new Map();
+  for (const r of users) { if (!u.has(r.org_id)) u.set(r.org_id, []); u.get(r.org_id).push({ email: r.email }); }
+  const pay = new Map(payments.map(r => [r.org_id, { count: parseInt(r.c, 10), cents: parseInt(r.cents, 10) }]));
+  const real = new Map(realDonors.map(r => [r.org_id, parseInt(r.c, 10)]));
+  return orgId => ({
+    users: u.get(orgId) || [],
+    payments: pay.get(orgId)?.count || 0,
+    paidCents: pay.get(orgId)?.cents || 0,
+    realDonors: real.get(orgId) || 0,
+  });
+}
+
+// One org row, with its kind, why, and what it pays. Every console list and
+// Metrics read this, so the list and the numbers never disagree.
+function withKind(org, facts) {
+  const k = ORG_KIND.inferKind(org, facts);
+  const mrrCents = ORG_KIND.orgMrrCents(org, k.kind);
+  return {
+    ...org,
+    kind: k.kind, kind_label: ORG_KIND.KIND_LABEL[k.kind], kind_source: k.source, kind_reason: k.reason,
+    counted: ORG_KIND.countsAsCustomer(k.kind) && !org.archived_at,
+    archived: !!org.archived_at,
+    payment_count: facts.payments, paid_cents: facts.paidCents, real_donor_count: facts.realDonors,
+    monthly_revenue_cents: mrrCents,
+    monthly_revenue: mrrCents / 100,
+  };
+}
+
+// What stops a permanent delete. An org with a subscription, a payment or a
+// real donor is only ever archived (ADMIN-CLEAN rule; the script reads the same).
+function deleteBlockers(org, facts) {
+  const out = [];
+  if (org.stripe_subscription_id) out.push("it has a Stripe subscription");
+  if (facts.payments > 0) out.push(`it has ${facts.payments} paid Steward invoice${facts.payments === 1 ? "" : "s"}`);
+  if (facts.realDonors > 0) out.push(`it has ${facts.realDonors} real (non-sample) donor${facts.realDonors === 1 ? "" : "s"}`);
+  if (ORG_KIND.DEMO_ORG_IDS.includes(org.id)) out.push("it is one of the two demo orgs");
+  return out;
+}
 
 async function orgWithMetrics(org) {
-  const [donors, grants, users, lastActive] = await Promise.all([
+  const [donors, grants, users, lastActive, facts] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [org.id]),
     query("SELECT COUNT(*) AS c FROM grants WHERE org_id=?", [org.id]),
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [org.id]),
     query("SELECT MAX(created_at) AS t FROM interactions WHERE org_id=?", [org.id]),
+    orgKindFacts(),
   ]);
+  const f = facts(org.id);
   return {
-    ...org,
+    ...withKind(org, f),
     donor_count:    parseInt(donors[0].c, 10),
     grant_count:    parseInt(grants[0].c, 10),
     user_count:     parseInt(users[0].c, 10),
     last_active:    lastActive[0]?.t || null,
-    monthly_revenue: PLAN_MRR[org.subscription_status === "active" ? org.plan : "trial"] || 0,
+    delete_blockers: deleteBlockers(org, f),
   };
 }
 
@@ -2085,78 +2134,223 @@ app.get("/admin/orgs", requireAuth, requireSuperAdmin, wrap(async (req, res) => 
   // One grouped aggregate per table instead of 4 queries per org (was N+1 —
   // Promise.all(orgs.map(orgWithMetrics))). orgWithMetrics stays for the
   // single-org GET /admin/orgs/:id, where per-org queries are fine.
-  const [orgs, donorCounts, grantCounts, userCounts, lastActives] = await Promise.all([
+  const [orgs, donorCounts, grantCounts, userCounts, lastActives, facts] = await Promise.all([
     query("SELECT * FROM orgs ORDER BY created_at DESC", []),
     query("SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL GROUP BY org_id", []),
     query("SELECT org_id, COUNT(*) AS c FROM grants GROUP BY org_id", []),
     query("SELECT org_id, COUNT(*) AS c FROM users GROUP BY org_id", []),
     query("SELECT org_id, MAX(created_at) AS t FROM interactions GROUP BY org_id", []),
+    orgKindFacts(),
   ]);
   const byOrg = (rows, col) => new Map(rows.map(r => [r.org_id, r[col]]));
   const dMap = byOrg(donorCounts, "c"), gMap = byOrg(grantCounts, "c"),
         uMap = byOrg(userCounts, "c"), aMap = byOrg(lastActives, "t");
-  res.json(orgs.map(org => ({
-    ...org,
-    donor_count:    parseInt(dMap.get(org.id) || 0, 10),
-    grant_count:    parseInt(gMap.get(org.id) || 0, 10),
-    user_count:     parseInt(uMap.get(org.id) || 0, 10),
-    last_active:    aMap.get(org.id) || null,
-    monthly_revenue: PLAN_MRR[org.subscription_status === "active" ? org.plan : "trial"] || 0,
-  })));
+  res.json(orgs.map(org => {
+    const f = facts(org.id);
+    return {
+      ...withKind(org, f),
+      donor_count:    parseInt(dMap.get(org.id) || 0, 10),
+      grant_count:    parseInt(gMap.get(org.id) || 0, 10),
+      user_count:     parseInt(uMap.get(org.id) || 0, 10),
+      last_active:    aMap.get(org.id) || null,
+      delete_blockers: deleteBlockers(org, f),
+    };
+  }));
 }));
 
+// The plan line Jonathan set, or the default (orgKind.DEFAULT_TARGET).
+async function mrrTarget() {
+  const rows = await query("SELECT value FROM admin_settings WHERE key='mrr_target'", []).catch(() => []);
+  const v = rows[0]?.value;
+  return v && v.start && v.start.month ? v : ORG_KIND.DEFAULT_TARGET;
+}
+
+const monthKey = d => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+const monthEnd = key => { const [y, m] = key.split("-").map(Number); return new Date(Date.UTC(y, m, 1) - 1); };
+
+// Paying customers and MRR at the end of each month, from paid Steward
+// invoices: an org counts in month M when a paid invoice's period covers the
+// last moment of M (the current month: now). Its MRR is that invoice's
+// monthly amount. Then the target line runs on through the plan's last month.
+function mrrByMonth(payments, countedIds, target, now = new Date()) {
+  const thisKey = monthKey(now);
+  const first = payments.length
+    ? monthKey(new Date(Math.min(...payments.map(p => new Date(p.paid_at).getTime()))))
+    : thisKey;
+  const startKey = [first, "2026-10"].sort()[0];
+  const lastKey = [thisKey, target.through || "2027-12"].sort().reverse()[0];
+  const out = [];
+  let [y, m] = startKey.split("-").map(Number);
+  for (let guard = 0; guard < 60; guard++) {
+    const key = `${y}-${String(m).padStart(2, "0")}`;
+    if (key > lastKey) break;
+    const future = key > thisKey;
+    const at = key === thisKey ? now : monthEnd(key);
+    let customers = null, mrrCents = null;
+    if (!future) {
+      const latest = new Map();
+      for (const p of payments) {
+        if (!countedIds.has(p.org_id)) continue;
+        const start = new Date(p.period_start || p.paid_at).getTime();
+        const end = p.period_end ? new Date(p.period_end).getTime() : new Date(p.paid_at).getTime() + 31 * 86400000;
+        if (start <= at.getTime() && end >= at.getTime()) {
+          const prev = latest.get(p.org_id);
+          if (!prev || new Date(p.paid_at) > new Date(prev.paid_at)) latest.set(p.org_id, p);
+        }
+      }
+      customers = latest.size;
+      mrrCents = [...latest.values()].reduce((s, p) => s + Number(p.monthly_cents || 0), 0);
+    }
+    out.push({ month: key, customers, mrr_cents: mrrCents, target: ORG_KIND.targetFor(key, target) });
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+const METRIC_DEFINITIONS = {
+  mrr: "The monthly amount on every live Stripe subscription (active or past due) of a Customer or Prospect trial org. Never a plan's list price.",
+  arr: "MRR times twelve.",
+  paying: "Customer and Prospect trial orgs with a live Stripe subscription that has a monthly amount above zero.",
+  trialing: "Customer and Prospect trial orgs whose subscription status is trialing.",
+  churned: "Customer and Prospect trial orgs whose subscription ended (canceled or unpaid).",
+  conversion: "Paying orgs divided by paying plus churned orgs.",
+  left_out: "Demo, Internal test and Fixture orgs, and archived orgs. They never count.",
+  counted: "Customer and Prospect trial orgs that are not archived: the only orgs Metrics counts.",
+};
+
 app.get("/admin/metrics", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const orgs = await query("SELECT * FROM orgs", []);
-  const now = new Date();
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
-  const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-
-  const active = orgs.filter(o => o.subscription_status === "active");
-  const trialing = orgs.filter(o => o.subscription_status === "trialing");
-  const churned = orgs.filter(o => o.subscription_status === "cancelled");
-  const mrr = active.reduce((s, o) => s + (PLAN_MRR[o.plan] || 0), 0);
-
-  const [donors, grants, interactions, newThisMonth, newLastMonth] = await Promise.all([
-    query("SELECT COUNT(*) AS c FROM donors", []),
-    query("SELECT COUNT(*) AS c FROM grants", []),
-    query("SELECT COUNT(*) AS c FROM interactions", []),
-    query("SELECT COUNT(*) AS c FROM orgs WHERE created_at >= ?", [startOfMonth]),
-    query("SELECT COUNT(*) AS c FROM orgs WHERE created_at >= ? AND created_at < ?", [startOfLastMonth, endOfLastMonth]),
+  const [orgs, facts, target, payments] = await Promise.all([
+    query("SELECT * FROM orgs", []),
+    orgKindFacts(),
+    mrrTarget(),
+    query("SELECT org_id, amount_paid_cents, monthly_cents, period_start, period_end, paid_at FROM platform_payments", []),
   ]);
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  const all = orgs.map(o => withKind(o, facts(o.id)));
+  const counted = all.filter(o => o.counted);
+  const leftOut = all.filter(o => !o.counted);
+  // A row a number opens: enough to recognise the org and check the amount.
+  const row = o => ({ id: o.id, name: o.name, kind: o.kind, kind_label: o.kind_label, plan: o.plan,
+    subscription_status: o.subscription_status, monthly_revenue_cents: o.monthly_revenue_cents,
+    stripe_subscription_id: o.stripe_subscription_id || null, created_at: o.created_at, trial_ends_at: o.trial_ends_at,
+    reason: o.kind_reason });
+
+  const paying = counted.filter(o => o.monthly_revenue_cents > 0);
+  const trialing = counted.filter(o => o.subscription_status === "trialing");
+  const churned = counted.filter(o => ORG_KIND.ENDED_STATUSES.has(o.subscription_status));
+  const mrrCents = paying.reduce((s, o) => s + o.monthly_revenue_cents, 0);
 
   const trialDaysLeft = trialing.map(o => {
     if (!o.trial_ends_at) return 30;
     return Math.max(0, Math.ceil((new Date(o.trial_ends_at) - Date.now()) / 86400000));
   });
   const avgTrialDays = trialDaysLeft.length ? Math.round(trialDaysLeft.reduce((a, b) => a + b, 0) / trialDaysLeft.length) : 0;
+  const countedIds = new Set(counted.map(o => o.id));
+  const newThisMonth = counted.filter(o => new Date(o.created_at) >= startOfMonth);
+  const newLastMonth = counted.filter(o => new Date(o.created_at) >= startOfLastMonth && new Date(o.created_at) < startOfMonth);
+
+  const [donors, grants, interactions] = await Promise.all([
+    query("SELECT org_id, COUNT(*) AS c FROM donors WHERE deleted_at IS NULL GROUP BY org_id", []),
+    query("SELECT org_id, COUNT(*) AS c FROM grants GROUP BY org_id", []),
+    query("SELECT org_id, COUNT(*) AS c FROM interactions GROUP BY org_id", []),
+  ]);
+  const sumCounted = rows => rows.reduce((s, r) => s + (countedIds.has(r.org_id) ? parseInt(r.c, 10) : 0), 0);
+
+  const leftOutBy = { demo: 0, internal_test: 0, fixture: 0, archived: 0 };
+  for (const o of leftOut) {
+    if (o.archived) leftOutBy.archived++;
+    else leftOutBy[o.kind] = (leftOutBy[o.kind] || 0) + 1;
+  }
+  const parts = [["demo", "demo"], ["internal_test", "internal test"], ["fixture", "fixture"], ["archived", "archived"]]
+    .filter(([k]) => leftOutBy[k] > 0).map(([k, w]) => `${leftOutBy[k]} ${w}`);
+  const leftOutSentence = leftOut.length
+    ? `Left out ${leftOut.length} org${leftOut.length === 1 ? "" : "s"} that are not customers: ${parts.join(", ")}.`
+    : "Every org counts: none is a demo, internal test, fixture or archived.";
+
+  const byPlan = {};
+  for (const o of paying) {
+    const p = o.plan || "unknown";
+    byPlan[p] = byPlan[p] || { plan: p, count: 0, mrr_cents: 0 };
+    byPlan[p].count++; byPlan[p].mrr_cents += o.monthly_revenue_cents;
+  }
 
   res.json({
     total_orgs: orgs.length,
-    active_subscriptions: active.length,
+    counted_orgs: counted.length,
+    left_out: leftOutBy,
+    left_out_count: leftOut.length,
+    left_out_sentence: leftOutSentence,
+    paying_customers: paying.length,
+    active_subscriptions: paying.length,
     trialing: trialing.length,
     churned: churned.length,
-    mrr,
-    arr: mrr * 12,
+    mrr_cents: mrrCents,
+    mrr: mrrCents / 100,
+    arr: (mrrCents * 12) / 100,
     avg_trial_days_remaining: avgTrialDays,
-    trial_conversion_rate: (active.length + churned.length) > 0
-      ? Math.round((active.length / (active.length + churned.length)) * 100)
+    trial_conversion_rate: (paying.length + churned.length) > 0
+      ? Math.round((paying.length / (paying.length + churned.length)) * 100)
       : 0,
-    new_orgs_this_month: parseInt(newThisMonth[0].c, 10),
-    new_orgs_last_month: parseInt(newLastMonth[0].c, 10),
-    total_donors: parseInt(donors[0].c, 10),
-    total_grants: parseInt(grants[0].c, 10),
-    total_interactions: parseInt(interactions[0].c, 10),
-    plan_breakdown: {
-      trial:    orgs.filter(o => !o.plan || o.plan === "trial").length,
-      core:     orgs.filter(o => o.plan === "core" && o.subscription_status === "active").length,
-      team:     orgs.filter(o => o.plan === "team" && o.subscription_status === "active").length,
-      founding: orgs.filter(o => o.plan === "founding" && o.subscription_status === "active").length,
-      seed:     orgs.filter(o => o.plan === "seed" && o.subscription_status === "active").length,
-      growth:   orgs.filter(o => o.plan === "growth" && o.subscription_status === "active").length,
-      impact:   orgs.filter(o => o.plan === "impact" && o.subscription_status === "active").length,
+    new_orgs_this_month: newThisMonth.length,
+    new_orgs_last_month: newLastMonth.length,
+    total_donors: sumCounted(donors),
+    total_grants: sumCounted(grants),
+    total_interactions: sumCounted(interactions),
+    by_plan: Object.values(byPlan).sort((a, b) => b.mrr_cents - a.mrr_cents),
+    by_month: mrrByMonth(payments, countedIds, target, now),
+    target,
+    definitions: METRIC_DEFINITIONS,
+    // EVERY NUMBER OPENS (REPORTS-4): the rows behind each headline, footing.
+    rows: {
+      mrr: paying.map(row), paying: paying.map(row), trialing: trialing.map(row), churned: churned.map(row),
+      conversion: [...paying, ...churned].map(row), counted: counted.map(row), left_out: leftOut.map(row),
+      new_this_month: newThisMonth.map(row), new_last_month: newLastMonth.map(row),
     },
   });
+}));
+
+// The plan line. Jonathan sets where it starts and how fast it climbs.
+app.post("/admin/metrics/target", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const b = req.body || {};
+  const month = String(b.startMonth || "").trim();
+  const through = String(b.through || "").trim();
+  const customers = Number(b.startCustomers), monthlyNet = Number(b.monthlyNet);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(through) || through < month)
+    return res.status(400).json({ error: "bad_target", message: "Give the first milestone month and the last month as YYYY-MM, the last on or after the first." });
+  if (!Number.isFinite(customers) || customers < 0 || !Number.isFinite(monthlyNet) || monthlyNet < 0)
+    return res.status(400).json({ error: "bad_target", message: "Customers and net new a month are numbers, zero or more." });
+  const value = { start: { month, customers: Math.round(customers) }, monthlyNet: Math.round(monthlyNet), through };
+  await run(`INSERT INTO admin_settings (key, value, updated_at, updated_by) VALUES ('mrr_target', ?, NOW(), ?)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW(), updated_by = EXCLUDED.updated_by`,
+    [JSON.stringify(value), req.user.userId]);
+  res.json({ ok: true, target: value });
+}));
+
+// Kind, archive and undo. Each is one POST; the audit trail records it.
+app.post("/admin/orgs/:id/kind", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const kind = req.body?.kind;
+  if (kind !== null && !ORG_KIND.KINDS.includes(kind))
+    return res.status(400).json({ error: "bad_kind", message: `Kind is one of: ${ORG_KIND.KINDS.map(k => ORG_KIND.KIND_LABEL[k]).join(", ")}.` });
+  const r = await run("UPDATE orgs SET org_kind=?, org_kind_set_at=NOW(), org_kind_set_by=? WHERE id=?",
+    [kind, req.user.userId, req.params.id]);
+  if (!r.changes) return res.status(404).json({ error: "Org not found" });
+  res.json({ ok: true, kind });
+}));
+
+app.post("/admin/orgs/:id/archive", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const r = await run("UPDATE orgs SET archived_at=COALESCE(archived_at, NOW()), archived_by=? WHERE id=?",
+    [req.user.userId, req.params.id]);
+  if (!r.changes) return res.status(404).json({ error: "Org not found" });
+  res.json({ ok: true, archived: true });
+}));
+
+app.post("/admin/orgs/:id/unarchive", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const r = await run("UPDATE orgs SET archived_at=NULL, archived_by=NULL WHERE id=?", [req.params.id]);
+  if (!r.changes) return res.status(404).json({ error: "Org not found" });
+  res.json({ ok: true, archived: false });
 }));
 
 app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
@@ -2300,7 +2494,7 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
 const mailPolicy = require("../mailPolicy");
 async function adminMailPayload(orgId) {
   const [org] = await query(
-    `SELECT id, name, emails_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name,
+    `SELECT id, name, emails_enabled, is_demo_org, onboarded_at, onboarded_via, onboarded_by_name, org_kind,
             sending_domain, sending_domain_status, sending_from_email FROM orgs WHERE id=?`, [orgId]);
   if (!org) return null;
   const demo = mailPolicy.orgMailDecision(org, mailPolicy.CATEGORY.DONOR).reason === "demo_org";
@@ -2465,11 +2659,23 @@ async function auditSampleData(orgId, action, actor, counts, detail) {
 }
 
 app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const { confirm } = req.body;
+  const { confirm, confirmName } = req.body || {};
   if (!confirm) return res.status(400).json({ error: "confirm: true required" });
-  const orgs = await query("SELECT id FROM orgs WHERE id=?", [req.params.id]);
+  const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const orgId = req.params.id;
+  // ADMIN-CLEAN: PERMANENT DELETE IS ONLY FOR AN ORG WITH NOTHING REAL IN IT.
+  // A Stripe subscription, a paid invoice or one real donor means archive,
+  // never delete. And it asks twice: the second time is the org's own name.
+  const blockers = deleteBlockers(orgs[0], (await orgKindFacts())(orgId));
+  if (blockers.length) {
+    return res.status(409).json({ error: "delete_refused", blockers,
+      message: `Steward will not delete ${orgs[0].name} because ${blockers.join(" and ")}. Archive it instead; that hides it and can be undone.` });
+  }
+  if (String(confirmName || "").trim() !== String(orgs[0].name || "").trim()) {
+    return res.status(400).json({ error: "confirm_name_required",
+      message: `Type the org's name, ${orgs[0].name}, to delete it permanently.` });
+  }
   // Cascade delete — order matters for FK constraints; .catch(() => {}) on each so a missing table never aborts.
   // donor_materials/planned_gifts/milestone_drafts/note_reminders reference
   // donor_id and MUST go before the `donors` delete below — found missing

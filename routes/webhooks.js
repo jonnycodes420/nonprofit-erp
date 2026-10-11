@@ -17,6 +17,7 @@
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
 const AC = require("../auctionCore");
+const ORG_KIND = require("../orgKind");   // ADMIN-CLEAN: real subscription amounts
 const TL = require("../timelineLine");   // WIRE-1 rule 2: every act lands on the timeline   // PARITY-2 Part 4: who won, and the split
 const { rateLimit } = require("express-rate-limit");
 
@@ -1901,9 +1902,11 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
         // she was promised on the very screen she was promised it.
         let status = "active";
         let trialEnd = null;
+        let subMrrCents = null;
         if (obj.subscription) {
           try {
             const sub = await billingStripe.subscriptions.retrieve(obj.subscription);
+            subMrrCents = ORG_KIND.monthlyCentsFromSubscription(sub);
             periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
             if (sub.status === "trialing") {
               status = "trialing";
@@ -1916,6 +1919,7 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
                   trial_ends_at=COALESCE(?, trial_ends_at), grace_until=NULL WHERE id=?`,
           [plan, status, obj.subscription || null, periodEnd, trialEnd, orgId]
         );
+        if (subMrrCents != null) await recordBillingMrr(orgId, subMrrCents);
       }
     } else if (event.type === "invoice.payment_succeeded") {
       // FIX-32: the $0 invoice Stripe issues when a trial STARTS is not a
@@ -1929,6 +1933,7 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
           "UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?",
           [periodEnd, orgId]
         );
+        await recordPlatformPayment(orgId, obj);
       }
     } else if (event.type === "invoice.payment_failed") {
       if (orgId) {
@@ -1958,6 +1963,7 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
           const status = trialing ? "trialing" : "active";
           const trialEnd = trialing && obj.trial_end ? new Date(obj.trial_end * 1000).toISOString() : null;
           if (obj.id) await refreshBillingCard(orgId, obj.id).catch(() => {});
+          await recordBillingMrr(orgId, ORG_KIND.monthlyCentsFromSubscription(obj));
           if (plan) {
             await run("UPDATE orgs SET plan=?, subscription_status=?, current_period_end=?, trial_ends_at=COALESCE(?, trial_ends_at), grace_until=NULL WHERE id=?", [plan, status, periodEnd, trialEnd, orgId]);
           } else {
@@ -2564,6 +2570,27 @@ async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz
 // chose stays its plan so "Keep Steward" can put it back on the same one.
 // Only a subscription that ends AFTER the first charge gets the three days'
 // grace. The plan is never rewritten: there is one plan, everything included.
+// ADMIN-CLEAN: WHAT THE ORG REALLY PAYS. The console's MRR is this amount,
+// read from the subscription Stripe sent, never a plan's list price.
+async function recordBillingMrr(orgId, cents) {
+  if (!orgId || !Number.isFinite(cents)) return;
+  await run("UPDATE orgs SET billing_mrr_cents=?, billing_mrr_at=NOW() WHERE id=?", [Math.round(cents), orgId]);
+}
+// One row per paid Steward invoice. A $0 invoice is not a payment.
+async function recordPlatformPayment(orgId, inv) {
+  const paid = Number(inv?.amount_paid);
+  if (!orgId || !inv?.id || !(paid > 0)) return;
+  const period = inv.lines?.data?.[0]?.period || {};
+  const at = s => (s ? new Date(s * 1000).toISOString() : null);
+  await run(
+    `INSERT INTO platform_payments (id, org_id, stripe_invoice_id, amount_paid_cents, monthly_cents,
+                                    period_start, period_end, paid_at, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,COALESCE(?, NOW()),?,?) ON CONFLICT (stripe_invoice_id) DO NOTHING`,
+    ["pp_" + uuid().slice(0, 12), orgId, inv.id, Math.round(paid), ORG_KIND.monthlyCentsFromInvoice(inv),
+     at(period.start), at(period.end), at(inv.status_transitions?.paid_at || inv.created),
+     "system:billing-webhook", "Stripe billing"]);
+}
+
 async function markSubscriptionEnded(orgId) {
   const [org] = await query("SELECT trial_ends_at FROM orgs WHERE id=?", [orgId]);
   const trialEnd = org && org.trial_ends_at ? new Date(org.trial_ends_at) : null;

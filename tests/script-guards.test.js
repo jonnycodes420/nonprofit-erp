@@ -46,6 +46,9 @@ const GUARDED_WRITERS = [
   // FIX-30: puts back the postal states the Agent overwrote with "runs".
   // Dry run by default; --apply/--undo write through writerDbUrl.
   "repair-runs-state",
+  // ADMIN-CLEAN: sorts every org into its kind, archives and deletes junk.
+  // Dry run by default; --apply writes through writerDbUrl.
+  "admin-clean",
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
   "build55-capture", "build57-capture", "build57-import-drill",
