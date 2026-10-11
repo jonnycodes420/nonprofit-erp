@@ -2573,12 +2573,13 @@ async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz
 // ADMIN-CLEAN: WHAT THE ORG REALLY PAYS. The console's MRR is this amount,
 // read from the subscription Stripe sent, never a plan's list price.
 async function recordBillingMrr(orgId, cents) {
-  if (!orgId || !Number.isFinite(cents)) return;
-  await run("UPDATE orgs SET billing_mrr_cents=?, billing_mrr_at=NOW() WHERE id=?", [Math.round(cents), orgId]);
+  if (!orgId || !Number.isInteger(cents)) return;
+  await run("UPDATE orgs SET billing_mrr_cents=?, billing_mrr_at=NOW() WHERE id=?", [cents, orgId]);
 }
 // One row per paid Steward invoice. A $0 invoice is not a payment.
 async function recordPlatformPayment(orgId, inv) {
-  const paid = Number(inv?.amount_paid);
+  // Stripe's amount_paid is already integer cents: stored as it came.
+  const paid = parseInt(inv?.amount_paid, 10);
   if (!orgId || !inv?.id || !(paid > 0)) return;
   const period = inv.lines?.data?.[0]?.period || {};
   const at = s => (s ? new Date(s * 1000).toISOString() : null);
@@ -2586,7 +2587,7 @@ async function recordPlatformPayment(orgId, inv) {
     `INSERT INTO platform_payments (id, org_id, stripe_invoice_id, amount_paid_cents, monthly_cents,
                                     period_start, period_end, paid_at, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,COALESCE(?, NOW()),?,?) ON CONFLICT (stripe_invoice_id) DO NOTHING`,
-    ["pp_" + uuid().slice(0, 12), orgId, inv.id, Math.round(paid), ORG_KIND.monthlyCentsFromInvoice(inv),
+    ["pp_" + uuid().slice(0, 12), orgId, inv.id, paid, ORG_KIND.monthlyCentsFromInvoice(inv),
      at(period.start), at(period.end), at(inv.status_transitions?.paid_at || inv.created),
      "system:billing-webhook", "Stripe billing"]);
 }
