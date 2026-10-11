@@ -17,16 +17,18 @@
 //   §6  Last contacted and engagement use the original dates.
 //   §7  No history yet is not a zero: the scores say noHistory until a person
 //       has any conversation on file.
-//   §8  Imported do not solicit keeps a person off Calls to make.
+//   §8  Do not solicit is thanked, never asked: a gift from them puts them on
+//       Calls to make, an asking list still leaves them out (FIX-35); no
+//       phone calls keeps a person off Calls to make.
 //   §9  ⌘K finds the words of an imported call.
 //   §10 Undo removes everything the history import added, and only that.
 //
 // HOW IT WOULD GO RED: drop the folded id (§1 and §2's 1,910 fall to 1,848);
 // set a flag at preview or without confirmation (§3); leave the tags in (§4);
-// stamp imports with today (§6); read "Calls to make" without do_not_solicit
-// (§8: the flagged donor is on the list); delete less on undo (§10).
+// stamp imports with today (§6); keep do_not_solicit on "Calls to make"
+// (§8: the flagged donor is missing); delete less on undo (§10).
 // Proven able to fail: with the folded-id fix reverted, §1 and §2 went red;
-// with callsToMake's do_not_solicit line removed, §8 went red.
+// with IMPORT-2's do_not_solicit line still in callsToMake, §8 went red (FIX-35).
 //
 // Standard scratch stack (tests/README.md). Sends nothing.
 
@@ -182,17 +184,28 @@ async function reset() {
     const s1 = await api("GET", `/donors/${call.donor_id}/scores`, tok);
     ok("§7 a person with imported history no longer reads No history yet", s1.body.noHistory === false, s1.body.noHistory);
 
-    // ── §8 · do not solicit keeps them off Calls to make ─────────────────
+    // ── §8 · do not solicit is thanked, never asked (FIX-35) ─────────────
     const flaggedId = confirmFlags[0].donorId;
-    const [control] = await q(`SELECT id FROM donors WHERE org_id=$1 AND COALESCE(do_not_solicit,false)=false
+    const controls = await q(`SELECT id FROM donors WHERE org_id=$1 AND COALESCE(do_not_solicit,false)=false
                                  AND COALESCE(do_not_contact,false)=false AND COALESCE(deceased,false)=false AND COALESCE(kind,'') <> 'anonymous'
-                                 AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=donors.id) ORDER BY id LIMIT 1`, [ORG]);
-    for (const [id, did] of [["g_import2h_flag", flaggedId], ["g_import2h_ctl", control.id]])
+                                 AND COALESCE(do_not_call,false)=false AND id <> $2
+                                 AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=donors.id) ORDER BY id LIMIT 2`, [ORG, flaggedId]);
+    const [control, noCall] = controls;
+    await q(`UPDATE donors SET do_not_call = true WHERE id=$1 AND org_id=$2`, [noCall.id, ORG]);
+    for (const [id, did] of [["g_import2h_flag", flaggedId], ["g_import2h_ctl", control.id], ["g_import2h_nocall", noCall.id]])
       await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,created_by,created_by_name) VALUES ($1,$2,$3,250000,$4,'system:test','test')`, [id, ORG, did, today]);
     const hc = await api("GET", "/home/calls", tok);
     const onList = id => (hc.body.rows || []).some(r => r.donorId === id) || JSON.stringify(hc.body).includes(id);
     ok("§8 a large gift from an ordinary donor puts them on Calls to make (the check is not vacuous)", onList(control.id), hc.body.count);
-    ok("§8 the same gift from a donor marked do not solicit does not", !onList(flaggedId), hc.body.rows);
+    ok("§8 the same gift from a donor marked do not solicit puts them on for a thank-you call", onList(flaggedId), hc.body.rows);
+    ok("§8 …but a donor marked no phone calls stays off a list of calls", !onList(noCall.id), hc.body.rows);
+    // An asking list still leaves them out: both givers made the top tenth by
+    // lifetime giving, and only the one who may be asked is on it.
+    await q(`UPDATE donors SET total_giving = 900000000 WHERE org_id=$1 AND id = ANY($2)`, [ORG, [flaggedId, control.id]]);
+    const top = await api("GET", "/groups/starters/top_tenth", tok);
+    const onTop = id => (top.body.people || []).some(p => p.id === id);
+    ok("§8 an asking list (Top tenth) carries the ordinary donor (not vacuous)", top.status === 200 && onTop(control.id), top.body.people);
+    ok("§8 …and never the donor marked do not solicit", !onTop(flaggedId), top.body.people);
 
     // ── §9 · ⌘K finds what was said ──────────────────────────────────────
     const se = await api("GET", "/search?q=" + encodeURIComponent("talk to my wife"), tok);

@@ -359,4 +359,4 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
 - **No history yet is not cold.** A person with no conversation, note or meeting on file (gift lines do not count)
   reads "No history yet" on the profile, never "Engagement 0, Distant", and Home's "no recent contact" list skips
   them. `NOT_HISTORY_TYPES` in routes/crm.js is the one list of interaction types that are not history. (IMPORT-2)
-- **Calls to make skips do not solicit and no phone calls**, as well as deceased and do not contact. (IMPORT-2)
+- **Calls to make skips no phone calls**, as well as deceased, do not contact and anonymous. It does NOT skip do not solicit: every row is a thank-you call, and thanking is not asking. Asking lists, appeals, Drift's re-engagement asks and the asking starters still leave do not solicit out (`solicitableSql`). (IMPORT-2, corrected by FIX-35)
