@@ -2078,6 +2078,10 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     // would hide which of the two happened, which is the only thing that
     // matters when the totals look wrong.
     duplicateQuestions: 0, ridesOnTop: 0,
+    // CONNECT-2: every row that was skipped for a problem with the ROW (not
+    // a payout or a pending payment, which are simply not gifts), with its
+    // provider id and the reason in words. The card lists these.
+    skipped: [],
   };
   const touchedDonors = new Set();
 
@@ -2088,7 +2092,17 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     try {
       const use = adapter || sourceAdapters.getAdapter(source.provider);
       if (!use) throw Object.assign(new Error(`no adapter for ${source.provider}`), { code: "NO_ADAPTER" });
-      const credentials = await openSourceCredentials(source);
+      let credentials = await openSourceCredentials(source);
+      // CONNECT-2 · A SQUARE CONNECTED BY OAUTH RENEWS ITS TOKEN. Square's
+      // access token lasts thirty days; a source that holds a refresh token
+      // and an expiry asks the one token seam (routes/finance.js
+      // accessTokenFor), which renews five minutes early and re-seals the
+      // bag. A pasted personal token has no expiry and is used as it is.
+      if (source.provider === "square" && source.token_expires_at && credentials.refreshToken) {
+        const tok = await require("./routes/finance").accessTokenFor(orgId, source, "square");
+        if (!tok.ok) throw Object.assign(new Error(tok.body.sentence), { status: 401, step: "auth" });
+        credentials = { ...credentials, accessToken: tok.accessToken };
+      }
       const http = sourceAdapters.readOnlyHttp(source.provider, fetchImpl ? { fetchImpl } : {});
 
       // The window. A backfill walks as far back as the provider allows (the
@@ -2112,13 +2126,28 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
                                           backfill: isBackfill, config: sourceConfig(source) });
         page++;
         for (const n of out?.notices || []) summary.notices.push(n);
+        for (const k of out?.skipped || []) noteSkippedRow(summary, k, SKIP_LISTED_REASONS[k.reason] || String(k.reason || "").replace(/_/g, " "));
         for (const raw of out?.rows || []) {
           summary.rowsRead++;
           const norm = normalizeRow(raw, { provider: source.provider });
-          if (!norm.ok) { summary.dropped[norm.reason] = (summary.dropped[norm.reason] || 0) + 1; continue; }
-          await writeSourceRow(orgId, source, norm.row, {
-            day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey,
-          });
+          if (!norm.ok) {
+            summary.dropped[norm.reason] = (summary.dropped[norm.reason] || 0) + 1;
+            if (SKIP_LISTED_REASONS[norm.reason]) noteSkippedRow(summary, raw, SKIP_LISTED_REASONS[norm.reason]);
+            continue;
+          }
+          // CONNECT-2 · ONE BAD ROW NEVER BREAKS THE RUN (MAILCHIMP-1's rule,
+          // for money). A row the database refuses used to throw out of this
+          // loop: the whole check was recorded as failed, the card went
+          // broken, and every gift after that row was never read. Now the row
+          // is skipped and LISTED with the reason, and the run carries on.
+          try {
+            await writeSourceRow(orgId, source, norm.row, {
+              day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey,
+            });
+          } catch (rowErr) {
+            console.error(`[giving-source] ${source.provider} org=${orgId} skipped one row: ${rowErr.code || rowErr.message}`);
+            noteSkippedRow(summary, norm.row, "Steward could not save this row, so it was skipped. The rest of the check carried on.");
+          }
         }
         cursor = out?.cursor ?? null;
         done = out?.done !== false || !cursor;
@@ -2163,6 +2192,29 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
   });
 }
 
+// CONNECT-2: the refusals that are about a broken ROW, and the words the
+// card shows beside each one. Money going out, a pending payment and a
+// refund are not problems and are counted, not listed.
+const SKIP_LISTED_REASONS = {
+  no_external_id: "The provider sent no id for this row, so Steward could not be sure it would not be read twice.",
+  bad_date: "The date on this row could not be read, and Steward never guesses a date.",
+  bad_amount: "The amount on this row could not be read as money.",
+  bad_status: "The provider gave this row a status Steward does not recognise.",
+  fee_exceeds_gross: "The fee on this row is larger than the gift, which means the provider's figures are the wrong way round.",
+};
+const SKIPPED_KEPT = 100;
+function noteSkippedRow(summary, row, reason) {
+  if (summary.skipped.length >= SKIPPED_KEPT) return;
+  const r = row || {};
+  summary.skipped.push({
+    externalId: String(r.externalId ?? r.id ?? "").slice(0, 120) || null,
+    occurredAt: r.occurredAt ? String(r.occurredAt).slice(0, 10) : null,
+    donorName: String(r.donorName || "").replace(/\u0000/g, "").slice(0, 120) || null,
+    amountCents: Number.isInteger(r.amountCents) ? r.amountCents : null,
+    reason,
+  });
+}
+
 // ── BUILD-92 A3 — THE SAME GIFT FROM TWO PLACES ────────────────────────────
 //
 // De-duplication is per source, by the provider's own id, and that is right:
@@ -2192,22 +2244,30 @@ const CROSS_SOURCE_DAY_WINDOW = 2;
 // Stripe"). Either direction counts: the relationship is about the money
 // being the same money, not about which row was typed first.
 function sourcesRideTogether(a, b) {
-  if (!a || !b) return false;
+  // A gift from Steward's own Stripe has no source row at all (id null), and
+  // null === null must never read as "these two are one stack".
+  if (!a || !b || !a.id || !b.id) return false;
   return a.sits_on_top_of === b.id || b.sits_on_top_of === a.id;
 }
 
 // The gift already on file that this provider row looks like, or null.
 // Ordered by how close the dates are, so the nearest candidate is the one a
 // human is asked about.
+//
+// CONNECT-2: the other side may also be a gift Steward's OWN Stripe recorded
+// (the donation webhook leaves no source and a payment id). Givebutter or
+// Zeffy reporting money the org also took on its giving page through Stripe
+// is the same money, and it is asked about once, never written twice.
 async function findCrossSourceGift(orgId, source, row, donor) {
   const rows = await query(
     `SELECT g.id, g.amount, g.date, g.external_id, g.giving_source_id,
-            s.id AS src_id, s.display_name AS src_name, s.provider AS src_provider,
+            s.id AS src_id, COALESCE(s.display_name, 'Stripe') AS src_name, COALESCE(s.provider, 'stripe') AS src_provider,
             s.sits_on_top_of AS src_sits_on_top_of
        FROM gifts g
-       JOIN giving_sources s ON s.id = g.giving_source_id AND s.org_id = g.org_id
+       LEFT JOIN giving_sources s ON s.id = g.giving_source_id AND s.org_id = g.org_id
       WHERE g.org_id = ?
-        AND g.giving_source_id <> ?
+        AND ((g.giving_source_id IS NOT NULL AND g.giving_source_id <> ?)
+             OR (g.giving_source_id IS NULL AND COALESCE(g.stripe_payment_id, '') <> ''))
         AND ROUND(g.amount * 100) = ?
         AND g.date::date BETWEEN ?::date - ?::int AND ?::date + ?::int
         AND g.donor_id IN (
@@ -2222,8 +2282,11 @@ async function findCrossSourceGift(orgId, source, row, donor) {
      // resolveSourceDonor returns { id, name } - the address to match on is the
      // one the PROVIDER reported, which is also the one it resolved the donor
      // by. The sentinel makes the email arm dead rather than matching blanks
-     // when a provider row carries no address at all.
-     orgId, donor.id, (row.donorEmail || "").trim() || "\u0000no-email",
+     // when a provider row carries no address at all. CONNECT-2: it was a NUL
+     // byte, which Postgres refuses in any text parameter (22021), so EVERY
+     // provider row without an email failed the whole check and left an
+     // orphan donor behind. Spaces make it equally impossible as an address.
+     orgId, donor.id, (row.donorEmail || "").trim() || "no email on this row",
      row.occurredAt]);
   return rows[0] || null;
 }
@@ -2279,6 +2342,22 @@ async function writeSourceRow(orgId, source, row, ctx) {
     `SELECT id FROM gifts WHERE org_id=? AND also_external_ids @> ?::jsonb LIMIT 1`,
     [orgId, JSON.stringify([key])]);
   if (answered) { summary.duplicates++; return; }
+  // CONNECT-2 · THE SAME PAYMENT FROM A FILE. An organisation that brought
+  // its history in from the provider's own export (Zeffy's Payments export,
+  // Givebutter's transactions file) has those gifts under the provider's BARE
+  // id, because the import keeps the id column as it was. The API names the
+  // same payment `zeffy:<id>`. Same bare id and the same amount to the cent is
+  // the same payment: the API's key goes onto the imported gift and nothing
+  // new is written.
+  const [fromFile] = await query(
+    `SELECT id FROM gifts WHERE org_id=? AND external_id=? AND giving_source_id IS NULL
+        AND ROUND(amount * 100) = ? LIMIT 1`, [orgId, String(row.externalId), row.amountCents]);
+  if (fromFile) {
+    await run(`UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+                WHERE id=? AND org_id=?`, [JSON.stringify([key]), fromFile.id, orgId]);
+    summary.duplicates++;
+    return;
+  }
   const [standing] = await query(
     `SELECT id, status FROM gift_duplicate_questions WHERE org_id=? AND external_key=?`, [orgId, key]);
   if (standing && standing.status === "open") { summary.duplicateQuestions++; return; }
@@ -2368,6 +2447,19 @@ async function resolveSourceDonor(orgId, source, row, { actorId, actorName, summ
     if (email) {
       const [again] = await query("SELECT id, name FROM donors WHERE org_id=? AND email ILIKE ? AND deleted_at IS NULL LIMIT 1", [orgId, email]);
       if (again) return again;
+    }
+    // CONNECT-2 · EMAIL, THEN NAME. A row with no email (Zeffy and Square
+    // often send none), or with an email nobody on file has, lands on THE one
+    // person of that exact name when that person has no email of their own
+    // to disagree with. One record per person: before this, every such gift
+    // made a second Harriet Lowe for somebody to merge by hand. Two people of
+    // that name, or one with a different email, is not a match, and falls
+    // through to the collision below.
+    if (name) {
+      const same = await query(
+        `SELECT id, name, email FROM donors
+          WHERE org_id=? AND deleted_at IS NULL AND lower(trim(name))=lower(trim(?)) LIMIT 2`, [orgId, name]);
+      if (same.length === 1 && !String(same[0].email || "").trim()) return { id: same[0].id, name: same[0].name };
     }
     // THE COLLISION. Somebody of this name is already on file under a
     // different (or no) email. Steward does NOT merge them - a guessed merge

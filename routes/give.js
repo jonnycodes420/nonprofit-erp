@@ -601,7 +601,18 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
         sentN = qMap.mode === "deposit" ? q.entries : q.gifts; sentCents = q.cents; heldN = 0;
         lastSent = q.lastAt || null;
       }
-      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : "deposit";
+      // CONNECT-2: Xero counts what its own sync sent, the same count its panel shows.
+      const XSm = key === "xero" && b ? require("../xeroSync") : null;
+      if (XSm) {
+        const x = await XSm.sentSummary(orgId, b.realm_id);
+        const [m30] = await query(
+          `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount_cents),0)::bigint AS cents FROM gift_bookkeeping_syncs
+            WHERE org_id=? AND vendor='xero' AND realm_id=? AND status='synced' AND synced_at >= ?::date`,
+          [orgId, String(b.realm_id || ""), since30]);
+        sentN = Number(m30 && m30.n) || 0; sentCents = Number(m30 && m30.cents) || 0; heldN = 0;
+        lastSent = x.lastAt || null;
+      }
+      const sentNoun = QSm ? (qMap.mode === "deposit" ? "deposit" : "sales receipt") : XSm ? "bank transaction" : "deposit";
       // FIX-20 Part 4: Xero's send does not exist yet, and its card says so
       // rather than counting deposits that cannot have happened.
       if (BK.VENDORS[key].sends === false) {
@@ -623,7 +634,9 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
-        subtitle: QSm ? QSm.sendsSentence(qMap) : "Steward sends one deposit per payout. It never sends the same payout twice.",
+        subtitle: QSm ? QSm.sendsSentence(qMap)
+          : key === "xero" ? "Steward sends one bank transaction per gift when you press Sync. It never sends the same gift twice."
+          : "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
         oauthProvider: OAUTH_BY_VENDOR[key] || null,
@@ -824,6 +837,8 @@ app.get("/connections/:id/log", requireAuth, wrap(async (req, res) => {
       giftsCreated: x.giftsCreated, centsCreated: x.centsCreated, duplicates: x.duplicates,
       dropped: x.dropped, duplicateQuestions: x.duplicateQuestions, reason: x.reason }),
       skipped: Object.entries(x.dropped || {}).map(([k, n]) => `${n} ${C.dropWords(k)}`),
+      // CONNECT-2: and each row skipped for a problem with the row, by id.
+      skippedRows: Array.isArray(x.skipped) ? x.skipped : [],
       notices: x.notices || [] };
   });
   // The failure that is STILL standing goes at the top, because it is the one
@@ -851,7 +866,44 @@ function sourceIsConnected(s) { return !!s && s.status !== "disconnected"; }
 
 app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   const { providerLabel } = await import("../shared/givingSources.js");
+  const C = await import("../shared/connections.js");
   const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
+  // CONNECT-2 · WHAT THE LAST CHECK FOUND, one sentence from the same run row
+  // the sync log reads, plus the rows it skipped and why.
+  const lastRuns = new Map((await query(
+    `SELECT i.id, i.committed_at, i.summary_json FROM imports i
+       JOIN giving_sources s ON s.last_run_id = i.id AND s.org_id = i.org_id
+      WHERE i.org_id = ?`, [req.user.orgId])).map(r => [r.id, r]));
+  const lastRunOf = id => {
+    const r = id && lastRuns.get(id);
+    if (!r) return null;
+    const x = typeof r.summary_json === "string" ? JSON.parse(r.summary_json || "{}") : (r.summary_json || {});
+    return { at: r.committed_at, giftsCreated: Number(x.giftsCreated) || 0, centsCreated: Number(x.centsCreated) || 0,
+      feeCents: Number(x.feeCents) || 0, duplicates: Number(x.duplicates) || 0,
+      duplicateQuestions: Number(x.duplicateQuestions) || 0,
+      sentence: C.syncLogLine({ at: r.committed_at, ok: true, rowsRead: x.rowsRead, giftsCreated: x.giftsCreated,
+        centsCreated: x.centsCreated, duplicates: x.duplicates, dropped: x.dropped,
+        duplicateQuestions: x.duplicateQuestions, reason: x.reason }).sentence,
+      skipped: Array.isArray(x.skipped) ? x.skipped.slice(0, 25) : [] };
+  };
+  // CONNECT-2 · "ASK ME EACH TIME" IS A REAL CHOICE. A source set to ask
+  // leaves each gift without a fund, and this is the list that asks: every
+  // gift from it still without one, newest first, to choose on the card.
+  const askRows = await query(
+    `SELECT g.id, g.giving_source_id, g.external_id, g.date::text AS date, ROUND(g.amount::numeric*100)::bigint AS cents,
+            d.name AS donor_name
+       FROM gifts g JOIN giving_sources s ON s.id = g.giving_source_id AND s.org_id = g.org_id
+       LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND s.default_fund_id IS NULL AND s.status <> 'disconnected'
+        AND g.fund_id IS NULL AND g.amount > 0
+      ORDER BY g.date DESC, g.id LIMIT 200`, [req.user.orgId]);
+  const askBySource = new Map();
+  for (const g of askRows) {
+    if (!askBySource.has(g.giving_source_id)) askBySource.set(g.giving_source_id, []);
+    const list = askBySource.get(g.giving_source_id);
+    if (list.length < 25) list.push({ giftId: g.id, externalId: String(g.external_id || "").replace(/^[a-z]+:/, ""),
+      date: String(g.date).slice(0, 10), cents: Number(g.cents) || 0, donorName: g.donor_name || null });
+  }
   const rows = await query(
     `SELECT s.*, f.name AS fund_name,
             (SELECT COUNT(*) FROM gifts g
@@ -884,6 +936,8 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
       everChecked: !!(r.last_tried_at || r.last_error_at || r.last_synced_at),
       // Deliberately never the credential, and never a prefix of it.
       hasCredentials: !!r.credentials_sealed,
+      lastRun: lastRunOf(r.last_run_id),
+      needsFund: r.default_fund_id ? [] : (askBySource.get(r.id) || []),
     })),
     // BUILD-92 B2 — what this organisation told us it also uses. No adapter,
     // no credential, no claim: a name, so the page can say it back and the
@@ -959,6 +1013,7 @@ const PROVIDER_BASE_ENV = {
   zeffy: ["ZEFFY_API_BASE"],
   stripe: ["STRIPE_SOURCE_API_BASE", "STRIPE_API_BASE"],
   givebutter: ["GIVEBUTTER_API_BASE"],
+  square: ["SQUARE_API_BASE"],
 };
 function verifyBeforeSaving(provider) {
   if (!process.env.TEST_MODE) return true;
@@ -1250,6 +1305,59 @@ app.patch("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, sits_on_top_of=?, config=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?",
             [displayName, fundId, sitsOnTopOf, JSON.stringify(nextConfig), req.params.id, orgId]);
   res.json({ ok: true, displayName, defaultFundId: fundId, sitsOnTopOf });
+}));
+
+// CONNECT-2 · ANSWERING "ASK ME EACH TIME". One gift from THIS source, one
+// of THIS org's funds. The gift row and its ledger stamp move together, the
+// same pair PUT /gifts/:id keeps in step. A gift that already has a fund, or
+// came from anywhere else, is not this card's to change.
+app.post("/giving-sources/:id/fund", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const giftId = String(req.body?.giftId || ""), fundId = String(req.body?.fundId || "");
+  const [f] = await query("SELECT id, name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+  if (!f) return res.status(400).json({ error: "unknown_fund", sentence: "Choose one of your funds." });
+  const changed = await query(
+    `UPDATE gifts SET fund_id=? WHERE id=? AND org_id=? AND giving_source_id=? AND fund_id IS NULL RETURNING id`,
+    [f.id, giftId, orgId, s.id]);
+  if (!changed.length) return res.status(404).json({ error: "not_waiting",
+    sentence: "That gift is not waiting for a fund on this connection." });
+  await run("UPDATE fin_transactions SET fund_id=? WHERE gift_id=? AND org_id=?", [f.id, giftId, orgId]);
+  res.json({ ok: true, giftId, fundId: f.id, sentence: `That gift is now in ${f.name}.` });
+}));
+
+// CONNECT-2 · WHICH SQUARE LOCATIONS TAKE GIFTS. Square cannot tell a
+// donation from a lesson fee, so nothing is imported until the organisation
+// names its giving locations; this reads Square's own list of them for the
+// card to choose from. Reads only. A POST because asking may renew the token,
+// and a GET never changes state.
+app.post("/giving-sources/:id/square-locations", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=? AND provider='square' AND status <> 'disconnected'",
+    [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const http = sourceAdapters.readOnlyHttp("square");
+  try {
+    let credentials = {};
+    if (s.credentials_sealed) {
+      const { openBag } = await import("../shared/secretBox.js");
+      credentials = openBag(s.credentials_sealed, { aad: orgId });
+    }
+    if (s.token_expires_at && credentials.refreshToken) {
+      const tok = await require("./finance").accessTokenFor(orgId, s, "square");
+      if (!tok.ok) return res.status(tok.status).json(tok.body);
+      credentials = { ...credentials, accessToken: tok.accessToken };
+    }
+    const locations = await sourceAdapters.getAdapter("square").listLocations({ credentials, http });
+    const chosen = sourceConfig(s).locationIds || [];
+    res.json({ locations: locations.map(l => ({ ...l, chosen: chosen.includes(l.id) })),
+      sentence: chosen.length
+        ? `Steward imports payments from ${chosen.length} of your ${locations.length} Square location${locations.length === 1 ? "" : "s"}.`
+        : "Steward imports nothing from Square until you choose which locations take donations." });
+  } catch (e) {
+    res.status(502).json({ error: "square_unreachable", sentence: sourceErrorSentence(e, s) });
+  }
 }));
 
 // "Check now". Same function the schedule calls - there is no second path.

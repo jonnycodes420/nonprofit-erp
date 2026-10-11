@@ -26,6 +26,7 @@ const JOB_WRITES = {
   processScheduledCampaigns:         "sends a campaign the org scheduled",
   processEmailMarketing:             "syncs an audience out and campaign activity back in",
   processQboAutoSync:                "sends waiting gifts to QuickBooks for orgs that turned auto-sync on",
+  processXeroAutoSync:               "sends waiting gifts to Xero for orgs that turned auto-sync on and mapped every fund",
   processTrackedSequences:           "advances a donor through a sequence the org turned on",
   processSmartMoves:                 "moves a donor's stage and logs the move",
   processThreadNudges:               "opens or nudges a Thread step",

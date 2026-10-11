@@ -52,11 +52,11 @@ export const PROVIDERS = {
     // consent, from the connections endpoint, never guessed.
     tenantStep: "https://api.xero.com/connections",
     sandboxNote: "Connect the Xero demo company first: it is a real tenant with fake books.",
-    // FIX-22: Connect landed on Xero's invalid_scope page. Xero apps made
-    // after 2 March 2026 take only granular scopes, and accounting.transactions
-    // is not one of them (INT-PROD-1 replaced it). Until the scope list is
-    // proved against a real Xero app, the card says so and offers no button (routes/finance.js reads it).
-    held: "Xero isn't available yet.",
+    // FIX-22: Connect landed on Xero's invalid_scope page, because Xero apps
+    // made after 2 March 2026 take only granular scopes. CONNECT-2: the list
+    // above is the granular one INT-PROD-1 settled, so the hold is lifted and
+    // the card offers Connect once XERO_CLIENT_ID, XERO_CLIENT_SECRET and
+    // XERO_REDIRECT_URI are set. A provider can still be held with `held`.
   },
   intuit: {
     key: "intuit", label: "QuickBooks Online", kind: "bookkeeping",
@@ -127,10 +127,12 @@ export const PROVIDERS = {
   constantcontact: {
     key: "constantcontact", label: "Constant Contact", kind: "email", vendor: "constantcontact",
     authorizeUrl: "https://authz.constantcontact.com/oauth2/default/v1/authorize",
-    // NOT the authz host. Constant Contact serves the token endpoint from a
-    // different domain, and pointing this at authz.constantcontact.com is a
-    // 404 that reads like a bad client id.
-    tokenUrl: "https://idfed.constantcontact.com/as/token.oauth2",
+    // CONNECT-2: the SAME authz host as the authorize step. The old
+    // idfed.constantcontact.com/as/token.oauth2 endpoint belongs to Constant
+    // Contact's retired authorization service, and a code issued by the authz
+    // host is not exchangeable there. Checked 11 Oct 2026 against
+    // developer.constantcontact.com/api_guide/server_flow.html.
+    tokenUrl: "https://authz.constantcontact.com/oauth2/default/v1/token",
     // The minimum for what INT-3 does: read and write contacts and lists,
     // read campaign activity, and a refresh token so a daily pull survives.
     // Nothing here can send a campaign.

@@ -2165,16 +2165,64 @@ const DIRECT_ORDER=["paypal","zeffy","stripe","givebutter","square"];
 //
 // A key leaves this map the moment a real account has synced through it, and
 // NEEDS-JONATHAN.md §6 is where the two asks are tracked.
-const VERIFYING={
-  zeffy:  "To be one of the first: a read-only API key from your Zeffy account.",
-  square: "To be one of the first: a production access token from your Square account.",
-};
+// CONNECT-2 (11 Oct 2026): Zeffy and Square were checked field by field
+// against each provider's published reference, and the tile no longer says
+// "being verified". What each one needs from the organisation is in the
+// connect panel's own steps. The map stays, empty, as the seam for the next
+// provider that has never read a real payload.
+const VERIFYING={};
 const VERIFYING_LINE="Available, being verified with a first organization.";
 const UPLOAD_ORDER=["cashapp","venmo"];
 const STATEMENT_LINE="Once a month, drop the statement in.";
 // The bank is not a provider and never will be one, so it is a tile in its own
 // right rather than a row in the registry.
 const BANK_TILE={key:"bank",label:"My bank (Zelle, cheques, anything else)",mode:"file"};
+
+// CONNECT-2 · WHICH SQUARE LOCATIONS TAKE GIFTS. Square cannot tell a
+// donation from a lesson fee, so nothing comes in until these are chosen.
+// The list is Square's own, read when the person opens it.
+function SquareLocations({sourceId,disabled,onSaved}){
+  const [open,setOpen]=useState(false);
+  const [state,setState]=useState(null); // {locations, sentence} | {error}
+  const [picked,setPicked]=useState([]);
+  const [saving,setSaving]=useState(false);
+  const read=async()=>{
+    setOpen(true); setState(null);
+    try{
+      const r=await apiFetch(`/giving-sources/${sourceId}/square-locations`,{method:"POST",body:JSON.stringify({})});
+      setState(r); setPicked((r.locations||[]).filter(l=>l.chosen).map(l=>l.id));
+    }catch(e){ setState({error:errorMessage(e,"Steward could not read your Square locations.")}); }
+  };
+  const save=async()=>{
+    setSaving(true);
+    try{ await apiFetch(`/giving-sources/${sourceId}`,{method:"PATCH",body:JSON.stringify({config:{locationIds:picked}})}); setOpen(false); onSaved&&onSaved(); }
+    catch(e){ setState(st=>({...(st||{}),error:errorMessage(e,"Could not save the locations.")})); }
+    finally{ setSaving(false); }
+  };
+  if(!open) return (
+    <button data-testid="gs-square-locations" disabled={disabled} onClick={read}
+      style={{font:"inherit",fontSize:11.5,marginTop:8,padding:0,background:"none",border:"none",color:T.green,cursor:"pointer",textDecoration:"underline"}}>
+      Choose which Square locations take donations
+    </button>);
+  return (
+    <div data-testid="gs-square-panel" style={{fontSize:11.5,color:T.ink,marginTop:8,lineHeight:1.5}}>
+      {!state&&<div style={{color:T.ink3}}>Reading your Square locations…</div>}
+      {state&&state.error&&<div style={{color:T.terra700}}>{state.error}</div>}
+      {state&&state.locations&&(<>
+        <div style={{color:T.ink3,marginBottom:4}}>{state.sentence}</div>
+        {state.locations.map(l=>(
+          <label key={l.id} style={{display:"flex",gap:6,alignItems:"center"}}>
+            <input type="checkbox" checked={picked.includes(l.id)} disabled={disabled}
+              onChange={e=>setPicked(p=>e.target.checked?[...p,l.id]:p.filter(x=>x!==l.id))}/>
+            {l.name}{l.active?"":" (closed)"}
+          </label>))}
+        <button data-testid="gs-square-save" disabled={disabled||saving} onClick={save}
+          style={{font:"inherit",fontSize:11.5,fontWeight:700,marginTop:6,padding:"4px 10px",borderRadius:6,border:"none",background:T.green,color:T.white,cursor:"pointer"}}>
+          {saving?"Saving…":"Save locations"}
+        </button>
+      </>)}
+    </div>);
+}
 
 function GivingSourceTile({title,logoKey,state,statusLine,note,error,actions,onOpen,openLabel}){
   const tone=state==="waiting"?T.gold700:state==="failed"?T.terra700:T.ink3;
@@ -2260,6 +2308,11 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
   const setFund=async(id,fundId)=>{
     try{ await apiFetch(`/giving-sources/${id}`,{method:"PATCH",body:JSON.stringify({defaultFundId:fundId||null})}); await load(); }
     catch(e){ setErr(errorMessage(e,"Could not set the fund for that source.")); }
+  };
+
+  const chooseFund=async(id,giftId,fundId)=>{
+    try{ await apiFetch(`/giving-sources/${id}/fund`,{method:"POST",body:JSON.stringify({giftId,fundId})}); await load(); }
+    catch(e){ setErr(errorMessage(e,"Could not set the fund for that gift.")); }
   };
 
   const startConnect=(p)=>setConnect({provider:p,values:{},testing:false,tested:null,error:""});
@@ -2382,6 +2435,19 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
                         Disconnect
                       </button>
                     </div>
+                    {s.lastRun&&(
+                      <div data-testid="gs-last-run" style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
+                        {s.lastRun.sentence}
+                        {s.lastRun.feeCents>0&&` Fees ${fmtFull(s.lastRun.feeCents/100)}, so ${fmtFull((s.lastRun.centsCreated-s.lastRun.feeCents)/100)} net.`}
+                      </div>)}
+                    {s.lastRun&&s.lastRun.skipped&&s.lastRun.skipped.length>0&&(
+                      <details data-testid="gs-skipped" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
+                        <summary style={{cursor:"pointer"}}>{s.lastRun.skipped.length} row{s.lastRun.skipped.length===1?"":"s"} skipped</summary>
+                        <ul style={{margin:"6px 0 0",paddingLeft:16,lineHeight:1.5}}>
+                          {s.lastRun.skipped.map((r,i)=><li key={i}>{r.externalId||"A row with no id"}: {r.reason}</li>)}
+                        </ul>
+                      </details>)}
+                    {k==="square"&&<SquareLocations sourceId={s.id} disabled={isReadOnly||!isAdmin} onSaved={load}/>}
                     <div style={{fontSize:11.5,color:T.ink3,marginTop:8}}>
                       Gifts go to{" "}
                       <select data-testid="gs-fund" value={s.defaultFundId||""} disabled={isReadOnly||!isAdmin}
@@ -2391,6 +2457,20 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact,autoConnect,onC
                         {funds.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
                     </div>
+                    {(s.needsFund||[]).length>0&&(
+                      <div data-testid="gs-needs-fund" style={{fontSize:11.5,color:T.ink,marginTop:8,lineHeight:1.5}}>
+                        {s.needsFund.length} gift{s.needsFund.length===1?" is":"s are"} waiting for you to choose a fund:
+                        {s.needsFund.map(g=>(
+                          <div key={g.giftId} style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+                            <span>{g.donorName||"A donor"}, {fmtFull(g.cents/100)} on {g.date}</span>
+                            <select data-testid="gs-gift-fund" defaultValue="" disabled={isReadOnly||!isAdmin}
+                              onChange={e=>e.target.value&&chooseFund(s.id,g.giftId,e.target.value)}
+                              style={{font:"inherit",fontSize:11.5,padding:"2px 4px",border:"1px solid "+T.bg3,borderRadius:6,background:T.bgCard,color:T.ink}}>
+                              <option value="">Choose a fund</option>
+                              {funds.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+                            </select>
+                          </div>))}
+                      </div>)}
                   </div>
                 ):null}/>
             </div>

@@ -21,14 +21,16 @@
 // day rather than waiting out the five-day grace. So a stopped plan is
 // expressed as exactly that, and no second channel exists to keep in step.
 
-const { firstOf, toCents, toCivilDate, dropNotice } = require("./field.js");
+const { firstOf, toCents, toCivilDate, dropNotice, listSkip } = require("./field.js");
 
 const BASE = "https://api.givebutter.com/v1";
 const PAGE_LIMIT = 100;
 
 const FIELD_MAP = {
   externalId: ["id", "transaction_id", "transactionId"],
-  occurredAt: ["created_at", "createdAt", "date", "captured_at", "transacted_at"],
+  // CONNECT-2: docs.givebutter.com lists `transacted_at` beside `created_at`;
+  // the day the money moved is the gift's date.
+  occurredAt: ["transacted_at", "created_at", "createdAt", "date", "captured_at"],
   amount: ["amount", "total", "gross_amount", "grossAmount"],
   fee: ["fee", "fees", "processing_fee", "processingFee", "platform_fee"],
   currency: ["currency", "currency_code"],
@@ -71,7 +73,12 @@ function mapTransaction(t) {
 
   const raw = String(firstOf(t, FIELD_MAP.status) ?? "succeeded").toLowerCase();
   let status = "completed";
-  if (REFUNDED.includes(raw)) status = "refunded";
+  // CONNECT-2: the documented refund mark is on the nested charges:
+  // `transactions[].refunded` / `refunded_at`. Any one refunded means the
+  // gift came back; the top-level status words stay as the second belt.
+  const nested = Array.isArray(t.transactions) ? t.transactions : [];
+  const refundedNested = nested.some(x => x && (x.refunded === true || (typeof x.refunded === "string" && x.refunded && x.refunded !== "false") || x.refunded_at));
+  if (REFUNDED.includes(raw) || refundedNested) status = "refunded";
   else if (FAILED.includes(raw)) status = "failed";
   else if (PENDING.includes(raw)) return { drop: "pending", id };
 
@@ -178,10 +185,10 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   const qs = new URLSearchParams({ per_page: String(PAGE_LIMIT), page: String(page) });
   const body = await get(http, `${base}/transactions?${qs}`, key);
 
-  const rows = [], drops = {};
+  const rows = [], drops = {}, skipped = [];
   for (const t of items(body)) {
     const out = mapTransaction(t);
-    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; continue; }
+    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; listSkip(skipped, out); continue; }
     rows.push(out.row);
   }
 
@@ -207,7 +214,7 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   }
 
   const n = dropNotice("Givebutter", drops); if (n) notices.push(n);
-  return { rows, cursor: more ? String(page + 1) : null, done: !more, notices };
+  return { rows, cursor: more ? String(page + 1) : null, done: !more, notices, skipped };
 }
 
 async function testCredentials({ credentials, http, today, env = process.env }) {

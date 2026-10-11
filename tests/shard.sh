@@ -101,6 +101,9 @@ start_server() {
   GOOGLE_CALENDAR_API_BASE="http://localhost:$cal" \
   GMAIL_API_BASE="http://localhost:$cal" GRAPH_API_BASE="http://localhost:$cal" \
   MAILCHIMP_API_BASE="http://localhost:$cal/mailchimp/3.0" \
+  GIVEBUTTER_API_BASE="http://localhost:$cal/givebutter/v1" ZEFFY_API_BASE="http://localhost:$cal/zeffy/api/v1" \
+  SQUARE_API_BASE="http://localhost:$cal/square/v2" \
+  CONSTANT_CONTACT_API_BASE="http://localhost:$cal/constantcontact/v3" \
   node server.js >"$SERVER_LOG" 2>&1 &
   echo $!
 }
@@ -165,6 +168,9 @@ export CALENDAR_MOCK_PORT="$cal"
 # MAILCHIMP-1: the Mailchimp stand-in shares the calendar mock's port (suites
 # in a shard run one at a time) under its own /mailchimp path.
 export MAILCHIMP_MOCK_PORT="$cal"
+# CONNECT-2: Givebutter, Zeffy, Square and Constant Contact stand-ins share it
+# too, each under its own path (tests/connect2/).
+export CONSTANT_CONTACT_MOCK_PORT="$cal"
 # FIX-15 — the two suites that boot server.js IN-PROCESS (tenant-matrix,
 # fix11-audit-trail) used fixed ports, :5697 and :5698, which two worktrees'
 # batteries both bound. Suites run serially inside a shard, so both share the

@@ -75,6 +75,11 @@ export const PROVIDERS = {
       "Open Integrations, then API.",
       "Create a key and copy it.",
     ],
+    // CONNECT-2: Zeffy's API is labelled beta. Zeffy says every organisation
+    // gets it, but an account that does not show API under Integrations yet
+    // still has the export, and the import reads it (the Zeffy preset). Said
+    // BEFORE the steps, so nobody hunts for a menu that is not there.
+    waitNote: "Zeffy's API is in beta. If you do not see API under Settings, Integrations, export Payments from Zeffy instead and drop the file into Steward's import. A payment brought in both ways is counted once.",
   },
   stripe: {
     key: "stripe", label: "Stripe", mode: "api", recurring: "exact",
@@ -90,11 +95,13 @@ export const PROVIDERS = {
   givebutter: {
     key: "givebutter", label: "Givebutter", mode: "api", recurring: "exact",
     credentialFields: [{ name: "apiKey", label: "API key", secret: true }],
-    help: "In Givebutter, open Account → Integrations → API, and create a key.",
+    // CONNECT-2: the screen names are Givebutter's own (docs.givebutter.com,
+    // Authentication). The key is shown once, so it is copied straight in.
+    help: "In Givebutter, open Settings, then Integrations, then API Keys, and create a key.",
     steps: [
-      "Open Givebutter and go to Account, then Integrations.",
-      "Open API and create a key.",
-      "Copy the key.",
+      "Open Givebutter as an administrator and go to Settings, then Integrations.",
+      "Open API Keys and click Create New API Key.",
+      "Copy the key straight away. Givebutter shows it only once.",
     ],
   },
   // INT-POS — `pos: true` marks a register rather than a giving platform. It

@@ -390,7 +390,11 @@ export function syncSentence(run) {
   if (r.optOuts) bits.push(`${r.optOuts.toLocaleString()} ${r.optOuts === 1 ? "unsubscribe" : "unsubscribes"} brought in`);
   if (r.updated) bits.push(`${r.updated.toLocaleString()} ${r.updated === 1 ? "record" : "records"} updated`);
   const refused = Number(r.refused) || 0;
-  const tail = refused ? ` ${refusedSentence(refused, r.provider)}` : "";
+  // CONNECT-2: a row the tool sent that Steward could not use (no address, or
+  // one no mailbox could have) is passed over and SAID, never silently dropped.
+  const skipped = Number(r.skipped) || 0;
+  const tail = (refused ? ` ${refusedSentence(refused, r.provider)}` : "") +
+    (skipped ? ` ${skipped.toLocaleString()} ${skipped === 1 ? "row" : "rows"} from ${label} had no usable address and ${skipped === 1 ? "was" : "were"} skipped.` : "");
   if (!bits.length) return `Checked ${label}. Nothing had changed.${tail}`;
   return bits.join(", ") + "." + tail;
 }

@@ -66,4 +66,14 @@ function dropNotice(provider, drops) {
   return parts.length ? `${provider} rows not counted as gifts: ${parts.join(", ")}.` : null;
 }
 
-module.exports = { readPath, firstOf, toCents, toCivilDate, dropNotice };
+// CONNECT-2: a row refused for a problem with the ROW itself (no id, a date
+// or an amount nobody can read) is LISTED, with the provider's id, so the
+// card can say which one and why. A payout or a pending payment is not a
+// problem and is only counted.
+const LISTED_DROPS = ["no_external_id", "bad_date", "bad_amount"];
+function listSkip(skipped, out) {
+  if (!out || !LISTED_DROPS.includes(out.drop) || skipped.length >= 100) return;
+  skipped.push({ externalId: out.id ? String(out.id) : null, reason: out.drop });
+}
+
+module.exports = { readPath, firstOf, toCents, toCivilDate, dropNotice, listSkip, LISTED_DROPS };

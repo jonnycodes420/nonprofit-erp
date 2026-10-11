@@ -33,6 +33,10 @@ let sharedComposeTodayMeetings = null;
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
+// CONNECT-2: the one token seam, published so the giving-source runner
+// (server.js syncSource) renews an OAuth Square token the same way.
+let sharedAccessTokenFor = null;
+let sharedProcessXeroAutoSync = null;
 
 function mount(ctx) {
 const {
@@ -1010,6 +1014,8 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
   await run(sql, [sealed, expiresAt, orgId, O.vendorKeyOf(providerKey)]);
   return { ok: true, accessToken: fresh.accessToken, refreshed: true };
 }
+
+sharedAccessTokenFor = accessTokenFor;
 
 // DISCONNECT. Revokes where the provider supports it, deletes the tokens, and
 // keeps every record already imported: what came in is the organisation's own
@@ -2077,14 +2083,28 @@ async function audienceMembership(orgId, audienceIds) {
 // MAILCHIMP_API_BASE is the stand-in seam (tests/mailchimp1-sync.test.js), the
 // same shape as INTUIT_API_BASE. Unset in production, where the data centre wins.
 const mailchimpBase = row => process.env.MAILCHIMP_API_BASE || `https://${row.server_prefix}.api.mailchimp.com/3.0`;
-const CC_BASE = "https://api.cc.email/v3";
+// CONNECT-2: the same stand-in seam for Constant Contact, read at CALL time so
+// a test boot's CONSTANT_CONTACT_API_BASE is honoured. Unset in production.
+const ccBase = () => process.env.CONSTANT_CONTACT_API_BASE || "https://api.cc.email/v3";
+// Constant Contact pages with `_links.next.href`, which it sends either whole
+// ("https://api.cc.email/v3/contacts?cursor=…") or from the root ("/v3/…").
+// Either way the part after the version is the path the fetcher appends.
+function ccNextPath(body) {
+  const href = body && body._links && body._links.next && body._links.next.href;
+  if (!href) return null;
+  const m = /\/v3(\/.*)$/.exec(String(href));
+  return m ? m[1] : null;
+}
+// How many pages of one Constant Contact listing a run reads. 20 pages of 500
+// unsubscribes is ten thousand people; past that the next run carries on.
+const CC_MAX_PAGES = 20;
 
 async function emailToolFetch(orgId, provider, row, path, { method = "GET", body = null } = {}) {
   const first = await accessTokenFor(orgId, row, provider);
   // `accessTokenFor` answers with a refusal shape rather than throwing, and
   // that refusal is already the sentence a person should read.
   if (!first.ok) { const e = new Error(first.body.sentence); e.status = first.status; throw e; }
-  const base = provider === "mailchimp" ? mailchimpBase(row) : CC_BASE;
+  const base = provider === "mailchimp" ? mailchimpBase(row) : ccBase();
   const call = t => fetch(base + path, {
     method,
     headers: { Authorization: "Bearer " + t, Accept: "application/json",
@@ -2155,8 +2175,7 @@ async function knownEmails(orgId, provider, row) {
   for (let page = 0; page < 10 && cursor; page++) {
     const body = await emailToolFetch(orgId, provider, row, cursor);
     out.push(...(body.contacts || []).map(c => c.email_address?.address).filter(Boolean));
-    const next = body._links?.next?.href;
-    cursor = next ? next.replace(/^\/v3/, "") : null;
+    cursor = ccNextPath(body);
   }
   return out;
 }
@@ -2310,7 +2329,7 @@ app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWrit
   const out = await runEmailSync(orgId, provider, row, mapping);
   if (!out.ok) return res.status(502).json({ error: "sync_failed", sentence: out.sentence });
   res.json({ ok: true, pushed: out.pushed, campaigns: out.campaigns, optOuts: out.optOuts,
-             updated: out.updated, refused: out.refused, sentence: out.sentence });
+             updated: out.updated, refused: out.refused, skipped: out.skipped || 0, sentence: out.sentence });
 }));
 
 /**
@@ -2329,10 +2348,16 @@ async function runEmailSync(orgId, provider, row, mapping) {
   // MAILCHIMP-1: THE RECORDS THIS RUN CHANGED, counted once each however
   // many things it learned about them.
   const touched = new Set();
+  // CONNECT-2: what one run learns about rows it could not use, and the
+  // addresses the TOOL itself says are unsubscribed. The second set is handed
+  // to the push, because Constant Contact's upsert re-subscribes an
+  // unsubscribed contact (see pushAudience) and the only safe answer is never
+  // to offer it one.
+  const runCtx = { skipped: 0, toolUnsubscribed: new Set() };
   try {
-    const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId, touched);
-    const campaigns = await pullCampaigns(orgId, provider, row, touched);
-    const { pushed, refused } = await pushAudience(orgId, provider, row, mapping);
+    const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId, touched, runCtx);
+    const campaigns = await pullCampaigns(orgId, provider, row, touched, runCtx);
+    const { pushed, refused } = await pushAudience(orgId, provider, row, mapping, runCtx);
     // ONE REFUSED ADDRESS IS A ROW, NOT AN OUTAGE. Before MAILCHIMP-1 the first
     // address Mailchimp refused threw out of the push, this whole run was
     // recorded as an error, and the card read BROKEN with "Please provide a
@@ -2344,9 +2369,9 @@ async function runEmailSync(orgId, provider, row, mapping) {
           SET status='active', last_synced_at=NOW(), last_pushed_count=?, last_updated_count=?,
               last_refused=?::jsonb, last_error=NULL, last_error_at=NULL, updated_at=NOW()
         WHERE id=?`, [pushed, touched.size, JSON.stringify(refused.slice(0, REFUSED_KEPT)), row.id]);
-    return { ok: true, pushed, campaigns, optOuts, updated: touched.size, refused,
+    return { ok: true, pushed, campaigns, optOuts, updated: touched.size, refused, skipped: runCtx.skipped,
              sentence: EM.syncSentence({ provider, pushed, campaigns, optOuts,
-                                         updated: touched.size, refused: refused.length }) };
+                                         updated: touched.size, refused: refused.length, skipped: runCtx.skipped }) };
   } catch (e) {
     await noteEmailToolError(orgId, row.id, e.message, e.status);
     return { ok: false, sentence: e.message };
@@ -2402,7 +2427,7 @@ async function noteEmailToolError(orgId, id, sentence, status) {
  * "an unsubscribed person is never pushed again" true by construction rather
  * than by a filter somebody has to remember.
  */
-async function pushAudience(orgId, provider, row, mapping) {
+async function pushAudience(orgId, provider, row, mapping, runCtx = { toolUnsubscribed: new Set() }) {
   const EM = await emailMarketingMod();
   // MAILCHIMP-1: NOTHING IS ADDED UNLESS SHE TURNED ADDING ON. A mapping saved
   // before this build has no `push` and so pushes nothing: choosing an
@@ -2415,6 +2440,11 @@ async function pushAudience(orgId, provider, row, mapping) {
   const refused = [];
   for (const p of counts.people) {
     const person = byId.get(p.id);
+    // CONNECT-2: NEVER OFFER THE TOOL SOMEBODY IT SAYS ASKED TO STOP. The
+    // opt-out read just before this normally makes them ineligible already;
+    // this catches an address the tool holds as unsubscribed that Steward could
+    // not match (a second record, a changed address) and would otherwise push.
+    if (runCtx.toolUnsubscribed.has(String(p.email || "").toLowerCase())) continue;
     const [firstName, ...rest] = String(person.name || "").trim().split(/\s+/);
     try {
     if (provider === "mailchimp") {
@@ -2433,8 +2463,14 @@ async function pushAudience(orgId, provider, row, mapping) {
           tags: p.tags,
         } });
     } else {
-      // Constant Contact's upsert takes the list membership and the tags by
-      // name, and it too leaves an unsubscribed contact unsubscribed.
+      // Constant Contact's upsert takes the list membership by id. It does NOT
+      // leave an unsubscribed contact alone: its own guide says sign_up_form
+      // "may set the contact's email permission policy as having given you
+      // explicit permission" even when the contact is unsubscribed
+      // (developer.constantcontact.com/api_guide/contacts_create_or_update.html,
+      // read 11 Oct 2026). That is why the loop above skips every address the
+      // tool reported unsubscribed in this same run, and why the push is off
+      // unless she turned it on.
       await emailToolFetch(orgId, provider, row, "/contacts/sign_up_form",
         { method: "POST", body: {
           email_address: p.email, first_name: firstName || "", last_name: rest.join(" "),
@@ -2462,7 +2498,7 @@ async function pushAudience(orgId, provider, row, mapping) {
  * says is subscribed does NOT un-suppress anybody here, because the more
  * restrictive answer wins and Steward never re-subscribes.
  */
-async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()) {
+async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set(), runCtx = { skipped: 0, toolUnsubscribed: new Set() }) {
   const EM = await emailMarketingMod();
   let statuses = [];
   if (provider === "mailchimp") {
@@ -2472,17 +2508,30 @@ async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()
       statuses.push(...(body.members || []).map(m => ({ email: m.email_address, status: m.status, at: m.last_changed })));
     }
   } else {
-    const body = await emailToolFetch(orgId, provider, row,
-      `/contacts?status=unsubscribed&limit=500&include=email_address`);
-    statuses.push(...(body.contacts || []).map(c => ({
-      email: c.email_address?.address, status: "unsubscribed", at: c.email_address?.opt_out_date || null })));
+    // CONNECT-2: EVERY PAGE, not the first 500. Constant Contact's unsubscribes
+    // are account-wide (an unsubscribed contact is unsubscribed from every
+    // list), so this reads the account, not the mapped list. `include` takes
+    // subresources only; the address comes back on every contact regardless.
+    let path = `/contacts?status=unsubscribed&limit=500`;
+    for (let page = 0; path && page < CC_MAX_PAGES; page++) {
+      const body = await emailToolFetch(orgId, provider, row, path);
+      statuses.push(...(body.contacts || []).map(c => ({
+        email: c.email_address?.address, status: "unsubscribed", at: c.email_address?.opt_out_date || null })));
+      path = ccNextPath(body);
+    }
   }
   let written = 0;
   for (const s of statuses) {
     const email = String(s.email || "").trim().toLowerCase();
-    if (!email) continue;
+    // CONNECT-2: ONE BAD ROW NEVER BREAKS THE RUN. A contact with no address,
+    // or one no mailbox could have, is counted and passed over.
+    if (!email || EM.addressProblem(email) === "malformed") { runCtx.skipped++; continue; }
     const decision = EM.optOutFromStatus(s.status);
     if (!decision.optOut) continue;
+    if (decision.kind === "unsubscribed") runCtx.toolUnsubscribed.add(email);
+    // A database refusal on one person is that person's problem, not the run's:
+    // nothing was written for them, so the next read simply tries again.
+    try {
     // MAILCHIMP-1: ONLY PEOPLE STEWARD ALREADY HAS, the same rule the activity
     // read keeps. An address on her newsletter list that is nobody on file is
     // not written into Steward at all.
@@ -2520,6 +2569,10 @@ async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()
        `${decision.kind === "unreachable" ? "Email stopped working" : "Unsubscribed"} in ${EM.providerLabel(provider)}.`,
        String(s.at || new Date().toISOString()).slice(0, 10), `system:email-marketing/${provider}`]).catch(() => {});
     written++;
+    } catch (e) {
+      console.error(`[email-marketing] ${provider} opt-out row skipped:`, e.message);
+      runCtx.skipped++;
+    }
   }
   return written;
 }
@@ -2529,7 +2582,7 @@ async function pullOptOuts(orgId, provider, row, audienceId, touched = new Set()
  * person per campaign. Counts only: no body, no recipient list, nothing that
  * could be mistaken for something Steward could send.
  */
-async function pullCampaigns(orgId, provider, row, touched = new Set()) {
+async function pullCampaigns(orgId, provider, row, touched = new Set(), runCtx = { skipped: 0 }) {
   let campaigns = [];
   if (provider === "mailchimp") {
     const body = await emailToolFetch(orgId, provider, row,
@@ -2543,12 +2596,7 @@ async function pullCampaigns(orgId, provider, row, touched = new Set()) {
       clicks: c.report_summary?.subscriber_clicks || 0,
     }));
   } else {
-    const body = await emailToolFetch(orgId, provider, row,
-      "/emails?limit=50&include=campaign_activities");
-    campaigns = (body.campaigns || []).map(c => ({
-      id: c.campaign_id, name: c.name || "Untitled campaign", subject: c.name || null,
-      sentAt: c.last_sent_date || null, sends: 0, opens: 0, clicks: 0,
-    }));
+    campaigns = await ccSentCampaigns(orgId, provider, row);
   }
   let n = 0;
   for (const c of campaigns) {
@@ -2565,7 +2613,7 @@ async function pullCampaigns(orgId, provider, row, touched = new Set()) {
     // The per-person activity, for the most recent campaigns only. Every
     // campaign ever sent would be one call each on every daily run, against
     // somebody else's rate limit, to re-learn something that cannot change.
-    if (n <= ACTIVITY_CAMPAIGN_LIMIT) await pullActivity(orgId, provider, row, id, c, touched);
+    if (n <= ACTIVITY_CAMPAIGN_LIMIT) await pullActivity(orgId, provider, row, id, c, touched, runCtx);
   }
   return n;
 }
@@ -2575,6 +2623,84 @@ async function pullCampaigns(orgId, provider, row, touched = new Set()) {
 const ACTIVITY_CAMPAIGN_LIMIT = 10;
 
 /**
+ * CONNECT-2 · CONSTANT CONTACT'S SENT CAMPAIGNS, in the one shape above.
+ *
+ * Three reads, each from Constant Contact's v3 guide (11 Oct 2026):
+ *   GET /emails                     campaigns[].campaign_id, name, current_status
+ *                                   (Draft, Scheduled, Executing, Done, Error, Removed)
+ *   GET /emails/{campaign_id}       campaign_activities[] with role "primary_email",
+ *                                   whose campaign_activity_id every report is keyed by
+ *   GET /reports/stats/email_campaign_activities/{ids}
+ *                                   results[].stats.em_sends / em_opens / em_clicks
+ *                                   (opens and clicks counted once per person), ten ids a call
+ * Only "Done" is a sent campaign. A campaign whose detail or counts will not
+ * load keeps its name and zero counts: one campaign is never worth the run.
+ */
+async function ccSentCampaigns(orgId, provider, row) {
+  const body = await emailToolFetch(orgId, provider, row, "/emails?limit=50");
+  const sent = (body.campaigns || [])
+    .filter(c => c && c.campaign_id && String(c.current_status || "").toLowerCase() === "done")
+    .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  const out = sent.map(c => ({
+    id: c.campaign_id, name: c.name || "Untitled campaign", subject: c.name || null,
+    // The list carries no send time; a Done campaign's last update is its send.
+    sentAt: c.last_sent_date || c.updated_at || null, sends: 0, opens: 0, clicks: 0, activityId: null,
+  }));
+  for (const c of out.slice(0, ACTIVITY_CAMPAIGN_LIMIT)) {
+    try {
+      const d = await emailToolFetch(orgId, provider, row, `/emails/${encodeURIComponent(c.id)}`);
+      const primary = (d.campaign_activities || []).find(a => a && a.role === "primary_email");
+      c.activityId = primary ? primary.campaign_activity_id : null;
+    } catch { /* this campaign keeps zero counts and no per-person read */ }
+  }
+  const ids = out.map(c => c.activityId).filter(Boolean);
+  for (let i = 0; i < ids.length; i += 10) {
+    try {
+      const st = await emailToolFetch(orgId, provider, row,
+        `/reports/stats/email_campaign_activities/${ids.slice(i, i + 10).map(encodeURIComponent).join(",")}`);
+      for (const r of st.results || []) {
+        const c = out.find(x => x.activityId === r.campaign_activity_id);
+        if (!c || !r.stats) continue;
+        c.sends = Number(r.stats.em_sends) || 0;
+        c.opens = Number(r.stats.em_opens) || 0;
+        c.clicks = Number(r.stats.em_clicks) || 0;
+      }
+    } catch { /* counts stay zero; the people below are still read */ }
+  }
+  return out;
+}
+
+/**
+ * CONNECT-2 · WHO DID WHAT WITH ONE CONSTANT CONTACT CAMPAIGN, as one entry
+ * per address: the same {email, opened, clicked, unsubscribed, clickedLabel,
+ * occurred} the Mailchimp read produces, so ONE writer below handles both.
+ * Contact-level tracking reports, each paged by `_links.next.href`:
+ *   /reports/email_reports/{activity}/tracking/opens    tracking_activities[].email_address, created_time
+ *   /reports/email_reports/{activity}/tracking/clicks   …and link_url
+ *   /reports/email_reports/{activity}/tracking/optouts  …the people who unsubscribed from it
+ */
+async function ccActivity(orgId, provider, row, activityId) {
+  const byEmail = new Map();
+  const kinds = [["opens", "opened"], ["clicks", "clicked"], ["optouts", "unsubscribed"]];
+  for (const [kind, flag] of kinds) {
+    let path = `/reports/email_reports/${encodeURIComponent(activityId)}/tracking/${kind}?limit=500`;
+    for (let page = 0; path && page < CC_MAX_PAGES; page++) {
+      const body = await emailToolFetch(orgId, provider, row, path);
+      for (const t of body.tracking_activities || []) {
+        const email = String(t.email_address || "").trim().toLowerCase();
+        const m = byEmail.get(email) || { email, opened: false, clicked: false, unsubscribed: false, clickedLabel: null, occurred: null };
+        m[flag] = true;
+        if (flag === "clicked" && t.link_url && !m.clickedLabel) m.clickedLabel = t.link_url;
+        if (t.created_time && (!m.occurred || String(t.created_time) < String(m.occurred))) m.occurred = t.created_time;
+        byEmail.set(email, m);
+      }
+      path = ccNextPath(body);
+    }
+  }
+  return [...byEmail.values()];
+}
+
+/**
  * ONE ROW PER PERSON PER CAMPAIGN, and one timeline line to match.
  *
  * ONLY PEOPLE STEWARD ALREADY HAS. An address on the org's Mailchimp audience
@@ -2582,35 +2708,54 @@ const ACTIVITY_CAMPAIGN_LIMIT = 10;
  * newsletter list into a donor file behind somebody's back. It is skipped, and
  * the campaign's counts still report the whole send.
  */
-async function pullActivity(orgId, provider, row, campaignRowId, campaign, touched = new Set()) {
-  if (provider !== "mailchimp") return;   // Constant Contact's per-person activity lands with its own build
+async function pullActivity(orgId, provider, row, campaignRowId, campaign, touched = new Set(), runCtx = { skipped: 0 }) {
   const EM = await emailMarketingMod();
+  // Each provider's report, read into the one shape. One campaign's detail is
+  // never worth failing the whole sync.
   let members = [];
   try {
-    const body = await emailToolFetch(orgId, provider, row,
-      `/reports/${encodeURIComponent(campaign.id)}/email-activity?count=1000&fields=emails.email_address,emails.activity`);
-    members = body.emails || [];
-  } catch { return; }                     // one campaign's detail is never worth failing the whole sync
+    if (provider === "mailchimp") {
+      const body = await emailToolFetch(orgId, provider, row,
+        `/reports/${encodeURIComponent(campaign.id)}/email-activity?count=1000&fields=emails.email_address,emails.activity`);
+      members = (body.emails || []).map(m => {
+        const acts = Array.isArray(m.activity) ? m.activity : [];
+        return {
+          email: String(m.email_address || "").trim().toLowerCase(),
+          opened: acts.some(a => a.action === "open"),
+          clicked: acts.some(a => a.action === "click"),
+          unsubscribed: acts.some(a => a.action === "unsub"),
+          clickedLabel: (acts.find(a => a.action === "click" && a.url) || {}).url || null,
+          occurred: (acts.find(a => a.timestamp) || {}).timestamp || null,
+        };
+      });
+    } else {
+      if (!campaign.activityId) return;
+      members = await ccActivity(orgId, provider, row, campaign.activityId);
+    }
+  } catch { return; }
   if (!members.length) return;
 
-  const emails = members.map(m => String(m.email_address || "").toLowerCase()).filter(Boolean);
+  const usable = members.filter(m => {
+    const good = m.email && EM.addressProblem(m.email) !== "malformed";
+    if (!good) runCtx.skipped++;
+    return good;
+  });
+  const emails = usable.map(m => m.email);
   if (!emails.length) return;
   const donors = await query(
     `SELECT id, LOWER(email) AS email FROM donors
       WHERE org_id=? AND deleted_at IS NULL AND LOWER(email) = ANY(?)`, [orgId, emails]);
   const byEmail = new Map(donors.map(d => [d.email, d.id]));
 
-  for (const m of members) {
-    const email = String(m.email_address || "").toLowerCase();
+  for (const m of usable) {
+    const email = m.email;
+    if (m.unsubscribed && runCtx.toolUnsubscribed) runCtx.toolUnsubscribed.add(email);
     const donorId = byEmail.get(email);
     if (!donorId) continue;               // not a person on file, and this build does not make one
-    const acts = Array.isArray(m.activity) ? m.activity : [];
-    const opened = acts.some(a => a.action === "open");
-    const clicked = acts.some(a => a.action === "click");
-    const unsubscribed = acts.some(a => a.action === "unsub");
+    const { opened, clicked, unsubscribed, clickedLabel } = m;
     if (!opened && !clicked && !unsubscribed) continue;
-    const clickedLabel = (acts.find(a => a.action === "click" && a.url) || {}).url || null;
-    const occurred = (acts.find(a => a.timestamp) || {}).timestamp || campaign.sentAt || null;
+    const occurred = m.occurred || campaign.sentAt || null;
+    try {
     // A RE-READ THAT LEARNS NOTHING NEW CHANGES NO RECORD, so it is not counted.
     const [prior] = await query(
       `SELECT opened, clicked, unsubscribed FROM email_marketing_activity WHERE campaign_id=? AND donor_id=?`,
@@ -2657,6 +2802,11 @@ async function pullActivity(orgId, provider, row, campaignRowId, campaign, touch
         `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
         ["int_" + uuid().slice(0, 8), orgId, donorId, "email", note, date,
          `system:email-marketing/${provider}`]).catch(() => {});
+    }
+    } catch (e) {
+      // ONE PERSON'S ROW NEVER BREAKS THE RUN. Counted, and tried again next time.
+      console.error(`[email-marketing] ${provider} activity row skipped:`, e.message);
+      runCtx.skipped++;
     }
   }
 }
@@ -2851,7 +3001,7 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
   if (!c) return res.status(404).json({ error: "Not found" });
   // FIX-20 Part 4: a vendor Steward cannot really send to is refused here,
   // before anything is claimed, so no row ever says a deposit went.
-  if (BK.VENDORS[c.vendor] && BK.VENDORS[c.vendor].sends === false)
+  if (BK.VENDORS[c.vendor] && (BK.VENDORS[c.vendor].sends === false || BK.VENDORS[c.vendor].depositSend === false))
     return res.status(409).json({ error: "send_not_available", sentence: BK.VENDORS[c.vendor].notSendingSentence });
   const mapping = { ...((typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping) || {}),
                     donorNames: c.donor_names === true };
@@ -3323,6 +3473,167 @@ sharedProcessQboAutoSync = async function processQboAutoSync(onlyOrgId = null) {
 // fund is mapped.
 app.post("/qbo/auto-sync/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   res.json(await sharedProcessQboAutoSync(req.user.orgId));
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONNECT-2 Part 3 · XERO SYNC
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The QuickBooks shape, for Xero. The connection is INT-OAUTH's (granular
+// scopes accounting.banktransactions and accounting.settings.read, and the
+// organisation chosen at /oauth/xero/tenant); these routes are what it is
+// for: "Read from Xero" to prove it is the right organisation and to list its
+// accounts, the mapping, and Sync. The engine is xeroSync.js. NOTHING IS SENT
+// UNTIL A PERSON PRESSES SYNC, unless the org admin turned on auto-sync, which
+// cannot be turned on while any fund is unmapped.
+//
+// One live Xero connection per org, so no route takes a row id in its path.
+const xeroSyncMod = () => require("../xeroSync");
+const xeroTokenFor = orgId => (conn, force) => accessTokenFor(orgId, conn, "xero", { force });
+const xeroCtx = (orgId, c) => ({ orgId, tenantId: String(c.realm_id || ""),
+  token: c.credentials_sealed ? force => accessTokenFor(orgId, c, "xero", { force }) : null });
+
+app.get("/xero", requireAuth, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  const [org] = await query("SELECT xero_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
+  if (!c) return res.json({ connected: false, autoSync: false, funds: [],
+    sentence: "Xero is not connected. Connect it, choose the organisation, and nothing is sent until you press Sync." });
+  const map = XS.readMapping(c);
+  const gaps = await XS.mappingGaps(orgId, map);
+  const sent = await XS.sentSummary(orgId, c.realm_id);
+  const since = XS.startDateOf(c, map);
+  const pq = XS.pendingRowsSql(orgId, since);
+  const pending = c.realm_id ? await query(pq.sql, pq.args) : [];
+  const pendingCents = pending.reduce((t, r) => t + Number(r.cents), 0);
+  res.json({
+    connected: true, id: c.id, signedIn: !!c.credentials_sealed, tenantChosen: !!c.realm_id,
+    tenantName: map.tenantName, autoSync: !!(org && org.xero_auto_sync === true), demo: !!(org && org.is_demo_org === true),
+    mappingReady: gaps.ok, canSync: !!gaps.canSync && !!c.realm_id,
+    mappingGaps: gaps.ok ? null : { funds: gaps.funds, bankAccount: gaps.bankAccount, sentence: gaps.sentence },
+    mappingOtherTenant: map.otherTenant,
+    mapping: { startDate: since, bankAccount: map.bankAccount, feeAccount: map.feeAccount, funds: map.funds },
+    funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+            { id: XS.NO_FUND, name: "No fund named", restricted: false }],
+    pending: { count: pending.length, cents: pendingCents,
+      definition: `Every gift dated on or after ${since} that has not been sent to this Xero organisation. Real money only: never a sample, a refund, stock or in-kind.`,
+      rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10),
+        cents: Number(r.cents), fund: r.fund_name || null, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : null })) },
+    sent,
+    lastSentAt: c.last_sent_at || null, lastError: c.last_error || null, lastErrorAt: c.last_error_at || null,
+    definition: "Each gift becomes one bank transaction in Xero (money received), on the income account its fund is mapped to, in the bank account you choose, with any processing fee as a negative line. Nothing is sent until somebody presses Sync, and a gift is never sent twice.",
+  });
+}));
+
+// READ FROM XERO. A POST because asking may renew the token, and a GET never
+// changes state. It reads the organisation's name and accounts and keeps only
+// the name, so the card can say which books it points at.
+app.post("/xero/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, and its organisation appears here." });
+  if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+  if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
+    return res.status(409).json({ error: "not_signed_in", sentence: "Xero is not signed in yet, so Steward cannot read it. Connect it again." });
+  const out = await XS.fetchPreview(xeroCtx(orgId, c));
+  if (!out.ok) return res.status(502).json({ error: "preview_failed", sentence: out.sentence });
+  if (out.organisation.name) {
+    await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{xero}',
+                 COALESCE(mapping->'xero', '{}'::jsonb) || ?::jsonb), updated_at=NOW() WHERE id=? AND org_id=?`,
+      [JSON.stringify({ tenantName: out.organisation.name }), c.id, orgId]);
+  }
+  res.json({ ...out,
+    sentence: `Steward can read ${out.organisation.name || "this Xero organisation"}: ${out.income.length} income account${out.income.length === 1 ? "" : "s"} and ${out.bank.length} bank account${out.bank.length === 1 ? "" : "s"}. It only read them; nothing was sent to Xero.` });
+}));
+
+// The mapping, saved as one document. Fund ids are checked against THIS org's
+// own funds; an id off a request body is never trusted.
+app.put("/xero/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const c = await XS.connection(orgId);
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, then choose where each gift lands." });
+  const b = req.body || {};
+  if (b.startDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.startDate)))
+    return res.status(400).json({ error: "bad_date", sentence: "The start date must be written 2026-10-01." });
+  const mine = new Set((await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId])).map(f => f.id).concat([XS.NO_FUND]));
+  const str = (v, n) => (v === null || v === undefined || v === "") ? null : String(v).slice(0, n);
+  const acct = v => (v && typeof v === "object" && (str(v.code, 30) || str(v.id, 64)))
+    ? { code: str(v.code, 30), id: str(v.id, 64), name: str(v.name, 200) } : null;
+  const funds = {};
+  for (const [k, v] of Object.entries(b.funds && typeof b.funds === "object" ? b.funds : {})) {
+    if (!mine.has(k)) continue;
+    const a = acct(v);
+    if (a && a.code) funds[k] = a;
+  }
+  const prior = XS.readMapping(c);
+  const xero = { startDate: b.startDate ? String(b.startDate) : prior.startDate,
+    bankAccount: acct(b.bankAccount), feeAccount: acct(b.feeAccount), funds,
+    tenantId: c.realm_id ? String(c.realm_id) : null, tenantName: prior.tenantName };
+  await run(`UPDATE bookkeeping_connections SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{xero}', ?::jsonb),
+                    updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(xero), c.id, orgId]);
+  // A mapping that no longer covers every fund turns auto-sync off, so the
+  // switch can never be on while a gift has nowhere to land.
+  const gaps = await XS.mappingGaps(orgId, XS.readMapping({ ...c, mapping: { xero } }));
+  if (!gaps.ok) await run("UPDATE orgs SET xero_auto_sync=false WHERE id=?", [orgId]);
+  res.json({ ok: true, mapping: xero, mappingReady: gaps.ok,
+    sentence: "Saved. Nothing has been sent: gifts wait in Pending until somebody presses Sync." });
+}));
+
+app.post("/xero/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const all = req.body?.all === true;
+  const giftIds = Array.isArray(req.body?.giftIds) ? req.body.giftIds.map(String).filter(Boolean) : null;
+  const out = await XS.syncGifts({ orgId, giftIds, all, who: actor(req), tokenFor: xeroTokenFor(orgId) });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  res.json(out);
+}));
+
+// AUTO-SYNC, the org admin's own switch. Off by default, and it cannot be
+// turned on until every fund, and "No fund named", has a Xero account.
+app.put("/xero/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const XS = xeroSyncMod();
+  const orgId = req.user.orgId;
+  const on = req.body?.on === true;
+  if (on) {
+    const c = await XS.connection(orgId);
+    if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first." });
+    if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+    const gaps = await XS.mappingGaps(orgId, XS.readMapping(c));
+    if (!gaps.ok) return res.status(409).json({ error: "needs_mapping", sentence: gaps.sentence });
+  }
+  await run("UPDATE orgs SET xero_auto_sync=? WHERE id=?", [on, orgId]);
+  res.json({ ok: true, autoSync: on, sentence: on
+    ? "Auto-sync is on. Once an hour Steward sends whatever is waiting, as Steward's own entry in the log."
+    : "Auto-sync is off. Nothing goes to Xero until somebody presses Sync." });
+}));
+
+// THE HOURLY TICK, published to routes/jobs.js: the same engine as the
+// button, only for orgs whose admin turned auto-sync on, and only while every
+// fund is mapped.
+sharedProcessXeroAutoSync = async function processXeroAutoSync(onlyOrgId = null) {
+  const XS = xeroSyncMod();
+  const orgs = await query(
+    `SELECT o.id FROM orgs o
+       JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='xero' AND c.status <> 'disconnected'
+      WHERE o.xero_auto_sync = true AND COALESCE(o.is_demo_org, false) = false
+        AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
+  let sent = 0, waiting = 0;
+  for (const { id } of orgs) {
+    const r = await XS.syncGifts({ orgId: id, all: true, limit: 50, tokenFor: xeroTokenFor(id), everyFundMapped: true,
+      who: { id: "system:xero/auto-sync", name: "Steward (Xero auto-sync)" } })
+      .catch(e => { console.error("[xero-auto-sync]", id, e.message); return null; });
+    if (r && r.ok) { sent += r.synced; waiting += r.failed; }
+  }
+  return { detail: `${orgs.length} org(s) with Xero auto-sync on; ${sent} sent, ${waiting} left in Pending`,
+           summary: `Xero auto-sync sent ${sent} and left ${waiting} in Pending.` };
+};
+app.post("/xero/auto-sync/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  res.json(await sharedProcessXeroAutoSync(req.user.orgId));
 }));
 
 // Disconnecting stops the sending and DELETES NOTHING, in Steward or in the
@@ -4107,8 +4418,16 @@ module.exports = {
     if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
     return sharedProcessEmailMarketing(...args);
   },
+  accessTokenFor: (...args) => {
+    if (!sharedAccessTokenFor) throw new Error("accessTokenFor called before routes/finance mount()");
+    return sharedAccessTokenFor(...args);
+  },
   processQboAutoSync: (...args) => {
     if (!sharedProcessQboAutoSync) throw new Error("processQboAutoSync called before routes/finance mount()");
     return sharedProcessQboAutoSync(...args);
+  },
+  processXeroAutoSync: (...args) => {
+    if (!sharedProcessXeroAutoSync) throw new Error("processXeroAutoSync called before routes/finance mount()");
+    return sharedProcessXeroAutoSync(...args);
   },
 };

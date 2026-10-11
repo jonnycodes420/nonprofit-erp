@@ -40,7 +40,7 @@
 // because it is the cheapest way to take a gift. That is worth remembering
 // when deciding what to recommend to them.
 
-const { firstOf, toCents, toCivilDate, dropNotice } = require("./field.js");
+const { firstOf, toCents, toCivilDate, dropNotice, listSkip } = require("./field.js");
 
 const BASE = "https://connect.squareup.com/v2";
 // Pinned deliberately. Square dates its API and changes behaviour between
@@ -190,10 +190,10 @@ async function fetchRows({ credentials, since, cursor, http, today, config, env 
 
   const body = await get(http, `${base}/payments?${params}`, token);
 
-  const rows = [], drops = {};
+  const rows = [], drops = {}, skipped = [];
   for (const p of items(body)) {
     const out = mapPayment(p, { config });
-    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; continue; }
+    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; listSkip(skipped, out); continue; }
     rows.push(out.row);
   }
 
@@ -215,7 +215,7 @@ async function fetchRows({ credentials, since, cursor, http, today, config, env 
   const n = dropNotice("Square", drops); if (n) notices.push(n);
 
   const next = nextCursor(body);
-  return { rows, cursor: next, done: !next, notices };
+  return { rows, cursor: next, done: !next, notices, skipped };
 }
 
 async function testCredentials({ credentials, http, today, config, env = process.env }) {
@@ -247,8 +247,22 @@ async function testCredentials({ credentials, http, today, config, env = process
   };
 }
 
+// CONNECT-2 · THE LOCATIONS, so the organisation can say which take gifts.
+// GET /v2/locations (MERCHANT_PROFILE_READ) answers every location, inactive
+// ones included; the card shows them all and marks which are closed.
+async function listLocations({ credentials, http, env = process.env }) {
+  const token = credentials?.accessToken;
+  if (!token) throw Object.assign(new Error("Square: no access token"), { code: "NO_CREDENTIALS" });
+  const base = String(env.SQUARE_API_BASE || BASE).replace(/\/$/, "");
+  const body = await get(http, `${base}/locations`, token);
+  return (Array.isArray(body?.locations) ? body.locations : []).map(l => ({
+    id: String(l.id || ""), name: String(l.name || l.business_name || l.id || ""),
+    active: String(l.status || "ACTIVE").toUpperCase() === "ACTIVE",
+  })).filter(l => l.id);
+}
+
 module.exports = {
-  key: "square",
+  key: "square", listLocations,
   fetchRows,
   testCredentials,
   mapPayment, gateReason, items, nextCursor,
