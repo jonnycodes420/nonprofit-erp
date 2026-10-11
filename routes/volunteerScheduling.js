@@ -2490,7 +2490,7 @@ app.post("/org/:orgSlug/volunteer-page/:pageSlug/signup", donateLimiter, wrap(as
   const message = !slot ? `Thank you. ${orgName} will be in touch about the next shift.`
     : r.already ? `You were already ${r.status === "waitlisted" ? "on the waiting list" : "signed up"} for this one.`
     : r.status === "waitlisted" ? `That shift is full, so you are on the waiting list. If somebody drops out, the first person waiting takes the place and ${orgName} will be in touch.`
-    : `You are signed up for ${sv.shift_name}, ${sv.shift_when}. Thank you.`;
+    : `You are signed up for ${sv.shift_name}, ${sv.shift_when}.`;
   res.status(201).json({ ok: true, status: r.status || null, position: r.position || null, already: !!r.already, message, link });
 }));
 
