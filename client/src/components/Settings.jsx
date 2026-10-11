@@ -46,6 +46,12 @@ function slugifyPreview(s){
   return (s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60);
 }
 
+// VOL-PAGE-1 — the three volunteer page templates (keys match the server's starters).
+const VOL_TEMPLATES=[
+  ["one_day","A one-day event","a single day with shifts and a sign-up"],
+  ["ongoing","Ongoing roles","your regular roles, each with its shifts"],
+  ["group_day","A group service day","churches, schools and companies bring a team"],
+];
 const GP_STATUS_META={
   active:   {label:"Active",   bg:T.green100, color:T.greenDk, border:T.greenDk},
   archived: {label:"Archived", bg:T.bg2, color:T.ink3, border:T.bg3},
@@ -264,6 +270,10 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   const [slugTouched,setSlugTouched]=useState(false);
   const [saving,setSaving]=useState(false);
   const [shareOpenId,setShareOpenId]=useState(null);
+  // VOL-PAGE-1 — a volunteer page lives in this same list, built in the same
+  // editor on the same brand. It starts from one of three templates.
+  const [volNew,setVolNew]=useState(null);   // null | {title, template}
+  const [volLink,setVolLink]=useState(null); // VOL-PAGE-1: null | {id, title, slug}, a volunteer page's own title and link
 
   // Peer-to-peer fundraisers nested under each page — lazily fetched on
   // first expand and cached per page id, same "don't refetch what's already
@@ -337,7 +347,51 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     try{
       const updated=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({status:nextStatus})});
       setPages(prev=>prev.map(x=>x.id===p.id?updated:x));
+      // VOL-PAGE-1: unpublishing a volunteer page is one click, so it is one
+      // click to take back, through the shared Undo toast.
+      if(p.page_kind==="volunteer"){
+        offerUndo({undoAction:async()=>{
+          const back=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({status:p.status})});
+          setPages(prev=>prev.map(x=>x.id===p.id?back:x));
+          return back;
+        },message:nextStatus==="archived"?`Unpublished ${p.title}.`:`Published ${p.title} again.`},nextStatus==="archived"?"Unpublished":"Published");
+      }
     }catch(e){alert(errorMessage(e, "Failed to update giving page"));}
+  }
+
+  // VOL-PAGE-1: a volunteer page's title and custom link, through the same
+  // PUT as a giving page (which touches the slug only when it is sent), with
+  // the shared Undo putting both back.
+  async function saveVolLink(p){
+    if(!volLink||!volLink.title.trim())return;
+    setSaving(true);
+    try{
+      const updated=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({title:volLink.title.trim(),slug:volLink.slug.trim()||volLink.title.trim()})});
+      setPages(prev=>prev.map(x=>x.id===p.id?{...x,...updated,public_url:p.public_url?p.public_url.replace(/[^/]+$/,updated.slug):p.public_url}:x));
+      setVolLink(null);
+      offerUndo({undoAction:async()=>{
+        const back=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({title:p.title,slug:p.slug})});
+        setPages(prev=>prev.map(x=>x.id===p.id?{...x,...back,public_url:p.public_url}:x));
+        return back;
+      },message:`The link is now /${updated.slug}.`},"Saved");
+    }catch(e){alert(errorMessage(e, "Could not save the title and link"));}
+    setSaving(false);
+  }
+
+  async function createVolunteerPage(){
+    if(!volNew||!volNew.title.trim())return;
+    setSaving(true);
+    try{
+      const created=await apiFetch("/giving-pages",{method:"POST",body:JSON.stringify({title:volNew.title.trim(),page_kind:"volunteer",template:volNew.template})});
+      setPages(prev=>[created,...prev]);
+      setVolNew(null);
+      offerUndo({undoAction:async()=>{
+        await apiFetch(`/giving-pages/${created.id}`,{method:"DELETE"});
+        setPages(prev=>prev.filter(x=>x.id!==created.id));
+        return {ok:true};
+      },message:`Made ${created.title}. Build it, then publish.`},"Volunteer page made");
+    }catch(e){alert(errorMessage(e, "Could not make the volunteer page"));}
+    setSaving(false);
   }
 
   async function deletePage(p){
@@ -360,6 +414,29 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
           + New Giving Page
         </button>}
       </div>
+      {isAdmin&&(volNew?(
+        <div data-testid="new-volunteer-page" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:8}}>A new volunteer page</div>
+          <input style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,marginBottom:10,fontFamily:"inherit"}}
+            value={volNew.title} placeholder="Volunteer with us" onChange={e=>setVolNew({...volNew,title:e.target.value})} aria-label="Page title"/>
+          <div style={{fontSize:12,fontWeight:700,color:T.ink3,marginBottom:6}}>Start from</div>
+          {VOL_TEMPLATES.map(([k,label,hint])=>(
+            <label key={k} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:13,padding:"5px 0",cursor:"pointer"}}>
+              <input type="radio" name="vol-template" checked={volNew.template===k} onChange={()=>setVolNew({...volNew,template:k})} style={{marginTop:3}}/>
+              <span><strong>{label}</strong><span style={{color:T.ink3}}> · {hint}</span></span>
+            </label>
+          ))}
+          <div style={{display:"flex",gap:8,marginTop:10}}>
+            <button onClick={createVolunteerPage} disabled={saving||!volNew.title.trim()} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",opacity:saving||!volNew.title.trim()?0.5:1}}>Make the page</button>
+            <button onClick={()=>setVolNew(null)} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",fontSize:12,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Cancel</button>
+          </div>
+        </div>
+      ):(
+        <button onClick={()=>setVolNew({title:"Volunteer with us",template:"ongoing"})} disabled={isReadOnly||!orgSlug}
+          style={{background:"none",border:"1px solid "+T.green,borderRadius:8,padding:"6px 12px",color:T.green,fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",marginBottom:14,opacity:(isReadOnly||!orgSlug)?0.45:1}}>
+          + New volunteer page
+        </button>
+      ))}
       <div style={{fontSize:13,color:T.ink3,marginBottom:pages.length?14:0,lineHeight:1.6}}>
         {pages.length===0
           ?"Build a titled, storied donation page for a specific campaign, gala, or appeal, with its own goal and progress bar, separate from your main donation page."
@@ -371,11 +448,12 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
         // One goal concept: a page linked to a campaign tracks toward THAT
         // campaign — its progress line/bar shows the campaign's live figures,
         // not a second page-local goal system. An unlinked page keeps its own.
+        const isVol=p.page_kind==="volunteer";
         const linked=!!p.campaign_id;
         const raised=linked?(parseFloat(p.campaign_raised)||0):(parseFloat(p.raised_amount)||0);
         const goal=linked?(p.campaign_goal!=null?parseFloat(p.campaign_goal):null):(p.goal_amount!=null?parseFloat(p.goal_amount):null);
         const pct=goal>0?Math.min(100,Math.round((raised/goal)*100)):null;
-        const url=orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}`:"";
+        const url=isVol?(p.public_url?`${window.location.origin}${p.public_url}`:""):(orgSlug?`${window.location.origin}/give/${orgSlug}/${p.slug}`:"");
         const meta=GP_STATUS_META[p.status]||GP_STATUS_META.active;
         const shareOpen=shareOpenId===p.id;
         const fundraisersOpen=fundraisersOpenId===p.id;
@@ -385,14 +463,21 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
               <div style={{flex:1,minWidth:0}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span style={{fontSize:14,fontWeight:700,color:T.ink}}>{p.title}</span>
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:meta.bg,color:meta.color,border:"1px solid "+meta.border}}>{meta.label}</span>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:meta.bg,color:meta.color,border:"1px solid "+meta.border}}>{isVol?(p.status==="active"?(p.published_at?"Published":"Not published yet"):"Unpublished"):meta.label}</span>
+                  {isVol&&<span data-testid="volunteer-page-label" style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.bg,color:T.ink2,border:"1px solid "+T.bg3}}>Volunteer page</span>}
                   {p.fund_name&&<span style={{fontSize:11,color:T.ink3}}>→ {p.fund_name}</span>}
                   {p.campaign_name&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:99,background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300}}>Counts toward {p.campaign_name}</span>}
                 </div>
+                {isVol?(
+                  <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
+                    {Number(p.vol_signups||0)} sign-ups · {Number(p.vol_shifts_filled||0)} shifts filled · {Number(p.vol_views||0)} views
+                  </div>
+                ):(
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
                   {fmtDollars(raised)}{goal?` of ${fmtDollars(goal)} raised`:" raised"}{pct!=null?` · ${pct}%`:""}
                 </div>
-                {goal>0&&(
+                )}
+                {!isVol&&goal>0&&(
                   <div style={{background:T.bg,borderRadius:99,height:6,overflow:"hidden",marginTop:6,maxWidth:320}}>
                     <div style={{height:"100%",width:`${pct}%`,background:T.greenDk,borderRadius:99}}/>
                   </div>
@@ -403,16 +488,17 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",...activeMark(shareOpen,"bottom")}}>
                   Share {shareOpen?"▲":"▼"}
                 </button>
-                <button onClick={()=>toggleFundraisers(p)} aria-pressed={fundraisersOpen}
+                {!isVol&&<button onClick={()=>toggleFundraisers(p)} aria-pressed={fundraisersOpen}
                   style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",...activeMark(fundraisersOpen,"bottom")}}>
                   Fundraisers{fundraisersByPage[p.id]?` (${fundraisersByPage[p.id].length})`:""} {fundraisersOpen?"▲":"▼"}
-                </button>
+                </button>}
                 {isAdmin&&<>
-                  <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+                  {!isVol&&<button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>}
+                  {isVol&&<button data-testid="volunteer-page-link" onClick={()=>setVolLink(volLink&&volLink.id===p.id?null:{id:p.id,title:p.title,slug:p.slug})} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Title and link</button>}
                   <a href={`/portal-editor?page=${p.id}`} style={{background:T.gold500,border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink,cursor:"pointer",textDecoration:"none"}}>Build the page</a>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
                     style={{background:p.status==="active"?T.terra100:T.green100,border:"1px solid "+(p.status==="active"?T.terra200:T.greenDk),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?T.terra700:T.greenDk,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
-                    {p.status==="active"?"Archive":"Reactivate"}
+                    {isVol?(p.status==="active"?"Unpublish":"Publish again"):(p.status==="active"?"Archive":"Reactivate")}
                   </button>
                   <button onClick={()=>deletePage(p)}
                     style={{background:"transparent",border:"1px solid "+T.terra200,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.terra700,cursor:"pointer"}}>
@@ -421,25 +507,36 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 </>}
               </div>
             </div>
+            {isVol&&volLink&&volLink.id===p.id&&(
+              <div style={{marginTop:14,background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexWrap:"wrap",gap:12,alignItems:"flex-end"}}>
+                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:600,color:T.ink2,flex:"1 1 220px"}}>Title
+                  <input value={volLink.title} onChange={e=>setVolLink({...volLink,title:e.target.value})} style={{padding:"8px 10px",border:"1px solid "+T.bg3,borderRadius:6,fontSize:14}}/>
+                </label>
+                <label style={{display:"flex",flexDirection:"column",gap:4,fontSize:12,fontWeight:600,color:T.ink2,flex:"1 1 220px"}}>Link: /volunteer-page/{orgSlug}/
+                  <input value={volLink.slug} onChange={e=>setVolLink({...volLink,slug:e.target.value})} style={{padding:"8px 10px",border:"1px solid "+T.bg3,borderRadius:6,fontSize:14}}/>
+                </label>
+                <button onClick={()=>saveVolLink(p)} disabled={saving||isReadOnly} style={{background:T.green,color:T.bgCard,border:"none",borderRadius:6,padding:"9px 14px",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
+              </div>
+            )}
             {shareOpen&&(
               <div style={{marginTop:14,background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
                 <UrlLinkButtons url={url}/>
                 <QrCodeBlock url={url} filenameBase={slugifyPreview(p.title)||"giving-page"}/>
                 <div>
                   <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Embed Code</div>
-                  <EmbedCodeBlock url={url}/>
+                  <EmbedCodeBlock url={isVol&&url?url+"?embed=1":url}/>
                 </div>
                 {/* BUILD-102 Part 4 — the DONATION FORM on her own website, which
                     is a different thing from embedding the whole page: one line,
                     a self-sizing frame, and no card field anywhere on her site.
                     The snippets are generated by the SERVER so the script URL, the
                     id and the fallback cannot drift apart in three places of copy. */}
-                {isAdmin&&<FormOptionsBlock pageId={p.id} isReadOnly={isReadOnly}/>}
-                <FormEmbedBlock pageId={p.id} status={p.status}/>
+                {!isVol&&isAdmin&&<FormOptionsBlock pageId={p.id} isReadOnly={isReadOnly}/>}
+                {!isVol&&<FormEmbedBlock pageId={p.id} status={p.status}/>}
                 {/* BUILD-102 Part 6 — the funnel, with every figure's definition
                     on its own hover, and a sentence where a winner would be if it
                     were callable. */}
-                <FormFunnelBlock pageId={p.id}/>
+                {!isVol&&<FormFunnelBlock pageId={p.id}/>}
               </div>
             )}
             {fundraisersOpen&&(()=>{

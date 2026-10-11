@@ -9,6 +9,7 @@ import { WIDGETS } from "../../../shared/pageWidgets.js";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
 import { displayDate } from "../../../shared/displayDate";
+import { VolunteerBlock } from "./VolunteerBlocks";
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -289,6 +290,11 @@ export function WidgetView({ w, ctx }) {
       );
     case "mygiving":
       return ctx.renderMyGiving ? ctx.renderMyGiving() : null;
+    // VOL-PAGE-1 — the volunteer page's own blocks, drawn from the programme's
+    // live data (VolunteerBlocks.jsx), through this same one renderer.
+    case "opportunities": case "shiftpicker": case "volsignup": case "volwaiver":
+    case "volimpact": case "volquote": case "groupsignup":
+      return <VolunteerBlock w={w} ctx={ctx} />;
     default:
       return null;
   }

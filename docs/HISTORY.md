@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## VOL-PAGE-1 · Volunteer pages built like giving pages (2026-10-11)
+
+- **One table of public pages.** A volunteer page is a `giving_pages` row with `page_kind = 'volunteer'` on a new "volunteer" surface of the one widget registry, so the editor, brand, media library, publish, slug, embed, Fundraising > Pages and ⌘K are shared. Every read that means "a page that takes gifts" now filters on the kind.
+- **Seven volunteer blocks:** opportunities (role cards with time and skills, new `commitment`/`skills` columns), shift picker (filled of needed, waiting list), sign-up form (the org's own questions, group option), waiver and background check, impact numbers (hours this year from `volunteer-hours`, roster from FIX-31's rule), a volunteer quote (shown only with permission) and group sign-up. Gallery and video are the shared blocks. Three templates (one-day event, ongoing roles, group service day) lay out blocks and prompts and invent nothing.
+- **Sign-ups** post to `/org/:org/volunteer-page/:slug/signup`: VOL-1's `findOrCreatePerson` (one record per person) and `signUp` (the one capacity decision), a `volunteer_page_signups` row, a timeline note, the new_volunteer journey, and drafted confirmation and group-leader emails. Nothing sends.
+- **Volunteer emails on the EMAIL-1 editor:** confirmation, reminder (VOL-1's day-before draft now uses it), thank-you with hours (existing), "we miss you" after 90 days (drafted by the reminder sweep and `POST /volunteer-hub/drafts/miss-you`), group leader confirmation. All drafts, as VOL-1's were; VOL-1 sent nothing automatically, so nothing new does.
+- **Traps:** the figure drawer route strips `page` from the query (it is the paging param), so a figure keyed by page id needs another name (`vpage`). `NULL AS amount` in a figure source is typed text and breaks the sum; write `NULL::numeric`. The brand guard rejects any hex not in the T tokens or publicTheme, so new client files must use those values.
+- **Found, not fixed (next brief):** the giving-page draft/publish/revert routes pass `req.user.id, req.user.name` to `recordAssetPointerHistory`, which reads an actor object, so their image-history rows carry no actor. The PARITY-3 `/volunteer-with/:org` page has no `vercel.json` rewrite and likely falls through to the SPA on prod.
 ## ADMIN-CLEAN · The admin console and Metrics show only what's real (2026-10-11)
 
 - **One kind per org** (`orgKind.js`): customer, prospect_trial, demo, internal_test, fixture. `orgs.org_kind` when

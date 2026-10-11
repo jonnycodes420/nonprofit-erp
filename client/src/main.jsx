@@ -24,6 +24,7 @@ const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
+const VolunteerPage      = React.lazy(() => import("./pages/VolunteerPage")); // VOL-PAGE-1
 // BUILD-102 Part 4 — the form inside an org's own website, addressed by form ID.
 const EmbeddedForm       = React.lazy(() => import("./pages/EmbeddedForm"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
@@ -277,6 +278,9 @@ function Root() {
               deliberately NOT under /give: an embed is addressed by form ID, so
               the org pastes one line and never has to know its own slugs. */}
           <Route path="/embed/:formId" element={<EmbeddedForm />} />
+          {/* VOL-PAGE-1 — a volunteer page, built like a giving page. Not under
+              /volunteer: those paths are the API's server-rendered pages. */}
+          <Route path="/volunteer-page/:orgSlug/:pageSlug" element={<VolunteerPage />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />

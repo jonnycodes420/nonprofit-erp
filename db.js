@@ -7134,6 +7134,35 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_org ON volunteer_applications (org_id, status, submitted_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_apps_person ON volunteer_applications (org_id, person_id) WHERE person_id IS NOT NULL`);
+
+  // ── VOL-PAGE-1 · THE VOLUNTEER PAGE IS A PAGE LIKE A GIVING PAGE ─────────
+  // One table of public pages, so one editor, one list, one search and one
+  // embed. `page_kind` says which surface of the widget registry it uses;
+  // every read that means "a page that takes gifts" filters on 'give'.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS page_kind TEXT NOT NULL DEFAULT 'give'`);
+  // What a role card shows, typed once on the role and never on the page.
+  await pool.query(`ALTER TABLE volunteer_opportunities ADD COLUMN IF NOT EXISTS commitment TEXT`);
+  await pool.query(`ALTER TABLE volunteer_opportunities ADD COLUMN IF NOT EXISTS skills TEXT`);
+  // Each sign-up through a volunteer page: who, what they told us, and the
+  // shift booking it made (none for "tell me when there is something").
+  // This is the row the page's Sign-ups figure opens.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_page_signups (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      page_id TEXT NOT NULL REFERENCES giving_pages(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      signup_id TEXT REFERENCES volunteer_signups(id) ON DELETE SET NULL,
+      group_id TEXT REFERENCES volunteer_groups(id) ON DELETE SET NULL,
+      group_size INTEGER,
+      availability TEXT,
+      interests JSONB NOT NULL DEFAULT '[]'::jsonb,
+      answers JSONB NOT NULL DEFAULT '[]'::jsonb,
+      matched BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_page_signups ON volunteer_page_signups (org_id, page_id, created_at DESC)`);
   // FIX-24 Part 1: the volunteer record made by staff (or the Agent) from a
   // person already on file: an APPROVED application with how many hours a week
   // they can give and the roles they will do. `via` says who made it: 'page'

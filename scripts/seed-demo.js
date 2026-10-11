@@ -3399,6 +3399,95 @@ async function main() {
     console.log(`[seed] email: ${r.photos} photos, ${r.videos} videos, ${r.templates} templates`);
   }
 
+  // ── VOL-PAGE-1 · "VOLUNTEER WITH HARBORLIGHT", BUILT LIKE A GIVING PAGE ──
+  // A published volunteer page (a giving_pages row of kind volunteer) on the
+  // org's brand, with the media library's photos and one video, the three
+  // roles (now with what each asks of you), the upcoming shifts the schedule
+  // above already holds, and five people who signed up through it: two who
+  // already give (matched to their own record, never a second one) and three
+  // who never have, who land in "Volunteers who have never given".
+  {
+    console.log("[seed] the volunteer page…");
+    const ROLE_WORDS = {
+      vo_b72_shore: ["Two hours, most Saturdays, as often as suits you", "None. Gloves, bags and a team lead are waiting for you"],
+      vo_b72_tutor: ["One hour a week, the same afternoon, for a school term", "Patience, and a background check before your first session"],
+      vo_b72_gala:  ["One evening a year, about five hours", "A warm welcome at the door; lifting a few chairs"],
+    };
+    for (const [id, [commitment, skills]] of Object.entries(ROLE_WORDS)) {
+      await q(`UPDATE volunteer_opportunities SET commitment=$1, skills=$2 WHERE id=$3 AND org_id=$4`, [commitment, skills, id, ORG]);
+    }
+    const photos = await q(`SELECT id, alt, '/portal-assets/' || asset_id AS url FROM media_items WHERE org_id=$1 AND kind='photo' ORDER BY id`, [ORG]);
+    const photo = n => photos.find(p => p.id === `med_b72_p${String(n).padStart(2, "0")}`) || photos[0];
+    const [video] = await q(`SELECT provider, video_id FROM media_items WHERE org_id=$1 AND kind='video' ORDER BY id LIMIT 1`, [ORG]);
+    const W = (n, w) => ({ id: `wid_7a${String(n).padStart(6, "0")}`, ...w });
+    const hero = photo(7), g = [photo(6), photo(8), photo(10), photo(11)];   // the dock, then four volunteer photos
+    const widgets = [
+      W(1, { type: "hero", heading: "Volunteer with Harborlight", sub: "Give a Saturday morning, an hour a week or one evening a year. Every shift is with people who will be glad you came.",
+             image: hero.url, alt: hero.alt, imageCrop: null, size: "tall" }),
+      W(2, { type: "richtext", blocks: [{ type: "p", text: "Harborlight runs on volunteers: the Saturday crew who keep Pier 4 clean, the tutors who sit with the same young person every week, and the gala crew who make one night a year feel effortless. Pick what suits you below." }] }),
+      W(3, { type: "opportunities", heading: "Ways to help", opportunityIds: [] }),
+      W(4, { type: "volimpact", heading: "What our volunteers did this year" }),
+      W(5, { type: "gallery", images: g.map(p => p.url) }),
+      W(6, { type: "video", provider: video ? video.provider : "youtube", videoId: video ? video.video_id : "aqz-KE-bpKQ", caption: "A Saturday on the harbor" }),
+      W(7, { type: "volquote", text: "", name: "", permission: false }),
+      W(8, { type: "shiftpicker", heading: "Upcoming shifts", opportunityIds: [] }),
+      W(9, { type: "volsignup", heading: "Sign up to help", askPhone: true, askAvailability: true, askInterests: true,
+             questions: ["Is there anything we should know to make the day work for you?"] }),
+      W(10, { type: "groupsignup", heading: "Bringing a group?", text: "Churches, schools and companies are welcome. Tell us about your group and we will be in touch to plan the day together." }),
+      W(11, { type: "volwaiver", heading: "Before your first shift" }),
+    ];
+    const PAGE = "gp_b72vol1";
+    await q(`INSERT INTO giving_pages (id,org_id,slug,title,story,image_url,status,page_kind,draft,published,draft_updated_at,published_at,created_by,created_by_name)
+             VALUES ($1,$2,'volunteer','Volunteer with Harborlight','','','active','volunteer',$3,$3,NOW(),NOW(),'u_b72demo','Dana Reyes')`,
+      [PAGE, ORG, JSON.stringify(widgets)]);
+    // Two weeks of views, counted the way every page counts them.
+    for (let d = 13; d >= 0; d--) {
+      const views = [9, 14, 11, 6, 18, 22, 7, 12, 16, 9, 25, 19, 13, 8][d];
+      await q(`INSERT INTO form_events (id,org_id,form_id,day,views) VALUES ($1,$2,$3,$4,$5)`, [`fe_b72vol_${d}`, ORG, PAGE, dAdd(TODAY, -d), views]);
+    }
+    // Five sign-ups through the page, onto upcoming published shifts with room.
+    const open = await q(
+      `SELECT r.id AS role_id, r.slot_id, s.date, COALESCE(s.name, o.name) AS shift, r.name AS role
+         FROM volunteer_slot_roles r JOIN volunteer_slots s ON s.id = r.slot_id JOIN volunteer_opportunities o ON o.id = s.opportunity_id
+        WHERE s.org_id=$1 AND s.date > $2 AND s.published IS NOT FALSE AND s.cancelled_at IS NULL
+          AND r.needed > (SELECT COUNT(*) FROM volunteer_signups su WHERE su.role_id = r.id AND su.status IN ('confirmed','completed'))
+        ORDER BY s.date, r.sort LIMIT 5`, [ORG, TODAY]);
+    const givers = await q(`SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND COALESCE(kind,'person')='person'
+                              AND gift_count > 0 AND NOT (person_types @> '["volunteer"]'::jsonb) AND email IS NOT NULL ORDER BY total_giving DESC, id OFFSET 40 LIMIT 2`, [ORG]);
+    const NEWCOMERS = [["Wilhelmina Thornquist", "Saturdays, most months"], ["Caspian Holloway-Reed", "Tuesday afternoons in term time"], ["Ottoline Fairbrass", "Weekends"]];
+    const people = [...givers.map(x => ({ id: x.id, name: x.name, matched: true, availability: "Weekends" }))];
+    for (const [k, [name, availability]] of NEWCOMERS.entries()) {
+      if (!takeName(name)) throw new Error(`[seed] volunteer page: "${name}" is already somebody in Harborlight`);
+      const id = `d_b72_vp${k + 1}`;
+      await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,'prospect','active','[]','["volunteer"]'::jsonb,'system:volunteer-page','The volunteer, from the volunteer page')`,
+        [id, ORG, name, `${name.toLowerCase().replace(/[^a-z]+/g, ".")}@example.org`]);
+      people.push({ id, name, matched: false, availability });
+    }
+    for (const [k, p] of people.entries()) {
+      const slot = open[k % Math.max(1, open.length)];
+      const when = dAdd(TODAY, -(k * 2 + 1));
+      if (p.matched) await q(`UPDATE donors SET person_types = COALESCE(person_types,'["donor"]'::jsonb) || '["volunteer"]'::jsonb WHERE id=$1 AND org_id=$2`, [p.id, ORG]);
+      let suId = null;
+      if (slot) {
+        suId = `vsu_b72vp${k + 1}`;
+        await q(`INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,status,source,note,role_id,created_by,created_by_name,created_at)
+                 VALUES ($1,$2,$3,$4,'confirmed','public',$5,$6,'system:volunteer-page','The volunteer, from the volunteer page',$7::date)`,
+          [suId, ORG, slot.slot_id, p.id, p.availability, slot.role_id, when]);
+      }
+      await q(`INSERT INTO volunteer_page_signups (id,org_id,page_id,person_id,signup_id,availability,interests,answers,matched,created_by,created_by_name,created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'[]'::jsonb,$8,'system:volunteer-page','The volunteer, from the volunteer page',$9::date)`,
+        [`vps_b72_${k + 1}`, ORG, PAGE, p.id, suId, p.availability, JSON.stringify(k % 2 ? ["Tutoring"] : ["Harbor clean-up"]), p.matched, when]);
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+               VALUES ($1,$2,$3,'note',$4,$5,'system:volunteer-page','The volunteer, from the volunteer page',$6)`,
+        [`int_b72_vp${k + 1}`, ORG, p.id,
+         `Signed up on the volunteer page "Volunteer with Harborlight"${slot ? ` for ${slot.shift} (${slot.role}), ${slot.date}` : ", asking to hear about the next shift"}.\nAvailability: ${p.availability}`,
+         when, JSON.stringify({ volunteerPageId: PAGE, volunteerPageSignupId: `vps_b72_${k + 1}` })]);
+    }
+    console.log(`[seed] volunteer page: published, ${open.length} open places used, ${people.length} sign-ups (${givers.length} matched to givers)`);
+  }
+
+
   // WIRE-1 addendum · THE OLDER GIFTS HAVE BEEN THANKED. Four years of gifts
   // all "Not thanked yet" is no organisation anyone would believe. Every gift
   // more than 30 days old is marked thanked by letter a few days after it came

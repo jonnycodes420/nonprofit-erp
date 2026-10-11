@@ -81,7 +81,7 @@ async function buildEmailContext(orgId) {
   const events = await query(
     `SELECT id, name, date, public_slug FROM events WHERE org_id=? ORDER BY date DESC LIMIT 500`, [orgId]);
   const pages = await query(
-    `SELECT id, title, slug, image_url FROM giving_pages WHERE org_id=? ORDER BY created_at DESC LIMIT 500`, [orgId]);
+    `SELECT id, title, slug, image_url FROM giving_pages WHERE org_id=? AND COALESCE(page_kind,'give') = 'give' ORDER BY created_at DESC LIMIT 500`, [orgId]);
   const evMap = new Map(events.map(e => [e.id, e]));
   const gpMap = new Map(pages.map(p => [p.id, p]));
   const slug = org && org.org_slug;

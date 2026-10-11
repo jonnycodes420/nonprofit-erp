@@ -67,6 +67,8 @@ const SECTION_BY_KEY = {
     thanks_first: "thanks", thanks_renewal: "thanks", thanks_monthly: "thanks", thanks_major: "thanks",
     thanks_memorial: "thanks", receipt: "thanks", year_end: "thanks", lapsed: "appeals",
     event_followup: "events", volunteer_thanks: "events",
+    // VOL-PAGE-1 — the volunteer emails, on the same editor and brand.
+    volunteer_confirm: "events", volunteer_reminder: "events", volunteer_miss_you: "events", volunteer_group_leader: "events",
   },
   campaign: {
     appeal: "appeals", monthly_appeal: "appeals", year_end: "appeals", newsletter: "appeals", sponsor_update: "appeals",

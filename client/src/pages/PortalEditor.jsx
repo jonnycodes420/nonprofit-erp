@@ -27,6 +27,7 @@ import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "../components/ConfirmDialog";
 import MediaPicker from "../components/MediaPicker";
+import { VolunteerProvider } from "../components/VolunteerBlocks";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -117,6 +118,7 @@ export default function PortalEditor() {
   const [funds, setFunds] = useState([]);
   const [camps, setCamps] = useState([]);
   const [impactUpdates, setImpactUpdates] = useState([]); // the org's REAL published updates (BUILD-55)
+  const [volData, setVolData] = useState(null);       // VOL-PAGE-1: the programme's live roles, shifts and numbers
   const [device, setDevice] = useState("phone");     // §4: phone DEFAULT
   const [mode, setMode] = useState("page");           // "page" (widgets) | "design" (theme)
   // BUILD-95 §5B — which surface this editor is arranging. ONE editor; the
@@ -126,7 +128,10 @@ export default function PortalEditor() {
   // identical (GET base · PUT base/draft · POST base/publish · base/revert),
   // so the surface is a base path and a filter, not a second editor.
   const givingPageId = new URLSearchParams(window.location.search).get("page") || "";
-  const surface = givingPageId ? "give" : "portal";
+  // VOL-PAGE-1: a giving_pages row may be a volunteer page; the server says
+  // which surface it is, and with it which widgets the palette may offer.
+  const surface = givingPageId ? (meta?.surface || "give") : "portal";
+  const isVolunteer = surface === "volunteer";
   const apiBase = givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
   const [formPosition, setFormPosition] = useState("top");
   const [libOpen, setLibOpen] = useState(false);      // widget library — collapsed by default (BUILD-55)
@@ -145,7 +150,13 @@ export default function PortalEditor() {
   const applyPs = useCallback((next) => { psRef.current = next; setPs(next); }, []);
 
   useEffect(() => {
-    apiFetch(apiBase).then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); if (d.formPosition) setFormPosition(d.formPosition); }).catch(e => setErr(errorMessage(e)));
+    apiFetch(apiBase).then(d => {
+      setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); if (d.formPosition) setFormPosition(d.formPosition);
+      // The preview draws the real programme (org content, never a person's data).
+      if (d.surface === "volunteer" && givingPageId) {
+        apiFetch(`/giving-pages/${givingPageId}/volunteer-data`).then(setVolData).catch(() => setVolData({}));
+      }
+    }).catch(e => setErr(errorMessage(e)));
     apiFetch("/portal-settings").then(d => { psRef.current = d; setPs(d); }).catch(() => {});
     apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => {});
     apiFetch("/fundraising/campaigns").then(c => setCamps(Array.isArray(c) ? c : [])).catch(() => {});
@@ -261,7 +272,7 @@ export default function PortalEditor() {
 
   const publish = async () => {
     if (publishing) return;
-    if (!(await askConfirm({ title: "Publish this page?", body: "Donors will see it immediately.", yes: "Publish" }))) return;
+    if (!(await askConfirm({ title: "Publish this page?", body: isVolunteer ? "Anyone with the link will see it immediately." : "Donors will see it immediately.", yes: "Publish" }))) return;
     setPublishing(true); setErr("");
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
@@ -362,7 +373,7 @@ export default function PortalEditor() {
       {(ps.logo_data || ps.logo_url) && (
         <img src={ps.logo_data || resolveAssetUrl(ps.logo_url)} alt="" style={{ height: 28, maxWidth: 90, objectFit: "contain" }} />
       )}
-      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface === "give" ? (meta?.pageTitle || "Your giving page") : (ps.display_name || "Your portal")}</div>
+      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface !== "portal" ? (meta?.pageTitle || (isVolunteer ? "Your volunteer page" : "Your giving page")) : (ps.display_name || "Your portal")}</div>
     </div>
   );
   // BUILD-95 §5B — the ONE control a giving page adds. The form is not a
@@ -395,7 +406,7 @@ export default function PortalEditor() {
   const pageBody = widgets.length === 0 ? (
     <div style={{ padding: "10px 0 30px" }}>
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Start with a layout</div>
-      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point, everything stays editable, and nothing is visible to donors until you publish.</div>
+      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point, everything stays editable, and nothing is visible to {isVolunteer ? "anyone" : "donors"} until you publish.</div>
       {(meta?.starters || []).map(s => (
         <button key={s.key} onClick={() => applyStarter(s.key)}
           style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.hair, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
@@ -406,8 +417,16 @@ export default function PortalEditor() {
   ) : (
     <>
       {formPosition === "top" && formBlock}
-      <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx}
-        decorate={mode === "page" ? decorateWidget : undefined} />
+      {isVolunteer ? (
+        <VolunteerProvider data={volData || {}} orgSlug={ps.org_slug} pageSlug={meta?.pageSlug} preview
+          hasGroup={widgets.some(w => w.type === "groupsignup")}>
+          <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={{ ...publicPreviewCtx, volData: volData || {} }}
+            decorate={mode === "page" ? decorateWidget : undefined} />
+        </VolunteerProvider>
+      ) : (
+        <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx}
+          decorate={mode === "page" ? decorateWidget : undefined} />
+      )}
       {formPosition === "bottom" && formBlock}
     </>
   );
@@ -428,8 +447,8 @@ export default function PortalEditor() {
       {/* ── Top chrome ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
         <a href="/dashboard" style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>← Steward</a>
-        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{surface === "give" ? "Giving page" : "Portal editor"}</span>
-        {surface === "give"
+        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : "Portal editor"}</span>
+        {surface !== "portal"
           ? <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>{meta?.pageTitle || "Page"}</span>
           : <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>}
         {/* Mode toggle — "Page" edits the widgets; "Design" edits the theme +
@@ -483,7 +502,7 @@ export default function PortalEditor() {
               <div style={{ fontSize: 13, fontWeight: 700 }}>Add a widget</div>
               <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>✕</button>
             </div>
-            {widgetTypesHere(surface).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
+            {(Array.isArray(meta?.widgetTypes) && givingPageId ? meta.widgetTypes : widgetTypesHere(surface)).filter(t => WIDGET_META[t]).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
               <button key={type} onClick={() => { addWidget(type); setLibOpen(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.editLine, borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>
@@ -510,7 +529,7 @@ export default function PortalEditor() {
                   </div>
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px, how donors arriving from email see it</div>
+              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>{isVolunteer ? "Phone · 390px, how people arriving from a flyer or a text see it" : "Phone · 390px, how donors arriving from email see it"}</div>
             </div>
           </div>
         ) : (
@@ -527,7 +546,7 @@ export default function PortalEditor() {
         {/* ── Options panel — beside the canvas, only while a widget is selected ── */}
         {mode === "page" && selectedWidget && (
           <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
-            <WidgetOptions w={selectedWidget} funds={funds} camps={camps}
+            <WidgetOptions w={selectedWidget} funds={funds} camps={camps} volData={volData}
               onChange={patch => updateWidget(selectedWidget.id, patch)}
               onClose={() => setSelected(null)} />
           </div>
@@ -654,7 +673,7 @@ function DesignRail({ ps, onSet, note }) {
   );
 }
 
-function WidgetOptions({ w, funds, camps, onChange, onClose }) {
+function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
   // EMAIL-1: the media library, shared with emails. `picker` is
   // { kind, onPick } while the picker is open; picking fills the widget with
   // the item's /portal-assets path (and its words where the widget has them),
@@ -837,6 +856,73 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
     case "give": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
       <div style={lbl}>Button label</div><input style={inp} value={w.buttonLabel || ""} onChange={e => onChange({ buttonLabel: e.target.value })} /></>;
+    // ── VOL-PAGE-1 · the volunteer blocks. Roles, shifts and numbers come
+    // from Volunteers; only headings, choices and the org's own words are set here.
+    case "opportunities":
+    case "shiftpicker": {
+      const opps = (volData && volData.opportunities) || [];
+      const ids = Array.isArray(w.opportunityIds) ? w.opportunityIds : [];
+      const toggleOpp = id => onChange({ opportunityIds: ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id] });
+      return <>{head}
+        <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+        <div style={lbl}>Roles to show</div>
+        <div style={{ fontSize: 12, color: E.muted, marginBottom: 6, lineHeight: 1.5 }}>Leave them all unticked to show every public role, including ones you add later.</div>
+        {opps.map(o => (
+          <label key={o.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+            <input type="checkbox" checked={ids.includes(o.id)} onChange={() => toggleOpp(o.id)} /> {o.name}
+          </label>
+        ))}
+        {!opps.length && <div style={{ fontSize: 12, color: E.muted }}>No public volunteer roles yet. Add one in Volunteers.</div>}
+        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
+          {w.type === "shiftpicker" ? "Shifts, open spots and the waiting list come from Volunteers and update themselves." : "Each role's description, time, skills and place come from Volunteers."}
+        </div></>;
+    }
+    case "volsignup": {
+      const qs = Array.isArray(w.questions) ? w.questions.map(q => (typeof q === "string" ? q : (q && (q.label || q.q)) || "")) : [];
+      const setQs = next => onChange({ questions: next });
+      const flag = (k, text) => (
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}>
+          <input type="checkbox" checked={w[k] !== false} onChange={e => onChange({ [k]: e.target.checked })} /> {text}
+        </label>
+      );
+      return <>{head}
+        <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+        <div style={lbl}>Ask for</div>
+        <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Name, email and a shift are always asked.</div>
+        {flag("askPhone", "Phone")}
+        {flag("askAvailability", "When they can usually help")}
+        {flag("askInterests", "Which roles interest them")}
+        <div style={lbl}>Your own questions (up to 5)</div>
+        {qs.map((q, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            <input style={inp} value={q} maxLength={200} placeholder="Do you have a T-shirt size preference?" onChange={e => setQs(qs.map((x, j) => j === i ? e.target.value : x))} />
+            <button aria-label="Remove question" onClick={() => setQs(qs.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: E.terra, cursor: "pointer" }}>✕</button>
+          </div>
+        ))}
+        {qs.length < 5 && <button onClick={() => setQs([...qs, ""])} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, marginTop: 8 }}>+ Add a question</button>}
+        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
+          A sign-up finds the person if they are already in Steward, or adds them, and books the shift they chose.
+        </div></>;
+    }
+    case "volwaiver":
+    case "volimpact":
+    case "groupsignup": return <>{head}
+      <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
+      {w.type === "groupsignup" && <><div style={lbl}>Text</div><textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} onChange={e => onChange({ text: e.target.value })} /></>}
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
+        {w.type === "volwaiver" ? "Which roles ask for a waiver or a background check comes from each role in Volunteers."
+          : w.type === "volimpact" ? "Hours served this year and the volunteer roster are counted from your records when the page is opened, never typed in."
+          : "Adds a group option to the sign-up form: the group's name, kind, size and the leader's phone."}
+      </div></>;
+    case "volquote": return <>{head}
+      <div style={lbl}>Their words</div>
+      <textarea style={{ ...inp, resize: "vertical" }} rows={3} value={w.text || ""} maxLength={500} placeholder="Add a quote from one of your volunteers" onChange={e => onChange({ text: e.target.value })} />
+      <div style={lbl}>Their name</div><input style={inp} value={w.name || ""} maxLength={120} onChange={e => onChange({ name: e.target.value })} />
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, marginTop: 10, cursor: "pointer", lineHeight: 1.5 }}>
+        <input type="checkbox" checked={w.permission === true} onChange={e => onChange({ permission: e.target.checked })} style={{ marginTop: 3 }} />
+        This volunteer said we may share these words with their name.
+      </label>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 8, lineHeight: 1.5 }}>The quote shows on the page only with this box ticked.</div></>;
     case "mygiving": return <>{head}
       <div style={{ fontSize: 12.5, color: E.muted, lineHeight: 1.6 }}>
         Signed-in donors see their own giving history, recurring gifts, and receipts here.

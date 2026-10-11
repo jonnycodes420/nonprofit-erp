@@ -18,6 +18,7 @@ const express = require("express");
 const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition of a winner
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
 const { getAssetMeta } = require("../assetStore");
+const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
 
 const routers = {
   r0: express.Router(),
@@ -1564,7 +1565,18 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
   // one definition, grants awarded toward it included). The list shows the
   // sources' values, so the number and its rows are one computation.
   const FS = require("../figureSources");
+  const [orgRow] = await query("SELECT org_slug FROM orgs WHERE id=?", [req.user.orgId]);
   for (const r of rows) {
+    // VOL-PAGE-1: a volunteer page shows its views, sign-ups and shifts
+    // filled, each opening its rows, where a giving page shows money.
+    if (r.page_kind === VP.KIND) {
+      r.public_url = `/volunteer-page/${orgRow && orgRow.org_slug}/${r.slug}`;
+      for (const [k, key] of [["vol_views", "volpage-views"], ["vol_signups", "volpage-signups"], ["vol_shifts_filled", "volpage-shifts"]]) {
+        r[k + "_source"] = { key, params: { vpage: r.id } };
+        r[k] = (await FS.figureValue(req.user.orgId, r[k + "_source"])).value;
+      }
+      continue;
+    }
     r.raised_source = { key: "page-raised", params: { page: r.id } };
     r.raised_amount = (await FS.figureValue(req.user.orgId, r.raised_source)).value;
     if (r.campaign_id) {
@@ -1618,6 +1630,18 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const base = slugifyGivingPage(slug || title);
   const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
   const id = "gp_" + uuid().slice(0, 8);
+  // VOL-PAGE-1: a volunteer page is the same row, born with its template's
+  // blocks as its draft (through the one validator) and no gift fields.
+  if (req.body.page_kind === VP.KIND) {
+    const st = VP.STARTERS[req.body.template] || VP.STARTERS.ongoing;
+    const v = await validateWidgets(st.widgets, req.user.orgId);
+    if (v.error) return res.status(400).json({ error: v.error });
+    await run(`INSERT INTO giving_pages (id, org_id, slug, title, story, image_url, status, page_kind, draft, draft_updated_at, created_by, created_by_name)
+               VALUES (?,?,?,?,'','','active',?,?,NOW(),?,?)`,
+      [id, req.user.orgId, finalSlug, title.trim(), VP.KIND, JSON.stringify(v.widgets), actor(req).id, actor(req).name]);
+    const [row] = await query("SELECT * FROM giving_pages WHERE id=?", [id]);
+    return res.status(201).json(row);
+  }
   await run(
     `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, p2p_requires_approval, ends_on, created_by, created_by_name)
      VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?::date,?,?)`,
@@ -1729,6 +1753,10 @@ const GIVE_STARTERS = {
     ],
   },
 };
+
+// VOL-PAGE-1: which registry surface and which templates a page uses.
+const surfaceOf = pg => (pg && pg.page_kind === VP.KIND ? VP.KIND : "give");
+const startersOf = pg => (surfaceOf(pg) === VP.KIND ? VP.STARTERS : GIVE_STARTERS);
 
 const givingPageOr404 = async (id, orgId) => {
   const [p] = await query(`SELECT * FROM giving_pages WHERE id = ? AND org_id = ?`, [id, orgId]);
@@ -2078,6 +2106,13 @@ app.get("/giving-pages/:id/embed", requireAuth, requireAdmin, wrap(async (req, r
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
   const base = publicAppUrl();
+  if (pg.page_kind === VP.KIND) {
+    // A volunteer page embeds as itself: the form posts to Steward, never to the site it sits on.
+    const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [req.user.orgId]);
+    const url = `${base}/volunteer-page/${o.org_slug}/${pg.slug}`;
+    return res.json({ pageId: pg.id, status: pg.status, url, previewUrl: url,
+      iframe: `<iframe src="${url}" width="100%" height="1100" style="border:0" title="Volunteer sign-up" loading="lazy"></iframe>` });
+  }
   res.json({
     pageId: pg.id, status: pg.status,
     // ONE LINE, which is the whole promise of the product's first page.
@@ -2217,9 +2252,11 @@ app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, re
     formPosition: normalizeFormPosition(pg.form_position) || DEFAULT_FORM_POSITION,
     // So the editor can name what she is arranging rather than saying "portal".
     pageTitle: pg.title, pageSlug: pg.slug,
+    // VOL-PAGE-1: the page's kind picks its surface, its palette and its templates.
+    pageKind: surfaceOf(pg), surface: surfaceOf(pg), status: pg.status,
     // The palette the editor may offer for THIS surface, from the one registry.
-    widgetTypes: typesForSurface("give"),
-    starters: Object.entries(GIVE_STARTERS).map(([key, st]) => ({ key, label: st.label })),
+    widgetTypes: typesForSurface(surfaceOf(pg)),
+    starters: Object.entries(startersOf(pg)).map(([key, st]) => ({ key, label: st.label })),
   });
 }));
 
@@ -2233,10 +2270,10 @@ app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAcc
   // THE SURFACE IS A FILTER AT BOTH ENDS. The palette offers what belongs here
   // and the server REFUSES the rest — a hand-rolled request cannot put My
   // Giving on a page a stranger opens from a flyer.
-  const allowed = new Set(typesForSurface("give"));
+  const allowed = new Set(typesForSurface(surfaceOf(pg)));
   const stray = v.widgets.find(w => !allowed.has(w.type));
   if (stray) return res.status(400).json({ error: "wrong_surface",
-    message: `A "${stray.type}" widget does not belong on a giving page.` });
+    message: `A "${stray.type}" widget does not belong on a ${surfaceOf(pg) === VP.KIND ? "volunteer" : "giving"} page.` });
 
   const pos = normalizeFormPosition(req.body?.formPosition ?? pg.form_position);
   await run(`UPDATE giving_pages SET draft = ?, draft_updated_at = NOW(), form_position = ?, updated_at = NOW()
@@ -2251,7 +2288,7 @@ app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAcc
 app.post("/giving-pages/:id/page/starter", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
-  const st = GIVE_STARTERS[req.body?.key];
+  const st = startersOf(pg)[req.body?.key];
   if (!st) return res.status(400).json({ error: "unknown_starter" });
   // Through the SAME validator every other draft goes through — a starter is
   // not a privileged path into the page.
@@ -2988,7 +3025,7 @@ const donateHandler = async (req, res) => {
   let pageTitle = "";
   let pageCampaignId = null;
   if (givingPageId) {
-    const pageRow = await query("SELECT slug, title, campaign_id FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [givingPageId, org.id]);
+    const pageRow = await query(`SELECT slug, title, campaign_id FROM giving_pages WHERE id=? AND org_id=? AND status='active' AND ${VP.GIVE_KIND_SQL()}`, [givingPageId, org.id]);
     if (!pageRow.length) return res.status(400).json({ error: "This giving page is no longer available." });
     givingPageSlug = pageRow[0].slug;
     pageTitle = pageRow[0].title;
@@ -3367,7 +3404,7 @@ app.post("/give/:orgSlug/started", donateLimiter, wrap(async (req, res) => {
   if (!START_TOKEN_RE.test(String(b.startToken || "")) || !EMAIL_RE.test(String(b.email || "").trim())) return res.status(400).json({ error: "bad_request" });
   let formName = "Giving page", formPath = `/give/${req.params.orgSlug}`, pageId = null;
   if (b.givingPageId) {
-    const [pg] = await query("SELECT id, slug, title FROM giving_pages WHERE id=? AND org_id=? AND status='active'", [String(b.givingPageId), org.id]);
+    const [pg] = await query(`SELECT id, slug, title FROM giving_pages WHERE id=? AND org_id=? AND status='active' AND ${VP.GIVE_KIND_SQL()}`, [String(b.givingPageId), org.id]);
     if (!pg) return res.status(400).json({ error: "bad_request" });
     pageId = pg.id; formName = pg.title || formName; formPath = `/give/${req.params.orgSlug}/${pg.slug}`;
   }
@@ -6348,6 +6385,36 @@ async function validateWidget(raw, orgId) {
       case "give":
         w.heading = wStr(raw.heading, 120);
         w.buttonLabel = wStr(raw.buttonLabel, 40) || "Give";
+        break;
+      // VOL-PAGE-1 · the volunteer blocks. Places, numbers and roles are read
+      // when the page opens; a block stores only which roles and its words.
+      case "opportunities":
+      case "shiftpicker": {
+        w.heading = wStr(raw.heading, 120);
+        const ids = Array.isArray(raw.opportunityIds) ? raw.opportunityIds.slice(0, 12) : [];
+        for (const id of ids) { if (!(await orgOwns("volunteer_opportunities", id, orgId))) return { error: "Each role must be one of your own volunteer roles." }; }
+        w.opportunityIds = ids;
+        break;
+      }
+      case "volsignup": {
+        w.heading = wStr(raw.heading, 120);
+        w.askPhone = raw.askPhone !== false; w.askAvailability = !!raw.askAvailability; w.askInterests = !!raw.askInterests;
+        const qs = Array.isArray(raw.questions) ? raw.questions : [];
+        if (qs.length > 5) return { error: "A sign-up form takes up to five of your own questions." };
+        w.questions = qs.map(x => wStr(typeof x === "string" ? x : x && x.label, 200)).filter(Boolean);
+        break;
+      }
+      case "volwaiver":
+      case "volimpact":
+        w.heading = wStr(raw.heading, 120);
+        break;
+      case "volquote":
+        // Shown on the public page only with words, a name and permission.
+        w.text = wStr(raw.text, 500); w.name = wStr(raw.name, 120); w.permission = raw.permission === true;
+        if (w.permission && (!w.text || !w.name)) return { error: "A volunteer quote needs their words and their name." };
+        break;
+      case "groupsignup":
+        w.heading = wStr(raw.heading, 120); w.text = wStr(raw.text, 500);
         break;
       case "mygiving":
         break;      // no fields — renders the signed-in donor's own data,

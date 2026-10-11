@@ -43,6 +43,13 @@ export const MERGE_FIELDS = Object.freeze([
   { key: "monthly_amount",  label: "Their monthly gift",          sample: "$25" },
   { key: "event_name",      label: "Last event they came to",     sample: "Harbor Lights Gala" },
   { key: "volunteer_hours", label: "Volunteer hours this year",   sample: "36" },
+  // VOL-PAGE-1: the shift a volunteer email is about, and the group a leader
+  // signed up. Filled from the sign-up, never typed.
+  { key: "shift_name",      label: "The shift",                   sample: "Saturday studio setup" },
+  { key: "shift_when",      label: "When the shift is",           sample: "Saturday, October 17, 9am to noon" },
+  { key: "shift_where",     label: "Where the shift is",          sample: "12 Wharf Street" },
+  { key: "group_name",      label: "Their group",                 sample: "St. Peter's youth group" },
+  { key: "group_size",      label: "How many in the group",       sample: "12" },
   { key: "org_name",        label: "Organisation name",           sample: "Harborlight Youth Collective" },
   { key: "signature",       label: "Signature block",             sample: "Dana Reyes\nExecutive Director" },
   { key: "org_address",     label: "Organisation address",        sample: "12 Wharf Street, Salem, MA 01970" },
@@ -84,6 +91,20 @@ export const TEMPLATE_KINDS = Object.freeze([
   { kind: "volunteer_thanks", label: "Volunteer thank-you", channel: "email",
     subject: "Thank you for your time",
     body: "Dear {{first_name}},\n\nThank you for the {{volunteer_hours}} hours you have given {{org_name}} this year. Time is the hardest thing to give, and you gave it.\n\nWith thanks,\n{{signature}}" },
+  // VOL-PAGE-1 · THE OTHER VOLUNTEER EMAILS. Each is a draft a person reviews
+  // and sends; the reminder is the words VOL-1's day-before draft now uses.
+  { kind: "volunteer_confirm", label: "Volunteer shift confirmation", channel: "email",
+    subject: "You are signed up: {{shift_name}}",
+    body: "Dear {{first_name}},\n\nThank you for signing up to help with {{org_name}}. You are on {{shift_name}}, {{shift_when}}.\n\nWhere: {{shift_where}}.\n\nIf anything changes, reply to this and we will sort it out.\n\nWith thanks,\n{{signature}}" },
+  { kind: "volunteer_reminder", label: "Volunteer reminder, the day before", channel: "email",
+    subject: "Tomorrow: {{shift_name}}",
+    body: "Dear {{first_name}},\n\nA reminder that you are on {{shift_name}} tomorrow, {{shift_when}}.\n\nWhere: {{shift_where}}.\n\nIf you cannot make it, reply to this and we will find somebody.\n\nThank you,\n{{signature}}" },
+  { kind: "volunteer_miss_you", label: "Volunteer: we miss you", channel: "email",
+    subject: "We miss you, {{first_name}}",
+    body: "Dear {{first_name}},\n\nIt has been a few months since your last shift with {{org_name}}, and we have missed you. There are new dates coming up, and you would be very welcome back whenever it suits you.\n\nWith thanks,\n{{signature}}" },
+  { kind: "volunteer_group_leader", label: "Volunteer group leader confirmation", channel: "email",
+    subject: "Your group is signed up: {{group_name}}",
+    body: "Dear {{first_name}},\n\nThank you for bringing {{group_name}} to {{org_name}}. We have you down for {{group_size}} people on {{shift_name}}, {{shift_when}}.\n\nWe will be in touch to plan the day together. If your numbers change, reply to this.\n\nWith thanks,\n{{signature}}" },
 ]);
 export const KIND_KEYS = TEMPLATE_KINDS.map(t => t.kind);
 export const kindDef = k => TEMPLATE_KINDS.find(t => t.kind === k) || null;

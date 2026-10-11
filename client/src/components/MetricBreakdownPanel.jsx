@@ -32,7 +32,7 @@ import { donorHref, rowClick } from "../lib/appUrls";
 // the Dashboard's root retained a `transform` from `.fade-in`'s fill-mode,
 // which made it the containing block for every position:fixed descendant and
 // dropped this panel at the vertical middle of the whole tall page.
-const UNITS = { months: "months", days: "days", points: "points", hours: "hours" };
+const UNITS = { months: "months", days: "days", points: "points", hours: "hours", views: "views" };
 // ENGAGE-1: points carry up to two decimals (a touch fades with age); months
 // and days are whole.
 // REPORTS-3: so do HOURS. A volunteer shift is recorded to the quarter hour,

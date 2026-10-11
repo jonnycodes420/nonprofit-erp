@@ -1051,7 +1051,41 @@ function PagesView({ pages, orgSlug, onNavigate }) {
           const raisedSource = linked ? p.campaign_raised_source : p.raised_source;   // REPORTS-4
           const goal = linked ? (p.campaign_goal != null ? parseFloat(p.campaign_goal) : null) : (p.goal_amount != null ? parseFloat(p.goal_amount) : null);
           const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
-          const url = orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "";
+          const isVol = p.page_kind === "volunteer";
+          const url = isVol ? (p.public_url ? `${window.location.origin}${p.public_url}` : "")
+            : (orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "");
+          // VOL-PAGE-1 — a volunteer page sits in the same list, and its three
+          // numbers open the rows behind them like every other figure here.
+          if (isVol) return (
+            <div key={p.id} data-testid="volunteer-page-card" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Volunteer page</span>
+                {!p.published_at && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Not published yet</span>}
+              </div>
+              <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
+                {[["vol_signups", "vol_signups_source", "Sign-ups"], ["vol_shifts_filled", "vol_shifts_filled_source", "Shifts filled"], ["vol_views", "vol_views_source", "Views"]].map(([k, sk, label]) => (
+                  <div key={k}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>
+                      {p[sk] ? <Figure variant="inline" kind="count" value={Number(p[k] || 0)} label={`${label} · ${p.title}`} source={p[sk]} /> : Number(p[k] || 0).toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <a href={`/portal-editor?page=${p.id}`} style={{ fontSize: 12, color: T.white, background: T.green, fontWeight: 700, textDecoration: "none", borderRadius: 8, padding: "6px 12px" }}>Edit the page</a>
+                {url && p.published_at && <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.greenMid, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px" }}>Open page</a>}
+                {url && <button onClick={() => setShareId(shareId === p.id ? null : p.id)} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>QR and embed</button>}
+              </div>
+              {shareId === p.id && url && (
+                <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+                  <QrCodeBlock url={url} filenameBase={`volunteer-page-${p.slug}`} />
+                  <EmbedCodeBlock url={url + "?embed=1"} />
+                </div>
+              )}
+            </div>
+          );
           return (
             <div key={p.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
