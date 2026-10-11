@@ -38,7 +38,7 @@
 //
 // `NEEDS-JONATHAN.md` §6 names the live walk that closes it.
 
-const { firstOf, toCents, toCivilDate, dropNotice } = require("./field.js");
+const { firstOf, toCents, toCivilDate, dropNotice, listSkip } = require("./field.js");
 
 const BASE = "https://api.zeffy.com/api/v1";
 
@@ -196,17 +196,17 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   assertOk(res);
 
   const items = readItems(res.body);
-  const rows = [], drops = {};
+  const rows = [], drops = {}, skipped = [];
   for (const p of items) {
     const out = mapPayment(p);
-    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; continue; }
+    if (out.drop) { drops[out.drop] = (drops[out.drop] || 0) + 1; listSkip(skipped, out); continue; }
     rows.push(out.row);
   }
   const { more, next } = readCursor(res.body);
   const notices = [];
   const n = dropNotice("Zeffy", drops); if (n) notices.push(n);
 
-  return { rows, cursor: more ? String(next) : null, done: !more, notices };
+  return { rows, cursor: more ? String(next) : null, done: !more, notices, skipped };
 }
 
 async function testCredentials({ credentials, http, today, sleep, env = process.env }) {
