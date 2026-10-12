@@ -542,7 +542,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
     try {
       const r = await apiFetch(`/giving-sources/${encodeURIComponent(c.id)}/sync`, { method: "POST", body: "{}" });
       setMsg(r?.giftsCreated != null
-        ? `Checked. ${r.giftsCreated} new ${r.giftsCreated === 1 ? "gift" : "gifts"}.`
+        ? `Checked. ${r.giftsCreated} new ${r.giftsCreated === 1 ? "gift" : "gifts"}.${r.historyNote ? " " + r.historyNote : ""}`
         : "Checked.");
       await load();
     } catch (e) { setMsg(errorMessage(e, "That check did not go through.")); }

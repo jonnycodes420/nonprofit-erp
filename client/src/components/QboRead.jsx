@@ -186,6 +186,7 @@ export default function QboRead({ can, demo }) {
               <div style={{ color: T.ink3 }}>{F[b].label}</div>{fig(b)}</div>))}
         </div>
         <div data-testid="qbo-read-leftout" style={sub}>{view.leftOut} {F.other_account && F.other_account.count > 0 && fig("other_account", "Left out: other accounts")}</div>
+        {view.historyNote && <div data-testid="qbo-read-history-note" style={sub}>{view.historyNote}</div>}
         {(view.byAccount || []).length > 0 && <div style={sub}>By account: {view.byAccount.map(a => `${a.name} (${a.count}, ${money(a.cents)})`).join("; ")}.</div>}
 
         {view.samples.length > 0 && <>

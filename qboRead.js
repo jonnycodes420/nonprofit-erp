@@ -50,7 +50,6 @@ const VENDOR = "quickbooks";
 const DAY_WINDOW = 3;
 const PAGE = 1000;
 const MAX_PAGES = 20;
-const THANK_DAYS = 30;
 const SAMPLE = 10;
 const PROCESSORS = /\b(stripe|paypal|square|givebutter|zeffy)\b/i;
 const BUCKETS = {
@@ -507,7 +506,6 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
   const res = { recorded: 0, cents: 0, waiting: 0, created: 0, refunded: 0, removed: 0, already: 0 };
   const touched = new Set();
   const created = new Map();
-  const thankFrom = addDays(today, -THANK_DAYS);
   for (const l of lines) {
     if (l.bucket === "refund" || l.bucket === "removed") {
       const claimRow = await query(
@@ -560,9 +558,10 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
         importId, readFromVendor: VENDOR, source: VENDOR,
         actorId: who.id, actorName: who.name,
         ledgerDescription: undefined,
-        // A check that came in last week waits for a thank-you like any other.
-        // A year of history read on the first day does not open a year of drafts.
-        thankYou: String(l.txn_date) >= thankFrom,
+        // A check that came in last week waits for a thank-you, and can start a
+        // journey, like any other. A year of history read on the first day
+        // opens no year of drafts and starts nothing (FIX-36, historyGifts.js).
+        history: true, today,
       });
     } catch (e) {
       await run(`DELETE FROM qbo_read_gifts WHERE org_id=? AND line_key=? AND gift_id IS NULL`, [orgId, l.line_key]);
