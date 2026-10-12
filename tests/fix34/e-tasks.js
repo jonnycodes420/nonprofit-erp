@@ -135,7 +135,11 @@ async function run() {
     ok("§3 it has an unsubscribe line", !!link);
     const pref = async () => (await q(`SELECT notify_daily_tasks, notify_thread_nudge FROM users WHERE id='u_f34e'`))[0];
     const auditN = async () => (await q(`SELECT COUNT(*)::int AS n FROM fin_audit_log WHERE org_id=$1`, [ORG]).catch(() => [{ n: -1 }]))[0].n;
-    const a0 = await auditN();
+    // PUSH-1 · the audit row for /nudges/run above is written on the response's
+    // "finish", so on a slow runner it can land after a read taken here. Wait
+    // for the count to hold still before taking the baseline (CI, PR #181).
+    let a0 = await auditN();
+    for (let i = 0; i < 20; i++) { await new Promise(r => setTimeout(r, 150)); const n = await auditN(); if (n === a0) break; a0 = n; }
     const gGet = await fetch(`${BASE}/unsubscribe?token=${link}`);
     const gHead = await fetch(`${BASE}/unsubscribe?token=${link}`, { method: "HEAD" });
     const p1 = await pref();

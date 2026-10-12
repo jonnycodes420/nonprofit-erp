@@ -79,6 +79,9 @@ export function SyncHealth({ h, calendar, onRetry, busy }) {
         {calendar && cell("Meetings found", h.meetingsFound, "health-meetings")}
         {calendar && cell("Dates on your calendar", h.eventsPushed, "health-pushed")}
       </div>
+      {h.instant && <div data-testid="health-instant" style={{ fontSize: 13, color: h.instant.on ? T.ink : T.gold700 }}>
+        {h.instant.sentence}{h.instant.on ? (h.instant.lastNoticeAt ? ` · last notice ${ago(h.instant.lastNoticeAt)}` : " · no changes since it started") : ""}
+      </div>}
       {h.lastError && <div data-testid="health-error" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: T.gold700 }}>
         <span>{h.lastError}</span>
         <button type="button" onClick={onRetry} disabled={busy} style={quiet}>Check again</button>

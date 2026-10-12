@@ -12,7 +12,7 @@
 function mount(ctx) {
 const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
-  deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth,
+  deliverWebhooks, syncMailbox, syncCalendar, pushStewardDates, refreshMailboxSyncHealth, mailboxAccessToken,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue, processAuctionUnpaid, processUnansweredMail,
@@ -409,18 +409,55 @@ if (!backgroundTicksDisabled()) {
 // time; each read is guarded by its own advisory lock (server.js), so a tick
 // that lands while the last one is still reading a connection skips it, and a
 // 429 is honoured by skipping the connection until Retry-After.
-const MAILBOX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+// PUSH-1 · WHEN GOOGLE OR MICROSOFT TELLS STEWARD AT ONCE, THE TICK IS THE
+// SAFETY NET. Mail (or the calendar) whose instant updates are on is read
+// every 30 minutes instead of every 5; the rest exactly as before. If that
+// 30-minute read finds a change no notice announced, instant updates are
+// paused for that connection, the panel says so, and it is read every 5
+// minutes again until a fresh channel is made (at most once an hour).
+// The tick also renews every channel well before it expires (mailboxPush.js).
+const MAILBOX_SYNC_INTERVAL_MS = Number(process.env.MAILBOX_TICK_MS) > 0 && process.env.TEST_MODE === "1" ? Number(process.env.MAILBOX_TICK_MS) : 5 * 60 * 1000;
 const MAILBOX_SYNC_PARALLEL = 4;
+const MP = require("../mailboxPush");
+// A TEST_MODE tick can be held to one org, so push1-instant never reads
+// another suite's leftover connections in a shared shard database.
+const tickOrg = () => (process.env.TEST_MODE === "1" && process.env.MAILBOX_TICK_ORG) || null;
+async function readWithPush(conn, rows, what) {
+  const state = MP.pushState(conn, rows, what);
+  if (!state.configured) {
+    return what === "mail" ? syncMailbox(conn.user_id, conn.org_id, conn.provider) : syncCalendar(conn.user_id, conn.org_id, conn.provider);
+  }
+  const [last] = await query(`SELECT MAX(finished_at) AS t FROM mailbox_sync_runs WHERE user_id=? AND provider=? AND kind=? AND ok`,
+    [conn.user_id, conn.provider, what]);
+  const prevOk = last && last.t;
+  if (!MP.readDue(state, prevOk)) return { skipped: "push_on" };
+  const out = what === "mail" ? await syncMailbox(conn.user_id, conn.org_id, conn.provider) : await syncCalendar(conn.user_id, conn.org_id, conn.provider);
+  if (out && MP.missedNotice(state, out.gatedChange, prevOk)) {
+    console.error(`[push] ${conn.provider} ${what} for ${conn.id}: the safety read found a change no notice announced; instant updates paused`);
+    await MP.pauseRows({ run }, state.rowIds, "stopped");
+  }
+  return out;
+}
 async function syncOneConnection(conn) {
-  await syncMailbox(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[mailbox-sync]", e.message));
-  await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
+  if (MP.config().base) {
+    await MP.ensurePush(conn, { query, run, token: () => mailboxAccessToken(conn, conn.org_id, conn.provider) })
+      .catch(e => console.error("[push] keeping channels:", e.message));
+  }
+  const rows = await query(`SELECT * FROM mailbox_push WHERE connection_id=?`, [conn.id]).catch(() => []);
+  await readWithPush(conn, rows, "mail").catch(e => console.error("[mailbox-sync]", e.message));
+  await readWithPush(conn, rows, "calendar").catch(e => console.error("[calendar-sync]", e.message));
   await pushStewardDates(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-push]", e.message));
 }
 async function syncAllGmail() {
+  // A channel whose connection was disconnected or paused is forgotten: its
+  // notices already read nothing, and the provider lets it lapse.
+  await run(`DELETE FROM mailbox_push p USING mailbox_connections m
+              WHERE m.id = p.connection_id AND (m.status <> 'active' OR m.paused IS TRUE)`).catch(() => {});
   const connections = await query(
-    `SELECT user_id, org_id, provider FROM mailbox_connections
+    `SELECT * FROM mailbox_connections
       WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL
-        AND (retry_after IS NULL OR retry_after <= NOW())`);
+        AND (retry_after IS NULL OR retry_after <= NOW())
+        AND (?::text IS NULL OR org_id = ?::text)`, [tickOrg(), tickOrg()]);
   const queue = connections.slice();
   await Promise.all(Array.from({ length: Math.min(MAILBOX_SYNC_PARALLEL, queue.length) }, async () => {
     while (queue.length) await syncOneConnection(queue.shift());
@@ -446,7 +483,9 @@ if (!backgroundTicksDisabled()) {
 
 // Mail and calendar read on startup (10s delay) then every 5 minutes. The
 // health count is taken at boot too, so /health never says null for a tick.
-if (!backgroundTicksDisabled()) {
+// PUSH-1: a TEST_MODE server given MAILBOX_TICK_MS runs only this tick, that
+// often, so push1-instant can watch the cadence without every other job.
+if (!backgroundTicksDisabled() || (process.env.TEST_MODE === "1" && Number(process.env.MAILBOX_TICK_MS) > 0)) {
   setTimeout(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
   setTimeout(() => syncAllGmail().catch(console.error), 10000);
   setInterval(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);

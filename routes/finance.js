@@ -1129,6 +1129,20 @@ async function mailboxHealth(conn) {
     : failNewer ? lastFail.error : (conn.calendar_granted && conn.calendar_error) || null;
   const since = new Date(conn.created_at || Date.now()).getTime();
   const stale = !conn.paused && (refused || (mailOk ? Date.now() - new Date(mailOk).getTime() > STALE_MS : Date.now() - since > STALE_MS));
+  // PUSH-1 · INSTANT UPDATES, per connection: on (with when the last notice
+  // came), or paused and why, with the cadence the tick is using. Absent when
+  // the server has no instant updates set up, because then nothing changed.
+  const MP = require("../mailboxPush");
+  const pushRows = await query(`SELECT * FROM mailbox_push WHERE connection_id=?`, [conn.id]).catch(() => []);
+  const pMail = MP.pushState(conn, pushRows, "mail"), pCal = MP.pushState(conn, pushRows, "calendar");
+  const parts = [pMail, pCal].filter(p => p.configured);
+  const pAll = !parts.length ? null : {
+    configured: true, on: parts.every(p => p.on),
+    paused: (parts.find(p => p.paused) || {}).paused || null,
+    lastNoticeAt: parts.map(p => p.lastNoticeAt).filter(Boolean).sort().pop() || null,
+  };
+  const instant = pAll ? { on: pAll.on, sentence: MP.instantSentence(pAll, conn.provider), lastNoticeAt: pAll.lastNoticeAt,
+    pollEveryMinutes: pAll.on ? MP.SAFETY_POLL_MS / 60e3 : MP.FALLBACK_POLL_MS / 60e3 } : null;
   const banner = !stale ? null : mailOk
     ? `Steward hasn't read your ${label} since ${clock(mailOk, tz)}. Reconnect`
     : `Steward hasn't been able to read your ${label} yet. Reconnect`;
@@ -1138,8 +1152,8 @@ async function mailboxHealth(conn) {
     meetingsFound: meetings.n || 0, eventsPushed: pushed.n || 0,
     lastError, lastErrorAt: refused ? conn.last_error_at : apisOff.length ? conn.api_checked_at : failNewer ? lastFail.finished_at : null,
     apis: apisOff.map(a => ({ api: a.api, label: a.label, reason: a.reason, sentence: a.sentence })),
-    stale, banner,
-    definition: "From Steward's own record of every read. Messages logged counts emails with people on file that this connection added to their records; meetings found counts calendar events with someone on file.",
+    stale, banner, instant,
+    definition: "From Steward's own record of every read. Messages logged counts emails with people on file that this connection added to their records; meetings found counts calendar events with someone on file. Instant updates means Google or Microsoft tells Steward the moment something changes; Steward still reads on its own every 30 minutes, or every 5 when they are paused.",
   };
 }
 
