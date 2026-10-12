@@ -21,6 +21,7 @@ import { T, Card } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
+import QboRead from "./QboRead";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -265,6 +266,9 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
             onClick={save}>{busy === "save" ? "Saving…" : "Save the mapping"}</button>}
         </div>}
       </div>
+
+      {/* QBO-IN · GIFTS ENTERED IN QUICKBOOKS, read into Steward */}
+      <QboRead can={can} demo={!!d.demo} />
 
       {/* 2 · PENDING */}
       {p && <div data-testid="qbo-pending" style={{ marginTop: 16 }}>

@@ -6456,6 +6456,78 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS deposit_ref TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_deposit ON gifts (org_id, deposited_on, deposit_ref)`);
 
+  // ── QBO-IN · GIFTS ENTERED IN QUICKBOOKS COME INTO STEWARD ───────────────
+  // `read_from_vendor` marks a gift Steward READ from the books ('quickbooks'),
+  // so the send side never posts it back (qboSync.pendingWhere). A read is a
+  // run: its plan lines are kept (the review screen and every number on it
+  // open them), and `qbo_read_gifts` is the once-only key, one row per
+  // QuickBooks line ever recorded (company + transaction + line).
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS read_from_vendor TEXT`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS qbo_read_runs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      realm_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'review',
+      read_from TEXT,
+      automatic BOOLEAN NOT NULL DEFAULT false,
+      summary JSONB,
+      import_id TEXT,
+      saved_at TIMESTAMPTZ,
+      undone_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_qbo_read_runs_org ON qbo_read_runs (org_id, created_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS qbo_read_lines (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      run_id TEXT NOT NULL,
+      line_key TEXT NOT NULL,
+      txn_type TEXT NOT NULL,
+      txn_id TEXT NOT NULL,
+      txn_date TEXT,
+      cents BIGINT NOT NULL DEFAULT 0,
+      account_id TEXT,
+      account_name TEXT,
+      fund_id TEXT,
+      customer_id TEXT,
+      customer_name TEXT,
+      business BOOLEAN NOT NULL DEFAULT false,
+      method TEXT,
+      check_number TEXT,
+      memo TEXT,
+      bucket TEXT NOT NULL,
+      reason TEXT,
+      donor_id TEXT,
+      matched_gift_id TEXT,
+      candidates JSONB,
+      gift_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_qbo_read_lines_run ON qbo_read_lines (org_id, run_id, bucket)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS qbo_read_gifts (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      line_key TEXT NOT NULL,
+      realm_id TEXT NOT NULL,
+      txn_type TEXT NOT NULL,
+      txn_id TEXT NOT NULL,
+      customer_id TEXT,
+      cents BIGINT NOT NULL,
+      gift_id TEXT,
+      run_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'recorded',
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, line_key)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_qbo_read_gifts_txn ON qbo_read_gifts (org_id, realm_id, txn_type, txn_id)`);
+
   // THE CHEQUE NUMBERS ALREADY RECORDED, recovered from the notes the deposit
   // sheet wrote them into. One-shot, by flag. The pattern is the one
   // routes/crm.js writes and nothing else uses, so a note that merely mentions

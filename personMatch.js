@@ -50,4 +50,36 @@ async function findOrCreateGuest(orgId, name, who, q = query) {
   return id;
 }
 
-module.exports = { findPersonId, findOrCreateGuest };
+// QBO-IN · THE SAME ORDER, WITH THE ANSWER "I CANNOT TELL". A read from the
+// books has nobody standing at the door to ask, so where findPersonId says
+// null for two people of one name, this says which two, and a person picks.
+// Email first (the oldest record wins, as above). Then the name, keeping only
+// people whose email does not disagree; if more than one is left, the street
+// line or postcode decides; if it still cannot, the answer is "ambiguous" with
+// the candidates. Nothing is guessed.
+const lc = s => String(s || "").trim().toLowerCase();
+async function matchPerson(orgId, { email, name, line1, postal } = {}, q = query) {
+  const e = lc(email);
+  if (e) {
+    const m = await q(
+      `SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(email))=?
+        ORDER BY created_at ASC NULLS LAST, id LIMIT 1`, [orgId, e]);
+    if (m.length) return { status: "matched", id: m[0].id, by: "email", candidates: [] };
+  }
+  const n = String(name || "").trim();
+  if (!n) return { status: "none", id: null, by: null, candidates: [] };
+  const rows = await q(
+    `SELECT id, name, email, address, zip FROM donors
+      WHERE org_id=? AND deleted_at IS NULL AND LOWER(TRIM(name))=LOWER(?) ORDER BY created_at ASC NULLS LAST, id LIMIT 10`, [orgId, n]);
+  const same = rows.filter(r => !e || !lc(r.email) || lc(r.email) === e);
+  if (!same.length) return { status: "none", id: null, by: null, candidates: [] };
+  if (same.length === 1) return { status: "matched", id: same[0].id, by: "name", candidates: [] };
+  const street = lc(line1), zip = lc(postal).slice(0, 5);
+  const byAddress = (street || zip) ? same.filter(r =>
+    (street && lc(r.address).includes(street)) || (zip && lc(r.zip).slice(0, 5) === zip)) : [];
+  if (byAddress.length === 1) return { status: "matched", id: byAddress[0].id, by: "name and address", candidates: [] };
+  return { status: "ambiguous", id: null, by: null,
+    candidates: same.map(r => ({ id: r.id, name: r.name, email: r.email || null, address: r.address || null })) };
+}
+
+module.exports = { findPersonId, findOrCreateGuest, matchPerson };

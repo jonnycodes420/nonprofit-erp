@@ -90,6 +90,15 @@ if (!backgroundTicksDisabled()) {
     .catch(e => console.error("[qbo-auto-sync]", e.message)), 60 * 60 * 1000);
 }
 
+// QBO-IN: THE AUTOMATIC QUICKBOOKS READ, hourly, only for orgs whose admin
+// turned on "Read new gifts automatically" after a reviewed first save. It
+// reads QuickBooks and writes nothing there.
+if (!backgroundTicksDisabled()) {
+  const runQboAutoRead = () => require("./finance").processQboAutoRead();
+  setInterval(() => recordTick("processQboAutoRead", runQboAutoRead)
+    .catch(e => console.error("[qbo-auto-read]", e.message)), 60 * 60 * 1000);
+}
+
 // CONNECT-2: XERO AUTO-SYNC, the same rule as QuickBooks. Hourly, only for
 // orgs whose admin turned it on, and never while a fund is unmapped.
 if (!backgroundTicksDisabled()) {
