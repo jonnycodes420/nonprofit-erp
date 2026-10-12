@@ -1196,6 +1196,33 @@ const SOURCES = {
       };
     },
   },
+  // QBO-IN · EVERY NUMBER ON THE QUICKBOOKS READ'S REVIEW SCREEN. The rows
+  // are the run's own lines (qboRead.js wrote them when it read), so a count
+  // and the lines behind it are one table. `bucket` "donation" is every line
+  // on a ticked account; `account` narrows to one of them.
+  "qbo-read": {
+    label: "Read from QuickBooks",
+    measure: () => "sum",
+    params: { run: "id:required", bucket: "word", account: "id" },
+    sentence: (p) => p.bucket === "donation"
+      ? "Every line this read found on an income account ticked as a donation account, whatever became of it."
+      : `The lines in this read from QuickBooks that ${String(p.bucket || "any").replace(/_/g, " ")} describes, at the amount on each line.`,
+    sql: (orgId, p) => {
+      const args = [orgId, p.run];
+      let where = "l.org_id = ? AND l.run_id = ?";
+      if (p.bucket === "donation") where += " AND l.bucket IN ('gift','ambiguous','unmatched','already_in_steward','steward_sent','payout','already_read')";
+      else if (p.bucket) { where += " AND l.bucket = ?"; args.push(p.bucket); }
+      if (p.account) { where += " AND l.account_id = ?"; args.push(p.account); }
+      return {
+        sql: `SELECT l.id, 'quickbooks line' AS type, l.donor_id, COALESCE(d.name, l.customer_name, 'No name') AS name, l.txn_date AS date,
+                     ROUND(l.cents::numeric / 100, 2) AS amount,
+                     CONCAT_WS(' · ', l.txn_type || ' ' || l.txn_id, l.account_name, l.reason) AS detail
+                FROM qbo_read_lines l LEFT JOIN donors d ON d.id = l.donor_id AND d.org_id = l.org_id
+               WHERE ${where}`,
+        args,
+      };
+    },
+  },
   "one-gift": {
     label: "The gift",
     measure: () => "sum",

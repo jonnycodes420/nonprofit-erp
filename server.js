@@ -1105,7 +1105,12 @@ async function recordGift(o) {
                 // UPDATE after the fact is a second write path, and the one thing
                 // that must never happen to an attribution is that it lands on
                 // some gifts and not others depending on which door they came in.
-                "utm_source", "utm_medium", "utm_campaign"];
+                "utm_source", "utm_medium", "utm_campaign",
+                // QBO-IN — a gift READ from the organisation's books: the run it
+                // came in on (so the whole read undoes in one step), the cheque
+                // number the bookkeeper typed, and the vendor it was read from,
+                // which is what keeps the send side from posting it back.
+                "import_id", "check_number", "read_from_vendor"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -1122,7 +1127,8 @@ async function recordGift(o) {
                 o.quidProQuoValue != null ? round2(Math.max(0, amount - Number(o.quidProQuoValue))) : null,
                 o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
                 o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
-                o.utmSource || null, o.utmMedium || null, o.utmCampaign || null];
+                o.utmSource || null, o.utmMedium || null, o.utmCampaign || null,
+                o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -11537,7 +11543,8 @@ require("./routes/billing").mount({
   checkActiveDonorBand,
 });
 require("./routes/finance").mount({
-  AGENT_MODEL,   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
+  AGENT_MODEL,
+  recordGift, recalcDonorSummary, recalcPledgePayment,   // QBO-IN — the QuickBooks read   // FIX-12 Part 7b — the after-meeting chips use the Agent engine's model
   // INT-BUILD-1 — the first sync after a connect, and the calendar.
   syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,

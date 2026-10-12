@@ -33,6 +33,8 @@ let sharedComposeTodayMeetings = null;
 // PARITY-2 Part 5: set by mount() to the QuickBooks auto-sync, so the hourly
 // tick runs the same engine the Sync button does.
 let sharedProcessQboAutoSync = null;
+// QBO-IN: set by mount() to the automatic QuickBooks read.
+let sharedProcessQboAutoRead = null;
 // CONNECT-2: the one token seam, published so the giving-source runner
 // (server.js syncSource) renews an OAuth Square token the same way.
 let sharedAccessTokenFor = null;
@@ -49,6 +51,8 @@ const {
   resolveSegmentSpec, filterBySegment, recordUnsubscribe,
   // INT-BUILD-1 — the mailbox and calendar syncs, and the token seam.
   syncMailbox, syncCalendar, pushStewardDates, mailboxAccessToken, closeThreadStepForContact,
+  // QBO-IN — the one gift path and the two recomputes a read and its refunds use.
+  recordGift, recalcDonorSummary, recalcPledgePayment,
 } = ctx;
 let app = routers.r0;
 // FIX-1 E — the payout reconciliation and the money-in sentences (pure, ESM).
@@ -3481,6 +3485,185 @@ sharedProcessQboAutoSync = async function processQboAutoSync(onlyOrgId = null) {
            summary: `QuickBooks auto-sync sent ${sent} and left ${waiting} in Pending.` };
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  QBO-IN · GIFTS ENTERED IN QUICKBOOKS COME INTO STEWARD, COUNTED ONCE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The engine is qboRead.js. It only READS QuickBooks (GETs on the query
+// endpoint, the one accounting scope); every write here is to Steward. The
+// first read always stops at a review; Save records the gifts through
+// recordGift; Undo takes the whole read back. No route takes a row id in its
+// path: a run id travels in the body or the query, and every query is scoped
+// to the caller's org.
+const qboReadMod = () => require("../qboRead");
+const qboReadWho = req => actor(req);
+async function qboReadGate(req, res) {
+  const QS = qboSyncMod();
+  const orgId = req.user.orgId;
+  const org = await qboEnabled(orgId);
+  if (!org || org.qbo_sync_enabled !== true) { qboOff(res); return null; }
+  const c = await qboConnection(orgId);
+  if (!c) { res.status(409).json({ error: "not_connected", sentence: "Connect QuickBooks first, and its gifts can be read here." }); return null; }
+  const demo = org.is_demo_org === true || QS.readMapping(c).demo;
+  return { orgId, c, demo, today: orgToday(await orgTz(orgId)) };
+}
+const QBO_READ_DEMO = "This is the demonstration file's example connection. It reads nothing from QuickBooks; the example below shows what a read looks like.";
+
+// The settings, the last reads, and the run still waiting for review.
+app.get("/qbo/read", requireAuth, wrap(async (req, res) => {
+  const R = qboReadMod();
+  const QS = qboSyncMod();
+  const g = await qboReadGate(req, res); if (!g) return;
+  const st = R.readSettings(g.c, g.today);
+  const sendMap = QS.readMapping(g.c);
+  const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [g.orgId]);
+  const runs = await query(
+    `SELECT id, status, read_from, automatic, summary, import_id, saved_at, undone_at, created_by_name, created_at
+       FROM qbo_read_runs WHERE org_id=? AND realm_id=? ORDER BY created_at DESC LIMIT 10`, [g.orgId, String(g.c.realm_id || "")]);
+  res.json({
+    demo: g.demo, demoSentence: g.demo ? QBO_READ_DEMO : null,
+    from: st.from, accounts: st.accounts, auto: st.auto, firstSavedAt: st.firstSavedAt, otherCompany: st.otherCompany,
+    ready: Object.keys(st.accounts).length > 0,
+    sendFunds: Object.fromEntries(Object.entries(sendMap.funds || {}).filter(([, v]) => v && v.accountId).map(([fid, v]) => [v.accountId, fid])),
+    funds,
+    runs: runs.map(r => ({ id: r.id, status: r.status, from: r.read_from, automatic: r.automatic === true, summary: r.summary,
+      savedAt: r.saved_at, undoneAt: r.undone_at, by: r.created_by_name, at: r.created_at })),
+    definition: "Gifts the bookkeeper entered in QuickBooks, read into Steward: only lines on the income accounts ticked as donation accounts, never anything Steward sent itself or already has from another door. Steward only reads; nothing is written to QuickBooks.",
+  });
+}));
+
+// Which income accounts are donations, which fund each lands on, from when,
+// and whether later reads run on their own.
+app.put("/qbo/read/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const R = qboReadMod();
+  const QS = qboSyncMod();
+  const g = await qboReadGate(req, res); if (!g) return;
+  if (g.demo) return res.status(409).json({ error: "demo", sentence: QBO_READ_DEMO });
+  const b = req.body || {};
+  const prior = R.readSettings(g.c, g.today);
+  if (b.from != null && b.from !== "" && !/^\d{4}-\d{2}-\d{2}$/.test(String(b.from)))
+    return res.status(400).json({ error: "bad_date", sentence: "The date must be written 2025-10-01." });
+  const funds = new Set((await query(`SELECT id FROM fin_funds WHERE org_id=?`, [g.orgId])).map(f => f.id));
+  const sendMap = QS.readMapping(g.c);
+  const accounts = {};
+  const src = b.accounts && typeof b.accounts === "object" ? b.accounts : prior.accounts;
+  for (const [id, v] of Object.entries(src).slice(0, 200)) {
+    if (!v || typeof v !== "object" || !String(id).trim()) continue;
+    const fundId = v.fundId && funds.has(String(v.fundId)) ? String(v.fundId) : R.defaultFundFor(id, sendMap);
+    accounts[String(id).slice(0, 60)] = { name: String(v.name || id).slice(0, 200), fundId: fundId || null };
+  }
+  const auto = b.auto === undefined ? prior.auto : b.auto === true;
+  if (auto && !prior.firstSavedAt)
+    return res.status(409).json({ error: "review_first", sentence: "Run the first read and save it from the review first. After that, new gifts can be read automatically." });
+  if (auto && !Object.keys(accounts).length)
+    return res.status(409).json({ error: "no_accounts", sentence: "Tick at least one donation account first." });
+  const read = { from: b.from ? String(b.from) : prior.from, accounts, auto,
+                 firstSavedAt: prior.firstSavedAt, realmId: g.c.realm_id ? String(g.c.realm_id) : null };
+  await run(`UPDATE bookkeeping_connections
+                SET mapping = jsonb_set(COALESCE(mapping, '{}'::jsonb), '{qbo}', COALESCE(mapping->'qbo', '{}'::jsonb) || jsonb_build_object('read', ?::jsonb)),
+                    updated_at=NOW() WHERE id=? AND org_id=?`, [JSON.stringify(read), g.c.id, g.orgId]);
+  const n = Object.keys(accounts).length;
+  res.json({ ok: true, ...read, sentence: n
+    ? `Saved. ${n} ${n === 1 ? "account counts" : "accounts count"} as donations, read from ${read.from}.${auto ? " New gifts are read automatically." : ""} Nothing was read yet.`
+    : "Saved. No account is ticked, so Steward reads nothing from QuickBooks." });
+}));
+
+// READ: asks QuickBooks (reads only) and writes the plan to Steward's own
+// run tables. No gift is written until somebody presses Save.
+app.post("/qbo/read/preview", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const R = qboReadMod();
+  const g = await qboReadGate(req, res); if (!g) return;
+  if (g.demo) return res.status(409).json({ error: "demo", sentence: QBO_READ_DEMO });
+  if (!g.c.credentials_sealed && process.env.TEST_MODE !== "1")
+    return res.status(409).json({ error: "not_signed_in", sentence: "QuickBooks is not signed in yet, so Steward cannot read it. Connect it again." });
+  const out = await R.planRead({ orgId: g.orgId, conn: g.c, today: g.today, who: qboReadWho(req), tokenFor: qboTokenFor(g.orgId) });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  res.json(await qboReadRunView(g.orgId, out.runId));
+}));
+async function qboReadRunView(orgId, runId) {
+  const R = qboReadMod();
+  const [r] = await query(`SELECT * FROM qbo_read_runs WHERE id=? AND org_id=?`, [runId, orgId]);
+  if (!r) return null;
+  const lines = await R.runLines(orgId, runId, null, 2000);
+  const of = b => lines.filter(l => l.bucket === b);
+  const sum = r.summary || {};
+  // Every count on the review screen is a figure whose rows are these lines.
+  const fig = b => ({ count: (sum.buckets && sum.buckets[b] && sum.buckets[b].count) || 0,
+    value: ((sum.buckets && sum.buckets[b] && sum.buckets[b].cents) || 0) / 100, kind: "money",
+    label: R.BUCKETS[b], source: { key: "qbo-read", params: { run: runId, bucket: b } } });
+  return {
+    ok: true, runId, status: r.status, from: r.read_from, automatic: r.automatic === true, savedAt: r.saved_at, undoneAt: r.undone_at,
+    summary: sum, figures: Object.fromEntries(Object.keys(R.BUCKETS).map(b => [b, fig(b)])),
+    byAccount: (sum.byAccount || []).map(a => ({ ...a, source: { key: "qbo-read", params: { run: runId, bucket: "donation", account: a.accountId } } })),
+    samples: of("gift").slice(0, 10), ambiguous: of("ambiguous").slice(0, 200), unmatched: of("unmatched").slice(0, 200),
+    skipped: [...of("steward_sent"), ...of("already_in_steward"), ...of("payout")].slice(0, 200),
+    refunds: [...of("refund"), ...of("refund_unmatched"), ...of("removed")].slice(0, 200),
+    already: of("already_read").length,
+    leftOut: sum.leftOutSentence || null,
+  };
+}
+app.get("/qbo/read/run", requireAuth, wrap(async (req, res) => {
+  const g = await qboReadGate(req, res); if (!g) return;
+  const v = await qboReadRunView(g.orgId, String(req.query.id || ""));
+  if (!v) return res.status(404).json({ error: "not_found", sentence: "That read is not on this organisation." });
+  res.json(v);
+}));
+app.post("/qbo/read/save", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const R = qboReadMod();
+  const g = await qboReadGate(req, res); if (!g) return;
+  if (g.demo) return res.status(409).json({ error: "demo", sentence: QBO_READ_DEMO });
+  const picks = {};
+  for (const [k, v] of Object.entries(req.body?.picks && typeof req.body.picks === "object" ? req.body.picks : {}).slice(0, 5000))
+    if (v) picks[String(k)] = String(v);
+  const out = await R.saveRun({ orgId: g.orgId, runId: String(req.body?.runId || ""), picks, who: qboReadWho(req), today: g.today,
+    deps: { recordGift, recalcDonorSummary, recalcPledgePayment } });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  // The first save is what lets later reads run on their own.
+  await run(`UPDATE bookkeeping_connections
+                SET mapping = jsonb_set(mapping, '{qbo,read,firstSavedAt}', to_jsonb(NOW()::text), true)
+              WHERE id=? AND org_id=? AND mapping->'qbo'->'read' IS NOT NULL AND (mapping->'qbo'->'read'->>'firstSavedAt') IS NULL`, [g.c.id, g.orgId]);
+  res.json({ ...out, view: await qboReadRunView(g.orgId, out.runId) });
+}));
+app.post("/qbo/read/undo", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const R = qboReadMod();
+  const g = await qboReadGate(req, res); if (!g) return;
+  const out = await R.undoRun({ orgId: g.orgId, runId: String(req.body?.runId || ""), who: qboReadWho(req),
+    deps: { recalcDonorSummary } });
+  if (!out.ok) return res.status(out.status || 409).json({ error: out.error, sentence: out.sentence });
+  res.json(out);
+}));
+
+// "Read new gifts automatically": after the first reviewed save, the hourly
+// tick reads and saves what is matched, as Steward's own entry. Lines that
+// need a person (ambiguous, unmatched) wait on that read's review, listed.
+sharedProcessQboAutoRead = async function processQboAutoRead(onlyOrgId = null) {
+  const R = qboReadMod();
+  const orgs = await query(
+    `SELECT o.id, c.id AS conn_id FROM orgs o
+       JOIN bookkeeping_connections c ON c.org_id = o.id AND c.vendor='quickbooks' AND c.status <> 'disconnected'
+      WHERE o.qbo_sync_enabled = true AND COALESCE(o.is_demo_org, false) = false
+        AND c.mapping->'qbo'->'read'->>'auto' = 'true' AND (c.mapping->'qbo'->'read'->>'firstSavedAt') IS NOT NULL
+        AND (?::text IS NULL OR o.id = ?::text)`, [onlyOrgId, onlyOrgId]);
+  const who = { id: "system:qbo/auto-read", name: "Steward (QuickBooks read)" };
+  let saved = 0;
+  for (const { id } of orgs) {
+    try {
+      const c = await qboConnection(id);
+      if (!c || (!c.credentials_sealed && process.env.TEST_MODE !== "1")) continue;
+      const today = orgToday(await orgTz(id));
+      const plan = await R.planRead({ orgId: id, conn: c, today, who, tokenFor: qboTokenFor(id), automatic: true });
+      if (!plan.ok) continue;
+      const out = await R.saveRun({ orgId: id, runId: plan.runId, picks: {}, who, today,
+        deps: { recordGift, recalcDonorSummary, recalcPledgePayment } });
+      if (out.ok) saved += out.recorded;
+    } catch (e) { console.error("[qbo-auto-read]", id, e.message); }
+  }
+  return { detail: `${orgs.length} org(s) read automatically; ${saved} gift(s) saved`, summary: `QuickBooks read saved ${saved} gift(s).` };
+};
+app.post("/qbo/read/auto/run", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  res.json(await sharedProcessQboAutoRead(req.user.orgId));
+}));
+
 // FIX-34 Q: the ops/test door onto the hourly QuickBooks tick, this org
 // only (the /auctions/run-unpaid-sweep shape). It is the same engine and the
 // same rules as the tick: it sends nothing unless auto-sync is on and every
@@ -4439,6 +4622,10 @@ module.exports = {
   processQboAutoSync: (...args) => {
     if (!sharedProcessQboAutoSync) throw new Error("processQboAutoSync called before routes/finance mount()");
     return sharedProcessQboAutoSync(...args);
+  },
+  processQboAutoRead: (...args) => {
+    if (!sharedProcessQboAutoRead) throw new Error("processQboAutoRead called before routes/finance mount()");
+    return sharedProcessQboAutoRead(...args);
   },
   processXeroAutoSync: (...args) => {
     if (!sharedProcessXeroAutoSync) throw new Error("processXeroAutoSync called before routes/finance mount()");

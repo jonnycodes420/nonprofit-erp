@@ -93,6 +93,8 @@ const GUARDED_WRITERS = [
 const SELF_REFUSING = [
   // FIX-34 D — the QuickBooks + PayPal walk on the LOCAL stack (seeds a fixture org).
   "fix34d-capture",
+  // QBO-IN — the QuickBooks read walk on the LOCAL stack (seeds the stand-in fixture org).
+  "qboin-walk",
   // FIX-34 E — the Tasks walk (thank-you draft, select mode at 390, morning email) on the LOCAL stack.
   "fix34e-capture",
   // FIX-34 C — Book a visit with two calendars and a refused Google API, on the LOCAL stack.

@@ -80,6 +80,8 @@ const MERGE_REFS = [
   // FIX-33: what a booked meeting changed on the record moves with the person,
   // and a candidate on an unsure meeting is the kept person after a merge.
   ["meeting_effects", "donor_id"], ["calendar_events", "candidate_ids"],
+  // QBO-IN: the person a QuickBooks line was matched to on a read's review.
+  ["qbo_read_lines", "donor_id"],
 ];
 // Pointers that are not a plain "column = person id".
 //   array   the column holds several people (a meeting with two donors): the

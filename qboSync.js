@@ -183,12 +183,15 @@ async function mappingGaps(orgId, map) {
 // The Pending list, the figure above it and the drill-through behind that
 // figure all read THIS, so the number and its rows cannot disagree. A gift is
 // pending when it is real money (not a sample, not a refund, not stock or
-// in-kind, which never reached a bank), dated on or after the start date, and
+// in-kind, which never reached a bank), not READ from the books in the first
+// place (QBO-IN: a gift that came from QuickBooks is never sent back to it),
+// dated on or after the start date, and
 // has no sync row, a failed one, or one stuck mid-send for ten minutes.
 function pendingWhere(orgId, since, { giftIds = null } = {}) {
   const args = [orgId, since];
   let where = `g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0
      AND COALESCE(g.is_sample, false) = false AND g.date >= ?
+     AND g.read_from_vendor IS NULL
      AND LOWER(TRIM(COALESCE(g.type, ''))) NOT IN (${NON_CASH_SQL})
      AND (s.id IS NULL OR s.status = 'failed'
           OR (s.status = 'sending' AND s.updated_at < NOW() - INTERVAL '${STALE_SENDING_MINUTES} minutes'))`;

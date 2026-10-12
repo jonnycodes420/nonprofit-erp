@@ -106,6 +106,12 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   expensive direction: a $5,000 bank gift grossed up at 0.8% would add $40 to cover a fee Stripe
   caps at $5. (GIVE-2 §5)
 
+- **A gift READ from QuickBooks is never sent back to it.** `gifts.read_from_vendor` is set in the
+  `recordGift` insert and `qboSync.pendingWhere` excludes it. The read only counts lines on accounts the
+  org ticked as donations, and never records a line twice (`qbo_read_gifts`, company + txn + line). (QBO-IN)
+- **A QuickBooks deposit line with a LinkedTxn is a receipt being banked, not a second gift.** Read the
+  receipt; skip the deposit line. A deposit line from Stripe/PayPal/Square is a payout and is skipped. (QBO-IN)
+
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam
   before any `Number()` guard, or "1,000.00" is refused. (BUILD-89S, BUILD-88b)
