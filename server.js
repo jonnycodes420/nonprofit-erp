@@ -193,6 +193,7 @@ const { PRODUCT_ID } = require("./product");
 // for the type discipline (instants vs civil dates) and why it exists.
 const geocode = require("./geocode"); // BUILD-84 P0-4 — the ONE seam an address becomes coordinates through; never called from a read path
 const orgTime = require("./orgTime");
+const HISTORY = require("./historyGifts");   // FIX-36: the one rule for gifts a history read brought in
 const TL = require("./timelineLine");   // WIRE-1 rule 2: every act lands on the timeline
 // BUILD-73 Part 2 — THE MONEY SEAM. Every money value that crosses into or out
 // of storage goes through here, and nothing else in this file converts between
@@ -1040,6 +1041,12 @@ async function recordGift(o) {
   const date = o.date;
   const giftId = o.giftId || ("g_" + uuid().slice(0, 8));
   const actorId = o.actorId || null, actorName = o.actorName || null;
+  // FIX-36: a gift a HISTORY READ brought in (`o.history`: a giving source's
+  // first read, QuickBooks, an import) older than historyGifts.HISTORY_DAYS is
+  // recorded and counted like any other, and starts nothing: no journey, no
+  // sequence, no thank-you draft. A live gift never sets `history`.
+  const oldHistory = o.history === true
+    && HISTORY.isOldHistory(date, o.today || orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
   // Rule 1 — a fund and a method, always. A fund the caller names is honoured
   // only if it belongs to this org (never trust an id off a webhook payload).
   //
@@ -1261,7 +1268,7 @@ async function recordGift(o) {
   // reads the gift's TYPE, and a gift that arrives as "cash" and is recognised
   // as an instalment a line later is a pledge payment. Queueing first meant the
   // floor never applied to the very payments it exists for.
-  if (o.thankYou !== false) {
+  if (o.thankYou !== false && !oldHistory) {
     await queueThankYouDraft(orgId, { giftId, donorId: o.donorId, cents: Math.round(amount * 100),
                                       fundId, type: appliedInstallment ? "pledge payment" : (o.type || "cash") })
       .catch(e => console.error("[thank-you] draft:", e.message));
@@ -1273,7 +1280,7 @@ async function recordGift(o) {
   // place it is unambiguous — a route that checks "is this their first gift"
   // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
   // is what that means mechanically: the only way in is the event itself.
-  try {
+  if (!oldHistory) try {
     const [after] = await query(
       `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
     if (after && Number(after.gift_count) === 1) {
@@ -1308,7 +1315,7 @@ async function recordGift(o) {
   try {
     const [d] = await query(
       `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
-    if (d) {
+    if (d && !oldHistory) {
       const cents = Math.round(amount * 100);
       // ORDER MATTERS, and it is the priority order, not this list's order:
       // each call independently asks the engine, and the engine replaces a
@@ -2079,6 +2086,8 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
   const isBackfill = !source.backfilled_at;
   const summary = {
     sourceId, provider: source.provider, reason, isBackfill,
+    // FIX-36: the one line a first read's summary says about what it started.
+    historyNote: isBackfill ? HISTORY.HISTORY_NOTE : null,
     rowsRead: 0, giftsCreated: 0, duplicates: 0, donorsCreated: 0,
     centsCreated: 0, feeCents: 0,
     refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0, failedRecurring: [],
@@ -2430,9 +2439,11 @@ async function writeSourceRow(orgId, source, row, ctx) {
     post: !isBackfill,
     source: `giving-source:${source.provider}`,
     actorId, actorName,
-    // A backfill of three years of history does not open three years of
-    // thank-you drafts. Live gifts arriving on a later sync do.
-    thankYou: !isBackfill,
+    // FIX-36: the first read is a history read. A backfill of three years
+    // does not open three years of thank-you drafts or start a journey for a
+    // gift from last spring; the gifts of the last 30 days are new to the
+    // donor and are treated as new (historyGifts.js). Later syncs are live.
+    history: isBackfill, today: day,
   });
   if (written.duplicate) { summary.duplicates++; return; }
   summary.giftsCreated++;

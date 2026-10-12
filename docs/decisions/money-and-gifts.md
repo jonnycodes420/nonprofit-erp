@@ -12,6 +12,12 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
 - **Write every gift through `recordGift`, from every door.** Extras (soft credits, tributes, quid pro quo,
   instalment matching, membership renewal) live inside it and are checked before the insert
   (`checkGiftExtras`), so a second INSERT silently skips them all. (BUILD-88a, BUILD-98)
+- **An old gift a history read brought in starts nothing.** A caller that reads history (a giving source's
+  first read, QBO-IN) passes `history: true` to `recordGift`; a gift dated more than `HISTORY_DAYS` (30) before
+  the org's today is recorded and counted everywhere, and starts no gift journey, no sequence and no thank-you
+  draft. The rule, the constant and the one sentence the screens show live in `historyGifts.js`. Live doors
+  never pass `history`. The two bulk import routes do not go through `recordGift` and start nothing at any
+  date. (FIX-36)
 - **A gift row always carries a fund and a payment method; the timeline entry links to it.** The
   interaction points at `interactions.gift_id` and holds no copy of the amount. (BUILD-88a)
 - **Every gift stamps `fin_transactions` exactly once.** Set `gift_id` and use `ON CONFLICT (gift_id)

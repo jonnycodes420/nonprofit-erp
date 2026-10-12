@@ -3600,6 +3600,7 @@ async function qboReadRunView(orgId, runId) {
     refunds: [...of("refund"), ...of("refund_unmatched"), ...of("removed")].slice(0, 200),
     already: of("already_read").length,
     leftOut: sum.leftOutSentence || null,
+    historyNote: require("../historyGifts").HISTORY_NOTE,   // FIX-36
   };
 }
 app.get("/qbo/read/run", requireAuth, wrap(async (req, res) => {
