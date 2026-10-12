@@ -38,7 +38,7 @@ retries instead of being dropped. Google Calendar's "anything new?" moved to the
 channel alive (`mailboxPush.ensurePush`), reads every 30 minutes while push is on and every 5 when it is not, and
 pauses push when a 30-minute read finds a change no notice announced. The health panel shows "Instant updates: on"
 with the last notice, or the paused sentence. Off until `PUSH_BASE_URL` (and, for Gmail, the Pub/Sub topic and
-service account) are set. One new suite, `push1-instant` (43 checks; four planted defects each seen red).
+service account) are set. One new suite, `push1-instant` (44 checks; four planted defects each seen red).
 
 ## CONNECT-2 · Givebutter, Square and Zeffy ready for a first org; Xero and Constant Contact built (2026-10-11)
 

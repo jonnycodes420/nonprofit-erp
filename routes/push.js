@@ -103,8 +103,14 @@ function router(getDeps) {
   r.post("/push/microsoft", async (req, res) => {
     // Graph proves the URL before it creates a subscription: the token comes
     // back as plain text within 10 seconds. It reads nothing and changes nothing.
+    // Graph's tokens are plain words, digits and punctuation; anything carrying
+    // markup is not one of them, so only a token that survives the strip is echoed.
     if (req.query && typeof req.query.validationToken === "string") {
-      return res.status(200).type("text/plain").send(req.query.validationToken);
+      const token = req.query.validationToken;
+      const safe = token.replace(/[^A-Za-z0-9 _.,:;+\-\/=()\[\]{}|@#$%*!?~]/g, "");
+      if (!safe || safe !== token || safe.length > 2048) return refuse(res, "Outlook", "a validation token Steward will not echo", req.ip);
+      res.set("X-Content-Type-Options", "nosniff");
+      return res.status(200).type("text/plain").send(safe);
     }
     const items = Array.isArray(req.body && req.body.value) ? req.body.value : [];
     if (!items.length) return refuse(res, "Outlook", "no notifications in the body", req.ip);

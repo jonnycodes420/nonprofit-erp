@@ -106,7 +106,7 @@ const mock = http.createServer((req, res) => {
     // Microsoft Graph
     if (p === "/v1.0/subscriptions" && req.method === "POST") {
       // Graph proves the URL first, exactly as the real one does.
-      const vt = "vt_" + crypto.randomBytes(6).toString("hex");
+      const vt = "Validation: Testing client application reachability for subscription Request-Id: " + crypto.randomUUID();
       const echo = await fetch(body.notificationUrl + "?validationToken=" + encodeURIComponent(vt), { method: "POST", headers: { "Content-Type": "text/plain" } })
         .then(async r => ({ status: r.status, text: await r.text(), type: r.headers.get("content-type") || "" })).catch(() => null);
       if (!echo || echo.status !== 200 || echo.text !== vt || !/text\/plain/.test(echo.type)) return send(400, { error: { code: "ValidationError", message: "Subscription validation request failed." } });
@@ -288,6 +288,7 @@ const logged = id => q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id
       ["a Graph notice with the wrong clientState", await graphNotice(subOf("me/mailFolders('Inbox')/messages"), { clientState: "guess" })],
       ["a Graph notice for an unknown subscription", await graphNotice({ id: "sub_nobody", clientState: "x", resource: "me/events" })],
     ];
+    cases.push(["a validation token carrying markup is not echoed", await fetch(B + "/push/microsoft?validationToken=" + encodeURIComponent("<script>alert(1)</script>"), { method: "POST" })]);
     for (const [what, r] of cases) ok(`§5 refused: ${what} (401)`, r.status === 401, String(r.status));
     await sleep(1200);
     ok("§5 …and not one of them started a read", (await pushRunsNow()) === before5, `${before5} -> ${await pushRunsNow()}`);
