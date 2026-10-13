@@ -19888,8 +19888,11 @@ app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => 
        WHERE org_id = ? AND deleted_at IS NULL AND id IN (${nonRetainedIds.map(() => "?").join(",")})`,
       [orgId, ...nonRetainedIds]
     );
+    // SCALE-1: each date is read once, not once per comparison; the comparator
+    // returns the same numbers (NaN included), so the stable sort is unchanged.
+    const t = new Map(donorRows.map(d => [d, new Date(d.last_gift_date || 0).getTime()]));
     rows = donorRows
-      .sort((a, b) => new Date(b.last_gift_date || 0) - new Date(a.last_gift_date || 0))
+      .sort((a, b) => t.get(b) - t.get(a))
       .slice(0, PAGE_SIZE)
       .map(d => ({
         donorId: d.id,
