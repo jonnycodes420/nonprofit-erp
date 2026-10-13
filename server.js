@@ -11476,12 +11476,35 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   // Only donor_id + date are read below — SELECT * was shipping every column
   // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
   // year-bucketing itself deliberately stays (see comment above).
-  let allGifts = gifts || await query("SELECT donor_id, date FROM gifts WHERE org_id = ?", [orgId]);
+  // SCALE-1: without a caller's gift list, the database does the bucketing:
+  // one row per donor per year for just the two years read (not every gift
+  // the org ever had, 150k rows at a large org), plus the earliest date. The
+  // regex is parseCivil's (ASCII digits, anchored), so the buckets are the
+  // same rows the JS path below would make; proven identical on a 150k-gift org.
+  let assignedIds = null;
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
-    const assignedIds = new Set(assignedRows.map(r => r.id));
-    allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
+    assignedIds = new Set(assignedRows.map(r => r.id));
   }
+  let thisYearDonorIds, prevYearDonorIds, firstGiftDate;
+  if (!gifts) {
+    const [pairs, [first]] = await Promise.all([
+      query(`SELECT donor_id, LEFT(date, 4)::int AS y FROM gifts
+              WHERE org_id = ? AND date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(date, 4) IN (?, ?)
+              GROUP BY 1, 2`, [orgId, String(year).padStart(4, "0"), String(prevYear).padStart(4, "0")]),
+      // The earliest stored date, as the JS reduce below reads it: every
+      // non-empty date, its first ten characters, compared as strings.
+      query(`SELECT MIN(LEFT(date, 10) COLLATE "C") AS first FROM gifts
+              WHERE org_id = ? AND date IS NOT NULL AND date <> ''${userId ? " AND donor_id = ANY(?)" : ""}`,
+            userId ? [orgId, [...assignedIds]] : [orgId]),
+    ]);
+    const kept = assignedIds ? pairs.filter(r => assignedIds.has(r.donor_id)) : pairs;
+    thisYearDonorIds = new Set(kept.filter(r => r.y === year).map(r => r.donor_id));
+    prevYearDonorIds = new Set(kept.filter(r => r.y === prevYear).map(r => r.donor_id));
+    firstGiftDate = first?.first || null;
+  } else {
+  let allGifts = gifts;
+  if (assignedIds) allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
   // ORG_TZ_SEAM_OK (BUILD-75 A.6) — year-bucket by the stored CIVIL date's own
   // Y, never a new Date() round-trip: `new Date("2026-01-01")` read back through
   // a non-UTC process zone lands on Dec 31 and buckets every New Year's Day
@@ -11490,18 +11513,19 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   const civilYear = g => { const c = orgTime.parseCivil(g.date); return c ? c.y : null; };
   const thisYearGifts = allGifts.filter(g => civilYear(g) === year);
   const prevYearGifts = allGifts.filter(g => civilYear(g) === prevYear);
-  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
-  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
-  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
-  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
+  thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
+  prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
   // BUILD-76 follow-up — the confidence floor (see RETENTION_FLOOR): a rate
   // computed over too few prior-year donors, or too little history, is a
   // thin-data artifact and every consumer must know it. Civil-string compare
   // is safe for YYYY-MM-DD; span measured to the org's own today.
-  const firstGiftDate = allGifts.reduce((min, g) => {
+  firstGiftDate = allGifts.reduce((min, g) => {
     const d = g.date ? String(g.date).slice(0, 10) : null;
     return d && (!min || d < min) ? d : min;
   }, null);
+  }
+  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
   const historyDays = firstGiftDate
     ? (orgTime.daysBetween(firstGiftDate, orgToday(await orgTz(orgId))) ?? 0)
     : 0;
