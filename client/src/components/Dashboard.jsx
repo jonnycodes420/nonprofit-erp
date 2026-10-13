@@ -38,7 +38,7 @@ import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
 const todayCivil=()=>new Date().toISOString().split("T")[0];
-// SCALE-2 — what Home reads when it opens, and what it reads once it knows the
+// SCALE-2: what Home reads when it opens, and what it reads once it knows the
 // scope (GET /home/bundle answers each list in one request; routes/homeBundle.js
 // holds the same paths). Keep in step with the effects below.
 const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/recurring/exceptions","/readouts/latest","/move",
@@ -315,7 +315,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
-  // SCALE-2 — Home's first reads in one request. Asked during the first
+  // SCALE-2: Home's first reads in one request. Asked during the first
   // render, before any effect (a child's effects run before this component's),
   // so every apiFetch below for one of these paths is handed the bundle's
   // answer. The list is exactly what Home and its panels read when it opens.
@@ -772,7 +772,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // independently-toggled views that could disagree.
   useEffect(()=>{
     if(scope===undefined)return;
-    // SCALE-2 — the second wave, once the scope is known: one request.
+    // SCALE-2: the second wave, once the scope is known: one request.
     if(surface==="home") prefetch(homeScopeReads(scope));
     setQueueLoading(true);
     apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));

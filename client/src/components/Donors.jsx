@@ -60,7 +60,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // written back below, so a filtered list opens the same in a new tab.
   const[urlList]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/donors"?donorsListState(window.location.search):{});
   const routerNavigate=useNavigate();
-  // SCALE-2 — THE SHELL NO LONGER HOLDS EVERY DONOR. The whole-org list is
+  // SCALE-2: THE SHELL NO LONGER HOLDS EVERY DONOR. The whole-org list is
   // loaded here only when a view that draws the whole org opens (Team,
   // Re-engage, the map) or the call list is asked for; everything else asks
   // the server (lib/people.js). `orgPeople` is null until then.

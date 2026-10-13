@@ -1454,7 +1454,7 @@ function scheduleScores(orgId) {
 // LIVE-1 — the after-change step's helpers, handed over once at boot.
 const AFTER = require("./afterChange");
 AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors });
-// SCALE-2 — the per-org summary (orgSummary.js) and the in-process door the
+// SCALE-2: the per-org summary (orgSummary.js) and the in-process door the
 // Home bundle and the summary's refresh use (inProcess.js). An internal token
 // is signed for one stored answer's recompute and never leaves this process.
 require("./inProcess").configure(app);
@@ -1466,7 +1466,7 @@ async function signInternalToken(userId) {
 const ORG_SUMMARY = require("./orgSummary");
 ORG_SUMMARY.configure({ orgTz, orgToday, signInternalToken });
 require("./jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refreshOrg(payload && payload.orgId));
-// SCALE-2 — the nightly Drift refresh: an org whose stored Drift answers are
+// SCALE-2: the nightly Drift refresh: an org whose stored Drift answers are
 // from an earlier day gets them recomputed for its new day, so the first visit
 // of the morning reads stored rows too. Checked every six hours because each
 // org's day turns over in its own timezone.
@@ -6943,7 +6943,7 @@ async function driftGiftAnswers(orgId, today, ids, refusedById) {
       : [];
     const refusedRows = refusedById.get(id) || 0;
     const a = driftEngine.assessDrift(gifts, today, { refusedRows });
-    // POLISH-1 Part 6 — the same gifts, read as of yesterday (see below).
+    // POLISH-1 Part 6: the same gifts, read as of yesterday (see below).
     const y = driftEngine.assessDrift(gifts, orgTime.addDays(today, -1), { refusedRows });
     const ans = { a, wasDriftingHigh: y.state === "drifting" && y.confidence === "high", pledgeRecent: !!(agg && agg.pledge_recent) };
     out.set(id, ans);
@@ -6998,7 +6998,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const onPledge = new Set(pledgeRows.map(r => r.donor_id));
   const lastContact = new Map(contactRows.map(r => [r.donor_id, String(r.last_contact).slice(0, 10)]));
   const handledCutoff = orgTime.addDays(today, -driftEngine.DRIFT.HANDLED_SNOOZE_DAYS);
-  // BUILD-80 Part 2.4 — the import stamps has-refused-rows:N; a refused row
+  // BUILD-80 Part 2.4: the import stamps has-refused-rows:N; a refused row
   // caps this donor's drift confidence until it is resolved.
   const refusedById = new Map();
   for (const d of donors) {
@@ -7029,7 +7029,7 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
       continue;
     }
     // The gift-derived answer (driftGiftAnswers above): stored, or computed
-    // from the gifts and stored. POLISH-1 Part 6 — wasDriftingHigh is the same
+    // from the gifts and stored. POLISH-1 Part 6: wasDriftingHigh is the same
     // gifts read as of yesterday. Drift is computed against the org's civil
     // today, so the Home count can move at midnight with nothing new in the
     // file (the PREMIUM-1 walk saw 7 become 8 across 11:16pm to 12:05am). The

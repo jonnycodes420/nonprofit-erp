@@ -1,4 +1,4 @@
-// mailboxFetch.js — SCALE-2. THE GMAIL HALF OF A MAILBOX READ, IN AS FEW
+// mailboxFetch.js · SCALE-2. THE GMAIL HALF OF A MAILBOX READ, IN AS FEW
 // SEARCHES AS GMAIL WILL RUN.
 //
 // A read asks Gmail only for messages that involve an address on file (the

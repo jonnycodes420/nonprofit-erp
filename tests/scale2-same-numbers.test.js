@@ -134,7 +134,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   const tok = await login(ADMIN);
 
   // ── §1 · fresh, stored, fresh again ─────────────────────────────────────
-  console.log("— §1 · the store answers exactly what the gifts say —");
+  console.log("§1 · the store answers exactly what the gifts say");
   // The org-wide stewardship read writes the day's metric snapshot the first
   // time it runs, and a moved snapshot is a change. One read settles the day,
   // as Home's first visit does.
@@ -158,7 +158,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   ok("§1 with the store wiped, a fresh computation gives the same bytes again", drift2.length === 0, drift2.join(" "));
 
   // ── §2 · Home in one request ────────────────────────────────────────────
-  console.log("\n— §2 · Home's first reads in one request —");
+  console.log("\n§2 · Home's first reads in one request");
   const b = await fetch(BASE + "/home/bundle?" + HOME_FIRST.map(p => "p=" + encodeURIComponent(p)).join("&"),
     { headers: { authorization: `Bearer ${tok}` } });
   const bundle = b.status === 200 ? await b.json() : {};
@@ -170,7 +170,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   ok("§2 a read that is not part of Home is refused, so the bundle is not a general proxy", refused.status === 400, refused.status);
 
   // ── §3 · a gift through any door ────────────────────────────────────────
-  console.log("\n— §3 · a gift through any door moves the stored answers at once —");
+  console.log("\n§3 · a gift through any door moves the stored answers at once");
   const doors = [
     ["the gift form", "q0", 140, async () => (await fetch(BASE + "/donors/d_s2_q0/gifts", { method: "POST",
       headers: { authorization: `Bearer ${tok}`, "content-type": "application/json" },
@@ -215,7 +215,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   }
 
   // ── §4 · the nightly comparison ─────────────────────────────────────────
-  console.log("\n— §4 · the nightly comparison —");
+  console.log("\n§4 · the nightly comparison");
   await readAll(tok, ["/metrics/stewardship-summary?scope=all"]);   // settle the day's snapshot after §3's gifts
   await forgetStore();
   await readAll(tok);

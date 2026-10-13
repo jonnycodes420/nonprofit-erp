@@ -375,7 +375,7 @@ function AppShell() {
       // 403 (or any failure on a portal-tier org) falls back to empty data.
       const results = await Promise.allSettled([
         apiFetch("/org"),
-        // SCALE-2 — THE SHELL NO LONGER DOWNLOADS EVERY DONOR. This read was
+        // SCALE-2: THE SHELL NO LONGER DOWNLOADS EVERY DONOR. This read was
         // /donors/summaries: 24 MB for a 25,000-donor org, on every sign-in.
         // Every reader of that list now asks the server for what it shows
         // (lib/people.js, routes/donorLookups.js); `data.donors` stays an

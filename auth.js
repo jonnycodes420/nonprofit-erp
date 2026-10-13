@@ -11,7 +11,7 @@ const SIGNING_SECRET = SECRET || "nonprofit_erp_secret_dev";
 function signToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "7d" });
 }
-// SCALE-2 — a two-minute token for a recompute inside this process (the
+// SCALE-2: a two-minute token for a recompute inside this process (the
 // per-org summary's refresh and nightly check). It is never sent anywhere.
 function signInternalToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "2m" });
