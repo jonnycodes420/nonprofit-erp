@@ -6978,13 +6978,16 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     // recovered (billing again), and paused (a deliberate, known state with
     // its own portal-drift signal — not QUIET drift). Only canceled/lost
     // return a donor to voluntary cadence.
+    // SCALE-2: asked about some people (a page of the donors list, one
+    // profile, the after-change step), these three read only those people.
     query(`SELECT DISTINCT donor_id FROM recurring_subscriptions
-            WHERE org_id = ? AND status IN ('active','past_due','recovering','recovered','paused')`, [orgId]),
-    query(`SELECT DISTINCT donor_id FROM pledges WHERE org_id = ? AND status = 'open'`, [orgId]),
+            WHERE org_id = ? AND status IN ('active','past_due','recovering','recovered','paused')${donorIds ? " AND donor_id = ANY(?)" : ""}`,
+          [orgId, ...idParams]),
+    query(`SELECT DISTINCT donor_id FROM pledges WHERE org_id = ? AND status = 'open'${donorIds ? " AND donor_id = ANY(?)" : ""}`, [orgId, ...idParams]),
     // Last meaningful contact — powers HANDLED (the list stops resurfacing
     // someone already called; the badge is untouched, they are still drifting).
     query(`SELECT donor_id, MAX(date) AS last_contact FROM interactions
-            WHERE org_id = ? AND type IN ${MEANINGFUL_CONTACT_TYPES} GROUP BY donor_id`, [orgId]),
+            WHERE org_id = ? AND type IN ${MEANINGFUL_CONTACT_TYPES}${donorIds ? " AND donor_id = ANY(?)" : ""} GROUP BY donor_id`, [orgId, ...idParams]),
   ]);
   const onSubscription = new Set(recurringRows.map(r => r.donor_id));
   const onPledge = new Set(pledgeRows.map(r => r.donor_id));
