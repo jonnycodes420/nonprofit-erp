@@ -908,6 +908,23 @@ async function forEachByDonor(list, fn) {
 const RECENT_WORK_ACTOR = { id: "system:import-recent-gifts", name: "Steward (your import's recent gifts)" };
 const recentJobs = new Map();   // import id → { promise, cancelled }
 const IT = require("../importThanks");
+// The job never writes beside an import request for the same org: a chunked
+// file sends its next chunk while the job works on the last one, and the two
+// writing the same people at once deadlocked (import2-history, the battery).
+// So the job waits until no import request for the org is in flight, then
+// takes the import's own advisory lock for one small batch at a time; a new
+// chunk's transaction waits for at most that one batch.
+const RECENT_BATCH = 50;
+const importsInFlight = new Map();   // org id → requests running
+function markImportInFlight(orgId, res) {
+  importsInFlight.set(orgId, (importsInFlight.get(orgId) || 0) + 1);
+  let done = false;
+  const end = () => { if (done) return; done = true; const n = (importsInFlight.get(orgId) || 1) - 1; if (n > 0) importsInFlight.set(orgId, n); else importsInFlight.delete(orgId); };
+  res.on("finish", end); res.on("close", end);
+}
+async function importsIdle(orgId) {
+  while (importsInFlight.get(orgId)) await new Promise(r => setTimeout(r, 100));
+}
 
 async function queueRecentWork(txq, orgId, runId, gifts, { actorId, actorName, thanks, touched = [] }) {
   const up = await txq(
@@ -957,9 +974,11 @@ async function runRecentWork(orgId, runId, job) {
   };
   for (;;) {
     if (job.cancelled) break;
-    const rows = await query(`SELECT id, gift FROM import_recent_work WHERE import_id=? AND org_id=? ORDER BY seq LIMIT 600`, [runId, orgId]);
+    await importsIdle(orgId);
+    const rows = await query(`SELECT id, gift FROM import_recent_work WHERE import_id=? AND org_id=? ORDER BY seq LIMIT ${RECENT_BATCH}`, [runId, orgId]);
     if (!rows.length) break;
     const list = rows.map(r => ({ ...(typeof r.gift === "string" ? JSON.parse(r.gift) : r.gift), _workId: r.id }));
+    await withAdvisoryLock(`import:${orgId}`, async () => {
     // The totals of the people these land on are brought up to date FIRST,
     // so recordGift's "is this their first gift" reads the file's older gifts.
     await recalcDonorSummaryBatch(list.map(g => g.donorId), orgId).catch(e => console.error("[import-recent] recalc:", e.message));
@@ -994,6 +1013,7 @@ async function runRecentWork(orgId, runId, job) {
       done++;
       if (Date.now() - lastSaved > 700) { lastSaved = Date.now(); await save(); }
     });
+    });   // end withAdvisoryLock
     await save();
   }
   await save();
@@ -1006,13 +1026,20 @@ async function runRecentWork(orgId, runId, job) {
   const touchedRaw = tj ? (typeof tj.touched === "string" ? JSON.parse(tj.touched) : tj.touched) : [];
   const fromGifts = (await query(`SELECT DISTINCT donor_id AS id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, runId])).map(r => r.id);
   const touched = [...new Set([...(touchedRaw || []), ...fromGifts])];
-  await require("../afterChange").afterChange(orgId, touched, { door: "csv_import", history: true, runTag: runId })
+  await importsIdle(orgId);
+  await withAdvisoryLock(`import:${orgId}`, () => require("../afterChange").afterChange(orgId, touched, { door: "csv_import", history: true, runTag: runId }))
     .catch(e => console.error("[import-recent] after-change:", e.message));
   const left = await query(`SELECT 1 FROM import_recent_work WHERE import_id=? LIMIT 1`, [runId]);
   if (left.length || job.cancelled) return;   // another chunk arrived; the loop runs again
-  await run(`UPDATE import_recent_jobs SET status='done', finished_at=NOW() WHERE import_id=? AND status='running'`, [runId]);
+  // Done, then the readout, then finished: the screen reads "done" only once
+  // finished_at is set, so it never shows a finished run without its readout.
+  await run(`UPDATE import_recent_jobs SET status='done', finished_at=NULL WHERE import_id=? AND status='running'`, [runId]);
   await writeImportReadoutOnce(orgId, runId).catch(e => console.error("[readout] import job:", e.message));
+  await run(`UPDATE import_recent_jobs SET finished_at=NOW() WHERE import_id=? AND status='done'`, [runId]);
 }
+// What the screen is told: a job is still running until its finish has been
+// written (see above).
+const recentJobStatus = j => (j.status === "done" && !j.finished_at ? "running" : j.status);
 
 // The readout for an import run, written once, by whichever of the job's end
 // and POST /imports comes second. A run with no job (a donors-only file) has
@@ -1058,7 +1085,7 @@ function recentProgressSentence(j) {
   const total = Number(j.total) || 0, done = Math.min(Number(j.done) || 0, total);
   const thanks = IT.cleanAnswer(typeof j.thanks === "string" ? JSON.parse(j.thanks) : j.thanks);
   const verb = thanks && thanks.mode === "none" ? "Checking" : "Thanking and checking";
-  if (j.status === "done") return `Done: ${total.toLocaleString("en-US")} recent ${total === 1 ? "gift" : "gifts"} checked.`;
+  if (recentJobStatus(j) === "done") return `Done: ${total.toLocaleString("en-US")} recent ${total === 1 ? "gift" : "gifts"} checked.`;
   if (j.status === "cancelled") return "Stopped: this import was undone.";
   return `${verb} ${total.toLocaleString("en-US")} recent ${total === 1 ? "gift" : "gifts"}: ${done.toLocaleString("en-US")} done`;
 }
@@ -4776,6 +4803,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
+  markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
   const { donors, gifts } = req.body;
   // BUILD-82 Part 2.5 — a gift sheet imported ALONE links to the donors the
   // org already has (Donor ID first, then email, then name); donors may be
@@ -8140,12 +8168,12 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   let readout = null;
   try { readout = await writeImportReadoutOnce(orgId, id); }
   catch (e) { console.error("[readout] import:", e.message); }
-  const [jobNow] = await query(`SELECT status FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [id, orgId]);
+  const [jobNow] = await query(`SELECT status, finished_at FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [id, orgId]);
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
   res.json({ ok: true, id, name, reconciled: findings.length === 0, findings,
              readout: readout ? { id: readout.id, headline: readout.headline } : null,
-             working: !!(jobNow && jobNow.status === "running") });
+             working: !!(jobNow && recentJobStatus(jobNow) === "running") && !readout });
 }));
 
 
@@ -8282,11 +8310,11 @@ app.get("/imports/:id/progress", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [j] = await query(`SELECT * FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [req.params.id, orgId]);
   if (!j) return res.status(404).json({ error: "not_found", message: "No work is running for that import." });
-  const [ro] = j.status === "done" ? await query(
+  const [ro] = recentJobStatus(j) === "done" ? await query(
     `SELECT id, headline FROM readouts WHERE org_id=? AND source_kind='import' AND source_id=? AND removed_at IS NULL ORDER BY created_at DESC LIMIT 1`,
     [orgId, req.params.id]) : [];
   const errors = typeof j.errors === "string" ? JSON.parse(j.errors) : (j.errors || []);
-  res.json({ status: j.status, total: Number(j.total) || 0, done: Math.min(Number(j.done) || 0, Number(j.total) || 0),
+  res.json({ status: recentJobStatus(j), total: Number(j.total) || 0, done: Math.min(Number(j.done) || 0, Number(j.total) || 0),
              thankYouDrafts: Number(j.thank_yous) || 0, errors, sentence: recentProgressSentence(j),
              readout: ro ? { id: ro.id, headline: ro.headline } : null });
 }));
@@ -9282,6 +9310,7 @@ app.post("/import-merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (r
 }));
 
 app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
+  markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
   const { gifts } = req.body;
   if (!Array.isArray(gifts) || !gifts.length)
     return res.status(400).json({ error: "gifts array required" });

@@ -26,7 +26,7 @@
 
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const A = "org_ce2e_a", B = "org_ce2e_b", C = "org_ce2e_c";
@@ -177,6 +177,8 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     });
     ok("import 200/201", imp.status === 200 || imp.status === 201, imp.status);
     expectedTotal += 300;
+    // FIX-37: a recent imported gift is written behind the screen; wait for it.
+    await waitFor(async () => { const r = await api("GET", `/imports/${imp.body?.importId}/progress`, tA); return r.body?.status === "done" ? r : null; }, { timeout: 20000 }).catch(() => null);
     const after = await giftsFor("ce_d1");
     ok("import: exactly ONE new gift row", after.length === before + 1, { before, after: after.length });
     // BUILD-83 Part 6 — an import posts NOTHING to the ledger, so there is no
