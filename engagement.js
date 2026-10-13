@@ -245,7 +245,7 @@ function reasonOf(w, byPart, lastDate, today) {
   if (!counted.length) return "No meeting, call, reply, event, ticket, fundraising page, auction bid, membership or volunteer shift in the last 24 months.";
   const say = x => {
     const b = (byPart[x.k] && byPart[x.k].booked) || 0, held = x.n - b;
-    if (x.k === "meetings" && b) return [held ? `${held} ${held === 1 ? "meeting" : "meetings"}` : null, `${b} ${b === 1 ? "meeting" : "meetings"} booked`].filter(Boolean).join(" and ");
+    if (x.k === "meetings" && b) return held ? `${held} ${held === 1 ? "meeting" : "meetings"} (${b} more booked)` : `${b} ${b === 1 ? "meeting" : "meetings"} booked`;
     return `${x.n} ${x.n === 1 ? w.TOUCH_POINTS[x.k].one : w.TOUCH_POINTS[x.k].many}`;
   };
   const top = counted.slice(0, 2).map(say).join(" and ");
