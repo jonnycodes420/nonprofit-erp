@@ -577,7 +577,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               textTransform: "uppercase", color: DOT[c.status] || T.ink3 }}>{(d.statuses?.[c.status]?.label) || c.status}</span>
             {!isReadOnly && isAdmin && c.connected && c.kind === "source" && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>Sync log</button>
+                <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>History</button>
                 <button style={btn(false)} disabled={busy === c.id} data-testid="connection-check"
                   onClick={() => check(c)}>{busy === c.id ? "Checking…" : "Check now"}</button>
               </span>)}

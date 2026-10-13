@@ -539,7 +539,7 @@ export const HELP_ARTICLES = [
       { h: `Connect, manage or fix`, steps: [
         `Find the service's card.`,
         `Click "Connect" to set it up. Some open the service's own sign-in page; others ask for a key, with "Test" to try it before you save.`,
-        `Click "Manage" on a connected card to see what came through it, open its "Sync log", or "Check now".`,
+        `Click "Manage" on a connected card to see what came through it, open its "History" (every check, newest first), or "Check now".`,
         `Click "Fix" on a card that needs attention. It opens the same detail with the reason at the top.`,
       ]},
       { h: `Good to know`, p: [

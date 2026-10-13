@@ -297,7 +297,7 @@ export function MoveReport({ importId, onClose }) {
           <div style={{ fontSize: 16.5, fontWeight: 800, color: T.ink, lineHeight: 1.45 }}>{r.headline}</div>
           {data.vendor && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>
-              From your {data.vendor} export{data.import?.name ? ` · ${data.import.name}` : ""}
+              {`From your ${data.vendor} export${data.import?.name ? ` · ${data.import.name}` : ""}`}
             </div>
           )}
         </div>
@@ -340,13 +340,12 @@ export function MoveReport({ importId, onClose }) {
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ink2, lineHeight: 1.7 }}>
               {r.differences.map((d, i) => (
                 <li key={`l${i}`}>
-                  {d.label}: your file says {d.money ? centsStr(d.file) : numStr(d.file)}, Steward holds{" "}
-                  {d.money ? centsStr(d.held) : numStr(d.held)}.
+                  {`${d.label}: your file says ${d.money ? centsStr(d.file) : numStr(d.file)}, Steward holds ${d.money ? centsStr(d.held) : numStr(d.held)}.`}
                 </li>
               ))}
               {r.mismatchedDonors.map((d, i) => (
                 <li key={`d${i}`}>
-                  {d.name}: your file says {centsStr(d.file)}, Steward holds {centsStr(d.held)}.
+                  {`${d.name}: your file says ${centsStr(d.file)}, Steward holds ${centsStr(d.held)}.`}
                 </li>
               ))}
             </ul>

@@ -8303,14 +8303,20 @@ app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// POLISH-2 Part 6: the Imports list shows files she brought in. A connection's
+// scheduled check ("PayPal - checked 2026-10-12", shape 'source') is that
+// connection's history and is read there (GET /connections/:id/log), so it is
+// left out here unless a caller asks for everything with ?include=checks.
 app.get("/imports", requireAuth, wrap(async (req, res) => {
+  const withChecks = req.query.include === "checks";
   const rows = await query(
     `SELECT id, name, source_filename, shape,
             TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
             committed_at, actor_user_name, rows_in, gifts_created, donors_created,
             donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
             migration_source, thanks_answer
-       FROM imports WHERE org_id=? ORDER BY committed_at DESC, id DESC LIMIT 200`,
+       FROM imports WHERE org_id=? ${withChecks ? "" : "AND COALESCE(shape, '') <> 'source'"}
+      ORDER BY committed_at DESC, id DESC LIMIT 200`,
     [req.user.orgId]);
   res.json({
     imports: rows.map(r => {
