@@ -15,6 +15,10 @@ const pool = new Pool({
   // which would leave the odd connection unmarked. A startup option is applied
   // by the server before the connection is handed over, every time.
   options: "-c steward.app_connection=on",
+  // SCALE-1: pg's default of 10 connections was busy 10 of 10 for the whole
+  // 20-user load run. Raise it per process with DB_POOL_MAX only as far as the
+  // database's own connection limit allows across every replica and the worker.
+  max: Math.max(2, Number(process.env.DB_POOL_MAX) || 10),
 });
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
@@ -6824,6 +6828,75 @@ async function runSchemaInit(pool) {
   // FIX-37: the answer to "have the last 30 days already been thanked?",
   // saved with the run and shown in its history.
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS thanks_answer JSONB`);
+  // SCALE-1 · THE QUEUE (jobQueue.js). One row per run of a background job;
+  // one row per periodic job's next due time. At most one waiting row per key,
+  // which is what makes a second enqueue of the same run a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_queue (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      org_id TEXT,
+      key TEXT NOT NULL,
+      payload JSONB,
+      status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','running','done','dead')),
+      priority INTEGER NOT NULL DEFAULT 5,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      backoff_ms INTEGER,
+      run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      round TEXT,
+      locked_by TEXT,
+      started_at TIMESTAMPTZ,
+      heartbeat_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ,
+      failed_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS backoff_ms INTEGER`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS job_queue_one_waiting ON job_queue (key) WHERE status = 'waiting'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_ready ON job_queue (status, priority, run_after)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_key ON job_queue (key) WHERE status = 'running'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_org ON job_queue (org_id) WHERE status = 'running'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_round ON job_queue (round) WHERE round IS NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_schedule (
+      name TEXT PRIMARY KEY,
+      every_ms BIGINT NOT NULL,
+      next_run_at TIMESTAMPTZ NOT NULL,
+      last_enqueued_at TIMESTAMPTZ
+    )`);
+  // SCALE-1 · rate-limit counters every web replica shares (rateLimitStore.js),
+  // and the once-an-hour mark for an ops alert, so two replicas send it once.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rate_limit_hits (
+      key TEXT PRIMARY KEY,
+      hits INTEGER NOT NULL DEFAULT 0,
+      reset_at TIMESTAMPTZ NOT NULL
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits (reset_at)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_in_flight (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      started_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_in_flight_org ON import_in_flight (org_id, started_at)`);
+  // SCALE-1 · each org's AI calls per UTC day (aiClient.js's daily budget).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      org_id TEXT NOT NULL,
+      day DATE NOT NULL,
+      calls INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (org_id, day)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ops_alert_marks (
+      hour_key TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`
@@ -7896,6 +7969,16 @@ async function runSchemaInit(pool) {
       value JSONB NOT NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       updated_by TEXT)`);
+
+  // SCALE-1 · indexes. The app shell and Home count an org's sample rows on
+  // every load (countSampleData, /org/sample-data-status). Sample rows are few
+  // or none, so a partial index on just them answers each count from a tiny
+  // index instead of reading every gift the org has: 447 ms -> 0.02 ms for a
+  // 150k-gift org's sample-gift count. Building them read the 5.8M-gift load
+  // database in about 3 s in all.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_sample ON gifts (org_id) WHERE is_sample = true`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_sample ON donors (org_id) WHERE is_sample = true`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_sample ON interactions (org_id) WHERE is_sample = true`);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.

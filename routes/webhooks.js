@@ -19,7 +19,7 @@ const express = require("express");
 const AC = require("../auctionCore");
 const ORG_KIND = require("../orgKind");   // ADMIN-CLEAN: real subscription amounts
 const TL = require("../timelineLine");   // WIRE-1 rule 2: every act lands on the timeline   // PARITY-2 Part 4: who won, and the split
-const { rateLimit } = require("express-rate-limit");
+const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 
 const routers = {
   r0: express.Router(),
@@ -1565,7 +1565,7 @@ async function markEmailEvent(orgId, email, reason, event) {
 // burst Steward's appeals make and still stops a flood before the signature
 // check. The Stripe and billing webhooks stay unlimited (generalLimiter skips
 // them, and no limiter here touches them): a 429 must never cost a charge.
-const resendWebhookLimiter = rateLimit({
+const resendWebhookLimiter = rateLimit("resendWebhookLimiter", {
   windowMs: 60 * 1000, limit: 3000, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: rateLimitDisabled,
 });
@@ -1682,7 +1682,7 @@ async function paypalCertificate(certUrl) {
   return pem;
 }
 
-const paypalWebhookLimiter = rateLimit({
+const paypalWebhookLimiter = rateLimit("paypalWebhookLimiter", {
   windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false,
   skip: () => rateLimitDisabled(), handler: rateLimitHandler,
 });
@@ -1702,7 +1702,7 @@ const paypalWebhookLimiter = rateLimit({
 //
 // Mailchimp POSTs form-encoded, not JSON, which is why this one route parses
 // urlencoded where its neighbours take raw JSON.
-const mailchimpWebhookLimiter = rateLimit({
+const mailchimpWebhookLimiter = rateLimit("mailchimpWebhookLimiter", {
   windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false,
   skip: () => rateLimitDisabled(), handler: rateLimitHandler,
 });

@@ -43,7 +43,8 @@ process.on("unhandledRejection", (reason) => {
 const express = require("express");
 const cors = require("cors");
 const compression = require("compression");
-const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
+// SCALE-1: every limiter counts in Postgres, shared by every web replica (rateLimitStore.js).
+const { rateLimit, ipKeyGenerator } = require("./rateLimitStore");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 // FIX-12 Part 3: every model call goes through aiClient.js, which asks the org's AI switch first.
@@ -420,7 +421,8 @@ const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "
 const generalSkip = (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook";
 const SIGNED_IN_LIMIT = 6000; // per user per 15 minutes: ~400 a minute, sustained
 const PUBLIC_IP_LIMIT = 1000; // per IP per 15 minutes, for requests with no valid token
-const signedInLimiter = rateLimit({
+const signedInLimiter = rateLimit("signedInLimiter", {
+  perReplica: true,   // SCALE-1: in memory on purpose, each replica its share (rateLimitStore.js)
   windowMs: 15 * 60 * 1000,
   limit: SIGNED_IN_LIMIT,
   standardHeaders: true,
@@ -429,7 +431,8 @@ const signedInLimiter = rateLimit({
   keyGenerator: (req) => "user:" + req._limitUser,
   skip: (req) => generalSkip(req) || !(req._limitUser = tokenUserId(req)),
 });
-const generalLimiter = rateLimit({
+const generalLimiter = rateLimit("generalLimiter", {
+  perReplica: true,   // SCALE-1: in memory on purpose, each replica its share (rateLimitStore.js)
   windowMs: 15 * 60 * 1000,
   limit: PUBLIC_IP_LIMIT,
   standardHeaders: true,
@@ -445,7 +448,7 @@ app.use(generalLimiter);
 
 // FIX-22 · Ask why writes a sentence with the model on every question. Its own
 // ceiling, per user, is the one a person can meet only by trying: 60 an hour.
-const whyAskLimiter = rateLimit({
+const whyAskLimiter = rateLimit("whyAskLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 60,
   standardHeaders: true,
@@ -458,7 +461,7 @@ const whyAskLimiter = rateLimit({
 
 // Per-IP: stops one attacker from spraying attempts across many different
 // accounts (each account-scoped limiter below would look "clean" individually).
-const loginIpLimiter = rateLimit({
+const loginIpLimiter = rateLimit("loginIpLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: true,
@@ -467,7 +470,7 @@ const loginIpLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 // Per-account+IP: stops repeated brute force against one specific account.
-const loginAccountLimiter = rateLimit({
+const loginAccountLimiter = rateLimit("loginAccountLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 6,
   standardHeaders: true,
@@ -477,7 +480,7 @@ const loginAccountLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 
-const registerLimiter = rateLimit({
+const registerLimiter = rateLimit("registerLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 5,
   standardHeaders: true,
@@ -486,7 +489,7 @@ const registerLimiter = rateLimit({
   skip: rateLimitDisabled, // local scripted suites create fixture orgs (see tests/)
 });
 
-const passwordResetLimiter = rateLimit({
+const passwordResetLimiter = rateLimit("passwordResetLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 5,
   standardHeaders: true,
@@ -495,7 +498,7 @@ const passwordResetLimiter = rateLimit({
   skip: rateLimitDisabled, // consistent with the other limiters; local suites drive the reset flow
 });
 
-const donateLimiter = rateLimit({
+const donateLimiter = rateLimit("donateLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 15,
   standardHeaders: true,
@@ -506,7 +509,7 @@ const donateLimiter = rateLimit({
 
 // PARITY-1 Part F: the video thank-you page and its stream. A video player
 // asks for many byte ranges, so this budget is per IP and generous.
-const videoLimiter = rateLimit({
+const videoLimiter = rateLimit("videoLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 600,
   standardHeaders: true,
@@ -517,7 +520,7 @@ const videoLimiter = rateLimit({
 
 // Public "Request an invitation" form (invitation pivot, 2026-08-06). A human
 // fills this once; anything past this budget from one IP is a bot.
-const invitationLimiter = rateLimit({
+const invitationLimiter = rateLimit("invitationLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
@@ -1025,8 +1028,8 @@ async function runVolunteerRemindersTick() {
   } catch (e) { console.error("[volunteer] reminder sweep:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => runVolunteerRemindersTick(), 60000);
-  setInterval(() => runVolunteerRemindersTick(), 60 * 60 * 1000);
+  // SCALE-1: a queue job (jobQueue.js), so one replica runs it, not each.
+  require("./jobQueue").define("runVolunteerRemindersTick", { everyMs: 60 * 60 * 1000, firstMs: 60000, run: runVolunteerRemindersTick });
 }
 
 async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
@@ -2896,6 +2899,11 @@ app.get("/health", (req, res) => {
     // successfully in two hours. Counts only, no address, no org. The prod
     // smoke fails on stale > 0; checkedAt null = no sync run since boot.
     mailboxSync: mailboxSyncHealth,
+    // SCALE-1: the background queue (jobQueue.js) and the last five-minute
+    // round of per-org syncs: how long it took and its slowest org, by id only.
+    // Cached (refreshed every 15s), so /health stays a synchronous read.
+    queue: require("./jobQueue").healthNow().queue,
+    tick: require("./jobQueue").healthNow().tick,
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -4176,7 +4184,7 @@ app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 //      POLLING trigger needs ("new person", "new gift"): Zapier dedupes by id.
 const API_KEY_PREFIX = "stw_";
 const hashApiKey = k => crypto.createHash("sha256").update(String(k)).digest("hex");
-const apiLimiter = rateLimit({
+const apiLimiter = rateLimit("apiLimiter", {
   windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: rateLimitDisabled,
   keyGenerator: req => {
@@ -4916,6 +4924,11 @@ async function opsAlert(kind, subject, body) {
   if (_opsAlertSent.has(hourKey)) return { skipped: "already_alerted_this_hour" };
   _opsAlertSent.set(hourKey, true);
   if (_opsAlertSent.size > 200) _opsAlertSent.clear();
+  // SCALE-1: the hour's mark is a row too, so a worker and two web replicas
+  // that all see the same failure send one alert between them.
+  const marked = await query(`INSERT INTO ops_alert_marks (hour_key) VALUES (?) ON CONFLICT DO NOTHING RETURNING hour_key`, [hourKey])
+    .catch(() => [{ hour_key: hourKey }]);
+  if (!marked.length) return { skipped: "already_alerted_this_hour" };
   console.error(`[ops-alert] ${kind}: ${subject}`);
   try {
     await _rawResend.emails.send({
@@ -5346,7 +5359,7 @@ function escapeHtml(s) {
 // own page shouldn't be able to get rate-limited out of it just because
 // other donors on the same shared/NAT'd IP have been actively giving
 // through POST /donate/:orgSlug, which would exhaust a shared limiter.
-const fundraiserManageLimiter = rateLimit({
+const fundraiserManageLimiter = rateLimit("fundraiserManageLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: true,
@@ -6855,14 +6868,22 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     // scheduled pledge payment — or that pays a pledge row — inside the
     // trailing 24 months means the donor's cadence is CONTRACTUAL, not
     // voluntary, and drift has nothing to say about it.
+    // SCALE-1: json_agg, not array_agg: the driver decodes a JSON array with
+    // the native JSON.parse, where a Postgres array literal is parsed character
+    // by character in JS (486 -> 228 ms at 24k donors). Same values after the
+    // String()/parseFloat below: proven equal for every donor of a 25k org.
     query(`SELECT g.donor_id,
-                  array_agg(g.date::text ORDER BY g.date) AS dates,
-                  array_agg(g.amount ORDER BY g.date) AS amounts,
+                  json_agg(g.date::text ORDER BY g.date) AS dates,
+                  json_agg(g.amount ORDER BY g.date) AS amounts,
                   bool_or((g.notes ~* 'pledge (payment|installment)' OR g.pledge_id IS NOT NULL)
                           AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
-             FROM gifts g JOIN donors d ON d.id = g.donor_id
+             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
             GROUP BY g.donor_id`, [today, orgId, ...idParams]),
+    // SCALE-1: "d.org_id = g.org_id" is the tenant rule (a gift's donor is in
+    // the gift's org; zero rows break it across the 5.8M-gift load database). It
+    // lets the planner probe this org's donors instead of hashing every
+    // org's donors table: 390 ms -> 235 ms at 25k donors / 150k gifts.
     // Every status that means "this donor is ON a subscription": active,
     // failing (past_due/recovering — the failed-payment path owns those),
     // recovered (billing again), and paused (a deliberate, known state with
@@ -8529,8 +8550,8 @@ if (!backgroundTicksDisabled()) {
   // BUILD-56 Part 4 — the retention purge: destroys objects soft-deleted more
   // than ASSET_RETENTION_DAYS ago (never a referenced one; every destruction
   // logged in asset_purge_log). 6-hour cadence like checkTrialExpiry.
-  setTimeout(() => purgeExpiredAssets().catch(console.error), 90000);
-  setInterval(() => purgeExpiredAssets().catch(console.error), 6 * 60 * 60 * 1000);
+  // SCALE-1: the purge writes, so it is a queue job and runs once, not per replica.
+  require("./jobQueue").define("purgeExpiredAssets", { everyMs: 6 * 60 * 60 * 1000, firstMs: 90000, run: () => purgeExpiredAssets() });
 } else {
   // Ticks off (test boot): populate the /health counters once at load — a
   // read-only count, no mail/state side effects — so the fields aren't stale.
@@ -10749,17 +10770,17 @@ const portalLimiterSkip = (req) => rateLimitDisabled() && !req.headers["x-test-e
 const portalLimiterIpKey = (req) =>
   (rateLimitDisabled() && req.headers["x-test-limit-bucket"])
     ? String(req.headers["x-test-limit-bucket"]) : ipKeyGenerator(req.ip);
-const portalLinkIpLimiter = rateLimit({
+const portalLinkIpLimiter = rateLimit("portalLinkIpLimiter", {
   windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "plink-ip:" + portalLimiterIpKey(req),
 });
-const portalLinkEmailLimiter = rateLimit({
+const portalLinkEmailLimiter = rateLimit("portalLinkEmailLimiter", {
   windowMs: 15 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "plink-em:" + String(req.body?.email || "").toLowerCase().trim().slice(0, 200),
 });
-const portalMutationLimiter = rateLimit({
+const portalMutationLimiter = rateLimit("portalMutationLimiter", {
   windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "pmut:" + portalLimiterIpKey(req),
@@ -11129,12 +11150,12 @@ async function donorAudit(accountId, email, action, req, meta) {
 }
 
 // ── §1.1 rate limits (same x-test seam discipline as the portal limiters) ──
-const accountIpLimiter = rateLimit({
+const accountIpLimiter = rateLimit("accountIpLimiter", {
   windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "acct-ip:" + portalLimiterIpKey(req),
 });
-const accountEmailLimiter = rateLimit({
+const accountEmailLimiter = rateLimit("accountEmailLimiter", {
   windowMs: 15 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "acct-em:" + foldEmail(req.body?.email).slice(0, 200),
@@ -11152,13 +11173,13 @@ const accountEmailLimiter = rateLimit({
 // shape; what the donor sees comes from the dashboard refetch, which renders
 // only what the verified-email link machinery entitles them to.
 
-const directorySearchLimiter = rateLimit({
+const directorySearchLimiter = rateLimit("directorySearchLimiter", {
   windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "dir:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
     ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
 });
-const addOrgLimiter = rateLimit({
+const addOrgLimiter = rateLimit("addOrgLimiter", {
   windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "diradd:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
@@ -11169,7 +11190,7 @@ async function einLookup(ein) {
   if (!rows.length) return { found: false };
   return { found: true, name: rows[0].name, status: rows[0].status };
 }
-const networkSignupLimiter = rateLimit({
+const networkSignupLimiter = rateLimit("networkSignupLimiter", {
   windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "netsignup:" + portalLimiterIpKey(req),
@@ -11272,7 +11293,7 @@ if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use((err, req, res, next) => {
   // FIX-12 Part 3: a model call the org's AI switch refused is the org's
   // choice, not a crash. A route with a non-AI path catches it before here.
-  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : 503).json({ error: err.message, code: err.code, reason: err.reason });
+  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : err.reason === "ai_budget" ? 429 : 503).json({ error: err.message, message: err.message, code: err.code, reason: err.reason });
   // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
   // so scripts/error-digest.js can group a day of these by type and route.
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
@@ -11349,12 +11370,16 @@ async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
   // byte-identical to the old subquery's behavior. GROUP BY d.id is enough —
   // the other selected columns are functionally dependent on the PK.
   const rows = await query(
+    // SCALE-1: now that interactions(donor_id, date) is indexed, a LATERAL
+    // MAX per donor is one backward index probe each (24k donors: 64 ms),
+    // where the hash join read every org's interactions (2.6M rows: 935 ms).
+    // Proven identical on a 25k-donor org (EXCEPT ALL both ways, 0 rows).
     `SELECT d.id, d.name, d.total_giving, d.first_gift_date,
-       COALESCE(MAX(i.date), d.first_gift_date) AS last_contact
+       COALESCE(lc.m, d.first_gift_date) AS last_contact
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MAX(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}) lc ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}`,
     userId ? [orgId, userId] : [orgId]
   );
   const today = Date.now();
@@ -11382,12 +11407,14 @@ async function computeFirstTouchDelay(orgId) {
   // see LOADTEST_REPORT.md). MIN over zero joined rows is NULL, matching the
   // old subquery's "no first touch yet" result exactly.
   const rows = await query(
-    `SELECT d.id, d.name, d.first_gift_date, MIN(i.date) AS first_touch_date
+    // SCALE-1: LATERAL MIN per donor, one forward index probe each (same
+    // reason and proof as computeStewardshipDebtBreakdown above).
+    `SELECT d.id, d.name, d.first_gift_date, ft.m AS first_touch_date
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id
-       AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MIN(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
+                           AND i.date >= d.first_gift_date) ft ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
     [orgId]
   );
   let totalDays = 0, touched = 0, untouched = 0;
@@ -11466,12 +11493,35 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   // Only donor_id + date are read below — SELECT * was shipping every column
   // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
   // year-bucketing itself deliberately stays (see comment above).
-  let allGifts = gifts || await query("SELECT donor_id, date FROM gifts WHERE org_id = ?", [orgId]);
+  // SCALE-1: without a caller's gift list, the database does the bucketing:
+  // one row per donor per year for just the two years read (not every gift
+  // the org ever had, 150k rows at a large org), plus the earliest date. The
+  // regex is parseCivil's (ASCII digits, anchored), so the buckets are the
+  // same rows the JS path below would make; proven identical on a 150k-gift org.
+  let assignedIds = null;
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
-    const assignedIds = new Set(assignedRows.map(r => r.id));
-    allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
+    assignedIds = new Set(assignedRows.map(r => r.id));
   }
+  let thisYearDonorIds, prevYearDonorIds, firstGiftDate;
+  if (!gifts) {
+    const [pairs, [first]] = await Promise.all([
+      query(`SELECT donor_id, LEFT(date, 4)::int AS y FROM gifts
+              WHERE org_id = ? AND date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(date, 4) IN (?, ?)
+              GROUP BY 1, 2`, [orgId, String(year).padStart(4, "0"), String(prevYear).padStart(4, "0")]),
+      // The earliest stored date, as the JS reduce below reads it: every
+      // non-empty date, its first ten characters, compared as strings.
+      query(`SELECT MIN(LEFT(date, 10) COLLATE "C") AS first FROM gifts
+              WHERE org_id = ? AND date IS NOT NULL AND date <> ''${userId ? " AND donor_id = ANY(?)" : ""}`,
+            userId ? [orgId, [...assignedIds]] : [orgId]),
+    ]);
+    const kept = assignedIds ? pairs.filter(r => assignedIds.has(r.donor_id)) : pairs;
+    thisYearDonorIds = new Set(kept.filter(r => r.y === year).map(r => r.donor_id));
+    prevYearDonorIds = new Set(kept.filter(r => r.y === prevYear).map(r => r.donor_id));
+    firstGiftDate = first?.first || null;
+  } else {
+  let allGifts = gifts;
+  if (assignedIds) allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
   // ORG_TZ_SEAM_OK (BUILD-75 A.6) — year-bucket by the stored CIVIL date's own
   // Y, never a new Date() round-trip: `new Date("2026-01-01")` read back through
   // a non-UTC process zone lands on Dec 31 and buckets every New Year's Day
@@ -11480,18 +11530,19 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   const civilYear = g => { const c = orgTime.parseCivil(g.date); return c ? c.y : null; };
   const thisYearGifts = allGifts.filter(g => civilYear(g) === year);
   const prevYearGifts = allGifts.filter(g => civilYear(g) === prevYear);
-  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
-  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
-  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
-  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
+  thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
+  prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
   // BUILD-76 follow-up — the confidence floor (see RETENTION_FLOOR): a rate
   // computed over too few prior-year donors, or too little history, is a
   // thin-data artifact and every consumer must know it. Civil-string compare
   // is safe for YYYY-MM-DD; span measured to the org's own today.
-  const firstGiftDate = allGifts.reduce((min, g) => {
+  firstGiftDate = allGifts.reduce((min, g) => {
     const d = g.date ? String(g.date).slice(0, 10) : null;
     return d && (!min || d < min) ? d : min;
   }, null);
+  }
+  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
   const historyDays = firstGiftDate
     ? (orgTime.daysBetween(firstGiftDate, orgToday(await orgTz(orgId))) ?? 0)
     : 0;
@@ -11507,10 +11558,17 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   };
 }
 
-async function snapshotMetricsForOrg(orgId) {
+// SCALE-1: the reads are independent, so they run in one parallel batch and
+// the writes follow. `out` (optional) receives the full first-touch and
+// retention results, so GET /metrics/stewardship-summary?scope=all, which
+// snapshots and then shows those same two figures, computes each once.
+async function snapshotMetricsForOrg(orgId, out = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const debt = await computeStewardshipDebt(orgId);
-  const { avgDays } = await computeFirstTouchDelay(orgId);
+  const [debt, firstTouch, recovery, retentionAll] = await Promise.all([
+    computeStewardshipDebt(orgId), computeFirstTouchDelay(orgId), computeRecoveryRate(orgId), computeRetentionRate(orgId),
+  ]);
+  if (out) { out.firstTouch = firstTouch; out.retention = retentionAll; }
+  const { avgDays } = firstTouch;
   await run(
     `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
      ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
@@ -11523,7 +11581,7 @@ async function snapshotMetricsForOrg(orgId) {
       ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
     );
   }
-  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
+  const { rate: recoveryRate } = recovery;
   if (recoveryRate != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
@@ -11552,7 +11610,7 @@ async function snapshotMetricsForOrg(orgId) {
     if (th.continuationRate != null) await put("thread_continuation_rate", th.continuationRate);
   } catch (e) { console.error("[metrics] thread health:", e.message); }
 
-  const { retentionRate, thinData: retentionThin } = await computeRetentionRate(orgId);
+  const { retentionRate, thinData: retentionThin } = retentionAll;
   // BUILD-76 follow-up: a thin-data rate is never snapshotted — a 100%-on-16-
   // donors artifact in the trend line would outlive the thin data that made it.
   if (retentionRate != null && !retentionThin) {
@@ -11831,6 +11889,30 @@ require("./routes/crm").mount({
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
+});
+// SCALE-1 · THE QUEUE STARTS once every job is defined (routes/jobs.js below,
+// and the few defined beside their code). The scheduler is the background
+// ticks, so a test boot (DISABLE_BACKGROUND_TICKS=1) enqueues nothing on a
+// timer; the worker lanes still run, because an import's recent gifts are
+// queued work, not a tick. STEWARD_PROCESS=web runs no lanes at all.
+// The probe job scale1-queue drives: it records which process ran it and when,
+// and can be told to take a while or to fail. TEST_MODE only.
+if (testMode()) {
+  require("./jobQueue").handle("testProbe", async (p, job) => {
+    const t0 = new Date();
+    if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));
+    await run(`INSERT INTO tick_log (id, name, started_at, finished_at, ok, detail) VALUES (?,?,?,NOW(),?,?)`,
+      ["tick_" + uuid().slice(0, 12), "testProbe", t0.toISOString(), !p.fail,
+       JSON.stringify({ key: job.key, org: job.org_id, pid: process.pid, attempt: job.attempts })]);
+    if (p.fail) throw new Error("probe told to fail");
+  });
+}
+DB_READY.then(() => {
+  const JQ = require("./jobQueue");
+  JQ.start({ scheduler: !backgroundTicksDisabled() });
+  const refresh = () => JQ.refreshHealth().catch(() => {});
+  setTimeout(refresh, 5000).unref();
+  setInterval(refresh, 15000).unref();
 });
 require("./routes/jobs").mount({
   // INT-5 — the webhook delivery pass, on the existing tick.

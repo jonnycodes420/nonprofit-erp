@@ -144,6 +144,7 @@ CORE=(
   fix36-history
   live1-alive
   fix37-import-thanks
+  scale1-queue
   fix20-qbo-realm-switch
   oauth-state
   int3-optout

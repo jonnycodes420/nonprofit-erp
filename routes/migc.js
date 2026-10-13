@@ -22,7 +22,7 @@
 
 const express = require("express");
 const cors = require("cors");
-const { rateLimit } = require("express-rate-limit");
+const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 const { Resend } = require("resend");
 const { query, uuid } = require("../db");
 
@@ -108,8 +108,8 @@ const limiterOpts = {
   handler: migc429,
   skip: rateLimitDisabled,
 };
-const contactLimiter = rateLimit({ ...limiterOpts });
-const subscribeLimiter = rateLimit({ ...limiterOpts });
+const contactLimiter = rateLimit("contactLimiter", { ...limiterOpts });
+const subscribeLimiter = rateLimit("subscribeLimiter", { ...limiterOpts });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
