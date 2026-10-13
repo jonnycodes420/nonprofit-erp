@@ -6868,14 +6868,22 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     // scheduled pledge payment — or that pays a pledge row — inside the
     // trailing 24 months means the donor's cadence is CONTRACTUAL, not
     // voluntary, and drift has nothing to say about it.
+    // SCALE-1: json_agg, not array_agg: the driver decodes a JSON array with
+    // the native JSON.parse, where a Postgres array literal is parsed character
+    // by character in JS (486 -> 228 ms at 24k donors). Same values after the
+    // String()/parseFloat below: proven equal for every donor of a 25k org.
     query(`SELECT g.donor_id,
-                  array_agg(g.date::text ORDER BY g.date) AS dates,
-                  array_agg(g.amount ORDER BY g.date) AS amounts,
+                  json_agg(g.date::text ORDER BY g.date) AS dates,
+                  json_agg(g.amount ORDER BY g.date) AS amounts,
                   bool_or((g.notes ~* 'pledge (payment|installment)' OR g.pledge_id IS NOT NULL)
                           AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
-             FROM gifts g JOIN donors d ON d.id = g.donor_id
+             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
             WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
             GROUP BY g.donor_id`, [today, orgId, ...idParams]),
+    // SCALE-1: "d.org_id = g.org_id" is the tenant rule (a gift's donor is in
+    // the gift's org; zero rows break it across the 5.8M-gift load database). It
+    // lets the planner probe this org's donors instead of hashing every
+    // org's donors table: 390 ms -> 235 ms at 25k donors / 150k gifts.
     // Every status that means "this donor is ON a subscription": active,
     // failing (past_due/recovering — the failed-payment path owns those),
     // recovered (billing again), and paused (a deliberate, known state with
@@ -11362,12 +11370,16 @@ async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
   // byte-identical to the old subquery's behavior. GROUP BY d.id is enough —
   // the other selected columns are functionally dependent on the PK.
   const rows = await query(
+    // SCALE-1: now that interactions(donor_id, date) is indexed, a LATERAL
+    // MAX per donor is one backward index probe each (24k donors: 64 ms),
+    // where the hash join read every org's interactions (2.6M rows: 935 ms).
+    // Proven identical on a 25k-donor org (EXCEPT ALL both ways, 0 rows).
     `SELECT d.id, d.name, d.total_giving, d.first_gift_date,
-       COALESCE(MAX(i.date), d.first_gift_date) AS last_contact
+       COALESCE(lc.m, d.first_gift_date) AS last_contact
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MAX(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}) lc ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}`,
     userId ? [orgId, userId] : [orgId]
   );
   const today = Date.now();
@@ -11395,12 +11407,14 @@ async function computeFirstTouchDelay(orgId) {
   // see LOADTEST_REPORT.md). MIN over zero joined rows is NULL, matching the
   // old subquery's "no first touch yet" result exactly.
   const rows = await query(
-    `SELECT d.id, d.name, d.first_gift_date, MIN(i.date) AS first_touch_date
+    // SCALE-1: LATERAL MIN per donor, one forward index probe each (same
+    // reason and proof as computeStewardshipDebtBreakdown above).
+    `SELECT d.id, d.name, d.first_gift_date, ft.m AS first_touch_date
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id
-       AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MIN(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
+                           AND i.date >= d.first_gift_date) ft ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
     [orgId]
   );
   let totalDays = 0, touched = 0, untouched = 0;
@@ -11479,12 +11493,35 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   // Only donor_id + date are read below — SELECT * was shipping every column
   // of 200k+ rows (~70MB heap churn per call at load-test scale). The JS
   // year-bucketing itself deliberately stays (see comment above).
-  let allGifts = gifts || await query("SELECT donor_id, date FROM gifts WHERE org_id = ?", [orgId]);
+  // SCALE-1: without a caller's gift list, the database does the bucketing:
+  // one row per donor per year for just the two years read (not every gift
+  // the org ever had, 150k rows at a large org), plus the earliest date. The
+  // regex is parseCivil's (ASCII digits, anchored), so the buckets are the
+  // same rows the JS path below would make; proven identical on a 150k-gift org.
+  let assignedIds = null;
   if (userId) {
     const assignedRows = await query("SELECT id FROM donors WHERE org_id = ? AND assigned_to = ? AND deleted_at IS NULL", [orgId, userId]);
-    const assignedIds = new Set(assignedRows.map(r => r.id));
-    allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
+    assignedIds = new Set(assignedRows.map(r => r.id));
   }
+  let thisYearDonorIds, prevYearDonorIds, firstGiftDate;
+  if (!gifts) {
+    const [pairs, [first]] = await Promise.all([
+      query(`SELECT donor_id, LEFT(date, 4)::int AS y FROM gifts
+              WHERE org_id = ? AND date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(date, 4) IN (?, ?)
+              GROUP BY 1, 2`, [orgId, String(year).padStart(4, "0"), String(prevYear).padStart(4, "0")]),
+      // The earliest stored date, as the JS reduce below reads it: every
+      // non-empty date, its first ten characters, compared as strings.
+      query(`SELECT MIN(LEFT(date, 10) COLLATE "C") AS first FROM gifts
+              WHERE org_id = ? AND date IS NOT NULL AND date <> ''${userId ? " AND donor_id = ANY(?)" : ""}`,
+            userId ? [orgId, [...assignedIds]] : [orgId]),
+    ]);
+    const kept = assignedIds ? pairs.filter(r => assignedIds.has(r.donor_id)) : pairs;
+    thisYearDonorIds = new Set(kept.filter(r => r.y === year).map(r => r.donor_id));
+    prevYearDonorIds = new Set(kept.filter(r => r.y === prevYear).map(r => r.donor_id));
+    firstGiftDate = first?.first || null;
+  } else {
+  let allGifts = gifts;
+  if (assignedIds) allGifts = allGifts.filter(g => assignedIds.has(g.donor_id));
   // ORG_TZ_SEAM_OK (BUILD-75 A.6) — year-bucket by the stored CIVIL date's own
   // Y, never a new Date() round-trip: `new Date("2026-01-01")` read back through
   // a non-UTC process zone lands on Dec 31 and buckets every New Year's Day
@@ -11493,18 +11530,19 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   const civilYear = g => { const c = orgTime.parseCivil(g.date); return c ? c.y : null; };
   const thisYearGifts = allGifts.filter(g => civilYear(g) === year);
   const prevYearGifts = allGifts.filter(g => civilYear(g) === prevYear);
-  const thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
-  const prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
-  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
-  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
+  thisYearDonorIds = new Set(thisYearGifts.map(g => g.donor_id));
+  prevYearDonorIds = new Set(prevYearGifts.map(g => g.donor_id));
   // BUILD-76 follow-up — the confidence floor (see RETENTION_FLOOR): a rate
   // computed over too few prior-year donors, or too little history, is a
   // thin-data artifact and every consumer must know it. Civil-string compare
   // is safe for YYYY-MM-DD; span measured to the org's own today.
-  const firstGiftDate = allGifts.reduce((min, g) => {
+  firstGiftDate = allGifts.reduce((min, g) => {
     const d = g.date ? String(g.date).slice(0, 10) : null;
     return d && (!min || d < min) ? d : min;
   }, null);
+  }
+  const retained = [...thisYearDonorIds].filter(id => prevYearDonorIds.has(id)).length;
+  const retentionRate = prevYearDonorIds.size > 0 ? Math.round(retained / prevYearDonorIds.size * 100) : null;
   const historyDays = firstGiftDate
     ? (orgTime.daysBetween(firstGiftDate, orgToday(await orgTz(orgId))) ?? 0)
     : 0;
@@ -11520,10 +11558,17 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   };
 }
 
-async function snapshotMetricsForOrg(orgId) {
+// SCALE-1: the reads are independent, so they run in one parallel batch and
+// the writes follow. `out` (optional) receives the full first-touch and
+// retention results, so GET /metrics/stewardship-summary?scope=all, which
+// snapshots and then shows those same two figures, computes each once.
+async function snapshotMetricsForOrg(orgId, out = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const debt = await computeStewardshipDebt(orgId);
-  const { avgDays } = await computeFirstTouchDelay(orgId);
+  const [debt, firstTouch, recovery, retentionAll] = await Promise.all([
+    computeStewardshipDebt(orgId), computeFirstTouchDelay(orgId), computeRecoveryRate(orgId), computeRetentionRate(orgId),
+  ]);
+  if (out) { out.firstTouch = firstTouch; out.retention = retentionAll; }
+  const { avgDays } = firstTouch;
   await run(
     `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
      ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
@@ -11536,7 +11581,7 @@ async function snapshotMetricsForOrg(orgId) {
       ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
     );
   }
-  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
+  const { rate: recoveryRate } = recovery;
   if (recoveryRate != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
@@ -11565,7 +11610,7 @@ async function snapshotMetricsForOrg(orgId) {
     if (th.continuationRate != null) await put("thread_continuation_rate", th.continuationRate);
   } catch (e) { console.error("[metrics] thread health:", e.message); }
 
-  const { retentionRate, thinData: retentionThin } = await computeRetentionRate(orgId);
+  const { retentionRate, thinData: retentionThin } = retentionAll;
   // BUILD-76 follow-up: a thin-data rate is never snapshotted — a 100%-on-16-
   // donors artifact in the trend line would outlive the thin data that made it.
   if (retentionRate != null && !retentionThin) {

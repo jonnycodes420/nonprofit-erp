@@ -7968,6 +7968,16 @@ async function runSchemaInit(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW(),
       updated_by TEXT)`);
 
+  // SCALE-1 · indexes. The app shell and Home count an org's sample rows on
+  // every load (countSampleData, /org/sample-data-status). Sample rows are few
+  // or none, so a partial index on just them answers each count from a tiny
+  // index instead of reading every gift the org has: 447 ms -> 0.02 ms for a
+  // 150k-gift org's sample-gift count. Building them read the 5.8M-gift load
+  // database in about 3 s in all.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_sample ON gifts (org_id) WHERE is_sample = true`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_sample ON donors (org_id) WHERE is_sample = true`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_sample ON interactions (org_id) WHERE is_sample = true`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

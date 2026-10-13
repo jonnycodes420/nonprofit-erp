@@ -107,7 +107,20 @@ const ymd = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
 // `+ 7 * 24 * 60 * 60 * 1000` is wrong by definition: a week containing a DST
 // transition is 167 or 169 hours long, so millisecond arithmetic silently
 // lands on the wrong day twice a year.
+// SCALE-1: a fast path for the common string "YYYY-MM-DD...", read by char
+// code (the same digits the regex accepts: ASCII 0-9 only), because Drift
+// calls this hundreds of thousands of times for a large org. Anything else
+// takes the regex, so the result is the same for every input.
+const _isDigit = c => c >= 48 && c <= 57;
 function parseCivil(s) {
+  if (typeof s === "string" && s.length >= 10 && s.charCodeAt(4) === 45 && s.charCodeAt(7) === 45) {
+    const c0 = s.charCodeAt(0), c1 = s.charCodeAt(1), c2 = s.charCodeAt(2), c3 = s.charCodeAt(3);
+    const c5 = s.charCodeAt(5), c6 = s.charCodeAt(6), c8 = s.charCodeAt(8), c9 = s.charCodeAt(9);
+    if (_isDigit(c0) && _isDigit(c1) && _isDigit(c2) && _isDigit(c3) && _isDigit(c5) && _isDigit(c6) && _isDigit(c8) && _isDigit(c9)) {
+      return { y: (c0 - 48) * 1000 + (c1 - 48) * 100 + (c2 - 48) * 10 + (c3 - 48), m: (c5 - 48) * 10 + (c6 - 48), d: (c8 - 48) * 10 + (c9 - 48) };
+    }
+    return null;
+  }
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ""));
   return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
 }
