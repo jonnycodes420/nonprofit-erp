@@ -16,7 +16,8 @@ import { apiFetch, API, getToken } from "../api";
 import { EXAMPLES as SHOW_EXAMPLES } from "../../../shared/showMe";
 import { T, fmtFull } from "./shared";
 import { Figure } from "./Figure";
-import { DonorLink } from "./RecordLink";
+import { DonorLink, RecordLink } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 import { LogConversationModal } from "./LogConversation";
 import { errorMessage } from "../lib/domainError";
 
@@ -235,6 +236,19 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
         <div data-testid="why-sentence" data-sentence-source={answer.sentenceSource} style={{ fontSize: 17, lineHeight: 1.5, color: T.ink, fontFamily: "'Fraunces', Georgia, serif" }}>{answer.sentence}</div>
         {answer.aiOff && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>AI is turned off for your organization, so this is Steward's own wording.</div>}
       </div>
+
+      {/* POLISH-1: every quote opens the line it came from on the record. */}
+      {(answer.quotes || []).length > 0 && <div data-testid="ask-quotes">
+        <div style={LABEL}>What was said, each opens its line on the record</div>
+        {answer.quotes.map((x, i) => (
+          <RecordLink key={x.id} to={tabHref("donors", x.open)} data-testid="ask-quote" data-interaction={x.id}
+            style={{ display: "block", padding: "9px 2px", borderTop: i ? "1px solid " + T.bg2 : "none", color: T.ink }}>
+            <span style={{ fontSize: 12, color: T.ink3 }}>{x.kind.charAt(0).toUpperCase() + x.kind.slice(1)} on {x.date}{x.who ? ` · ${x.who}` : ""}</span>
+            <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: T.greenDk, textDecoration: "underline", textDecorationColor: T.bg3, textUnderlineOffset: 3 }}>“{x.text}”</span>
+          </RecordLink>
+        ))}
+        {answer.rule && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>{answer.rule}</div>}
+      </div>}
 
       {answer.reasons.length > 0 && <div>
         <div style={LABEL}>{answer.person && answer.person.intent === "done" ? "What they have done, each opens its rows" : money ? "Why, largest first" : "Why, most people first"}</div>

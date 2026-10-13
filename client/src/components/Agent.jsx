@@ -32,7 +32,7 @@
 //   · THE RUN STATE IS THE SERVER'S. The sheet reads GET /agent/runs/:id; the
 //     button never believes its own guess that a run is still going.
 //   · NO RAW MARKDOWN AND NO COLOUR LITERALS. Every colour is a token.
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { Workflows } from "./Workflows";
@@ -257,7 +257,8 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, onReviewAll
 // wrote nothing, and the panel says so.
 function readPanel({ read, wide, onNavigate, onClose }) {
   const go = (tab, opts) => onNavigate && onNavigate(tab, opts);
-  const eyebrow = read.kind === "explain" ? "Read · what it means" : read.kind === "person" || read.kind === "people" || read.kind === "list" ? "Read · found" : "Read · a report";
+  const eyebrow = read.kind === "explain" ? "Read · what it means" : read.kind === "talked" ? "Read · what was said"
+    : read.kind === "person" || read.kind === "people" || read.kind === "list" ? "Read · found" : "Read · a report";
   return (
     <section data-testid="agent-read" data-kind={read.kind} style={{ ...PANEL, padding: wide ? "26px 28px" : "18px 16px", minWidth: 0 }}>
       <div style={EYEBROW}>{eyebrow}</div>
@@ -266,6 +267,20 @@ function readPanel({ read, wide, onNavigate, onClose }) {
       </h2>
       {read.answer && <p style={{ fontSize: 16, lineHeight: 1.5, margin: "0 0 8px", color: T.ink }}>{read.answer}</p>}
       <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: "0 0 8px", color: T.ink2 }}>{read.sentence}</p>
+      {/* POLISH-1: the same answer Ask gives, each quote opening its line on the record. */}
+      {read.kind === "talked" && (read.quotes || []).length > 0 && (
+        <div data-testid="agent-read-quotes" style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
+          {read.quotes.map(x => (
+            <DonorLink key={x.id} id={x.donorId} data-testid="agent-read-quote" data-interaction={x.id}
+              onOpen={() => go("donors", { selectDonorId: x.donorId, anchor: x.open && x.open.anchor })}
+              style={{ ...OUTLINE_BTN, textAlign: "left", fontWeight: 500, borderWidth: 1, lineHeight: 1.45 }}>
+              <span style={{ display: "block", fontSize: 12, color: T.ink3 }}>{x.kind.charAt(0).toUpperCase() + x.kind.slice(1)} on {x.date}{x.who ? ` · ${x.who}` : ""}</span>
+              “{x.text}”
+            </DonorLink>
+          ))}
+        </div>
+      )}
+      {read.kind === "talked" && read.rule && <p style={{ fontSize: 12.5, color: T.ink3, margin: "0 0 8px" }}>{read.rule}</p>}
       {read.kind === "list" && (read.people || []).length > 0 && (
         <div data-testid="agent-read-list" style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
           {read.people.map(p => (
@@ -289,7 +304,7 @@ function readPanel({ read, wide, onNavigate, onClose }) {
           <button data-testid="agent-read-open" onClick={() => go("reports", { report: read.report })}
             style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open {read.name}</button>
         )}
-        {read.kind === "person" && (
+        {(read.kind === "person" || read.kind === "talked") && (
           <DonorLink id={read.donorId} data-testid="agent-read-open" onOpen={() => go("donors", { selectDonorId: read.donorId })}
             style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open the record</DonorLink>
         )}
@@ -487,6 +502,17 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     setAsking(false);
   }, [asking, loadPlans, loadWaiting, loadStatus, persona]);
 
+  // POLISH-1: when an answer arrives (a read, a which, a plan or a refusal),
+  // bring it into view. `answerNonce` moves once per finished ask.
+  const resultRef = useRef(null);
+  const [answerNonce, setAnswerNonce] = useState(0);
+  useEffect(() => { if (!asking) setAnswerNonce(n => n + 1); }, [asking]);
+  useEffect(() => {
+    if (answerNonce < 2 || view !== "ask") return;
+    const el = resultRef.current;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [answerNonce]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // Home's one-line entry carried her words here, and she already pressed.
   useEffect(() => { if (autoAsk && initialText) ask(initialText); /* once, on arrival */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -574,7 +600,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     || (data?.donors || []).find(d => d && d.name);
   const examples = [
     `Draft a thank-you to every ${t("giver", 1)} who gave this month`,
-    someone ? `Just got a cheque from ${someone.name}, 250 dollars` : `Just got a cheque for 250 dollars from someone on file`,
+    someone ? `Just got a check from ${someone.name} for $250` : `Just got a check for $250 from someone on file`,
     `Find the ${t("giver", 2)} who gave last year and not this year, and draft each a note`,
   ];
 
@@ -805,8 +831,14 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
                 </button>
               ))}
             </div>
-            {askErr && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginBottom: 16 }}>{askErr}</div>}
-            {read ? readFor() : which ? whichFor() : asked ? sheetFor(asked) : null}
+            {/* POLISH-1: the answer lands under the examples, ~600px down; it
+                scrolls into view with a ready line the moment it arrives. */}
+            <div ref={resultRef} data-testid="agent-result" style={{ scrollMarginTop: 12 }}>
+              {!asking && (askErr || read || which || asked) && <div role="status" data-testid="agent-ready" style={{ ...EYEBROW, color: T.greenDk, marginBottom: 8 }}>
+                {askErr ? "Steward's answer" : "Ready"}</div>}
+              {askErr && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginBottom: 16 }}>{askErr}</div>}
+              {read ? readFor() : which ? whichFor() : asked ? sheetFor(asked) : null}
+            </div>
           </div>
         )}
 

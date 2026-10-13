@@ -1,4 +1,5 @@
 // shared/agentShape.js — BUILD-97 Part 3. THE AGENT YOU CAN TELL WHAT TO DO.
+import { clipAtWord } from "./askGuide.js";
 //
 // BUILD-75 C.2 drew the line and it has not moved:
 //
@@ -661,7 +662,8 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0, he
   // steps under it carry the detail. Never a headline for a plan with no steps.
   const h = String(said || "").trim().replace(/\s+/g, " ").replace(/[.!]*$/, "");
   if (order.length && h.length >= 8 && h.length <= 90 && !/\u2014/.test(h)) summary = h.charAt(0).toUpperCase() + h.slice(1) + ".";
-  const cant = String(cannot || "").trim().replace(/\s+/g, " ").slice(0, 200);
+  // POLISH-1: cut where a word ends, never mid-word ("open the retention repor").
+  const cant = clipAtWord(cannot, 200);
   const people_ = new Set(out.map(s => s.donorId).filter(Boolean));
   return {
     steps: out,
@@ -671,7 +673,7 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0, he
     sends: out.filter(s => s.tool === "send_email").length,
     confirms: out.filter(s => s.state === STEP_CONFIRM).length,
     withheld,
-    cannot: cant ? (cant.endsWith(".") ? cant : cant + ".") : null,
+    cannot: cant ? (/[.!?…]$/.test(cant) ? cant : cant + ".") : null,
   };
 }
 

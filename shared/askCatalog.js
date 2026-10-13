@@ -1,4 +1,5 @@
 // shared/askCatalog.js · ASK-2. WHAT CAN BE ASKED, DEFINED ONCE.
+import { clipAtWord } from "./askGuide.js";
 //
 // The free box ("Or ask your own question") turns a question into a TYPED
 // PLAN: a metric, a period, what to compare it with, what to break it down
@@ -149,7 +150,7 @@ export function resolveCompare(kind, cur) {
 //        events:[{id,name}], today }. Returns { ok, plan } or { ok:false, refused }.
 export function validatePlan(raw, ctx = {}) {
   if (!raw || typeof raw !== "object") return { ok: false, refused: "that question" };
-  if (raw.unsupported) return { ok: false, refused: String(raw.unsupported).slice(0, 80) };
+  if (raw.unsupported) return { ok: false, refused: clipAtWord(raw.unsupported, 80) };
   const kind = raw.kind || "metric";
   if (!["metric", "who"].includes(kind)) return { ok: false, refused: "that kind of question" };
   const m = METRICS[raw.metric];

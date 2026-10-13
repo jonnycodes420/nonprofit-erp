@@ -23,6 +23,8 @@ const GR = require("../groups");
 const FS = require("../figureSources");
 
 const routers = { r0: express.Router() };
+// POLISH-1: the conversation answer, for the Agent's read (set by mount).
+const exported = {};
 // ASK-3: money and small numbers in the words of a list answer.
 const fmtUsd = c => "$" + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: c % 100 ? 2 : 0, maximumFractionDigits: 2 });
 const firstName = n => String(n || "").trim().split(/\s+/)[0] || "them";
@@ -521,7 +523,7 @@ async function tryQuery(req, typed, previousQuery = null) {
       messages: [{ role: "user", content: AQ.queryPrompt(typed, { today, catalog, previous: prev && prev.ok ? prev.plan : null }) }],
     });
     const raw = AQ.readQueryTool(out.content);
-    if (!raw || raw.answerable === false) return { refused: raw && raw.unsupported ? String(raw.unsupported).slice(0, 120) : null };
+    if (!raw || raw.answerable === false) return { refused: raw && raw.unsupported ? (await guide()).clipAtWord(raw.unsupported, 120) : null };
     const chk = AQ.validateQuery(raw);
     if (!chk.ok) return { refused: chk.refused };
     return { answer: await runQueryPlan(req, chk.plan, typed, "query") };
@@ -644,11 +646,16 @@ async function personActivity(req, res, { donor, typed }) {
 // donor-activity figure (it opens its rows), and the sentence quotes the
 // latest few from the same rows. A template, so the words are the record's own
 // and nothing in it can be made up.
-async function personTalked(req, res, { donor, typed }) {
+//
+// POLISH-1 · ONE RULE FOR CONVERSATIONS. Ask summarizes the calls, notes and
+// meetings logged on a person's record, and every quote opens the line it came
+// from. The Home box, the Why and What rail and the Agent all answer a
+// conversation question with THIS, so no surface quotes a call on one visit
+// and refuses on the next.
+async function talkedAnswer(orgId, donor, typed, userId) {
   const G = await guide();
-  const orgId = req.user.orgId;
   const [d] = await query(`SELECT id, name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [donor, orgId]);
-  if (!d) return res.status(404).json({ error: "Donor not found" });
+  if (!d) return null;
   const today = orgToday(await orgTz(orgId));
   const y = today.slice(0, 4);
   const t = String(typed || "");
@@ -661,7 +668,7 @@ async function personTalked(req, res, { donor, typed }) {
   const f = await FS.figure(orgId, source, {}, { rows: false });
   const n = f ? f.totalRows : 0;
   const rows = n ? await query(
-    `SELECT i.type, LEFT(i.date::text, 10) AS date, i.note, i.logged_by_name AS who, i.metadata->>'kind' AS kind
+    `SELECT i.id, i.type, LEFT(i.date::text, 10) AS date, i.note, i.logged_by_name AS who, i.metadata->>'kind' AS kind
        FROM interactions i WHERE i.org_id = ? AND i.donor_id = ? AND i.type = ANY(?)
         AND LEFT(i.date::text, 10) >= ? AND LEFT(i.date::text, 10) <= ? AND COALESCE(i.note, '') <> ''
       ORDER BY i.date DESC, i.id DESC LIMIT 3`,
@@ -669,28 +676,40 @@ async function personTalked(req, res, { donor, typed }) {
   const word = r => r.kind === "visit" ? "a visit" : ({ call: "a call", meeting: "a meeting", email: "an email", ask: "an ask", note: "a note",
     stewardship: "a thank-you", letter: "a letter", text: "a text", event: "a conversation at an event" })[r.type] || "a conversation";
   const said = r => String(r.note).replace(/([^.!?:;])\s*\n+\s*/g, "$1. ").replace(/\s+/g, " ").trim();
-  const quote = r => { const x = said(r); return `${word(r)} on ${r.date}${r.who ? ` (${r.who})` : ""}: "${x.slice(0, 160)}${x.length > 160 ? "…" : ""}"`; };
+  // A long line is cut where a word ends, never in the middle of one.
+  const clipped = r => G.clipAtWord(said(r), 160);
+  const quote = r => `${word(r)} on ${r.date}${r.who ? ` (${r.who})` : ""}: "${clipped(r)}"`;
   // A quote that already ends in its own full stop is not given a second one.
-  const stop = r => (/[.!?]$/.test(said(r).slice(0, 160)) && said(r).length <= 160 ? "" : ".");
+  const stop = r => (/[.!?]$/.test(clipped(r)) ? "" : ".");
   const sentence = !n
     ? `There is nothing on ${d.name}'s record ${period.words}: no conversations, notes or meetings. If they are in your old system, bring your notes in and ask again.`
     : `${period.words[0].toUpperCase() + period.words.slice(1)}, you had ${spellN(n)} ${n === 1 ? "conversation" : "conversations"} with ${d.name}.`
       + (rows.length ? ` The latest was ${quote(rows[0])}${stop(rows[0])}` : "")
       + (rows.length > 1 ? ` Before that, ${rows.slice(1).map(quote).join("; and ")}${stop(rows[rows.length - 1])}` : "");
-  await logQuestion(orgId, typed || "What did we talk about with this person?", "person: talked", true);
+  // Each quote opens the line it came from: the record, at that line.
+  const quotes = rows.map(r => ({ id: r.id, donorId: d.id, kind: word(r), date: r.date, who: r.who || null, text: clipped(r),
+    open: { tab: "donors", selectDonorId: d.id, anchor: `item-${r.id}` } }));
   const def = await FS.figureSentence(source);
   const out = {
     answered: true, question: { key: "person", text: typed || `What did we talk about with ${d.name}?` }, donor: { id: d.id, name: d.name },
     campaign: null, compare: null, person: { id: d.id, name: d.name, intent: "talked" },
     readAs: `${d.name} · what you talked about, ${period.words}`,
-    sentence, sentenceSource: "template", template: sentence, aiOff: false,
+    sentence, sentenceSource: "template", template: sentence, aiOff: false, quotes,
+    rule: "Ask summarizes the calls, notes and meetings logged on a record. Every quote opens the line it came from.",
     reasons: n ? [{ key: "conversations", label: "Conversations and meetings", count: n, cents: 0, hours: null, measure: "count",
       unit: n === 1 ? "conversation" : "conversations", definition: def, source }] : [],
     who: [{ donorId: d.id, name: d.name, cents: null, reason: `Open ${firstName(d.name)}'s record for every line in full.` }],
     cantSee: "This reads the conversations and notes on their record in Steward, including any brought in from your old system. What was said and never written down is not here.",
     step: null, alsoSteps: [],
   };
-  res.json({ ...out, followUps: G.followUpsFor(out, { canSeeMore: await P.canSee(req.user.userId) }) });
+  return { ...out, followUps: G.followUpsFor(out, { canSeeMore: userId ? await P.canSee(userId) : false }) };
+}
+exported.talkedAnswer = talkedAnswer;
+async function personTalked(req, res, { donor, typed }) {
+  const out = await talkedAnswer(req.user.orgId, donor, typed, req.user.userId);
+  if (!out) return res.status(404).json({ error: "Donor not found" });
+  await logQuestion(req.user.orgId, typed || "What did we talk about with this person?", "person: talked", true);
+  res.json(out);
 }
 
 // "What should I ask them for?" / "the top five": the people the last answer
@@ -1081,4 +1100,4 @@ app.get("/ask/suggestions", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, talkedAnswer: (...a) => exported.talkedAnswer(...a) };

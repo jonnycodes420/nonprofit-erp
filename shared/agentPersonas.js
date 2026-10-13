@@ -113,7 +113,7 @@ export const PERSONAS = [
     "You look after a donor's first thirty days. When somebody gives for the first time you draft the welcome in the organisation's voice, open a follow-up thread with a date, and create the task that makes sure somebody picks it up. You draft; she sends.",
     ["find_people", "count", "draft_note", "create_task", "log_note", "open_thread", "start_journey", "stop_journey", "set_next_step", "mark_gift_thanked"],
     ["first_gift"],
-    "It drafts, starts journeys and opens next steps. Every word reaches her queue, never a donor."),
+    "It drafts, starts journeys and opens next steps. Every word waits in your queue: nothing ever goes straight to a donor."),
 ];
 
 // THE FALLBACK, and the old behaviour exactly. Not in PERSONAS: it is not a

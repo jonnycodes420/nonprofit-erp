@@ -2032,6 +2032,20 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   if (named.badPick) return res.status(400).json({ error: "not_one_of_them",
     sentence: "That is not one of the records that name matches. Pick one from the list." });
 
+  // POLISH-1 · ONE RULE FOR CONVERSATIONS. "Summarize my call with Emily" is a
+  // read, answered by Ask's own conversation answer (routes/why.js
+  // talkedAnswer): the calls, notes and meetings on her record, each quote
+  // opening its line. It used to reach the model, which refused ("I can't pull
+  // up what was said with Emily"), while Ask quoted the same call. No model,
+  // no switch, no write.
+  if (kind === A.KIND_TASK && (await import("../shared/askGuide.js")).personIntent(agentUnaddressed(text)) === "talked") {
+    if (named.ambiguous.length) return res.json({ which: await agentWhich(req.user.orgId, named.ambiguous[0]) });
+    if (named.scope && named.scope.length === 1) {
+      const talked = await require("./why").talkedAnswer(req.user.orgId, named.scope[0], text, req.user.userId);
+      if (talked) return res.json({ read: { kind: "talked", donorId: talked.donor.id, name: talked.donor.name,
+        sentence: talked.sentence, quotes: talked.quotes, rule: talked.rule, note: "Steward read this and wrote nothing." } });
+    }
+  }
   const giftNews = kind === A.KIND_TASK && A.isGiftNews(text) && !!A.parseAmountCents(text);
   const read = kind === A.KIND_TASK && !giftNews ? A.readIntent(agentUnaddressed(text)) : null;
   // FIX-3 B — MORE THAN ONE ADA: ASK WHICH, BEFORE ANY PLAN. The walk's plan
@@ -2153,7 +2167,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     const readOnly = built.steps.length - runnable.length;
     plan = A.compilePlan(runnable, { people: built.people, reads: readNames, withheld: built.withheld,
       headline: built.headline, cannot: built.cannot || (readOnly && !runnable.length
-        ? "That is a question rather than work. Steward answers it in Reports (or try \"open the retention report\"); a plan here would change nothing" : null) });
+        ? "That's a question for Reports: try \"open the retention report\"." : null) });
     if (!plan.steps.length) return res.json({ cannot: { sentence: plan.cannot || "Steward found nothing it can do for that, so nothing was planned." } });
     if (built.timing) plan.timing = built.timing;   // FIX-8 Part D.1
     plan.sends = Math.max(plan.sends, built.sends);

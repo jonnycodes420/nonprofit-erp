@@ -147,7 +147,12 @@ export function followUpsFor(answer, { canSeeMore = false } = {}) {
 // person at all (the catalog and the eight questions take it).
 const INTENTS = [
   // IMPORT-2: what was said, from the notes and conversations on their record.
-  ["talked", /\bwhat (did|have|has) (we|i|you|they|she|he)\b.*\b(talk(ed)?|spoke|speak|discuss(ed)?|say|said|chat(ted)?)\b|\b(notes?|conversations?) (with|about|on)\b|\bwhat (do|did) (we|our notes) (say|know) about\b/i],
+  // POLISH-1: the same question in other words takes the same path. "Summarize
+  // my call with Emily", "how did the meeting with Emily go", "Emily's last
+  // call" were read as something else (or, typed on Home without a question
+  // mark, sent to the Agent, which refused), so one visit quoted the call and
+  // the next said it could not.
+  ["talked", /\bwhat (did|have|has) (we|i|you|they|she|he)\b.*\b(talk(ed)?|spoke|speak|discuss(ed)?|say|said|chat(ted)?)\b|\b(notes?|conversations?) (with|about|on)\b|\bwhat (do|did) (we|our notes) (say|know) about\b|\b(summari[sz]e|recap|sum up)\b|\b(calls?|meetings?|visits?|conversations?) with\b|\bhow (did|was) (the|my|our|her|his|their|that)\b.*\b(call|meeting|visit|conversation|talk)\b|\b(last|latest|recent|most recent) (call|meeting|visit|conversation|note)s?\b|\bwhat (happened|was said) (on|in|at|during|with)\b/i],
   ["stopped", /\bwhy (did|has|have|is)\b.*\b(stop(ped)?|quit|laps(e|ed)|leave|left|go(ne)? quiet)\b|\bwhy (hasn't|has not|hasnt|haven't|didn't|did not)\b.*\b(give|given|giving|donat)/i],
   // WIRE-1: everything one person has done with the org, not only their gifts.
   ["done", /\bwhat (has|have|did)\b.*\b(done|been doing|been up to|been involved)\b|\b(involvement|activity|everything)\b.*\bwith us\b|\bdone with us\b|\bhow (has|is)\b.*\binvolved\b/i],
@@ -156,9 +161,21 @@ const INTENTS = [
   ["given", /\bgiven to\b|\bwhat (has|did|have)\b.*\bgive to\b|\bgiving history\b|\bgift history\b|\bhow much has\b.*\bgiven\b/i],
   ["ask", /\bask\b.*\bfor\b|\bget\b.*\bto give\b|\bgive (more|again|bigger)\b|\bupgrade\b|\bhow much should\b|\bwhat (should|do|can) (i|we) ask\b|\bask (her|him|them)\b|\btell me about\b|\bwho is\b/i],
 ];
+// POLISH-1: a sentence that is too long is cut where a word ends, with an
+// ellipsis, never in the middle of a word ("open the retention repor…").
+export function clipAtWord(text, max) {
+  const s = String(text || "").trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return (at > max * 0.5 ? cut.slice(0, at) : cut).replace(/[\s,;:.!?-]+$/, "") + "…";
+}
+// An instruction ("Log a call with Emily", "Plan a meeting with Emily") is
+// work for the Agent, never a question about what was said.
+const DOING = /^\s*(please\s+)?(log|plan|schedule|draft|send|add|record|book|set|create|make|remind|email|write|call|text|enter|note|start|open)\b/i;
 export function personIntent(text) {
   const s = String(text || "").replace(/[‘’]/g, "'");
-  for (const [k, re] of INTENTS) if (re.test(s)) return k;
+  for (const [k, re] of INTENTS) if (re.test(s) && !(k === "talked" && DOING.test(s))) return k;
   return null;
 }
 // "and Margaret?", "what about Ondine", "Flavia?": the thread's question, about someone else.

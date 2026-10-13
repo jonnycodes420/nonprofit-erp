@@ -158,7 +158,7 @@ async function orgCounts() {
     ok("§1 AI off: the model was not asked", captured.length === before, `${captured.length} vs ${before}`);
     ok("§1 AI off: exactly the hand-built rows", JSON.stringify(ids(a1.rows || [])) === JSON.stringify(ids(hand)), JSON.stringify(ids(a1.rows || [])));
     ok("§1 the count is the rows", a1.count === hand.length, String(a1.count));
-    ok("§1 the filters in words", (a1.words || []).join(" · ") === `Gave in ${Y - 1} · nothing in ${Y} · not deceased`, (a1.words || []).join(" · "));
+    ok("§1 the filters in words", (a1.words || []).join(" · ") === `Gave in ${Y - 1} · nothing in ${Y} · leaving out anyone marked deceased`, (a1.words || []).join(" · "));
     const p = new URLSearchParams(a1.countSource ? a1.countSource.params : {});
     const fig = await (await fetch(`${B}/figures/${a1.countSource && a1.countSource.key}/rows?${p}`, { headers: H })).json();
     ok("§1 the count opens the same rows", JSON.stringify(ids(fig.rows || [])) === JSON.stringify(ids(hand)) && fig.totalRows === hand.length, JSON.stringify(fig).slice(0, 300));
@@ -217,7 +217,7 @@ async function orgCounts() {
       a6.answered === true && JSON.stringify(ids(a6.rows || [])) === JSON.stringify(ids(handCamp)) && JSON.stringify(ids(handCamp)) === JSON.stringify(["d_p4show_a", "d_p4show_f"])
       && a6.rules.gaveCampaign === "c_p4show_prev" && a6.rules.notGaveCampaign === "c_p4show_now",
       JSON.stringify({ got: ids(a6.rows || []), hand: ids(handCamp), rules: a6.rules }));
-    ok("§6 …and the filters name the campaigns", (a6.words || []).join(" · ") === `Gave to Spring Appeal ${Y - 1} · nothing to Spring Appeal ${Y} · not deceased`, (a6.words || []).join(" · "));
+    ok("§6 …and the filters name the campaigns", (a6.words || []).join(" · ") === `Gave to Spring Appeal ${Y - 1} · nothing to Spring Appeal ${Y} · leaving out anyone marked deceased`, (a6.words || []).join(" · "));
 
     // §7 FIX-27: no ask this year, and what to ask.
     const a7 = await ask("Which donors haven't been asked and what should I ask them?");
