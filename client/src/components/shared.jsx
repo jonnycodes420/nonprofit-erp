@@ -730,8 +730,8 @@ export function GlobalStyles() {
       /* Header stays ONE row: compact "←" back (word hidden) beside the donor
          name, the full-width Back bar wasted ~60px of a 700px fold. */
       .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
-      .dph-back{padding:8px 12px!important;font-size:16px!important;min-width:40px!important;min-height:40px!important;}
-      .dph-back-word{display:none!important;}
+      /* POLISH-1: Back is its own small line above the header, word and all. */
+      .dph-back{padding:6px 12px!important;font-size:13px!important;min-height:36px!important;}
       .dph-identity{flex:1 1 auto!important;min-width:0!important;}
       /* Action row: Request Gift is the full-width primary; Impact Summary +
          Edit live behind the "⋯" overflow (they wrapped and misaligned at

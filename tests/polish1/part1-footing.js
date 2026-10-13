@@ -18,15 +18,17 @@
 // read "1 meeting in the last 24 months" beside Last met's "Not met yet"; and
 // shared/phone.js did not exist.
 const bcrypt = require("bcryptjs");
+const fs = require("fs");
+const path = require("path");
 
 const ORG = "org_pol1foot";
-const A = "d_pol1foot_a", B = "d_pol1foot_b";
+const A = "d_pol1foot_a", B = "d_pol1foot_b", C = "d_pol1foot_c";
 const ADMIN = `admin@${ORG}.test`;
 
 module.exports = async function partOne(h) {
   const { ok, q, BASE } = h;
   const del = async () => {
-    for (const t of ["gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "fin_transactions", "gifts", "tasks"]) {
+    for (const t of ["person_photos", "gift_soft_credits", "pledges", "interactions", "threads", "donor_scores", "fin_transactions", "gifts", "tasks"]) {
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
     }
     await q(`DELETE FROM donors WHERE org_id=$1`, [ORG]);
@@ -103,5 +105,58 @@ module.exports = async function partOne(h) {
   ok("§1 a number with an extension is shown as typed, and the link dials the number",
     P && P.phoneDisplay("731.506.1544 ext 4") === "731.506.1544 ext 4" && P.phoneHref("731.506.1544 ext 4") === "tel:+17315061544");
 
+  // §1h THE HEADER IS THE SAME WITH A PHOTO (Jonathan, 13 Oct). A second
+  // person gets a photo through the real upload route; at 1440 and 390 the
+  // name's left edge and top, and the mark's box, match the person without one.
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,person_types,created_by,created_by_name)
+           VALUES ($1,$2,'Pia Photograph',$3,'active','cultivate','["donor"]'::jsonb,$4,$5)`, [C, ORG, `${C}@example.org`, ...who]);
+  const img = "data:image/jpeg;base64," + fs.readFileSync(path.join(__dirname, "..", "..", "scripts", "demo-assets", "demo-impact-studio.jpg")).toString("base64");
+  const up = await fetch(BASE + `/donors/${C}/photo`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok }, body: JSON.stringify({ image: img }) });
+  ok("§1h the photo is stored through the upload route", up.status === 200, up.status);
+  const why = browserWhy(BASE);
+  if (!h.browserLegOrSkip(why, "§1h")) {
+    const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright"));
+    const APP = process.env.APP_URL || "http://localhost:4173";
+    const login = await (await fetch(BASE + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: ADMIN, password: "loadtest1234" }) })).json();
+    const b = await chromium.launch();
+    for (const w of [1440, 390]) {
+      const box = {};
+      for (const id of [A, C]) {
+        const pg = await b.newPage({ viewport: { width: w, height: 900 } });
+        await pg.addInitScript(([t, u, o]) => { localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o); },
+          [login.token, JSON.stringify(login.user), JSON.stringify(login.org)]);
+        await pg.goto(`${APP}/donors/${id}`, { waitUntil: "domcontentloaded" });
+        await pg.waitForSelector('[data-testid="dp-name"]', { timeout: 30000 }).catch(() => {});
+        await pg.waitForTimeout(1500);
+        const photo = await pg.locator('[data-testid="dp-identity"] img[data-testid="person-mark"]').count();
+        const n = await pg.locator('[data-testid="dp-name"]').first().boundingBox({ timeout: 4000 }).catch(() => null);
+        const m = await pg.locator('[data-testid="donor-photo-drop"]').first().boundingBox({ timeout: 4000 }).catch(() => null);
+        box[id] = { photo, n, m };
+        await pg.close();
+      }
+      const [a, c] = [box[A], box[C]];
+      const near = (x, y) => x && y && Math.abs(x - y) <= 1;
+      ok(`§1h @${w} the photo really renders on one and not the other`, a.photo === 0 && c.photo === 1, { a: a.photo, c: c.photo });
+      ok(`§1h @${w} the name starts at the same left edge and top, photo or not`,
+        a.n && c.n && near(a.n.x, c.n.x) && near(a.n.y, c.n.y), { without: a.n, with: c.n });
+      ok(`§1h @${w} the mark is the same box, top-aligned with the name`,
+        a.m && c.m && near(a.m.x, c.m.x) && near(a.m.y, c.m.y) && near(a.m.width, c.m.width) && Math.abs(c.m.y - c.n.y) <= 8, { without: a.m, with: c.m, name: c.n });
+    }
+    await b.close();
+  }
+
   await del();
 };
+
+// The same reasons smoke-walk gives for not driving a browser.
+function browserWhy(BASE) {
+  const DIST = path.join(__dirname, "..", "..", "client", "dist");
+  if (!fs.existsSync(path.join(DIST, "index.html"))) return "client/dist not built";
+  const assets = path.join(DIST, "assets");
+  const origin = BASE.replace(/^https?:\/\//, "");
+  const js = fs.existsSync(assets) ? fs.readdirSync(assets).filter(f => f.endsWith(".js")) : [];
+  if (!js.some(f => fs.readFileSync(path.join(assets, f), "utf8").includes(origin))) return "client/dist not built against the local API";
+  try { require(path.join(process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa"), "node_modules", "playwright")); }
+  catch { return "Playwright not found (set PLAYWRIGHT_DIR)"; }
+  return null;
+}

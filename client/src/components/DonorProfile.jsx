@@ -1924,9 +1924,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           Code intact, re-enable by uncommenting.
       {showVoiceMemo&&<VoiceMemoModal donor={donor} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>{setShowVoiceMemo(false);if(onInteractionAdded)onInteractionAdded();}}/>}
       */}
-      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-        <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
-        <div className="dph-identity" style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+      {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
+          below it the mark (photo or initials, one size) sits top-aligned with
+          the name, and everything about the person is one column beside it.
+          Centred rows let the mark and Back float to the middle of a column
+          whose height changed with the person, so a photo moved the name. */}
+      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px 12px",display:"flex",flexWrap:"wrap",alignItems:"flex-start",gap:"8px 12px",flexShrink:0}}>
+        <div className="dph-backrow" style={{flexBasis:"100%"}}>
+          <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
+        </div>
+        <div className="dph-identity" data-testid="dp-identity" style={{display:"flex",alignItems:"flex-start",gap:12,flex:1,minWidth:0}}>
           {/* BUILD-94 Part 1 — the face. Drop an image on it or click to pick
               one; the old mark was a stage-tinted first letter, which told you
               the stage twice (the pill beside it already says it) and told you
@@ -1940,7 +1947,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   first thing. It is display type now; the email moved to the
                   rail's contact block, where somebody looks when they are
                   about to call. */}
-              <span className="dph-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+              <span className="dph-name" data-testid="dp-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
                 fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{donor.name}</span>
               {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
                   it is brass (the overdue colour), never terracotta. */}
@@ -2006,7 +2013,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             BUTTON with a menu, never a link, because it does something on
             this page rather than going somewhere. Everything that was in the
             row is in the menu, so nothing was dropped. */}
-        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
+        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",alignSelf:"flex-start",position:"relative"}}>
           {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
               buttons in two different colours (a brass "Log a conversation" and
               an emerald "Request Gift"), so nothing on it was the obvious thing
