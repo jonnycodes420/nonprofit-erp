@@ -2449,11 +2449,15 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // an ESM module knows (the open proposal stages) awaits it here. Awaiting
     // a plain object is a no-op, so every existing source is untouched.
     const { sql, args, order } = await def.sql(orgId, p);
-    const [a] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args);
+    // SCALE-1: the total and the page are independent reads; one parallel batch.
+    const [[a], rowsRead] = await Promise.all([
+      query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
+      wantRows
+        ? query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
+        : Promise.resolve([]),
+    ]);
     agg = a;
-    pageRows = wantRows
-      ? await query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
-      : [];
+    pageRows = rowsRead;
   }
   const { value, cents } = valueOf(measure, agg);
   return {

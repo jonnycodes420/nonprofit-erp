@@ -18673,11 +18673,21 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const includeMedium = req.query.includeMedium === "1" || req.query.includeMedium === "true";
   const uncapped = req.query.all === "1" || req.query.all === "true";
-  const { map, today } = await computeDriftForDonors(orgId);
+  // SCALE-1: the reads below that do not depend on the drift map start now
+  // and run beside it (one parallel batch instead of five serial trips).
+  const pEng = query(`SELECT donor_id, engagement, band FROM donor_scores WHERE org_id = ?`, [orgId]);
+  const pInstitutional = query(
+    `SELECT id, name, kind, funder_type, donor_type, total_giving, last_gift_date, gift_count FROM donors
+      WHERE org_id = ? AND deleted_at IS NULL AND kind = 'organisation' AND COALESCE(gift_count,0) > 0
+      ORDER BY total_giving DESC NULLS LAST LIMIT 50`, [orgId]);
+  const pImportHealth = importHealth(orgId);
   // BUILD-79 Part 6 — "1,111 giving patterns checked" was once said about an
   // org with ZERO gifts; zero patterns were checked. The chip's honest count.
-  const giftedDonorCount = (await query(
-    "SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count,0) > 0", [orgId]))[0].n;
+  const pGifted = query(
+    "SELECT COUNT(*)::int AS n FROM donors WHERE org_id=? AND deleted_at IS NULL AND COALESCE(gift_count,0) > 0", [orgId]);
+  for (const p of [pEng, pInstitutional, pImportHealth, pGifted]) p.catch(() => {});   // awaited below; never unhandled
+  const { map, today } = await computeDriftForDonors(orgId);
+  const giftedDonorCount = (await pGifted)[0].n;
 
   const drifting = [...map.values()].filter(a => a.state === "drifting");
   const high = drifting.filter(a => a.confidence === "high");
@@ -18717,7 +18727,7 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // (engagement Distant), and the row says so; and the list can be put in
   // engagement order (?sort=engagement, closest first: who is likeliest to
   // pick up). The default order is unchanged: the usual gift at risk.
-  const engRows = await query(`SELECT donor_id, engagement, band FROM donor_scores WHERE org_id = ?`, [orgId]);
+  const engRows = await pEng;
   const engMap = new Map(engRows.map(r => [r.donor_id, r]));
   const byEngagement = req.query.sort === "engagement";
   const surfaced = (includeMedium ? drifting : high)
@@ -18747,14 +18757,11 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // foundation or DAF, a gift from anyone else (shared/institutional.js), and
   // the date as it reads, computed once here for Home to print.
   const INST = await import("../shared/institutional.js");
-  const institutional = (await query(
-    `SELECT id, name, kind, funder_type, donor_type, total_giving, last_gift_date, gift_count FROM donors
-      WHERE org_id = ? AND deleted_at IS NULL AND kind = 'organisation' AND COALESCE(gift_count,0) > 0
-      ORDER BY total_giving DESC NULLS LAST LIMIT 50`, [orgId]))
+  const institutional = (await pInstitutional)
     .map(r => ({ donorId: r.id, name: r.name, totalGiving: r.total_giving, lastGiftDate: r.last_gift_date, giftCount: r.gift_count,
                  lastWord: INST.lastGiftWord(r), lastGiftLabel: INST.shortCivilDate(r.last_gift_date) }));
 
-  const { caveat: importCaveat } = await importHealth(orgId);
+  const { caveat: importCaveat } = await pImportHealth;
   res.json({
     today,
     institutional,
