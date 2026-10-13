@@ -290,6 +290,16 @@ async function collectLiveAssetRefs(orgId) {
     ...await query(`SELECT draft, published FROM giving_pages${w}`, p),
     ...(await query(`SELECT blocks FROM email_templates${w}`, p)).map(r => ({ draft: r.blocks, published: null })),
   ];
+  // GIVE-EDIT-1: a giving page's own photo, its drafted photo, and every kept
+  // version of a page (a version that can be restored keeps its photos).
+  for (const r of await query(`SELECT image_url, draft_settings->>'imageUrl' AS draft_image FROM giving_pages${w}`, p)) {
+    add(r.image_url); add(r.draft_image);
+  }
+  for (const r of await query(`SELECT snapshot FROM giving_page_versions${w}`, p).catch(() => [])) {
+    const snap = typeof r.snapshot === "string" ? JSON.parse(r.snapshot) : (r.snapshot || {});
+    add(snap.settings && snap.settings.imageUrl);
+    pageRows.push({ draft: Array.isArray(snap.widgets) ? snap.widgets : [], published: null });
+  }
   for (const r of pageRows) {
     for (const list of [r.draft, r.published]) {
       for (const wd of (Array.isArray(list) ? list : [])) {

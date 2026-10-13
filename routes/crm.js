@@ -21335,6 +21335,8 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
       raisedAmount: parseFloat(page.raised_amount) || 0,
+      // GIVE-EDIT-1: the goal bar's switch, set in the page editor.
+      showGoal: page.show_goal !== false,
       fundId: page.fund_id, fundName: page.fund_name || null,
       // "Counts toward" linkage (attribution FIX) — when set, the public
       // thermometer shows the campaign's progress, not a second page-local goal.

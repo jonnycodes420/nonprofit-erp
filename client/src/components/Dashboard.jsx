@@ -31,6 +31,7 @@ import { MorningBrief } from "./MeetingPanels";
 import { MailboxBanner } from "./InboxConnect";
 import { displayDateShort } from "../../../shared/displayDate";
 import { displayName } from "../../../shared/displayName.js";
+import { stepInSentence, ORG_NAME_RE } from "../../../shared/stepCase.js";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
 import { AskHero } from "./AskRail";
@@ -50,19 +51,7 @@ const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/recurring/
 const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
   `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
   `/dashboard/retention/breakdown?scope=${scope}`];
-// FIX (2026-09-18) — "Next: send the proposal." A step label is written as a
-// heading ("Send the proposal"); inside a sentence it is mid-sentence. Only the
-// first letter moves, and only when the word is not already a name or an
-// acronym — "Send the LOI" keeps its LOI.
-// FIX-34: "2 more for Christopher", but an organisation keeps its whole name.
-const ORG_NAME_RE=/\b(foundation|trust|fund|church|inc|llc|ltd|company|corporation|association|society|club|group|bank|school|university|council|collective|partners|ministries)\b/i;
-const lowerFirst=s=>{
-  const str=String(s||"").trim();
-  if(!str)return str;
-  const first=str.split(/\s+/)[0];
-  if(first.length>1&&first===first.toUpperCase())return str;
-  return str.charAt(0).toLowerCase()+str.slice(1);
-};
+// "Next: send the proposal." keeps names and acronyms (shared/stepCase.js).
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
 // [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
@@ -2040,7 +2029,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
           <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
-            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
+            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {stepInSentence(t.nextStep.label,[t.donorName])}{/[.?!]$/.test(String(t.nextStep.label||"").trim())?"":"."}</span>
             {t.moreSteps?.length>0&&<>{" "}<span role="button" tabIndex={0} data-testid="thread-steps-more" aria-expanded={moreOpen===t.donorId}
               onClick={e=>{e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}
               onKeyDown={e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();setMoreOpen(o=>o===t.donorId?null:t.donorId);}}}

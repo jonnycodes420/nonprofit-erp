@@ -907,7 +907,8 @@ export default function Donate() {
   const effectiveAmount = isCustom ? parseFloat(customAmt) || 0 : (preset || 0);
   const baseCents = Math.round(effectiveAmount * 100);
   const feeCents = baseCents >= 100 ? grossUpCents(baseCents) - baseCents : 0;
-  const showCoverFees = org?.coverFeesEnabled && baseCents >= 100;
+  // GIVE-EDIT-1 — a page may hide the fee-cover box; the org's switch still wins.
+  const showCoverFees = org?.coverFeesEnabled && giveSpec?.showCoverFee !== false && baseCents >= 100;
   const chargedAmount = showCoverFees && coverFees ? (baseCents + feeCents) / 100 : effectiveAmount;
 
   const isRecurring = frequency !== "one-time";
@@ -1252,6 +1253,8 @@ export default function Donate() {
   // The goal bar, drawn once: at the top of a campaign page, or under the
   // story on any other giving page (FIX-15 Part 6).
   const goalBar = () => {
+              // GIVE-EDIT-1 — the page's own switch: the goal and its bar off.
+              if (givingPage && givingPage.showGoal === false) return null;
               const linked = !!givingPage.campaignId;
               const shownRaised = linked && givingPage.campaignRaised != null ? givingPage.campaignRaised : givingPage.raisedAmount;
               const shownGoal = linked ? givingPage.campaignGoal : givingPage.goalAmount;
@@ -1537,7 +1540,7 @@ export default function Donate() {
             spec={giveSpec}
             formId={givingPage?.id}
             theme={th}
-            coverFeesEnabled={org?.coverFeesEnabled}
+            coverFeesEnabled={!!org?.coverFeesEnabled && giveSpec.showCoverFee !== false}
             upsellThresholdCents={givingPage?.upsellThresholdCents}
             upsellMonthlyCents={givingPage?.upsellMonthlyCents}
             feeRateSentence={org?.feeRateSentence}

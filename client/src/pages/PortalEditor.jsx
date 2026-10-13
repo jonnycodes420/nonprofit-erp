@@ -71,6 +71,10 @@ const btn = { background: E.gold, color: E.ink, border: "none", borderRadius: 9,
 const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid " + E.line, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
 const inp = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + E.bg3, borderRadius: 8, fontFamily: "inherit" };
 const lbl = { fontSize: 11, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
+// GIVE-EDIT-1 — the Details rail and the form preview.
+const money0 = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const FREQ_LABEL = { once: "One-time", monthly: "Monthly", annual: "Annual" };
+const checkRow = { display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: E.body, cursor: "pointer", marginTop: 8, lineHeight: 1.5 };
 
 function varsForPs(ps) {
   const pairing = resolvePairing(ps.type_pairing);
@@ -119,20 +123,30 @@ export default function PortalEditor() {
   const [camps, setCamps] = useState([]);
   const [impactUpdates, setImpactUpdates] = useState([]); // the org's REAL published updates (BUILD-55)
   const [volData, setVolData] = useState(null);       // VOL-PAGE-1: the programme's live roles, shifts and numbers
-  const [device, setDevice] = useState("phone");     // §4: phone DEFAULT
-  const [mode, setMode] = useState("page");           // "page" (widgets) | "design" (theme)
+  // GIVE-EDIT-1 — `?form=org` edits the org's own donation form in this same
+  // editor; `?page=gp_…` a giving or volunteer page; nothing, the portal.
+  const editorParams = new URLSearchParams(window.location.search);
+  const givingPageId = editorParams.get("page") || "";
+  const isOrgForm = !givingPageId && editorParams.get("form") === "org";
+  const isPageEditor = !!givingPageId || isOrgForm;
+  // A giving page opens on its Details, side by side at desktop and phone.
+  const [device, setDevice] = useState(isPageEditor ? "both" : "phone");     // §4: phone DEFAULT for the portal
+  const [mode, setMode] = useState(isPageEditor ? "details" : "page");       // "details" | "page" (widgets) | "design" (theme)
+  const [ds, setDs] = useState(null);                 // GIVE-EDIT-1: the draft settings
+  const [dsErrors, setDsErrors] = useState([]);
+  const [dsSave, setDsSave] = useState("idle");
+  const [historyOpen, setHistoryOpen] = useState(false);
   // BUILD-95 §5B — which surface this editor is arranging. ONE editor; the
   // surface decides which widgets the palette offers and nothing else.
   // BUILD-95 §5B — ONE editor, two surfaces. `?page=gp_…` arranges a giving
   // page; no parameter arranges the org's portal page. The route SHAPES are
   // identical (GET base · PUT base/draft · POST base/publish · base/revert),
   // so the surface is a base path and a filter, not a second editor.
-  const givingPageId = new URLSearchParams(window.location.search).get("page") || "";
   // VOL-PAGE-1: a giving_pages row may be a volunteer page; the server says
   // which surface it is, and with it which widgets the palette may offer.
-  const surface = givingPageId ? (meta?.surface || "give") : "portal";
+  const surface = isOrgForm ? "orgform" : givingPageId ? (meta?.surface || "give") : "portal";
   const isVolunteer = surface === "volunteer";
-  const apiBase = givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
+  const apiBase = isOrgForm ? "/org-form/page" : givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
   const [formPosition, setFormPosition] = useState("top");
   const [libOpen, setLibOpen] = useState(false);      // widget library — collapsed by default (BUILD-55)
   const [selected, setSelected] = useState(null);
@@ -146,12 +160,19 @@ export default function PortalEditor() {
   const psSeq = useRef(0);        // Design-mode race guard (mirrors editSeq)
   const psSaveTimer = useRef(null);
   const psRef = useRef(null);     // latest ps, updated synchronously on edit
+  const dsSeq = useRef(0);        // GIVE-EDIT-1: settings race guard (mirrors editSeq)
+  const dsTimer = useRef(null);
+  const dsRef = useRef(null);
 
   const applyPs = useCallback((next) => { psRef.current = next; setPs(next); }, []);
 
   useEffect(() => {
     apiFetch(apiBase).then(d => {
       setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); if (d.formPosition) setFormPosition(d.formPosition);
+      const s0 = d.draftSettings || d.settings || null;
+      dsRef.current = s0; setDs(s0);
+      // A volunteer page has no Details rail and keeps the phone first.
+      if (d.surface === "volunteer") { setMode(m => m === "details" ? "page" : m); setDevice(v => v === "both" ? "phone" : v); }
       // The preview draws the real programme (org content, never a person's data).
       if (d.surface === "volunteer" && givingPageId) {
         apiFetch(`/giving-pages/${givingPageId}/volunteer-data`).then(setVolData).catch(() => setVolData({}));
@@ -237,6 +258,54 @@ export default function PortalEditor() {
     }, 1200);
   }, [apiBase, formPosition]);
 
+  // GIVE-EDIT-1 — the Details rail's draft, saved like the widgets: debounced,
+  // and the server's answer adopted only if nothing changed in flight.
+  const saveSettingsNow = useCallback(async (next) => {
+    const seq = ++dsSeq.current;
+    setDsSave("saving");
+    const { imageData, ...rest } = next || {};
+    const body = { settings: imageData ? { ...rest, imageData } : rest };
+    try {
+      const r = await apiFetch(apiBase + "/settings", { method: "PUT", body: JSON.stringify(body) });
+      if (seq === dsSeq.current) {
+        if (r && r.draftSettings) { dsRef.current = r.draftSettings; setDs(r.draftSettings); }
+        setMeta(m => m ? { ...m, draftSettings: r?.draftSettings || m.draftSettings } : m);
+        setDsErrors([]); setDsSave("saved");
+      }
+      return true;
+    } catch (e) {
+      if (seq === dsSeq.current) {
+        const errs = Array.isArray(e?.body?.errors) ? e.body.errors : Array.isArray(e?.data?.errors) ? e.data.errors : Array.isArray(e?.errors) ? e.errors : [];
+        setDsErrors(errs.length ? errs : [{ field: "", message: errorMessage(e, "Could not save the draft.") }]);
+        setDsSave("error");
+      }
+      return false;
+    }
+  }, [apiBase]);
+  const scheduleSettingsSave = useCallback((next) => {
+    setDsSave("dirty");
+    if (dsTimer.current) clearTimeout(dsTimer.current);
+    dsTimer.current = setTimeout(() => { dsTimer.current = null; saveSettingsNow(next); }, 900);
+  }, [saveSettingsNow]);
+  const setSetting = (k, v) => {
+    const next = { ...(dsRef.current || {}), [k]: v };
+    if (v === undefined) delete next[k];
+    dsRef.current = next; setDs(next); scheduleSettingsSave(next);
+  };
+  const setFormSetting = (patch) => {
+    const cur = dsRef.current || {};
+    const next = { ...cur, form: { ...(cur.form || {}), ...patch } };
+    dsRef.current = next; setDs(next); scheduleSettingsSave(next);
+  };
+  const reloadMeta = async () => {
+    const d = await apiFetch(apiBase);
+    setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []);
+    if (d.formPosition) setFormPosition(d.formPosition);
+    const s0 = d.draftSettings || d.settings || null;
+    dsRef.current = s0; setDs(s0); setDsErrors([]);
+    return d;
+  };
+
   const update = (next) => { setWidgets(next); scheduleSave(next); };
   const updateWidget = (id, patch) => update(widgets.map(w => w.id === id ? { ...w, ...patch } : w));
   const removeWidget = (id) => { update(widgets.filter(w => w.id !== id)); if (selected === id) setSelected(null); };
@@ -276,21 +345,27 @@ export default function PortalEditor() {
     setPublishing(true); setErr("");
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
-      const seq = ++editSeq.current;
-      const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets, formPosition }) });
-      if (seq === editSeq.current) setWidgets(r.draft);
+      // GIVE-EDIT-1 — a pending Details edit is saved first, so Publish
+      // publishes what is on screen.
+      if (dsTimer.current) { clearTimeout(dsTimer.current); dsTimer.current = null; if (!(await saveSettingsNow(dsRef.current))) throw new Error("Fix the notes in Details, then publish."); }
+      if (!isOrgForm && (widgets.length || Array.isArray(meta?.draft))) {
+        const seq = ++editSeq.current;
+        const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets, formPosition }) });
+        if (seq === editSeq.current) setWidgets(r.draft);
+      }
       await apiFetch(apiBase + "/publish", { method: "POST", body: "{}" });
-      const d = await apiFetch(apiBase);
-      setMeta(d); setSaveState("saved");
+      await reloadMeta();
+      setSaveState("saved"); setDsSave("idle");
     } catch (e) { setErr(errorMessage(e, "Publish failed.")); }
     setPublishing(false);
   };
   const revert = async () => {
     if (!(await askConfirm({ title: "Discard the draft?", body: "The page goes back to the last published version.", yes: "Discard draft", danger: true }))) return;
     try {
-      const r = await apiFetch(apiBase + "/revert", { method: "POST", body: "{}" });
-      setWidgets(Array.isArray(r.draft) ? r.draft : []);
-      setSelected(null); setSaveState("saved");
+      if (dsTimer.current) { clearTimeout(dsTimer.current); dsTimer.current = null; }
+      await apiFetch(apiBase + "/revert", { method: "POST", body: "{}" });
+      await reloadMeta();
+      setSelected(null); setSaveState("saved"); setDsSave("idle");
     } catch (e) { setErr(errorMessage(e, "Revert failed.")); }
   };
   const applyStarter = async (key) => {
@@ -373,7 +448,8 @@ export default function PortalEditor() {
       {(ps.logo_data || ps.logo_url) && (
         <img src={ps.logo_data || resolveAssetUrl(ps.logo_url)} alt="" style={{ height: 28, maxWidth: 90, objectFit: "contain" }} />
       )}
-      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface !== "portal" ? (meta?.pageTitle || (isVolunteer ? "Your volunteer page" : "Your giving page")) : (ps.display_name || "Your portal")}</div>
+      {/* An unbuilt giving page shows its own headline just below; one is enough. */}
+      {!(surface === "give" && widgets.length === 0 && ds) && <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface !== "portal" ? (meta?.pageTitle || (isVolunteer ? "Your volunteer page" : "Your giving page")) : (ps.display_name || "Your portal")}</div>}
     </div>
   );
   // BUILD-95 §5B — the ONE control a giving page adds. The form is not a
@@ -391,21 +467,26 @@ export default function PortalEditor() {
     </label>
   );
 
-  const formBlock = surface !== "give" ? null : (
-    <div style={{ border: "2px dashed var(--pt-primary,"+E.preview+")", borderRadius: 12, padding: "18px 16px",
-                  textAlign: "center", margin: "14px 0", background: "rgba(0,0,0,0.02)" }}>
-      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--pt-primary," + E.preview + ")" }}>
-        The donation form
-      </div>
-      <div style={{ fontSize: 12, color: E.muted, marginTop: 4 }}>
-        Always here. Amounts, frequency and card details.
-      </div>
-    </div>
+  // GIVE-EDIT-1 — the form as the draft says a donor will meet it.
+  const formBlock = (surface !== "give" && surface !== "orgform") || !ds ? null : (
+    <FormPreview ds={ds} camps={camps} surface={surface} />
   );
+  const heroWidget = widgets.find(w => w.type === "hero") || null;
+  const draftPhoto = ds ? (ds.imageData || resolveAssetUrl(ds.imageUrl || "")) : "";
+  // An unbuilt giving page shows its title, story and photo, as it does live.
+  const unbuiltPage = surface === "give" && ds ? (
+    <div data-testid="unbuilt-preview">
+      {draftPhoto && <img src={draftPhoto} alt="" style={{ width: "100%", maxHeight: 260, objectFit: "cover", borderRadius: 12, display: "block", marginBottom: 14 }} />}
+      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 28, lineHeight: 1.2, marginBottom: 10 }}>{ds.title}</div>
+      {String(ds.story || "").split(/\n{2,}/).filter(Boolean).map((t, i) => <p key={i} style={{ fontSize: 15, lineHeight: 1.6, margin: "0 0 10px" }}>{t}</p>)}
+    </div>
+  ) : null;
 
-  const pageBody = widgets.length === 0 ? (
+  const pageBody = surface === "orgform" ? formBlock : widgets.length === 0 ? (
     <div style={{ padding: "10px 0 30px" }}>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Start with a layout</div>
+      {unbuiltPage}
+      {unbuiltPage && formBlock}
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6, marginTop: unbuiltPage ? 18 : 0 }}>{unbuiltPage ? "Or start from a layout" : "Start with a layout"}</div>
       <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point, everything stays editable, and nothing is visible to {isVolunteer ? "anyone" : "donors"} until you publish.</div>
       {(meta?.starters || []).map(s => (
         <button key={s.key} onClick={() => applyStarter(s.key)}
@@ -447,7 +528,7 @@ export default function PortalEditor() {
       {/* ── Top chrome ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
         <a href="/dashboard" style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>← Steward</a>
-        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : "Portal editor"}</span>
+        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal editor"}</span>
         {surface !== "portal"
           ? <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>{meta?.pageTitle || "Page"}</span>
           : <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>}
@@ -455,18 +536,18 @@ export default function PortalEditor() {
             page details (the old Settings portal form, moved here so you edit
             what you see, where you see it). */}
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
-          {["page", "design"].map(m => (
-            <button key={m} onClick={() => { setMode(m); if (m === "design") { setSelected(null); setLibOpen(false); } }}
+          {(surface === "give" ? ["details", "page", "design"] : surface === "orgform" ? ["details", "design"] : ["page", "design"]).map(m => (
+            <button key={m} data-testid={"editor-mode-" + m} onClick={() => { setMode(m); if (m !== "page") { setSelected(null); setLibOpen(false); } }}
               style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? E.editPanel2 : "transparent", borderColor: mode === m ? E.gold : E.line }}>
-              {m === "page" ? "Page" : "Design"}
+              {m === "page" ? "Page" : m === "details" ? "Details" : "Design"}
             </button>
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
-          {["phone", "desktop"].map(d => (
-            <button key={d} onClick={() => setDevice(d)}
+          {(isPageEditor ? ["both", "phone", "desktop"] : ["phone", "desktop"]).map(d => (
+            <button key={d} data-testid={"editor-device-" + d} onClick={() => setDevice(d)}
               style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? E.editPanel2 : "transparent", borderColor: device === d ? E.gold : E.line }}>
-              {d === "phone" ? "Phone" : "Desktop"}
+              {d === "phone" ? "Phone" : d === "desktop" ? "Desktop" : "Side by side"}
             </button>
           ))}
         </div>
@@ -481,8 +562,9 @@ export default function PortalEditor() {
         <span style={{ marginLeft: "auto", fontSize: 12, color: E.sage }}>
           {saveState === "saving" ? "Saving draft…" : saveState === "dirty" ? "Unsaved edits…" : saveState === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves"}
         </span>
-        {meta?.publishedAt && <button onClick={revert} style={btnQuiet}>Revert to published</button>}
-        <button onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
+        {isPageEditor && <button data-testid="editor-history" onClick={() => { setHistoryOpen(o => !o); setSelected(null); }} style={{ ...btnQuiet, borderColor: historyOpen ? E.gold : E.line }}>History</button>}
+        {(meta?.publishedAt || meta?.draftSettings) && <button onClick={revert} style={btnQuiet}>Revert to published</button>}
+        <button data-testid="editor-publish" onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
       </div>
       {err && <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
 
@@ -490,6 +572,16 @@ export default function PortalEditor() {
         {/* ── Left rail: Design mode — the theme + page-detail controls (the
             old Settings PortalManager form, one home now). The preview to the
             right updates immediately from local ps state. ── */}
+        {/* On a phone the history takes the rail's place rather than squeezing beside it. */}
+        {mode === "details" && ds && !(historyOpen && typeof window !== "undefined" && window.innerWidth < 900) && (
+          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
+            {surface === "orgform"
+              ? <OrgFormRail ds={ds} onSet={setSetting} errors={dsErrors} saveState={dsSave} />
+              : <DetailsRail ds={ds} onSet={setSetting} onSetForm={setFormSetting} errors={dsErrors} saveState={dsSave}
+                  funds={Array.isArray(meta?.funds) && meta.funds.length ? meta.funds : funds} camps={Array.isArray(meta?.campaigns) && meta.campaigns.length ? meta.campaigns : camps}
+                  hero={heroWidget} onHeroHeading={v => heroWidget && updateWidget(heroWidget.id, { heading: v })} />}
+          </div>
+        )}
         {mode === "design" && (
           <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
             <DesignRail ps={ps} onSet={setDesign} note={designNote} />
@@ -515,8 +607,30 @@ export default function PortalEditor() {
           </div>
         )}
 
-        {/* ── Canvas ── */}
-        {device === "phone" ? (
+        {/* ── Canvas ── GIVE-EDIT-1: "Side by side" draws the desktop page and
+            the 390px phone next to each other, from the same draft. */}
+        {device === "both" ? (
+          <div data-testid="preview-side-by-side" style={{ flex: 1, minWidth: 0, display: "flex", gap: 0, overflow: "hidden" }}>
+            <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
+              <div style={{ textAlign: "center", fontSize: 11, color: E.muted, padding: "8px 0 0" }}>Desktop</div>
+              <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
+                {pageHeader}
+                {pageBody}
+              </div>
+            </div>
+            <div style={{ flexShrink: 0, overflow: "auto", padding: "16px 18px", borderLeft: "1px solid " + E.editPanel2 }}>
+              <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
+                <div style={{ width: 390, height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
+                  <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
+                    {pageHeader}
+                    {pageBody}
+                  </div>
+                </div>
+              </div>
+              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px</div>
+            </div>
+          </div>
+        ) : device === "phone" ? (
           <div style={{ flex: 1, minWidth: 0, overflow: "auto", display: "flex" }}>
             {/* margin:auto centers the frame both ways and never clips when the
                 viewport is shorter than the frame (flex centering would). */}
@@ -544,7 +658,12 @@ export default function PortalEditor() {
         )}
 
         {/* ── Options panel — beside the canvas, only while a widget is selected ── */}
-        {mode === "page" && selectedWidget && (
+        {historyOpen && isPageEditor && (
+          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
+            <HistoryPanel apiBase={apiBase} onClose={() => setHistoryOpen(false)} onRestored={reloadMeta} />
+          </div>
+        )}
+        {!historyOpen && mode === "page" && selectedWidget && (
           <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
             <WidgetOptions w={selectedWidget} funds={funds} camps={camps} volData={volData}
               onChange={patch => updateWidget(selectedWidget.id, patch)}
@@ -930,4 +1049,275 @@ function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
       </div></>;
     default: return head;
   }
+}
+
+// ── GIVE-EDIT-1 · The page's details, its form, its history ──────────────
+// One editor still: the Details rail edits the page's DRAFT settings (the
+// headline, the story, the photo, the form's amounts and frequency, where the
+// gift goes, the goal bar and the thank-you), saved through
+// PUT <base>/settings. Nothing reaches a donor until Publish, and every
+// publish is a version that can be put back in one click.
+
+function railGroup(label) {
+  return <div style={{ fontSize: 12, fontWeight: 700, color: E.body, textTransform: "uppercase", letterSpacing: "0.08em", margin: "18px 0 2px", borderTop: "1px solid " + E.editLine, paddingTop: 14 }}>{label}</div>;
+}
+function FieldError({ errors, prefix }) {
+  const hit = (errors || []).filter(e => String(e.field || "").startsWith(prefix));
+  if (!hit.length) return null;
+  return <div data-testid="field-error" style={{ fontSize: 12, color: E.terra, marginTop: 4, lineHeight: 1.4 }}>{hit.map(e => e.message).join(" ")}</div>;
+}
+
+// A list of amounts in whole or decimal dollars. The text is local while she
+// types, so "2" on the way to "25" never becomes a refused $2 or a lost field.
+function AmountList({ valueDollars, onChange, min = 0, max = 8, whole = false, testid }) {
+  const [text, setText] = useState(() => (valueDollars || []).map(String));
+  const key = (valueDollars || []).join(",");
+  const lastSent = useRef(key);
+  useEffect(() => { if (key !== lastSent.current) { setText((valueDollars || []).map(String)); lastSent.current = key; } }, [key]);
+  const push = (next) => {
+    setText(next);
+    const nums = next.map(t => Number(String(t).replace(/[$,\s]/g, ""))).filter(n => Number.isFinite(n) && n > 0).map(n => whole ? Math.round(n) : Math.round(n * 100) / 100);
+    lastSent.current = nums.join(",");
+    onChange(nums);
+  };
+  return (
+    <div data-testid={testid}>
+      {text.map((t, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+          <span style={{ fontSize: 13, color: E.muted }}>$</span>
+          <input style={{ ...inp, width: 110 }} inputMode="decimal" value={t} aria-label={`Amount ${i + 1}`}
+            onChange={e => push(text.map((x, j) => j === i ? e.target.value : x))} />
+          {text.length > min && <button type="button" onClick={() => push(text.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: E.muted, fontSize: 12, cursor: "pointer" }}>Remove</button>}
+        </div>
+      ))}
+      {text.length < max && <button type="button" onClick={() => push([...text, ""])} style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, padding: "5px 12px", fontSize: 12 }}>Add an amount</button>}
+    </div>
+  );
+}
+
+function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroHeading, saveState }) {
+  const f = ds.form || {};
+  const photo = ds.imageData || resolveAssetUrl(ds.imageUrl || "");
+  const des = f.designation || { mode: "none", fundId: null, fundIds: [] };
+  const choosing = des.mode === "choice";
+  const freq = f.defaultFrequency || "once";
+  const setFreq = v => onSetForm({ defaultFrequency: v, ...(v === "monthly" ? { offerMonthly: true } : {}), ...(v === "annual" ? { offerAnnual: true } : {}) });
+  const setFund = fundId => {
+    onSet("fundId", fundId || null);
+    if (!choosing) onSetForm({ designation: fundId ? { mode: "fixed", fundId, fundIds: [] } : { mode: "none", fundId: null, fundIds: [] } });
+  };
+  const setChoosing = on => onSetForm({ designation: on ? { mode: "choice", fundId: null, fundIds: funds.map(x => x.id) }
+    : ds.fundId ? { mode: "fixed", fundId: ds.fundId, fundIds: [] } : { mode: "none", fundId: null, fundIds: [] } });
+  return (
+    <div data-testid="details-rail">
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Details</div>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
+        Every change saves as a draft. Donors keep seeing the live page until you press Publish, and the link never changes.
+      </div>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>{saveState === "saving" ? "Saving draft…" : saveState === "error" ? "Not saved yet. Check the notes below." : saveState === "saved" ? "Draft saved" : ""}</div>
+      {errors && errors.length > 0 && (
+        <div data-testid="details-errors" style={{ background: E.terra100, color: E.terra, fontSize: 12.5, borderRadius: 8, padding: "8px 10px", marginTop: 8, lineHeight: 1.5 }}>
+          {errors.map((e, i) => <div key={i}>{e.message}</div>)}
+        </div>
+      )}
+
+      {railGroup("The page")}
+      <div style={lbl}>Headline</div>
+      {hero ? (
+        <>
+          <input data-testid="details-headline" style={inp} value={hero.heading || ""} placeholder={ds.title || "Your headline"} onChange={e => onHeroHeading(e.target.value)} />
+          <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>This page opens with a picture block, so the headline is the one on that block.</div>
+        </>
+      ) : (
+        <input data-testid="details-headline" style={inp} value={ds.title || ""} onChange={e => onSet("title", e.target.value)} />
+      )}
+      <FieldError errors={errors} prefix="title" />
+      <div style={lbl}>The story</div>
+      <textarea data-testid="details-story" style={{ ...inp, minHeight: 120, resize: "vertical", lineHeight: 1.5 }} value={ds.story || ""} onChange={e => onSet("story", e.target.value)} placeholder="What this gift makes possible, in your own words." />
+      <FieldError errors={errors} prefix="story" />
+      <div style={lbl}>Photo</div>
+      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
+        shape="banner" preview={photo || null}
+        label={photo ? "Replace photo" : "Drag a photo here, or browse"}
+        onFile={({ dataUrl }) => onSet("imageData", dataUrl)}
+        onRemove={() => { onSet("imageData", undefined); onSet("imageUrl", ""); }} />
+      <FieldError errors={errors} prefix="image" />
+      <div style={{ fontSize: 11.5, color: E.muted, marginTop: 8, lineHeight: 1.45 }}>Colors and logo come from your brand, in the Design tab, so every page looks like yours.</div>
+
+      {railGroup("The gift")}
+      <div style={lbl}>Suggested amounts</div>
+      <AmountList testid="details-amounts" valueDollars={(f.amountsCents || []).map(c => c / 100)} max={8}
+        onChange={nums => onSetForm({ amountsCents: nums.map(n => Math.round(n * 100)) })} />
+      <FieldError errors={errors} prefix="form.amountsCents" />
+      <FieldError errors={errors} prefix="amountsCents" />
+      <div style={lbl}>Opens on</div>
+      <div role="radiogroup" aria-label="Which frequency is chosen first" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {["once", "monthly", "annual"].map(v => (
+          <label key={v} style={{ ...checkRow, marginTop: 0, border: "1px solid " + (freq === v ? E.green : E.bg3), borderRadius: 8, padding: "5px 10px", background: freq === v ? E.white : "transparent" }}>
+            <input type="radio" name="opens-on" checked={freq === v} onChange={() => setFreq(v)} /> {FREQ_LABEL[v]}
+          </label>
+        ))}
+      </div>
+      <label style={checkRow}><input type="checkbox" checked={f.offerMonthly !== false} disabled={freq === "monthly"} onChange={e => onSetForm({ offerMonthly: e.target.checked })} style={{ marginTop: 2 }} />Offer monthly giving</label>
+      <label style={checkRow}><input type="checkbox" checked={f.offerAnnual === true} disabled={freq === "annual"} onChange={e => onSetForm({ offerAnnual: e.target.checked })} style={{ marginTop: 2 }} />Offer a yearly gift</label>
+      <FieldError errors={errors} prefix="form.offer" />
+      <FieldError errors={errors} prefix="form.defaultFrequency" />
+      <label style={checkRow}>
+        <input data-testid="details-cover-fee" type="checkbox" checked={f.showCoverFee !== false} onChange={e => onSetForm({ showCoverFee: e.target.checked })} style={{ marginTop: 2 }} />
+        <span>Show the box that lets donors cover the fee
+          <span style={{ display: "block", fontSize: 11, color: E.muted }}>Your organization's own fee setting in Settings still decides whether it can show at all.</span></span>
+      </label>
+
+      {railGroup("Where the gift goes")}
+      <div style={lbl}>Fund</div>
+      <select style={inp} value={ds.fundId || ""} onChange={e => setFund(e.target.value)} disabled={choosing}>
+        <option value="">No fund named</option>
+        {funds.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </select>
+      <label style={checkRow}><input data-testid="details-donor-chooses" type="checkbox" checked={choosing} onChange={e => setChoosing(e.target.checked)} style={{ marginTop: 2 }} />Let the donor choose the fund</label>
+      <FieldError errors={errors} prefix="form.designation" />
+      <FieldError errors={errors} prefix="fund" />
+      <div style={lbl}>Counts toward a campaign</div>
+      <select style={inp} value={ds.campaignId || ""} onChange={e => onSet("campaignId", e.target.value || null)}>
+        <option value="">No campaign</option>
+        {camps.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+      <FieldError errors={errors} prefix="campaign" />
+
+      {railGroup("Goal")}
+      <label style={checkRow}><input data-testid="details-show-goal" type="checkbox" checked={ds.showGoal !== false} onChange={e => onSet("showGoal", e.target.checked)} style={{ marginTop: 2 }} />Show the goal and progress bar</label>
+      {ds.showGoal !== false && !ds.campaignId && (
+        <>
+          <div style={lbl}>Goal ($)</div>
+          <input style={inp} inputMode="decimal" value={ds.goalAmount == null ? "" : ds.goalAmount}
+            onChange={e => { const v = e.target.value.replace(/[^0-9.]/g, ""); onSet("goalAmount", v === "" ? null : Number(v)); }} />
+        </>
+      )}
+      {ds.showGoal !== false && ds.campaignId && <div style={{ fontSize: 11.5, color: E.muted, marginTop: 6 }}>The bar shows the campaign's own goal and what it has raised.</div>}
+      <FieldError errors={errors} prefix="goal" />
+
+      {railGroup("After they give")}
+      <div style={lbl}>Thank-you message</div>
+      <textarea data-testid="details-thanks" style={{ ...inp, minHeight: 90, resize: "vertical", lineHeight: 1.5 }} value={(f.thankYou && f.thankYou.message) || ""}
+        placeholder="Leave it empty and donors read a short thank-you in your name."
+        onChange={e => onSetForm({ thankYou: { ...(f.thankYou || {}), message: e.target.value } })} />
+      <FieldError errors={errors} prefix="form.thankYou" />
+    </div>
+  );
+}
+
+function OrgFormRail({ ds, onSet, errors, saveState }) {
+  return (
+    <div data-testid="details-rail">
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Your donation form</div>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
+        The amounts donors see on your main giving page. Changes save as a draft until you publish, and the link never changes. Your name and colors come from the Design tab.
+      </div>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 6 }}>{saveState === "saving" ? "Saving draft…" : saveState === "saved" ? "Draft saved" : ""}</div>
+      {errors && errors.length > 0 && (
+        <div data-testid="details-errors" style={{ background: E.terra100, color: E.terra, fontSize: 12.5, borderRadius: 8, padding: "8px 10px", marginTop: 8 }}>{errors.map((e, i) => <div key={i}>{e.message}</div>)}</div>
+      )}
+      {railGroup("One-time amounts")}
+      <AmountList testid="orgform-onetime" valueDollars={ds.onetimeAmounts || []} min={3} max={6} whole onChange={v => onSet("onetimeAmounts", v)} />
+      {railGroup("Monthly amounts")}
+      <AmountList testid="orgform-monthly" valueDollars={ds.monthlyAmounts || []} min={3} max={6} whole onChange={v => onSet("monthlyAmounts", v)} />
+      <div style={{ fontSize: 11.5, color: E.muted, marginTop: 10, lineHeight: 1.45 }}>Three to six whole-dollar amounts for each.</div>
+    </div>
+  );
+}
+
+// The draft form as a donor will meet it. A picture of the form, not the form:
+// nothing here can take a card.
+function FormPreview({ ds, camps, surface }) {
+  const pill = on => ({ border: "1px solid " + (on ? "var(--pt-primary," + E.preview + ")" : E.bg3), background: on ? "var(--pt-primary," + E.preview + ")" : E.white,
+    color: on ? E.white : E.body, borderRadius: 8, padding: "8px 12px", fontSize: 14, fontWeight: 600 });
+  const box = { background: E.white, border: "var(--pt-card-border,1px solid " + E.hair + ")", borderRadius: "var(--pt-card-radius,14px)", padding: "16px 16px", margin: "14px 0" };
+  if (surface === "orgform") {
+    return (
+      <div data-testid="form-preview" style={box}>
+        {[["One-time", ds.onetimeAmounts], ["Monthly", ds.monthlyAmounts]].map(([label, list]) => (
+          <div key={label} style={{ marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{(list || []).map(a => <span key={a} style={pill(false)}>{money0(a)}</span>)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const f = ds.form || {};
+  const freqs = ["once", ...(f.offerMonthly !== false ? ["monthly"] : []), ...(f.offerAnnual === true ? ["annual"] : [])];
+  const first = freqs.includes(f.defaultFrequency) ? f.defaultFrequency : "once";
+  const camp = ds.campaignId ? camps.find(c => c.id === ds.campaignId) : null;
+  const goal = camp ? Number(camp.goalAmount || 0) : Number(ds.goalAmount || 0);
+  const raised = camp ? Number(camp.raised || 0) : null;
+  const pct = goal > 0 && raised != null ? Math.min(100, Math.round((raised / goal) * 100)) : 0;
+  return (
+    <div data-testid="form-preview" style={box}>
+      {ds.showGoal !== false && goal > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ height: 10, borderRadius: 99, background: E.hair, overflow: "hidden" }}>
+            <div style={{ width: pct + "%", height: "100%", background: "var(--pt-primary," + E.preview + ")" }} />
+          </div>
+          <div style={{ fontSize: 12.5, color: E.muted, marginTop: 6 }}>
+            {raised != null ? `${money0(raised)} raised of ${money0(goal)}` : `Goal ${money0(goal)}. The bar fills from real gifts once the page is live.`}
+          </div>
+        </div>
+      )}
+      {freqs.length > 1 && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>{freqs.map(v => <span key={v} style={pill(v === first)}>{FREQ_LABEL[v]}</span>)}</div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {(f.amountsCents || []).map(c => <span key={c} style={pill(false)}>{money0(c / 100)}{first === "monthly" ? "/mo" : first === "annual" ? "/yr" : ""}</span>)}
+        {f.allowOther !== false && <span style={{ ...pill(false), color: E.muted }}>Other</span>}
+      </div>
+      {f.showCoverFee !== false && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: E.body, marginTop: 12 }}>
+          <span style={{ width: 14, height: 14, border: "1px solid " + E.muted, borderRadius: 3, display: "inline-block" }} /> Cover the processing fee so all of my gift goes to the work
+        </div>
+      )}
+      <div style={{ marginTop: 14, ...pill(true), textAlign: "center", background: "var(--pt-button,var(--pt-primary," + E.preview + "))" }}>Give</div>
+      {f.thankYou && f.thankYou.message ? (
+        <div style={{ fontSize: 12, color: E.muted, marginTop: 12, lineHeight: 1.5 }}><strong>After they give:</strong> {f.thankYou.message}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function HistoryPanel({ apiBase, onClose, onRestored }) {
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState("");
+  const load = useCallback(() => {
+    apiFetch(apiBase + "/history").then(r => setRows(Array.isArray(r?.versions) ? r.versions : []))
+      .catch(e => { setRows([]); setErr(errorMessage(e, "Could not load the history.")); });
+  }, [apiBase]);
+  useEffect(() => { load(); }, [load]);
+  const when = d => { try { return new Date(d).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+  const restore = async (v) => {
+    if (!(await askConfirm({ title: `Put version ${v.number} back?`, body: "It goes live straight away, at the same link. The page as it is now stays in this list, so you can come back to it.", yes: "Restore" }))) return;
+    setBusy(v.id); setErr("");
+    try { await apiFetch(`${apiBase}/history/${encodeURIComponent(v.id)}/restore`, { method: "POST", body: "{}" }); await onRestored(); load(); }
+    catch (e) { setErr(errorMessage(e, "Could not restore that version.")); }
+    setBusy("");
+  };
+  return (
+    <div data-testid="history-panel">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700 }}>History</div>
+        <button onClick={onClose} aria-label="Close history" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>Done ✕</button>
+      </div>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 10 }}>Every publish is kept, with who did it and when. Restore puts that version live again.</div>
+      {err && <div style={{ fontSize: 12, color: E.terra, marginBottom: 8 }}>{err}</div>}
+      {rows === null ? <div style={{ fontSize: 12, color: E.muted }}>Loading…</div>
+        : rows.length === 0 ? <div style={{ fontSize: 12.5, color: E.muted }}>Nothing published yet. The first Publish starts the history.</div>
+        : rows.map((v, i) => (
+          <div key={v.id} data-testid="history-row" style={{ background: E.white, border: "1px solid " + E.editLine, borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: E.body }}>Version {v.number}{i === 0 ? " · live now" : ""}</div>
+            <div style={{ fontSize: 12, color: E.muted, marginTop: 2 }}>{v.baseline ? "As it was before the first edit here" : `${v.restoredFrom ? `Restored from version ${v.restoredFrom}` : "Published"} by ${v.byName || "someone on your team"}`} · {when(v.createdAt)}</div>
+            {i > 0 && <button type="button" data-testid="history-restore" disabled={!!busy} onClick={() => restore(v)}
+              style={{ ...btnQuiet, color: E.ink, borderColor: E.bg3, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>{busy === v.id ? "Restoring…" : "Restore"}</button>}
+          </div>
+        ))}
+    </div>
+  );
 }

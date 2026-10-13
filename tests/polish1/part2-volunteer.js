@@ -66,8 +66,17 @@ module.exports = async function part2(h) {
     const pt = words(await p.text());
     ok("§2a a sign-up from it reads \"You're in. <Org> will be in touch this week.\"",
       p.status === 200 && pt.includes("You're in.") && pt.includes(`${ORG_NAME} will be in touch this week.`), pt.slice(0, 200));
+    // GIVE-EDIT-1: the standing link waits for a person, like the published
+    // page. It is an application in Pending applications, not a roster row;
+    // approving it is what makes the person a volunteer.
+    const [onRoster] = await q(`SELECT id FROM donors WHERE org_id=$1 AND email='rosa.standing@pol1vol.local'`, [ORG]);
+    ok("§2a the sign-up is not put straight on the roster", !onRoster, onRoster);
+    const pend = (await api("GET", "/volunteer-hub/applications", tok)).body;
+    const rosaApp = (pend.applications || []).find(a => a.email === "rosa.standing@pol1vol.local");
+    ok("§2a the sign-up waits in Pending applications", rosaApp && rosaApp.status === "pending", pend.applications);
+    const appr = await api("POST", `/volunteer-hub/applications/${rosaApp && rosaApp.id}/approve`, tok, {});
     const [rosa] = await q(`SELECT id, person_types FROM donors WHERE org_id=$1 AND email='rosa.standing@pol1vol.local'`, [ORG]);
-    ok("§2a the sign-up is on the record as a Volunteer", !!rosa && JSON.stringify(rosa.person_types).includes("volunteer"), rosa);
+    ok("§2a approving it puts them on the record as a Volunteer", appr.status === 200 && !!rosa && JSON.stringify(rosa.person_types).includes("volunteer"), { status: appr.status, rosa });
 
     // ── §2c the expiry sentence ─────────────────────────────────────────────
     ok("§2c Reach says whether the link expires, before she copies it",
