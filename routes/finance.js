@@ -763,23 +763,26 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
        calendarOk, who_.id, who_.name]);
     await writeAuditLog(req.user.orgId, who_.id, who_.name, "mailbox_connected", "mailbox", key, {}).catch(() => {});
     const ML = await mailboxMod();
-    // The first sync runs now, so the connect page can show what it found.
-    // It never blocks the answer: a slow mailbox is a later number, not a
-    // failed connection.
     // FIX-34: each API this connection needs is asked one cheap question now,
     // so a switched-off API is named on the card instead of a silent nothing.
     const [made] = await query(`SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
       [req.user.userId, req.user.orgId, key]);
     const apis = made ? await runApiCheck(made).catch(() => null) : null;
     const apiRefused = (apis || []).filter(a => a.ok === false).map(a => a.sentence);
-    const first = await Promise.race([
-      (async () => { const m = await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => null);
-                     const c = calendarOk ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => null) : null;
-                     return { m, c }; })(),
-      new Promise(r => setTimeout(() => r(null), 20000)),
-    ]);
+    // SCALE-2 · THE FIRST READ IS A BACKGROUND JOB (routes/jobs.js
+    // mailboxFirstRead), so the answer never waits on a big mailbox. The card
+    // shows how far it has got until it finishes.
+    let reading = false;
+    if (made) {
+      await run(`UPDATE mailbox_connections SET read_progress=0 WHERE id=?`, [made.id]);
+      reading = !!(await require("../jobQueue").enqueue({ name: "mailboxFirstRead", orgId: req.user.orgId,
+        key: "mailboxFirstRead:" + made.id, payload: { connectionId: made.id }, priority: 2 }).catch(e => {
+          console.error("[mailbox] first read not queued:", e.message); return null; }));
+      if (!reading) await run(`UPDATE mailbox_connections SET read_progress=NULL WHERE id=? AND NOT EXISTS
+        (SELECT 1 FROM job_queue WHERE key=? AND status IN ('waiting','running'))`, [made.id, "mailboxFirstRead:" + made.id]);
+    }
     return res.json({ ok: true, provider: key, account: address, needsTenantChoice: false, tenants: null,
-      calendarGranted: calendarOk, firstSync: !!first, apis,
+      calendarGranted: calendarOk, firstSync: false, reading, apis,
       sentence: `${address} is connected, and Steward holds the permission encrypted. ${ML.FIELDS_SENTENCE}`
         + (apiRefused.length ? " " + apiRefused.join(" ") : "")
         + (calendarOk ? "" : " The calendar was not included, so meetings will not appear until you add it.") });
@@ -1161,6 +1164,10 @@ async function mailboxHealth(conn) {
   };
   const instant = pAll ? { on: pAll.on, sentence: MP.instantSentence(pAll, conn.provider), lastNoticeAt: pAll.lastNoticeAt,
     pollEveryMinutes: pAll.on ? MP.SAFETY_POLL_MS / 60e3 : MP.FALLBACK_POLL_MS / 60e3 } : null;
+  // SCALE-2 · the first read's progress, only while its job is still waiting
+  // or running (a read whose process died never leaves a line stuck at 40%).
+  const reading = conn.read_progress != null && await require("../jobQueue").keyBusy("mailboxFirstRead:" + conn.id).catch(() => false)
+    ? { pct: Math.max(0, Math.min(99, Number(conn.read_progress) || 0)) } : null;
   const banner = !stale ? null : mailOk
     ? `Steward hasn't read your ${label} since ${clock(mailOk, tz)}. Reconnect`
     : `Steward hasn't been able to read your ${label} yet. Reconnect`;
@@ -1170,7 +1177,7 @@ async function mailboxHealth(conn) {
     meetingsFound: meetings.n || 0, eventsPushed: pushed.n || 0,
     lastError, lastErrorAt: refused ? conn.last_error_at : apisOff.length ? conn.api_checked_at : failNewer ? lastFail.finished_at : null,
     apis: apisOff.map(a => ({ api: a.api, label: a.label, reason: a.reason, sentence: a.sentence })),
-    stale, banner, instant,
+    stale, banner, instant, reading,
     definition: "From Steward's own record of every read. Messages logged counts emails with people on file that this connection added to their records; meetings found counts calendar events with someone on file. Instant updates means Google or Microsoft tells Steward the moment something changes; Steward still reads on its own every 30 minutes, or every 5 when they are paused.",
   };
 }

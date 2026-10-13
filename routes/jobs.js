@@ -505,6 +505,21 @@ Q.handle("mailboxSync", async ({ connectionId }) => {
   if (conn) await syncOneConnection(conn);
 });
 Q.handle("mailboxSyncHealth", () => refreshMailboxSyncHealth({ log: true }));
+// SCALE-2 · A NEW CONNECTION'S FIRST READ IS A JOB, not part of the connect
+// request: a 25,000-donor mailbox is a minute of searching, and the connect
+// page answers at once. The read writes its progress as it goes; the card
+// stops showing it when this job is done, however it ended.
+Q.handle("mailboxFirstRead", async ({ connectionId }) => {
+  const [conn] = await query(`SELECT * FROM mailbox_connections WHERE id=? AND status='active'`, [connectionId]);
+  if (!conn) return;
+  try {
+    await syncMailbox(conn.user_id, conn.org_id, conn.provider, { trigger: "connect" });
+    await run(`UPDATE mailbox_connections SET read_progress=NULL WHERE id=?`, [conn.id]);
+    if (conn.calendar_granted) await syncCalendar(conn.user_id, conn.org_id, conn.provider, { trigger: "connect" });
+  } finally {
+    await run(`UPDATE mailbox_connections SET read_progress=NULL WHERE id=?`, [conn.id]).catch(() => {});
+  }
+});
 
 // Check trial expiry on startup (15s delay) then every 6 hours
 async function checkTrialExpiry() {

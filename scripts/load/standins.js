@@ -11,6 +11,13 @@
 const http = require("http");
 
 const LATENCY_MS = Number(process.env.STANDIN_LATENCY_MS || 60);
+// SCALE-2: the ports can move, so a second run (the mailbox measure) never
+// shares counts with a load run already using the defaults.
+const PORTS = { providers: Number(process.env.STANDIN_PROVIDER_PORT || 6718), anthropic: Number(process.env.STANDIN_ANTHROPIC_PORT || 6719),
+                mail: Number(process.env.STANDIN_MAIL_PORT || 6702) };
+// SCALE-2: a Gmail search longer than this (URL-encoded) is refused with 400,
+// the way a real provider refuses a query it will not run. 0 = no limit.
+const GMAIL_Q_MAX = Number(process.env.STANDIN_GMAIL_Q_MAX || 0);
 const counts = { providers: {}, anthropic: { calls: 0, inputTokens: 0, outputTokens: 0, byKind: {} }, mail: { sends: 0, batch: 0 } };
 const bump = (o, k, n = 1) => { o[k] = (o[k] || 0) + n; };
 const readBody = req => new Promise(res => { let b = ""; req.on("data", c => { b += c; }); req.on("end", () => res(b)); });
@@ -39,8 +46,10 @@ http.createServer(async (req, res) => {
   const key = req.method + " " + req.url.split("?")[0].replace(/\/(load|org_load|realm|acct_load)[\w-]*/g, "/:id").slice(0, 80);
   bump(counts.providers, key);
   void body;
+  const qm = GMAIL_Q_MAX && /\/gmail\/v1\/users\/[^/]+\/messages\?/.test(req.url) && req.url.match(/[?&]q=([^&]*)/);
+  if (qm && qm[1].length > GMAIL_Q_MAX) return later(() => send(res, 400, { error: { code: 400, message: "Invalid query" } }));
   later(() => send(res, 200, providerBody(req.url)));
-}).listen(6718, "127.0.0.1");
+}).listen(PORTS.providers, "127.0.0.1");
 
 http.createServer(async (req, res) => {
   const raw = await readBody(req);
@@ -59,7 +68,7 @@ http.createServer(async (req, res) => {
   later(() => send(res, 200, { id: "msg_load", type: "message", role: "assistant", model: b.model || "claude-load",
     content, stop_reason: tool ? "tool_use" : "end_turn", stop_sequence: null,
     usage: { input_tokens: input, output_tokens: out } }));
-}).listen(6719, "127.0.0.1");
+}).listen(PORTS.anthropic, "127.0.0.1");
 
 http.createServer(async (req, res) => {
   const raw = await readBody(req);
@@ -71,6 +80,6 @@ http.createServer(async (req, res) => {
   }
   counts.mail.sends++;
   send(res, 200, { id: "load_" + counts.mail.sends });
-}).listen(6702, "127.0.0.1");
+}).listen(PORTS.mail, "127.0.0.1");
 
-console.log(`[standins] providers :6718, anthropic :6719, mail :6702 (latency ${LATENCY_MS}ms)`);
+console.log(`[standins] providers :${PORTS.providers}, anthropic :${PORTS.anthropic}, mail :${PORTS.mail} (latency ${LATENCY_MS}ms)`);

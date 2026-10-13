@@ -9206,6 +9206,7 @@ function syncErrorSentence(providerKey, what, e) {
 // FIX-34 · ONE RUN PER CONNECTION AT A TIME, and a 429 is honoured. The lock
 // is a Postgres advisory lock, so it also holds across two instances.
 const APIC = require("./apiCheck");
+const MBF = require("./mailboxFetch");
 const syncLockKey = (kind, conn) => `mailboxsync:${kind}:${conn.id}`;
 const backedOff = conn => conn.retry_after && new Date(conn.retry_after).getTime() > Date.now();
 async function noteRetryAfter(conn, e) {
@@ -9228,7 +9229,7 @@ async function syncMailboxLocked(conn, userId, orgId, providerKey, trigger) {
   const runId = await startSyncRun(conn, "mail", trigger);
   await run(`UPDATE mailbox_connections SET last_tried_at=NOW() WHERE id=?`, [conn.id]).catch(() => {});
   try {
-    const out = await syncMailboxRun(conn, userId, orgId, providerKey);
+    const out = await syncMailboxRun(conn, userId, orgId, providerKey, { progress: trigger === "connect" });
     await finishSyncRun(runId, { ok: true, found: out.found ?? null, logged: out.logged || 0 });
     await refreshMailboxSyncHealth().catch(() => {});
     return out;
@@ -9269,7 +9270,7 @@ async function gmailUnchanged(conn, token) {
   return b.history && b.history.length ? { changed: true } : { unchanged: true, historyId: String(b.historyId) };
 }
 
-async function syncMailboxRun(conn, userId, orgId, providerKey) {
+async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = false } = {}) {
   const ML = await import("./shared/mailboxLog.js");
   const token = await mailboxAccessToken(conn, orgId, providerKey);
   if (!token) throw Object.assign(new Error("token refused"), { code: "token_refused" });
@@ -9329,7 +9330,17 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
     [orgId, providerKey, orgId]);
   const excludedIds = exRows.map(r => r.message_id).filter(Boolean);
 
-  const fetched = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()]);
+  // SCALE-2 · THE FIRST READ SAYS HOW FAR IT HAS GOT. Only the read a new
+  // connection starts (routes/jobs.js mailboxFirstRead) writes it, at most
+  // once a second, for the Connections card's "Reading your mailbox: 40%".
+  let lastPct = -1, lastAt = 0;
+  const onProgress = !progress ? null : async (done, total) => {
+    const pct = Math.min(99, Math.floor(done * 100 / Math.max(1, total)));
+    if (pct <= lastPct || Date.now() - lastAt < 1000) return;
+    lastPct = pct; lastAt = Date.now();
+    await run(`UPDATE mailbox_connections SET read_progress=? WHERE id=?`, [pct, conn.id]).catch(() => {});
+  };
+  const fetched = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()], { onProgress });
   // Every request the provider refused, and none it answered: that is a
   // failed read, said so, never "nothing new".
   if (fetched.asked && fetched.refused === fetched.asked)
@@ -9827,7 +9838,7 @@ async function mailboxAccessToken(conn, orgId, providerKey) {
 // GRAPH_API_BASE) serves every mail URL, the attachments included.
 const GMAIL_BASE = () => process.env.GMAIL_API_BASE || "https://gmail.googleapis.com";
 const GRAPH_BASE = () => process.env.GRAPH_API_BASE || "https://graph.microsoft.com";
-async function fetchMailboxMessages(providerKey, token, donorEmails) {
+async function fetchMailboxMessages(providerKey, token, donorEmails, { onProgress = null } = {}) {
   const out = [];
   const seen = new Set();
   const CHUNK = 15, CAP = 120;
@@ -9835,10 +9846,13 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
   const auth = { headers: { Authorization: "Bearer " + token } };
   // One request, counted: a refusal is a number the caller can act on, not a
   // null that reads as an empty mailbox.
-  const ask = async url => {
+  const ask = async (url, { soft = false } = {}) => {
     asked++;
     try {
       const r = await providerFetch(url, auth);
+      // SCALE-2: a search Gmail found too long is split and asked again
+      // (mailboxFetch.js), so it is neither an answer nor a refusal.
+      if (soft && !r.ok && MBF.TOO_LONG.has(r.status)) { asked--; return { tooLong: true }; }
       if (!r.ok) {
         refused++; lastStatus = r.status; lastBody = await r.json().catch(() => null);
         console.error(`[mailbox] ${providerKey} answered ${r.status}`);
@@ -9855,19 +9869,18 @@ async function fetchMailboxMessages(providerKey, token, donorEmails) {
   };
   const keep = m => { if (m && m.id && !seen.has(String(m.id)) && out.length < CAP) { seen.add(String(m.id)); out.push(m); } };
   const GRAPH_SELECT = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,body,hasAttachments,webLink,conversationId,internetMessageHeaders";
+  if (providerKey === "google") {
+    // Gmail's search covers every folder, so mail she SENT to a donor is in
+    // this answer too; the SENT label is what marks it hers. SCALE-2: as many
+    // addresses per search as Gmail will run, searches four ahead and message
+    // fetches eight at a time, kept in the old order (mailboxFetch.js).
+    for (const m of await MBF.readGmail({ ask, base: GMAIL_BASE(), emails: donorEmails, toMessage: gmailToMessage, cap: CAP, onProgress })) keep(m);
+    return { messages: out, asked, refused, lastStatus, lastBody };
+  }
   for (let i = 0; i < donorEmails.length && out.length < CAP; i += CHUNK) {
     const chunk = donorEmails.slice(i, i + CHUNK);
-    if (providerKey === "google") {
-      // Gmail's search covers every folder, so mail she SENT to a donor is in
-      // this answer too; the SENT label is what marks it hers.
-      const q = chunk.map(e => `from:${e} OR to:${e} OR cc:${e}`).join(" OR ");
-      const list = await ask(`${GMAIL_BASE()}/gmail/v1/users/me/messages?maxResults=40&q=${encodeURIComponent(q)}`);
-      for (const { id } of (list?.messages || [])) {
-        if (out.length >= CAP) break;
-        const full = await ask(`${GMAIL_BASE()}/gmail/v1/users/me/messages/${id}?format=full`);
-        if (full) keep(gmailToMessage(full));
-      }
-    } else {
+    if (onProgress) await onProgress(i, donorEmails.length);
+    {
       // FIX-33 · SENT MAIL LOGS TOO. Outlook was asked only for mail FROM a
       // person on file, so an email she sent a donor from Outlook was never
       // logged (GRANTS-1 found it). Sent Items is asked separately, by
