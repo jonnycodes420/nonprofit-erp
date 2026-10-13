@@ -7743,6 +7743,9 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_sync_runs_org ON mailbox_sync_runs (org_id, started_at DESC)`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_error TEXT`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_tried_at TIMESTAMPTZ`);
+  // SCALE-2 · how far the first read of a new connection has got (0 to 99),
+  // NULL when no first read is under way.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS read_progress SMALLINT`);
   // FIX-34 · each API the connection needs, as last checked (apiCheck.js);
   // a 429 skips the connection until retry_after; the Gmail history id and
   // the calendar's last read time make a run with nothing new one small call;

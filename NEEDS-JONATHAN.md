@@ -21,6 +21,12 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-SCALE-2 · ONE LOOK AT A REAL GMAIL FIRST READ (2026-10-13)
+
+1. After SCALE-2 is live, connect a real Gmail in an org with more than 100 people who have an email (or press Read now on one that is connected). On Settings, Connections the card shows "Reading your mailbox: N%" and then the usual numbers. If the card instead names a Gmail error, set `GMAIL_QUERY_MAX=2000` on the Railway web service (it is the most characters one Gmail search may carry; unset means 6,000) and tell Claude. Nothing else is needed: Gmail's own "too long" refusals are already handled.
+
+---
+
 ## 0-SCALE-1 · A WORKER SERVICE, THEN A SECOND WEB REPLICA (2026-10-13)
 
 Nothing breaks if you never do this: with `STEWARD_PROCESS` unset the one service serves the app AND runs every background job, exactly as before. Do the steps in order; each is safe on its own.

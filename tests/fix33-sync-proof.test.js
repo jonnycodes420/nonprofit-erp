@@ -85,6 +85,30 @@ const graphEvent = (id, subject, startH, attendees = [], location = null) => ({
   attendees: attendees.map(a => ({ emailAddress: { address: a } })),
 });
 
+// SCALE-2 (§11): a Gmail that runs the search it is sent. It reads the
+// addresses out of the query in either spelling (the old "from:a OR to:a" and
+// the {} group), answers newest first, honours maxResults and pageToken, takes
+// S.gmailSearch.delayMs per search, and refuses with 400 a query whose
+// URL-encoded length is over S.gmailSearch.qMax, the way Gmail refuses one it
+// will not run.
+function gmailSearch(u, send) {
+  const G = S.gmailSearch;
+  const qRaw = u.searchParams.get("q") || "";
+  G.searches++;
+  setTimeout(() => {
+    if (G.qMax && encodeURIComponent(qRaw).length > G.qMax) { G.refusedTooLong++; return send(400, { error: { code: 400, message: "Invalid query" } }); }
+    const want = new Set([...qRaw.matchAll(/\b(?:from|to|cc):"?([^\s{}()"]+)"?/g)].map(m => m[1].toLowerCase()));
+    const hdr = (m, n) => (m.payload.headers.find(h => h.name.toLowerCase() === n) || {}).value || "";
+    const addrs = m => ["from", "to", "cc"].flatMap(n => hdr(m, n).split(",")).map(a => (a.match(/<([^>]+)>/) || [, a])[1].trim().toLowerCase());
+    const hits = Object.values(S.gmail).filter(m => addrs(m).some(a => want.has(a)))
+      .sort((a, b) => Number(b.internalDate) - Number(a.internalDate)).map(m => ({ id: m.id }));
+    const max = Math.min(500, Number(u.searchParams.get("maxResults")) || 100);
+    const from = Number(u.searchParams.get("pageToken") || 0);
+    const page = hits.slice(from, from + max);
+    send(200, { messages: page, ...(from + max < hits.length ? { nextPageToken: String(from + max) } : {}), resultSizeEstimate: hits.length });
+  }, G.delayMs || 0);
+}
+
 const mock = http.createServer((req, res) => {
   let raw = "";
   req.on("data", c => { raw += c; });
@@ -111,6 +135,7 @@ const mock = http.createServer((req, res) => {
       return send(404, {});
     }
     // Gmail
+    if (p === "/gmail/v1/users/me/messages" && S.gmailSearch) return gmailSearch(u, send);
     if (p === "/gmail/v1/users/me/messages") return send(200, { messages: Object.keys(S.gmail).map(id => ({ id })) });
     if (p.startsWith("/gmail/v1/users/me/messages/")) { const m = S.gmail[p.split("/").pop()]; return m ? send(200, m) : send(404, {}); }
     // Google Calendar
@@ -121,7 +146,7 @@ const mock = http.createServer((req, res) => {
   });
 });
 
-const TABLES = ["mailbox_sync_runs", "meeting_effects", "calendar_pushes", "calendar_events", "mail_reply_steps", "mailbox_connections",
+const TABLES = ["job_queue", "mailbox_sync_runs", "meeting_effects", "calendar_pushes", "calendar_events", "mail_reply_steps", "mailbox_connections",
   "tasks", "threads", "interactions", "donor_scores", "fin_transactions", "budgets", "accounts", "fin_funds", "donors", "users"];
 async function reset() {
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -358,6 +383,75 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§10 a provider that refuses every request is a failed read with a Try again sentence, not 'nothing new'",
     r10.body.ok === false && /fault on its side/.test(h2.lastError || "") && !/did not answer/.test(h2.lastError || ""), JSON.stringify([r10.body.error, h2.lastError]));
   S.graphStatus = 200;
+
+  // ── §11 · SCALE-2 · A BIG FIRST READ: FEW SEARCHES, OUT OF THE WAY, SAME RESULT
+  console.log("\n· §11 · a 600-address first read: fewer searches, a background job with progress, the same rows");
+  const KIM = `kim@${ORG}.local`, N = 600;
+  await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fix33_kim',$1,$2,$3,'Kim Osei','admin')`, [ORG, KIM, PW]);
+  const addr = i => `supporter.number${i}@longfamilyfoundation.org`;
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,created_by,created_by_name)
+           SELECT 'd_s2_' || g, $1, 'Supporter ' || g, 'supporter.number' || g || '@longfamilyfoundation.org', 'active', 50, 'system:test', 'test'
+             FROM generate_series(0, $2 - 1) g`, [ORG, N]);
+  {
+    const { sealBag } = await import("../shared/secretBox.js");
+    await q(`INSERT INTO mailbox_connections (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,calendar_granted,created_by,created_by_name)
+             VALUES ('mbx_fix33_kim',$1,'u_fix33_kim','google',$2,'active',$3,NOW() + INTERVAL '1 day',false,'system:test','test')`,
+      [ORG, KIM, sealBag({ accessToken: "tok_kim", refreshToken: "ref_kim", scope: null }, { aad: ORG })]);
+  }
+  const kim = { token: await login(KIM, "loadtest1234") };
+  // Mail with people spread over the whole list (the first, the last, both
+  // sides of every 15-address boundary), sent and received, one to two people,
+  // and one from a stranger that must never be asked for or stored.
+  S.gmail = {};
+  const msAgo = n => Date.now() - n * 864e5;
+  const s2 = [[0, 1], [14, 2], [15, 3], [150, 4], [299, 5], [451, 6], [598, 7], [599, 8]];
+  for (const [i, d] of s2) S.gmail["s2_in_" + i] = gm("s2_in_" + i, `Supporter ${i} <${addr(i)}>`, KIM, `Hello from ${i}`, `A note from supporter ${i}.`, msAgo(d));
+  S.gmail.s2_out_222 = gm("s2_out_222", KIM, addr(222), "Thank you", "Thank you for coming.", msAgo(2), ["SENT"]);
+  S.gmail.s2_two = gm("s2_two", `Supporter 5 <${addr(5)}>`, `${KIM}, ${addr(6)}`, "The two of us", "We would both like to visit.", msAgo(3));
+  S.gmail.s2_x = gm("s2_x", STRANGER, KIM, SECRET_SUBJECT, "Please call the clinic.", msAgo(1));
+  const kimRows = () => q(`SELECT donor_id, type, note, date, created_at, created_by, metadata->>'message_id' AS mid, metadata->>'direction' AS dir
+                             FROM interactions WHERE org_id=$1 AND created_by='system:mailbox/google/u_fix33_kim'
+                            ORDER BY metadata->>'message_id', donor_id`, [ORG]);
+  const want = [...s2.map(([i]) => `s2_in_${i}|d_s2_${i}`), "s2_out_222|d_s2_222", "s2_two|d_s2_5", "s2_two|d_s2_6"].sort();
+
+  // 1 · "Read now" (the same read a first read runs), with a Gmail that runs any search.
+  S.gmailSearch = { searches: 0, refusedTooLong: 0, delayMs: 0, qMax: 0 };
+  await api("POST", "/mailbox/google/sync", kim.token, { what: "mail" });
+  const searches1 = S.gmailSearch.searches;
+  const rows1 = await kimRows();
+  ok("§11 every message with somebody on file is logged on the right record, and nothing else",
+    JSON.stringify(rows1.map(r => `${r.mid}|${r.donor_id}`).sort()) === JSON.stringify(want), JSON.stringify(rows1.map(r => `${r.mid}|${r.donor_id}`)));
+  ok("§11 the stranger's message is never stored", (await anywhere(SECRET_SUBJECT)) === 0);
+  ok("§11 600 addresses take at most 20 Gmail searches (15 a search was 40)", searches1 > 0 && searches1 <= 20, `${searches1} searches`);
+
+  // 2 · The first read as a background job, against a Gmail that refuses any
+  // search over 2,500 characters and answers each in a quarter second.
+  await q(`DELETE FROM interactions WHERE org_id=$1 AND created_by='system:mailbox/google/u_fix33_kim'`, [ORG]);
+  await q(`UPDATE mailbox_connections SET read_progress=0, gmail_history_id=NULL WHERE id='mbx_fix33_kim'`);
+  S.gmailSearch = { searches: 0, refusedTooLong: 0, delayMs: 250, qMax: 2500 };
+  await q(`INSERT INTO job_queue (id, name, org_id, key, payload, status, priority, run_after, created_by, created_by_name)
+           VALUES ('job_fix33_kim','mailboxFirstRead',$1,'mailboxFirstRead:mbx_fix33_kim',$2::jsonb,'waiting',2,NOW(),'system:test','test')`,
+    [ORG, JSON.stringify({ connectionId: "mbx_fix33_kim" })]);
+  const seenPct = [];
+  let finished = false;
+  for (let t = Date.now(); Date.now() - t < 60000;) {
+    const g = ((await api("GET", "/mailbox", kim.token)).body.providers || []).find(p => p.key === "google");
+    if (g && g.health && g.health.reading) seenPct.push(g.health.reading.pct);
+    const [j] = await q(`SELECT status FROM job_queue WHERE id='job_fix33_kim'`);
+    if (j && j.status === "done") { finished = true; break; }
+    await new Promise(r => setTimeout(r, 150));
+  }
+  ok("§11 the first read runs as a background job and finishes", finished, JSON.stringify(await q(`SELECT status, last_error FROM job_queue WHERE id='job_fix33_kim'`)));
+  ok("§11 while it runs, the card has a progress line part of the way through",
+    seenPct.some(p => p > 0 && p < 100), JSON.stringify(seenPct));
+  const g2 = ((await api("GET", "/mailbox", kim.token)).body.providers || []).find(p => p.key === "google");
+  ok("§11 …and once it is done the line is gone", g2 && g2.health && g2.health.reading === null, JSON.stringify(g2 && g2.health && g2.health.reading));
+  ok("§11 a search Gmail refuses as too long is split, never dropped", S.gmailSearch.refusedTooLong > 0, JSON.stringify(S.gmailSearch));
+  const rows2 = await kimRows();
+  const strip = rs => JSON.stringify(rs.map(r => ({ ...r, created_at: new Date(r.created_at).toISOString() })));
+  ok("§11 the job's rows are identical to the read before it (same people, notes, dates, directions)", strip(rows2) === strip(rows1),
+    JSON.stringify(rows2.map(r => `${r.mid}|${r.donor_id}`)));
+  S.gmailSearch = null;
 
   for (const t of TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM fin_audit_log WHERE org_id=$1`, [ORG]).catch(() => {});
