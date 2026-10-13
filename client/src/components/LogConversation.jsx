@@ -148,9 +148,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 
   return (
     <Modal onClose={onClose} width={460} zIndex={300} padding={24}
-      ariaLabel="Log a conversation" dialogStyle={{ border: "1px solid " + T.bg3 }}>
+      ariaLabel="Log a call" dialogStyle={{ border: "1px solid " + T.bg3 }}>
       <div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Edit this conversation" : "Log a conversation"}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Edit this conversation" : "Log a call"}</div>
         <div style={{ fontSize: 12, color: T.ink3, marginBottom: 14 }}>{donor.name}</div>
 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
@@ -169,7 +169,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
               unreadable paragraph. Cmd or Ctrl and Enter still saves. */}
           <textarea ref={lineRef} value={line} onChange={e => setLine(e.target.value)} rows={3}
             onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && line.trim()) save(false); }}
-            placeholder="She asked for the impact report." data-testid="conv-line"
+            placeholder="e.g. She asked for the impact report." data-testid="conv-line"
             style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
         {!editing && ["call_reached", "meeting", "visit"].includes(touch) && (

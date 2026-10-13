@@ -12606,6 +12606,7 @@ app.get("/journeys/suggest-big-gift", requireAuth, wrap(async (req, res) => {
   // Rounded on purpose, and it is not a gift: it is a THRESHOLD being offered
   // for her to accept or type over, and it is carried in cents from here on.
   const suggested = Math.max(step, Math.round(p90 / step) * step);
+  const DDp = await import("../shared/displayDate.js");
   const rows = await query(
     `SELECT g.id, g.amount::float amount, g.date, d.id AS donor_id, d.name AS donor_name
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -12619,7 +12620,7 @@ app.get("/journeys/suggest-big-gift", requireAuth, wrap(async (req, res) => {
     // $4,000.50 shown as $4,001 in the rows behind a number is the whole
     // reason the money seam exists.
     rows: rows.map(r => ({ id: r.donor_id, giftId: r.id, name: r.donor_name,
-      reason: `${sentenceMoney(r.amount)} on ${r.date}` })),
+      reason: `${sentenceMoney(r.amount)} on ${DDp.displayDate(r.date)}` })),
   });
 }));
 
@@ -12980,6 +12981,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: "Not found" });
   const J = await journeyMod();
   const PL = await planMod();
+  const DD = await import("../shared/displayDate.js");
 
   // The donor, and the DATE THE TRIGGER WOULD HAVE FIRED ON — which is what
   // the offsets count from, not today. A first gift in October means month 3
@@ -13001,15 +13003,15 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
         GROUP BY d.id, d.name HAVING COUNT(g.id)=1
         ORDER BY MIN(g.date) DESC LIMIT 1`, [orgId]);
     if (r) { donor = r; from = String(r.date).slice(0, 10);
-             basis = `First gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+             basis = `First gift $${Number(r.amount).toLocaleString("en-US")} · ${DD.displayDate(from)}`; }
   } else if (t.trigger_key === "gift_over") {
     const r = await newestGift(Number(t.trigger_amount_cents) || 0);
     if (r) { donor = r; from = String(r.date).slice(0, 10);
-             basis = `Gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+             basis = `Gift $${Number(r.amount).toLocaleString("en-US")} · ${DD.displayDate(from)}`; }
   }
   if (!donor) {
     const r = await newestGift(0);
-    if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${from}`; }
+    if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${DD.displayDate(from)}`; }
   }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
@@ -13033,7 +13035,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
     if (real.length) {
       return res.json({
         donor: { id: live.donor_id, name: live.name,
-                 basis: `In this journey since ${String(live.applied_on).slice(0, 10)}` },
+                 basis: `In this journey since ${DD.displayDate(String(live.applied_on).slice(0, 10))}` },
         from: String(live.applied_on).slice(0, 10),
         live: true,
         steps: real.map(s => ({
@@ -13087,6 +13089,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
 // A GET, and it writes nothing: no plan, no step, no thread.
 app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  const DDj = await import("../shared/displayDate.js");
   const PL = await planMod();
   const J = await journeyMod();
   const [donor] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
@@ -13117,7 +13120,7 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
     // JOURNEYS-3 — the other journeys they are in; they can be in this one too.
     alsoIn: inNow.filter(p => p.template_id !== t.id).map(p => p.template_name),
     sentence: first
-      ? `${donor.name} would start with "${first.label}", due ${first.dueDate}. Nothing is sent. Every step waits for you.`
+      ? `${donor.name} would start with "${first.label}", due ${DDj.displayDate(first.dueDate)}. Nothing is sent. Every step waits for you.`
       : "That journey has no steps yet.",
   });
 }));
@@ -19627,8 +19630,9 @@ app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, 
   const [open] = await query(
     "SELECT id, next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL",
     [orgId, req.params.id]);
+  const DDt = await import("../shared/displayDate.js");
   if (open) return res.status(409).json({ error: "thread_open",
-    message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${open.due_date}.`,
+    message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${DDt.displayDate(open.due_date)}.`,
     thread: { id: open.id, label: open.next_step_label, due: open.due_date } });
 
   // FIX-19: an ownerId from the body is an active user of THIS org, or the

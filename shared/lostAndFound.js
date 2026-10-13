@@ -31,6 +31,7 @@
 // because an audit whose numbers cannot be opened is an audit nobody acts
 // on.
 
+import { displayDate as dateWords } from "./displayDate.js";
 import { normalizeDate, normalizeMoney, normalizeName, normalizeEmail } from "./importShape.js";
 
 // ── THE THRESHOLDS, AND WHY THEY ARE THESE ───────────────────────────────
@@ -234,7 +235,7 @@ export function audit(gifts, { today }) {
           ? `${quiet.length} ${quiet.length === 1 ? "donor has" : "donors have"} given in some year and not in ${thisYear}. Their best year was worth ${money(quiet.reduce((a, d) => a + bestYearCents(d), 0))}.`
           : `Nobody on this file has gone quiet.`,
         definition: `Donors with at least one gift in any year before ${thisYear}, and none in ${thisYear}. A superset of the list above.`,
-        rows: quiet.map(d => row(d, { cents: bestYearCents(d), note: `last gave ${d.last.date}` })) },
+        rows: quiet.map(d => row(d, { cents: bestYearCents(d), note: `last gave ${dateWords(d.last.date) || d.last.date}` })) },
       { key: "drifting", label: "Giving down 40% or more",
         count: drifting.length, cents: drifting.reduce((a, d) => a + (d.fromCents - d.toCents), 0),
         sentence: drifting.length
@@ -256,7 +257,7 @@ export function audit(gifts, { today }) {
           ? `The ${Math.min(TOP_AT_RISK, atRisk.length)} people with the most at stake account for ${money(atRisk.slice(0, TOP_AT_RISK).reduce((a, d) => a + d.atRiskCents, 0))} of the ${money(dollarsAtRiskCents)} at risk.`
           : "Nothing is at risk on this file.",
         definition: "Everybody quiet or drifting, ranked by what is at stake: the best year of somebody quiet, or the size of the drop for somebody drifting.",
-        rows: atRisk.slice(0, TOP_AT_RISK).map(d => row(d, { cents: d.atRiskCents, note: d.why === "quiet" ? `quiet since ${d.last.date}` : `down ${d.dropPct}%` })) },
+        rows: atRisk.slice(0, TOP_AT_RISK).map(d => row(d, { cents: d.atRiskCents, note: d.why === "quiet" ? `quiet since ${dateWords(d.last.date) || d.last.date}` : `down ${d.dropPct}%` })) },
     ],
     headline: {
       dollarsAtRiskCents,

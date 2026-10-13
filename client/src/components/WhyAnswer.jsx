@@ -295,7 +295,7 @@ export function WhyAnswerBody({ answer, isReadOnly, onStepTaken }) {
         </div>}
         {done && <div data-testid="why-step-done" style={{ fontSize: 13, color: T.greenDk, fontWeight: 600 }}>{done}</div>}
         {err && <div style={{ fontSize: 13, color: T.ink2 }}>{err}</div>}
-        {!done && <div style={{ fontSize: 12, color: T.ink3 }}>{step.kind === "log" ? "Opens Log a conversation. Nothing is sent." : "Adds steps to the Thread for a person to take. Nothing is sent."}</div>}
+        {!done && <div style={{ fontSize: 12, color: T.ink3 }}>{step.kind === "log" ? "Opens Log a call. Nothing is sent." : "Adds steps to the Thread for a person to take. Nothing is sent."}</div>}
       </div>}
 
       {answer.cantSee && <div data-testid="why-cant-see" style={{ fontSize: 12.5, color: T.ink2, borderLeft: "3px solid " + T.gold, padding: "4px 0 4px 10px", lineHeight: 1.5 }}>{answer.cantSee}</div>}

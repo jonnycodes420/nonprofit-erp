@@ -26,6 +26,7 @@
 //
 // Pure: no DB, no clock, no JSX. `today` is always a parameter.
 
+import { displayDate as dateWords } from "./displayDate.js";
 export const RESTRICTED_METRICS = [
   { key: "awarded", label: "Awarded",
     definition: "What the funder said yes to, in the award letter." },
@@ -104,8 +105,8 @@ export function balanceSentence(b, formatMoney) {
   if (b.outstandingCents > 0) parts.push(`${fm(b.outstandingCents)} still owed by the funder`);
   if (b.releaseDate) {
     parts.push(b.released
-      ? `released on ${b.releaseDate}`
-      : `not spendable until ${b.releaseDate}`);
+      ? `released on ${dateWords(b.releaseDate) || b.releaseDate}`
+      : `not spendable until ${dateWords(b.releaseDate) || b.releaseDate}`);
   }
   return parts.join(", ") + ".";
 }

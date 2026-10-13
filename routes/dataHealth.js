@@ -830,7 +830,7 @@ app.post("/data-health/ncoa/apply", requireAuth, checkWriteAccess, wrap(async (r
       const [d] = await queryTx(client, "SELECT id, address, address2, city, state, zip FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [m.donor_id, orgId]);
       if (!d) continue;
       const before = { address: d.address || "", address2: d.address2 || "", city: d.city || "", state: d.state || "", zip: d.zip || "" };
-      const when = m.move_date ? ` (moved ${m.move_date})` : "";
+      const when = m.move_date ? ` (moved ${(await import("../shared/displayDate.js")).displayDate(m.move_date) || m.move_date})` : "";
       if (m.kind === "move") {
         const n = m.new_address;
         await runTx(client, `INSERT INTO donor_address_history (id, org_id, donor_id, source, before, after, ncoa_move_id, created_by, created_by_name) VALUES (?,?,?,?,?::jsonb,?::jsonb,?,?,?)`,

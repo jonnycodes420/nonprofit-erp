@@ -21,6 +21,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
+import { displayDate } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
@@ -423,7 +424,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           </div>;
         } else if (it.kind === "gift") {
           const g = it.g;
-          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{displayDate(g.date)}{g.notes ? ` · ${g.notes}` : ""}</div>;
         } else if (it.kind === "file" && it.f) {
           extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }

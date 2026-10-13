@@ -51,6 +51,9 @@ const centsStr = (c) => {
   return (n < 0 ? "-$" : "$") + s;
 };
 const numStr = (n) => (Math.trunc(Number(n) || 0)).toLocaleString("en-US");
+// POLISH-2: a source label read mid-sentence. "Moving from A spreadsheet" →
+// "Moving from a spreadsheet"; a product name keeps its capital.
+const midSentence = (label) => String(label || "").replace(/^(A|An|The|Your) /, w => w.toLowerCase());
 
 const card = {
   background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: 16,
@@ -490,7 +493,7 @@ export function MoveCard({ isReadOnly = false }) {
   if (!move || !move.source) return null;
 
   const sentence = [
-    move.completedAt ? `Moved from ${move.label}` : `Moving from ${move.label}`,
+    move.completedAt ? `Moved from ${midSentence(move.label)}` : `Moving from ${midSentence(move.label)}`,
     move.startedAt ? `started ${when(move.startedAt)}` : null,
     move.imports ? `${move.imports} import${move.imports === 1 ? "" : "s"}` : null,
   ].filter(Boolean).join(" · ");
@@ -516,7 +519,7 @@ export function MoveCard({ isReadOnly = false }) {
               <button data-testid="move-complete-confirm" onClick={() => act("/move/complete")} disabled={busy}
                 style={{ background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
                          padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                Yes, we've moved
+                Yes, we've moved to Steward
               </button>
               <button onClick={() => setConfirming(false)} disabled={busy}
                 style={{ background: T.bg2, color: T.ink2, border: "none", borderRadius: 8,
@@ -527,7 +530,7 @@ export function MoveCard({ isReadOnly = false }) {
           <button data-testid="move-complete" onClick={() => setConfirming(true)}
             style={{ marginTop: 11, background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
                      padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            We've moved
+            We've moved to Steward
           </button>
         )
       )}

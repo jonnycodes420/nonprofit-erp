@@ -69,8 +69,8 @@ const api = async (method, p, tok, body) => {
   // ── the conversation, with a gift and a next step ─────────────────────────
   await page.goto(`${APP}/donors/${donor.id}`, { waitUntil: "domcontentloaded", timeout: 60000 });
   await page.waitForTimeout(3000);
-  ok("the profile opens", /Log a conversation/.test(await page.innerText("body")));
-  await page.click('button:has-text("Log a conversation")');
+  ok("the profile opens", /Log a call/.test(await page.innerText("body")));
+  await page.click('button:has-text("Log a call")');
   await page.waitForTimeout(700);
   await page.click('button:has-text("Gift received")');
   await page.fill('input[placeholder^="One line"]', "She brought the cheque to the office.");

@@ -415,6 +415,11 @@ export function GlobalStyles() {
        backtick ends the string. It did, and 'takeover' became an identifier.) */
     .fullscreen-takeover{left:var(--sidebar-w,0px)!important;}
     .app-topbar{user-select:none;}
+    /* POLISH-2 - A PLACEHOLDER LOOKS LIKE ONE. "She asked for the impact
+       report." in the log-a-call box read as a note already written. Every
+       placeholder is the secondary ink, lighter and in italic, so an empty box
+       never looks filled in. */
+    input::placeholder,textarea::placeholder{color:${T.ink3};opacity:0.72;font-style:italic;}
     .topbar-search::placeholder{color:rgba(240,237,230,0.7);}
     .topbar-search:focus{border-color:${T.gold500}!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
     .side-nav-btn:not([aria-current]):hover{color:${T.inkInverse}!important;}

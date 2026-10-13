@@ -31,7 +31,7 @@ export const FR_SECTIONS = [
       // BUILD-102 — a form is a giving page with a form config, so forms live
       // with the pages they are.
       { id: "pages", label: "Giving pages & forms" },
-      { id: "events", label: "Events" },
+      { id: "events", label: "Tickets & sponsors" },   // POLISH-2: the rail has the one "Events"
       // PARITY-2 Part 4: an auction usually belongs to an event, so it sits
       // beside them.
       { id: "auctions", label: "Auctions" },
