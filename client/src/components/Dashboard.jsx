@@ -806,16 +806,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // SCALE-2: "still in the live list" is asked of the server for just these
   // ids. Until it answers the queue shows nothing, as it did while loading;
   // if the read fails (null) nobody is hidden for it.
-  const [queuePeople,queuePeopleReady]=usePeopleById(queueItems.map(i=>i.donorId));
-  const queueLive=id=>!!id&&(queuePeople===null||!!queuePeople[id]);
+  // The server marks each row onFile (GET /dashboard/today); the by-id
+  // lookup is only for an answer that does not carry the mark.
+  const queueMarked=queueItems.every(i=>typeof i.onFile==="boolean");
+  const [queuePeople,queuePeopleReady]=usePeopleById(queueMarked?[]:queueItems.map(i=>i.donorId));
+  const queueLive=item=>queueMarked?item.onFile:(!!item.donorId&&(queuePeople===null||!!queuePeople[item.donorId]));
   const visibleQueue=!queuePeopleReady?[]:queueItems
-    .filter(item=>queueLive(item.donorId))
+    .filter(item=>queueLive(item))
     .slice(0,6);
   const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
   // D-1 (BUILD-45): an attention item with no resolvable donor (an orphaned
   // task) is never rendered as a dead link — its row main falls back to a
   // <span>. Surface the count in dev only so orphans don't hide silently.
-  const orphanQueueCount=!queuePeopleReady?0:queueItems.filter(i=>!queueLive(i.donorId)).length;
+  const orphanQueueCount=!queuePeopleReady?0:queueItems.filter(i=>!queueLive(i)).length;
   useEffect(()=>{
     if(import.meta.env.DEV&&orphanQueueCount>0)
       console.log(`[dashboard] Needs-attention: ${orphanQueueCount} item(s) with no resolvable donor (rendered non-navigable).`);

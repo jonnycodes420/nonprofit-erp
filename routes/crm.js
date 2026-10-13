@@ -18699,7 +18699,14 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   }
 
   items.sort((a, b) => b.priority - a.priority);
-  res.json(items.slice(0, 10));
+  const top = items.slice(0, 10);
+  // SCALE-2: whether each person is still on file (in this org, not deleted),
+  // so Home no longer needs the whole donor list, or a second request, to
+  // hide a row nothing can act on (a task row is not filtered by deleted_at).
+  const onFile = new Set((await query(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND id = ANY(?)`,
+    [orgId, top.map(i => i.donorId).filter(Boolean)])).map(r => r.id));
+  for (const i of top) i.onFile = !!i.donorId && onFile.has(i.donorId);
+  res.json(top);
 }));
 
 // ── BUILD-76 Part 2 — the Drifting surface ─────────────────────────────────

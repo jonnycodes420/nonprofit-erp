@@ -42,9 +42,13 @@ async function freshLogin(email) {
   if (!r.ok) throw new Error(`login ${email}: ${r.status} ${await r.text()}`);
   return (await r.json()).token;
 }
-async function call(token, method, path, body) {
+// SCALE-2: BASES=a,b spreads the users over several web processes (a model
+// of WEB_REPLICAS); each user keeps to one, as a load balancer's session would.
+const BASES = (process.env.BASES || BASE).split(",").map(s => s.trim()).filter(Boolean);
+if (BASES.some(b => !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(b))) { console.error("Refusing: BASES must be loopback."); process.exit(1); }
+async function call(token, method, path, body, base = BASE) {
   const t0 = performance.now();
-  const r = await fetch(BASE + path, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  const r = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
   return { ms: performance.now() - t0, status: r.status, path, bytes: text.length, text };
@@ -70,10 +74,9 @@ const SCREENS = {
   // SCALE-2: Home asks for each wave in ONE request (client/src/api.js
   // prefetch -> GET /home/bundle); these are the same reads as SCALE-1's 25
   // and 6, now two calls.
-  // The third wave is the queue's "still on file" lookup for the people
-  // /dashboard/today named (lib/people.js usePeopleById); six ids stand in.
-  home: (o) => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))],
-                [G("/donors/lookup?ids=" + [7, 8, 9, 10, 11, 12].map(n => `org_${o.slug}_d${n}`).join(","))]],
+  // The queue's "still on file" mark comes with /dashboard/today, so Home is
+  // these two requests.
+  home: () => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))]],
   donors: () => [[G("/donors?limit=50&offset=0&role=donor"), G("/org/team"), G("/portfolio/officers"),
                   G("/custom-fields?entity=donor"), G("/donors/custom-field-values/all"), G("/me")]],
   profile: (o) => { const d = `/donors/${o.donorId}`; return [[G(d)],
@@ -93,7 +96,7 @@ async function latency() {
   const users = [];
   for (const n of orgs) {
     const slug = `load${String(n).padStart(3, "0")}`;
-    users.push({ slug, token: await login(`admin@${slug}.load`), donorId: `org_${slug}_d${7 + n}` });
+    users.push({ slug, token: await login(`admin@${slug}.load`), donorId: `org_${slug}_d${7 + n}`, base: BASES[users.length % BASES.length] });
   }
   const per = Object.fromEntries(Object.keys(SCREENS).map(k => [k, { screen: [], status: {}, slowest: {} }]));
   const stopAt = Date.now() + DURATION;
@@ -110,7 +113,7 @@ async function latency() {
       for (const [name, reqs] of Object.entries(SCREENS)) {
         const t0 = performance.now();
         const rs = [];
-        for (const wave of reqs(u)) rs.push(...await Promise.all(wave.map(([m, p, b]) => call(u.token, m, p, b))));
+        for (const wave of reqs(u)) rs.push(...await Promise.all(wave.map(([m, p, b]) => call(u.token, m, p, b, u.base))));
         per[name].screen.push(performance.now() - t0);
         per[name].bytes = Math.max(per[name].bytes || 0, rs.reduce((n, r) => n + r.bytes, 0));
         for (const r of rs) {
