@@ -24831,32 +24831,37 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   // count EVERY such re-engagement gift (not only a donor's current last gift),
   // so a donor who lapsed, came back, then lapsed and came back again is counted
   // for each genuine return. reengagedDonorCount = distinct donors who came back.
-  const pReeng = query(
-    `SELECT COALESCE(SUM(g.amount),0) AS amt, COUNT(DISTINCT g.donor_id)::int AS donors
-       FROM gifts g
-      WHERE g.org_id = ?
-        AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date) IS NOT NULL
-        AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date)::date > 365`,
+  //
+  // SCALE-1: (1b) and (1c) are ONE statement. "The latest earlier gift" was a
+  // correlated MAX subquery run twice per gift (150,000 gifts = 600,000 index
+  // probes, about 1.5 s each, twice). Now the org's gifts are grouped to one
+  // row per donor per day and LAG over those days is exactly "the latest
+  // strictly earlier date", so the >365-day test, the totals and the top 50
+  // come from one pass. Proven row-for-row identical on a 150,000-gift org.
+  // The totals keep gifts whose donor row is gone (the old (1b) had no join);
+  // the list joins donors, as (1c) did.
+  const pReengBoth = query(
+    `WITH day AS (
+       SELECT donor_id, date, SUM(amount) AS amt, COUNT(*) AS n,
+              LAG(date) OVER (PARTITION BY donor_id ORDER BY date) AS prev
+         FROM gifts WHERE org_id = ? AND date IS NOT NULL
+        GROUP BY donor_id, date),
+     per AS (
+       SELECT donor_id, COALESCE(SUM(amt),0) AS amount, SUM(n)::int AS gift_count, MAX(date) AS last_return_date
+         FROM day WHERE prev IS NOT NULL AND date::date - prev::date > 365
+        GROUP BY donor_id)
+     SELECT t.amt, t.donors, l.id, l.name, l.amount, l.gift_count, l.last_return_date
+       FROM (SELECT COALESCE(SUM(amount),0) AS amt, COUNT(*)::int AS donors FROM per) t
+       LEFT JOIN LATERAL (
+         SELECT per.donor_id AS id, d.name, per.amount, per.gift_count, per.last_return_date
+           FROM per JOIN donors d ON d.id = per.donor_id
+          ORDER BY per.amount DESC
+          LIMIT 50) l ON true
+      ORDER BY l.amount DESC`,
     [orgId]
   );
-
-
-  // (1c) The donors BEHIND the re-engaged number — the Home hero chip drills
-  // into exactly these rows (every aggregate drills into its source; the
-  // destination must show the same count/amount the chip claimed). Same
-  // >365-day-gap predicate as (1b), grouped per donor, capped at 50.
-  const pReengDonors = query(
-    `SELECT g.donor_id AS id, d.name, COALESCE(SUM(g.amount),0) AS amount,
-            COUNT(*)::int AS gift_count, MAX(g.date) AS last_return_date
-       FROM gifts g JOIN donors d ON d.id = g.donor_id
-      WHERE g.org_id = ?
-        AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date) IS NOT NULL
-        AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = g.donor_id AND g2.date < g.date)::date > 365
-      GROUP BY g.donor_id, d.name
-      ORDER BY amount DESC
-      LIMIT 50`,
-    [orgId]
-  );
+  const pReeng = pReengBoth.then(rows => [{ amt: rows[0]?.amt ?? 0, donors: rows[0]?.donors ?? 0 }]);
+  const pReengDonors = pReengBoth.then(rows => rows.filter(r => r.id != null));
 
   // (2) Fees kept — factual. Base = online giving processed through Steward
   // (own-Stripe donations, stripe_payment_id set), which the org kept 100% of.
@@ -24903,16 +24908,8 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   // the org's calendar can answer, and the at-risk figure would flip for
   // everyone west of UTC for part of each day. One cutoff, computed once.
   const _quietCutoff = orgTime.addDays(orgToday(await orgTz(orgId)), -QUIET_DAYS);
-  const pAtRisk = query(
-    `SELECT COALESCE(SUM(d.total_giving), 0) AS amt, COUNT(*)::int AS donors
-       FROM donors d
-      WHERE d.org_id = ?
-        AND d.deleted_at IS NULL
-        AND d.total_giving > 0
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) IS NOT NULL
-        AND (SELECT MAX(g.date) FROM gifts g WHERE g.donor_id = d.id) < ?`,
-    [orgId, _quietCutoff]
-  );
+  // SCALE-1: the at-risk TOTAL query is gone: nothing read it (BUILD-83 3.3 below).
+  const pAtRisk = Promise.resolve([]);
   // The donors BEHIND the at-risk number — every aggregate drills into its
   // source, and the destination shows the same count and amount the chip claimed.
   const pAtRiskDonors = query(
