@@ -852,33 +852,55 @@ function computeMoveSuggestions(donor, ctx = {}) {
 // "Importing…". This computes total/count/last-gift-date and the amount of the
 // most-recent gift (tie-break by created_at) for the whole set at once, matching
 // recalcDonorSummary's semantics exactly. No-op on an empty set.
+// LIVE-1 — recent imported gifts go through recordGift several people at a
+// time (RECENT_GIFT_LANES), each person's own gifts in date order on one lane,
+// so "is this their first gift" and the person's totals stay exact while a
+// file with hundreds of recent gifts does not wait on them one by one.
+const RECENT_GIFT_LANES = 6;
+// What a file's recent gifts could set off, read ONCE for the file: the
+// triggers with a journey switched on, the sequences that are live, and the
+// people with an open pledge or a membership a gift could renew. recordGift
+// skips the checks that cannot fire, which takes a recent imported gift from
+// about two dozen round trips to about half that.
+async function importGiftContext(orgId) {
+  const safe = p => p.catch(() => []);
+  const [j, sq, pl, mb] = await Promise.all([
+    safe(query(`SELECT DISTINCT trigger_key AS k FROM cultivation_templates WHERE org_id=? AND journey_enabled=true AND archived_at IS NULL AND trigger_key IS NOT NULL`, [orgId])),
+    safe(query(`SELECT DISTINCT trigger AS k FROM sequences WHERE org_id=? AND status='active' AND tracks IS NOT NULL`, [orgId])),
+    safe(query(`SELECT DISTINCT donor_id AS d FROM pledges WHERE org_id=? AND status='open'`, [orgId])),
+    safe(query(`SELECT DISTINCT donor_id AS d FROM memberships WHERE org_id=? AND status IN ('active','grace')`, [orgId])),
+  ]);
+  return { armed: { journeys: new Set(j.map(r => r.k)), sequences: new Set(sq.map(r => r.k)) },
+           pledgers: new Set(pl.map(r => r.d)), members: new Set(mb.map(r => r.d)) };
+}
+function recentGiftHints(ctx, donorId) {
+  return { armed: ctx.armed,
+           ...(ctx.pledgers.has(donorId) ? {} : { applyInstallment: false }),
+           ...(ctx.members.has(donorId) ? {} : { membershipRenewal: false }) };
+}
+
+async function forEachByDonor(list, fn) {
+  const byDonor = new Map();
+  for (const g of list) { if (!byDonor.has(g.donorId)) byDonor.set(g.donorId, []); byDonor.get(g.donorId).push(g); }
+  const queues = [...byDonor.values()].map(q => q.sort((a, b) => String(a.date).localeCompare(String(b.date))));
+  let next = 0;
+  const lane = async () => { while (next < queues.length) { const q = queues[next++]; for (const g of q) await fn(g); } };
+  await Promise.all(Array.from({ length: Math.min(RECENT_GIFT_LANES, queues.length) }, lane));
+}
+
+// LIVE-1 — the org's saved value answers, as one function: (field, raw) →
+// the value she chose, or the raw value when she has said nothing about it.
+async function importValueMapper(orgId) {
+  const rows = await query(`SELECT field, raw_norm, value FROM import_value_mappings WHERE org_id=?`, [orgId]).catch(() => []);
+  const m = new Map(rows.map(r => [r.field + "|" + r.raw_norm, r.value]));
+  const norm = v => String(v || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return (field, raw) => (raw ? (m.get(field + "|" + norm(raw)) || raw) : raw);
+}
+
 async function recalcDonorSummaryBatch(donorIds, orgId) {
-  const ids = [...new Set(donorIds)].filter(Boolean);
-  if (!ids.length) return;
-  await run(
-    `WITH agg AS (
-       SELECT donor_id,
-              COALESCE(SUM(amount),0) AS total,
-              COUNT(*) AS cnt,
-              MAX(date) AS last_date
-       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
-       GROUP BY donor_id
-     ),
-     last_amt AS (
-       SELECT DISTINCT ON (donor_id) donor_id, amount
-       FROM gifts WHERE org_id=? AND donor_id = ANY(?)
-       ORDER BY donor_id, date DESC, created_at DESC
-     )
-     UPDATE donors d
-        SET total_giving     = agg.total,
-            gift_count       = agg.cnt,
-            last_gift_date   = agg.last_date,
-            last_gift_amount = COALESCE(last_amt.amount, 0),
-            updated_at       = NOW()
-       FROM agg LEFT JOIN last_amt ON last_amt.donor_id = agg.donor_id
-      WHERE d.id = agg.donor_id AND d.org_id = ?`,
-    [orgId, ids, orgId, ids, orgId]
-  );
+  // LIVE-1: the query moved to afterChange.js, the one after-change step, so
+  // there is one copy of it.
+  return require("../afterChange").recalcDonorSummaryBatch(query, donorIds, orgId);
 }
 
 // ── Wealth Score ────────────────────────────────────────────────────────────
@@ -4774,6 +4796,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // inside SAVEPOINTs so one bad batch is survivable AND counted, instead of
   // killing the request or (as before) vanishing into a warning nobody reads.
   const pendingGiftCredit = [];   // BUILD-98 Part 1 — soft credits/tributes/matches, applied after commit
+  const recentGiftsToRecord = [];   // LIVE-1 — gifts from the last 30 days, written by recordGift after commit
+  let recentRecorded = 0, recentThankYous = 0;
   await withAdvisoryLock(`import:${orgId}`, async () => {
   await withTransaction(async (txc) => {
   // Email dedup. BUILD-72 Part 1: the dedup now keeps the EXISTING donor's ID
@@ -5091,6 +5115,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const seenExternalIds = new Map(); // within-file external id → the gift it identifies
   const fpCounts = new Map();        // informational twin report, NOT a filter
   const giftsToInsert = [];
+  // LIVE-1 · VALUES MAP THEMSELVES. What she said a file's value means ("CHK"
+  // is a check, "Gala 25" is the Gala fund) is applied to every later file.
+  const valueAs = await importValueMapper(orgId);
   // BUILD-72 Part 1 — every row announces itself to the ledger BEFORE any
   // routing decision, then lands in exactly one bucket. There is no `continue`
   // in this loop that does not first record where the row went.
@@ -5150,8 +5177,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // hardcoded to NULL here, which is why every imported gift in every org
       // has no fund and no payment method, and why a column with a standard
       // home read as "→ new custom field" on the receipt.
-      fund: String(g.fund || "").trim().slice(0, 120) || null,
-      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null,
+      fund: valueAs("fund", String(g.fund || "").trim().slice(0, 120)) || null,
+      paymentMethod: valueAs("paymentMethod", String(g.paymentMethod || "").trim().slice(0, 60)) || null,
       // BUILD-98 Part 1 — the row's soft credit, tribute and matching employer,
       // as NAMES; written after the transaction commits (importGiftExtras).
       credit: (g.softCredit || g.tribute || g.matchEmployer)
@@ -5271,6 +5298,26 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 16 params/row (WIRE-1 added campaign_id) → 32,000 of the 65,535 cap
   const campaignIdOf = await campaignIdResolver(orgId);
 
+  // ── LIVE-1 · A CSV GIFT BEHAVES LIKE EVERY OTHER GIFT ───────────────────
+  // A gift from the last HISTORY_DAYS days is new to the donor: it is written
+  // by recordGift with `history: true` after this transaction commits, so it
+  // gets a thank-you draft and can start a journey exactly as the same gift
+  // from Stripe would. An older gift is history: it is recorded here in the
+  // batch and counted everywhere, and starts nothing, which is precisely what
+  // recordGift's own FIX-36 branch does with it. Both are counted in this
+  // ledger as created now; a recent gift recordGift then refuses is moved
+  // to "skipped" or "errored" on the receipt, never lost from the count.
+  const HG = require("../historyGifts");
+  for (let i = giftsToInsert.length - 1; i >= 0; i--) {
+    const g = giftsToInsert[i];
+    if (!HG.isOldHistory(g.date, importToday)) {
+      recentGiftsToRecord.unshift({ ...g, fundId: (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
+                                    campaignId: campaignIdOf(g.campaign) });
+      giftsToInsert.splice(i, 1);
+      ledger.created(g.amount);
+    }
+  }
+
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
     const giftParams = [], giftTuples = [];
@@ -5389,6 +5436,42 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
 
+  // LIVE-1 — the recent gifts, through the one gift path. The totals of the
+  // people they land on are brought up to date FIRST, so recordGift's own
+  // "is this their first gift" reads the batch's older gifts too: a donor
+  // with a gift from 2019 in this file is not a first-time donor today.
+  if (recentGiftsToRecord.length) {
+    const importToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK — the same day the split above used
+    const gctx = await importGiftContext(orgId);
+    try { await recalcDonorSummaryBatch(recentGiftsToRecord.map(g => g.donorId), orgId); }
+    catch (e) { console.error("[combined-import] pre-recordGift recalc:", e.message); }
+    await forEachByDonor(recentGiftsToRecord, async g => {
+      try {
+        const w = await recordGift({
+          orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
+          campaignId: g.campaignId, notes: g.notes, fundId: g.fundId, paymentMethod: g.paymentMethod,
+          externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
+          importId: runId, history: true, today: importToday,
+          post: false,             // BUILD-83 Part 6: an import never posts to the ledger
+          actorId: importerId, actorName: importerName, source: "csv-import",
+          door: "csv_import", afterChange: false,   // the step runs once for the whole file below
+          ...recentGiftHints(gctx, g.donorId),
+        });
+        if (w.duplicate) { externalIdDupes++; return; }
+        recentRecorded++; giftsInserted++;
+        affectedDonorIds.add(g.donorId);
+        const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
+        if (ty) recentThankYous++;
+        if (g.customFields && Object.keys(g.customFields).length)
+          await run("UPDATE gifts SET custom_fields=? WHERE id=? AND org_id=?", [JSON.stringify(g.customFields), w.gift.id, orgId]);
+        if (g.credit) pendingGiftCredit.push({ giftId: w.gift.id, g });
+      } catch (e) {
+        console.error("[combined-import] recent gift:", e.message);
+        batchErrors.push({ rows: `recent gift ${g.date}`, error: e.message });
+      }
+    });
+  }
+
   // BUILD-83 — the round-trip budget, logged: batch counts are the number that
   // moves when this import is slow on a hosted database.
   console.log(`[combined-import] org=${orgId} donors=${created} (${Math.ceil(created / IMPORT_DONOR_BATCH)} batches) gifts=${giftsInserted} (${Math.ceil(giftsInserted / IMPORT_GIFT_BATCH)} batches) — ~${Math.ceil(created / IMPORT_DONOR_BATCH) * 2 + Math.ceil(giftsInserted / IMPORT_GIFT_BATCH) * 4} write round trips`);
@@ -5435,11 +5518,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } else writtenReadback = { donors: 0, excluded: 0, gifts: 0, cash: 0, pledgePayments: 0 };
   } catch (e) { console.error("[import] read-back failed:", e.message); writtenReadback = { error: e.message }; }
 
-  // Recalc every donor that had gifts inserted — ONE set-based query (import
-  // hang fix), not a per-donor loop.
-  if (affectedDonorIds.size) {
-    try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
-    catch (e) { console.error(`[combined-import] batch recalc failed:`, e.message); }
+  // LIVE-1 · THE ONE AFTER-CHANGE STEP, once for every person the file
+  // touched (its totals are the batch recalc the import always ran). History:
+  // moving someone into a group by importing them starts no journey.
+  let afterChangeResult = null;
+  {
+    const touched = [...new Set([...affectedDonorIds, ...donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id))])];
+    afterChangeResult = await require("../afterChange").afterChange(orgId, touched,
+      { door: "csv_import", history: true, runTag: runId });
   }
 
   // Gap 2: Promote donor status — same thresholds as single-gift route
@@ -5583,6 +5669,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }
 
   res.json({ created, giftsInserted, importNotesCreated, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
+             // LIVE-1 — the recent gifts recordGift wrote, the thank-yous it
+             // drafted, and how long the after-change step took.
+             recentRecorded, thankYouDrafts: recentThankYous,
+             afterChange: afterChangeResult ? { donors: afterChangeResult.donors, ms: afterChangeResult.ms } : null,
              memberships: membershipsImported, // BUILD-101 Part 6
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
@@ -6131,6 +6221,8 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   );
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
+  // LIVE-1 — a logged touch is a change to the person: the after-change step.
+  await require("../afterChange").afterChange(req.user.orgId, [req.params.id], { door: "logged_touch" });
   res.status(201).json(rows[0]);
 }));
 
@@ -7853,9 +7945,25 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   await require("../onboarded").stampOnboardedFromImport(query, orgId, id)
     .catch(e => console.error("[mail-1] onboarded stamp:", e.message));
   require("./dataHealth").afterImport(orgId, id);   // CLEAN-1: Data health runs after every import
+  // LIVE-1 · "WHAT THIS TOLD US". Written from the rows this run wrote (its
+  // gifts carry the run id, its new people carry it too), and from what the
+  // after-change step saw when the file was saved (stamped with the run id).
+  let readout = null;
+  try {
+    const giftIds = (await query(`SELECT id, donor_id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, id]));
+    const made = (await query(`SELECT id FROM donors WHERE org_id=? AND created_import_id=?`, [orgId, id])).map(r => r.id);
+    if (giftIds.length) {
+      readout = await require("../readout").writeReadout(orgId, {
+        sourceKind: "import", sourceId: id, sourceName: name,
+        giftIds: giftIds.map(g => g.id), donorIds: [...new Set([...giftIds.map(g => g.donor_id), ...made])],
+        stamp: `csv_import:${id}`, today: orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
+      });
+    }
+  } catch (e) { console.error("[readout] import:", e.message); }
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
-  res.json({ ok: true, id, name, reconciled: findings.length === 0, findings });
+  res.json({ ok: true, id, name, reconciled: findings.length === 0, findings,
+             readout: readout ? { id: readout.id, headline: readout.headline } : null });
 }));
 
 
@@ -8795,6 +8903,24 @@ async function mayUndoImport(req, ranBy) {
   return !!(me && me.role === "admin");
 }
 
+// LIVE-1 — every journey an import's gift started: its open step's thread is
+// closed as handled outside, then the plan and its steps are deleted, so a
+// re-import of the same file starts them afresh.
+async function stopImportJourneys(orgId, importId, who) {
+  const plans = await query(`SELECT id FROM cultivation_plans WHERE org_id=? AND started_import_id=?`, [orgId, importId]);
+  if (!plans.length) return 0;
+  const ids = plans.map(p => p.id);
+  const steps = await query(`SELECT thread_id FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?) AND thread_id IS NOT NULL`, [orgId, ids]);
+  const threadIds = steps.map(s => s.thread_id);
+  if (threadIds.length)
+    await run(`UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside'
+                WHERE org_id=? AND id = ANY(?) AND closed_at IS NULL`, [orgId, threadIds]);
+  await run(`DELETE FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?)`, [orgId, ids]);
+  await run(`DELETE FROM cultivation_plans WHERE org_id=? AND id = ANY(?)`, [orgId, ids]);
+  void who;
+  return ids.length;
+}
+
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -8816,6 +8942,12 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
 
   const gifts = await query("SELECT id, donor_id, pledge_id FROM gifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
   const giftIds = gifts.map(g => g.id);
+  // LIVE-1 — the journeys this import's gifts started are stopped and taken
+  // away (an undo is as if the file never came), their open step closed; and
+  // the readout it wrote is removed.
+  const plansStopped = await stopImportJourneys(orgId, req.params.id, actor(req));
+  await run(`UPDATE readouts SET removed_at=NOW() WHERE org_id=? AND source_kind='import' AND source_id=? AND removed_at IS NULL`,
+    [orgId, req.params.id]);
   const pledgeIds = [...new Set(gifts.map(g => g.pledge_id).filter(Boolean))];
   const donorIds = [...new Set(gifts.map(g => g.donor_id))];
   if (giftIds.length) {
@@ -8872,8 +9004,11 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
         + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
         + " removed, and the preferences it set turned back off. Nothing else was touched." });
   }
-  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length,
+  // LIVE-1 — the people it touched are recomputed by the one after-change step.
+  await require("../afterChange").afterChange(orgId, donorIds.filter(d => !orphans.some(o => o.id === d)), { door: "csv_import", history: true });
+  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length, journeysStopped: plansStopped,
     sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"} removed`
+      + (plansStopped ? `, ${plansStopped} ${plansStopped === 1 ? "journey" : "journeys"} it started stopped` : "")
       + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
       + `. Nothing else was touched.` });
 }));
@@ -8927,6 +9062,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     return res.status(400).json({ error: "gifts array required" });
 
   const orgId = req.user.orgId;
+  const valueAs = await importValueMapper(orgId);   // LIVE-1: saved value answers
 
   // Validate all provided donorIds belong to this org
   const donorIds = [...new Set(gifts.map(g => g.donorId).filter(Boolean))];
@@ -9009,7 +9145,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
       fileFpCounts.set(rowKey, (fileFpCounts.get(rowKey) || 0) + 1);
     }
     toInsert.push({ donorId:g.donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", fund_id:g.fund_id||null, notes:g.notes||"", externalId, rowKey,
-      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null });
+      paymentMethod: valueAs("paymentMethod", String(g.paymentMethod || "").trim().slice(0, 60)) || null });
   }
   const duplicateCandidates = {
     withinFile: [...fileFpCounts.values()].filter(n => n > 1).reduce((s, n) => s + (n - 1), 0),
@@ -9053,10 +9189,20 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];
+  // LIVE-1 — the same split as /donors/import-combined: a gift from the last
+  // 30 days goes through recordGift after commit; an older one is history.
+  const HG = require("../historyGifts");
+  const histToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const recentToRecord = [];
+  for (let i = toInsert.length - 1; i >= 0; i--) {
+    if (!HG.isOldHistory(toInsert[i].date, histToday)) { recentToRecord.unshift(toInsert[i]); toInsert.splice(i, 1); }
+  }
+  let recentThankYous = 0;
 
   // BUILD-72 Part 1 — ONE transaction for the request, SAVEPOINT per batch, and
   // the reconciliation invariant asserted before it commits.
   await withTransaction(async (txc) => {
+  for (const g of recentToRecord) ledger.created(g.amount);
   for (let bi = 0; bi < toInsert.length; bi += BATCH) {
     const batch = toInsert.slice(bi, bi + BATCH);
     const ftParams = [], ftTuples = []; // fin_transactions rows for current-FY gifts in this batch
@@ -9127,12 +9273,41 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   ledger.assertBalanced();
   }); // end withTransaction
 
+  // LIVE-1 — the recent gifts, through recordGift (see import-combined).
+  if (recentToRecord.length) {
+    const gctx = await importGiftContext(orgId);
+    try { await recalcDonorSummaryBatch([...affectedDonorIds, ...recentToRecord.map(g => g.donorId)], orgId); }
+    catch (e) { console.error("[gift-import] pre-recordGift recalc:", e.message); }
+    await forEachByDonor(recentToRecord, async g => {
+      try {
+        const w = await recordGift({
+          orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
+          campaignId: campaignIdOf(g.campaign), notes: g.notes, fundId: g.fund_id, paymentMethod: g.paymentMethod,
+          externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
+          importId: runId, history: true, today: histToday, post: false,
+          actorId: importerId, actorName: importerName, source: "csv-import",
+          door: "csv_import", afterChange: false,
+          ...recentGiftHints(gctx, g.donorId),
+        });
+        if (w.duplicate) { externalIdDupes++; return; }
+        inserted++; affectedDonorIds.add(g.donorId);
+        const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
+        if (ty) recentThankYous++;
+      } catch (e) {
+        console.error("[gift-import] recent gift:", e.message);
+        batchErrors.push({ rows: `recent gift ${g.date}`, error: e.message });
+      }
+    });
+  }
+
   // Recalc donor summaries — always full recalc from gifts table, never delta.
   // ONE set-based query (import hang fix), not a per-donor loop.
   if (affectedDonorIds.size) {
     try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
     catch (e) { console.error(`[gift-import] batch recalc failed:`, e.message); }
   }
+  // LIVE-1 · the one after-change step, once for everybody this file touched.
+  await require("../afterChange").afterChange(orgId, [...affectedDonorIds], { door: "csv_import", history: true, runTag: runId });
 
   // Gap 2: Promote donor status — same thresholds as single-gift route
   // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
@@ -9194,7 +9369,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
 
-  res.json({ inserted, duplicates: externalIdDupes, invalid,
+  res.json({ inserted, duplicates: externalIdDupes, invalid, thankYouDrafts: recentThankYous,
              donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
              duplicateCandidates, externalIdDupes,
              // BUILD-72 Part 1 — the default is KEEP ALL. Nothing is held back;
@@ -11345,9 +11520,9 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
     ins = await query(
     `INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,
                                     owner_id,owner_name,created_by,created_by_name,
-                                    trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event)
+                                    trigger_key,priority,replaced_plan_id,replaced_reason,trigger_event,started_import_id)
      SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text,
-            ?::text,?::int,?::text,?::text,?::text
+            ?::text,?::int,?::text,?::text,?::text,?::text
       WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text
                           AND x.template_id=?::text AND x.status='active')
      RETURNING id`,
@@ -11358,7 +11533,9 @@ async function startOneJourney(orgId, donor, winner, triggerKey, eventKey, opts 
      // first-gift journey still says what kind of journey it is; `by_hand` is
      // recorded only for a journey that genuinely has that trigger.
      opts.forceJourneyId ? (winner.trigger_key || triggerKey) : triggerKey,
-     v.priority, replacedId, reason, eventKey, orgId, donor.id, winner.id]);
+     v.priority, replacedId, reason, eventKey,
+     // LIVE-1 — the import whose gift started this, so the import's undo stops it.
+     opts.importId || null, orgId, donor.id, winner.id]);
   } catch (e) {
     // A unique index: a concurrent fire of the same event, or the same journey, won.
     if (e.code === "23505") return { started: false, reason: "already_enrolled_for_event", eventKey };
@@ -18907,6 +19084,10 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     ? { id: giftWritten.gift.id, amount: round2(parseFloat(giftWritten.gift.amount) || 0),
         fundId: giftWritten.fundId, paymentMethod: giftWritten.paymentMethod }
     : (giftWritten && giftWritten.duplicate ? { duplicate: true } : null);
+  // LIVE-1 — the conversation (and any gift it carried) is a change to the
+  // person: the after-change step. A gift written above ran it already with
+  // the gift form's name; this is the touch's own call.
+  await require("../afterChange").afterChange(orgId, [req.params.id], { door: "logged_touch" });
   res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
 }));
 
@@ -25539,6 +25720,8 @@ async function logEventAttendance(orgId, attendee, event, status, who, day) {
         .catch(e => console.error("[journey] first_event:", e.message));
     }
   }
+  // LIVE-1 — coming (or not) is a change to the person: the after-change step.
+  require("../afterChange").afterChangeSoon(orgId, [attendee.donor_id], { door: "event_checkin" });
   return true;
 }
 

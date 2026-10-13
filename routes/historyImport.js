@@ -255,6 +255,11 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
       await runTx(txc, `UPDATE donors SET ${f.flag}=true WHERE org_id=? AND id=?`, [orgId, f.donorId]);
   });
 
+  // LIVE-1 — the one after-change step for everybody the file touched. The
+  // org's scores are still recomputed right here (not scheduled) because the
+  // receipt below shows engagement before and after.
+  await require("../afterChange").afterChange(orgId,
+    [...new Set(write.map(it => it.match.donorId).filter(Boolean))], { door: "history_import", history: true });
   await recomputeScoresForOrg(orgId).catch(e => console.error("[history-import] scores", e.message));
   const after = await spread();
   const counts = Hm.countPlan(items);

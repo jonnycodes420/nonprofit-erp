@@ -349,4 +349,30 @@ function aboveOwnPattern(gifts, today, a) {
   return days.size >= usual;
 }
 
-module.exports = { DRIFT, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };
+
+// LIVE-1 · THE NAME OF A DONOR'S RHYTHM. Read off the same assessment Drift
+// makes, so "late for them" and "their rhythm" can never disagree. One of
+// monthly, quarterly, yearly, year_end or none ("no pattern yet"): fewer than
+// two giving events, or intervals too uneven to call, is no pattern.
+const RHYTHM_WORDS = {
+  monthly: "Gives about every month",
+  quarterly: "Gives about every three months",
+  yearly: "Gives about once a year",
+  year_end: "Gives at the end of the year",
+  none: "No pattern yet",
+};
+function rhythmOf(a) {
+  if (!a || !a.cadenceDays && !a.seasonal) return "none";
+  if (a.seasonal) {
+    const m = a.seasonal.kind === "month" ? a.seasonal.month : a.seasonal.quarterEndMonth;
+    return m >= 11 ? "year_end" : "yearly";
+  }
+  if (a.intervalCv != null && a.intervalCv > 0.5) return "none";
+  const d = a.cadenceDays;
+  if (d < 45) return "monthly";
+  if (d >= 70 && d < 135) return "quarterly";
+  if (d >= 300 && d < 450) return "yearly";
+  return "none";
+}
+
+module.exports = { DRIFT, RHYTHM_WORDS, rhythmOf, assessDrift, aboveOwnPattern, detectSeasonalCluster, humanSpan, humanCadence, median, intervalCv };

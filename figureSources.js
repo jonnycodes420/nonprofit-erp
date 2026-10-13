@@ -345,6 +345,29 @@ function auctionWinsSql(orgId, p) {
 }
 
 const SOURCES = {
+  // ── LIVE-1 · A LINE OF "WHAT THIS TOLD US" ──────────────────────────────
+  // The people a readout line counts, each with the gift (or the row) that
+  // put them there. Read from the readout's own stored rows, so the count on
+  // the line and the rows it opens are one list. One row per person.
+  "readout-line": {
+    label: "What this told us",
+    measure: () => "count",
+    params: { readout: "id:required", kind: "word:required" },
+    sentence: () => "The people on this line of the readout, each with the gift that put them there. The line's Why says which rule chose them.",
+    sql: (orgId, p) => ({
+      sql: `SELECT DISTINCT ON (r->>'donorId') (r->>'donorId') AS id, 'person' AS type, r->>'donorId' AS donor_id, d.name,
+                   r->>'date' AS date,
+                   CASE WHEN r->>'cents' IS NOT NULL THEN ROUND((r->>'cents')::numeric / 100, 2) END AS amount,
+                   COALESCE(r->>'groupName', r->>'how', '') AS detail
+              FROM readouts x
+              CROSS JOIN LATERAL jsonb_array_elements(x.lines) l
+              CROSS JOIN LATERAL jsonb_array_elements(l->'rows') r
+              JOIN donors d ON d.id = r->>'donorId' AND d.org_id = x.org_id
+             WHERE x.org_id = ? AND x.id = ? AND l->>'kind' = ? AND x.removed_at IS NULL AND d.deleted_at IS NULL`,
+      args: [orgId, p.readout, p.kind],
+      order: "id",
+    }),
+  },
   // ── GIFTS ────────────────────────────────────────────────────────────────
   gifts: {
     label: "Gifts",

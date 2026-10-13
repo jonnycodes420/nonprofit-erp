@@ -53,6 +53,7 @@ const MERGE_REFS = [
   ["cultivation_plans", "donor_id", "refuse"], ["custom_field_values", "donor_id"], ["donor_account_links", "donor_id"],
   ["donor_address_history", "donor_id"], ["donor_designations", "donor_id"], ["donor_materials", "donor_id"],
   ["donor_relationships", "donor_id_a"], ["donor_relationships", "donor_id_b"], ["donor_scores", "donor_id"],
+  ["donor_rhythm", "donor_id"], ["group_crossings", "donor_id"], ["readout_events", "donor_id"],   // LIVE-1
   ["email_marketing_activity", "donor_id"], ["event_attendees", "donor_id"], ["fin_transactions", "donor_id"],
   ["gift_duplicate_questions", "donor_id"], ["gift_soft_credits", "donor_id"], ["gifts", "donor_id"],
   ["gifts", "tribute_donor_id"], ["gifts", "match_employer_id"], ["giving_recurring", "donor_id", "refuse"],

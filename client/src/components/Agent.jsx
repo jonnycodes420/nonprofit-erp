@@ -7,7 +7,7 @@
 // as a checklist on its right with the confirm at the foot. Brass is what the
 // agent is doing; emerald is only ever the one yes.
 //
-// Five views:
+// Six views:
 //   Plans      — every instruction she has given down the left with its run's
 //                state; the open plan on the right as a checklist (what it read,
 //                each step, its state), the confirm at the foot.
@@ -15,6 +15,7 @@
 //   Workflows  — the recipes, moved here from their own tab.
 //   Waiting    — everything Steward prepared that waits on a person, one queue,
 //                oldest first.
+//   What changed — LIVE-1: what every import and read told us (WhatChanged.jsx).
 //   Guardrails — pause everything, drafting on or off (the org's switch, the
 //                same control and write as Settings → Data), what it can and
 //                cannot do in plain sentences, every instruction and run, and
@@ -43,6 +44,7 @@ import { DonorLink } from "./RecordLink";
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
 import { AgentDraftReview } from "./AgentDraftReview";
+import { WhatChanged } from "./WhatChanged";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
 const SERIF = "'DM Serif Display',Georgia,serif";
@@ -51,6 +53,7 @@ const VIEWS = [
   { id: "ask", label: "Ask" },
   { id: "workflows", label: "Workflows" },
   { id: "waiting", label: "Waiting for you" },
+  { id: "changed", label: "What changed" },   // LIVE-1: what every import and read told us
   { id: "guardrails", label: "Guardrails" },
 ];
 const VIEW_IDS = VIEWS.map(v => v.id);
@@ -672,6 +675,8 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
             </button>
           ))}
         </div>
+
+        {view === "changed" && <WhatChanged isReadOnly={isReadOnly} onNavigate={onNavigate} wide={wide}/>}
 
         {view === "plans" && (
           <div data-testid="agent-view-plans">

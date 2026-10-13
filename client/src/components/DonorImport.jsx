@@ -23,6 +23,8 @@ import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { NEGATOR_PHRASES, STAGE_COLORS, inferStage, normalizeStage } from "./donorShared";
 import { displayDate } from "../../../shared/displayDate";
+import { RecordLink } from "./RecordLink";
+import { tabHref } from "../lib/appUrls";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -761,6 +763,35 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // the sample count is read from the same route the banner and the clear use,
 // and if there is any, she confirms the clear (or keeps the sample and
 // closes). Nothing is deleted without the click.
+// LIVE-1 · how many thank-you drafts these gifts will make, before saving.
+function ThankYouPreview({ dates }) {
+  const [said, setSaid] = useState(null);
+  const key = (dates || []).join(",");
+  useEffect(() => {
+    const ds = (dates || []).filter(Boolean);
+    if (!ds.length) { setSaid(null); return; }
+    let live = true;
+    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates: ds }) })
+      .then(r => { if (live) setSaid(r && r.sentence); }).catch(() => {});
+    return () => { live = false; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!said) return null;
+  return <div data-testid="gi-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{said}</div>;
+}
+
+// LIVE-1 · WHAT THIS FILE TOLD US, on the result screen: the readout's
+// headline and the way to What changed, where each line has its rows.
+function ImportReadout({ readout }) {
+  if (!readout || !readout.headline) return null;
+  return (
+    <div data-testid="import-readout" style={{textAlign:"left",border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,borderRadius:10,padding:"10px 14px",margin:"0 0 14px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
+      <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:2}}>What this told us</div>
+      {readout.headline}.{" "}
+      <RecordLink to={tabHref("agent", { agentView: "changed" })} style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>See who, and what to do</RecordLink>
+    </div>
+  );
+}
+
 export function DonorImport(props) {
   const [gate, setGate] = useState("checking"); // checking | ask | open
   const [count, setCount] = useState(0);
@@ -835,6 +866,13 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   const [workbook,   setWorkbook]   = useState(null);       // BUILD-82 — the one-import workbook flow ({roled})
   const [mapping,    setMapping]    = useState({});         // aggregate + wide donor-field mapping
   const [txMap,      setTxMap]      = useState({ donorName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",city:"",state:"",owner:"",externalId:"" });
+  // LIVE-1 — files map themselves (the saved answer for these headers and the
+  // columns it does not cover), the thank-you count before saving, and the
+  // value answers ("CHK" is Check) she gives once for every later file.
+  const [shapeMemory, setShapeMemory] = useState(null);
+  const [tyPreview,  setTyPreview]  = useState(null);
+  const [valueAnswers, setValueAnswers] = useState({});   // "field|raw" → value
+  const [savedValues, setSavedValues] = useState([]);
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
   const [yearConvention, setYearConvention] = useState("dec31");
   const [shape,      setShape]      = useState("aggregate");// auto-detected file shape
@@ -1041,6 +1079,20 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     const cfg = autoDetectWideConfig(headers, rows);
     setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
     setParsed({ headers, rows });
+    // LIVE-1 · A FILE WITH COLUMNS SHE HAS MAPPED BEFORE MAPS ITSELF. Her saved
+    // answers win over the guess for every column the saved file had; only
+    // the new columns are left for her.
+    setShapeMemory(null);
+    apiFetch("/import-shapes/match", { method: "POST", body: JSON.stringify({ headers }) }).then(m => {
+      if (!m || !m.matched) return;
+      const d = {}, t = {};
+      for (const [h, code] of Object.entries(m.mapping || {})) for (const part of String(code).split("|")) {
+        if (part.startsWith("d:")) d[h] = part.slice(2); else if (part.startsWith("t:")) t[part.slice(2)] = h;
+      }
+      if (Object.keys(d).length) setMapping(prev => ({ ...prev, ...d }));
+      if (Object.keys(t).length) setTxMap(prev => ({ ...prev, ...t }));
+      setShapeMemory({ newHeaders: m.newHeaders || [], why: m.why || "" });
+    }).catch(() => {});
     // BUILD-78 Part 3.1 — left side of the column equation, from parse entry.
     setPhysicalCols(physical || { headerCells: headers, headerCount: headers.length, orphanColumns: 0, overflowRows: 0, total: headers.length });
     setCfDecisions({});
@@ -1294,6 +1346,37 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
   }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice, orgToday, mcPeople]);
+  // LIVE-1 · BEFORE ANYONE SAVES: how many thank-you drafts this file makes
+  // (one per gift from the last 30 days). The server holds the rule.
+  const giftDatesKey = (payload?.gifts || []).map(g => g.date || "").join(",");
+  useEffect(() => {
+    const dates = (payload?.gifts || []).map(g => g.date).filter(Boolean);
+    if (!dates.length) { setTyPreview(null); return; }
+    let live = true;
+    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates }) })
+      .then(r => { if (live) setTyPreview(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [giftDatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The value answers she gave before, and the values in THIS file's payment
+  // method and fund columns that are not the same word as a standard one.
+  useEffect(() => { apiFetch("/import-values").then(r => setSavedValues(r?.values || [])).catch(() => {}); }, []);
+  const valueQuestions = useMemo(() => {
+    if (!parsed || effectiveShape !== "transaction") return [];
+    const out = [];
+    for (const field of ["paymentMethod", "fund"]) {
+      const col = txMap[field];
+      if (!col) continue;
+      const seen = new Map();
+      for (const r of parsed.rows) { const v = String(r[col] ?? "").trim(); if (v) seen.set(v, (seen.get(v) || 0) + 1); }
+      const vals = [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+      for (const [raw, n] of vals) {
+        const norm = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        const saved = savedValues.find(v => v.field === field && v.raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === norm);
+        out.push({ field, raw, n, saved: saved ? saved.value : "" });
+      }
+    }
+    return out;
+  }, [parsed, effectiveShape, txMap, savedValues]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -1461,6 +1544,11 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       // file's gifts and people carry it and its Move Report can scope
       // itself to them. Every chunk sends the same id.
       const runId = newRunId();
+      // LIVE-1 — the value answers she gave on this screen are saved FIRST,
+      // so this file is read with them too, and every later file after it.
+      const answers = Object.entries(valueAnswers).map(([k, value]) => { const i = k.indexOf("|"); return { field: k.slice(0, i), raw: k.slice(i + 1), value }; })
+        .filter(a => a.value && a.value.trim() && a.value.trim() !== a.raw);
+      if (answers.length) await apiFetch("/import-values", { method: "POST", body: JSON.stringify({ values: answers }) }).catch(() => {});
       const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras, runId);
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
@@ -1689,7 +1777,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       try {
         const R = totals.reconciliation || {};
         const rowsR = R.rows || {}, dollarsR = R.dollars || {};
-        await apiFetch("/imports", { method: "POST", body: JSON.stringify({
+        const rec = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
           id: runId,
           migrationSource: moveSource || undefined,
           name: srcFile?.name || "Imported file",
@@ -1725,6 +1813,18 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
             refusedRows: (totals.refusedRows || []).slice(0, 5000).map(r => ({ line: r.line ?? null, reason: r.reason || null, name: r.name || null, raw: r.raw || {} })),
           },
         })});
+        // LIVE-1 — what this file told us, on the result screen.
+        if (rec && rec.readout) setResult(r => (r ? { ...r, readout: rec.readout } : r));
+        // LIVE-1 — files map themselves: her answers for these columns, saved
+        // against the file's headers ("d:" a donor field, "t:" a gift field).
+        const enc = {};
+        for (const h of parsed.headers) {
+          const parts = [];
+          if (mapping[h]) parts.push("d:" + mapping[h]);
+          for (const [f, hh] of Object.entries(txMap)) if (hh === h) parts.push("t:" + f);
+          if (parts.length) enc[h] = parts.join("|").slice(0, 120);
+        }
+        if (Object.keys(enc).length) apiFetch("/import-shapes", { method: "POST", body: JSON.stringify({ headers: parsed.headers, mapping: enc }) }).catch(() => {});
       } catch (e) {
         console.error("[import] could not record the run:", e);
       }
@@ -2022,6 +2122,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported, with gaps you should read." : "Import complete."}
           </div>
+          <ImportReadout readout={result.readout}/>
           {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold700,marginBottom:4}}>What's missing before this counts as fully accounted for</div>
@@ -3276,6 +3377,31 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               )}
             </div>;
           })()}
+          {/* LIVE-1 · files map themselves, values she explained once, and how
+              many thank-yous this file will draft, all before anyone saves. */}
+          {shapeMemory&&(
+            <div data-testid="import-shape-memory" style={{background:T.bg,border:"1px solid "+T.bg2,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.6}}>
+              <strong>This file mapped itself.</strong> {shapeMemory.why}
+              {shapeMemory.newHeaders.length>0
+                ?<> New {shapeMemory.newHeaders.length===1?"column":"columns"} to decide: <strong>{shapeMemory.newHeaders.join(", ")}</strong>.</>
+                :" Nothing new to decide."}
+            </div>
+          )}
+          {valueQuestions.length>0&&(
+            <div data-testid="import-value-answers" style={{border:"1px solid "+T.bg2,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12.5,color:T.ink}}>
+              <div style={{fontWeight:700,marginBottom:4}}>What do these values mean?</div>
+              <div style={{color:T.ink3,marginBottom:6}}>Say once and every later file reads them the same way. Leave a box empty to keep the value as it is.</div>
+              {valueQuestions.map(q=>{const k=q.field+"|"+q.raw;return(
+                <label key={k} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"3px 0"}}>
+                  <span style={{minWidth:120}}>{q.field==="fund"?"Fund":"Payment method"} “{q.raw}” <span style={{color:T.ink3}}>({q.n})</span></span>
+                  <span style={{color:T.ink3}}>means</span>
+                  <input value={valueAnswers[k]??q.saved} placeholder={q.raw} maxLength={120}
+                    onChange={e=>setValueAnswers(v=>({...v,[k]:e.target.value}))}
+                    style={{flex:"1 1 140px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12.5,fontFamily:"inherit"}}/>
+                </label>);})}
+            </div>
+          )}
+          {tyPreview&&<div data-testid="import-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{tyPreview.sentence}</div>}
           {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
@@ -3626,7 +3752,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
       // The run is recorded so Settings, Imports shows it and the undo has
       // something to undo. `gift_file_with_donors` is what makes this import
       // reversible as a whole (routes/crm.js).
-      await apiFetch("/imports", { method: "POST", body: JSON.stringify({
+      const rec = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
         id: runId,
         name: srcFile?.name || "Gift file",
         sourceFilename: srcFile?.name || null,
@@ -3634,8 +3760,8 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
         donorsCreated: wouldCreate.donors.length,
         giftsCreated: wouldCreate.gifts.length,
         dollars: wouldCreate.dollars,
-      }) }).catch(() => { /* the import happened; the receipt is not the import */ });
-      setResult({ ...totals, shape: "gift_file_with_donors", runId,
+      }) }).catch(() => null);   // the import happened; the receipt is not the import
+      setResult({ ...totals, shape: "gift_file_with_donors", runId, readout: rec && rec.readout ? rec.readout : null,
                   donorsCreated: wouldCreate.donors.length,
                   giftsCreated: wouldCreate.gifts.length });
       setStep("result");
@@ -3685,9 +3811,9 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
         recorded = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
           id: runId, name: srcFile?.name || "Gift file", sourceFilename: srcFile?.name || null, shape: "gifts", ...fig,
           summary: { ...fig, dollarsSetAside: Number(dollarsR.skipped) || 0, dollarsErrored: Number(dollarsR.errored) || 0 },
-        }) }).then(() => true).catch(() => false);   // the import happened; the receipt is not the import
+        }) }).catch(() => false);   // the import happened; the receipt is not the import
       }
-      setResult(recorded ? { ...res, runId } : res); setStep("result");
+      setResult(recorded ? { ...res, runId, readout: recorded.readout || null } : res); setStep("result");
     } catch(e) { setErr(errorMessage(e, "Import failed.")); }
     setLoading(false);
   };
@@ -3713,6 +3839,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             Import complete.
           </div>
+          <ImportReadout readout={result.readout}/>
           {/* FIX-11 Part 4 — when the import CREATED the people, the result
               says so, and offers the one undo that removes both halves. */}
           {result.shape === "gift_file_with_donors" ? (
@@ -4137,6 +4264,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
             </div>
           )}
 
+          <ThankYouPreview dates={matchedGifts.map(g => g.date)}/>
           {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           {/* FIX-11 Part 4 — TWO WAYS FORWARD, on the same screen. Creating the
               people is the emerald one, because it is what somebody arriving

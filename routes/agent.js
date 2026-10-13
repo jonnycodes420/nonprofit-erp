@@ -964,6 +964,11 @@ async function agentContext(orgId, { today, scope, allowed }) {
   const want = t => allowed.has(t);
   const safe = p => p.catch(() => []);
   const ctx = {};
+  // LIVE-1 — what recent imports and reads told us, one line each, so the
+  // Agent knows about yesterday. Every number in them was counted from rows.
+  ctx.readouts = await safe(query(
+    `SELECT id, headline, for_date FROM readouts WHERE org_id=? AND removed_at IS NULL AND is_example IS NOT TRUE
+        AND for_date >= ? ORDER BY created_at DESC LIMIT 5`, [orgId, orgTime.addDays(today, -7)]));
   if (want("set_owner")) ctx.staff = await safe(query("SELECT id, name FROM users WHERE org_id=? ORDER BY name LIMIT 50", [orgId]));
   if (want("add_to_group") || want("remove_from_group"))
     ctx.groups = await safe(query("SELECT id, name FROM audiences WHERE org_id=? AND kind='static' ORDER BY name LIMIT 100", [orgId]));
@@ -1105,6 +1110,7 @@ function A3money(cents) {
 function agentContextLines(c) {
   const out = [];
   const sec = (title, rows, fmt) => { if (rows && rows.length) out.push("", title, ...rows.map(fmt)); };
+  sec("WHAT RECENT IMPORTS AND READS TOLD US (counted from rows; quote, never change, the numbers):", c.readouts, r => `  ${r.for_date} | ${r.headline}`);
   sec("STAFF (ownerUserId):", c.staff, u => `  ${u.id} | ${u.name}`);
   sec("GROUPS kept by hand (groupId):", c.groups, g => `  ${g.id} | ${g.name}`);
   sec("HOUSEHOLDS (householdId):", c.households, h => `  ${h.id} | ${h.name}`);

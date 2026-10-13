@@ -364,6 +364,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       setRecurringAttention((c.failedCards||0)+(c.aboutToLapse||0)+(c.pendingProposals||0)+(c.anniversaries||0));
     }).catch(()=>{});
   },[]);
+  // LIVE-1 — the newest readout of the last seven days ("Your September
+  // import: 4 lapsed donors came back"), one row on the Thread. A failure is
+  // silence: a readout that will not load must never break the morning screen.
+  const [latestReadout,setLatestReadout]=useState(null);
+  useEffect(()=>{apiFetch("/readouts/latest").then(d=>setLatestReadout(d?.readout||null)).catch(()=>{});},[]);
   const [briefing,setBriefing]=useState("");
   const [briefLoading,setBriefLoading]=useState(false);
   const [briefOpen,setBriefOpen]=useState(false);
@@ -2122,6 +2127,38 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const at=homeRows.findIndex(r=>r.age>=0&&r.age<age);
       if(at<0)homeRows.push({age,el});else homeRows.splice(at,0,{age,el});
     });
+  }
+
+  // ── LIVE-1 · WHAT THE LAST IMPORT TOLD US IS A ROW ─────────────────────
+  // Like the stopped card, it is NOT a thread: no Done, no snooze. It borrows
+  // the row's shape, says the readout's headline, and its one action opens
+  // What changed, where every line has its rows and its own action. Newest
+  // news, so it leads the list.
+  if(homeCalm&&latestReadout){
+    const ro=latestReadout;
+    homeRows.unshift({age:-1,el:(
+      <li key={"readout-"+ro.id} className="attn-row" data-testid="home-readout-row"
+        style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk}}>
+        <a href="/app/agent?view=changed" className="attn-row-main"
+          style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
+          onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("agent",{agentView:"changed"});}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{ro.title}</div>
+            <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
+              {ro.lines.filter(l=>l.kind!=="data_problems").slice(0,2).map(l=>l.sentence).join(", ")}.{" "}
+              <span style={{color:T.ink,fontWeight:600}}>Next: see who, and what to do about each.</span>
+            </div>
+          </div>
+          <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
+            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{String(ro.forDate||"").slice(5)}</div>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>readout</div>
+          </div>
+        </a>
+        <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
+          <button className="attn-row-action" data-testid="home-readout-open" onClick={()=>onNavigate("agent",{agentView:"changed"})}
+            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>See who</button>
+        </div>
+      </li>)});
   }
 
   // The thank queue items fold into the thread rows themselves once a gift
