@@ -214,7 +214,7 @@ const SETUP_ITEM_META = {
   conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
   // INT-BUILD-1 Part 0 — the viewer's OWN inbox, so it ticks per person.
   inbox:      { label: "Connect your inbox",             why: "Gmail or Outlook; your conversations with people on file log themselves",     cta: "Connect", nav: ["settings", { section: "connections", focus: "inbox" }] },
-  team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
+  team:       { label: "Invite your team",               why: "add your fundraisers so everyone sees their own donors",                       cta: "Invite",  nav: ["settings", { section: "team" }] },
   // BUILD-83 Part 5.3 — the closer.
   sustainers: { label: "Move your monthly givers",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
 };
@@ -1837,8 +1837,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             language, and never a Re-engage button. */}
         {driftData.institutional?.length > 0 && (
           <div style={{...cPad,...(onPanel?{marginTop:12,paddingTop:14}:{}),borderTop:"1px solid "+T.bg3}}>
-            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-              Institutional giving: foundations, DAFs, churches and businesses
+            <div style={{fontSize:12,fontWeight:800,color:T.ink3,marginBottom:6}}>
+              Institutional giving: foundations, donor-advised funds, churches and businesses
             </div>
             {driftData.institutional.slice(0,8).map(inst=>(
               <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>

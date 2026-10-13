@@ -364,8 +364,8 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
 // `today`/fiscal boundaries are resolved by the server at run time, so a saved
 // "this year" is this year every time it runs.
 export const STANDARD_REPORTS = [
-  { key: "lybunt", name: "LYBUNT", question: "Who gave last year and not yet this year?", kind: "handler", handler: "lybunt", params: { yearMode: "fiscal" } },
-  { key: "sybunt", name: "SYBUNT", question: "Who gave in some earlier year and not this one?", kind: "handler", handler: "sybunt", params: { yearMode: "fiscal" } },
+  { key: "lybunt", name: "Gave last year, not this year", question: "Who gave last year and not yet this year?", kind: "handler", handler: "lybunt", params: { yearMode: "fiscal" } },
+  { key: "sybunt", name: "Gave before, not this year", question: "Who gave in some earlier year and not this one?", kind: "handler", handler: "sybunt", params: { yearMode: "fiscal" } },
   { key: "first-time", name: "First-time donors this year", question: "Who gave for the very first time this year?", kind: "builder",
     def: { entity: "people", columns: ["name", "first_gift_date", "lifetime", "email"], filter: { op: "and", rules: [{ field: "first_gift_date", cmp: "on_or_after", value: "{{fyStart}}" }] }, sort: { field: "first_gift_date", dir: "desc" } } },
   { key: "by-fund", name: "Donors by fund", question: "How much came in to each fund this year, and from how many gifts?", kind: "builder",

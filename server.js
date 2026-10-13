@@ -2686,7 +2686,11 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
-  const [fund] = fundId ? await query("SELECT name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  const [fund] = fundId ? await query("SELECT name, public_name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  // POLISH-2: a donor reads the fund's public name, or "where it's needed
+  // most" for the org's general fund. Never the bookkeeping name of that one.
+  const fundPublic = fund && String(fund.public_name || "").trim() || null;
+  const generalFund = !!fund && !fundPublic && fundId === (await orgUnrestrictedFundId(orgId).catch(() => null));
   const draftMod = await import("./shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
   // ── FIX-6 follow-up 8 · THE FACTS THE DRAFT MAY REST ON ─────────────────
@@ -2716,9 +2720,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     campaignName: (thisGift && thisGift.campaign) || null,
   };
   const draft = reason === "pledge_completed"
-    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice, ...facts });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she

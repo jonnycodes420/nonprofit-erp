@@ -59,8 +59,8 @@ const writeBtn = (isReadOnly, style) => ({
 function FundModal({ fund, onSave, onClose }) {
   const [form, setForm] = useState(
     fund
-      ? { name: fund.name, description: fund.description || "", restricted: !!fund.restricted }
-      : { name:"", description:"", restricted:false }
+      ? { name: fund.name, description: fund.description || "", restricted: !!fund.restricted, public_name: fund.public_name || "" }
+      : { name:"", description:"", restricted:false, public_name:"" }
   );
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   return (
@@ -75,6 +75,11 @@ function FundModal({ fund, onSave, onClose }) {
         <div>
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Description</div>
           <input value={form.description} onChange={set("description")} placeholder="Purpose of this fund" style={inp}/>
+        </div>
+        <div>
+          <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Name donors see in a thank-you</div>
+          <input value={form.public_name} onChange={set("public_name")} placeholder="e.g. our new training boat" style={inp}/>
+          <div style={{ fontSize:11, color:T.ink3, marginTop:4, lineHeight:1.45 }}>Leave it blank to use the fund name. Gifts to your general fund say &ldquo;where it&rsquo;s needed most.&rdquo;</div>
         </div>
         <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:T.ink, cursor:"pointer" }}>
           <input type="checkbox" checked={form.restricted} onChange={e => setForm(p => ({ ...p, restricted: e.target.checked }))}/>

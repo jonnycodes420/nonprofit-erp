@@ -12,7 +12,9 @@
 // editing a person's tags cannot erase the hedge.
 
 // Every internal flag matches one of these. A new machine flag is added here.
-const INTERNAL_TAG_RES = [/^has-refused-rows:\d+$/i];
+// POLISH-2: shares-id:<id> is the import's note that two records carried the
+// same old-system id (shared/importShape.js); it showed on Journeys as a tag.
+const INTERNAL_TAG_RES = [/^has-refused-rows:\d+$/i, /^shares-id:/i];
 
 const parse = raw => {
   if (Array.isArray(raw)) return raw;

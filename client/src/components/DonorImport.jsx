@@ -2681,7 +2681,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One file · donors and their giving history · shape auto-detected · stages auto-assigned</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One file: your donors and their giving history. We sort out the columns and stages for you.</div>
             {/* LOST & FOUND — somebody who ran the free audit and then signed
                 up still has the file open on their desk, and the obvious
                 next thing is to import the same one. The FILE did not
@@ -2748,10 +2748,10 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
-              label="Drop your spreadsheet here, or browse"
+              label="Choose your spreadsheet, or drag it here"
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export. We detect the shape and build donors and their giving history. .csv, .tsv, .xlsx, .xls.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>A donor list or a gift export. We read your file and build your donors and their giving history. .csv, .tsv, .xlsx, .xls.</div>
             {moveSource && (
               <div data-testid="move-source-line" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
                 Set up for your export from <strong style={{color:T.ink2}}>{moveLabel || moveSource}</strong>.{" "}
@@ -4051,10 +4051,10 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
-              label="Drop your spreadsheet here, or browse"
+              label="Choose your spreadsheet, or drag it here"
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift), auto-detected.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>One row per donor with a column for each year, or one row per gift. We work out which.</div>
 
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>

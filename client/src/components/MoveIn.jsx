@@ -125,8 +125,8 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
         Where are your donors today?
       </div>
       <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14, lineHeight: 1.5 }}>
-        Pick the system you are coming from and Steward fills in the mapping for you, so your
-        file opens already matched up. Keep your old system running as long as you like.
+        Tell us where your donors live now and we'll line up the columns for you, so your
+        file opens ready to go. Keep your old system running as long as you like.
       </div>
       {err && <div style={{ color: T.ink2, fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 10 }}>
@@ -135,7 +135,7 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
             onClick={() => choose(t.key)}
             style={{ textAlign: "left", background: T.bgCard, border: `1px solid ${T.bg3}`,
                      borderRadius: 11, padding: "13px 14px", cursor: saving ? "wait" : "pointer" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{t.label}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>We&rsquo;re moving from {t.label}</div>
             {t.sub && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3, lineHeight: 1.45 }}>{t.sub}</div>}
           </button>
         ))}

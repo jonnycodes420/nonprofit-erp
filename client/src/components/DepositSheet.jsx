@@ -405,8 +405,8 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             {plan.totals.slipCents == null
               ? " · type the slip total so Steward can check its own arithmetic"
               : ` = ${cents(plan.totals.giftCents + plan.totals.notGiftCents + plan.totals.needsCents)} against a slip of ${cents(plan.totals.slipCents)}`}
-            {plan.balanced === true && <span style={{ color: T.greenDk, fontWeight: 700 }}> · it foots</span>}
-            {plan.balanced === false && <span style={{ fontWeight: 700 }}> · it does not foot</span>}
+            {plan.balanced === true && <span style={{ color: T.greenDk, fontWeight: 700 }}> · it checks out</span>}
+            {plan.balanced === false && <span style={{ fontWeight: 700 }}> · it does not add up</span>}
           </div>
 
           {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 10 }}>{err}</div>}

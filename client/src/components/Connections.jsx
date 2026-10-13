@@ -1135,7 +1135,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   }
   // Books: the bookkeeper file needs nothing connected; it is always ready.
   cards.push({ key: "bookkeeper-file", section: "books", icon: "bookkeeperFile", name: "Bookkeeper file",
-    line: "A monthly file of every gift, by fund and payout, that foots to the cent. Nothing to connect.",
+    line: "A monthly file of every gift, by fund and payout, that adds up to the cent. Nothing to connect.",
     status: "ready", button: { kind: "manage", label: "Manage", onClick: () => onNavigate && onNavigate("finance", "close") } });
   // Build your own.
   if (isAdmin) {

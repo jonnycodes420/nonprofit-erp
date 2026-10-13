@@ -2024,6 +2024,9 @@ async function runSchemaInit(pool) {
   // for a human, and NEVER quietly General. A guessed designation is an audit
   // finding.
   await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS aliases JSONB`);
+  // POLISH-2: the name a donor reads in a thank-you ("the boat fund"), when
+  // it differs from the bookkeeping name ("Harbor Skills Boat"). Null = none.
+  await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS public_name TEXT`);
   // The org's unrestricted DEFAULT, set deliberately. A blank memo goes here
   // only if somebody chose one; with nothing chosen a blank memo is Needs you,
   // because "we do not know" is not the same as "unrestricted".

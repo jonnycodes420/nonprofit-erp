@@ -78,7 +78,7 @@ export const VOLUNTEER_PRESETS = {
     },
   },
   wranglr: {
-    label: "Wranglr",
+    label: "A shift-scheduling export",
     confidence: "documented-not-walked",
     signal: ["shift date", "shift name", "hours worked"],
     columns: {

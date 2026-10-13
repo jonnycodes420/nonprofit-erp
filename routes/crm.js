@@ -578,7 +578,8 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
       WHERE t.org_id = ? AND t.sent_at IS NULL AND t.skipped_at IS NULL
         AND d.deleted_at IS NULL
       ORDER BY g.amount DESC, t.created_at ASC`, [orgId]);
-  const [org] = await query("SELECT voice_samples FROM orgs WHERE id=?", [orgId]);
+  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
   const draftMod = await import("../shared/draftNote.js");
@@ -593,7 +594,9 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
     voice: { ready: voice.ready, samples: voice.count, needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - voice.count) },
     drafts: rows.map(r => ({ id: r.id, donorId: r.donor_id, giftId: r.gift_id, donorName: r.donor_name,
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
-      fundName: r.fund_name || null, body: r.body, voiceUsed: r.voice, opened: !!r.opened_at })),
+      fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
+      // POLISH-2: signed by whoever is reading the queue, since she sends it.
+      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice }) })),
   });
 }));
 
@@ -12543,7 +12546,9 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       [req.user.orgId]).catch(() => [])).map(t => ({ id: t.id, name: t.name })),
     priority: { min: J.PRIORITY_MIN, max: J.PRIORITY_MAX, default: J.PRIORITY_DEFAULT },
     stages: stageRows.map(r => r.stage),
-    tags: tagRows.map(r => r.tag),
+    // POLISH-2: a machine flag (has-refused-rows:N, shares-id:X) is never a
+    // tag she can pick; donorTags.js is the one list of them.
+    tags: tagRows.map(r => r.tag).filter(t => !DTAGS.isInternalTag(t)),
     presets: J.PRESETS.map(p => ({ ...p, touches: J.touchesSentence(p.steps) })),
     // FIX-5 — the team, so a step can name a person as its owner instead of
     // always falling to the relationship owner.
@@ -13225,7 +13230,7 @@ async function journeyStats(orgId, t) {
       { key: "onTime", label: "Steps on time", value: onTime, rows: "onTime",
         sentence: "People who have completed at least one step on or before the day it was due." },
       { key: "late", label: "Steps late", value: late, rows: "late",
-        sentence: "People with a step completed after its due date, or still waiting past it. Late is brass, not a failure." },
+        sentence: "People with a step completed after its due date, or still waiting past it. Late is okay. It isn't failure." },
       { key: "skipped", label: "Steps skipped", value: skipped, rows: "skipped",
         sentence: "People where somebody decided not to do a step and said why. The reason is on each row." },
       { key: "secondGift", label: "Gave again within a year", value: secondGift, rows: "secondGift",

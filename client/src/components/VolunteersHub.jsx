@@ -231,7 +231,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
           <button onClick={() => setAdding(true)} style={btnPrimary} data-testid="vol-add-open">Add a volunteer</button>
           <button onClick={() => setImporting(true)} style={btnQuiet} data-testid="vol-import-open">Import volunteers</button>
           <span style={{ fontSize: 12.5, color: T.ink3 }}>
-            One person, or a file from VolunteerHub, SignUpGenius, Wranglr, Bloomerang Volunteer or a spreadsheet.
+            Add one person, or bring a file from VolunteerHub, SignUpGenius or a spreadsheet.
           </span>
         </div>
       )}

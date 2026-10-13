@@ -267,7 +267,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
             {!tzKnown
-              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone first. Steward will not fire a reminder at a guessed hour.
+              ? <>We'll remind you in your morning email when it's due. To have it email you at a specific time, set your organization&rsquo;s time zone first. Steward will not fire a reminder at a guessed hour.
                   {onNavigate && <>{" "}
                     {/* FIX (2026-09-10) — refusing an action and then leaving
                         the user to hunt for the fix is half a fix. This lands
@@ -279,7 +279,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                   </>}</>
               : sanitizeStepTime(nsTime)
                 ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened, instead of the morning list. It fires on a weekend too.</>
-                : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}
+                : <>We'll remind you in your morning email when it's due. (Or sooner: add a time and it emails you at that moment.) Skipping is recorded as skipped.</>}
           </div>
         </div>}
 

@@ -4113,9 +4113,10 @@ app.post("/finance/funds", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const id = "ff_" + uuid().slice(0, 8);
+  const publicName = String(req.body.public_name || "").trim().slice(0, 120) || null;
   await run(
-    "INSERT INTO fin_funds (id,org_id,name,description,restricted) VALUES (?,?,?,?,?)",
-    [id, req.user.orgId, name, description || "", restricted ? true : false]
+    "INSERT INTO fin_funds (id,org_id,name,description,restricted,public_name) VALUES (?,?,?,?,?,?)",
+    [id, req.user.orgId, name, description || "", restricted ? true : false, publicName]
   );
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [id]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "fund", id, {
@@ -4138,10 +4139,14 @@ app.put("/finance/funds/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
       : String(req.body.aliases || "").split(/[,\n]/);
     aliases = [...new Set(raw.map(a => String(a).trim()).filter(a => a.length >= 2).map(a => a.slice(0, 80)))].slice(0, 25);
   }
+  // POLISH-2: the name donors read. Absent from the body = unchanged.
+  const publicName = req.body.public_name !== undefined
+    ? (String(req.body.public_name || "").trim().slice(0, 120) || null)
+    : (oldFund ? oldFund.public_name || null : null);
   const affected = await run(
-    "UPDATE fin_funds SET name=?,description=?,restricted=?,aliases=?::jsonb WHERE id=? AND org_id=?",
+    "UPDATE fin_funds SET name=?,description=?,restricted=?,aliases=?::jsonb,public_name=? WHERE id=? AND org_id=?",
     [name, description || "", restricted ? true : false,
-     aliases && aliases.length ? JSON.stringify(aliases) : null, req.params.id, req.user.orgId]
+     aliases && aliases.length ? JSON.stringify(aliases) : null, publicName, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Fund not found" });
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [req.params.id]);

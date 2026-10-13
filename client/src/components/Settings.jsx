@@ -1866,7 +1866,7 @@ function ImportsHistory(){
       <SectionLabel>Imports</SectionLabel>
       {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
-        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback, undoing an import is not part of this release.
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added.
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}

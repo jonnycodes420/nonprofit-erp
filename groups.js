@@ -613,7 +613,7 @@ function rulesSentence(rules = {}) {
   if (rules.openTask) parts.push("with an open task");
   if (rules.fromImport) parts.push("added by one import");
   if (rules.groupId) parts.push("in another group");
-  if (rules.notDeceased) parts.push("not deceased");
+  if (rules.notDeceased) parts.push("leaving out anyone marked deceased");
   if (rules.bunt === "lybunt") parts.push("who gave last year and not yet this year (fiscal years)");
   if (rules.bunt === "sybunt") parts.push("who gave some year before last and not last year or this year (fiscal years)");
   if (rules.firstGiftThisYear) parts.push("whose first gift ever came this fiscal year");

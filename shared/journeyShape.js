@@ -814,7 +814,10 @@ export function touchesSentence(steps = []) {
   if (!n) return "No steps yet.";
   const last = Math.max(...steps.map(s => Number(s.offsetDays) || 0));
   const months = Math.round(last / 30);
-  const span = last < 45 ? `${Math.max(1, Math.round(last / 7))} week${Math.round(last / 7) === 1 ? "" : "s"}`
+  // POLISH-2: the plural follows the number shown ("1 touch over 1 week",
+  // never "1 weeks": a same-day step rounded to 0 weeks but showed as 1).
+  const weeks = Math.max(1, Math.round(last / 7));
+  const span = last < 45 ? `${weeks} week${weeks === 1 ? "" : "s"}`
              : `${months} month${months === 1 ? "" : "s"}`;
   return `${n} touch${n === 1 ? "" : "es"} over ${span}. Nothing is sent without you.`;
 }

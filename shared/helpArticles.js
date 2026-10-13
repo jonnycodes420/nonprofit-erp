@@ -738,7 +738,7 @@ export const HELP_ARTICLES = [
         `Open Donors and click "↑ Import & tools ▾".`,
         `Choose "Import + History" (recommended) to bring gifts too, or "Import donors only".`,
         `Under "Where are your donors today?", pick your old system and read its short how-to, then click "Continue". Or click "Skip this, I already have my file ready".`,
-        `Drop your file where it says "Drop your spreadsheet here, or browse". If the workbook has a donors sheet and a gifts sheet, Steward offers to import both.`,
+        `Click "Choose your spreadsheet, or drag it here". If the workbook has a donors sheet and a gifts sheet, Steward offers to import both.`,
         `Check the mapping. Steward says what it detected. Click "✦ Auto-map" or set each column yourself.`,
         `For every column you have not mapped, choose "Store it" or "Discard". The import waits until each one is decided.`,
         `Click "Import" with the counts shown, for example "Import 412 donors + 1,906 gifts →".`,

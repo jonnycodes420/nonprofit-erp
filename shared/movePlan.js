@@ -65,7 +65,9 @@ export const MOVE_TILES = [
   { key: "givebutter",      kind: "preset", presetKey: "givebutter" },
   { key: "kindful",         kind: "preset", presetKey: "kindful" },
   { key: "networkforgood",  kind: "preset", presetKey: "networkforgood" },
-  { key: "spreadsheet",     kind: "spreadsheet", label: "A spreadsheet",
+  // POLISH-2: lower case, because the label is always read after "from"
+  // ("We're moving from a spreadsheet", "Moved from a spreadsheet").
+  { key: "spreadsheet",     kind: "spreadsheet", label: "a spreadsheet",
     sub: "Excel, Numbers, Google Sheets, or a CSV from anywhere" },
 ];
 

@@ -65,8 +65,13 @@ function greetingFor(voice, donorName) {
     : swapped;
 }
 
+// POLISH-2: a plain draft is still a letter. Before her samples arrive it
+// opens "Dear <first name>," and closes "With thanks," and the org's name;
+// the sender's own name goes in above the org's when the queue is read, by
+// signThankYou, because whoever opens the queue is the one who sends it.
+export const PLAIN_SIGNOFF = "With thanks,";
 function wrap(voice, donorName, middle, orgName) {
-  if (!voice.ready) return middle;
+  if (!voice.ready) return [`Dear ${firstName(donorName) || "friend"},`, "", middle, "", [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n")].join("\n");
   const tail = [voice.signoff || "Thank you", voice.signature || orgName || ""].filter(Boolean).join(",\n");
   return [greetingFor(voice, donorName), "", middle, "", tail].join("\n");
 }
@@ -103,6 +108,9 @@ const TIER = cents => {
 
 export function thankYouDraft({
   donorName, giftCents, fundName, orgName, voice = { ready: false }, date = null,
+  // POLISH-2: true when the gift went to the org's general fund. A donor
+  // never sees "General Operating"; the letter says where the money goes.
+  generalFund = false,
   // Every one of these is optional, and an absent one is never guessed at.
   isFirstGift = null,          // true when this is the first gift on their record
   isRecurring = null,          // true when it came from a monthly commitment
@@ -112,7 +120,8 @@ export function thankYouDraft({
 } = {}) {
   const first = firstName(donorName) || "friend";
   const amt = money(giftCents);
-  const to = fundName ? ` to ${fundName}` : campaignName ? ` to ${campaignName}` : "";
+  const to = generalFund && !campaignName ? ", which will go where it's needed most"
+    : fundName ? ` to ${fundName}` : campaignName ? ` to ${campaignName}` : "";
   const tier = TIER(giftCents);
   const months = Number.isFinite(Number(monthsSinceLastGift)) ? Math.round(Number(monthsSinceLastGift)) : null;
   const before = Number.isFinite(Number(giftCountBefore)) ? Number(giftCountBefore) : null;
@@ -123,7 +132,7 @@ export function thankYouDraft({
     middle = `Thank you for your monthly gift of ${amt}${to}. Giving every month is the steadiest kind of help there is, and we notice it.`;
   } else if (isFirstGift === true) {
     middle = tier === "major" || tier === "large"
-      ? `Thank you for your first gift${to}, and for making it ${amt}. Starting here means a great deal, and we would like you to see what it does.`
+      ? `Thank you for your first gift${generalFund ? "" : to}, and for making it ${amt}${generalFund ? to : ""}. Starting here means a great deal, and we would like you to see what it does.`
       : `Thank you for your first gift of ${amt}${to}. It is the beginning of something, and we are glad you chose us to begin it with.`;
   } else if (months !== null && months >= 12) {
     // We know the gap because we were told it. Saying "welcome back" to
@@ -147,6 +156,24 @@ export function thankYouDraft({
   return { body, voice: voice.ready ? "org_samples" : "default", first, amount: amt,
            fundName: fundName || null, date, tier,
            basis: { isFirstGift, isRecurring, monthsSinceLastGift: months, giftCountBefore: before, campaignName } };
+}
+
+// POLISH-2 · THE SENDER SIGNS IT. Read time, not write time: the draft is
+// written by the system before anyone has opened it, and the person who opens
+// the queue is the one who sends it from her own mail. A plain draft written
+// before POLISH-2 (no greeting, no sign-off) is given both here, so a queue
+// already waiting reads the same as a new one. A draft in her own voice is
+// left exactly as written: her samples already carry her signature.
+export function signThankYou(body, { donorName, senderName, orgName, voiceUsed = "default" } = {}) {
+  let text = String(body || "");
+  if (voiceUsed === "org_samples" || !text.trim()) return text;
+  if (!/^dear\b/i.test(text.trim())) text = `Dear ${firstName(donorName) || "friend"},\n\n${text.trim()}`;
+  const close = [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n");
+  if (!text.includes(PLAIN_SIGNOFF)) text = `${text.trimEnd()}\n\n${close}`;
+  const name = String(senderName || "").trim();
+  if (name && !text.includes(`${PLAIN_SIGNOFF}\n${name}`))
+    text = text.replace(`${PLAIN_SIGNOFF}\n`, `${PLAIN_SIGNOFF}\n${name}\n`);
+  return text;
 }
 
 // ── B.2 — the pledge-instalment reminder ───────────────────────────────────
