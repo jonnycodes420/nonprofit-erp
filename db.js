@@ -6788,6 +6788,42 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_readouts_org ON readouts (org_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_readouts_source ON readouts (org_id, source_kind, source_id)`);
+  // FIX-37 · AN IMPORT'S RECENT-GIFT WORK, BEHIND THE SCREEN. One job row per
+  // import run (its progress, the thank-you answer it runs under, whether the
+  // readout has been written), and one work row per recent gift still to go
+  // through recordGift. The work rows are what make the job survive a
+  // restart: a gift the file brought is never only in memory. A done row is
+  // deleted, so what is left is exactly what is still to do.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_recent_jobs (
+      import_id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      total INTEGER NOT NULL DEFAULT 0,
+      done INTEGER NOT NULL DEFAULT 0,
+      thank_yous INTEGER NOT NULL DEFAULT 0,
+      thanks JSONB,
+      errors JSONB NOT NULL DEFAULT '[]'::jsonb,
+      touched JSONB NOT NULL DEFAULT '[]'::jsonb,
+      readout_claimed BOOLEAN NOT NULL DEFAULT FALSE,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_recent_work (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      import_id TEXT NOT NULL,
+      seq INTEGER NOT NULL,
+      gift JSONB NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_recent_work_run ON import_recent_work (import_id, seq)`);
+  // FIX-37: the answer to "have the last 30 days already been thanked?",
+  // saved with the run and shown in its history.
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS thanks_answer JSONB`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`

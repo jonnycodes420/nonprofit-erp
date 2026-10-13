@@ -1901,6 +1901,10 @@ function ImportsHistory(){
                         From {r.migrationSource}
                       </div>
                     )}
+                    {/* FIX-37: what she answered about thanking the last 30 days. */}
+                    {r.thanks&&(
+                      <div data-testid="imports-thanks" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{r.thanks}</div>
+                    )}
                     {r.hasMoveReport&&(
                       <button onClick={()=>setMoveReportId(r.id)} data-testid="imports-move-report"
                         style={{background:"none",border:"none",padding:0,marginTop:3,font:"inherit",

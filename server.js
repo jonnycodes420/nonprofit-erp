@@ -1051,6 +1051,11 @@ async function recordGift(o) {
   // sequence, no thank-you draft. A live gift never sets `history`.
   const oldHistory = o.history === true
     && HISTORY.isOldHistory(date, o.today || orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+  // FIX-37: an imported gift the organisation says was ALREADY THANKED in the
+  // system it came from (importThanks.js) is recorded and counted, and gets no
+  // thank-you draft and starts no gift journey or gift sequence: the thanking
+  // happened, elsewhere.
+  const thankedElsewhere = o.alreadyThanked === true;
   // Rule 1 — a fund and a method, always. A fund the caller names is honoured
   // only if it belongs to this org (never trust an id off a webhook payload).
   //
@@ -1272,7 +1277,7 @@ async function recordGift(o) {
   // reads the gift's TYPE, and a gift that arrives as "cash" and is recognised
   // as an instalment a line later is a pledge payment. Queueing first meant the
   // floor never applied to the very payments it exists for.
-  if (o.thankYou !== false && !oldHistory) {
+  if (o.thankYou !== false && !oldHistory && !thankedElsewhere) {
     await queueThankYouDraft(orgId, { giftId, donorId: o.donorId, cents: Math.round(amount * 100),
                                       fundId, type: appliedInstallment ? "pledge payment" : (o.type || "cash") })
       .catch(e => console.error("[thank-you] draft:", e.message));
@@ -1284,7 +1289,7 @@ async function recordGift(o) {
   // place it is unambiguous — a route that checks "is this their first gift"
   // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
   // is what that means mechanically: the only way in is the event itself.
-  if (!oldHistory) try {
+  if (!oldHistory && !thankedElsewhere) try {
     const [after] = await query(
       `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
     if (after && Number(after.gift_count) === 1) {
@@ -1319,7 +1324,7 @@ async function recordGift(o) {
   try {
     const [d] = await query(
       `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
-    if (d && !oldHistory) {
+    if (d && !oldHistory && !thankedElsewhere) {
       const cents = Math.round(amount * 100);
       // ORDER MATTERS, and it is the priority order, not this list's order:
       // each call independently asks the engine, and the engine replaces a

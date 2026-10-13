@@ -209,7 +209,16 @@ app.post("/imports/thank-you-preview", requireAuth, wrap(async (req, res) => {
   const today = orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
   const dates = Array.isArray(req.body?.dates) ? req.body.dates.slice(0, 200000) : [];
   const n = dates.filter(d => !HG.isOldHistory(d, today)).length;
+  // FIX-37: "have the gifts from the last 30 days already been thanked?",
+  // with the default importThanks.js decides: yes for a first import, a file
+  // from another system, or more than 50 gifts; otherwise no.
+  const IT = require("../importThanks");
+  const firstImport = await IT.isFirstImport(query, req.user.orgId);
+  const system = await IT.recognizeSystem(req.body?.headers);
+  const def = IT.defaultAnswer({ firstImport, system, count: n });
   res.json({ thankYous: n, days: HG.HISTORY_DAYS,
+    ask: n > 0, firstImport, system: system ? IT.SYSTEM_LABELS[system] : null,
+    defaultAnswer: { mode: def.mode }, defaultWhy: def.why, defaultSentence: def.sentence,
     sentence: n
       ? `This import will draft up to ${n.toLocaleString("en-US")} thank-you ${n === 1 ? "note" : "notes"}, one for each gift from the last ${HG.HISTORY_DAYS} days. Nothing is sent; they wait for you.`
       : `This import drafts no thank-you notes: every gift in it is more than ${HG.HISTORY_DAYS} days old.` });

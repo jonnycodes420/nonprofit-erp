@@ -186,3 +186,29 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 - Undo removes the journeys an import's gifts started (`cultivation_plans.started_import_id`) and its
   readout. An "Import + History" file (shape `transaction`) now undoes as a whole within 7 days; fields
   it filled on people who already existed are not reverted.
+
+## FIX-37 · an import never floods the thank-you queue, and big files don't wait (2026-10-12)
+
+- Before saving, an import whose file would draft thank-yous asks "Have the gifts from the last 30 days
+  already been thanked?": "Yes, don't draft thank-yous" / "No, draft them all" / "Only gifts of $___ or
+  more". The default is decided in ONE place, `importThanks.js` (`defaultAnswer`): "Yes" for an org's first
+  import (no run on file that was not undone), for a file recognised as another system's export
+  (Bloomerang, DonorPerfect, Neon, Little Green Light, Kindful through the mapper presets, Salesforce through
+  the NPSP preset, Raiser's Edge by its own description columns), and for more than 50 recent gifts;
+  otherwise "No". `POST /imports/thank-you-preview` returns it; an import that arrives with no answer (an
+  API caller, the workbook flow) is given the same default by the route.
+- "Already thanked" is `recordGift({ alreadyThanked: true })`: the gift is recorded and counted, with no
+  thank-you draft, no gift journey and no gift sequence. The answer is saved on the run
+  (`imports.thanks_answer`) and shown in Settings, Imports.
+- An org's first import writes the readout "What your history shows" with no "new donors" lines, and
+  keeps lateness for everyone (their rhythm comes from the file's dates). Later imports are unchanged.
+- The recent-gift work runs BEHIND THE SCREEN. In the import's own transaction the recent gifts are written
+  as work rows (`import_recent_work`) under one job per run (`import_recent_jobs`); after the response,
+  `runRecentWork` in routes/crm.js records them through recordGift and then runs the after-change step for
+  everyone the run touched. Progress is `GET /imports/:id/progress`. A restart resumes running jobs from
+  their work rows. Undo cancels the job, waits for the gift in flight, clears the work rows, then removes
+  what was written. The readout is written by whichever of the job's end and `POST /imports` comes second
+  (`readout_claimed`). This is the one place import work runs in the background; SCALE-1 moves it to a
+  queue.
+- Undo now also removes the timeline lines an import's journeys wrote ("Journey started", each step), so a
+  person the file created is removed rather than kept alive by them.

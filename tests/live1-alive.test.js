@@ -82,6 +82,16 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
     `SELECT id FROM cultivation_plans WHERE org_id=$1 AND donor_id=$2 AND template_id=$3`, [ORG, donorId, j.body.id])).length;
   const draftsOf = async donorId => (await q(`SELECT id FROM thank_you_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, donorId])).length;
 
+  // FIX-37: an org's first import assumes its recent gifts were thanked in
+  // the old system. LIVE-1's checks are about a later, monthly file, so an
+  // earlier run is on file first. And the recent-gift work now runs behind
+  // the screen: `settled` waits for it.
+  await api("POST", "/imports", tok, { name: "An earlier file", shape: "donors", summary: {} });
+  const settled = async run => waitFor(async () => {
+    const r = await api("GET", `/imports/${run}/progress`, tok);
+    return r.body?.status === "done" ? r : null;
+  }, { timeout: 20000 }).catch(() => ({ body: null }));
+
   // ── §1 · A GIFT CSV ────────────────────────────────────────────────────
   const headers1 = ["Name", "Email", "Gift Date", "Gift Amount", "Gift ID"];
   const preview = await api("POST", "/imports/thank-you-preview", tok, { dates: [civilPlusDays(-5), civilPlusDays(-200)] });
@@ -94,10 +104,11 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
             { donorIndex: 1, amount: 60, date: civilPlusDays(-200), type: "cash", paymentMethod: "Check", externalId: "L1-OTTO-1" }],
   });
   ok("§1 the import records both gifts", imp1.status === 200 && imp1.body?.giftsInserted === 2, imp1.body);
-  ok("§1 it says it drafted 1 thank-you", imp1.body?.thankYouDrafts === 1, imp1.body?.thankYouDrafts);
   const rec1 = await api("POST", "/imports", tok, { id: run1, name: "September gifts", shape: "gift_file_with_donors",
     rowsIn: 2, giftsCreated: 2, donorsCreated: 2, dollarsIn: 135, dollarsCreated: 135, summary: {} });
   ok("§1 the run is recorded", rec1.status === 200 && rec1.body?.id === run1, rec1.body);
+  const done1 = await settled(run1);
+  ok("§1 it says it drafted 1 thank-you", done1.body?.thankYouDrafts === 1, done1.body);
   const nia = await donorByEmail(`nia@${DOMAIN}`), otto = await donorByEmail(`otto@${DOMAIN}`);
   ok("§1 the 5-day-old gift gets a thank-you draft", nia && (await draftsOf(nia.id)) === 1, nia);
   ok("§1 …and starts the first-gift journey", nia && (await plansOf(nia.id)) === 1, nia && await plansOf(nia.id));
@@ -138,7 +149,7 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   ok("§3 the second import records both gifts", imp2.status === 200 && imp2.body?.giftsInserted === 2, imp2.body);
   const rec2 = await api("POST", "/imports", tok, { id: run2, name: "October gifts", shape: "gifts",
     rowsIn: 2, giftsCreated: 2, dollarsIn: 1050, dollarsCreated: 1050, summary: {} });
-  const roId = rec2.body?.readout?.id;
+  const roId = rec2.body?.readout?.id || (await settled(run2)).body?.readout?.id;
   ok("§3 recording the run writes a readout", rec2.status === 200 && !!roId, rec2.body);
   const ro = await api("GET", `/readouts/${roId}`, tok);
   const kinds = (ro.body?.lines || []).map(l => l.kind).sort();
@@ -219,7 +230,7 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   // ── §6b · A READOUT ACTION KEEPS FIX-36's RULE ────────────────────────
   // Found by the LIVE-1 walk: "Draft thank-yous" on a first import's new-donor
   // line drafted a note for every first gift, three years old included.
-  const ro1 = rec1.body?.readout?.id;
+  const ro1 = rec1.body?.readout?.id || done1.body?.readout?.id;
   const act1 = await api("POST", `/readouts/${ro1}/lines/new_donors/act`, tok, {});
   ok("§6b drafting thank-yous from a readout skips the 200-day-old gift",
      act1.status === 200 && act1.body?.tooOld === 1 && (await draftsOf(otto.id)) === 0, { act1: act1.body, otto: await draftsOf(otto.id) });
