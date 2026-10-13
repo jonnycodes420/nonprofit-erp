@@ -11349,12 +11349,16 @@ async function computeStewardshipDebtBreakdown(orgId, { userId } = {}) {
   // byte-identical to the old subquery's behavior. GROUP BY d.id is enough —
   // the other selected columns are functionally dependent on the PK.
   const rows = await query(
+    // SCALE-1: now that interactions(donor_id, date) is indexed, a LATERAL
+    // MAX per donor is one backward index probe each (24k donors: 64 ms),
+    // where the hash join read every org's interactions (2.6M rows: 935 ms).
+    // Proven identical on a 25k-donor org (EXCEPT ALL both ways, 0 rows).
     `SELECT d.id, d.name, d.total_giving, d.first_gift_date,
-       COALESCE(MAX(i.date), d.first_gift_date) AS last_contact
+       COALESCE(lc.m, d.first_gift_date) AS last_contact
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MAX(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}) lc ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.total_giving > 0 ${userId ? "AND d.assigned_to = ?" : ""}`,
     userId ? [orgId, userId] : [orgId]
   );
   const today = Date.now();
@@ -11382,12 +11386,14 @@ async function computeFirstTouchDelay(orgId) {
   // see LOADTEST_REPORT.md). MIN over zero joined rows is NULL, matching the
   // old subquery's "no first touch yet" result exactly.
   const rows = await query(
-    `SELECT d.id, d.name, d.first_gift_date, MIN(i.date) AS first_touch_date
+    // SCALE-1: LATERAL MIN per donor, one forward index probe each (same
+    // reason and proof as computeStewardshipDebtBreakdown above).
+    `SELECT d.id, d.name, d.first_gift_date, ft.m AS first_touch_date
      FROM donors d
-     LEFT JOIN interactions i ON i.donor_id = d.id
-       AND i.type IN ${MEANINGFUL_CONTACT_TYPES} AND i.date >= d.first_gift_date
-     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL
-     GROUP BY d.id`,
+     LEFT JOIN LATERAL (SELECT MIN(i.date) AS m FROM interactions i
+                         WHERE i.donor_id = d.id AND i.type IN ${MEANINGFUL_CONTACT_TYPES}
+                           AND i.date >= d.first_gift_date) ft ON true
+     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.first_gift_date IS NOT NULL`,
     [orgId]
   );
   let totalDays = 0, touched = 0, untouched = 0;
@@ -11507,10 +11513,17 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
   };
 }
 
-async function snapshotMetricsForOrg(orgId) {
+// SCALE-1: the reads are independent, so they run in one parallel batch and
+// the writes follow. `out` (optional) receives the full first-touch and
+// retention results, so GET /metrics/stewardship-summary?scope=all, which
+// snapshots and then shows those same two figures, computes each once.
+async function snapshotMetricsForOrg(orgId, out = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
-  const debt = await computeStewardshipDebt(orgId);
-  const { avgDays } = await computeFirstTouchDelay(orgId);
+  const [debt, firstTouch, recovery, retentionAll] = await Promise.all([
+    computeStewardshipDebt(orgId), computeFirstTouchDelay(orgId), computeRecoveryRate(orgId), computeRetentionRate(orgId),
+  ]);
+  if (out) { out.firstTouch = firstTouch; out.retention = retentionAll; }
+  const { avgDays } = firstTouch;
   await run(
     `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
      ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
@@ -11523,7 +11536,7 @@ async function snapshotMetricsForOrg(orgId) {
       ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
     );
   }
-  const { rate: recoveryRate } = await computeRecoveryRate(orgId);
+  const { rate: recoveryRate } = recovery;
   if (recoveryRate != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
@@ -11552,7 +11565,7 @@ async function snapshotMetricsForOrg(orgId) {
     if (th.continuationRate != null) await put("thread_continuation_rate", th.continuationRate);
   } catch (e) { console.error("[metrics] thread health:", e.message); }
 
-  const { retentionRate, thinData: retentionThin } = await computeRetentionRate(orgId);
+  const { retentionRate, thinData: retentionThin } = retentionAll;
   // BUILD-76 follow-up: a thin-data rate is never snapshotted — a 100%-on-16-
   // donors artifact in the trend line would outlive the thin data that made it.
   if (retentionRate != null && !retentionThin) {

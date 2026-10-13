@@ -19790,10 +19790,14 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
   const sinceStr = since.toISOString().slice(0, 10);
   // BUILD-54 §1 — the three metric computations and three trend reads are
   // independent; one parallel batch (was 6 sequential round trips).
+  // SCALE-1: scope=all snapshots, and the snapshot already computes first
+  // touch and org-wide retention; reuse those instead of computing each twice.
+  const snap = {};
+  const pDebt = scope === "all" ? snapshotMetricsForOrg(orgId, snap) : computeStewardshipDebt(orgId, { userId });
   const [debt, firstTouch, retention, debtTrend, touchTrend, retentionTrend] = await Promise.all([
-    scope === "all" ? snapshotMetricsForOrg(orgId) : computeStewardshipDebt(orgId, { userId }),
-    computeFirstTouchDelay(orgId),
-    scope === "all" ? computeRetentionRate(orgId) : computeRetentionRate(orgId, { userId }),
+    pDebt,
+    scope === "all" ? pDebt.then(() => snap.firstTouch) : computeFirstTouchDelay(orgId),
+    scope === "all" ? pDebt.then(() => snap.retention) : computeRetentionRate(orgId, { userId }),
     query(
       "SELECT snapshot_date, value FROM metric_snapshots WHERE org_id=? AND metric_key='stewardship_debt' AND snapshot_date >= ? ORDER BY snapshot_date ASC",
       [orgId, sinceStr]),
