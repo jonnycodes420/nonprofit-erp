@@ -19688,7 +19688,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     const rows2 = await query(
       `SELECT COALESCE(SUM(g.amount),0) AS total
        FROM gifts g
-       JOIN donors d ON d.id = g.donor_id
+       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
        WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
          AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
          AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
@@ -19725,7 +19725,7 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
       const rows3 = await query(
         `SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id) AS donors
          FROM gifts g
-         JOIN donors d ON d.id = g.donor_id
+         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
          WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
            AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
            AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
@@ -20416,9 +20416,9 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     // Fundraising and Reports report the SAME period number (the BUILD-23
     // cross-surface invariant). Trashing a donor hides them from Reports; the
     // Fundraising header must not keep counting them.
-    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, cur.start, cur.end]),
-    query("SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, prior.start, prior.end]),
-    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, wk.start, wk.end]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, cur.start, cur.end]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, prior.start, prior.end]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, wk.start, wk.end]),
     query(
       `SELECT g.id, g.amount, g.date, g.stripe_payment_id, g.campaign, g.donor_id, d.name AS donor_name
          FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id
@@ -20432,8 +20432,8 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
          FROM giving_pages gp WHERE gp.org_id = ? AND COALESCE(gp.page_kind,'give') = 'give' ORDER BY gp.created_at DESC`,
       [orgId]
     ),
-    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, l12Start, l12End]),
-    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL", [orgId]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, l12Start, l12End]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE g.org_id = ? AND d.deleted_at IS NULL", [orgId]),
   ]);
 
   // Active org goal with pace (reuses the goal-progress math shape).
@@ -20444,7 +20444,7 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     let currentAmount = 0;
     if (gr.goal_type === "lapsed_recovery") {
       const r2 = await query(
-        `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id
+        `SELECT COALESCE(SUM(g.amount),0) AS total FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
           WHERE g.org_id = ? AND g.date >= ? AND g.date <= ? AND g.date = d.last_gift_date
             AND (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date) IS NOT NULL
             AND g.date::date - (SELECT MAX(g2.date) FROM gifts g2 WHERE g2.donor_id = d.id AND g2.date < g.date)::date > 365`,
@@ -22328,7 +22328,9 @@ function reportGiftWhere(p, orgId, params) {
   if (p.campaignId) { sql += " AND g.campaign_id = ?"; params.push(p.campaignId); }
   return sql;
 }
-const REPORT_GIFT_FROM = "FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE";
+// SCALE-1: the donor join carries the tenant rule, so the planner probes this
+// org's donors instead of hashing every org's (212 ms -> 58 ms at 150k gifts).
+const REPORT_GIFT_FROM = "FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id WHERE";
 
 // ── REPORTS-4 · A REPORT'S FIGURES, EACH THROUGH ITS SOURCE ──────────────
 // Every number a report puts on screen is computed here, by the source that
@@ -22345,31 +22347,13 @@ async function reportFigures(orgId, specs) {
 }
 
 async function reportGivingSummary(orgId, p) {
-  const tParams = [];
-  const where = reportGiftWhere(p, orgId, tParams);
-  const [totals] = await query(
-    `SELECT COUNT(*)::int AS gift_count,
-            COALESCE(SUM(g.amount),0) AS total,
-            COUNT(DISTINCT g.donor_id)::int AS unique_donors,
-            COALESCE(AVG(g.amount),0) AS avg_gift,
-            COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY g.amount),0) AS median_gift,
-            COALESCE(SUM(CASE WHEN g.stripe_payment_id IS NOT NULL THEN g.amount ELSE 0 END),0) AS online_total,
-            COUNT(*) FILTER (WHERE g.stripe_payment_id IS NOT NULL)::int AS online_count
-     ${REPORT_GIFT_FROM} ${where}`, tParams);
-
-  // New donors = first-ever gift (any fund/campaign) falls inside the period.
-  const nParams = [];
-  const nWhere = reportGiftWhere(p, orgId, nParams);
-  const [newSplit] = await query(
-    `WITH period_donors AS (SELECT DISTINCT g.donor_id ${REPORT_GIFT_FROM} ${nWhere}),
-          firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
-     SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
-     FROM period_donors pd JOIN firsts f ON f.donor_id = pd.donor_id`,
-    [...nParams, orgId, p.from, p.to]);
-
+  // SCALE-1: the period totals and the new-donor split this function used to
+  // read first were never returned (the figures below come from reportFigures);
+  // they were 2 of its 8 serial reads and are gone. The rest are independent
+  // and run as one parallel batch.
   const mParams = [];
   const mWhere = reportGiftWhere(p, orgId, mParams);
-  const monthly = await query(
+  const pMonthly = query(
     `SELECT LEFT(g.date, 7) AS month, COUNT(*)::int AS gifts,
             COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
      ${REPORT_GIFT_FROM} ${mWhere} GROUP BY 1 ORDER BY 1`, mParams);
@@ -22379,6 +22363,7 @@ async function reportGivingSummary(orgId, p) {
   // period still running is cut at today and compared with the same stretch
   // a year back; a finished one with the same dates a year earlier.
   const cmpSource = samePointLastYearSource(p.from, p.to, p.today || orgToday(p.org || {}), { fund: p.fundId, campaign: p.campaignId });
+  const pComparison = (async () => {
   let comparison = null;
   if (cmpSource) {
     const D = await dashboardsMod();
@@ -22401,7 +22386,9 @@ async function reportGivingSummary(orgId, p) {
     const h = await figureSources.historicalGiving(orgId, comparison.from, comparison.to);
     if (h) comparison = { ...comparison, value: h.value, cents: h.cents, source: h.source, imported: true, label: `${comparison.label}, from your old system`, definition: h.note };
   }
-  const importedThisPeriod = await figureSources.historicalGiving(orgId, p.from, p.to);
+  return comparison;
+  })();
+  const pImported = figureSources.historicalGiving(orgId, p.from, p.to);
 
   // The whole period of equal length before this one. NOT the comparison the
   // screen states: kept for the low-volume default (Reports opens on last year
@@ -22411,14 +22398,14 @@ async function reportGivingSummary(orgId, p) {
   const prior = { ...p, from: dayShift(p.from, -spanDays), to: dayShift(p.from, -1) };
   const pParams = [];
   const pWhere = reportGiftWhere(prior, orgId, pParams);
-  const [priorTotals] = await query(
+  const pPrior = query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total
      ${REPORT_GIFT_FROM} ${pWhere}`, pParams);
 
   // REPORTS-4: every figure on the summary, through the source that opens it.
   const F = { fund: p.fundId || undefined, campaign: p.campaignId || undefined };
   const G = extra => ({ key: "gifts", params: { from: p.from, to: p.to, ...F, ...extra } });
-  const figures = await reportFigures(orgId, {
+  const pFigures = reportFigures(orgId, {
     total: G({}), giftCount: G({ measure: "count" }),
     uniqueDonors: { key: "givers", params: { from: p.from, to: p.to, ...F } },
     newDonors: { key: "givers", params: { from: p.from, to: p.to, ...F, first: "new" } },
@@ -22427,6 +22414,8 @@ async function reportGivingSummary(orgId, p) {
     onlineTotal: G({ online: true }), onlineCount: G({ online: true, measure: "count" }),
     offlineTotal: G({ online: false }), offlineCount: G({ online: false, measure: "count" }),
   });
+  const [monthly, comparison, importedThisPeriod, [priorTotals], figures] =
+    await Promise.all([pMonthly, pComparison, pImported, pPrior, pFigures]);
   const fv = k => figures[k].value;
   return {
     figures,
@@ -22567,9 +22556,9 @@ async function reportRetention(orgId, p) {
     const cur = reportYearBounds(y, p.yearMode, p.fiscalStartMonth);
     const prior = reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth);
     const [r] = await query(
-      `WITH prior AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id
+      `WITH prior AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                       WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
-            cur AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id
+            cur AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
             firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
        SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
@@ -22726,17 +22715,17 @@ async function reportAnnual(orgId, p) {
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors,
             COALESCE(AVG(g.amount),0) AS avg_gift
-     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
     [orgId, cur.from, cur.to]);
   const [priorT] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors
-     FROM gifts g JOIN donors d ON d.id = g.donor_id
+     FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
      WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`,
     [orgId, prior.from, prior.to]);
   const [split] = await query(
-    `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id
+    `WITH period_donors AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                             WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?),
           firsts AS (SELECT donor_id, MIN(date) AS fg FROM gifts WHERE org_id = ? GROUP BY donor_id)
      SELECT COUNT(*) FILTER (WHERE f.fg >= ? AND f.fg <= ?)::int AS new_donors, COUNT(*)::int AS period_donors
@@ -22744,7 +22733,7 @@ async function reportAnnual(orgId, p) {
     [orgId, cur.from, cur.to, orgId, cur.from, cur.to]);
   // Retention: donors who gave in the prior year and gave again this year.
   const [ret] = await query(
-    `WITH prior AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id
+    `WITH prior AS (SELECT DISTINCT g.donor_id FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
                     WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?)
      SELECT (SELECT COUNT(*) FROM prior)::int AS prior_donors,
             (SELECT COUNT(*) FROM prior pr WHERE EXISTS
