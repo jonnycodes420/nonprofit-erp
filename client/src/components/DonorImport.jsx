@@ -763,6 +763,11 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // the sample count is read from the same route the banner and the clear use,
 // and if there is any, she confirms the clear (or keeps the sample and
 // closes). Nothing is deleted without the click.
+// LIVE-1 · the payment methods a file can name that need no explaining.
+const STANDARD_METHODS = new Set(["cash", "check", "cheque", "credit card", "card", "debit card", "ach", "bank transfer", "eft",
+  "wire", "wire transfer", "stock", "securities", "daf", "donor advised fund", "paypal", "venmo", "zelle", "apple pay",
+  "google pay", "online", "in kind", "money order", "crypto", "other", "visa", "mastercard", "amex", "american express", "discover"]);
+
 // LIVE-1 · how many thank-you drafts these gifts will make, before saving.
 function ThankYouPreview({ dates }) {
   const [said, setSaid] = useState(null);
@@ -870,6 +875,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   // columns it does not cover), the thank-you count before saving, and the
   // value answers ("CHK" is Check) she gives once for every later file.
   const [shapeMemory, setShapeMemory] = useState(null);
+  const [undoBusy,   setUndoBusy]   = useState(false);
   const [tyPreview,  setTyPreview]  = useState(null);
   const [valueAnswers, setValueAnswers] = useState({});   // "field|raw" → value
   const [savedValues, setSavedValues] = useState([]);
@@ -1371,6 +1377,9 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       const vals = [...seen.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
       for (const [raw, n] of vals) {
         const norm = raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+        // A payment method already spelled as a standard one ("Cash", "credit
+        // card") needs no answer; an abbreviation ("CC", "CHK") does.
+        if (field === "paymentMethod" && STANDARD_METHODS.has(norm)) continue;
         const saved = savedValues.find(v => v.field === field && v.raw.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim() === norm);
         out.push({ field, raw, n, saved: saved ? saved.value : "" });
       }
@@ -1765,7 +1774,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           ledger: importExtras.columnLedgerFull,
         };
       }
-      setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport });
+      setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport, runId });
 
       // ── TRANS-1 Part 3 — RECORD THE RUN ────────────────────────────────
       // The walk found that this path recorded nothing at all: only the
@@ -2553,6 +2562,13 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
+          {/* LIVE-1 — a one-row-per-gift file undoes as one: its gifts, the
+              people it created, the thank-you drafts and journeys it started,
+              and its readout. */}
+          {result.shape==="transaction"&&result.runId&&(result.undoSentence
+            ?<div data-testid="import-undone" style={{fontSize:13,color:T.ink2,marginBottom:14}}>{result.undoSentence}</div>
+            :<button data-testid="import-undo" disabled={undoBusy} onClick={async()=>{setUndoBusy(true);try{const r=await apiFetch(`/imports/${result.runId}/reverse`,{method:"POST",body:"{}"});setResult(x=>({...x,undoSentence:r.sentence||"Undone."}));}catch(e){setErr(errorMessage(e,"The undo did not finish. Nothing was changed."));}setUndoBusy(false);}}
+                style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 18px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer",marginRight:8}}>Undo this import</button>)}
           {/* IMPORT-2: the people are in; what was written about them comes next. */}
           <button data-testid="import-bring-notes" onClick={()=>{onImported&&onImported();setTimeout(()=>window.dispatchEvent(new Event("steward:history-import")),0);}} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 18px",color:T.ink,fontSize:14,fontWeight:700,cursor:"pointer",marginRight:8}}>Bring your notes and history</button>
           <button onClick={onImported} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"12px 28px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
@@ -3391,14 +3407,22 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
             <div data-testid="import-value-answers" style={{border:"1px solid "+T.bg2,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12.5,color:T.ink}}>
               <div style={{fontWeight:700,marginBottom:4}}>What do these values mean?</div>
               <div style={{color:T.ink3,marginBottom:6}}>Say once and every later file reads them the same way. Leave a box empty to keep the value as it is.</div>
-              {valueQuestions.map(q=>{const k=q.field+"|"+q.raw;return(
-                <label key={k} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"3px 0"}}>
-                  <span style={{minWidth:120}}>{q.field==="fund"?"Fund":"Payment method"} “{q.raw}” <span style={{color:T.ink3}}>({q.n})</span></span>
-                  <span style={{color:T.ink3}}>means</span>
-                  <input value={valueAnswers[k]??q.saved} placeholder={q.raw} maxLength={120}
-                    onChange={e=>setValueAnswers(v=>({...v,[k]:e.target.value}))}
-                    style={{flex:"1 1 140px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12.5,fontFamily:"inherit"}}/>
-                </label>);})}
+              {(()=>{
+                const one=q=>{const k=q.field+"|"+q.raw;return(
+                  <label key={k} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"3px 0"}}>
+                    <span style={{minWidth:120}}>{q.field==="fund"?"Fund":"Payment method"} “{q.raw}” <span style={{color:T.ink3}}>({q.n})</span></span>
+                    <span style={{color:T.ink3}}>means</span>
+                    <input value={valueAnswers[k]??q.saved} placeholder={q.raw} maxLength={120}
+                      onChange={e=>setValueAnswers(v=>({...v,[k]:e.target.value}))}
+                      style={{flex:"1 1 140px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12.5,fontFamily:"inherit"}}/>
+                  </label>);};
+                const methods=valueQuestions.filter(q=>q.field==="paymentMethod"), funds=valueQuestions.filter(q=>q.field==="fund");
+                return <>{methods.map(one)}
+                  {funds.length>0&&<details style={{marginTop:methods.length?6:0}}>
+                    <summary style={{cursor:"pointer",color:T.ink2}}>Fund names in this file ({funds.length}). Open to say one is another (“Gala 25” is the Gala fund).</summary>
+                    {funds.map(one)}
+                  </details>}</>;
+              })()}
             </div>
           )}
           {tyPreview&&<div data-testid="import-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{tyPreview.sentence}</div>}

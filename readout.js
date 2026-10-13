@@ -91,26 +91,31 @@ function computeLines({ gifts, newIds, names, today, medianCents, crossings = []
       if (medianCents != null && cents(first.amount) > medianCents) out.new_above_median.push(row(first));
     }
     if (!recent.length) continue;
+    // The person's WHOLE history is read, including older gifts this same
+    // file brought: a first import of three years still says who came back
+    // last month, because the file itself shows they had stopped.
     const g0 = recent[0];
     // Came back: the gift before their first recent one is more than a year
-    // before it (or there is none on file before it but they have older ones).
+    // before it.
     const before = list.filter(g => String(g.date) < String(g0.date));
-    if (old.length && before.length) {
+    if (before.length) {
       const prev = before[before.length - 1];
       if (orgTime.daysBetween(String(prev.date).slice(0, 10), String(g0.date).slice(0, 10)) > LAPSED_DAYS) out.lapsed_returned.push(row(g0));
     }
     const biggestRecent = recent.reduce((m, g) => (cents(g.amount) > cents(m.amount) ? g : m), recent[0]);
-    const oldMax = old.reduce((m, g) => Math.max(m, cents(g.amount)), 0);
+    const earlier = list.filter(g => String(g.date) < String(biggestRecent.date));
+    const earlierMax = earlier.reduce((m, g) => Math.max(m, cents(g.amount)), 0);
     let biggest = false;
-    if (old.length && cents(biggestRecent.amount) > oldMax) { out.biggest_ever.push(row(biggestRecent)); biggest = true; }
-    if (!biggest && old.length) {
+    if (earlier.length && cents(biggestRecent.amount) > earlierMax) { out.biggest_ever.push(row(biggestRecent)); biggest = true; }
+    if (!biggest && list.length > recent.length) {
       let thisYear = 0, lastYear = 0;
       for (const g of list) { const y = Number(String(g.date).slice(0, 4)); if (y === yr) thisYear += cents(g.amount); else if (y === yr - 1) lastYear += cents(g.amount); }
       if (lastYear > 0 && thisYear > lastYear && recent.some(g => Number(String(g.date).slice(0, 4)) === yr))
         out.above_last_year.push({ ...row(biggestRecent), cents: thisYear, lastYearCents: lastYear });
     }
     const recRecent = recent.filter(isRecurringGift);
-    if (recRecent.length && !old.some(isRecurringGift)) out.recurring_started.push(row(recRecent[0]));
+    if (recRecent.length && !list.some(g => isRecurringGift(g) && String(g.date) < String(recRecent[0].date)))
+      out.recurring_started.push(row(recRecent[0]));
   }
   for (const s of stoppedRows) out.recurring_stopped.push({ donorId: s.donorId, giftId: s.giftId || null, date: s.date || null, cents: s.cents || 0, how: s.how });
   // "Now late" is about people Steward already knew: someone new in this file
@@ -162,11 +167,11 @@ function sentenceFor(kind, n, { total, medianCents, rows }) {
 
 function whyFor(kind, { word, medianCents, rows, today }) {
   switch (kind) {
-    case "lapsed_returned": return `Each of these people has a gift in this ${word}, dated in the last ${RECENT_DAYS} days, and no gift for more than 12 months before it.`;
-    case "biggest_ever": return `Each person's gift in this ${word}, dated in the last ${RECENT_DAYS} days, is larger than every gift they made before it.`;
+    case "lapsed_returned": return `Each of these people has a gift in this ${word}, dated in the last ${RECENT_DAYS} days, and no gift for more than 12 months before it, reading everything Steward holds for them and everything this ${word} brought.`;
+    case "biggest_ever": return `Each person's gift in this ${word}, dated in the last ${RECENT_DAYS} days, is larger than every gift they made before it, in Steward or in this ${word}.`;
     case "above_last_year": return `Their giving in ${String(today).slice(0, 4)}, including this ${word}, adds up to more than everything they gave in ${Number(String(today).slice(0, 4)) - 1}.`;
     case "new_donors": return `Their first gift ever is in this ${word}: Steward held no gift from them before it.`;
-    case "new_above_median": return `Their first gift is more than ${dollars(medianCents)}, the middle of every gift your organization had recorded before this ${word}.`;
+    case "new_above_median": return `Their first gift is more than ${dollars(medianCents)}, the middle of every gift your organization had recorded before this ${word} (or, for a first ${word}, of every gift in it).`;
     case "recurring_started": return `A recurring gift in this ${word}, dated in the last ${RECENT_DAYS} days, from someone with no recurring gift before it.`;
     case "recurring_stopped": return `They gave monthly and no monthly gift has come in for more than ${MONTHLY_GAP_DAYS} days up to the newest gift in this ${word}, or their card plan was cancelled or failed in the last 30 days.`;
     case "now_late": return `Drift compares each person with their own rhythm (how often they usually give, or the month they usually give in), and these people became late when this ${word} was saved.`;
@@ -236,7 +241,14 @@ async function writeReadout(orgId, { sourceKind, sourceId, sourceName, giftIds =
   const [med] = await q(
     `SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS m FROM gifts
       WHERE org_id=? AND amount > 0 AND NOT (id = ANY(?))`, [orgId, [...newIds]]);
-  const medianCents = med && med.m != null ? cents(med.m) : null;
+  let medianCents = med && med.m != null ? cents(med.m) : null;
+  if (medianCents == null && newIds.size) {
+    // A first import: nothing was on file before it, so the middle gift is
+    // the file's own.
+    const [m2] = await q(`SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY amount) AS m FROM gifts WHERE org_id=? AND amount > 0 AND id = ANY(?)`,
+      [orgId, [...newIds]]);
+    medianCents = m2 && m2.m != null ? cents(m2.m) : null;
+  }
   if (stamp && crossings == null) {
     crossings = (await q(
       `SELECT c.donor_id, c.group_id, a.name FROM group_crossings c LEFT JOIN audiences a ON a.id = c.group_id
@@ -309,9 +321,15 @@ async function shapeReadout(orgId, row, { demoted } = {}) {
     [orgId, row.id])).map(r => r.line_kind));
   const acted = new Set((await q(`SELECT DISTINCT line_kind FROM readout_events WHERE org_id=? AND readout_id=? AND event='acted'`,
     [orgId, row.id])).map(r => r.line_kind));
+  // A thank-you is drafted only for a gift from the last HISTORY_DAYS days
+  // (FIX-36): a line whose gifts are all older has no thank-you to draft, so
+  // it offers no button rather than one that does nothing.
+  const HG = require("./historyGifts");
+  const draftable = l => (l.rows || []).some(r => r.giftId && r.date && !HG.isOldHistory(r.date, row.for_date));
   const shown = lines.filter(l => l.count > 0 && !gone.has(l.kind)).map(l => ({
     kind: l.kind, count: l.count, cents: l.cents || 0, sentence: l.sentence, why: l.why,
-    action: l.action, actionLabel: l.actionLabel, acted: acted.has(l.kind),
+    action: l.action === "thank_you_draft" && !draftable(l) ? null : l.action,
+    actionLabel: l.action === "thank_you_draft" && !draftable(l) ? null : l.actionLabel, acted: acted.has(l.kind),
     demoted: dem.has(l.kind),
     demotedWhy: dem.has(l.kind) ? `Moved down because "${KIND_NAMES[l.kind]}" was dismissed ${DISMISS_RUN} times running.` : null,
     rowCount: (l.rows || []).length,

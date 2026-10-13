@@ -147,14 +147,20 @@ app.post("/readouts/:id/lines/:kind/act", requireAuth, checkWriteAccess, wrap(as
       sentence: `${made.length} ${made.length === 1 ? "task" : "tasks"} added to Tasks for today.` });
   }
   if (line.action === "thank_you_draft") {
+    // FIX-36's rule holds here too: a gift older than HISTORY_DAYS is history
+    // and gets no thank-you, whoever presses the button.
+    const HG = require("../historyGifts");
+    let tooOld = 0;
     for (const row of line.rows || []) {
       if (!row.giftId || !nameOf[row.donorId]) continue;
+      if (HG.isOldHistory(row.date, today)) { tooOld++; continue; }
       const d = await queueThankYouDraft(orgId, { giftId: row.giftId, donorId: row.donorId, cents: row.cents || 0 }).catch(() => null);
       const [t] = await query(`SELECT id FROM thank_you_drafts WHERE org_id=? AND gift_id=? LIMIT 1`, [orgId, row.giftId]);
       if (t || d) { await record(row.donorId, t ? t.id : null); made.push(t ? t.id : row.giftId); }
     }
-    return res.json({ ok: true, made: made.length, kind: "drafts",
-      sentence: `${made.length} thank-you ${made.length === 1 ? "draft" : "drafts"} waiting for you in Thank-yous. Nothing was sent.` });
+    return res.json({ ok: true, made: made.length, kind: "drafts", tooOld,
+      sentence: `${made.length} thank-you ${made.length === 1 ? "draft" : "drafts"} waiting for you in Thank-yous. Nothing was sent.`
+        + (tooOld ? ` ${tooOld.toLocaleString("en-US")} ${tooOld === 1 ? "gift is" : "gifts are"} older than ${HG.HISTORY_DAYS} days and got none.` : "") });
   }
   if (line.action === "open_group") {
     const gid = (line.rows || []).map(x => x.groupId).find(Boolean) || null;

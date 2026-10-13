@@ -360,3 +360,21 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   reads "No history yet" on the profile, never "Engagement 0, Distant", and Home's "no recent contact" list skips
   them. `NOT_HISTORY_TYPES` in routes/crm.js is the one list of interaction types that are not history. (IMPORT-2)
 - **Calls to make skips no phone calls**, as well as deceased, do not contact and anonymous. It does NOT skip do not solicit: every row is a thank-you call, and thanking is not asking. Asking lists, appeals, Drift's re-engagement asks and the asking starters still leave do not solicit out (`solicitableSql`). (IMPORT-2, corrected by FIX-35)
+
+## LIVE-1 · what an import told us, and what Steward learned (2026-10-12)
+
+- A readout (`readout.js`, table `readouts`) is written when an import is recorded, a giving-source read
+  finishes or a QuickBooks read is saved. Lines: came back, biggest ever, more than last year, new donors
+  and new above the median, recurring started and stopped, now late for their own rhythm, crossed into a
+  group, data problems. A line with a zero is not written. Each count is a `readout-line` figure that opens
+  exactly its people; each line has a one-sentence Why naming the rows and the rule; each has one action.
+- Lines about gifts read the person's whole history, including older gifts the same file brought, and
+  only gifts dated in the last 90 days count as news. "Now late" never names someone new in that file.
+- An action makes the real thing: tasks for today (thank personally, call, add to calls), thank-you
+  drafts (only for gifts from the last 30 days: FIX-36's rule holds behind every button), or it opens the
+  group or Data health. Nothing reaches a donor.
+- Three dismissals of a kind in a row, with nothing done about it in between, move it to the bottom and
+  the page says why; "Put it back" restores it. What worked counts gifts within 60 days after an action
+  and says "gave after", never "because".
+- The newest readout of the last 7 days is one row on the Thread (the stopped-card row's shape, no Done);
+  the morning email has "What yesterday told us"; the Agent's context and Ask read the same rows.

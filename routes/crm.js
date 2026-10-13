@@ -4445,6 +4445,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   const BATCH = 500;
   let created = 0;
   const batchErrors = [];
+  const createdDonorIds = [];
 
   for (let bi = 0; bi < donorsToInsert.length; bi += BATCH) {
     const batch = donorsToInsert.slice(bi, bi + BATCH);
@@ -4452,10 +4453,13 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     // Build one flat params array and matching VALUE tuples in a single pass
     // so column order and param order are always in sync.
     const params = [];
+    const batchIds = [];   // LIVE-1: who this batch created, for the after-change step
     const tuples = batch.map(d => {
       const a = resolveAssignee(d);
+      const newId = importId("d_");
+      batchIds.push(newId);
       params.push(
-        importId("d_"), req.user.orgId,
+        newId, req.user.orgId,
         normalizeName(d.name),
         d.email   || "",
         d.phone   || "",
@@ -4524,6 +4528,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         );
       });
       created += batch.length;
+      createdDonorIds.push(...batchIds);
       for (const d of batch) ledger.created(round2(parseFloat(d.total) || 0));
     } catch (e) {
       const rowStart = bi + 1;
@@ -4582,6 +4587,10 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
       [req.user.orgId]);
     photosQueued = pq ? pq.n : 0;
   } catch (e) { console.error("[person-photo] queued count:", e.message); }
+  // LIVE-1 · the one after-change step, once for everyone this file created.
+  // `recalc: false`: a donors-only file carries the totals the old system
+  // stated and no gift rows, so recomputing from gifts would zero them.
+  await require("../afterChange").afterChange(req.user.orgId, createdDonorIds, { door: "csv_import", history: true, recalc: false });
   res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, unsubscribedImported, reconciliation: ledger.report() });
   // GTM-1b 1 — AFTER AN IMPORT, COUNT. The file is the thing that changes an
   // org's size, so this is where the active-donor count is re-taken. It runs
@@ -8882,8 +8891,12 @@ const DEPOSIT_REVERSE_HOURS = 24;
 // IMPORT-2: "history" is a notes and history file. It has no gifts; it undoes
 // by its interactions, tasks and relationships, and by the flags and tags it
 // set, all recorded on the run.
-const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history"]);
-const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7 };
+// LIVE-1: "transaction", the one-row-per-gift file through Import + History,
+// undoes as a whole too. Its gifts carry the run id and the people it created
+// carry it as `created_import_id`, which is everything the undo needs, and
+// what it now starts (thank-you drafts, journeys, a readout) is undone with it.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors", "gifts", "history", "transaction"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7, gifts: 24 * 7, history: 24 * 7, transaction: 24 * 7 };
 
 // NOT requireAdmin any more, and that is the one gate this changes. Importing
 // takes checkWriteAccess, so a staff member can import a file; if undoing it
@@ -8992,24 +9005,37 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
        AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
        AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, req.params.id]);
-  if (orphans.length) await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, orphans.map(o => o.id)]);
+  // A person the file created who is held by something else the file wrote
+  // and this undo does not reach (a membership, an open ask) stays, rather than
+  // the whole undo failing half way.
+  let orphansRemoved = orphans;
+  if (orphans.length) {
+    try { await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, orphans.map(o => o.id)]); }
+    catch (e) {
+      orphansRemoved = [];
+      for (const o of orphans) {
+        try { await run("DELETE FROM donors WHERE org_id=? AND id=?", [orgId, o.id]); orphansRemoved.push(o); }
+        catch (e2) { console.error("[imports] undo kept a person another record holds:", o.id, e2.code || e2.message); }
+      }
+    }
+  }
   // Totals RECOMPUTED from what remains, never decremented.
   for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
   for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
   await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [actor(req).name || actor(req).id, req.params.id, orgId]);
   if (imp.shape === "history") {
     await recomputeScoresForOrg(orgId).catch(() => {});
-    return res.json({ reversed: true, gifts: 0, interactions: ixIds.length, tasks: tasksRemoved, donorsRemoved: orphans.length,
+    return res.json({ reversed: true, gifts: 0, interactions: ixIds.length, tasks: tasksRemoved, donorsRemoved: orphansRemoved.length,
       sentence: `Undone. ${ixIds.length.toLocaleString()} history ${ixIds.length === 1 ? "line" : "lines"}, ${tasksRemoved} ${tasksRemoved === 1 ? "task" : "tasks"}`
-        + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
+        + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
         + " removed, and the preferences it set turned back off. Nothing else was touched." });
   }
   // LIVE-1 — the people it touched are recomputed by the one after-change step.
-  await require("../afterChange").afterChange(orgId, donorIds.filter(d => !orphans.some(o => o.id === d)), { door: "csv_import", history: true });
-  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length, journeysStopped: plansStopped,
+  await require("../afterChange").afterChange(orgId, donorIds.filter(d => !orphansRemoved.some(o => o.id === d)), { door: "csv_import", history: true });
+  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphansRemoved.length, journeysStopped: plansStopped,
     sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"} removed`
       + (plansStopped ? `, ${plansStopped} ${plansStopped === 1 ? "journey" : "journeys"} it started stopped` : "")
-      + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
+      + (orphansRemoved.length ? ` and ${orphansRemoved.length} ${orphansRemoved.length === 1 ? "person" : "people"} this file created` : "")
       + `. Nothing else was touched.` });
 }));
 

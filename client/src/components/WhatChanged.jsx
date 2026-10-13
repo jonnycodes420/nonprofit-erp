@@ -70,7 +70,7 @@ function ReadoutLine({ ro, line, isReadOnly, onDone, onNavigate }) {
           {" "}{line.sentence.replace(LEAD_COUNT, "")}.
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
-          {!said && <button type="button" style={{ ...BTN, opacity: isReadOnly || busy ? 0.5 : 1 }} disabled={isReadOnly || busy}
+          {!said && line.actionLabel && <button type="button" style={{ ...BTN, opacity: isReadOnly || busy ? 0.5 : 1 }} disabled={isReadOnly || busy}
             data-testid={`readout-act-${line.kind}`} onClick={act}>{line.actionLabel}</button>}
           {!ro.isExample && <button type="button" style={LINK} disabled={isReadOnly || busy} onClick={dismiss}
             data-testid={`readout-dismiss-${line.kind}`}>Dismiss</button>}

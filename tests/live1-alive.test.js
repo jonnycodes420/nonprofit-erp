@@ -210,6 +210,14 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   ok("§6 What worked counts Bo's gift after the call, and says 'gave', never 'because'",
      ww && ww.people === 1 && ww.cents === 25000 && /gave \$250/.test(ww.sentence || "") && !/because|thanks to/i.test(ww.sentence || ""), ww);
 
+  // ── §6b · A READOUT ACTION KEEPS FIX-36's RULE ────────────────────────
+  // Found by the LIVE-1 walk: "Draft thank-yous" on a first import's new-donor
+  // line drafted a note for every first gift, three years old included.
+  const ro1 = rec1.body?.readout?.id;
+  const act1 = await api("POST", `/readouts/${ro1}/lines/new_donors/act`, tok, {});
+  ok("§6b drafting thank-yous from a readout skips the 200-day-old gift",
+     act1.status === 200 && act1.body?.tooOld === 1 && (await draftsOf(otto.id)) === 0, { act1: act1.body, otto: await draftsOf(otto.id) });
+
   // ── §7 · UNDO ──────────────────────────────────────────────────────────
   const undo = await api("POST", `/imports/${run1}/reverse`, tok, {});
   ok("§7 the first import undoes", undo.status === 200 && undo.body?.reversed === true, undo.body);

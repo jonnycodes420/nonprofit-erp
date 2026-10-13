@@ -169,3 +169,20 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   `external_donor_id`, every id in `external_donor_ids`. A history file naming the second id must find them. (IMPORT-2)
 - **A Notes, Comments or Background column in a donor file becomes a dated note on the person**, once per person per
   wording, dated by its gift row, tagged with the run so the run's undo removes it. (IMPORT-2)
+
+## LIVE-1 · a CSV gift behaves like every other gift (2026-10-12)
+
+- Both gift import routes split a file: a gift dated in the last 30 days (historyGifts.js) goes through
+  `recordGift` with `history: true` after the batch commits, so it gets a thank-you draft and can start a
+  journey; an older gift stays in the batch writer and starts nothing. Recent gifts run in four lanes, one
+  donor per lane at a time, with `importGiftContext` hints so recordGift skips checks that cannot fire.
+- The preview says how many thank-yous a file will draft (`POST /imports/thank-you-preview`), before saving.
+- Every import calls the after-change step once per chunk (`afterChange.js`), never once per row. The
+  donors-only CSV passes `recalc: false`: its totals are the file's, with no gift rows behind them.
+- A file maps itself: the answers are saved against the header shape (`import_shape_mappings`, "d:" a
+  donor field, "t:" a gift field), and a later file whose headers include every saved column is filled in
+  and asks only about the new ones. Value answers ("CHK" is Check) live in `import_value_mappings` and are
+  applied by the server to every later file.
+- Undo removes the journeys an import's gifts started (`cultivation_plans.started_import_id`) and its
+  readout. An "Import + History" file (shape `transaction`) now undoes as a whole within 7 days; fields
+  it filled on people who already existed are not reverted.
