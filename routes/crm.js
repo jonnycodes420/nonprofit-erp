@@ -6231,7 +6231,7 @@ app.post("/donors/:id/interactions", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT * FROM interactions WHERE id = ?", [id]);
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   // LIVE-1 — a logged touch is a change to the person: the after-change step.
-  await require("../afterChange").afterChange(req.user.orgId, [req.params.id], { door: "logged_touch" });
+  await require("../afterChange").afterChange(req.user.orgId, [req.params.id], { door: "logged_touch", recalc: false });
   res.status(201).json(rows[0]);
 }));
 
@@ -19113,7 +19113,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   // LIVE-1 — the conversation (and any gift it carried) is a change to the
   // person: the after-change step. A gift written above ran it already with
   // the gift form's name; this is the touch's own call.
-  await require("../afterChange").afterChange(orgId, [req.params.id], { door: "logged_touch" });
+  await require("../afterChange").afterChange(orgId, [req.params.id], { door: "logged_touch", recalc: false });
   res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
 }));
 
@@ -25747,7 +25747,7 @@ async function logEventAttendance(orgId, attendee, event, status, who, day) {
     }
   }
   // LIVE-1 — coming (or not) is a change to the person: the after-change step.
-  require("../afterChange").afterChangeSoon(orgId, [attendee.donor_id], { door: "event_checkin" });
+  require("../afterChange").afterChangeSoon(orgId, [attendee.donor_id], { door: "event_checkin", recalc: false });
   return true;
 }
 

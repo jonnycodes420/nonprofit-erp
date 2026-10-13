@@ -259,7 +259,7 @@ app.post("/history-import/commit", requireAuth, checkWriteAccess, wrap(async (re
   // org's scores are still recomputed right here (not scheduled) because the
   // receipt below shows engagement before and after.
   await require("../afterChange").afterChange(orgId,
-    [...new Set(write.map(it => it.match.donorId).filter(Boolean))], { door: "history_import", history: true });
+    [...new Set(write.map(it => it.match.donorId).filter(Boolean))], { door: "history_import", history: true, recalc: false });
   await recomputeScoresForOrg(orgId).catch(e => console.error("[history-import] scores", e.message));
   const after = await spread();
   const counts = Hm.countPlan(items);

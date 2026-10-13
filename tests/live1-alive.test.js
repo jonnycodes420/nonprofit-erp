@@ -187,6 +187,12 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
     else ok(`§4 ${d}: the code that runs this door calls the step with its name`,
             new RegExp(`door: (?:[^,}]*\\? )?"${d}"`).test(SRC), d);
   }
+  // A door that writes no gift must not recompute totals: run late (hours and
+  // mail are coalesced), that recompute read the gifts before a merge and
+  // wrote them back after it (wire-journey §8, CI, the first LIVE-1 push).
+  const noGift = (log.body?.runs || []).filter(r => ["volunteer_hours", "logged_touch"].includes(r.door));
+  ok("§4 hours and a logged touch run the step without recomputing totals",
+     noGift.length >= 2 && noGift.every(r => r.recalc === false), noGift);
   const csvRun = (log.body?.runs || []).find(r => r.door === "csv_import" && r.donors >= 2);
   ok("§4 a whole file is ONE run of the step, not one per row", !!csvRun, log.body?.runs);
 

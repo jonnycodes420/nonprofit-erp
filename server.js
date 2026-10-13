@@ -1445,7 +1445,7 @@ AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftF
 // FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the
 // people in it, so it runs the after-change step (which schedules the scores).
 require("./meetingEffects").onChange = (orgId, ids) => {
-  if (ids && ids.length) AFTER.afterChangeSoon(orgId, ids, { door: "mail_calendar_sync" });
+  if (ids && ids.length) AFTER.afterChangeSoon(orgId, ids, { door: "mail_calendar_sync", recalc: false });
   else scheduleScores(orgId);
 };
 async function recomputeAllScores() {
@@ -4118,7 +4118,7 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
      shift.opportunityId || null, shift.slotId || null, shift.startTime || null, shift.endTime || null]);
   if (rows.length) await markVolunteer(orgId, personId);
   // LIVE-1 — hours are a change to the person: the one after-change step.
-  if (rows.length) AFTER.afterChangeSoon(orgId, [personId], { door: "volunteer_hours" });
+  if (rows.length) AFTER.afterChangeSoon(orgId, [personId], { door: "volunteer_hours", recalc: false });
   return rows[0]?.id || null;
 }
 
@@ -9350,7 +9350,7 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
       // could: the only write is to `interactions` and to an open thread step.
       await closeThreadStepForContact(orgId, donorId, decision.date, intId).catch(() => {});
       // LIVE-1 — the after-change step, once per sync for everyone it logged.
-      AFTER.afterChangeSoon(orgId, [donorId], { door: "mail_calendar_sync" });
+      AFTER.afterChangeSoon(orgId, [donorId], { door: "mail_calendar_sync", recalc: false });
     }
 
     // GRANTS-1 · A MESSAGE TO OR FROM A FUNDER CONTACT ALSO LANDS ON THE

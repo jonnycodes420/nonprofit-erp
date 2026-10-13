@@ -167,14 +167,19 @@ async function rhythmFor(orgId, ids, { door, today }) {
 // `fire(donorId, groupId)` starts a "joins a group" journey; a history write
 // passes none, so an import never starts a journey by moving someone into a
 // group (FIX-36's rule, applied here too).
-// `recalc: false` skips the totals when the caller just wrote them itself.
+// `recalc: false` skips the totals: when the caller just wrote them itself
+// (recordGift), and on EVERY door that writes no gift (hours, touches, mail,
+// meetings, check-in, history notes). A recompute that writes no news is not
+// free: it reads the gifts, then waits on the person's row, and if a merge
+// commits in between it writes the totals from before the merge (found by
+// wire-journey §8 on CI's slower runner).
 async function afterChange(orgId, donorIds, { door, history = false, fire = null, recalc = true, runTag = null } = {}) {
   const ids = [...new Set((donorIds || []).filter(Boolean))];
   // The run a readout will look for: "csv_import:imp_123" on every crossing
   // and every rhythm row this call wrote.
   const stamp = runTag ? `${door}:${runTag}` : door;
   const started = Date.now();
-  const result = { door, history, donors: ids.length, crossings: [], becameLate: [], ms: 0 };
+  const result = { door, history, recalc, donors: ids.length, crossings: [], becameLate: [], ms: 0 };
   if (!deps || !orgId || !ids.length) { logRun({ ...result, orgId, at: new Date().toISOString() }); return result; }
   const today = deps.orgToday(await deps.orgTz(orgId));   // ORG_TZ_SEAM_OK
   try {
