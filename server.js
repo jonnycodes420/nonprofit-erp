@@ -1450,6 +1450,36 @@ function scheduleScores(orgId) {
 // LIVE-1 — the after-change step's helpers, handed over once at boot.
 const AFTER = require("./afterChange");
 AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors });
+// SCALE-2 — the per-org summary (orgSummary.js) and the in-process door the
+// Home bundle and the summary's refresh use (inProcess.js). An internal token
+// is signed for one stored answer's recompute and never leaves this process.
+require("./inProcess").configure(app);
+async function signInternalToken(userId) {
+  const [u] = await query("SELECT id, org_id, email, role, is_super_admin FROM users WHERE id = ?", [userId]);
+  if (!u) return null;
+  return require("./auth").signInternalToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin: !!u.is_super_admin });
+}
+const ORG_SUMMARY = require("./orgSummary");
+ORG_SUMMARY.configure({ orgTz, orgToday, signInternalToken });
+require("./jobQueue").handle("orgSummaryRefresh", (payload) => ORG_SUMMARY.refreshOrg(payload && payload.orgId));
+// SCALE-2 — the nightly Drift refresh: an org whose stored Drift answers are
+// from an earlier day gets them recomputed for its new day, so the first visit
+// of the morning reads stored rows too. Checked every six hours because each
+// org's day turns over in its own timezone.
+async function refreshStoredDrift() {
+  const orgs = await query(`SELECT o.id FROM orgs o WHERE EXISTS (SELECT 1 FROM donors d WHERE d.org_id = o.id)`, []);
+  let n = 0;
+  for (const o of orgs) {
+    const today = orgToday(await orgTz(o.id));   // ORG_TZ_SEAM_OK
+    const [stale] = await query(`SELECT 1 FROM donor_drift WHERE org_id = ? AND computed_for <> ? LIMIT 1`, [o.id, today]);
+    const [none] = await query(`SELECT 1 FROM donor_drift WHERE org_id = ? LIMIT 1`, [o.id]);
+    if (!stale && none) continue;
+    try { await computeDriftForDonors(o.id); n++; } catch (e) { console.error("[drift-store] nightly", o.id, e.message); }
+  }
+  return n;
+}
+require("./jobQueue").define("refreshStoredDrift", { everyMs: 6 * 60 * 60 * 1000, firstMs: 10 * 60 * 1000, run: () => refreshStoredDrift() });
+require("./jobQueue").define("orgSummaryCheck", { everyMs: 24 * 60 * 60 * 1000, firstMs: 20 * 60 * 1000, run: () => ORG_SUMMARY.checkAll() });
 // FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the
 // people in it, so it runs the after-change step (which schedules the scores).
 require("./meetingEffects").onChange = (orgId, ids) => {
@@ -4166,6 +4196,7 @@ app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadshe
 app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
+app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
 app.use(require("./routes/readouts").routers.r0);     // LIVE-1: what this told us
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
@@ -6850,40 +6881,98 @@ async function computeAtRiskCandidates(orgId) {
 // status active/past_due/recovering all count as "on subscription") · open
 // pledges (contractual cadence, not voluntary) · single-gift donors (the
 // engine returns not_eligible — no cadence exists).
+// SCALE-2 · DRIFT READS WHAT'S STORED. The part of a donor's Drift answer that
+// comes from their gifts (the assessment, yesterday's state, the recent-pledge
+// marker) is stored per person in donor_drift for one org calendar day, and
+// Home and Drift read it instead of rebuilding every donor's gift array on
+// each visit. A write to gifts deletes the stored answer for the people it
+// touched (a statement trigger, so no door can skip it); the after-change step
+// recomputes them at once and the nightly job recomputes the org for the new
+// day. What is still read live is everything that is not gifts: the person's
+// flags, subscriptions, open pledges and last contact, which are each one
+// cheap read and decide exclusions and "handled" exactly as before.
+const DRIFT_STORE_OFF = () => process.env.DRIFT_STORE_OFF === "1";
+// Only an answer JSON can carry exactly is stored (a NaN or an undefined would
+// come back as something else); anything else is computed every time.
+function driftJsonExact(v) {
+  if (v === undefined) return false;
+  if (typeof v === "number") return Number.isFinite(v);
+  if (Array.isArray(v)) return v.every(driftJsonExact);
+  if (v && typeof v === "object") return Object.values(v).every(driftJsonExact);
+  return true;
+}
+// The gift-derived answer for `ids` (all of the org's donors when null), from
+// the store where it is current and from the gifts where it is not.
+async function driftGiftAnswers(orgId, today, ids, refusedById) {
+  const idFilter = ids ? " AND d.id = ANY(?)" : "";
+  const stored = DRIFT_STORE_OFF() ? [] : await query(
+    `SELECT s.donor_id, s.assessment, s.yesterday_high, s.pledge_recent, s.refused_rows
+       FROM donor_drift s JOIN donors d ON d.id = s.donor_id AND d.org_id = s.org_id
+      WHERE s.org_id = ? AND s.computed_for = ? AND d.deleted_at IS NULL${idFilter}`,
+    [orgId, today, ...(ids ? [ids] : [])]);
+  const out = new Map();
+  for (const r of stored) {
+    if ((refusedById.get(r.donor_id) || 0) !== r.refused_rows) continue;
+    out.set(r.donor_id, { a: JSON.parse(r.assessment), wasDriftingHigh: r.yesterday_high, pledgeRecent: r.pledge_recent });
+  }
+  const need = [...refusedById.keys()].filter(id => !out.has(id));
+  if (!need.length) return out;
+  // The old computation, unchanged, for the people with no current answer.
+  // SCALE-1: json_agg, not array_agg (the driver's native JSON.parse); and
+  // "d.org_id = g.org_id" is the tenant rule that lets the planner probe this
+  // org's donors.
+  const giftAgg = await query(`SELECT g.donor_id,
+                  json_agg(g.date::text ORDER BY g.date) AS dates,
+                  json_agg(g.amount ORDER BY g.date) AS amounts,
+                  bool_or((g.notes ~* 'pledge (payment|installment)' OR g.pledge_id IS NOT NULL)
+                          AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
+             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+            WHERE g.org_id = ? AND d.deleted_at IS NULL AND d.id = ANY(?)
+            GROUP BY g.donor_id`, [today, orgId, need]);
+  const giftsByDonor = new Map(giftAgg.map(r => [r.donor_id, r]));
+  const vals = [], tuples = [];
+  for (const id of need) {
+    const agg = giftsByDonor.get(id);
+    const gifts = agg
+      ? agg.dates.map((date, i) => ({ date: String(date).slice(0, 10), amount: parseFloat(agg.amounts[i]) || 0 }))
+      : [];
+    const refusedRows = refusedById.get(id) || 0;
+    const a = driftEngine.assessDrift(gifts, today, { refusedRows });
+    // POLISH-1 Part 6 — the same gifts, read as of yesterday (see below).
+    const y = driftEngine.assessDrift(gifts, orgTime.addDays(today, -1), { refusedRows });
+    const ans = { a, wasDriftingHigh: y.state === "drifting" && y.confidence === "high", pledgeRecent: !!(agg && agg.pledge_recent) };
+    out.set(id, ans);
+    if (driftJsonExact(a)) {
+      vals.push(orgId, id, JSON.stringify(a), ans.wasDriftingHigh, ans.pledgeRecent, refusedRows, today);
+      tuples.push("(?,?,?,?,?,?,?)");
+    }
+  }
+  if (!DRIFT_STORE_OFF()) {
+    for (let i = 0; i < tuples.length; i += 2000) {
+      const t = tuples.slice(i, i + 2000);
+      await run(`INSERT INTO donor_drift (org_id, donor_id, assessment, yesterday_high, pledge_recent, refused_rows, computed_for)
+                 VALUES ${t.join(",")}
+                 ON CONFLICT (org_id, donor_id) DO UPDATE SET assessment = EXCLUDED.assessment, yesterday_high = EXCLUDED.yesterday_high,
+                   pledge_recent = EXCLUDED.pledge_recent, refused_rows = EXCLUDED.refused_rows, computed_for = EXCLUDED.computed_for,
+                   computed_at = NOW()`, vals.slice(i * 7, (i + t.length) * 7))
+        .catch(e => console.error("[drift-store]", orgId, e.message));
+    }
+  }
+  return out;
+}
+
 async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const org = await orgTz(orgId);
   const today = orgToday(org);                              // ORG_TZ_SEAM_OK
   const idFilter = donorIds ? " AND d.id = ANY(?)" : "";
   const idParams = donorIds ? [donorIds] : [];
-  const [donors, giftAgg, recurringRows, pledgeRows, contactRows] = await Promise.all([
+  const [donors, recurringRows, pledgeRows, contactRows] = await Promise.all([
     query(`SELECT d.id, d.name, d.total_giving, d.deceased, d.do_not_contact, d.do_not_solicit,
                   d.imported_sustainer, d.tags, d.kind,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
              FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL
                                 AND ${donorOnly("d")}${idFilter}`, [orgId, ...idParams]),
-    // One compact row per donor — dates+amounts as parallel arrays, so the
-    // whole org's cadence math is a single round trip, not an N+1. The
-    // pledge marker (BUILD-77 Part 1d): a gift whose note marks it a
-    // scheduled pledge payment — or that pays a pledge row — inside the
-    // trailing 24 months means the donor's cadence is CONTRACTUAL, not
-    // voluntary, and drift has nothing to say about it.
-    // SCALE-1: json_agg, not array_agg: the driver decodes a JSON array with
-    // the native JSON.parse, where a Postgres array literal is parsed character
-    // by character in JS (486 -> 228 ms at 24k donors). Same values after the
-    // String()/parseFloat below: proven equal for every donor of a 25k org.
-    query(`SELECT g.donor_id,
-                  json_agg(g.date::text ORDER BY g.date) AS dates,
-                  json_agg(g.amount ORDER BY g.date) AS amounts,
-                  bool_or((g.notes ~* 'pledge (payment|installment)' OR g.pledge_id IS NOT NULL)
-                          AND g.date::date >= ?::date - INTERVAL '730 days') AS pledge_recent
-             FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-            WHERE g.org_id = ? AND d.deleted_at IS NULL${idFilter}
-            GROUP BY g.donor_id`, [today, orgId, ...idParams]),
-    // SCALE-1: "d.org_id = g.org_id" is the tenant rule (a gift's donor is in
-    // the gift's org; zero rows break it across the 5.8M-gift load database). It
-    // lets the planner probe this org's donors instead of hashing every
-    // org's donors table: 390 ms -> 235 ms at 25k donors / 150k gifts.
     // Every status that means "this donor is ON a subscription": active,
     // failing (past_due/recovering — the failed-payment path owns those),
     // recovered (billing again), and paused (a deliberate, known state with
@@ -6900,12 +6989,23 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
   const onSubscription = new Set(recurringRows.map(r => r.donor_id));
   const onPledge = new Set(pledgeRows.map(r => r.donor_id));
   const lastContact = new Map(contactRows.map(r => [r.donor_id, String(r.last_contact).slice(0, 10)]));
-  const giftsByDonor = new Map(giftAgg.map(r => [r.donor_id, r]));
   const handledCutoff = orgTime.addDays(today, -driftEngine.DRIFT.HANDLED_SNOOZE_DAYS);
+  // BUILD-80 Part 2.4 — the import stamps has-refused-rows:N; a refused row
+  // caps this donor's drift confidence until it is resolved.
+  const refusedById = new Map();
+  for (const d of donors) {
+    let refusedRows = 0;
+    try {
+      const tags = Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]");
+      for (const tg of tags) { const m = /^has-refused-rows:(\d+)$/.exec(String(tg)); if (m) refusedRows += Number(m[1]); }
+    } catch { /* unreadable tags never break drift */ }
+    refusedById.set(d.id, refusedRows);
+  }
+  const answers = await driftGiftAnswers(orgId, today, donorIds, refusedById);
 
   const map = new Map();
   for (const d of donors) {
-    const agg0 = giftsByDonor.get(d.id);
+    const ans = answers.get(d.id);
     let excludedReason = null;
     // BUILD-80 Part 7 — a grant cycle is not a giving cadence: organisations
     // (and the anonymous holding record) are off every person surface.
@@ -6915,30 +7015,19 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
     else if (d.do_not_solicit) excludedReason = "do_not_solicit";           // BUILD-77 — an ask list may never carry a no-ask donor
     else if (onSubscription.has(d.id) || d.stripe_subscription_status === "active") excludedReason = "active_recurring";
     else if (d.imported_sustainer) excludedReason = "unlinked_sustainer";  // BUILD-77 Part 5 — their card stopped, they did not; the recurring surface owns them
-    else if (onPledge.has(d.id) || (agg0 && agg0.pledge_recent)) excludedReason = "pledge_cadence";
+    else if (onPledge.has(d.id) || (ans && ans.pledgeRecent)) excludedReason = "pledge_cadence";
     if (excludedReason) {
       map.set(d.id, { state: "excluded", excludedReason, donorId: d.id });
       continue;
     }
-    const agg = giftsByDonor.get(d.id);
-    const gifts = agg
-      ? agg.dates.map((date, i) => ({ date: String(date).slice(0, 10), amount: parseFloat(agg.amounts[i]) || 0 }))
-      : [];
-    // BUILD-80 Part 2.4 — the import stamps has-refused-rows:N; a refused row
-    // caps this donor's drift confidence until it is resolved.
-    let refusedRows = 0;
-    try {
-      const tags = Array.isArray(d.tags) ? d.tags : JSON.parse(d.tags || "[]");
-      for (const tg of tags) { const m = /^has-refused-rows:(\d+)$/.exec(String(tg)); if (m) refusedRows += Number(m[1]); }
-    } catch { /* unreadable tags never break drift */ }
-    const a = driftEngine.assessDrift(gifts, today, { refusedRows });
-    // POLISH-1 Part 6 — the same gifts, read as of yesterday. Drift is
-    // computed against the org's civil today, so the Home count can move at
-    // midnight with nothing new in the file (the PREMIUM-1 walk saw 7 become
-    // 8 across 11:16pm to 12:05am). The readout names who crossed; a pure
-    // second pass over rows already in memory, no extra query.
-    const y = driftEngine.assessDrift(gifts, orgTime.addDays(today, -1), { refusedRows });
-    a.wasDriftingHigh = y.state === "drifting" && y.confidence === "high";
+    // The gift-derived answer (driftGiftAnswers above): stored, or computed
+    // from the gifts and stored. POLISH-1 Part 6 — wasDriftingHigh is the same
+    // gifts read as of yesterday. Drift is computed against the org's civil
+    // today, so the Home count can move at midnight with nothing new in the
+    // file (the PREMIUM-1 walk saw 7 become 8 across 11:16pm to 12:05am). The
+    // readout names who crossed.
+    const a = ans.a;
+    a.wasDriftingHigh = ans.wasDriftingHigh;
     a.donorId = d.id;
     a.donorName = d.name;
     a.assignedTo = d.assigned_to || null;
@@ -11569,6 +11658,10 @@ async function computeRetentionRate(orgId, { year = null, gifts, userId } = {}) 
 // the writes follow. `out` (optional) receives the full first-touch and
 // retention results, so GET /metrics/stewardship-summary?scope=all, which
 // snapshots and then shows those same two figures, computes each once.
+// SCALE-2: each upsert below writes only when the value moved. An unchanged
+// snapshot is no change at all, so the per-org summary (orgSummary.js, which
+// watches this table) keeps serving the stored stewardship figures; a moved
+// one is a change, and the next read recomputes with today's point in it.
 async function snapshotMetricsForOrg(orgId, out = null) {
   const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
   const [debt, firstTouch, recovery, retentionAll] = await Promise.all([
@@ -11578,13 +11671,15 @@ async function snapshotMetricsForOrg(orgId, out = null) {
   const { avgDays } = firstTouch;
   await run(
     `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-     ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+     ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
     ["ms_" + uuid().slice(0, 8), orgId, "stewardship_debt", debt, today]
   );
   if (avgDays != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "first_touch_delay", avgDays, today]
     );
   }
@@ -11592,7 +11687,8 @@ async function snapshotMetricsForOrg(orgId, out = null) {
   if (recoveryRate != null) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
     );
   }
@@ -11607,7 +11703,8 @@ async function snapshotMetricsForOrg(orgId, out = null) {
     const th = await computeThreadHealth(orgId, { days: 30 });
     const put = async (key, val) => run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, key, val, today]);
     await put("threads_open", th.open);
     if (th.medianDaysToClose != null) await put("thread_days_to_close", th.medianDaysToClose);
@@ -11623,7 +11720,8 @@ async function snapshotMetricsForOrg(orgId, out = null) {
   if (retentionRate != null && !retentionThin) {
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "retention_rate", retentionRate, today]
     );
   }
@@ -11642,7 +11740,8 @@ async function snapshotMetricsForOrg(orgId, out = null) {
     const rate = Math.round((capture[0].with_note / capture[0].total) * 100);
     await run(
       `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
-       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value
+       WHERE metric_snapshots.value IS DISTINCT FROM EXCLUDED.value`,
       ["ms_" + uuid().slice(0, 8), orgId, "log_capture_rate", rate, today]
     );
   }
@@ -11762,6 +11861,7 @@ require("./routes/dataHealth").mount({
 require("./routes/profileStatus").mount({
   actor, checkWriteAccess, computeDriftForDonors, orgTime, query, requireAdmin, requireAuth, run, wrap,
 });
+require("./routes/homeBundle").mount({ requireAuth, testMode, wrap });
 require("./routes/homeCalls").mount({
   actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, uuid, wrap,
 });

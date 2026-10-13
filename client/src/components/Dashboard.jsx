@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, prefetch } from "../api";
 import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
 import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
@@ -37,6 +37,16 @@ import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
 const todayCivil=()=>new Date().toISOString().split("T")[0];
+// SCALE-2 — what Home reads when it opens, and what it reads once it knows the
+// scope (GET /home/bundle answers each list in one request; routes/homeBundle.js
+// holds the same paths). Keep in step with the effects below.
+const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/recurring/exceptions","/readouts/latest","/move",
+  "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
+  "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
+  "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins"];
+const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
+  `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
+  `/dashboard/retention/breakdown?scope=${scope}`];
 // FIX (2026-09-18) — "Next: send the proposal." A step label is written as a
 // heading ("Send the proposal"); inside a sentence it is mid-sentence. Only the
 // first letter moves, and only when the word is not already a name or an
@@ -303,6 +313,11 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
 export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
+  // SCALE-2 — Home's first reads in one request. Asked during the first
+  // render, before any effect (a child's effects run before this component's),
+  // so every apiFetch below for one of these paths is handed the bundle's
+  // answer. The list is exactly what Home and its panels read when it opens.
+  useState(()=>{ if(surface==="home") prefetch(HOME_FIRST_READS); return null; });
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   // BUILD-89 — which of the rail's two states is showing. `today` is the
@@ -749,6 +764,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // independently-toggled views that could disagree.
   useEffect(()=>{
     if(scope===undefined)return;
+    // SCALE-2 — the second wave, once the scope is known: one request.
+    if(surface==="home") prefetch(homeScopeReads(scope));
     setQueueLoading(true);
     apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch(`/metrics/stewardship-summary?scope=${scope}`).then(r=>setStewardMetrics(r)).catch(()=>{});

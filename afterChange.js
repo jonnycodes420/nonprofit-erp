@@ -188,6 +188,8 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
     result.becameLate = r.becameLate;
     result.crossings = await groupCrossings(orgId, ids, { door: stamp, today, fire: history ? null : fire });
     deps.scheduleScores(orgId);
+    // SCALE-2: the org's stored Home figures are recomputed off the request path.
+    require("./orgSummary").scheduleRefresh(orgId);
   } catch (e) {
     console.error(`[after-change] ${door} for ${ids.length}:`, e.message);
     result.error = e.message;

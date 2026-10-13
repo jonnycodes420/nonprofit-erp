@@ -16,6 +16,7 @@ const express = require("express");
 const CT = require("../callsToMake");
 const FS = require("../figureSources");
 const DS = require("../donorStatus");
+const OS = require("../orgSummary");   // SCALE-2: stored until something changes
 
 const routers = { r0: express.Router() };
 
@@ -28,7 +29,7 @@ async function giftInOrg(orgId, id) {
   return g || null;
 }
 
-app.get("/home/calls", requireAuth, wrap(async (req, res) => {
+app.get("/home/calls", requireAuth, OS.cached("home-calls", { perUser: false }), wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [today, floor] = await Promise.all([DS.todayFor(orgId), CT.floorFor(orgId)]);
   const source = { key: "calls-to-make", params: { today, floor: String(floor) } };

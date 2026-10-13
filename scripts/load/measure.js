@@ -55,17 +55,20 @@ async function call(token, method, path, body) {
 // together, the next wave waits for the one before, and the screen is done
 // when its last wave is.
 const G = p => ["GET", p];
+const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
+  "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout", "/tasks/counts?scope=mine",
+  "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact", "/fundraising/overview", "/goals/active", "/drift",
+  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins"];
+const HOME_SCOPE = s => [`/dashboard/today?scope=${s}`, `/metrics/stewardship-summary?scope=${s}`, `/dashboard/home?scope=${s}`,
+  "/thank-yous", `/dashboard/stewardship-debt/breakdown?scope=${s}`, `/dashboard/retention/breakdown?scope=${s}`];
+const bundle = paths => "/home/bundle?" + paths.map(p => "p=" + encodeURIComponent(p)).join("&");
 const SCREENS = {
   shell: () => [[G("/org"), G("/donors/summaries"), G("/grants"), G("/volunteers"), G("/tasks"), G("/board"), G("/financials"),
                  G("/billing/status"), G("/journeys"), G("/status/summary"), G("/org/sample-data-status")]],
-  home: () => [
-    [G("/data-health/notice"), G("/gift-starts/notice"), G("/recurring/exceptions"), G("/readouts/latest"), G("/move"),
-     G("/sequences/home"), G("/agent/daily-line"), G("/threads/health"), G("/org/setup-status"), G("/me/home-layout"),
-     G("/tasks/counts?scope=mine"), G("/dashboard/my-stats"), G("/donors/stage-counts"), G("/recurring/health"), G("/impact"),
-     G("/fundraising/overview"), G("/goals/active"), G("/drift"), G("/threads?scope=mine"), G("/calendar/today"),
-     G("/calendar/to-log"), G("/mailbox"), G("/home/calls"), G("/home/annual-goal"), G("/ask/pins")],
-    [G("/dashboard/today?scope=all"), G("/metrics/stewardship-summary?scope=all"), G("/dashboard/home?scope=all"), G("/thank-yous"),
-     G("/dashboard/stewardship-debt/breakdown?scope=all"), G("/dashboard/retention/breakdown?scope=all")]],
+  // SCALE-2: Home asks for each wave in ONE request (client/src/api.js
+  // prefetch -> GET /home/bundle); these are the same reads as SCALE-1's 25
+  // and 6, now two calls.
+  home: () => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))]],
   donors: () => [[G("/donors?limit=50&offset=0&role=donor"), G("/org/team"), G("/portfolio/officers"),
                   G("/custom-fields?entity=donor"), G("/donors/custom-field-values/all"), G("/me")]],
   profile: (o) => { const d = `/donors/${o.donorId}`; return [[G(d)],
@@ -104,9 +107,10 @@ async function latency() {
         const rs = [];
         for (const wave of reqs(u)) rs.push(...await Promise.all(wave.map(([m, p, b]) => call(u.token, m, p, b))));
         per[name].screen.push(performance.now() - t0);
+        per[name].bytes = Math.max(per[name].bytes || 0, rs.reduce((n, r) => n + r.bytes, 0));
         for (const r of rs) {
           per[name].status[r.status] = (per[name].status[r.status] || 0) + 1;
-          const k = r.path.replace(/org_load\d+_d\d+/, ":id");
+          const k = r.path.startsWith("/home/bundle") ? `/home/bundle (${r.path.split("&p=").length} reads)` : r.path.replace(/org_load\d+_d\d+/, ":id");
           (per[name].slowest[k] = per[name].slowest[k] || []).push(r.ms);
         }
       }
@@ -117,11 +121,11 @@ async function latency() {
   console.log(`database connections: peak ${connPeak} open, ${activePeak} busy at once`);
   const table = {};
   for (const [name, v] of Object.entries(per)) {
-    table[name] = { n: v.screen.length, p50: Math.round(pct(v.screen, 50)), p95: Math.round(pct(v.screen, 95)), status: v.status,
+    table[name] = { n: v.screen.length, p50: Math.round(pct(v.screen, 50)), p95: Math.round(pct(v.screen, 95)), bytes: v.bytes || 0, status: v.status,
       requests: Object.fromEntries(Object.entries(v.slowest).map(([k, arr]) => [k, { p50: Math.round(pct(arr, 50)), p95: Math.round(pct(arr, 95)) }])) };
   }
   results.latency = table;
-  console.table(Object.fromEntries(Object.entries(table).map(([k, v]) => [k, { n: v.n, p50: v.p50, p95: v.p95, status: JSON.stringify(v.status) }])));
+  console.table(Object.fromEntries(Object.entries(table).map(([k, v]) => [k, { n: v.n, p50: v.p50, p95: v.p95, kb: Math.round(v.bytes / 1024), status: JSON.stringify(v.status) }])));
 }
 
 async function tick() {

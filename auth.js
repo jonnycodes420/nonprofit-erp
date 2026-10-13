@@ -11,6 +11,11 @@ const SIGNING_SECRET = SECRET || "nonprofit_erp_secret_dev";
 function signToken(payload) {
   return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "7d" });
 }
+// SCALE-2 — a two-minute token for a recompute inside this process (the
+// per-org summary's refresh and nightly check). It is never sent anywhere.
+function signInternalToken(payload) {
+  return jwt.sign(payload, SIGNING_SECRET, { expiresIn: "2m" });
+}
 
 // FIX-22 · the user a request is signed in as, from its bearer token, or null.
 // Used only to KEY a rate limiter (an office on one wifi must never share a
@@ -165,4 +170,4 @@ function requireAuth404(req, res, next) {
   return requireAuth(req, res, (err) => { res.status = status; next(err); });
 }
 
-module.exports = { signToken, tokenUserId, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };
+module.exports = { signToken, signInternalToken, tokenUserId, requireAuth, requireAuth404, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

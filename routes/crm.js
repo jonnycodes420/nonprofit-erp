@@ -36,6 +36,8 @@ const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person 
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
 const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
+// SCALE-2: org-wide figures are stored per org and served until something changes.
+const OS = require("../orgSummary");
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
 const fileLimiter = rateLimit("fileLimiter", {
@@ -17971,7 +17973,7 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
 // graceful: a Core org gets Tasks + a giving snapshot, no broken Team headers.
 // The Need-to-do LIST itself is the existing /dashboard/today queue (the client
 // already fetches it) — this endpoint returns the four headers' summary data.
-app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/home", requireAuth, OS.cached("dashboard-home"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const scope = req.query.scope === "all" ? "all" : "mine";
   // THE ORG'S CIVIL DATE, NOT THE UTC DAY. These four counts are Home's Today
@@ -18699,7 +18701,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 // see-all view). Rows already handled (a meaningful contact inside the
 // snooze window) are filtered from the LIST but stay in the headline —
 // the money is still at risk until a gift lands.
-app.get("/drift", requireAuth, wrap(async (req, res) => {
+app.get("/drift", requireAuth, OS.cached("drift"), wrap(async (req, res) => {
   const { orgId } = req.user;
   const includeMedium = req.query.includeMedium === "1" || req.query.includeMedium === "true";
   const uncapped = req.query.all === "1" || req.query.all === "true";
@@ -19826,7 +19828,7 @@ app.post("/metrics/reset-baselines", requireAuth, requireAdmin, wrap(async (req,
   res.json({ deleted: del.changes, resnapshotted: true });
 }));
 
-app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
+app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summary"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   // ?scope=mine (default) scopes Debt/Retention to the logged-in user's own
   // assigned donors, same as GET /dashboard/today; ?scope=all is org-wide.
@@ -19892,7 +19894,7 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
 // this surfaces it directly instead of leaving it as one opaque figure.
 // Capped at a page size since a large org could have hundreds of qualifying
 // donors; `count` is the true total so the UI can say "top 50 of 214".
-app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/stewardship-debt/breakdown", requireAuth, OS.cached("debt-breakdown"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
   const scope = req.query.scope === "all" ? "all" : "mine";
@@ -19917,7 +19919,7 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, r
 // this list can never disagree: nonRetained.length always equals
 // prevYearCount - retained by construction (set difference vs set
 // intersection of the same two sets).
-app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/retention/breakdown", requireAuth, OS.cached("retention-breakdown"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
   const scope = req.query.scope === "all" ? "all" : "mine";
@@ -20428,7 +20430,7 @@ function fundraisingGoalsPortfolio(rows) {
 // needs in one call: the active org goal with pace, this-period momentum vs
 // the prior period (same FY/calendar basis as Finance — one source of truth),
 // campaign + giving-page rollups, and recent real gifts.
-app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -23840,7 +23842,7 @@ app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
   res.json({ ...report, definitions: ACTIVITY_DEFINITIONS });
 }));
 
-app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
+app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when: req => req.params.key === "giving-summary" && !req.query.format }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
   let p;
@@ -24854,7 +24856,7 @@ async function queueTaskAssignmentEmail(task, actorUserId, eventKey = null) {
 // Org-scoped. New org with nothing recovered yet → recoveredAmount 0 +
 // watchingRecurringCount, so the client can show a forward-looking line
 // ("watching N recurring donors for failed cards") instead of a fake number.
-app.get("/impact", requireAuth, wrap(async (req, res) => {
+app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(async (req, res) => {
   const orgId = req.user.orgId;
 
   // (1) Recovered recurring giving — tracked recoveries ONLY, never total gifts.
