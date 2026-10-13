@@ -26,6 +26,7 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
+import { displayDate as dateWords } from "./displayDate.js";
 import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
@@ -824,7 +825,7 @@ export function touchesSentence(steps = []) {
 
 // Where a donor is, in the words the profile shows.
 export function stepPositionSentence({ seq, total, label, dueDate }) {
-  return `Step ${seq} of ${total} · ${label}${dueDate ? ` · due ${dueDate}` : ""}`;
+  return `Step ${seq} of ${total} · ${label}${dueDate ? ` · due ${dateWords(dueDate) || dueDate}` : ""}`;
 }
 
 export { MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel };

@@ -97,7 +97,7 @@ export const HELP_ARTICLES = [
     summary: `Donors is everyone who ever believed in your work, one record each, where you search, filter and open a person's whole story.`,
     sections: [
       { h: `What you see`, p: [
-        `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage and Map), "✦ Call List", "Log a conversation", "+ Add" and "↑ Import & tools ▾".`,
+        `The screen is titled "Your donors." Along the top are the search box, the views (Directory, Team for admins, Re-engage and Map), "✦ Call List", "Log a call", "+ Add" and "↑ Import & tools ▾".`,
         `The Directory lists each person with their stage, owner, lifetime giving, last gift and giving strength. Use the stage, owner and designation menus to narrow it, or open "⊞ Filters" for more: stage, giving pattern, geography, last gift, lifetime giving and custom fields. Re-engage gathers lapsed donors. Map shows where people live.`,
       ]},
       { h: `Add a donor`, steps: [
@@ -474,12 +474,12 @@ export const HELP_ARTICLES = [
     summary: `The profile is one person's whole story: every gift, every hour, every conversation, their next step and your tools.`,
     sections: [
       { h: `What you see`, p: [
-        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a conversation", "Plan a follow-up" and "More ▾". Four figures sit below: Lifetime, Last gift, Last met and Last email. Click any of them to see the rows behind it.`,
+        `The header has their photo, name and stage, any flags such as Do not contact, and three buttons: "Log a call", "Plan a follow-up" and "More ▾". Four figures sit below: Lifetime, Last gift, Last met and Last email. Click any of them to see the rows behind it.`,
         `The tabs are Overview, Gifts & Pledges, Funds, Related, Materials and Activity. Overview has "What do I do next", the timeline, giving by year, recent conversations, household and tasks.`,
         `The rail on the right always shows their next step, contact details, relationship owner, journey and quick actions.`,
       ]},
-      { h: `Log a conversation`, steps: [
-        `Click "Log a conversation".`,
+      { h: `Log a call`, steps: [
+        `Click "Log a call".`,
         `Fill in what happened. Add a gift if one came with it.`,
         `Save it. It joins their timeline.`,
       ]},

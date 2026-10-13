@@ -48,7 +48,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
         </button>
         {onLog && <button type="button" data-testid="dp-log-first" onClick={onLog}
           style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontWeight: 700, fontSize: 12.5, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
-          Log a conversation
+          Log a call
         </button>}
       </div>
       {children}

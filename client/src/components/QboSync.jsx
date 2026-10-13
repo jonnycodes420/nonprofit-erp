@@ -22,6 +22,7 @@ import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "./ConfirmDialog";
 import QboRead from "./QboRead";
+import { displayDate } from "../../../shared/displayDate.js";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -316,7 +317,7 @@ export default function QboSync({ connectionId = null, isReadOnly, isAdmin }) {
             <span style={{ flex: "1 1 200px", minWidth: 0, overflowWrap: "anywhere" }}>
               {r.donorName} ·{" "}
               <Figure variant="inline" figureKey={"qbo-sent-" + r.giftId} value={r.amount} kind="money" label={`${r.donorName} · the gift`}
-                definition="This one gift, at its own amount." source={r.source} /> · {r.date}
+                definition="This one gift, at its own amount." source={r.source} /> · {displayDate(r.date)}
             </span>
             {r.status === "synced"
               ? <a href={r.link} target="_blank" rel="noopener noreferrer" style={{ color: T.ink, fontWeight: 700, fontSize: 12.5 }}>Open in QuickBooks</a>

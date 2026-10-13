@@ -115,7 +115,7 @@ async function landingShots() {
   await page.waitForTimeout(1000);
   await page.click(`text=${donors[3].name}`);
   await page.waitForTimeout(1200);
-  await page.click('.dph-primary:has-text("Log a conversation")');
+  await page.click('.dph-primary:has-text("Log a call")');
   await page.waitForTimeout(500);
   const lineSel = 'input[placeholder="One line. She asked for the impact report."]';
   await page.fill(lineSel, "Asked what the scholarship fund still needs.");

@@ -20,6 +20,7 @@
 // Pure: no clock, no database, no fetch. Everything arrives as arguments so the
 // suites can drive it directly and nothing here can accidentally send.
 
+import { displayDate as dateWords } from "./displayDate.js";
 export const VOICE_SAMPLE_MIN = 3;
 
 const money = cents => {
@@ -185,7 +186,7 @@ export function signThankYou(body, { donorName, senderName, orgName, voiceUsed =
 export function pledgeReminderDraft({ donorName, installmentCents, dueDate, pledgeCents = null,
                                       paidCents = null, orgName, voice = { ready: false } } = {}) {
   const amt = money(installmentCents);
-  const when = dueDate ? ` that was due ${dueDate}` : "";
+  const when = dueDate ? ` that was due ${dateWords(dueDate) || dueDate}` : "";
   const remaining = pledgeCents != null && paidCents != null && pledgeCents > paidCents
     ? ` That would leave ${money(pledgeCents - paidCents - installmentCents > 0 ? pledgeCents - paidCents - installmentCents : 0)} on the pledge.`
     : "";
