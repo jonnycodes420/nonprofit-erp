@@ -579,7 +579,7 @@ function moveFileFactsFrom(donors, gifts) {
   } catch (e) { console.error("[move] could not build the file's own figures:", e); return null; }
 }
 
-async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId) {
+async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId, opts = {}) {
   let donors = donorsIn;
   const CHUNK = 500;
   // BUILD-99 Part 6 — the open asks ride the same chunked submit and are
@@ -639,6 +639,9 @@ async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId) {
       });
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
         ...(runId ? { importId: runId } : {}),
+        // FIX-37: the thank-you answer and the headers it was decided from.
+        ...(opts.thanks ? { thanks: opts.thanks } : {}),
+        ...(opts.headers && opts.headers.length ? { headers: opts.headers } : {}),
         ...(chunkProposals.length ? { proposals: chunkProposals } : {}),
         ...(chunkMemberships.length ? { memberships: chunkMemberships } : {}),
         // BUILD-78 — the column ledger + saved mappings ride every chunk
@@ -769,19 +772,74 @@ const STANDARD_METHODS = new Set(["cash", "check", "cheque", "credit card", "car
   "google pay", "online", "in kind", "money order", "crypto", "other", "visa", "mastercard", "amex", "american express", "discover"]);
 
 // LIVE-1 · how many thank-you drafts these gifts will make, before saving.
-function ThankYouPreview({ dates }) {
-  const [said, setSaid] = useState(null);
+// FIX-37: when the file would draft any, it asks whether they were thanked
+// already (ThanksQuestion), and hands the preview up so the import can send
+// the default when she leaves the answer alone.
+function ThankYouPreview({ dates, headers, answer, onAnswer, onPreview }) {
+  const [pv, setPv] = useState(null);
   const key = (dates || []).join(",");
   useEffect(() => {
     const ds = (dates || []).filter(Boolean);
-    if (!ds.length) { setSaid(null); return; }
+    if (!ds.length) { setPv(null); onPreview && onPreview(null); return; }
     let live = true;
-    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates: ds }) })
-      .then(r => { if (live) setSaid(r && r.sentence); }).catch(() => {});
+    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates: ds, headers: headers || [] }) })
+      .then(r => { if (live) { setPv(r); onPreview && onPreview(r); } }).catch(() => {});
     return () => { live = false; };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!said) return null;
-  return <div data-testid="gi-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{said}</div>;
+  if (!pv) return null;
+  if (pv.ask && onAnswer) return <ThanksQuestion preview={pv} answer={answer} onChange={onAnswer}/>;
+  return <div data-testid="gi-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{pv.sentence}</div>;
+}
+
+// FIX-37 · "HAVE THE GIFTS FROM THE LAST 30 DAYS ALREADY BEEN THANKED?"
+// Asked before saving whenever the file would draft thank-yous. The default
+// comes from the server (importThanks.js) with the reason it was chosen.
+function ThanksQuestion({ preview, answer, onChange }) {
+  if (!preview || !preview.ask) return null;
+  const a = answer || preview.defaultAnswer || { mode: "all" };
+  const pick = (mode) => onChange({ mode, ...(mode === "min" ? { min: a.min || 250 } : {}) });
+  const opt = (mode, label, extra) => (
+    <label key={mode} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",padding:"3px 0",cursor:"pointer"}}>
+      <input type="radio" name="import-thanks" data-testid={`import-thanks-${mode}`} checked={a.mode===mode} onChange={()=>pick(mode)} style={{accentColor:T.greenDk}}/>
+      <span>{label}</span>{extra}
+    </label>);
+  return (
+    <div data-testid="import-thanks-question" style={{border:"1px solid "+T.bg2,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
+      <div style={{fontWeight:700,marginBottom:2}}>Have the gifts from the last 30 days already been thanked?</div>
+      <div style={{color:T.ink3,marginBottom:6}}>
+        {preview.thankYous.toLocaleString("en-US")} {preview.thankYous===1?"gift is":"gifts are"} from the last 30 days.
+        {preview.defaultSentence?" "+preview.defaultSentence:""} Nothing is ever sent without you.
+      </div>
+      {opt("none","Yes, don't draft thank-yous")}
+      {opt("all","No, draft them all")}
+      {opt("min", a.mode==="min" ? "Only gifts of $" : "Only gifts of $___ or more", a.mode==="min"&&(
+        <><input type="number" min="1" step="1" data-testid="import-thanks-min" value={a.min||""}
+            onChange={e=>onChange({ mode:"min", min:Number(e.target.value)||0 })}
+            style={{width:90,border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 6px",fontSize:12.5,fontFamily:"inherit"}}/>
+          <span>or more</span></>))}
+    </div>
+  );
+}
+
+// FIX-37 · the recent-gift work runs behind the screen; this follows it.
+function ImportProgress({ runId, onDone }) {
+  const [p, setP] = useState(null);
+  useEffect(() => {
+    if (!runId) return;
+    let live = true, timer = null;
+    const tick = () => apiFetch(`/imports/${runId}/progress`).then(r => {
+      if (!live) return;
+      setP(r);
+      if (r && r.status === "running") timer = setTimeout(tick, 1200);
+      else if (r && onDone) onDone(r);
+    }).catch(() => { if (live) timer = setTimeout(tick, 3000); });
+    tick();
+    return () => { live = false; clearTimeout(timer); };
+  }, [runId]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!p || p.status !== "running") return null;
+  return <div data-testid="import-progress" style={{textAlign:"left",fontSize:13,color:T.ink2,margin:"0 0 14px"}}>
+    {p.sentence}. You can close this; the work carries on and the readout appears on Home when it is done.
+  </div>;
 }
 
 // LIVE-1 · WHAT THIS FILE TOLD US, on the result screen: the readout's
@@ -877,6 +935,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
   const [shapeMemory, setShapeMemory] = useState(null);
   const [undoBusy,   setUndoBusy]   = useState(false);
   const [tyPreview,  setTyPreview]  = useState(null);
+  const [thanks,     setThanks]     = useState(null);   // FIX-37: her answer; null = the default
   const [valueAnswers, setValueAnswers] = useState({});   // "field|raw" → value
   const [savedValues, setSavedValues] = useState([]);
   const [yearCols,   setYearCols]   = useState([]);         // wide year columns
@@ -1359,7 +1418,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
     const dates = (payload?.gifts || []).map(g => g.date).filter(Boolean);
     if (!dates.length) { setTyPreview(null); return; }
     let live = true;
-    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates }) })
+    apiFetch("/imports/thank-you-preview", { method: "POST", body: JSON.stringify({ dates, headers: parsed?.headers || [] }) })
       .then(r => { if (live) setTyPreview(r); }).catch(() => {});
     return () => { live = false; };
   }, [giftDatesKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1558,7 +1617,9 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
       const answers = Object.entries(valueAnswers).map(([k, value]) => { const i = k.indexOf("|"); return { field: k.slice(0, i), raw: k.slice(i + 1), value }; })
         .filter(a => a.value && a.value.trim() && a.value.trim() !== a.raw);
       if (answers.length) await apiFetch("/import-values", { method: "POST", body: JSON.stringify({ values: answers }) }).catch(() => {});
-      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras, runId);
+      const thanksAnswer = thanks || (tyPreview && tyPreview.defaultAnswer) || null;   // FIX-37
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras, runId,
+        { thanks: thanksAnswer, headers: parsed?.headers || [] });
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
       // the file was parsed, never the count of what survived the client's
@@ -1788,6 +1849,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
         const rowsR = R.rows || {}, dollarsR = R.dollars || {};
         const rec = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
           id: runId,
+          thanks: thanksAnswer || undefined,
           migrationSource: moveSource || undefined,
           name: srcFile?.name || "Imported file",
           sourceFilename: srcFile?.name || null,
@@ -1824,6 +1886,8 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
         })});
         // LIVE-1 — what this file told us, on the result screen.
         if (rec && rec.readout) setResult(r => (r ? { ...r, readout: rec.readout } : r));
+        // FIX-37: the recent gifts are still being worked through: follow them.
+        if (rec && rec.working) setResult(r => (r ? { ...r, working: true } : r));
         // LIVE-1 — files map themselves: her answers for these columns, saved
         // against the file's headers ("d:" a donor field, "t:" a gift field).
         const enc = {};
@@ -2131,6 +2195,9 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported, with gaps you should read." : "Import complete."}
           </div>
+          {result.working&&!result.readout&&(
+            <ImportProgress runId={result.runId} onDone={r=>setResult(x=>(x?{...x,working:false,readout:r.readout||x.readout}:x))}/>
+          )}
           <ImportReadout readout={result.readout}/>
           {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
             <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
@@ -3425,7 +3492,9 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               })()}
             </div>
           )}
-          {tyPreview&&<div data-testid="import-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{tyPreview.sentence}</div>}
+          {tyPreview&&(tyPreview.ask
+            ?<ThanksQuestion preview={tyPreview} answer={thanks} onChange={setThanks}/>
+            :<div data-testid="import-thankyou-preview" style={{fontSize:12.5,color:T.ink2,marginBottom:10,lineHeight:1.55}}>{tyPreview.sentence}</div>)}
           {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
@@ -3611,6 +3680,8 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
   const [xlsxSheets, setXlsxSheets] = useState(null);
   const [workbook, setWorkbook]     = useState(null); // BUILD-82 — xlsx goes through the workbook flow (gift-alone links by Donor ID)
   const [parsed, setParsed]         = useState(null);
+  const [ghThanks, setGhThanks]     = useState(null);   // FIX-37: her answer; null = the default
+  const [ghPreview, setGhPreview]   = useState(null);
   const [err, setErr]               = useState("");
 
   const [detectedFormat, setDetectedFormat] = useState("transactional");
@@ -3771,13 +3842,15 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
       // No owner mapping on this screen (that belongs to the donor-sheet
       // flow), so the rows go as they are rather than through
       // assignPayloadDonors, which is scoped to that component.
+      const ghAnswer = ghThanks || (ghPreview && ghPreview.defaultAnswer) || null;   // FIX-37
       const totals = await submitImportChunked(
-        wouldCreate.donors, wouldCreate.gifts, null, undefined, runId);
+        wouldCreate.donors, wouldCreate.gifts, null, undefined, runId, { thanks: ghAnswer, headers: parsed?.headers || [] });
       // The run is recorded so Settings, Imports shows it and the undo has
       // something to undo. `gift_file_with_donors` is what makes this import
       // reversible as a whole (routes/crm.js).
       const rec = await apiFetch("/imports", { method: "POST", body: JSON.stringify({
         id: runId,
+        thanks: ghAnswer || undefined,
         name: srcFile?.name || "Gift file",
         sourceFilename: srcFile?.name || null,
         shape: "gift_file_with_donors",
@@ -3785,7 +3858,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
         giftsCreated: wouldCreate.gifts.length,
         dollars: wouldCreate.dollars,
       }) }).catch(() => null);   // the import happened; the receipt is not the import
-      setResult({ ...totals, shape: "gift_file_with_donors", runId, readout: rec && rec.readout ? rec.readout : null,
+      setResult({ ...totals, shape: "gift_file_with_donors", runId, readout: rec && rec.readout ? rec.readout : null, working: !!(rec && rec.working),
                   donorsCreated: wouldCreate.donors.length,
                   giftsCreated: wouldCreate.gifts.length });
       setStep("result");
@@ -3825,7 +3898,9 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
       // WIRE-1: one run id, stamped on every gift and recorded, so Undo this
       // import removes exactly these gifts.
       const runId = newRunId();
-      const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend, importId:runId }) });
+      const ghAnswer = ghThanks || (ghPreview && ghPreview.defaultAnswer) || null;   // FIX-37
+      const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend, importId:runId,
+        ...(ghAnswer ? { thanks: ghAnswer } : {}), headers: parsed?.headers || [] }) });
       let recorded = false;
       if (res.inserted > 0) {
         const R = res.reconciliation || {}, rowsR = R.rows || {}, dollarsR = R.dollars || {};
@@ -3837,7 +3912,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           summary: { ...fig, dollarsSetAside: Number(dollarsR.skipped) || 0, dollarsErrored: Number(dollarsR.errored) || 0 },
         }) }).catch(() => false);   // the import happened; the receipt is not the import
       }
-      setResult(recorded ? { ...res, runId, readout: recorded.readout || null } : res); setStep("result");
+      setResult(recorded ? { ...res, runId, readout: recorded.readout || null, working: !!recorded.working } : res); setStep("result");
     } catch(e) { setErr(errorMessage(e, "Import failed.")); }
     setLoading(false);
   };
@@ -3863,6 +3938,9 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             Import complete.
           </div>
+          {result.working&&!result.readout&&(
+            <ImportProgress runId={result.runId} onDone={r=>setResult(x=>(x?{...x,working:false,readout:r.readout||x.readout}:x))}/>
+          )}
           <ImportReadout readout={result.readout}/>
           {/* FIX-11 Part 4 — when the import CREATED the people, the result
               says so, and offers the one undo that removes both halves. */}
@@ -4288,7 +4366,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
             </div>
           )}
 
-          <ThankYouPreview dates={matchedGifts.map(g => g.date)}/>
+          <ThankYouPreview dates={matchedGifts.map(g => g.date)} headers={parsed?.headers} answer={ghThanks} onAnswer={setGhThanks} onPreview={setGhPreview}/>
           {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           {/* FIX-11 Part 4 — TWO WAYS FORWARD, on the same screen. Creating the
               people is the emerald one, because it is what somebody arriving

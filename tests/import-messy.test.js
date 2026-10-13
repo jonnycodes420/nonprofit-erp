@@ -32,7 +32,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, importWorkSettled } = require("./helpers");
 
 const ORG = "org_b77golden";
 const FIXTURE = path.join(__dirname, "fixtures", "build77", "steward-messy-2500.csv");
@@ -181,6 +181,8 @@ async function reset() {
     sumRecon.rows.created += rr.rows.created; sumRecon.rows.skipped += rr.rows.skipped; sumRecon.rows.errored += rr.rows.errored;
     sumRecon.dollars.created += rr.dollars.created; sumRecon.dollars.skipped += rr.dollars.skipped; sumRecon.dollars.errored += rr.dollars.errored;
   }
+  // FIX-37: the recent gifts are written behind the screen; wait for them.
+  await importWorkSettled(ORG);
   // the FILE-level equation, exactly as the client now computes it
   const clientRefused = built.dispositions.filter(d => d.disposition !== "gift");
   const fileAccounted = sumRecon.rows.created + sumRecon.rows.skipped + sumRecon.rows.errored + clientRefused.length;
@@ -411,6 +413,7 @@ async function reset() {
       const r = await api("POST", "/donors/import-combined", tok33, { donors: slice, gifts: cg, identityResolved: true });
       if (r.status !== 200) { ok("FIX-33 chunk imports", false, { status: r.status, body: JSON.stringify(r.body).slice(0, 200) }); break; }
     }
+    await importWorkSettled(ORG33);   // FIX-37
     const [n33] = await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [ORG33]);
     ok(`DB people == ${expectRecords}`, n33.n === expectRecords, n33);
     const [g33] = await q(`SELECT COUNT(*)::int n, COALESCE(SUM(amount),0)::float d, COUNT(*) FILTER (WHERE amount<0)::int r FROM gifts WHERE org_id=$1`, [ORG33]);

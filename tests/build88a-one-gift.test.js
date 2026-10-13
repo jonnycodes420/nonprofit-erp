@@ -27,7 +27,7 @@ const bcrypt = require("bcryptjs");
 const stripe = require("stripe")("sk_test_dummy");
 const { execFileSync } = require("child_process");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, civilToday, importWorkSettled } = require("./helpers");
 
 const ORG = "org_b88a1";
 const ACCT = "acct_b88a1";
@@ -111,6 +111,8 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
     gifts: [{ donorIndex: 0, amount: 400, date: TODAY, type: "cash", fund: "Building Fund", paymentMethod: "ACH", externalId: "B88A1-1" }],
   });
   ok("an import records a gift", imp.status === 200 && imp.body.giftsInserted === 1, { status: imp.status, inserted: imp.body?.giftsInserted });
+  // FIX-37: the recent gifts are written behind the screen; wait for them.
+  await importWorkSettled(ORG);
 
   // DOOR 5 — an event attendee.
   await q(`INSERT INTO events (id,org_id,name,event_type,date) VALUES ('ev_b88a1',$1,'Spring Gala','gala',$2)`, [ORG, TODAY]);

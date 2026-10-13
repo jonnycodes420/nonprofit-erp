@@ -888,6 +888,208 @@ async function forEachByDonor(list, fn) {
   await Promise.all(Array.from({ length: Math.min(RECENT_GIFT_LANES, queues.length) }, lane));
 }
 
+// ── FIX-37 · THE RECENT-GIFT WORK RUNS BEHIND THE SCREEN ────────────────
+// Once an import's rows are saved, the request answers. Its recent gifts
+// (recordGift, one by one, for the last 30 days) and the after-change step
+// for everybody the file touched run here, after the response, as one job
+// per import run. This is the one place import work runs in the background;
+// SCALE-1 moves it to a real queue.
+//
+//   import_recent_jobs   one row per run: progress, the thank-you answer, errors
+//   import_recent_work   one row per recent gift still to do (deleted when done)
+//
+// The work rows are written in the import's own transaction, so a recent
+// gift is never only in memory: a restart picks the job up where it stopped
+// (resumeRecentWork, at boot). Undo cancels the job, waits for the gift in
+// flight, and then removes everything as before. When the job finishes it
+// writes the readout, if the run has been recorded by then; POST /imports
+// writes it instead when the job finished first. Whoever comes second writes
+// it, once (readout_claimed).
+const RECENT_WORK_ACTOR = { id: "system:import-recent-gifts", name: "Steward (your import's recent gifts)" };
+const recentJobs = new Map();   // import id → { promise, cancelled }
+const IT = require("../importThanks");
+// The job never writes beside an import request for the same org: a chunked
+// file sends its next chunk while the job works on the last one, and the two
+// writing the same people at once deadlocked (import2-history, the battery).
+// So the job waits until no import request for the org is in flight, then
+// takes the import's own advisory lock for one small batch at a time; a new
+// chunk's transaction waits for at most that one batch.
+const RECENT_BATCH = 50;
+const importsInFlight = new Map();   // org id → requests running
+function markImportInFlight(orgId, res) {
+  importsInFlight.set(orgId, (importsInFlight.get(orgId) || 0) + 1);
+  let done = false;
+  const end = () => { if (done) return; done = true; const n = (importsInFlight.get(orgId) || 1) - 1; if (n > 0) importsInFlight.set(orgId, n); else importsInFlight.delete(orgId); };
+  res.on("finish", end); res.on("close", end);
+}
+async function importsIdle(orgId) {
+  while (importsInFlight.get(orgId)) await new Promise(r => setTimeout(r, 100));
+}
+
+async function queueRecentWork(txq, orgId, runId, gifts, { actorId, actorName, thanks, touched = [] }) {
+  const up = await txq(
+    `INSERT INTO import_recent_jobs (import_id, org_id, status, total, thanks, touched, created_by, created_by_name)
+     VALUES (?,?,'running',?,?::jsonb,?::jsonb,?,?)
+     ON CONFLICT (import_id) DO UPDATE SET total = import_recent_jobs.total + EXCLUDED.total, status='running',
+       finished_at=NULL, thanks=COALESCE(EXCLUDED.thanks, import_recent_jobs.thanks),
+       touched = import_recent_jobs.touched || EXCLUDED.touched
+     WHERE import_recent_jobs.org_id = EXCLUDED.org_id AND import_recent_jobs.status <> 'cancelled'
+     RETURNING import_id`,
+    [runId, orgId, gifts.length, thanks ? JSON.stringify(thanks) : null, JSON.stringify(touched),
+     actorId || RECENT_WORK_ACTOR.id, actorName || RECENT_WORK_ACTOR.name]);
+  if (!up.length) throw new Error("This import was undone; start it again to bring the file in.");
+  const [{ s }] = await txq(`SELECT COALESCE(MAX(seq),0)::int AS s FROM import_recent_work WHERE import_id=?`, [runId]);
+  const ROWS = 1000;
+  for (let i = 0; i < gifts.length; i += ROWS) {
+    const part = gifts.slice(i, i + ROWS), params = [];
+    const tuples = part.map((g, k) => { params.push(importId("irw_"), orgId, runId, s + i + k + 1, JSON.stringify(g)); return "(?,?,?,?,?::jsonb)"; });
+    await txq(`INSERT INTO import_recent_work (id, org_id, import_id, seq, gift) VALUES ${tuples.join(",")}`, params);
+  }
+}
+
+function kickRecentWork(orgId, runId) {
+  const cur = recentJobs.get(runId);
+  if (cur) { cur.again = true; return cur.promise; }
+  const job = { cancelled: false, again: false };
+  job.promise = (async () => {
+    try { do { job.again = false; await runRecentWork(orgId, runId, job); } while (job.again && !job.cancelled); }
+    catch (e) { console.error("[import-recent] job:", runId, e.message); }
+    finally { recentJobs.delete(runId); }
+  })();
+  recentJobs.set(runId, job);
+  return job.promise;
+}
+
+async function runRecentWork(orgId, runId, job) {
+  const [jr] = await query(`SELECT * FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [runId, orgId]);
+  if (!jr || jr.status === "cancelled") return;
+  const thanks = IT.cleanAnswer(typeof jr.thanks === "string" ? JSON.parse(jr.thanks) : jr.thanks);
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const gctx = await importGiftContext(orgId);
+  let done = 0, thankYous = 0, lastSaved = Date.now();
+  const errors = [], credits = [];
+  const save = async () => {
+    const d = done, t = thankYous; done = 0; thankYous = 0;
+    await run(`UPDATE import_recent_jobs SET done = done + ?, thank_yous = thank_yous + ? WHERE import_id=?`, [d, t, runId]);
+  };
+  for (;;) {
+    if (job.cancelled) break;
+    await importsIdle(orgId);
+    const rows = await query(`SELECT id, gift FROM import_recent_work WHERE import_id=? AND org_id=? ORDER BY seq LIMIT ${RECENT_BATCH}`, [runId, orgId]);
+    if (!rows.length) break;
+    const list = rows.map(r => ({ ...(typeof r.gift === "string" ? JSON.parse(r.gift) : r.gift), _workId: r.id }));
+    await withAdvisoryLock(`import:${orgId}`, async () => {
+    // The totals of the people these land on are brought up to date FIRST,
+    // so recordGift's "is this their first gift" reads the file's older gifts.
+    await recalcDonorSummaryBatch(list.map(g => g.donorId), orgId).catch(e => console.error("[import-recent] recalc:", e.message));
+    await forEachByDonor(list, async g => {
+      if (job.cancelled) return;
+      try {
+        const isNew = IT.treatAsNew(thanks, g.amount);
+        const w = await recordGift({
+          orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
+          campaignId: g.campaignId, notes: g.notes, fundId: g.fundId, paymentMethod: g.paymentMethod,
+          externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
+          importId: runId, history: true, today, alreadyThanked: !isNew,
+          post: false,             // BUILD-83 Part 6: an import never posts to the ledger
+          actorId: jr.created_by, actorName: jr.created_by_name, source: "csv-import",
+          door: "csv_import", afterChange: false,   // the step runs once for the whole run below
+          ...recentGiftHints(gctx, g.donorId),
+        });
+        if (!w.duplicate) {
+          if (isNew) {
+            const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
+            if (ty) thankYous++;
+          }
+          if (g.customFields && Object.keys(g.customFields).length)
+            await run("UPDATE gifts SET custom_fields=? WHERE id=? AND org_id=?", [JSON.stringify(g.customFields), w.gift.id, orgId]);
+          if (g.credit) credits.push({ giftId: w.gift.id, g });
+        }
+      } catch (e) {
+        console.error("[import-recent] gift:", e.message);
+        errors.push({ rows: `recent gift ${g.date}`, error: e.message });
+      }
+      await run(`DELETE FROM import_recent_work WHERE id=?`, [g._workId]).catch(() => {});
+      done++;
+      if (Date.now() - lastSaved > 700) { lastSaved = Date.now(); await save(); }
+    });
+    });   // end withAdvisoryLock
+    await save();
+  }
+  await save();
+  if (credits.length) await importGiftExtras(orgId, credits, RECENT_WORK_ACTOR).catch(e => console.error("[import-recent] credit:", e.message));
+  if (errors.length) await run(`UPDATE import_recent_jobs SET errors = errors || ?::jsonb WHERE import_id=?`, [JSON.stringify(errors.slice(0, 200)), runId]);
+  if (job.cancelled) return;
+  // The one after-change step, once for everybody the run touched so far:
+  // its gifts' people and the people it created.
+  const [tj] = await query(`SELECT touched FROM import_recent_jobs WHERE import_id=?`, [runId]);
+  const touchedRaw = tj ? (typeof tj.touched === "string" ? JSON.parse(tj.touched) : tj.touched) : [];
+  const fromGifts = (await query(`SELECT DISTINCT donor_id AS id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, runId])).map(r => r.id);
+  const touched = [...new Set([...(touchedRaw || []), ...fromGifts])];
+  await importsIdle(orgId);
+  await withAdvisoryLock(`import:${orgId}`, () => require("../afterChange").afterChange(orgId, touched, { door: "csv_import", history: true, runTag: runId }))
+    .catch(e => console.error("[import-recent] after-change:", e.message));
+  const left = await query(`SELECT 1 FROM import_recent_work WHERE import_id=? LIMIT 1`, [runId]);
+  if (left.length || job.cancelled) return;   // another chunk arrived; the loop runs again
+  // Done, then the readout, then finished: the screen reads "done" only once
+  // finished_at is set, so it never shows a finished run without its readout.
+  await run(`UPDATE import_recent_jobs SET status='done', finished_at=NULL WHERE import_id=? AND status='running'`, [runId]);
+  await writeImportReadoutOnce(orgId, runId).catch(e => console.error("[readout] import job:", e.message));
+  await run(`UPDATE import_recent_jobs SET finished_at=NOW() WHERE import_id=? AND status='done'`, [runId]);
+}
+// What the screen is told: a job is still running until its finish has been
+// written (see above).
+const recentJobStatus = j => (j.status === "done" && !j.finished_at ? "running" : j.status);
+
+// The readout for an import run, written once, by whichever of the job's end
+// and POST /imports comes second. A run with no job (a donors-only file) has
+// nothing to wait for.
+async function writeImportReadoutOnce(orgId, runId) {
+  const [imp] = await query(`SELECT id, name FROM imports WHERE id=? AND org_id=?`, [runId, orgId]);
+  if (!imp) return null;
+  const [job] = await query(`SELECT status FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [runId, orgId]);
+  if (job) {
+    if (job.status !== "done") return null;
+    const claimed = await query(`UPDATE import_recent_jobs SET readout_claimed=true WHERE import_id=? AND readout_claimed=false RETURNING import_id`, [runId]);
+    if (!claimed.length) return null;
+  }
+  const giftIds = await query(`SELECT id, donor_id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, runId]);
+  const made = (await query(`SELECT id FROM donors WHERE org_id=? AND created_import_id=?`, [orgId, runId])).map(r => r.id);
+  if (!giftIds.length) return null;
+  return require("../readout").writeReadout(orgId, {
+    sourceKind: "import", sourceId: runId, sourceName: imp.name,
+    giftIds: giftIds.map(g => g.id), donorIds: [...new Set([...giftIds.map(g => g.donor_id), ...made])],
+    stamp: `csv_import:${runId}`, today: orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
+    firstImport: await IT.isFirstImport(query, orgId, runId),
+  });
+}
+
+// Undo, while the work runs: stop it, wait for the gift in flight, and clear
+// what was still to do. The undo then removes what was done, by the run id.
+async function cancelRecentWork(orgId, runId) {
+  await run(`UPDATE import_recent_jobs SET status='cancelled', finished_at=NOW() WHERE import_id=? AND org_id=?`, [runId, orgId]);
+  const job = recentJobs.get(runId);
+  if (job) { job.cancelled = true; await job.promise.catch(() => {}); }
+  await run(`DELETE FROM import_recent_work WHERE import_id=? AND org_id=?`, [runId, orgId]);
+}
+
+// A restart mid-run: every job still running carries on from its work rows.
+async function resumeRecentWork() {
+  const jobs = await query(`SELECT import_id, org_id FROM import_recent_jobs WHERE status='running'`).catch(() => []);
+  for (const j of jobs) kickRecentWork(j.org_id, j.import_id);
+}
+setTimeout(() => { resumeRecentWork().catch(e => console.error("[import-recent] resume:", e.message)); }, 8000).unref();
+
+// What the import screen shows while the work runs.
+function recentProgressSentence(j) {
+  const total = Number(j.total) || 0, done = Math.min(Number(j.done) || 0, total);
+  const thanks = IT.cleanAnswer(typeof j.thanks === "string" ? JSON.parse(j.thanks) : j.thanks);
+  const verb = thanks && thanks.mode === "none" ? "Checking" : "Thanking and checking";
+  if (recentJobStatus(j) === "done") return `Done: ${total.toLocaleString("en-US")} recent ${total === 1 ? "gift" : "gifts"} checked.`;
+  if (j.status === "cancelled") return "Stopped: this import was undone.";
+  return `${verb} ${total.toLocaleString("en-US")} recent ${total === 1 ? "gift" : "gifts"}: ${done.toLocaleString("en-US")} done`;
+}
+
 // LIVE-1 — the org's saved value answers, as one function: (field, raw) →
 // the value she chose, or the raw value when she has said nothing about it.
 async function importValueMapper(orgId) {
@@ -4601,6 +4803,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
+  markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
   const { donors, gifts } = req.body;
   // BUILD-82 Part 2.5 — a gift sheet imported ALONE links to the donors the
   // org already has (Donor ID first, then email, then name); donors may be
@@ -4806,7 +5009,20 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // killing the request or (as before) vanishing into a warning nobody reads.
   const pendingGiftCredit = [];   // BUILD-98 Part 1 — soft credits/tributes/matches, applied after commit
   const recentGiftsToRecord = [];   // LIVE-1 — gifts from the last 30 days, written by recordGift after commit
-  let recentRecorded = 0, recentThankYous = 0;
+  let recentQueued = 0;
+  // FIX-37: the run the background work belongs to (an API caller that sent
+  // no run id gets one), and the answer to "already thanked?". An import that
+  // arrives without an answer gets the same default the preview offers.
+  const jobRunId = runId || importId("imp_");
+  let thanksAnswer = IT.cleanAnswer(req.body.thanks);
+  if (!thanksAnswer) {
+    const today0 = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+    const recentN = (Array.isArray(req.body.gifts) ? req.body.gifts : [])
+      .filter(g => g && g.date && !require("../historyGifts").isOldHistory(String(g.date).slice(0, 10), today0)).length;
+    const d = IT.defaultAnswer({ firstImport: await IT.isFirstImport(query, orgId, runId),
+      system: await IT.recognizeSystem(req.body.headers), count: recentN });
+    thanksAnswer = { mode: d.mode };
+  }
   await withAdvisoryLock(`import:${orgId}`, async () => {
   await withTransaction(async (txc) => {
   // Email dedup. BUILD-72 Part 1: the dedup now keeps the EXISTING donor's ID
@@ -5438,6 +5654,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     }
   }
 
+  // FIX-37: the recent gifts are written as WORK for the background job, in
+  // this same transaction, so a gift the file brought is saved with the file.
+  if (recentGiftsToRecord.length || created || affectedDonorIds.size) {
+    await queueRecentWork((sql, params) => queryTx(txc, sql, params), orgId, jobRunId,
+      recentGiftsToRecord.map(({ credit, ...g }) => ({ ...g, credit: credit || null })),
+      { actorId: importerId, actorName: importerName, thanks: thanksAnswer,
+        touched: [...new Set([...affectedDonorIds, ...donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id))])] });
+    recentQueued = recentGiftsToRecord.length;
+  }
+
   // ── THE ASSERTION. Before this transaction commits, the equations must hold.
   // A throw here rolls the whole import back (db.js withTransaction) and the
   // route answers 409 with the discrepancy named in dollars.
@@ -5445,41 +5671,15 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
 
-  // LIVE-1 — the recent gifts, through the one gift path. The totals of the
-  // people they land on are brought up to date FIRST, so recordGift's own
-  // "is this their first gift" reads the batch's older gifts too: a donor
-  // with a gift from 2019 in this file is not a first-time donor today.
-  if (recentGiftsToRecord.length) {
-    const importToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK — the same day the split above used
-    const gctx = await importGiftContext(orgId);
-    try { await recalcDonorSummaryBatch(recentGiftsToRecord.map(g => g.donorId), orgId); }
-    catch (e) { console.error("[combined-import] pre-recordGift recalc:", e.message); }
-    await forEachByDonor(recentGiftsToRecord, async g => {
-      try {
-        const w = await recordGift({
-          orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
-          campaignId: g.campaignId, notes: g.notes, fundId: g.fundId, paymentMethod: g.paymentMethod,
-          externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
-          importId: runId, history: true, today: importToday,
-          post: false,             // BUILD-83 Part 6: an import never posts to the ledger
-          actorId: importerId, actorName: importerName, source: "csv-import",
-          door: "csv_import", afterChange: false,   // the step runs once for the whole file below
-          ...recentGiftHints(gctx, g.donorId),
-        });
-        if (w.duplicate) { externalIdDupes++; return; }
-        recentRecorded++; giftsInserted++;
-        affectedDonorIds.add(g.donorId);
-        const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
-        if (ty) recentThankYous++;
-        if (g.customFields && Object.keys(g.customFields).length)
-          await run("UPDATE gifts SET custom_fields=? WHERE id=? AND org_id=?", [JSON.stringify(g.customFields), w.gift.id, orgId]);
-        if (g.credit) pendingGiftCredit.push({ giftId: w.gift.id, g });
-      } catch (e) {
-        console.error("[combined-import] recent gift:", e.message);
-        batchErrors.push({ rows: `recent gift ${g.date}`, error: e.message });
-      }
-    });
+  // FIX-37: the recent gifts go through the one gift path BEHIND THE SCREEN
+  // (runRecentWork). Totals for the file's older gifts are brought up to date
+  // here, in the request, so every screen reads them right away.
+  if (affectedDonorIds.size) {
+    try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
+    catch (e) { console.error(`[combined-import] batch recalc failed:`, e.message); }
   }
+  giftsInserted += recentQueued;
+  for (const g of recentGiftsToRecord) affectedDonorIds.add(g.donorId);
 
   // BUILD-83 — the round-trip budget, logged: batch counts are the number that
   // moves when this import is slow on a hosted database.
@@ -5530,12 +5730,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // LIVE-1 · THE ONE AFTER-CHANGE STEP, once for every person the file
   // touched (its totals are the batch recalc the import always ran). History:
   // moving someone into a group by importing them starts no journey.
-  let afterChangeResult = null;
-  {
-    const touched = [...new Set([...affectedDonorIds, ...donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id))])];
-    afterChangeResult = await require("../afterChange").afterChange(orgId, touched,
-      { door: "csv_import", history: true, runTag: runId });
-  }
+  // FIX-37: it runs at the end of the background job, for everyone the run
+  // touched (runRecentWork), so the request does not wait on it.
+  kickRecentWork(orgId, jobRunId);
 
   // Gap 2: Promote donor status — same thresholds as single-gift route
   // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
@@ -5680,8 +5877,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   res.json({ created, giftsInserted, importNotesCreated, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              // LIVE-1 — the recent gifts recordGift wrote, the thank-yous it
              // drafted, and how long the after-change step took.
-             recentRecorded, thankYouDrafts: recentThankYous,
-             afterChange: afterChangeResult ? { donors: afterChangeResult.donors, ms: afterChangeResult.ms } : null,
+             // FIX-37: the recent gifts are queued, not yet written: the
+             // screen follows them on GET /imports/:id/progress.
+             recentQueued, importId: jobRunId, thanks: thanksAnswer,
              memberships: membershipsImported, // BUILD-101 Part 6
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
@@ -7934,21 +8132,29 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // gifts can carry it, then hands it back here. Validated to the same shape
   // this route would have generated, and refused if the org already used it,
   // so a replayed request cannot overwrite a recorded run.
+  // FIX-37: the answer the import ran under. The job holds the one the
+  // gifts were actually written with; the client's copy is the fallback.
+  const thanksFrom = async runIdOf => {
+    const [j] = runIdOf ? await query(`SELECT thanks FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [runIdOf, orgId]) : [];
+    const a = IT.cleanAnswer(j ? (typeof j.thanks === "string" ? JSON.parse(j.thanks) : j.thanks) : null) || IT.cleanAnswer(b.thanks);
+    return a ? JSON.stringify(a) : null;
+  };
   let id = importId("imp_");
   if (/^imp_[A-Za-z0-9_-]{4,40}$/.test(String(b.id || ""))) {
     const taken = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [String(b.id), orgId]);
     if (taken.length) return res.status(409).json({ error: "run_already_recorded", id: String(b.id) });
     id = String(b.id);
   }
+  const thanksSaved = await thanksFrom(id);
   await run(
     `INSERT INTO imports (id, org_id, name, source_filename, shape, started_at, committed_at,
        rows_in, gifts_created, donors_created, donors_merged, rows_set_aside, rows_errored,
-       dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json, migration_source)
-     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?,?,?,?,?,?,?,?,?)`,
+       dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json, migration_source, thanks_answer)
+     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb)`,
     [id, orgId, name, sourceFilename, shape, started,
      int(b.rowsIn), int(b.giftsCreated), int(b.donorsCreated), int(b.donorsMerged),
      int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
-     act.id, actorName, JSON.stringify(summary), migrationSource]);
+     act.id, actorName, JSON.stringify(summary), migrationSource, thanksSaved]);
   const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
   // MAIL-1: her first real donor file is what turns Steward's mail on for the org.
   await require("../onboarded").stampOnboardedFromImport(query, orgId, id)
@@ -7957,22 +8163,17 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // LIVE-1 · "WHAT THIS TOLD US". Written from the rows this run wrote (its
   // gifts carry the run id, its new people carry it too), and from what the
   // after-change step saw when the file was saved (stamped with the run id).
+  // FIX-37: while the run's recent gifts are still being worked through, the
+  // job writes it when it finishes (writeImportReadoutOnce).
   let readout = null;
-  try {
-    const giftIds = (await query(`SELECT id, donor_id FROM gifts WHERE org_id=? AND import_id=?`, [orgId, id]));
-    const made = (await query(`SELECT id FROM donors WHERE org_id=? AND created_import_id=?`, [orgId, id])).map(r => r.id);
-    if (giftIds.length) {
-      readout = await require("../readout").writeReadout(orgId, {
-        sourceKind: "import", sourceId: id, sourceName: name,
-        giftIds: giftIds.map(g => g.id), donorIds: [...new Set([...giftIds.map(g => g.donor_id), ...made])],
-        stamp: `csv_import:${id}`, today: orgToday(await orgTz(orgId)),   // ORG_TZ_SEAM_OK
-      });
-    }
-  } catch (e) { console.error("[readout] import:", e.message); }
+  try { readout = await writeImportReadoutOnce(orgId, id); }
+  catch (e) { console.error("[readout] import:", e.message); }
+  const [jobNow] = await query(`SELECT status, finished_at FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [id, orgId]);
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
   res.json({ ok: true, id, name, reconciled: findings.length === 0, findings,
-             readout: readout ? { id: readout.id, headline: readout.headline } : null });
+             readout: readout ? { id: readout.id, headline: readout.headline } : null,
+             working: !!(jobNow && recentJobStatus(jobNow) === "running") && !readout });
 }));
 
 
@@ -8075,7 +8276,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
             TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
             committed_at, actor_user_name, rows_in, gifts_created, donors_created,
             donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
-            migration_source
+            migration_source, thanks_answer
        FROM imports WHERE org_id=? ORDER BY committed_at DESC, id DESC LIMIT 200`,
     [req.user.orgId]);
   res.json({
@@ -8096,9 +8297,26 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         // before this build has a source but nothing to compare.
         migrationSource: r.migration_source || null,
         hasMoveReport: !!(summary && summary.moveFile),
+        // FIX-37: what she answered about the last 30 days' thank-yous.
+        thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
       };
     }),
   });
+}));
+
+// FIX-37: how far an import's recent-gift work has got, for the import
+// screen's progress line. Its readout is included once the work is done.
+app.get("/imports/:id/progress", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [j] = await query(`SELECT * FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [req.params.id, orgId]);
+  if (!j) return res.status(404).json({ error: "not_found", message: "No work is running for that import." });
+  const [ro] = recentJobStatus(j) === "done" ? await query(
+    `SELECT id, headline FROM readouts WHERE org_id=? AND source_kind='import' AND source_id=? AND removed_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+    [orgId, req.params.id]) : [];
+  const errors = typeof j.errors === "string" ? JSON.parse(j.errors) : (j.errors || []);
+  res.json({ status: recentJobStatus(j), total: Number(j.total) || 0, done: Math.min(Number(j.done) || 0, Number(j.total) || 0),
+             thankYouDrafts: Number(j.thank_yous) || 0, errors, sentence: recentProgressSentence(j),
+             readout: ro ? { id: ro.id, headline: ro.headline } : null });
 }));
 
 // One run, with the receipt exactly as it was shown.
@@ -8118,6 +8336,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       reconciled: findings.length === 0, findings, notices: importNotices(r),
       migrationSource: r.migration_source || null,
       hasMoveReport: !!(summary && summary.moveFile),
+      thanks: IT.answerSentence(IT.cleanAnswer(r.thanks_answer)) || null,
       summary,
     },
   });
@@ -8928,6 +9147,11 @@ async function stopImportJourneys(orgId, importId, who) {
   if (threadIds.length)
     await run(`UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside'
                 WHERE org_id=? AND id = ANY(?) AND closed_at IS NULL`, [orgId, threadIds]);
+  // FIX-37: and the timeline lines the journeys wrote ("Journey started",
+  // each step it opened) go with them: an undo is as if the file never came,
+  // and a person the file created is otherwise kept alive by those lines.
+  await run(`DELETE FROM interactions WHERE org_id=? AND (id IN (SELECT start_interaction_id FROM cultivation_plans WHERE org_id=? AND id = ANY(?))
+                                                       OR metadata->>'plan_id' = ANY(?))`, [orgId, orgId, ids, ids]);
   await run(`DELETE FROM cultivation_plan_steps WHERE org_id=? AND plan_id = ANY(?)`, [orgId, ids]);
   await run(`DELETE FROM cultivation_plans WHERE org_id=? AND id = ANY(?)`, [orgId, ids]);
   void who;
@@ -8953,6 +9177,9 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
       message: `This ${what} was recorded ${Math.round(ageHours)} hours ago. It reverses as a whole for ${Math.round(windowHours)} hours; after that, correct it gift by gift so the correction is visible on the record.` });
   }
 
+  // FIX-37: undo while the recent-gift work runs: stop it first, so nothing
+  // is written after the undo has read what to remove.
+  await cancelRecentWork(orgId, req.params.id);
   const gifts = await query("SELECT id, donor_id, pledge_id FROM gifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
   const giftIds = gifts.map(g => g.id);
   // LIVE-1 — the journeys this import's gifts started are stopped and taken
@@ -9083,6 +9310,7 @@ app.post("/import-merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (r
 }));
 
 app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
+  markImportInFlight(req.user.orgId, res);   // FIX-37: the background job waits for this request
   const { gifts } = req.body;
   if (!Array.isArray(gifts) || !gifts.length)
     return res.status(400).json({ error: "gifts array required" });
@@ -9223,7 +9451,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   for (let i = toInsert.length - 1; i >= 0; i--) {
     if (!HG.isOldHistory(toInsert[i].date, histToday)) { recentToRecord.unshift(toInsert[i]); toInsert.splice(i, 1); }
   }
-  let recentThankYous = 0;
+  let recentQueued = 0;
+  const jobRunId = runId || importId("imp_");
+  let thanksAnswer = IT.cleanAnswer(req.body.thanks);
+  if (!thanksAnswer) thanksAnswer = { mode: IT.defaultAnswer({ firstImport: await IT.isFirstImport(query, orgId, runId),
+    system: await IT.recognizeSystem(req.body.headers), count: recentToRecord.length }).mode };
 
   // BUILD-72 Part 1 — ONE transaction for the request, SAVEPOINT per batch, and
   // the reconciliation invariant asserted before it commits.
@@ -9295,36 +9527,18 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     }
   }
 
+  // FIX-37: the recent gifts, saved as the background job's work in this
+  // same transaction (see import-combined).
+  await queueRecentWork((sql, params) => queryTx(txc, sql, params), orgId, jobRunId,
+    recentToRecord.map(g => ({ donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
+      campaignId: campaignIdOf(g.campaign), notes: g.notes, fundId: g.fund_id, paymentMethod: g.paymentMethod,
+      externalId: g.externalId || null })),
+    { actorId: importerId, actorName: importerName, thanks: thanksAnswer, touched: [...affectedDonorIds] });
+  recentQueued = recentToRecord.length;
+
   // THE ASSERTION — before commit. A throw rolls the whole import back.
   ledger.assertBalanced();
   }); // end withTransaction
-
-  // LIVE-1 — the recent gifts, through recordGift (see import-combined).
-  if (recentToRecord.length) {
-    const gctx = await importGiftContext(orgId);
-    try { await recalcDonorSummaryBatch([...affectedDonorIds, ...recentToRecord.map(g => g.donorId)], orgId); }
-    catch (e) { console.error("[gift-import] pre-recordGift recalc:", e.message); }
-    await forEachByDonor(recentToRecord, async g => {
-      try {
-        const w = await recordGift({
-          orgId, donorId: g.donorId, amount: g.amount, date: g.date, type: g.type, campaign: g.campaign,
-          campaignId: campaignIdOf(g.campaign), notes: g.notes, fundId: g.fund_id, paymentMethod: g.paymentMethod,
-          externalId: g.externalId || null, conflict: g.externalId ? "external" : undefined,
-          importId: runId, history: true, today: histToday, post: false,
-          actorId: importerId, actorName: importerName, source: "csv-import",
-          door: "csv_import", afterChange: false,
-          ...recentGiftHints(gctx, g.donorId),
-        });
-        if (w.duplicate) { externalIdDupes++; return; }
-        inserted++; affectedDonorIds.add(g.donorId);
-        const [ty] = await query("SELECT 1 FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, w.gift.id]).catch(() => []);
-        if (ty) recentThankYous++;
-      } catch (e) {
-        console.error("[gift-import] recent gift:", e.message);
-        batchErrors.push({ rows: `recent gift ${g.date}`, error: e.message });
-      }
-    });
-  }
 
   // Recalc donor summaries — always full recalc from gifts table, never delta.
   // ONE set-based query (import hang fix), not a per-donor loop.
@@ -9332,8 +9546,11 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     try { await recalcDonorSummaryBatch([...affectedDonorIds], orgId); }
     catch (e) { console.error(`[gift-import] batch recalc failed:`, e.message); }
   }
-  // LIVE-1 · the one after-change step, once for everybody this file touched.
-  await require("../afterChange").afterChange(orgId, [...affectedDonorIds], { door: "csv_import", history: true, runTag: runId });
+  // FIX-37: the recent gifts and the after-change step run behind the
+  // screen (runRecentWork), exactly as for /donors/import-combined.
+  inserted += recentQueued;
+  for (const g of recentToRecord) affectedDonorIds.add(g.donorId);
+  kickRecentWork(orgId, jobRunId);
 
   // Gap 2: Promote donor status — same thresholds as single-gift route
   // (total_giving > 20000 → 'major', > 5000 → 'mid', ELSE keep existing)
@@ -9395,7 +9612,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
     } catch (e) { console.error(`[gift-import] stage inference failed:`, e.message); }
   }
 
-  res.json({ inserted, duplicates: externalIdDupes, invalid, thankYouDrafts: recentThankYous,
+  res.json({ inserted, duplicates: externalIdDupes, invalid, recentQueued, importId: jobRunId, thanks: thanksAnswer,
              donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
              duplicateCandidates, externalIdDupes,
              // BUILD-72 Part 1 — the default is KEEP ALL. Nothing is held back;

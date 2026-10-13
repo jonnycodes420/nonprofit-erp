@@ -57,7 +57,11 @@ const isRecurringGift = g => /recurr|monthly|sustain/i.test(String(g.type || "")
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function sourceWord(kind) { return kind === "import" ? "import" : "read"; }
-function readoutTitle(sourceKind, sourceName, today) {
+// FIX-37: an org's first import is its history arriving, not news: every
+// person in it is "new", so the readout says what the history shows instead.
+const FIRST_IMPORT_TITLE = "What your history shows";
+function readoutTitle(sourceKind, sourceName, today, firstImport = false) {
+  if (firstImport && sourceKind === "import") return FIRST_IMPORT_TITLE;
   const month = MONTHS[Number(String(today).slice(5, 7)) - 1] || "";
   if (sourceKind === "import") return `Your ${month} import`;
   return `Your ${month} ${sourceName || "read"}`.trim();
@@ -67,7 +71,7 @@ function readoutTitle(sourceKind, sourceName, today) {
 // plain data. `gifts` is every gift of every person concerned (new and old);
 // `newIds` the ids this run wrote.
 function computeLines({ gifts, newIds, names, today, medianCents, crossings = [], lateIds = [], stoppedRows = [],
-                        sourceKind = "import", groupNames = {} }) {
+                        sourceKind = "import", groupNames = {}, firstImport = false }) {
   const word = sourceWord(sourceKind);
   const recentFrom = orgTime.addDays(today, -RECENT_DAYS);
   const yr = Number(String(today).slice(0, 4));
@@ -121,8 +125,11 @@ function computeLines({ gifts, newIds, names, today, medianCents, crossings = []
   // "Now late" is about people Steward already knew: someone new in this file
   // was never on time here, so a late rhythm in their own history is not news
   // this file brought.
-  const isNew = new Set(out.new_donors.map(r => r.donorId));
+  // On a first import everyone is new, and their rhythm comes from the dates
+  // in the file itself, so lateness is kept and "new donors" is left out.
+  const isNew = firstImport ? new Set() : new Set(out.new_donors.map(r => r.donorId));
   const late = new Set(lateIds.filter(id => !isNew.has(id)));
+  if (firstImport) { out.new_donors = []; out.new_above_median = []; }
   for (const id of late) out.now_late.push({ donorId: id });
   const seenCross = new Set();
   for (const c of crossings) {
@@ -231,7 +238,7 @@ async function stoppedRecurring(orgId, { asOf, today }) {
 // the after-change step's own result; for a chunked import they are read back
 // by the run's stamp instead (`stamp`).
 async function writeReadout(orgId, { sourceKind, sourceId, sourceName, giftIds = [], donorIds = [], crossings = null,
-                                     becameLate = null, stamp = null, today, isExample = false }) {
+                                     becameLate = null, stamp = null, today, isExample = false, firstImport = false }) {
   const newIds = new Set(giftIds);
   const people = [...new Set([...donorIds])];
   const giftRows = people.length ? await q(
@@ -271,8 +278,8 @@ async function writeReadout(orgId, { sourceKind, sourceId, sourceName, giftIds =
   const names = Object.fromEntries((allIds.length ? await q(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, allIds]) : [])
     .map(r => [r.id, r.name]));
   const lines = computeLines({ gifts: giftRows, newIds, names, today, medianCents, crossings: crossings || [],
-                               lateIds: becameLate || [], stoppedRows, sourceKind });
-  const title = readoutTitle(sourceKind, sourceName, today);
+                               lateIds: becameLate || [], stoppedRows, sourceKind, firstImport });
+  const title = readoutTitle(sourceKind, sourceName, today, firstImport);
   const id = "ro_" + require("./db").uuid().replace(/-/g, "").slice(0, 14);
   await q(
     `INSERT INTO readouts (id, org_id, source_kind, source_id, title, headline, lines, for_date, is_example, created_by, created_by_name)
@@ -374,4 +381,4 @@ async function whatWorked(orgId) {
 }
 
 module.exports = { ACTOR, KINDS, KIND_ORDER, KIND_NAMES, DISMISS_RUN, GAVE_AFTER_DAYS, RECENT_DAYS, configure,
-  computeLines, writeReadout, shapeReadout, demotedKinds, whatWorked, readoutTitle, headlineOf, stoppedRecurring };
+  computeLines, writeReadout, shapeReadout, FIRST_IMPORT_TITLE, demotedKinds, whatWorked, readoutTitle, headlineOf, stoppedRecurring };

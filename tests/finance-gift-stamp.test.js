@@ -21,7 +21,7 @@
 //   - org-scoped: org B never sees org A's rows
 
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, waitFor } = require("./helpers");
 const { findManualDupes } = require("../scripts/dedupe-finance-gift-stamps");
 
 const ORG_A = "org_gstamp_a", ORG_B = "org_gstamp_b";
@@ -87,6 +87,8 @@ async function run() {
       gifts: [{ donorId: `d_${ORG_A}`, amount: 400, date: today, type: "cash", campaign: "", notes: "" }],
     });
     ok("gift-history import ok", imp.status === 200 || imp.status === 201, imp.status);
+    // FIX-37: a recent imported gift is written behind the screen; wait for it.
+    await waitFor(async () => { const r = await api("GET", `/imports/${imp.body?.importId}/progress`, a); return r.body?.status === "done" ? r : null; }, { timeout: 20000 }).catch(() => null);
     const gRows = await q(`SELECT id FROM gifts WHERE org_id=$1 AND amount=400`, [ORG_A]);
     ok("the imported gift row itself lands", gRows.length === 1, gRows.length);
     const rows = await q(`SELECT source, gift_id FROM fin_transactions WHERE org_id=$1 AND source='import'`, [ORG_A]);

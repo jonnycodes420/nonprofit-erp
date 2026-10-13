@@ -27,7 +27,7 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, importWorkSettled } = require("./helpers");
 
 const ORG = "org_groups2", ORG2 = "org_groups2b";
 const TABLES = ["audiences", "gifts", "interactions", "tasks", "threads", "import_merges", "imports", "donors", "fin_transactions", "fin_funds", "accounts", "budgets", "users"];
@@ -74,6 +74,8 @@ async function importThousand(tok) {
     const r = await api("POST", "/donors/import-combined", tok, { donors: slice, gifts: cg, identityResolved: true });
     if (r.status !== 200) throw new Error("import chunk " + r.status + " " + JSON.stringify(r.body).slice(0, 200));
   }
+  // FIX-37: the recent gifts are written behind the screen; wait for them.
+  await importWorkSettled();
   return built.donors.length;
 }
 
