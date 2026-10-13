@@ -15,6 +15,10 @@ const pool = new Pool({
   // which would leave the odd connection unmarked. A startup option is applied
   // by the server before the connection is handed over, every time.
   options: "-c steward.app_connection=on",
+  // SCALE-1: pg's default of 10 connections was busy 10 of 10 for the whole
+  // 20-user load run. Raise it per process with DB_POOL_MAX only as far as the
+  // database's own connection limit allows across every replica and the worker.
+  max: Math.max(2, Number(process.env.DB_POOL_MAX) || 10),
 });
 
 // ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────

@@ -74,6 +74,25 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Never set a test-only seam in production** (`TEST_MODE`, `DISABLE_RATE_LIMIT`, `*_API_BASE`,
   `RESEND_BASE_URL`, `DISABLE_BACKGROUND_TICKS`, `SESSION_CACHE_TTL_MS=0`). A test-only route checks
   `testMode()`, a function, and 404s otherwise. (BUILD-45, BUILD-84, BUILD-90)
+- **Background work is a job on the queue, never a timer in the web process.** A periodic job is
+  `every(name, everyMs, run, firstMs)` in routes/jobs.js (or `jobQueue.define` beside its code); work
+  for one org or one connection is `jobQueue.enqueue({ name, orgId, key })` with a `handle(name, fn)`.
+  A job's `run` returns its promise and lets errors through, so the queue can retry it. Never add a
+  `setInterval` that writes: a second replica would run it twice. (SCALE-1)
+- **`STEWARD_PROCESS` decides the role:** unset runs the web and the jobs in one process (how prod
+  ran before the worker service), `web` runs no jobs, `worker` runs the scheduler and the jobs. Code
+  must work in all three. (SCALE-1)
+- **Nothing a request reads may live only in one process's memory** when a second replica would read
+  it differently: rate limits (`rateLimitStore.js`, Postgres), OAuth state (`oauth_states`), an
+  import in flight (`import_in_flight`), an alert's hourly mark (`ops_alert_marks`). Pure caches of
+  data that is the same everywhere are fine. The two general per-request ceilings stay in memory on
+  purpose and each replica takes `1/WEB_REPLICAS` of them. (SCALE-1)
+- **Every model call is counted against the org's daily AI budget** in `aiClient.requireAi`
+  (`AI_DAILY_CALLS_PER_ORG`, default 500). Past it the call is refused like AI off (`ai_budget`, 429),
+  so the route's non-AI path answers. (SCALE-1)
+- **Measure scale with the load harness, never against prod.** `scripts/load/` seeds 200 orgs on a
+  loopback cluster (`seed-many.js`), stands in for every provider (`standins.js`) and measures screens,
+  jobs and imports (`measure.js`, `import-drive.js`); `npm run test:load` is the pass/fail. (SCALE-1)
 - **A screen's numbers are one read, not one read per number.** Prod's database is a round trip
   of about 20 ms away, so 50 small queries is a second before any of them is slow. Batch a
   screen's figures into one statement (`figureSources.groupFigureValues` is the pattern) and

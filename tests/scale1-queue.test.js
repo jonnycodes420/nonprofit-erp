@@ -32,6 +32,7 @@ async function boot(role, extra = {}) {
   const child = spawn(process.execPath, ["server.js"], {
     cwd: ROOT, stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, PORT: String(port), STEWARD_PROCESS: role, TEST_MODE: "1", DISABLE_BACKGROUND_TICKS: "1",
+      JWT_SECRET: process.env.JWT_SECRET || "local-test-secret", RESEND_API_KEY: process.env.RESEND_API_KEY || "re_dummy_local", SENTRY_DSN: "",
       WORKER_CONCURRENCY: "4", JOB_ORG_CAP: "2", JOB_POLL_MS: "100", JOB_BACKOFF_MS: "50",
       XERO_CLIENT_ID: "scale1-xero-client", XERO_CLIENT_SECRET: "scale1-xero-secret",
       XERO_REDIRECT_URI: "http://localhost:4173/oauth/xero/landing", ...extra },

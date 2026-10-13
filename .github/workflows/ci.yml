@@ -355,6 +355,16 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --service nonprofit-erp --ci
 
+      # SCALE-1: the worker service gets the same build once it exists. Until
+      # Jonathan creates it and sets the repo variable RAILWAY_WORKER_SERVICE
+      # (NEEDS-JONATHAN 0-SCALE-1), this step is skipped and the web service
+      # keeps running the jobs itself.
+      - name: Deploy the worker to Railway
+        if: ${{ vars.RAILWAY_WORKER_SERVICE != '' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service "${{ vars.RAILWAY_WORKER_SERVICE }}" --ci
+
       - name: Verify prod is healthy at this commit (timeout 5 min)
         run: |
           echo "Polling /health for status:ok + buildSha == $GITHUB_SHA …"

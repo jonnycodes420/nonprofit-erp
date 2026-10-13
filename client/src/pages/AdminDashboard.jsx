@@ -224,6 +224,64 @@ const SH = {
 };
 
 // ── Overview page ──────────────────────────────────────────────────────────
+// SCALE-1 · A background job that failed five times has stopped. It is
+// listed here with its org and its last error, and Retry puts it back on the
+// queue with its tries reset (POST /admin/jobs/:id/retry).
+function FailedJobs() {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const load = useCallback(() => adminFetch("/admin/jobs/failed").then(setData).catch(console.error), []);
+  useEffect(() => { load(); }, [load]);
+  const retry = async (id) => {
+    setBusy(id);
+    try { await adminFetch(`/admin/jobs/${id}/retry`, { method: "POST" }); await load(); }
+    catch (e) { rethrowProgrammerError(e); console.error(e); }
+    finally { setBusy(null); }
+  };
+  if (!data) return null;
+  const q = data.health && data.health.queue || {};
+  return (
+    <div data-testid="admin-failed-jobs" style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "20px 24px 12px" }}>
+        <div style={SH}>Background jobs</div>
+        <div style={{ fontSize: 13, color: A.secondary }}>
+          {q.waiting ?? 0} waiting, {q.running ?? 0} running, {q.failedLastHour ?? 0} failed tries in the last hour.
+          {" "}A job that fails five times stops and is listed below until it is retried.
+        </div>
+      </div>
+      {data.jobs.length === 0 ? (
+        <div style={{ padding: "0 24px 20px", fontSize: 13, color: A.muted }}>No job has stopped.</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: A.surface }}>
+              {["Job", "Org", "Error", "Stopped", ""].map(h => (
+                <th key={h} style={{ fontSize: 10, fontWeight: 700, color: A.muted, letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 20px", textAlign: "left" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {data.jobs.map(j => (
+              <tr key={j.id} style={{ borderBottom: `1px solid ${A.borderSub}` }}>
+                <td style={{ padding: "12px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{j.name}</td>
+                <td style={{ padding: "12px 20px", fontSize: 13, color: A.secondary }}>{j.org_name || j.org_id || "Every org"}</td>
+                <td style={{ padding: "12px 20px", fontSize: 12, color: A.secondary, maxWidth: 420 }}>{j.last_error}</td>
+                <td style={{ padding: "12px 20px", fontSize: 12, color: A.muted, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmtDate(j.failed_at)}</td>
+                <td style={{ padding: "12px 20px" }}>
+                  <button type="button" disabled={busy === j.id} onClick={() => retry(j.id)}
+                    style={{ background: A.green, color: "#fff", border: "none", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {busy === j.id ? "Retrying" : "Retry"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 function Overview({ metrics, orgs }) {
   const [open, setOpen] = useState(null);
   if (!metrics) return <div style={{ color: A.muted, padding: 40, fontSize: 13 }}>Loading metrics…</div>;
@@ -328,6 +386,8 @@ function Overview({ metrics, orgs }) {
           </tbody>
         </table>
       </div>
+
+      <FailedJobs />
     </div>
   );
 }
