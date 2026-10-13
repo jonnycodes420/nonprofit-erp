@@ -235,16 +235,38 @@ async function fireStripe(evtId, piId, cents, email, name) {
 
   // ── §4 · the nightly comparison ─────────────────────────────────────────
   console.log("\n§4 · the nightly comparison");
-  await readAll(tok, ["/metrics/stewardship-summary?scope=all"]);   // settle the day's snapshot after §3's gifts
-  await forgetStore();
-  await readAll(tok);
-  const c1 = await fetch(BASE + "/org-summary/check", { method: "POST", headers: { authorization: `Bearer ${tok}` } });
-  const r1 = c1.status === 200 ? await c1.json() : {};
+  // §3's gifts leave work behind (the scores, debounced; the queue's
+  // refresh). Each is a real change, and the check rightly skips an answer a
+  // change has overtaken, so it is run in a quiet moment, and again if a
+  // write still lands while it runs.
+  const quiet = async () => {
+    let last = await changeMark(), since = Date.now();
+    for (const t0 = Date.now(); Date.now() - t0 < 60000 && Date.now() - since < 3000;) {
+      await new Promise(r => setTimeout(r, 250));
+      const m = await changeMark();
+      if (String(m) !== String(last)) { last = m; since = Date.now(); }
+    }
+  };
+  let c1, r1 = {};
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await quiet();
+    await readAll(tok, ["/metrics/stewardship-summary?scope=all"]);   // settle the day's snapshot after §3's gifts
+    await forgetStore();
+    await readAll(tok);
+    c1 = await fetch(BASE + "/org-summary/check", { method: "POST", headers: { authorization: `Bearer ${tok}` } });
+    r1 = c1.status === 200 ? await c1.json() : {};
+    if (c1.status !== 200 || r1.compared >= STORED.length) break;
+  }
   ok("§4 the comparison runs and compares every stored answer", c1.status === 200 && r1.compared >= STORED.length, r1);
   ok("§4 it finds no difference", c1.status === 200 && r1.differences.length === 0, r1.differences);
-  await q(`UPDATE org_summary SET body = regexp_replace(body, '[0-9]', '7') WHERE org_key=$1 AND key LIKE 'impact|%'`, [ORG]).catch(() => {});
-  const c2 = await fetch(BASE + "/org-summary/check", { method: "POST", headers: { authorization: `Bearer ${tok}` } });
-  const r2 = c2.status === 200 ? await c2.json() : {};
+  let c2, r2 = {};
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt) { await quiet(); await forgetStore(); await readAll(tok, ["/impact"]); }
+    await q(`UPDATE org_summary SET body = regexp_replace(body, '[0-9]', '7') WHERE org_key=$1 AND key LIKE 'impact|%'`, [ORG]).catch(() => {});
+    c2 = await fetch(BASE + "/org-summary/check", { method: "POST", headers: { authorization: `Bearer ${tok}` } });
+    r2 = c2.status === 200 ? await c2.json() : {};
+    if (c2.status !== 200 || (r2.differences || []).length) break;   // else a change overtook it: plant again
+  }
   ok("§4 a planted difference in a stored answer is found and named", c2.status === 200 && r2.differences.length === 1
     && /impact/.test(r2.differences[0].key) && r2.lines.some(l => /DIFFERENCE/.test(l)), r2.differences);
 
