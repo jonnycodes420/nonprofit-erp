@@ -2690,7 +2690,12 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   // POLISH-2: a donor reads the fund's public name, or "where it's needed
   // most" for the org's general fund. Never the bookkeeping name of that one.
   const fundPublic = fund && String(fund.public_name || "").trim() || null;
-  const generalFund = !!fund && !fundPublic && fundId === (await orgUnrestrictedFundId(orgId).catch(() => null));
+  // The general fund is the org's oldest unrestricted fund, the same probe
+  // ensureOrgLedger reads, but READ ONLY: drafting a letter never heals a
+  // ledger or creates a fund (connect2-sources caught the healing version).
+  const [gen] = fund && !fundPublic
+    ? await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]) : [];
+  const generalFund = !!gen && gen.id === fundId;
   const draftMod = await import("./shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
   // ── FIX-6 follow-up 8 · THE FACTS THE DRAFT MAY REST ON ─────────────────
