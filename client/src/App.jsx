@@ -29,7 +29,7 @@ import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
-import { TopBar, MobileSearch } from "./components/TopBar";
+import { TopBar, MobileSearch, isApplePlatform } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
 import { TABS, BOTTOM_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS, FR_PART_TABS } from "./lib/tabRegistry";
 // NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
@@ -716,7 +716,7 @@ function AppShell() {
         <button data-testid="sidebar-toggle" onClick={toggleSidebar}
           aria-expanded={!sidebarCollapsed} aria-controls="app-sidebar-nav"
           aria-label={sidebarCollapsed?"Expand the sidebar":"Collapse the sidebar"}
-          title={(sidebarCollapsed?"Expand":"Collapse")+" sidebar  (⌘\\)"}
+          title={(sidebarCollapsed?"Expand":"Collapse")+" sidebar  ("+(isApplePlatform()?"⌘\\":"Ctrl \\")+")"}
           style={{...sideBtn(false),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
           <span aria-hidden="true" style={{fontSize:14,width:18,textAlign:"center",color:T.sage600,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
             <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -724,7 +724,7 @@ function AppShell() {
               <line x1={sidebarCollapsed?"5.1":"5.1"} y1="1.75" x2={sidebarCollapsed?"5.1":"5.1"} y2="12.25" stroke="currentColor" strokeWidth="1.3"/>
             </svg>
           </span>
-          {!sidebarCollapsed&&<>Collapse<span style={{marginLeft:"auto",fontSize:11,color:T.sage600,letterSpacing:"0.02em"}}>⌘\</span></>}
+          {!sidebarCollapsed&&<>Collapse<span style={{marginLeft:"auto",fontSize:11,color:T.sage600,letterSpacing:"0.02em"}}>{isApplePlatform()?"⌘\\":"Ctrl \\"}</span></>}
         </button>
       </div>
     </div>

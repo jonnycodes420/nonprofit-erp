@@ -343,7 +343,7 @@ app.post("/volunteer-hub/credentials", requireAuth, checkWriteAccess, wrap(async
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
   const who = actor(req);
   // A NEW ONE SUPERSEDES THE OLD, it does not delete it. When a background
-  // check was last done is a fact about the organisation's diligence, and a
+  // check was last done is a fact about the organization's diligence, and a
   // renewal is not a reason to lose the previous date.
   await run(`UPDATE volunteer_credentials SET superseded_at=NOW()
               WHERE org_id=? AND person_id=? AND kind=? AND superseded_at IS NULL`, [orgId, p.id, v.credential.kind]);
@@ -477,7 +477,7 @@ app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wra
 
   if (personId) {
     const [p] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [personId, orgId]);
-    if (!p) return res.status(404).json({ error: "Not found", message: "That person is not in this organisation." });
+    if (!p) return res.status(404).json({ error: "Not found", message: "That person is not in this organization." });
   }
 
   if (remove) {
@@ -695,7 +695,7 @@ app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
   const o = await publicOpportunity(null, req.params.slug);
   if (!o) return res.status(404).send(publicPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this opportunity has been taken down. Ask the organisation for its current link.</p></div>` }));
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this opportunity has been taken down. Ask the organization for its current link.</p></div>` }));
   const brand = await brandOf(o.org_id);
   const today = orgToday(await orgTz(o.org_id));                   // ORG_TZ_SEAM_OK
   const slots = await query(
@@ -725,7 +725,7 @@ app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
       <p class="small">${escapeHtml(s.sentence)}</p>
       ${cta}
     </div>`;
-  }).join("") : `<div class="card"><p class="muted">No dates are up yet. Check back, or ask the organisation when the next one is.</p></div>`;
+  }).join("") : `<div class="card"><p class="muted">No dates are up yet. Check back, or ask the organization when the next one is.</p></div>`;
 
   const needs = [];
   if (o.requires_waiver) needs.push("a signed waiver");
@@ -767,7 +767,7 @@ app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
       <h1>${escapeHtml(s.full ? "Join the waiting list" : "Sign up")}</h1>
       <p class="muted">${escapeHtml(o.name)} · ${escapeHtml(s.when)}</p>
       <p class="small">${escapeHtml(s.sentence)}</p>
-      ${s.full ? `<div class="ok">This shift is full. Sign up and you go on the waiting list; if somebody drops out, the first person waiting takes the place and the organisation will be in touch.</div>` : ""}
+      ${s.full ? `<div class="ok">This shift is full. Sign up and you go on the waiting list; if somebody drops out, the first person waiting takes the place and the organization will be in touch.</div>` : ""}
       <form method="post" action="/volunteer/${escapeHtml(o.slug)}/signup">
         <input type="hidden" name="slot" value="${escapeHtml(s.id)}">
         <div class="hp" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
@@ -778,7 +778,7 @@ app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
         <label for="no">Anything we should know (optional)</label><textarea id="no" name="note" maxlength="500"></textarea>
         <button class="btn" type="submit">${s.full && !roleChoice ? "Put me on the waiting list" : "Sign me up"}</button>
       </form>
-      <p class="small" style="margin-top:14px">Your details go to ${escapeHtml(brand.displayName || "the organisation")} and nowhere else. No account, no password.</p>
+      <p class="small" style="margin-top:14px">Your details go to ${escapeHtml(brand.displayName || "the organization")} and nowhere else. No account, no password.</p>
     </div>` }));
 }));
 
@@ -824,7 +824,7 @@ app.post("/volunteer/:slug/signup", donateLimiter, express.urlencoded({ extended
   const body = r.already
     ? `<p>You were already ${r.status === "waitlisted" ? "on the waiting list" : "signed up"} for this one.</p>`
     : r.status === "waitlisted"
-      ? `<p>You are on the waiting list. If somebody drops out, the first person waiting takes the place and ${escapeHtml(brand.displayName || "the organisation")} will be in touch.</p>`
+      ? `<p>You are on the waiting list. If somebody drops out, the first person waiting takes the place and ${escapeHtml(brand.displayName || "the organization")} will be in touch.</p>`
       : `<p>You are signed up.</p>`;
   res.send(thanks(body + `<p class="small">Your shifts, in one place: <a href="${escapeHtml(link)}">open your volunteer page</a>. Keep the link; it works for thirty days.</p>`));
 }));
@@ -919,7 +919,7 @@ app.get("/volunteer/me", donateLimiter, wrap(async (req, res) => {
   }
   if (!link) return res.status(404).send(publicPage({ title: "Link expired",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>This link has expired.</h1><p class="muted">Volunteer links last ${VOL_LINK_DAYS} days. Ask the organisation for a new one.</p></div>` }));
+    body: `<div class="card"><h1>This link has expired.</h1><p class="muted">Volunteer links last ${VOL_LINK_DAYS} days. Ask the organization for a new one.</p></div>` }));
   const page = await myPage(link.org_id, link.person_id);
   if (!page) return res.status(404).send(publicPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
@@ -1012,7 +1012,7 @@ app.post("/volunteer/me/hours", donateLimiter, express.urlencoded({ extended: fa
 // Steward records WHAT they agreed to (a hash of the words), who typed their
 // name, when, and from where. An org that changes its waiver text does not
 // silently change what past volunteers signed.
-const DEFAULT_WAIVER = `I am taking part as a volunteer of my own free will. I will follow the organisation's instructions and safety directions. I understand that volunteering may involve physical activity and I confirm I am fit to take part. I agree that the organisation may contact me about the shifts I have signed up for.`;
+const DEFAULT_WAIVER = `I am taking part as a volunteer of my own free will. I will follow the organization's instructions and safety directions. I understand that volunteering may involve physical activity and I confirm I am fit to take part. I agree that the organization may contact me about the shifts I have signed up for.`;
 
 app.get("/volunteer/me/waiver", donateLimiter, wrap(async (req, res) => {
   const link = await readMagicLink(String(req.query.t || ""));
@@ -1075,7 +1075,7 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
     const decision = await orgMaySendEmail(orgId);
     if (!decision.send) {
       return res.json({ url, sent: false,
-        message: `Here is the link. Steward did not email it: ${decision.reason || "this organisation has email turned off"}.` });
+        message: `Here is the link. Steward did not email it: ${decision.reason || "this organization has email turned off"}.` });
     }
     if (!p.email) return res.json({ url, sent: false, message: "Here is the link. There is no email address on this record." });
     // FIX-14 Part 4: the same per-person check as donor mail (deceased,
@@ -1346,7 +1346,7 @@ app.get("/volunteer-hub/report", requireAuth, wrap(async (req, res) => {
     byProgram: byProgram.map(r => ({ program: r.program, hours: Number(r.h) / 100, shifts: r.n, rows: "program:" + r.program })),
     byMonth: byMonth.map(r => ({ month: r.month, hours: Number(r.h) / 100, shifts: r.n, rows: "month:" + r.month })),
     definitions: {
-      total: `Every hour on a shift dated between ${from} and ${to}, in your organisation's time zone. Hours come from a check-out, from the coordinator, from the volunteer's own page, or from an import.`,
+      total: `Every hour on a shift dated between ${from} and ${to}, in your organization's time zone. Hours come from a check-out, from the coordinator, from the volunteer's own page, or from an import.`,
       program: "The opportunity's program where the hours came from a shift somebody was checked out of, and the role written on the shift otherwise.",
       person: "One row per person, whether or not they also give.",
     },
@@ -1434,7 +1434,7 @@ app.get("/volunteer-hub/crossover", requireAuth, wrap(async (req, res) => {
   }
   const orgId = req.user.orgId;
   const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
-  const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "your organisation");
+  const orgName = await donorFacingOrgName(orgId, (org && org.name) || "").catch(() => (org && org.name) || "your organization");
   const V = `d.person_types @> '["volunteer"]'::jsonb`;
   const [both] = await query(
     `SELECT COUNT(*)::int c FROM donors d
@@ -1533,7 +1533,7 @@ app.patch("/volunteer-hub/settings", requireAuth, requireAdmin, checkWriteAccess
   res.json({ ok: true, remindersEnabled: !!o.volunteer_reminders_enabled,
     message: o.volunteer_reminders_enabled
       ? (o.is_demo_org === true
-          ? "Turned on, and nothing will be sent: this is the demonstration organisation and it never mails anybody."
+          ? "Turned on, and nothing will be sent: this is the demonstration organization and it never mails anybody."
           : "Turned on. A reminder goes out the day before a shift, to the people confirmed on it, once each.")
       : "Turned off. Steward will not write to your volunteers." });
 }));
@@ -2158,7 +2158,7 @@ app.get("/volunteer-with/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const o = await orgBySlugPublic(req.params.orgSlug);
   const rec = o ? await recruitmentOf(o.id) : null;
   if (!o || !rec.published) return res.status(404).send(publicPage({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">Ask the organisation for its current link.</p></div>` }));
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">Ask the organization for its current link.</p></div>` }));
   const brand = await brandOf(o.id);
   const today = orgToday(await orgTz(o.id));                       // ORG_TZ_SEAM_OK
   const opps = await query(
@@ -2250,8 +2250,9 @@ app.post("/volunteer-with/:orgSlug/apply", donateLimiter, express.urlencoded({ e
   if (!o || !rec.published) return res.status(404).send("Not found");
   const brand = await brandOf(o.id);
   const b = req.body || {};
-  const thanks = publicPage({ title: "Thank you", brand, body: `<div class="card"><h1>Thank you.</h1>
-    <p>Your application is with ${escapeHtml(brand.displayName || o.name)}. Somebody there reads every one and will be in touch.</p>
+  // POLISH-1 — the line the volunteer sees: she is in, and when to expect them.
+  const thanks = publicPage({ title: "You're in", brand, body: `<div class="card" data-testid="vol-apply-thanks"><h1>You're in.</h1>
+    <p>${escapeHtml(brand.displayName || o.name)} will be in touch this week.</p>
     <p class="small"><a href="/volunteer-with/${escapeHtml(o.org_slug)}">Back to the volunteer page</a></p></div>` });
   if (String(b.website || "").trim()) return res.send(thanks);       // the honeypot: thanked, nothing written
   const name = String(b.name || "").trim().slice(0, 200);

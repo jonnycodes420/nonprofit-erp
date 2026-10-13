@@ -432,7 +432,8 @@ function SignupView() {
     setBusy(true); setMsg("");
     try {
       const r = await apiFetch("/volunteer-hub/signup-link/regenerate", { method: "POST", body: "{}" });
-      setLink(r); setConfirming(false); setMsg("New link made. The old one no longer works.");
+      // A page link stays the one to share; only the standing link beside it changes.
+      setLink(l => (l && l.kind === "page" ? { ...l, standingUrl: r.url } : r)); setConfirming(false); setMsg("New link made. The old one no longer works.");
     } catch (e) { setMsg(errorMessage(e, "The new link was not made.")); }
     setBusy(false);
   };
@@ -444,21 +445,30 @@ function SignupView() {
     <div style={card} data-testid="vol-signup">
       <div style={{ ...eyebrow, marginBottom: 8 }}>Your volunteer sign-up link</div>
       <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.6, marginBottom: 12, maxWidth: 640 }}>
-        Put this on your website, in a newsletter, or on a poster. Whoever fills it in joins your roster as a Volunteer, on one record: if their email is already here, that person gains the Volunteer role.
+        {link && link.kind === "page"
+          ? "Put this on your website, in a newsletter, or on a poster. It opens your recruitment page, with a short form. Whoever applies waits in Pending applications, and approving them puts them on one record: if their email is already here, that person gains the Volunteer role."
+          : "Put this on your website, in a newsletter, or on a poster. Whoever fills it in joins your roster as a Volunteer, on one record: if their email is already here, that person gains the Volunteer role."}
       </div>
       {link && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <input readOnly value={link.url} aria-label="Sign-up link" onFocus={e => e.target.select()} style={{ ...inp, flex: "1 1 260px", minWidth: 0 }} />
+          <input readOnly value={link.url} aria-label="Sign-up link" data-testid="vol-signup-url" onFocus={e => e.target.select()} style={{ ...inp, flex: "1 1 260px", minWidth: 0 }} />
           <button onClick={copy} style={btnPrimary}>Copy link</button>
         </div>
       )}
-      {link && <div style={{ fontSize: 12, color: T.ink3, marginTop: 10, lineHeight: 1.6 }}>{link.sentence} What they write about when they can help lands in their internal notes.</div>}
+      {link && link.expirySentence && <div data-testid="vol-signup-expiry" style={{ fontSize: 12.5, color: T.ink, marginTop: 10, fontWeight: 600 }}>{link.expirySentence}</div>}
+      {link && <div style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.6 }}>{link.sentence}{link.kind === "page" ? "" : " What they write about when they can help lands in their internal notes."}</div>}
+      {link && link.kind === "page" && link.standingUrl && (
+        <div style={{ fontSize: 12, color: T.ink3, marginTop: 12, lineHeight: 1.6 }}>
+          No recruitment page? A standing link skips the application and puts people straight on your roster:{" "}
+          <span style={{ wordBreak: "break-all", color: T.ink2 }}>{link.standingUrl}</span>
+        </div>
+      )}
       {link && !confirming && (
-        <button data-testid="vol-signup-regenerate" onClick={() => setConfirming(true)} style={{ ...btnQuiet, marginTop: 12 }}>Make a new link</button>
+        <button data-testid="vol-signup-regenerate" onClick={() => setConfirming(true)} style={{ ...btnQuiet, marginTop: 12 }}>{link.kind === "page" ? "Make a new standing link" : "Make a new link"}</button>
       )}
       {link && confirming && (
         <div data-testid="vol-signup-confirm" style={{ marginTop: 12, padding: "12px 14px", border: "1px solid " + T.bg3, borderRadius: 10, fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
-          The link you have shared will stop working, everywhere it is posted. Anyone who opens it will be asked for your current link.
+          {link.kind === "page" ? "The standing link will stop working" : "The link you have shared will stop working"}, everywhere it is posted. Anyone who opens it will be asked for your current link.
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
             <button data-testid="vol-signup-regenerate-confirm" disabled={busy} onClick={regenerate} style={btnPrimary}>{busy ? "Making it…" : "Make a new link"}</button>
             <button onClick={() => setConfirming(false)} style={btnQuiet}>Keep this link</button>

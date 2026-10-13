@@ -114,7 +114,18 @@ const GROUP_TOP = 3;
 // was written inside TopBar, which a phone never shows, so on a phone nothing
 // could be searched for and Auctions, Peer-to-peer and Memberships could not
 // be found. Same server search, same quick-nav list, same rows.
-function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = "Search people, gifts, notes, meetings… ⌘K" }) {
+// POLISH-1 — the key a visitor presses to open search, by THEIR platform:
+// ⌘K on a Mac, iPhone or iPad, Ctrl K everywhere else. The listener accepts
+// both on every platform; only the words on the screen differ.
+export function isApplePlatform(nav = typeof navigator !== "undefined" ? navigator : null) {
+  if (!nav) return false;
+  const p = (nav.userAgentData && nav.userAgentData.platform) || nav.platform || nav.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(p);
+}
+export const searchShortcutLabel = (nav) => (isApplePlatform(nav) ? "⌘K" : "Ctrl K");
+const OPEN_EVENT = "steward:search-open";
+
+function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked, placeholder = `Search people, gifts, notes, meetings… ${searchShortcutLabel()}` }) {
   const [q,setQ] = useState("");
   const [results,setResults] = useState(null);   // [{kind,id,title,…}] | null
   const [more,setMore] = useState({});           // server kind -> it has more than it sent
@@ -123,6 +134,7 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
   const [sel,setSel] = useState(0);
   const rootRef = useRef(null);
   const seqRef = useRef(0);
+  const movedRef = useRef(false);
 
   useEffect(()=>{
     const onDown = e => { if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false); };
@@ -150,7 +162,9 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
 
   const navMatches = useMemo(()=>{
     const term = q.trim().toLowerCase();
-    if (!term) return [];
+    // POLISH-1: an empty box that has been opened (a click, ⌘K or Ctrl K)
+    // shows where it can take her, instead of nothing at all.
+    if (!term) return QUICK_NAV;
     return QUICK_NAV.filter(a=>a.keywords.includes(term)||a.label.toLowerCase().includes(term));
   },[q]);
 
@@ -210,14 +224,26 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
     return out;
   },[results,more,expanded,navMatches,onNavigate]);
 
-  const showDrop = open && q.trim().length>0 && (flat.length>0 || (q.trim().length>=2 && results!==null));
+  const empty = q.trim().length===0;
+  const showDrop = open && (empty || flat.length>0 || (q.trim().length>=2 && results!==null));
+
+  // POLISH-1 — ⌘K / Ctrl K opens the list even when the box already has the
+  // focus (focusing a focused field fires no focus event).
+  useEffect(()=>{
+    const el = inputRef.current;
+    if (!el) return undefined;
+    const on = () => setOpen(true);
+    el.addEventListener(OPEN_EVENT, on);
+    return ()=>el.removeEventListener(OPEN_EVENT, on);
+  },[inputRef]);
 
   const onKeyDown = e => {
     if (e.key==="Escape") { setOpen(false); inputRef.current?.blur(); return; }
     if (!flat.length) return;
-    if (e.key==="ArrowDown") { e.preventDefault(); setSel(s=>(s+1)%flat.length); setOpen(true); }
-    else if (e.key==="ArrowUp") { e.preventDefault(); setSel(s=>(s-1+flat.length)%flat.length); }
-    else if (e.key==="Enter") { e.preventDefault(); pick(flat[sel]||flat[0]); }
+    if (e.key==="ArrowDown") { e.preventDefault(); movedRef.current = true; setSel(s=>(s+1)%flat.length); setOpen(true); }
+    else if (e.key==="ArrowUp") { movedRef.current = true; e.preventDefault(); setSel(s=>(s-1+flat.length)%flat.length); }
+    // An empty box only goes somewhere once she has arrowed to a row.
+    else if (e.key==="Enter") { e.preventDefault(); if (q.trim() || movedRef.current) pick(flat[sel]||flat[0]); }
   };
 
   // Grouped render preserving flat indices
@@ -237,20 +263,23 @@ function GlobalSearch({ onNavigate, inputRef, style, autoFocus = false, onPicked
         className="topbar-search"
         data-testid="global-search"
         value={q}
-        onChange={e=>{setQ(e.target.value);setOpen(true);}}
+        onChange={e=>{setQ(e.target.value);setOpen(true);movedRef.current=false;}}
         onFocus={()=>setOpen(true)}
+        onClick={()=>setOpen(true)}
+        aria-keyshortcuts={isApplePlatform() ? "Meta+K" : "Control+K"}
         onKeyDown={onKeyDown}
         autoFocus={autoFocus}
         placeholder={placeholder}
         style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"7px 12px 7px 30px",color:T.inkInverse,fontSize:13,outline:"none",fontFamily:"inherit"}}
       />
       {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
-        {flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
+        {empty && <div data-testid="search-hint" style={{padding:"8px 14px 4px",fontSize:12.5,color:"rgba(240,237,230,0.7)"}}>Type a name, a gift, a note or a meeting.</div>}
+        {!empty && flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
         {groups.map(gr=><div key={gr.name}>
           <div style={{padding:"6px 14px 3px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
           {gr.items.map(item=>{
             flatIdx++;
-            const active = flatIdx===sel;
+            const active = flatIdx===sel && (!empty || movedRef.current);
             const i = flatIdx;
             // FIX-13 Part 6 — a person or grant result is a real link, so
             // Cmd/Ctrl/middle-click opens it in a new tab. A plain press still
@@ -328,6 +357,7 @@ export function TopBar({ auth, logout, onNavigate, screen }) {
         if (!r.width || !r.height) return; // hidden (mobile shell)
         e.preventDefault();
         el.focus(); el.select();
+        el.dispatchEvent(new Event(OPEN_EVENT));
       }
     };
     window.addEventListener("keydown",onKey);
