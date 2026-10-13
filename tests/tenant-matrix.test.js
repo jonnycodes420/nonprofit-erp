@@ -442,6 +442,7 @@ function bResolver(routePath, param) {
   }
   const byParam = {
     qid: "q1",   // PARITY-3: a question on an application
+    vid: `gpv_${B}`,   // GIVE-EDIT-1: a kept version of a giving page
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",
     // BUILD-99 (major gifts) Part 2 — a portfolio is READ by officer id, so the
