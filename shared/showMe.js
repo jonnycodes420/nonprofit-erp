@@ -392,7 +392,7 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaig
   if (raw.eventGuest && !EVENT_GUEST_WORDS[raw.eventGuest]) return { ok: false, refused: "eventGuest" };
   const meaningful = Object.keys(raw).filter(k => k !== "notDeceased");
   if (!meaningful.length && spec.withAsk) return { ok: false, refused: "who to ask" };
-  if (!meaningful.length) return { ok: false, refused: "nothing Steward recognised" };
+  if (!meaningful.length) return { ok: false, refused: "nothing Steward recognized" };
   const n = normalizeRules({ ...raw, notDeceased: "1" });
   if (!n.ok) return { ok: false, refused: n.errors[0] };
   // A value normalizeRules dropped (a "monthly" of "yes") is a filter that

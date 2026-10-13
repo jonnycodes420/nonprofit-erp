@@ -1255,7 +1255,7 @@ async function recordGift(o) {
           await onPledgeSettled(orgId, inst.pledge_id).catch(e => console.error("[pledge] settle:", e.message));
         }
       }
-    } catch (e) { console.error("[pledge] instalment auto-apply:", e.message); }
+    } catch (e) { console.error("[pledge] installment auto-apply:", e.message); }
   } else if (o.pledgeId) {
     await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
   }
@@ -1499,8 +1499,8 @@ async function checkGiftExtras(orgId, hardDonorId, giftCents, raw = {}) {
   if (trib) {
     const type = GC.TRIBUTE_TYPES.includes(trib.type) ? trib.type : GC.normaliseTributeType(trib.type);
     const name = String(trib.name || "").trim().slice(0, 200);
-    if (!type) errors.push("a tribute is in honour of someone or in memory of someone");
-    else if (!trib.donorId && !name) errors.push("a tribute names the person it honours");
+    if (!type) errors.push("a tribute is in honor of someone or in memory of someone");
+    else if (!trib.donorId && !name) errors.push("a tribute names the person it honors");
     else out.tribute = {
       type, donorId: trib.donorId ? String(trib.donorId) : null, name,
       notifyName: String(trib.notifyName || "").trim().slice(0, 200) || null,
@@ -2257,7 +2257,7 @@ const SKIP_LISTED_REASONS = {
   no_external_id: "The provider sent no id for this row, so Steward could not be sure it would not be read twice.",
   bad_date: "The date on this row could not be read, and Steward never guesses a date.",
   bad_amount: "The amount on this row could not be read as money.",
-  bad_status: "The provider gave this row a status Steward does not recognise.",
+  bad_status: "The provider gave this row a status Steward does not recognize.",
   fee_exceeds_gross: "The fee on this row is larger than the gift, which means the provider's figures are the wrong way round.",
 };
 const SKIPPED_KEPT = 100;
@@ -4465,7 +4465,7 @@ async function bulkSendAddressGate(orgId) {
   return {
     ok: false,
     reason: "no_mailing_address",
-    message: "Every bulk email has to carry your organisation's mailing address — it is the law for " +
+    message: "Every bulk email has to carry your organization's mailing address — it is the law for " +
              "commercial email, and Gmail and Yahoo both require it. Add it in Settings → Tax Receipts " +
              "and it appears in every footer from then on.",
   };
@@ -4760,7 +4760,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
           AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
           AND amount > 0
         ORDER BY date DESC LIMIT 2000`, [orgId]);
-    if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organisation"; }
+    if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organization"; }
   }
   const dist = S.ladderFromDistribution(cents);
   if (!dist.amountsCents) return null;
@@ -5347,7 +5347,7 @@ async function coverFeePayload(org) {
   return {
     feeRate: { pct: rates.card.pct, flatCents: rates.card.flatCents, capCents: rates.card.capCents },
     feeRateSentence: R.rateSentence(rates.card),
-    coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organisation.`,
+    coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organization.`,
   };
 }
 
@@ -6584,7 +6584,7 @@ async function processSequences() {
         // GOOD. Jonathan writes and sends onboarding himself. An enrolment that
         // survived from before is stopped here, with its reason, and sends nothing.
         if (enr.seq_trigger === "onboarding") {
-          console.log(`[mail-policy] stopped onboarding enrolment ${enr.id} (org ${enr.org_id}): the onboarding sequence is off for good (MAIL-1)`);
+          console.log(`[mail-policy] stopped onboarding enrollment ${enr.id} (org ${enr.org_id}): the onboarding sequence is off for good (MAIL-1)`);
           await run(`UPDATE sequence_enrollments SET status='stopped', last_error=? WHERE id=?`,
             ["Not sent: the onboarding sequence is off for good", enr.id]);
           continue;

@@ -24,7 +24,7 @@ export const LIMITS = { title: 140, intro: 2000, thankYou: 1000, label: 300, opt
 // What the page tells respondents, at the top, before the first question.
 // Named: who sees it and where it goes. Anonymous: what is NOT kept.
 export function privacySentence(mode, orgName) {
-  const org = orgName || "This organisation";
+  const org = orgName || "This organization";
   return mode === "anonymous"
     ? `This survey is anonymous. ${org} will see your answers but not who gave them: your name, email address and internet address are not saved with them, and they are not added to anyone's record.`
     : `This survey is not anonymous. Your answers are saved with your name on ${org}'s record of you, so the people there can read them and follow up. They are not shared with anyone else.`;

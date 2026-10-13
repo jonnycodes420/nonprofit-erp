@@ -362,7 +362,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       const g = it.g;
       if (g.matched) {
         title = `Matched gift: ${g.donor_name || "an employee"} gave ${fmtFull(Number(g.amount))}`;
-        body = "Their gift names this organisation as the employer that matches it.";
+        body = "Their gift names this organization as the employer that matches it.";
         return { title, body, meta, by, type };
       }
       title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;

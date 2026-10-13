@@ -26,7 +26,7 @@
 export const EVENTS = {
   "gift.created": {
     key: "gift.created", label: "Gift recorded",
-    description: "A gift was recorded in Steward, however it arrived: online, a cheque, an import or this API.",
+    description: "A gift was recorded in Steward, however it arrived: online, a check, an import or this API.",
   },
   "gift.refunded": {
     key: "gift.refunded", label: "Gift refunded",

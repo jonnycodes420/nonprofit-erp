@@ -1129,7 +1129,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   if (inbound) {
     const on = !!(inbound.enabled && inbound.address);
     cards.push({ key: "bcc", section: "inbox", icon: "bcc", name: "BCC address",
-      line: on ? `BCC ${inbound.address} on an email and it is logged to the person it names.` : "One address for the organisation: BCC it on an email and it is logged to the person it names.",
+      line: on ? `BCC ${inbound.address} on an email and it is logged to the person it names.` : "One address for the organization: BCC it on an email and it is logged to the person it names.",
       status: on ? "connected" : "not_connected",
       button: { kind: on ? "manage" : "connect", label: on ? "Manage" : "Connect", opens: true, onClick: () => toggle("bcc"), detail: () => bccPanel } });
   }

@@ -249,13 +249,13 @@ export function Help() {
   const [q, setQ] = useState("");
   const list = q.trim() ? searchArticles(HELP_ARTICLES, q, 20) : [...HELP_ARTICLES].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
   return <>
-    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="Short answers for people doing a lot with a little. There is an article for every screen and for the jobs people come for, and if yours is not here, a person answers." noCta />
+    <Hero eyebrow="Help center" crumbs={[["Customers"], ["Help center"]]} h="How do I <b>do this in Steward?</b>" lede="Short answers for people doing a lot with a little. There is an article for every screen and for the jobs people come for, and if yours is not here, a person answers." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap">
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help centre" aria-label="Search the help centre"
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help center" aria-label="Search the help center"
         style={{ width: "100%", maxWidth: 560, padding: "12px 14px", fontSize: 16, borderRadius: 10, border: "1px solid #D4CFC6", marginBottom: 20, fontFamily: "inherit" }} />
       <div className="cards">
         {list.map(a => <A className="card" href={"/help/" + a.slug} key={a.slug}><h4>{a.title}</h4><p>{a.summary}</p><span className="go">Read</span></A>)}
-        {!list.length && <p>Nothing in the help centre matches. Write to jonathan@stewardapp.dev and a person will answer.</p>}
+        {!list.length && <p>Nothing in the help center matches. Write to jonathan@stewardapp.dev and a person will answer.</p>}
       </div>
     </div></section>
     <FinalCta />
@@ -267,7 +267,7 @@ export function HelpArticle({ slug }) {
   if (!a) return null;
   const vote = v => { setVoted(v); fetch(API + "/help/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: a.slug, helpful: v }) }).catch(() => {}); };
   return <>
-    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre", "/help"], [a.title]]} h={a.title} lede={a.summary} noCta />
+    <Hero eyebrow="Help center" crumbs={[["Customers"], ["Help center", "/help"], [a.title]]} h={a.title} lede={a.summary} noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap prose" style={{ maxWidth: 760 }}>
       {(a.sections || []).map((s, i) => <div key={i}>{s.h && <h3>{s.h}</h3>}{(s.p || []).map((p, k) => <p key={k}>{p}</p>)}{s.steps && <ol>{s.steps.map((st, k) => <li key={k}>{st}</li>)}</ol>}</div>)}
       <p style={{ marginTop: 28 }}>{voted === null ? <>Did this help? <button type="button" className="btn" onClick={() => vote(true)}>Yes</button> <button type="button" className="btn" onClick={() => vote(false)}>No</button></> : "Thank you."}</p>

@@ -153,7 +153,7 @@ function guessKind({ fileName = "", headers = [], text = "" }) {
     return say("lybunt", "it lists people with their last gift and no gift this year");
   if (has(/^(year|fiscal year|month|period|quarter)$/) && has(/amount|total|giving|revenue|raised/))
     return say("giving_summary", "its rows are periods with a total");
-  if (/giving summary|total raised|total giving|revenue summary|year in review/.test(words)) return say("giving_summary", "it summarises giving");
+  if (/giving summary|total raised|total giving|revenue summary|year in review/.test(words)) return say("giving_summary", "it summarizes giving");
   return say("other", "it does not match one of the report kinds Steward knows");
 }
 

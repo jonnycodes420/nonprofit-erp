@@ -203,7 +203,7 @@ export function donorCountLine(n) {
 export function publicRaisedSentence({ name, raisedCents, goalCents }) {
   const first = firstNameOf(name) || "This fundraiser";
   const raised = money(raisedCents);
-  const what = `Every gift given through ${first}'s page, as it arrives. It all goes to the organisation.`;
+  const what = `Every gift given through ${first}'s page, as it arrives. It all goes to the organization.`;
   if (!goalCents) return `${raised} raised. ${what}`;
   const left = Number(goalCents) - Number(raisedCents);
   return left > 0

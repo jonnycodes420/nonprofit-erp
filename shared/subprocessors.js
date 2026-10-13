@@ -15,13 +15,13 @@
 // third party.
 export const SUBPROCESSORS = [
   { name: "Supabase", what: "Every record in Steward: donors, gifts, notes, users and settings.", why: "The managed Postgres database Steward runs on.", when: "always" },
-  { name: "Railway", what: "Everything Steward processes while it runs, application logs, and uploaded files (photos, cheque images, logos, grant documents) in its storage bucket.", why: "Hosts the Steward application and its file storage.", when: "always" },
+  { name: "Railway", what: "Everything Steward processes while it runs, application logs, and uploaded files (photos, check images, logos, grant documents) in its storage bucket.", why: "Hosts the Steward application and its file storage.", when: "always" },
   { name: "Vercel", what: "Page requests to the Steward website and app, including page addresses, and anonymous page-speed and visit measurements.", why: "Hosts the website and the app's pages.", when: "always" },
   { name: "Resend", what: "Recipient addresses, subjects and the body of every email Steward sends (receipts include the donor's name, the amount and the date), and email sent to your BCC logging address.", why: "Sends and receives email.", when: "always" },
   { name: "Sentry", what: "Error reports from the app, which can include the page and request details at the moment something failed.", why: "Tells us when something breaks so we can fix it.", when: "always" },
-  { name: "Stripe", what: "Donor name, email and card for online gifts and monthly plans, and your organisation's billing details.", why: "Takes payments, through your own connected Stripe account, and bills your Steward subscription.", when: "connected" },
-  { name: "Anthropic", what: "The text a drafting or reading feature needs: for example a donor's record rows for a brief or a draft, the grant library pieces chosen for a grant section, gift numbers, a photo of a cheque, or the transcript of a voice memo with the donor's name.", why: "Drafting, reading cheques and analysis. Nothing is sent once your organisation turns AI off in Settings.", when: "configured" },
-  { name: "OpenAI", what: "The audio of a voice memo a staff member records about a donor, and nothing else: no donor name, no organisation name. It sends back the transcript.", why: "Turns a voice memo into text. Nothing is sent once your organisation turns AI off in Settings.", when: "configured" },
+  { name: "Stripe", what: "Donor name, email and card for online gifts and monthly plans, and your organization's billing details.", why: "Takes payments, through your own connected Stripe account, and bills your Steward subscription.", when: "connected" },
+  { name: "Anthropic", what: "The text a drafting or reading feature needs: for example a donor's record rows for a brief or a draft, the grant library pieces chosen for a grant section, gift numbers, a photo of a check, or the transcript of a voice memo with the donor's name.", why: "Drafting, reading checks and analysis. Nothing is sent once your organization turns AI off in Settings.", when: "configured" },
+  { name: "OpenAI", what: "The audio of a voice memo a staff member records about a donor, and nothing else: no donor name, no organization name. It sends back the transcript.", why: "Turns a voice memo into text. Nothing is sent once your organization turns AI off in Settings.", when: "configured" },
   { name: "Google", what: "Messages and calendar events involving people already in your Steward (attachments only on email with a funder's contacts, filed on their grant), read from a staff member's own Gmail and Google Calendar, and events they book from a profile.", why: "Logs email and meetings onto the donor record.", when: "connected" },
   { name: "Microsoft", what: "The same as Google, for Outlook and Microsoft 365.", why: "Logs email and meetings onto the donor record.", when: "connected" },
   { name: "Mailchimp, Constant Contact", what: "Donor email addresses and first and last names you choose to sync, and the opens, clicks and unsubscribes they send back.", why: "Keeps your mailing list and your donor record in step.", when: "connected" },
@@ -36,8 +36,8 @@ export const SUBPROCESSORS = [
 ];
 
 export const WHEN_WORDS = {
-  always: "Used for every organisation",
-  connected: "Only if your organisation connects it",
+  always: "Used for every organization",
+  connected: "Only if your organization connects it",
   configured: "Only when the feature is switched on",
   used: "Only when a staff member uses that feature",
 };

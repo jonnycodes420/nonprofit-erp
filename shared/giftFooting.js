@@ -94,7 +94,7 @@ export const FOOTING_DEFINITIONS = Object.freeze({
   gross: "What the card or bank account was charged. This is the receipt's amount and the amount every giving total counts.",
   covered: "The part the donor added on purpose to cover the processing fee. Zero unless they ticked the box.",
   fee: "What the payment processor took, read from the charge itself rather than from a rate.",
-  net: "What reached the organisation's bank account: the charge less the processor's fee.",
+  net: "What reached the organization's bank account: the charge less the processor's fee.",
   intended: "What the donor meant to give to the mission: the charge less the part they added for the fee. This is what a campaign's progress counts.",
 });
 

@@ -355,7 +355,7 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
     // THE SENTENCE UNDER THE FORM. Not a boast and not a fee disclosure — the one
     // fact a donor deciding whether to type a card number wants: where the money
     // goes, and who takes a cut. Steward takes none, and never touches it.
-    trustLine: `Your gift goes to ${String(orgName || "this organisation")} directly. Steward never holds or moves it.`,
+    trustLine: `Your gift goes to ${String(orgName || "this organization")} directly. Steward never holds or moves it.`,
   };
 }
 
@@ -532,7 +532,7 @@ export function thankYouText(config, { orgName = "" } = {}) {
   const c = normalizeFormConfig(config, { orgFundIds: [] });
   const own = String(c.thankYou.message || "").trim();
   return {
-    message: own || `Thank you. ${orgName || "The organisation"} has your gift, and a receipt is on its way to your email.`,
+    message: own || `Thank you. ${orgName || "The organization"} has your gift, and a receipt is on its way to your email.`,
     fromTheOrg: !!own,
     redirectUrl: c.thankYou.redirectUrl || "",
   };

@@ -1851,7 +1851,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 </span>
               </div>
             ))}
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organisations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organizations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
           </div>
         )}
       </div>

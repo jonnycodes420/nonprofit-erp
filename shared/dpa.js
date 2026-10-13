@@ -15,7 +15,7 @@ export const DPA_VERSION = "2026-10-01 draft";
 export function dpaSections() {
   return [
     { h: "1. Who does what", p: [
-      `This agreement is between your organisation (the "Customer") and ${LEGAL_ENTITY_NAME} ("Steward"). The Customer controls the personal data it puts into Steward and decides why it is used. Steward processes that data only to provide the service the Customer signed up for, and only on the Customer's instructions, which are this agreement, the terms of service and what the Customer does in the product.`,
+      `This agreement is between your organization (the "Customer") and ${LEGAL_ENTITY_NAME} ("Steward"). The Customer controls the personal data it puts into Steward and decides why it is used. Steward processes that data only to provide the service the Customer signed up for, and only on the Customer's instructions, which are this agreement, the terms of service and what the Customer does in the product.`,
     ] },
     { h: "2. What Steward processes", p: [
       "Information about the Customer's donors, members, volunteers and other contacts: names, contact details, addresses, giving history, notes, logged emails and meetings, event registrations and volunteer hours. Information about the Customer's staff who use Steward: names, email addresses, roles and sign-in records.",
@@ -26,7 +26,7 @@ export function dpaSections() {
       "Only Steward staff who need access to provide or support the service can reach Customer data, and they are bound to keep it confidential.",
     ] },
     { h: "4. Security measures in place today", p: [
-      "Every connection to Steward uses HTTPS. Credentials for the Customer's other tools are encrypted per organisation and never shown back in a browser. Every change, export, download and sign-in is written to an audit log the application cannot edit. Staff can use two-factor sign-in, and an owner can require it for the whole team. Each signed-in session can be seen and ended. Roles limit what volunteer coordinators and staff can reach. Database backups are handled by the database provider.",
+      "Every connection to Steward uses HTTPS. Credentials for the Customer's other tools are encrypted per organization and never shown back in a browser. Every change, export, download and sign-in is written to an audit log the application cannot edit. Staff can use two-factor sign-in, and an owner can require it for the whole team. Each signed-in session can be seen and ended. Roles limit what volunteer coordinators and staff can reach. Database backups are handled by the database provider.",
     ] },
     { h: "5. Subprocessors", p: [
       "Steward uses the subprocessors listed at the end of this agreement and at stewardapp.dev/subprocessors. Steward will update that list before adding a new subprocessor that receives Customer data, and the Customer may object by writing to Steward.",

@@ -100,7 +100,7 @@ export default function XeroSync({ connectionId = null, isReadOnly, isAdmin }) {
         {d.lastSentAt ? ` Last sent ${when(d.lastSentAt)}.` : ""}
       </div>
       {!d.tenantChosen && <div style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>
-        Steward does not know which Xero organisation to use yet. Connect Xero again and choose it.</div>}
+        Steward does not know which Xero organization to use yet. Connect Xero again and choose it.</div>}
       {d.lastError && <div data-testid="xero-last-error" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.lastError}</div>}
       {d.mappingGaps && <div data-testid="xero-map-gaps" style={{ fontSize: 12.5, color: T.gold700, lineHeight: 1.5, marginTop: 4 }}>{d.mappingGaps.sentence}</div>}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8, lineHeight: 1.5 }}>{msg}</div>}
@@ -112,7 +112,7 @@ export default function XeroSync({ connectionId = null, isReadOnly, isAdmin }) {
             {busy === "read" ? "Reading" : seen ? "Read again" : "Read from Xero"}</button>
         </div>
         <div data-testid="xero-read-sentence" style={{ fontSize: 12.5, color: seen && seen.ok === false ? T.gold700 : seen ? T.ink : T.ink3, lineHeight: 1.5, marginTop: 4 }}>
-          {seen ? seen.sentence : "Reads the organisation's name and its accounts, to show these are the right books and to fill the lists below. It sends nothing."}</div>
+          {seen ? seen.sentence : "Reads the organization's name and its accounts, to show these are the right books and to fill the lists below. It sends nothing."}</div>
       </div>}
 
       {can && <div style={{ marginTop: 12 }}>

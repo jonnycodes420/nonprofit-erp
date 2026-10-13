@@ -1013,7 +1013,7 @@ const SOURCES = {
       notYet: "Each person who gave to last year's campaign and has not given to this one yet, with what they gave last time. Largest first.",
       less: "Each person who gave to both and gave less this time: this time minus last time.",
       more: "Each person who gave to both and gave more this time: this time minus last time.",
-      newcomers: "Each person whose first gift to the organisation came through this campaign, with what they gave.",
+      newcomers: "Each person whose first gift to the organization came through this campaign, with what they gave.",
       returning: "Each person who gave to both campaigns, with what they gave this time.",
       donorsThis: "Each person who gave to this campaign, once, with what they gave in all.",
       donorsLast: "Each person who gave to the campaign it is compared with, once, with what they gave in all.",
@@ -1898,7 +1898,7 @@ const SOURCES = {
     label: "Grant goal",
     measure: () => "sum",
     params: {},
-    sentence: () => "The amount the organisation means to win in grants this year, as an admin set it on Grants reports.",
+    sentence: () => "The amount the organization means to win in grants this year, as an admin set it on Grants reports.",
     sql: orgId => ({
       sql: `SELECT o.id, 'goal' AS type, NULL::text AS donor_id, 'Grant goal' AS name, NULL::text AS date,
                    ROUND(o.grant_goal_cents / 100.0, 2) AS amount, 'Set on Grants reports' AS detail
@@ -2138,7 +2138,7 @@ const SOURCES = {
     label: "Other income",
     measure: () => "sum",
     params: {},
-    sentence: () => "The one figure your organisation typed in Settings for income Steward does not track. It is never added to giving.",
+    sentence: () => "The one figure your organization typed in Settings for income Steward does not track. It is never added to giving.",
     sql: orgId => ({
       sql: `SELECT 'other-income' AS id, 'record' AS type, NULL::text AS donor_id, 'Typed in Settings' AS name, NULL::text AS date,
                    ROUND(other_income_this_year::numeric, 2) AS amount, 'Other income this year' AS detail

@@ -44,7 +44,7 @@ export const HELP_ARTICLES = [
       { h: `What you see`, p: [
         `The screen is titled "Your tasks." A line at the top counts what needs attention (overdue and due today), what is open and what is done. Tasks are grouped as Overdue, Due today, Upcoming and No date, with the soonest first.`,
         `Each row shows the task, its due date, the donor it is linked to (click the name to open their record), who it is assigned to, and a HIGH badge when it is high priority. Finished tasks fold into "Completed" at the bottom.`,
-        `The "Mine / All" switch chooses between tasks assigned to you and every task in your organisation. Mine is the default.`,
+        `The "Mine / All" switch chooses between tasks assigned to you and every task in your organization. Mine is the default.`,
       ]},
       { h: `Add a task`, steps: [
         `Click "+ New task".`,
@@ -69,8 +69,8 @@ export const HELP_ARTICLES = [
     summary: `Calendar puts everything with a date in one place: meetings, next steps, shifts, events and more.`,
     sections: [
       { h: `What you see`, p: [
-        `Week is the first view; Day, Month and Agenda are beside it (on a phone, Agenda comes first, with a strip of days at the top). Meetings, next steps and tasks, volunteer shifts (with how many places are filled), events, journey steps, campaign sends and pledge payments each have their own colour and their own tick box on the left. Birthdays are there too, ticked off until you want them.`,
-        `"Mine" shows what is yours; "Everyone" shows the whole organisation. An admin can also pick one person. The line across today is the current time, and the times are your organisation's time zone, named under the tick boxes.`,
+        `Week is the first view; Day, Month and Agenda are beside it (on a phone, Agenda comes first, with a strip of days at the top). Meetings, next steps and tasks, volunteer shifts (with how many places are filled), events, journey steps, campaign sends and pledge payments each have their own color and their own tick box on the left. Birthdays are there too, ticked off until you want them.`,
+        `"Mine" shows what is yours; "Everyone" shows the whole organization. An admin can also pick one person. The line across today is the current time, and the times are your organization's time zone, named under the tick boxes.`,
         `A small brass dot means something needs a look: two of your meetings at once, a shift short of people, or an event on top of a shift.`,
       ]},
       { h: `Move something`, steps: [
@@ -203,10 +203,10 @@ export const HELP_ARTICLES = [
     slug: `donor-portal`,
     title: `Donor Portal`,
     screens: [`portal`, `settings:portal`],
-    summary: `Donor Portal turns on and shares your branded donor sign-in page. It is shown only to organisations on the Portal plan.`,
+    summary: `Donor Portal turns on and shares your branded donor sign-in page. It is shown only to organizations on the Portal plan.`,
     sections: [
       { h: `Who sees this`, p: [
-        `Donor Portal is hidden from the navigation for most organisations. Nothing behind it is deleted. If your organisation is on the Portal plan, it is your main screen, and Settings has a matching Donor Portal section with an "Open Donor Portal →" button.`,
+        `Donor Portal is hidden from the navigation for most organizations. Nothing behind it is deleted. If your organization is on the Portal plan, it is your main screen, and Settings has a matching Donor Portal section with an "Open Donor Portal →" button.`,
       ]},
       { h: `What you see`, p: [
         `A card titled "Your donor portal" with a Live or Off marker and three buttons: "Edit the portal", "Open the live portal ↗" and "Copy link". Below it are campaign stories, Impact Updates, and engagement for the last 30 days: sign-ins, dashboard views, impact views and receipt downloads.`,
@@ -249,7 +249,7 @@ export const HELP_ARTICLES = [
       { h: `Good to know`, p: [
         `Giving pages are created in Settings, under Giving Pages. This screen lists them with "Open ↗" and "Copy link".`,
         `"Propose a recurring gift" under Recurring emails the donor a proposal. Nothing changes until they accept, and the link lasts 14 days.`,
-        `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organisation's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
+        `When a bank reissues a card, Stripe can update the saved card by itself, and Steward notes it on the donor's timeline and counts it on Recurring under "Cards updated automatically". Whether a card is updated depends on the card network and on your organization's own Stripe account; a card that is not updated still goes to failed-card recovery.`,
         `Every plan includes the Pipeline. Moving a card asks what happened.`,
         `Proposals are started from a person's record with "+ New proposal". Plans never send anything.`,
         `"Mark as sent" under Acknowledgments records the gifts as thanked by letter. It does not send anything.`,
@@ -446,11 +446,11 @@ export const HELP_ARTICLES = [
     slug: `settings`,
     title: `Settings`,
     screens: [`settings`],
-    summary: `Settings is where your organisation, team, connections, receipts, data and security are set up.`,
+    summary: `Settings is where your organization, team, connections, receipts, data and security are set up.`,
     sections: [
       { h: `The sections`, p: [
         `Organization: your name, mission, staff and board, and your brand. Team: who can sign in, and invites. Connections: every outside service in one place, from Stripe and PayPal to your inbox, your books and API keys, and whether each one is still working. Giving Pages: your time zone, donor-covers-fees and your giving pages. Customization: custom fields and impact metrics. Your words: what you call donors and gifts. Journeys. Tax Receipts. Imports. Audit log (admins). Your Data. Account. Security.`,
-        `Organisations on the Portal plan also see a Donor Portal section.`,
+        `Organizations on the Portal plan also see a Donor Portal section.`,
       ]},
       { h: `Find a setting`, steps: [
         `Click Settings at the bottom of the sidebar.`,
@@ -485,7 +485,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Record a gift`, steps: [
         `Open "Gifts & Pledges" and click "+ Add Gift".`,
-        `Enter the amount, date, type and payment method. Pick a campaign or a pledge it fulfils if it has one.`,
+        `Enter the amount, date, type and payment method. Pick a campaign or a pledge it fulfills if it has one.`,
         `Tick "Acknowledgement sent" if you have already thanked them.`,
         `Click "Save".`,
         `Click "Send receipt" on the row to email a tax receipt.`,
@@ -507,8 +507,8 @@ export const HELP_ARTICLES = [
     summary: `Organization holds your name, mission, staff and brand; Team holds who can sign in.`,
     sections: [
       { h: `Organization`, p: [
-        `The first card shows your own name, email and role, and your organisation's name and mission. "Staff and board" lists the people you have marked as staff or board. To add one, open their record and tap the Staff and board chip under their name.`,
-        `Under "Brand Identity", drop in your logo, pick your colour and click "Save branding". "Reset to Steward gold" undoes the colour.`,
+        `The first card shows your own name, email and role, and your organization's name and mission. "Staff and board" lists the people you have marked as staff or board. To add one, open their record and tap the Staff and board chip under their name.`,
+        `Under "Brand Identity", drop in your logo, pick your color and click "Save branding". "Reset to Steward gold" undoes the color.`,
       ]},
       { h: `Invite someone`, steps: [
         `Open Team and click "+ Invite Staff". Only admins see this.`,
@@ -570,7 +570,7 @@ export const HELP_ARTICLES = [
         `Donors then see an option to add the processing cost to their gift. Click "Disable donor-covers-fees" to turn it off.`,
       ]},
       { h: `Set your time zone`, steps: [
-        `Under "Time Zone", pick your organisation's zone. Only an admin can change it.`,
+        `Under "Time Zone", pick your organization's zone. Only an admin can change it.`,
       ]},
     ],
   },
@@ -652,7 +652,7 @@ export const HELP_ARTICLES = [
     summary: `The audit log is every change anyone made, who made it and when. Only admins can open it.`,
     sections: [
       { h: `What you see`, p: [
-        `Each change in your organisation is one row: who did it, what they did and when. That includes sign-ins, role changes and downloads of donor files, as well as edits to records. Rows cannot be changed or removed, by anyone.`,
+        `Each change in your organization is one row: who did it, what they did and when. That includes sign-ins, role changes and downloads of donor files, as well as edits to records. Rows cannot be changed or removed, by anyone.`,
         `Someone who is not an admin sees "The audit log is available to your organization's admins."`,
       ]},
       { h: `Find a change`, steps: [
@@ -678,7 +678,7 @@ export const HELP_ARTICLES = [
         `When it says "Your export is ready.", the file downloads. "Download it again" fetches it a second time.`,
       ]},
       { h: `Other things on Your Data`, p: [
-        `"Reading and drafting" is the one switch for all of Steward's AI: cheque reading, drafts, briefs, scores, board summaries, Ask Steward and voice memos. Only admins can change it. When it is off, nothing is sent to Anthropic or OpenAI, and each of those features says "AI is turned off for your organization" and shows what it can without AI. "Demo Data" loads or clears sample donors so you can try things safely.`,
+        `"Reading and drafting" is the one switch for all of Steward's AI: check reading, drafts, briefs, scores, board summaries, Ask Steward and voice memos. Only admins can change it. When it is off, nothing is sent to Anthropic or OpenAI, and each of those features says "AI is turned off for your organization" and shows what it can without AI. "Demo Data" loads or clears sample donors so you can try things safely.`,
       ]},
       { h: `Account`, p: [
         `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder, The Thread, and "Your meetings today", which is off unless you tick it and sends you, and only you, the same meeting briefs Home shows. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,
@@ -704,7 +704,7 @@ export const HELP_ARTICLES = [
         `"Two-factor sign-in" says whether it is on for you. Admins also see "Require two-factor for everyone on the team" and a "Your team" card with each person's two-factor state. "Where you're signed in" lists every browser used in the last week. "Change your password" is at the bottom.`,
       ]},
       { h: `Sign out a lost device`, steps: [
-        `Under "Where you're signed in", find the browser you do not recognise.`,
+        `Under "Where you're signed in", find the browser you do not recognize.`,
         `Click "Sign out" on that row, or "Sign out everywhere else" to end every session but this one.`,
       ]},
       { h: `Change your password`, steps: [
@@ -754,15 +754,15 @@ export const HELP_ARTICLES = [
     slug: `connect-stripe`,
     title: `Connect Stripe`,
     screens: [],
-    summary: `Connect Stripe so your giving pages can take card gifts, paid straight to your organisation's own Stripe account. Steward never holds the money.`,
+    summary: `Connect Stripe so your giving pages can take card gifts, paid straight to your organization's own Stripe account. Steward never holds the money.`,
     sections: [
       { h: `What it does`, p: [
-        `Steward creates a Stripe Express account for your organisation and Stripe pays you directly. Steward never touches your money. Only an admin can do this. Have your bank details to hand.`,
+        `Steward creates a Stripe Express account for your organization and Stripe pays you directly. Steward never touches your money. Only an admin can do this. Have your bank details to hand.`,
       ]},
       { h: `Connect`, steps: [
         `Open Settings, then Connections.`,
         `On the Stripe card under Giving, click "Connect".`,
-        `Stripe's own pages open. Fill in your organisation's details and bank account and finish every step.`,
+        `Stripe's own pages open. Fill in your organization's details and bank account and finish every step.`,
         `Stripe sends you back to Steward's Home screen.`,
         `Go back to Settings, Connections. Once Stripe says your account can take donations, the Stripe card says "Connected". Click "Manage" to see your account number and the date.`,
       ]},
@@ -803,7 +803,7 @@ export const HELP_ARTICLES = [
         `"Sync now" reads straight away. "Pause" stops reading until you click "Turn back on". "Disconnect" stops it and keeps what was logged. "Disconnect and remove" also deletes what it logged, and cannot be undone.`,
       ]},
       { h: `Rather not connect`, p: [
-        `Use your organisation's BCC address instead: BCC it on any email to a donor and the email lands on their record. Find it under "Log an email by BCC", with a "Copy" button. A message that names nobody on file is held for you to place, or stored nowhere.`,
+        `Use your organization's BCC address instead: BCC it on any email to a donor and the email lands on their record. Find it under "Log an email by BCC", with a "Copy" button. A message that names nobody on file is held for you to place, or stored nowhere.`,
       ]},
     ],
   },
@@ -848,7 +848,7 @@ export const HELP_ARTICLES = [
     sections: [
       { h: `How it works`, p: [
         `A video thank-you is up to two minutes, recorded with your computer's or phone's camera. Saving it stores the video and puts one draft email to the donor, with the link in it, in Communications under "Drafts to review". Nothing is sent until you send it.`,
-        `The donor opens the link to a small page in your organisation's colours with the video on it. The link is the only way in, and nothing else about the donor is on the page.`,
+        `The donor opens the link to a small page in your organization's colors with the video on it. The link is the only way in, and nothing else about the donor is on the page.`,
       ]},
       { h: `Record one`, steps: [
         `Open the donor's record and click "More".`,
@@ -922,7 +922,7 @@ export const HELP_ARTICLES = [
         `Five wrong codes in a row pause code entry for 15 minutes, and Steward emails you.`,
       ]},
       { h: `Manage it later`, p: [
-        `In Security, type a current code to use "Make new recovery codes" (the old set stops working) or "Turn two-factor off". If your organisation requires two-factor, it stays on.`,
+        `In Security, type a current code to use "Make new recovery codes" (the old set stops working) or "Turn two-factor off". If your organization requires two-factor, it stays on.`,
       ]},
       { h: `Require it for the team`, p: [
         `Admins: turn it on for yourself, then tick "Require two-factor for everyone on the team". Anyone without it sets it up at their next sign-in.`,

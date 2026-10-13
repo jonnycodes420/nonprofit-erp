@@ -116,7 +116,7 @@ export function unassignedSentence({ count, thresholdCents }, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (v => String(v));
   const n = Number(count) || 0;
   if (n === 0) return `Everybody who has given ${fm(thresholdCents)} or more is on somebody's list.`;
-  return `${n} ${n === 1 ? "person has" : "people have"} given ${fm(thresholdCents)} or more in total and nobody owns the relationship. ${fm(thresholdCents)} is the figure this organisation set.`;
+  return `${n} ${n === 1 ? "person has" : "people have"} given ${fm(thresholdCents)} or more in total and nobody owns the relationship. ${fm(thresholdCents)} is the figure this organization set.`;
 }
 
 export function portfolioCountSentence(count, officerName) {

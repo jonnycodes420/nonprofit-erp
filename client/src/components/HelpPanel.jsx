@@ -108,7 +108,7 @@ export function HelpPanel({ screen, onClose }) {
               <button type="button" onClick={() => setTicket(t => ({ ...t, open: false }))} style={{ ...btn, border: "none" }}>Cancel</button></div>
           </form> : <button type="button" onClick={() => setTicket(t => ({ ...t, open: true }))} style={btn}>Write to us</button>}
         </div>
-        <a href={current ? `/help/${current.slug}` : "/help"} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: T.greenDk }}>Open the help centre</a>
+        <a href={current ? `/help/${current.slug}` : "/help"} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: T.greenDk }}>Open the help center</a>
       </div>
     </div>
   );

@@ -152,7 +152,7 @@ export function template(key) { return TEMPLATES.find(t => t.key === String(key)
 // `today` is the ORG's civil date. A template whose day has already gone this
 // year rolls to next year's, because the alternative is standing up a campaign
 // that ended a fortnight ago.
-export function planFor(key, { today, orgName = "this organisation" } = {}) {
+export function planFor(key, { today, orgName = "this organization" } = {}) {
   const t = template(key);
   if (!t) return null;
   let anchor = t.anchor(today);
@@ -284,4 +284,4 @@ export function matchSentence({ matchCents = 0, raisedSinceMatchCents = 0, spons
 // gift will be doubled, which is the only direction this number is allowed to
 // be wrong in.
 export const MATCH_DEFINITION =
-  "A match is money somebody has promised to give alongside other people's gifts, up to a limit they set. Steward shows what is left of it from the gifts recorded to this campaign since the match began; it does not collect the match, and the organisation records that gift like any other.";
+  "A match is money somebody has promised to give alongside other people's gifts, up to a limit they set. Steward shows what is left of it from the gifts recorded to this campaign since the match began; it does not collect the match, and the organization records that gift like any other.";

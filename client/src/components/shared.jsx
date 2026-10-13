@@ -387,7 +387,7 @@ export function GlobalStyles() {
        pixel drew a brass bar. It read as a design element nobody could
        explain: at the right end of the Fundraising, Volunteers and Finance
        tab strips, down the donor profile, and above the Fundraising tabs.
-       Brass is one of the four colours and it MEANS something (overdue, needs
+       Brass is one of the four colors and it MEANS something (overdue, needs
        a look). Spending it on chrome is what made those bars unreadable.
        A scrollbar is now a quiet warm grey, and wide enough to grab. */
     ::-webkit-scrollbar{width:9px;height:9px;}
@@ -509,7 +509,7 @@ export function GlobalStyles() {
     .dash-row:hover{background:${T.bg}!important;box-shadow:inset 2px 0 0 ${T.greenDk};}
     /* D-1 (BUILD-45): "Needs your attention" row main is a real link. Hover
        affordance so it reads as clickable, not broken, cream-alt wash + the
-       donor name underlines. Colour change only, so no transition is needed
+       donor name underlines. Color change only, so no transition is needed
        under prefers-reduced-motion. Brass focus ring for keyboard. */
     /* BUILD-87 F.3.3, the row's record is there when you want it and silent
        when you do not. opacity (not display) so the row never changes height;

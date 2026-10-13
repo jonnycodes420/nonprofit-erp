@@ -30,7 +30,7 @@ export const ACK_MERGE_FIELDS = [
   { key: "gift_list", label: "Gift list", hint: "every gift in the batch for this donor, one per line" },
   { key: "fund", label: "Fund" },
   { key: "tribute", label: "Tribute", hint: "\"in memory of Ann Lee\", or nothing" },
-  { key: "org_name", label: "Organisation name" },
+  { key: "org_name", label: "Organization name" },
   { key: "signer", label: "Signer" },
   { key: "signer_title", label: "Signer's title" },
   { key: "year", label: "Year of the gift" },
@@ -104,7 +104,7 @@ export function letterFields({ donor, gifts, org }) {
   const funds = [...new Set(list.map(g => g.fund).filter(Boolean))];
   const tributes = list.filter(g => g.tributeType && g.tributeName);
   const tribute = tributes.length === 1
-    ? `, ${tributes[0].tributeType === "memory" ? "in memory of" : "in honour of"} ${tributes[0].tributeName}` : "";
+    ? `, ${tributes[0].tributeType === "memory" ? "in memory of" : "in honor of"} ${tributes[0].tributeName}` : "";
   const isOrg = donor.kind === "organisation";
   return {
     salutation: String(donor.salutation || "").trim() || (isOrg ? `Friends at ${donor.name}` : firstNameOf(donor.name)),

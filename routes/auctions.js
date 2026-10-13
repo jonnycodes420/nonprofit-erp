@@ -49,8 +49,8 @@ const TITLE_MAX = 160, DESC_MAX = 4000, CAT_MAX = 60, PHOTOS_MAX = 6;
 const MESSAGES = {
   registered: ["ok", "You are registered. Your bidder number is at the top of the page."],
   bid: ["ok", "Your bid is in. You are the high bidder."],
-  bought: ["ok", "It is yours at the buy-now price. The organisation will send you a link to pay."],
-  register_first: ["err", "Register to bid first: your name, email and phone, so the organisation knows who won."],
+  bought: ["ok", "It is yours at the buy-now price. The organization will send you a link to pay."],
+  register_first: ["err", "Register to bid first: your name, email and phone, so the organization knows who won."],
   closed: ["err", "Bidding on that item has closed."],
   not_open: ["err", "Bidding has not opened yet."],
   too_low: ["err", "Someone bid first. The lowest bid now is shown on the item."],
@@ -62,9 +62,9 @@ const MESSAGES = {
   link_bad: ["err", "That sign-in link has expired or was already used. Ask for a new one below."],
   signed_in: ["ok", "You are signed in on this device. Your bids and your bidder number are the same as on your other one."],
   paid_already: ["ok", "This item has already been paid for."],
-  pay_in_progress: ["err", "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organisation."],
+  pay_in_progress: ["err", "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organization."],
   pay_try_again: ["err", "We could not check on an earlier payment for this item. Try again in a minute."],
-  missing: ["err", "A name, an email and a phone number, so the organisation can reach you if you win."],
+  missing: ["err", "A name, an email and a phone number, so the organization can reach you if you win."],
   no_item: ["err", "That item is not in this auction."],
 };
 
@@ -142,7 +142,7 @@ function youOf(st, bidderId, myBidItems) {
 const YOU_WORDS = {
   high: ["ok", "You're the high bidder."],
   outbid: ["err", "You've been outbid."],
-  won: ["ok", "You won this. The organisation will send you a link to pay."],
+  won: ["ok", "You won this. The organization will send you a link to pay."],
   lost: ["muted", "Someone else won this one."],
 };
 
@@ -595,7 +595,7 @@ app.post("/auction-refund-flags/:id/resolve", requireAuth, checkWriteAccess, wra
 // ═══════════════════════════════════════════════════════════════════════
 
 const NOT_FOUND = () => page({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-  body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this auction has been taken down. Ask the organisation for its current link.</p></div>` });
+  body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this auction has been taken down. Ask the organization for its current link.</p></div>` });
 
 // A winner's pay page. It writes nothing: paying is a POST (routes/give.js).
 // Defined before /auction/:slug so "pay" is never read as a slug.
@@ -617,7 +617,7 @@ app.get("/auction/pay/:token", donateLimiter, wrap(async (req, res) => {
   if (item.paid_gift_id) {
     body = `<div class="card"><h1>Paid. Thank you.</h1><div class="ok">${esc(item.title)}, ${esc(fmt(amountC))}. Your receipt is on its way by email.</div></div>`;
   } else if (req.query.paid === "1") {
-    body = `<div class="card"><h1>Thank you. Your payment went through.</h1><p class="muted">We are recording it now. If this page does not say so within a minute, your email receipt is your proof of payment and ${esc(brand.displayName || "the organisation")} has the record.</p></div>`;
+    body = `<div class="card"><h1>Thank you. Your payment went through.</h1><p class="muted">We are recording it now. If this page does not say so within a minute, your email receipt is your proof of payment and ${esc(brand.displayName || "the organization")} has the record.</p></div>`;
   } else {
     body = `
       ${problem ? `<div class="${problem[0] === "ok" ? "ok" : "err"}">${esc(problem[1])}</div>` : ""}
@@ -628,12 +628,12 @@ app.get("/auction/pay/:token", donateLimiter, wrap(async (req, res) => {
         <div class="row"><h2>Your winning bid</h2><span class="pill open">${esc(fmt(amountC))}</span></div>
         <p class="small">${fmvC > 0
           ? `Its fair market value is ${esc(fmt(fmvC))}, so ${esc(fmt(dedC))} of this is tax deductible. Your receipt will say so.`
-          : "The whole amount is tax deductible: the organisation puts no value on what you receive."}</p>
+          : "The whole amount is tax deductible: the organization puts no value on what you receive."}</p>
         ${canPay ? `<form method="post" action="/auction/pay/${esc(req.params.token)}">
           <button class="btn" type="submit">Pay ${esc(fmt(amountC))}</button></form>`
-          : `<p class="small">${esc(brand.displayName || "The organisation")} will be in touch about paying. Nothing is charged on this page.</p>`}
+          : `<p class="small">${esc(brand.displayName || "The organization")} will be in touch about paying. Nothing is charged on this page.</p>`}
       </div>
-      <p class="small" style="text-align:center">Your card is taken by ${esc(brand.displayName || "the organisation")}'s own payment account. Steward never holds the money and never sees the card.</p>`;
+      <p class="small" style="text-align:center">Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.</p>`;
   }
   res.send(page({ title: `${item.title} · ${brand.displayName || ""}`, brand, body }));
 }));
@@ -693,7 +693,7 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
   const registerCard = !bidder && !allClosed ? `
     <div class="card" id="register">
       <h2>Register to bid</h2>
-      <p class="small">Your name, email and phone, so ${esc(brand.displayName || "the organisation")} can reach you if you win. Nothing is charged until you win and choose to pay.</p>
+      <p class="small">Your name, email and phone, so ${esc(brand.displayName || "the organization")} can reach you if you win. Nothing is charged until you win and choose to pay.</p>
       <form method="post" action="${self}/register">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <label>Your name<input name="name" required autocomplete="name"></label>
@@ -740,7 +740,7 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
         ${cats.map(c => `<a href="${self}?c=${encodeURIComponent(c)}" class="pill ${c === cat ? "open" : "shut"}">${esc(c)}</a>`).join("")}</p>` : ""}
     ${shown.map(itemCard).join("") || `<div class="card"><p class="muted">No items yet.</p></div>`}
     ${share}
-    <p class="small" style="text-align:center">If you win, you pay ${esc(brand.displayName || "the organisation")} through its own payment account. Steward never holds the money and never sees a card.</p>
+    <p class="small" style="text-align:center">If you win, you pay ${esc(brand.displayName || "the organization")} through its own payment account. Steward never holds the money and never sees a card.</p>
     <script>
     (function(){
       var cd=document.querySelector("[data-countdown]");
@@ -855,7 +855,7 @@ app.post("/auction/:slug/signin-link", express.urlencoded({ extended: false }), 
     if (!decision.send) { console.log(`[auction] sign-in link refused (${decision.reason})`); return; }
     if (!process.env.RESEND_API_KEY) return;
     const brand = await resolveOrgBrandTheme(a.org_id).catch(() => null);
-    const orgName = (brand && brand.displayName) || "the organisation";
+    const orgName = (brand && brand.displayName) || "the organization";
     const url = `${publicAppUrl()}${self}/signin#token=${encodeURIComponent(token)}`;   // a fragment never rides a Referer
     const PPm = await PP_READY;
     const e = PPm.escapeHtml;

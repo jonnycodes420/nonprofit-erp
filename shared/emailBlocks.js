@@ -41,7 +41,7 @@ export const EMAIL_MERGE_FIELDS = [
   { key: "last_gift_date",   token: "{{last_gift_date}}",   label: "Last gift date",    sample: "March 3, 2026", fallback: "recently" },
   { key: "campaign",         token: "{{campaign}}",         label: "Campaign",          sample: "Spring Appeal", fallback: "our work" },
   { key: "give_link",        token: "{{give_link}}",        label: "Giving link",       sample: "https://www.stewardapp.dev/give/sample", fallback: "" },
-  { key: "org_name",         token: "{{org_name}}",         label: "Your organisation", sample: "your organisation", fallback: "our organisation" },
+  { key: "org_name",         token: "{{org_name}}",         label: "Your organization", sample: "your organization", fallback: "our organization" },
 ];
 const MERGE_KEYS = new Set(EMAIL_MERGE_FIELDS.map(f => f.key));
 const MERGE_ALIASES = { first: "first_name", org: "org_name" };

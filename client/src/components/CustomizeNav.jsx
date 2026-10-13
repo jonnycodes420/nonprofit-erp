@@ -47,7 +47,7 @@ export function CustomizeNav({ groups, labelOf, onMove, onToggle, onReset, onClo
   };
 
   return <Modal onClose={onClose} title="Customize the sidebar" width={460}
-    subtitle="Hide what you don't use, and put what you do use where you want it. This is yours alone: nobody else in your organisation sees these changes."
+    subtitle="Hide what you don't use, and put what you do use where you want it. This is yours alone: nobody else in your organization sees these changes."
     footer={<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <button type="button" data-testid="nav-reset" onClick={onReset}
         style={{ background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 10, padding: "8px 14px",

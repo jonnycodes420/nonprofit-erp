@@ -2773,9 +2773,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   <input list="gift-people" value={addGiftForm.scName||""} onChange={e=>setAddGiftForm(p=>({...p,scName:e.target.value}))} placeholder="Soft credit to (a person on file)" style={inp} data-testid="gift-sc-name"/>
                   <input value={addGiftForm.scAmount||""} onChange={e=>setAddGiftForm(p=>({...p,scAmount:e.target.value}))} placeholder="Soft credit amount (blank = whole gift)" type="number" style={inp}/>
                   <select value={addGiftForm.tribType||""} onChange={e=>setAddGiftForm(p=>({...p,tribType:e.target.value}))} style={inp} data-testid="gift-trib-type">
-                    <option value="">Not a tribute gift</option><option value="honor">In honour of</option><option value="memory">In memory of</option>
+                    <option value="">Not a tribute gift</option><option value="honor">In honor of</option><option value="memory">In memory of</option>
                   </select>
-                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honours" style={inp} data-testid="gift-trib-name"/>
+                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honors" style={inp} data-testid="gift-trib-name"/>
                   <input value={addGiftForm.tribNotify||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotify:e.target.value}))} placeholder="Tell (e.g. the Lee family)" style={inp}/>
                   <input value={addGiftForm.tribNotifyEmail||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotifyEmail:e.target.value}))} placeholder="Their email or leave blank" style={inp}/>
                   <input list="gift-people" value={addGiftForm.matchEmployer||""} onChange={e=>setAddGiftForm(p=>({...p,matchEmployer:e.target.value}))} placeholder="Employer that will match it" style={inp}/>

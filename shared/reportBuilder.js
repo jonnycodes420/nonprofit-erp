@@ -38,7 +38,7 @@ export const ENTITIES = {
       state:           { label: "State", sql: "d.state", type: "text" },
       zip:             { label: "ZIP", sql: "d.zip", type: "text" },
       stage:           { label: "Stage", sql: "d.stage", type: "text" },
-      kind:            { label: "Person or organisation", sql: "COALESCE(d.kind,'person')", type: "text" },
+      kind:            { label: "Person or organization", sql: "COALESCE(d.kind,'person')", type: "text" },
       lifetime:        { label: "Lifetime giving", sql: "COALESCE(d.total_giving,0)", type: "money" },
       gift_count:      { label: "Number of gifts", sql: "COALESCE(d.gift_count,0)", type: "number" },
       first_gift_date: { label: "First gift date", sql: "NULLIF(d.first_gift_date,'')", type: "date" },
@@ -74,7 +74,7 @@ export const ENTITIES = {
       acknowledged_via:{ label: "Thanked how", sql: "g.acknowledged_via", type: "text" },
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },
-      donor_kind:      { label: "Donor is person or organisation", sql: "COALESCE(d.kind,'person')", type: "text" },
+      donor_kind:      { label: "Donor is person or organization", sql: "COALESCE(d.kind,'person')", type: "text" },
       // BUILD-102 (Steward Give) Part 5 — which email brought this gift in. Stored
       // on the gift, so the question is answered over the SAME rows every money
       // figure comes from rather than in a separate analytics product nobody

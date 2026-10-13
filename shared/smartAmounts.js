@@ -164,7 +164,7 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
     source: "org_distribution",
     sampleSize: sorted.length,
     medianCents: median,
-    sentence: `Chosen from this organisation's own gifts: the middle gift of the last ${sorted.length.toLocaleString("en-US")} was ${dollars(median)}.`,
+    sentence: `Chosen from this organization's own gifts: the middle gift of the last ${sorted.length.toLocaleString("en-US")} was ${dollars(median)}.`,
     defaultIndex: 1,
   };
 }
@@ -252,6 +252,6 @@ export function dollars(cents) {
 export const HOW_CHOSEN = Object.freeze({
   form: "The amounts you set on this form. Nothing is computed.",
   donor_history: "A returning donor arriving by their own personal link sees amounts starting from their own last gift. Their history, never anything bought from anybody.",
-  org_distribution: "Everyone else sees amounts drawn from this organisation's own recorded gifts through this form: the middle gift, then three asks above it.",
+  org_distribution: "Everyone else sees amounts drawn from this organization's own recorded gifts through this form: the middle gift, then three asks above it.",
   too_few: "Until there are eight gifts to look at, the form keeps the amounts you set.",
 });

@@ -274,7 +274,7 @@ app.get("/survey/:orgSlug/:slug", donateLimiter, wrap(async (req, res) => {
   const brand = r ? await brandOf(r.org_id) : { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
   framable(res);
   if (!r) return res.status(404).send(PP.publicPage({ title: "Not found", brand, footer: "Surveys by Steward.",
-    body: `<div class="card"><h1>That survey is not here.</h1><p class="muted">The link may have changed. Ask the organisation for its current link.</p></div>` }));
+    body: `<div class="card"><h1>That survey is not here.</h1><p class="muted">The link may have changed. Ask the organization for its current link.</p></div>` }));
   if (r.status !== "open") return res.send(PP.publicPage({ title: r.title, brand, footer: "Surveys by Steward.",
     body: `<div class="card"><h1>${esc(r.title)}</h1><p class="muted">This survey has closed. Thank you for looking.</p></div>` }));
   // A named survey reads the personal link; an anonymous one never does.
