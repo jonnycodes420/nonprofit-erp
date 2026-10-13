@@ -792,7 +792,7 @@ app.get("/connections/:id/gifts", requireAuth, wrap(async (req, res) => {
     rows: rows.map(r => ({ id: r.id, date: r.date, amountCents: Math.round(Number(r.amount) * 100),
       feeCents: Math.round(Number(r.fee_amount || 0) * 100), donorId: r.donor_id, donorName: r.donor_name })),
     count: rows.length, totalCents,
-    definition: "Every gift Steward recorded through this connection in the last thirty days, newest first. It foots to the figure on the card, in cents.",
+    definition: "Every gift Steward recorded through this connection in the last thirty days, newest first. It adds up to the figure on the card, to the cent.",
   });
 }));
 
