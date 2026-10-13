@@ -14,7 +14,13 @@ node scripts/load/standins.js > "$LOAD_DIR/standins.log" 2>&1 &
 echo $! >> "$LOAD_DIR/pids"
 # Production-shaped: no TEST_MODE, so the rate limiters and retry timers are
 # the real ones. Jobs are held, not disabled, so they can be timed.
-TICK_LOG="$LOAD_DIR/tick.jsonl" node -r ./scripts/load/tick-capture.js server.js > "$LOAD_DIR/server.log" 2>&1 &
+# CAPTURE=1 holds every job for scripts/load/measure.js tick (part 1's way of
+# timing jobs); without it the queue schedules and runs them for real.
+if [ "${CAPTURE:-0}" = "1" ]; then
+  TICK_LOG="$LOAD_DIR/tick.jsonl" node -r ./scripts/load/tick-capture.js server.js > "$LOAD_DIR/server.log" 2>&1 &
+else
+  node server.js > "$LOAD_DIR/server.log" 2>&1 &
+fi
 echo $! >> "$LOAD_DIR/pids"
 echo $! > "$LOAD_DIR/server.pid"
 for _ in $(seq 1 120); do

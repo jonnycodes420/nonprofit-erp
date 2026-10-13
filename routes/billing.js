@@ -2130,6 +2130,18 @@ async function orgWithMetrics(org) {
   };
 }
 
+// SCALE-1 · A JOB THAT FAILED FIVE TIMES STOPS, AND IS LISTED HERE with its
+// org and its error. Retry puts it back on the queue with its tries reset.
+app.get("/admin/jobs/failed", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const JQ = require("../jobQueue");
+  res.json({ jobs: await JQ.deadJobs(200), health: await JQ.refreshHealth() });
+}));
+app.post("/admin/jobs/:id/retry", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const out = await require("../jobQueue").retry(req.params.id);
+  if (!out) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true, ...out });
+}));
+
 app.get("/admin/orgs", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   // One grouped aggregate per table instead of 4 queries per org (was N+1 —
   // Promise.all(orgs.map(orgWithMetrics))). orgWithMetrics stays for the

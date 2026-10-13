@@ -25,6 +25,14 @@ const {
   weekBounds, recomputeAllScores,
 } = ctx;
 
+// SCALE-1 · A PERIODIC JOB IS A ROW ON THE QUEUE, NOT A TIMER IN THIS PROCESS.
+// `every(name, everyMs, run, firstMs)` replaces the old setTimeout + setInterval
+// pair: the first run is due `firstMs` after the job is first seen, then every
+// `everyMs`. Which process runs it is jobQueue.js's business (STEWARD_PROCESS).
+// `run` returns its promise and lets errors through, so a failure is retried.
+const Q = require("../jobQueue");
+const every = (name, everyMs, fn, firstMs) => Q.define(name, { everyMs, firstMs, run: fn });
+
 // Scheduled sweep — runs on the existing 5-min cadence (same pattern as
 // processWorkflowSweeps / processDigests; NOT a second scheduler). Auto-lapse
 // applies to EVERY onboarded org (it's a core smart-move, not gated on a
@@ -39,8 +47,7 @@ async function processSmartMoves() {
   } catch (e) { console.error("[smart-move] sweep:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processSmartMoves().catch(console.error), 40000);
-  setInterval(() => recordTick("processSmartMoves", processSmartMoves).catch(console.error), 5 * 60 * 1000);
+  every("processSmartMoves", 5 * 60 * 1000, () => recordTick("processSmartMoves", processSmartMoves), 40000);
 }
 
 // ---- THE SCHEDULE --------------------------------------------------------
@@ -54,8 +61,7 @@ if (!backgroundTicksDisabled()) {
 // that did not arrive.
 const GIVING_SOURCE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processGivingSources().catch(console.error), 90000);
-  setInterval(() => recordTick("processGivingSources", processGivingSources).catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
+  every("processGivingSources", GIVING_SOURCE_SYNC_INTERVAL_MS, () => recordTick("processGivingSources", processGivingSources), 90000);
 }
 
 // ── INT-5 · WEBHOOK DELIVERY ───────────────────────────────────────────────
@@ -63,8 +69,7 @@ if (!backgroundTicksDisabled()) {
 // is not the same product as one that arrives now. It rides the existing tick
 // machinery; INT-5 adds no second scheduler.
 if (!backgroundTicksDisabled()) {
-  setInterval(() => recordTick("deliverWebhooks", deliverWebhooks)
-    .catch(e => console.error("[webhooks]", e.message)), 60 * 1000);
+  every("deliverWebhooks", 60 * 1000, () => recordTick("deliverWebhooks", deliverWebhooks));
 }
 
 // ── INT-3 · THE DAILY PULL FROM THE EMAIL TOOL ─────────────────────────────
@@ -76,9 +81,7 @@ if (!backgroundTicksDisabled()) {
 const EMAIL_MARKETING_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 if (!backgroundTicksDisabled()) {
   const runEmailMarketing = () => require("./finance").processEmailMarketing();
-  setTimeout(() => runEmailMarketing().catch(e => console.error("[email-marketing]", e.message)), 120000);
-  setInterval(() => recordTick("processEmailMarketing", runEmailMarketing)
-    .catch(e => console.error("[email-marketing]", e.message)), EMAIL_MARKETING_SYNC_INTERVAL_MS);
+  every("processEmailMarketing", EMAIL_MARKETING_SYNC_INTERVAL_MS, () => recordTick("processEmailMarketing", runEmailMarketing), 120000);
 }
 
 // PARITY-2 Part 5: QUICKBOOKS AUTO-SYNC, hourly, and only for orgs whose
@@ -86,8 +89,7 @@ if (!backgroundTicksDisabled()) {
 // Sync. The tick is the same engine as the button, as `system:qbo/auto-sync`.
 if (!backgroundTicksDisabled()) {
   const runQboAutoSync = () => require("./finance").processQboAutoSync();
-  setInterval(() => recordTick("processQboAutoSync", runQboAutoSync)
-    .catch(e => console.error("[qbo-auto-sync]", e.message)), 60 * 60 * 1000);
+  every("processQboAutoSync", 60 * 60 * 1000, () => recordTick("processQboAutoSync", runQboAutoSync));
 }
 
 // QBO-IN: THE AUTOMATIC QUICKBOOKS READ, hourly, only for orgs whose admin
@@ -95,16 +97,14 @@ if (!backgroundTicksDisabled()) {
 // reads QuickBooks and writes nothing there.
 if (!backgroundTicksDisabled()) {
   const runQboAutoRead = () => require("./finance").processQboAutoRead();
-  setInterval(() => recordTick("processQboAutoRead", runQboAutoRead)
-    .catch(e => console.error("[qbo-auto-read]", e.message)), 60 * 60 * 1000);
+  every("processQboAutoRead", 60 * 60 * 1000, () => recordTick("processQboAutoRead", runQboAutoRead));
 }
 
 // CONNECT-2: XERO AUTO-SYNC, the same rule as QuickBooks. Hourly, only for
 // orgs whose admin turned it on, and never while a fund is unmapped.
 if (!backgroundTicksDisabled()) {
   const runXeroAutoSync = () => require("./finance").processXeroAutoSync();
-  setInterval(() => recordTick("processXeroAutoSync", runXeroAutoSync)
-    .catch(e => console.error("[xero-auto-sync]", e.message)), 60 * 60 * 1000);
+  every("processXeroAutoSync", 60 * 60 * 1000, () => recordTick("processXeroAutoSync", runXeroAutoSync));
 }
 
 // Fires due scheduled campaigns (status='scheduled', scheduled_at passed)
@@ -156,8 +156,7 @@ async function processScheduledCampaigns() {
   } catch (e) { console.error("[campaign-scheduler]", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processScheduledCampaigns().catch(console.error), 20000);
-  setInterval(() => recordTick("processScheduledCampaigns", processScheduledCampaigns).catch(console.error), 5 * 60 * 1000);
+  every("processScheduledCampaigns", 5 * 60 * 1000, () => recordTick("processScheduledCampaigns", processScheduledCampaigns), 20000);
 }
 
 async function processSavedReportSchedule() {
@@ -170,7 +169,7 @@ async function processSavedReportSchedule() {
   }
 }
 if (!backgroundTicksDisabled()) {
-  setInterval(() => recordTick("processSavedReportSchedule", processSavedReportSchedule).catch(console.error), 5 * 60 * 1000);
+  every("processSavedReportSchedule", 5 * 60 * 1000, () => recordTick("processSavedReportSchedule", processSavedReportSchedule));
 }
 
 // REPORTS-3 — THE BOARD PACK, ON THE DAY SHE PICKED. The same 5-minute tick,
@@ -195,7 +194,7 @@ async function processBoardPackSchedule() {
   } catch (e) { console.error("[board-pack] processBoardPackSchedule:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setInterval(() => recordTick("processBoardPackSchedule", processBoardPackSchedule).catch(console.error), 5 * 60 * 1000);
+  every("processBoardPackSchedule", 5 * 60 * 1000, () => recordTick("processBoardPackSchedule", processBoardPackSchedule));
 }
 
 // The tick — runs both digests for every onboarded org for the most-recently-
@@ -215,8 +214,7 @@ async function processDigests(now = new Date()) {
   } catch (e) { console.error("[digest] processDigests:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processDigests().catch(console.error), 30000);
-  setInterval(() => recordTick("processDigests", processDigests).catch(console.error), 5 * 60 * 1000);
+  every("processDigests", 5 * 60 * 1000, () => recordTick("processDigests", processDigests), 30000);
 }
 
 // ── BUILD-36 A3 — the daily due/overdue task reminder ────────────────────────
@@ -257,20 +255,17 @@ async function processDailyTaskReminders(now = new Date(), { force = false } = {
   } catch (e) { console.error("[daily-tasks] processDailyTaskReminders:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processDailyTaskReminders().catch(console.error), 45000);
-  setInterval(() => recordTick("processDailyTaskReminders", processDailyTaskReminders).catch(console.error), 5 * 60 * 1000);
+  every("processDailyTaskReminders", 5 * 60 * 1000, () => recordTick("processDailyTaskReminders", processDailyTaskReminders), 45000);
 }
 
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processGeocodeQueue().catch(e => console.error("[geocode]", e.message)), 55000);
-  setInterval(() => processGeocodeQueue().catch(e => console.error("[geocode]", e.message)), 5 * 60 * 1000);
+  every("processGeocodeQueue", 5 * 60 * 1000, () => processGeocodeQueue(), 55000);
 }
 
 // BUILD-94 Part 1 — the import photo queue rides the same cadence as the
 // geocoder, offset so the two network jobs do not start in the same second.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 70000);
-  setInterval(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 5 * 60 * 1000);
+  every("processPhotoQueue", 5 * 60 * 1000, () => processPhotoQueue(), 70000);
 }
 
 // BUILD-100 (grants) Part 2 — the milestone sweep rides the EXISTING five-minute
@@ -278,18 +273,16 @@ if (!backgroundTicksDisabled()) {
 // offset from the photo queue so the two do not start in the same second, and it
 // is idempotent: a pass that raised nothing is a pass that found nothing due.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 95000);
-  setInterval(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 5 * 60 * 1000);
+  every("processGrantMilestones", 5 * 60 * 1000, () => recordTick("processGrantMilestones", () => processGrantMilestones()), 95000);
 }
 
 // WIRE-1: an auction item won and not paid for two days opens a step on the
 // winner's Thread. Hourly is plenty; the sweep is idempotent per item.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 100000);
-  setInterval(() => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()).catch(console.error), 60 * 60 * 1000);
+  every("processAuctionUnpaid", 60 * 60 * 1000, () => recordTick("processAuctionUnpaid", () => processAuctionUnpaid()), 100000);
   // THREAD-3: an email that has waited a business day for a reply becomes a
   // step even when no new mail arrives to trigger a sync.
-  setInterval(() => recordTick("processUnansweredMail", () => processUnansweredMail()).catch(console.error), 60 * 60 * 1000);
+  every("processUnansweredMail", 60 * 60 * 1000, () => recordTick("processUnansweredMail", () => processUnansweredMail()));
 }
 
 // BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is
@@ -297,8 +290,7 @@ if (!backgroundTicksDisabled()) {
 // that lands anywhere inside it is on time, and a tighter cadence would only
 // spend queries discovering there is nothing to do.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processTrackedSequences().catch(e => console.error("[seq]", e.message)), 90000);
-  setInterval(() => recordTick("processTrackedSequences", processTrackedSequences).catch(e => console.error("[seq]", e.message)), 15 * 60 * 1000);
+  every("processTrackedSequences", 15 * 60 * 1000, () => recordTick("processTrackedSequences", processTrackedSequences), 90000);
 }
 
 async function processThreadNudges(now = new Date()) {
@@ -314,17 +306,14 @@ async function processThreadNudges(now = new Date()) {
   } catch (e) { console.error("[thread-nudge] processThreadNudges:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processThreadNudges().catch(console.error), 50000);
-  setInterval(() => recordTick("processThreadNudges", processThreadNudges).catch(console.error), 5 * 60 * 1000);
+  every("processThreadNudges", 5 * 60 * 1000, () => recordTick("processThreadNudges", processThreadNudges), 50000);
   // BUILD-88b B.2 — the late-instalment sweep rides the SAME timer family, not
   // a second scheduler. It opens threads and sends nothing, so it is safe to
   // run hourly: the `threads_one_open` index makes a repeat a no-op, and
   // `reminder_thread_id` makes it a no-op per instalment too.
-  setTimeout(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 70000);
-  setInterval(() => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
+  every("processPledgeInstallmentReminders", 60 * 60 * 1000, () => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)), 70000);
   // BUILD-101 Part 2 — memberships ride the same family. Opens threads, sends nothing.
-  setTimeout(() => processMembershipRenewals().catch(console.error), 80000);
-  setInterval(() => recordTick("processMembershipRenewals", processMembershipRenewals).then(o => o.opened && console.log(`[membership] ${o.opened} renewal thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
+  every("processMembershipRenewals", 60 * 60 * 1000, () => recordTick("processMembershipRenewals", processMembershipRenewals).then(o => o.opened && console.log(`[membership] ${o.opened} renewal thread(s) opened`)), 80000);
 }
 
 async function processStepReminders(now = new Date()) {
@@ -342,12 +331,10 @@ async function processStepReminders(now = new Date()) {
   } catch (e) { console.error("[step-reminder] processStepReminders:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processStepReminders().catch(console.error), 52000);
-  setInterval(() => recordTick("processStepReminders", processStepReminders).catch(console.error), 5 * 60 * 1000);
+  every("processStepReminders", 5 * 60 * 1000, () => recordTick("processStepReminders", processStepReminders), 52000);
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processDunning().catch(console.error), 5000);
-  setInterval(() => recordTick("processDunning", processDunning).catch(console.error), 60 * 60 * 1000);
+  every("processDunning", 60 * 60 * 1000, () => recordTick("processDunning", processDunning), 5000);
 }
 
 async function processCardExpiry() {
@@ -363,8 +350,7 @@ async function processCardExpiry() {
   } catch (e) { console.error("[card-expiry] processCardExpiry:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processCardExpiry().catch(console.error), 65000);
-  setInterval(() => recordTick("processCardExpiry", processCardExpiry).catch(console.error), 6 * 60 * 60 * 1000);
+  every("processCardExpiry", 6 * 60 * 60 * 1000, () => recordTick("processCardExpiry", processCardExpiry), 65000);
 }
 // The AUTOMATIC retry timers are disabled under DISABLE_RATE_LIMIT (the
 // local/test-env signal the rate limiters already use): during a deterministic
@@ -375,12 +361,10 @@ if (!backgroundTicksDisabled()) {
 // drives retry explicitly and production (DISABLE_RATE_LIMIT unset) retries on
 // the tick as designed.
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
-  setTimeout(() => retryFailedNotifications().catch(console.error), 50000);
-  setInterval(() => recordTick("retryFailedNotifications", retryFailedNotifications).catch(console.error), 5 * 60 * 1000);
+  every("retryFailedNotifications", 5 * 60 * 1000, () => recordTick("retryFailedNotifications", retryFailedNotifications), 50000);
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => reconcileStripeVsGifts().catch(console.error), 90000);
-  setInterval(() => reconcileStripeVsGifts().catch(console.error), RECONCILE_INTERVAL_MIN * 60 * 1000);
+  every("reconcileStripeVsGifts", RECONCILE_INTERVAL_MIN * 60 * 1000, () => reconcileStripeVsGifts(), 90000);
 }
 // BUILD-65 Part 6 — surface the accountsChecked DENOMINATOR even before the
 // first sweep (and even when background ticks are disabled), so /health can
@@ -388,21 +372,17 @@ if (!backgroundTicksDisabled()) {
 setTimeout(() => refreshReconcileDenominator().catch(() => {}), 8000);
 setInterval(() => refreshReconcileDenominator().catch(() => {}), 5 * 60 * 1000);
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => checkWebhookSubscriptions().catch(console.error), 95000);
-  setInterval(() => checkWebhookSubscriptions().catch(console.error), 60 * 60 * 1000);
+  every("checkWebhookSubscriptions", 60 * 60 * 1000, () => checkWebhookSubscriptions(), 95000);
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
-  setInterval(() => recordTick("processWorkflowSweeps", processWorkflowSweeps).catch(console.error), 5 * 60 * 1000);
+  every("processWorkflowSweeps", 5 * 60 * 1000, () => recordTick("processWorkflowSweeps", processWorkflowSweeps), 25000);
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processPledgeReminders().catch(console.error), 5000);
-  setInterval(() => processPledgeReminders().catch(console.error), 60 * 60 * 1000);
+  every("processPledgeReminders", 60 * 60 * 1000, () => processPledgeReminders(), 5000);
 }
 
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => processTrialReminders().catch(console.error), 45000);
-  setInterval(() => processTrialReminders().catch(console.error), 6 * 60 * 60 * 1000);
+  every("processTrialReminders", 6 * 60 * 60 * 1000, () => processTrialReminders(), 45000);
 }
 
 // INT-BUILD-1 — THE TICK READ THE WRONG TABLE. Since INT-4 every connection
@@ -474,31 +454,57 @@ async function syncAllGmail() {
   // FIX-33: the /health count and one error line per stale connection.
   await refreshMailboxSyncHealth({ log: true }).catch(e => console.error("[mailbox-stale] check failed:", e.message));
 }
+// SCALE-1: the queue's five-minute mailbox job. One round id for all of them,
+// which is what /health's tick figure is measured over.
+async function fanOutMailboxes() {
+  await run(`DELETE FROM mailbox_push p USING mailbox_connections m
+              WHERE m.id = p.connection_id AND (m.status <> 'active' OR m.paused IS TRUE)`).catch(() => {});
+  const conns = await query(
+    `SELECT id, org_id FROM mailbox_connections
+      WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL
+        AND (retry_after IS NULL OR retry_after <= NOW())`);
+  const round = "mailboxSync@" + Date.now();
+  for (const c of conns) await Q.enqueue({ name: "mailboxSync", orgId: c.org_id, key: "mailboxSync:" + c.id, payload: { connectionId: c.id }, round });
+  // The stale-connection count, after this round has had time to read.
+  await Q.enqueue({ name: "mailboxSyncHealth", key: "mailboxSyncHealth", runAfterMs: 2 * 60 * 1000 });
+}
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
-  setInterval(() => processNetworkGate().catch(console.error), 6 * 60 * 60 * 1000);
+  every("processNetworkGate", 6 * 60 * 60 * 1000, () => processNetworkGate());
 }
 
 // Run sequence engine on startup (5s delay) then every hour
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => {
-    processSequences().catch(console.error);
-    autoEnroll().catch(console.error);
+  // Both halves run; one failing does not skip the other, and either failing
+  // fails the job so the queue tries it again.
+  every("processSequences", 60 * 60 * 1000, async () => {
+    const out = await Promise.allSettled([processSequences(), autoEnroll()]);
+    const bad = out.find(o => o.status === "rejected");
+    if (bad) throw bad.reason;
   }, 5000);
-  setInterval(() => {
-    processSequences().catch(console.error);
-    autoEnroll().catch(console.error);
-  }, 60 * 60 * 1000);
 }
 
 // Mail and calendar read on startup (10s delay) then every 5 minutes. The
 // health count is taken at boot too, so /health never says null for a tick.
 // PUSH-1: a TEST_MODE server given MAILBOX_TICK_MS runs only this tick, that
 // often, so push1-instant can watch the cadence without every other job.
-if (!backgroundTicksDisabled() || (process.env.TEST_MODE === "1" && Number(process.env.MAILBOX_TICK_MS) > 0)) {
-  setTimeout(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
+// SCALE-1 · EACH CONNECTION IS ITS OWN JOB. The five-minute job only fans out:
+// one `mailboxSync` row per live connection, keyed by the connection, so one
+// slow mailbox no longer holds the others and a connection is never read by
+// two workers at once. The PUSH-1 test cadence keeps the old in-process loop.
+setTimeout(() => refreshMailboxSyncHealth().catch(() => {}), 3000);
+if (process.env.TEST_MODE === "1" && Number(process.env.MAILBOX_TICK_MS) > 0) {
   setTimeout(() => syncAllGmail().catch(console.error), 10000);
   setInterval(() => syncAllGmail().catch(console.error), MAILBOX_SYNC_INTERVAL_MS);
+} else if (!backgroundTicksDisabled()) {
+  every("syncMailboxes", MAILBOX_SYNC_INTERVAL_MS, () => fanOutMailboxes(), 10000);
 }
+Q.handle("mailboxSync", async ({ connectionId }) => {
+  const [conn] = await query(
+    `SELECT * FROM mailbox_connections WHERE id=? AND status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL
+        AND (retry_after IS NULL OR retry_after <= NOW())`, [connectionId]);
+  if (conn) await syncOneConnection(conn);
+});
+Q.handle("mailboxSyncHealth", () => refreshMailboxSyncHealth({ log: true }));
 
 // Check trial expiry on startup (15s delay) then every 6 hours
 async function checkTrialExpiry() {
@@ -510,8 +516,7 @@ async function checkTrialExpiry() {
   } catch (e) { console.error("checkTrialExpiry error:", e); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => checkTrialExpiry(), 15000);
-  setInterval(() => checkTrialExpiry(), 6 * 60 * 60 * 1000);
+  every("checkTrialExpiry", 6 * 60 * 60 * 1000, () => checkTrialExpiry(), 15000);
 }
 
 async function snapshotAllOrgMetrics() {
@@ -525,12 +530,10 @@ async function snapshotAllOrgMetrics() {
 // ENGAGE-1 — every org's engagement and generosity scores, from what is on
 // file. A gift or a touch also recomputes its own org within seconds.
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => recordTick("recomputeScores", recomputeAllScores).catch(console.error), 45000);
-  setInterval(() => recordTick("recomputeScores", recomputeAllScores).catch(console.error), 6 * 60 * 60 * 1000);
+  every("recomputeScores", 6 * 60 * 60 * 1000, () => recordTick("recomputeScores", recomputeAllScores), 45000);
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => snapshotAllOrgMetrics(), 20000);
-  setInterval(() => snapshotAllOrgMetrics(), 6 * 60 * 60 * 1000);
+  every("snapshotAllOrgMetrics", 6 * 60 * 60 * 1000, () => snapshotAllOrgMetrics(), 20000);
 }
 }
 

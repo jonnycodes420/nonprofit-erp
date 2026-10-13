@@ -35,10 +35,10 @@ const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person 
 // EMAIL-1 — a template rendered for one person (the send, the test, drafts).
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
-const { rateLimit } = require("express-rate-limit");
+const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
-const fileLimiter = rateLimit({
+const fileLimiter = rateLimit("fileLimiter", {
   windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: true, legacyHeaders: false,
   skip: () => process.env.TEST_MODE === "1" || process.env.DISABLE_RATE_LIMIT === "1",
 });
@@ -892,8 +892,9 @@ async function forEachByDonor(list, fn) {
 // Once an import's rows are saved, the request answers. Its recent gifts
 // (recordGift, one by one, for the last 30 days) and the after-change step
 // for everybody the file touched run here, after the response, as one job
-// per import run. This is the one place import work runs in the background;
-// SCALE-1 moves it to a real queue.
+// per import run. SCALE-1: the job is a row on the queue (jobQueue.js,
+// `importRecent`, keyed by the run), so it runs in the worker when there is
+// one, survives a restart, and never runs twice at once for the same run.
 //
 //   import_recent_jobs   one row per run: progress, the thank-you answer, errors
 //   import_recent_work   one row per recent gift still to do (deleted when done)
@@ -915,15 +916,22 @@ const IT = require("../importThanks");
 // takes the import's own advisory lock for one small batch at a time; a new
 // chunk's transaction waits for at most that one batch.
 const RECENT_BATCH = 50;
-const importsInFlight = new Map();   // org id → requests running
+// SCALE-1: "an import request is running for this org" is a row, not a Map,
+// because the job may run in the worker while the request runs in a web
+// replica. A row older than ten minutes is a request whose process died.
 function markImportInFlight(orgId, res) {
-  importsInFlight.set(orgId, (importsInFlight.get(orgId) || 0) + 1);
+  const id = importId("iif_");
+  const ready = run(`INSERT INTO import_in_flight (id, org_id) VALUES (?,?)`, [id, orgId]).catch(() => {});
   let done = false;
-  const end = () => { if (done) return; done = true; const n = (importsInFlight.get(orgId) || 1) - 1; if (n > 0) importsInFlight.set(orgId, n); else importsInFlight.delete(orgId); };
+  const end = () => { if (done) return; done = true; ready.then(() => run(`DELETE FROM import_in_flight WHERE id=?`, [id])).catch(() => {}); };
   res.on("finish", end); res.on("close", end);
 }
 async function importsIdle(orgId) {
-  while (importsInFlight.get(orgId)) await new Promise(r => setTimeout(r, 100));
+  for (;;) {
+    const busy = await query(`SELECT 1 FROM import_in_flight WHERE org_id=? AND started_at > NOW() - INTERVAL '10 minutes' LIMIT 1`, [orgId]);
+    if (!busy.length) return;
+    await new Promise(r => setTimeout(r, 250));
+  }
 }
 
 async function queueRecentWork(txq, orgId, runId, gifts, { actorId, actorName, thanks, touched = [] }) {
@@ -947,18 +955,20 @@ async function queueRecentWork(txq, orgId, runId, gifts, { actorId, actorName, t
   }
 }
 
+// A chunk that arrives while the run's job is working leaves one waiting row
+// behind it, which is how its gifts are picked up: the job never runs twice
+// at once for the same run, and never forgets the work that came in late.
+const JQ = require("../jobQueue");
 function kickRecentWork(orgId, runId) {
-  const cur = recentJobs.get(runId);
-  if (cur) { cur.again = true; return cur.promise; }
-  const job = { cancelled: false, again: false };
-  job.promise = (async () => {
-    try { do { job.again = false; await runRecentWork(orgId, runId, job); } while (job.again && !job.cancelled); }
-    catch (e) { console.error("[import-recent] job:", runId, e.message); }
-    finally { recentJobs.delete(runId); }
-  })();
-  recentJobs.set(runId, job);
-  return job.promise;
+  return JQ.enqueue({ name: "importRecent", orgId, key: "importRecent:" + runId, payload: { orgId, runId }, priority: 3 })
+    .catch(e => console.error("[import-recent] enqueue:", runId, e.message));
 }
+JQ.handle("importRecent", async ({ orgId, runId }) => {
+  const job = { cancelled: false };
+  recentJobs.set(runId, job);
+  try { await runRecentWork(orgId, runId, job); }
+  finally { recentJobs.delete(runId); }
+});
 
 async function runRecentWork(orgId, runId, job) {
   const [jr] = await query(`SELECT * FROM import_recent_jobs WHERE import_id=? AND org_id=?`, [runId, orgId]);
@@ -974,6 +984,9 @@ async function runRecentWork(orgId, runId, job) {
   };
   for (;;) {
     if (job.cancelled) break;
+    // Undo may come from another process: the run's own row says so.
+    const [st] = await query(`SELECT status FROM import_recent_jobs WHERE import_id=?`, [runId]);
+    if (!st || st.status === "cancelled") { job.cancelled = true; break; }
     await importsIdle(orgId);
     const rows = await query(`SELECT id, gift FROM import_recent_work WHERE import_id=? AND org_id=? ORDER BY seq LIMIT ${RECENT_BATCH}`, [runId, orgId]);
     if (!rows.length) break;
@@ -1069,11 +1082,20 @@ async function writeImportReadoutOnce(orgId, runId) {
 async function cancelRecentWork(orgId, runId) {
   await run(`UPDATE import_recent_jobs SET status='cancelled', finished_at=NOW() WHERE import_id=? AND org_id=?`, [runId, orgId]);
   const job = recentJobs.get(runId);
-  if (job) { job.cancelled = true; await job.promise.catch(() => {}); }
+  if (job) job.cancelled = true;
+  // Wait for the gift in flight, wherever the job runs: it stops at its next
+  // gift or batch, and its queue row stops running.
+  for (let i = 0; i < 600; i++) {
+    const busy = await query(`SELECT 1 FROM job_queue WHERE key=? AND status='running' LIMIT 1`, ["importRecent:" + runId]);
+    if (!busy.length) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
   await run(`DELETE FROM import_recent_work WHERE import_id=? AND org_id=?`, [runId, orgId]);
 }
 
-// A restart mid-run: every job still running carries on from its work rows.
+// A run that was mid-way when SCALE-1 deployed has no queue row yet. Each one
+// still running is enqueued once at boot (a second enqueue of a waiting key
+// is a no-op, so every replica doing this is harmless).
 async function resumeRecentWork() {
   const jobs = await query(`SELECT import_id, org_id FROM import_recent_jobs WHERE status='running'`).catch(() => []);
   for (const j of jobs) kickRecentWork(j.org_id, j.import_id);
@@ -12441,8 +12463,8 @@ app.post("/journeys/run-sweep", requireAuth, requireAdmin, wrap(async (req, res)
   res.json({ fired });
 }));
 if (process.env.DISABLE_BACKGROUND_TICKS !== "1") {
-  setTimeout(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 90000);
-  setInterval(() => runJourneySweep().catch(e => console.error("[journey] sweep:", e.message)), 60 * 60 * 1000);
+  // SCALE-1: a queue job (jobQueue.js), so one replica runs it, not each.
+  require("../jobQueue").define("runJourneySweep", { everyMs: 60 * 60 * 1000, firstMs: 90000, run: () => runJourneySweep() });
 }
 
 // ── THREAD-2a · THE JOURNEY ROUTES ────────────────────────────────────────
@@ -16536,16 +16558,13 @@ function wealthScreenParams(d) {
 // One place, because all three are about the same request and separating them
 // is how a call gets rate-limited but not logged, or logged but not scoped.
 const apiScopesMod = () => import("../shared/apiScopes.js");
-// Per-key, in memory, one minute wide. Per KEY rather than per org so one noisy
-// integration cannot starve another, and deliberately not in the database: a
-// rate limiter that writes a row per request is its own denial of service.
-const apiKeyHits = new Map();
-function apiRateHit(keyId, perMinute) {
-  const now = Date.now();
-  const w = apiKeyHits.get(keyId);
-  if (!w || now - w.start >= 60000) { apiKeyHits.set(keyId, { start: now, n: 1 }); return { ok: true }; }
-  w.n++;
-  if (w.n > perMinute) return { ok: false, retryAfter: Math.ceil((w.start + 60000 - now) / 1000) };
+// Per-key, one minute wide. Per KEY rather than per org so one noisy
+// integration cannot starve another. SCALE-1: counted in Postgres (one upsert,
+// rateLimitStore.js), because a count in this process's memory is a count per
+// replica, and a second replica would double every key's allowance.
+async function apiRateHit(keyId, perMinute) {
+  const r = await require("../rateLimitStore").hit("apiKey", keyId, 60000);
+  if (r.totalHits > perMinute) return { ok: false, retryAfter: Math.max(1, Math.ceil((r.resetTime.getTime() - Date.now()) / 1000)) };
   return { ok: true };
 }
 
@@ -16584,7 +16603,7 @@ async function requireApiKey(req, res, next) {
     req.apiKey = { id: k.id, orgId: k.org_id, name: k.name,
                    scopes: S.effectiveScopes(stored), stored };
     logApiCall(req, res, { keyId: k.id, orgId: k.org_id, scope: req.requiredScope });
-    const hit = apiRateHit(k.id, S.RATE_LIMIT_PER_MINUTE);
+    const hit = await apiRateHit(k.id, S.RATE_LIMIT_PER_MINUTE);
     if (!hit.ok) {
       res.set("Retry-After", String(hit.retryAfter));
       return res.status(429).json(S.rateLimitBody(hit.retryAfter));

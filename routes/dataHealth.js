@@ -270,8 +270,9 @@ async function runDataHealthNightly() {
   return `checked ${orgs.length} orgs`;
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => recordTick("runDataHealthNightly", runDataHealthNightly).catch(console.error), 15 * 60 * 1000);
-  setInterval(() => recordTick("runDataHealthNightly", runDataHealthNightly).catch(console.error), 24 * 60 * 60 * 1000);
+  // SCALE-1: a queue job (jobQueue.js), so one replica runs it, not each.
+  require("../jobQueue").define("runDataHealthNightly", { everyMs: 24 * 60 * 60 * 1000, firstMs: 15 * 60 * 1000,
+    run: () => recordTick("runDataHealthNightly", runDataHealthNightly) });
 }
 
 app.get("/data-health", requireAuth, wrap(async (req, res) => {

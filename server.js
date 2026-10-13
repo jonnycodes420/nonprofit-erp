@@ -43,7 +43,8 @@ process.on("unhandledRejection", (reason) => {
 const express = require("express");
 const cors = require("cors");
 const compression = require("compression");
-const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
+// SCALE-1: every limiter counts in Postgres, shared by every web replica (rateLimitStore.js).
+const { rateLimit, ipKeyGenerator } = require("./rateLimitStore");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 // FIX-12 Part 3: every model call goes through aiClient.js, which asks the org's AI switch first.
@@ -420,7 +421,8 @@ const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "
 const generalSkip = (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook";
 const SIGNED_IN_LIMIT = 6000; // per user per 15 minutes: ~400 a minute, sustained
 const PUBLIC_IP_LIMIT = 1000; // per IP per 15 minutes, for requests with no valid token
-const signedInLimiter = rateLimit({
+const signedInLimiter = rateLimit("signedInLimiter", {
+  perReplica: true,   // SCALE-1: in memory on purpose, each replica its share (rateLimitStore.js)
   windowMs: 15 * 60 * 1000,
   limit: SIGNED_IN_LIMIT,
   standardHeaders: true,
@@ -429,7 +431,8 @@ const signedInLimiter = rateLimit({
   keyGenerator: (req) => "user:" + req._limitUser,
   skip: (req) => generalSkip(req) || !(req._limitUser = tokenUserId(req)),
 });
-const generalLimiter = rateLimit({
+const generalLimiter = rateLimit("generalLimiter", {
+  perReplica: true,   // SCALE-1: in memory on purpose, each replica its share (rateLimitStore.js)
   windowMs: 15 * 60 * 1000,
   limit: PUBLIC_IP_LIMIT,
   standardHeaders: true,
@@ -445,7 +448,7 @@ app.use(generalLimiter);
 
 // FIX-22 · Ask why writes a sentence with the model on every question. Its own
 // ceiling, per user, is the one a person can meet only by trying: 60 an hour.
-const whyAskLimiter = rateLimit({
+const whyAskLimiter = rateLimit("whyAskLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 60,
   standardHeaders: true,
@@ -458,7 +461,7 @@ const whyAskLimiter = rateLimit({
 
 // Per-IP: stops one attacker from spraying attempts across many different
 // accounts (each account-scoped limiter below would look "clean" individually).
-const loginIpLimiter = rateLimit({
+const loginIpLimiter = rateLimit("loginIpLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: true,
@@ -467,7 +470,7 @@ const loginIpLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 // Per-account+IP: stops repeated brute force against one specific account.
-const loginAccountLimiter = rateLimit({
+const loginAccountLimiter = rateLimit("loginAccountLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 6,
   standardHeaders: true,
@@ -477,7 +480,7 @@ const loginAccountLimiter = rateLimit({
   skip: rateLimitDisabled,
 });
 
-const registerLimiter = rateLimit({
+const registerLimiter = rateLimit("registerLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 5,
   standardHeaders: true,
@@ -486,7 +489,7 @@ const registerLimiter = rateLimit({
   skip: rateLimitDisabled, // local scripted suites create fixture orgs (see tests/)
 });
 
-const passwordResetLimiter = rateLimit({
+const passwordResetLimiter = rateLimit("passwordResetLimiter", {
   windowMs: 60 * 60 * 1000,
   limit: 5,
   standardHeaders: true,
@@ -495,7 +498,7 @@ const passwordResetLimiter = rateLimit({
   skip: rateLimitDisabled, // consistent with the other limiters; local suites drive the reset flow
 });
 
-const donateLimiter = rateLimit({
+const donateLimiter = rateLimit("donateLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 15,
   standardHeaders: true,
@@ -506,7 +509,7 @@ const donateLimiter = rateLimit({
 
 // PARITY-1 Part F: the video thank-you page and its stream. A video player
 // asks for many byte ranges, so this budget is per IP and generous.
-const videoLimiter = rateLimit({
+const videoLimiter = rateLimit("videoLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 600,
   standardHeaders: true,
@@ -517,7 +520,7 @@ const videoLimiter = rateLimit({
 
 // Public "Request an invitation" form (invitation pivot, 2026-08-06). A human
 // fills this once; anything past this budget from one IP is a bot.
-const invitationLimiter = rateLimit({
+const invitationLimiter = rateLimit("invitationLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
@@ -1025,8 +1028,8 @@ async function runVolunteerRemindersTick() {
   } catch (e) { console.error("[volunteer] reminder sweep:", e.message); }
 }
 if (!backgroundTicksDisabled()) {
-  setTimeout(() => runVolunteerRemindersTick(), 60000);
-  setInterval(() => runVolunteerRemindersTick(), 60 * 60 * 1000);
+  // SCALE-1: a queue job (jobQueue.js), so one replica runs it, not each.
+  require("./jobQueue").define("runVolunteerRemindersTick", { everyMs: 60 * 60 * 1000, firstMs: 60000, run: runVolunteerRemindersTick });
 }
 
 async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
@@ -2896,6 +2899,11 @@ app.get("/health", (req, res) => {
     // successfully in two hours. Counts only, no address, no org. The prod
     // smoke fails on stale > 0; checkedAt null = no sync run since boot.
     mailboxSync: mailboxSyncHealth,
+    // SCALE-1: the background queue (jobQueue.js) and the last five-minute
+    // round of per-org syncs: how long it took and its slowest org, by id only.
+    // Cached (refreshed every 15s), so /health stays a synchronous read.
+    queue: require("./jobQueue").healthNow().queue,
+    tick: require("./jobQueue").healthNow().tick,
   });
 });
 // ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
@@ -4176,7 +4184,7 @@ app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
 //      POLLING trigger needs ("new person", "new gift"): Zapier dedupes by id.
 const API_KEY_PREFIX = "stw_";
 const hashApiKey = k => crypto.createHash("sha256").update(String(k)).digest("hex");
-const apiLimiter = rateLimit({
+const apiLimiter = rateLimit("apiLimiter", {
   windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: rateLimitDisabled,
   keyGenerator: req => {
@@ -4916,6 +4924,11 @@ async function opsAlert(kind, subject, body) {
   if (_opsAlertSent.has(hourKey)) return { skipped: "already_alerted_this_hour" };
   _opsAlertSent.set(hourKey, true);
   if (_opsAlertSent.size > 200) _opsAlertSent.clear();
+  // SCALE-1: the hour's mark is a row too, so a worker and two web replicas
+  // that all see the same failure send one alert between them.
+  const marked = await query(`INSERT INTO ops_alert_marks (hour_key) VALUES (?) ON CONFLICT DO NOTHING RETURNING hour_key`, [hourKey])
+    .catch(() => [{ hour_key: hourKey }]);
+  if (!marked.length) return { skipped: "already_alerted_this_hour" };
   console.error(`[ops-alert] ${kind}: ${subject}`);
   try {
     await _rawResend.emails.send({
@@ -5346,7 +5359,7 @@ function escapeHtml(s) {
 // own page shouldn't be able to get rate-limited out of it just because
 // other donors on the same shared/NAT'd IP have been actively giving
 // through POST /donate/:orgSlug, which would exhaust a shared limiter.
-const fundraiserManageLimiter = rateLimit({
+const fundraiserManageLimiter = rateLimit("fundraiserManageLimiter", {
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: true,
@@ -8529,8 +8542,8 @@ if (!backgroundTicksDisabled()) {
   // BUILD-56 Part 4 — the retention purge: destroys objects soft-deleted more
   // than ASSET_RETENTION_DAYS ago (never a referenced one; every destruction
   // logged in asset_purge_log). 6-hour cadence like checkTrialExpiry.
-  setTimeout(() => purgeExpiredAssets().catch(console.error), 90000);
-  setInterval(() => purgeExpiredAssets().catch(console.error), 6 * 60 * 60 * 1000);
+  // SCALE-1: the purge writes, so it is a queue job and runs once, not per replica.
+  require("./jobQueue").define("purgeExpiredAssets", { everyMs: 6 * 60 * 60 * 1000, firstMs: 90000, run: () => purgeExpiredAssets() });
 } else {
   // Ticks off (test boot): populate the /health counters once at load — a
   // read-only count, no mail/state side effects — so the fields aren't stale.
@@ -10749,17 +10762,17 @@ const portalLimiterSkip = (req) => rateLimitDisabled() && !req.headers["x-test-e
 const portalLimiterIpKey = (req) =>
   (rateLimitDisabled() && req.headers["x-test-limit-bucket"])
     ? String(req.headers["x-test-limit-bucket"]) : ipKeyGenerator(req.ip);
-const portalLinkIpLimiter = rateLimit({
+const portalLinkIpLimiter = rateLimit("portalLinkIpLimiter", {
   windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "plink-ip:" + portalLimiterIpKey(req),
 });
-const portalLinkEmailLimiter = rateLimit({
+const portalLinkEmailLimiter = rateLimit("portalLinkEmailLimiter", {
   windowMs: 15 * 60 * 1000, max: 6, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "plink-em:" + String(req.body?.email || "").toLowerCase().trim().slice(0, 200),
 });
-const portalMutationLimiter = rateLimit({
+const portalMutationLimiter = rateLimit("portalMutationLimiter", {
   windowMs: 10 * 60 * 1000, max: 40, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "pmut:" + portalLimiterIpKey(req),
@@ -11129,12 +11142,12 @@ async function donorAudit(accountId, email, action, req, meta) {
 }
 
 // ── §1.1 rate limits (same x-test seam discipline as the portal limiters) ──
-const accountIpLimiter = rateLimit({
+const accountIpLimiter = rateLimit("accountIpLimiter", {
   windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "acct-ip:" + portalLimiterIpKey(req),
 });
-const accountEmailLimiter = rateLimit({
+const accountEmailLimiter = rateLimit("accountEmailLimiter", {
   windowMs: 15 * 60 * 1000, max: 8, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "acct-em:" + foldEmail(req.body?.email).slice(0, 200),
@@ -11152,13 +11165,13 @@ const accountEmailLimiter = rateLimit({
 // shape; what the donor sees comes from the dashboard refetch, which renders
 // only what the verified-email link machinery entitles them to.
 
-const directorySearchLimiter = rateLimit({
+const directorySearchLimiter = rateLimit("directorySearchLimiter", {
   windowMs: 15 * 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "dir:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
     ? String(req.headers["x-test-limit-bucket"]) : (req.donorAccount?.id || portalLimiterIpKey(req))),
 });
-const addOrgLimiter = rateLimit({
+const addOrgLimiter = rateLimit("addOrgLimiter", {
   windowMs: 15 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "diradd:" + ((rateLimitDisabled() && req.headers["x-test-limit-bucket"])
@@ -11169,7 +11182,7 @@ async function einLookup(ein) {
   if (!rows.length) return { found: false };
   return { found: true, name: rows[0].name, status: rows[0].status };
 }
-const networkSignupLimiter = rateLimit({
+const networkSignupLimiter = rateLimit("networkSignupLimiter", {
   windowMs: 60 * 60 * 1000, max: 5, standardHeaders: true, legacyHeaders: false,
   handler: rateLimitHandler, skip: portalLimiterSkip,
   keyGenerator: (req) => "netsignup:" + portalLimiterIpKey(req),
@@ -11272,7 +11285,7 @@ if (process.env.SENTRY_DSN) Sentry.setupExpressErrorHandler(app);
 app.use((err, req, res, next) => {
   // FIX-12 Part 3: a model call the org's AI switch refused is the org's
   // choice, not a crash. A route with a non-AI path catches it before here.
-  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : 503).json({ error: err.message, code: err.code, reason: err.reason });
+  if (err instanceof AiOffError) return res.status(err.reason === "ai_disabled" ? 403 : err.reason === "ai_budget" ? 429 : 503).json({ error: err.message, message: err.message, code: err.code, reason: err.reason });
   // HARDEN-1: the route PATTERN (not the URL, which carries ids) on the line,
   // so scripts/error-digest.js can group a day of these by type and route.
   const route = (req.baseUrl || "") + ((req.route && req.route.path) || req.path || "");
@@ -11831,6 +11844,30 @@ require("./routes/crm").mount({
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
+});
+// SCALE-1 · THE QUEUE STARTS once every job is defined (routes/jobs.js below,
+// and the few defined beside their code). The scheduler is the background
+// ticks, so a test boot (DISABLE_BACKGROUND_TICKS=1) enqueues nothing on a
+// timer; the worker lanes still run, because an import's recent gifts are
+// queued work, not a tick. STEWARD_PROCESS=web runs no lanes at all.
+// The probe job scale1-queue drives: it records which process ran it and when,
+// and can be told to take a while or to fail. TEST_MODE only.
+if (testMode()) {
+  require("./jobQueue").handle("testProbe", async (p, job) => {
+    const t0 = new Date();
+    if (p.sleepMs) await new Promise(r => setTimeout(r, p.sleepMs));
+    await run(`INSERT INTO tick_log (id, name, started_at, finished_at, ok, detail) VALUES (?,?,?,NOW(),?,?)`,
+      ["tick_" + uuid().slice(0, 12), "testProbe", t0.toISOString(), !p.fail,
+       JSON.stringify({ key: job.key, org: job.org_id, pid: process.pid, attempt: job.attempts })]);
+    if (p.fail) throw new Error("probe told to fail");
+  });
+}
+DB_READY.then(() => {
+  const JQ = require("./jobQueue");
+  JQ.start({ scheduler: !backgroundTicksDisabled() });
+  const refresh = () => JQ.refreshHealth().catch(() => {});
+  setTimeout(refresh, 5000).unref();
+  setInterval(refresh, 15000).unref();
 });
 require("./routes/jobs").mount({
   // INT-5 — the webhook delivery pass, on the existing tick.

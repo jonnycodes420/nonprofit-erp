@@ -6824,6 +6824,73 @@ async function runSchemaInit(pool) {
   // FIX-37: the answer to "have the last 30 days already been thanked?",
   // saved with the run and shown in its history.
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS thanks_answer JSONB`);
+  // SCALE-1 · THE QUEUE (jobQueue.js). One row per run of a background job;
+  // one row per periodic job's next due time. At most one waiting row per key,
+  // which is what makes a second enqueue of the same run a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_queue (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      org_id TEXT,
+      key TEXT NOT NULL,
+      payload JSONB,
+      status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','running','done','dead')),
+      priority INTEGER NOT NULL DEFAULT 5,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      max_attempts INTEGER NOT NULL DEFAULT 5,
+      run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      round TEXT,
+      locked_by TEXT,
+      started_at TIMESTAMPTZ,
+      heartbeat_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ,
+      failed_at TIMESTAMPTZ,
+      last_error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS job_queue_one_waiting ON job_queue (key) WHERE status = 'waiting'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_ready ON job_queue (status, priority, run_after)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_key ON job_queue (key) WHERE status = 'running'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_org ON job_queue (org_id) WHERE status = 'running'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_round ON job_queue (round) WHERE round IS NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS job_schedule (
+      name TEXT PRIMARY KEY,
+      every_ms BIGINT NOT NULL,
+      next_run_at TIMESTAMPTZ NOT NULL,
+      last_enqueued_at TIMESTAMPTZ
+    )`);
+  // SCALE-1 · rate-limit counters every web replica shares (rateLimitStore.js),
+  // and the once-an-hour mark for an ops alert, so two replicas send it once.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rate_limit_hits (
+      key TEXT PRIMARY KEY,
+      hits INTEGER NOT NULL DEFAULT 0,
+      reset_at TIMESTAMPTZ NOT NULL
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_rate_limit_hits_reset ON rate_limit_hits (reset_at)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_in_flight (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      started_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_in_flight_org ON import_in_flight (org_id, started_at)`);
+  // SCALE-1 · each org's AI calls per UTC day (aiClient.js's daily budget).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      org_id TEXT NOT NULL,
+      day DATE NOT NULL,
+      calls INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (org_id, day)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ops_alert_marks (
+      hour_key TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
   // What staff did with a line: dismissed, restored (the kind put back), or
   // acted (a task, a draft, a group opened). The learning reads these.
   await pool.query(`

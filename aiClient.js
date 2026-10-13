@@ -23,9 +23,18 @@ const { query } = require("./db");
 
 const AI_OFF_MESSAGE = "AI is turned off for your organization";
 
+// SCALE-1 · A DAILY AI BUDGET PER ORG. One org's runaway use (a sequence
+// drafting for thousands of people, a script hammering Ask) cannot spend the
+// account's rate limit for everybody else. Counted per org per UTC day in
+// `ai_usage`, one upsert per call; past the budget the call is refused like
+// AI off, so every route's non-AI path answers instead.
+const AI_DAILY_CALLS = () => Math.max(1, Number(process.env.AI_DAILY_CALLS_PER_ORG) || 500);
+const aiBudgetMessage = () => `Your organization has used today's ${AI_DAILY_CALLS().toLocaleString("en-US")} AI requests. `
+  + "AI writing starts again at midnight UTC; everything else keeps working, with plain sentences in place of written ones.";
+
 class AiOffError extends Error {
   constructor(reason) {
-    super(reason === "ai_disabled" ? AI_OFF_MESSAGE : "AI isn't available on this server.");
+    super(reason === "ai_disabled" ? AI_OFF_MESSAGE : reason === "ai_budget" ? aiBudgetMessage() : "AI isn't available on this server.");
     this.name = "AiOffError";
     this.code = "ai_off";
     this.reason = reason;
@@ -47,6 +56,14 @@ async function aiGate(orgId, provider = "anthropic") {
 async function requireAi(orgId, provider) {
   const g = await aiGate(orgId, provider);
   if (!g.ok) throw new AiOffError(g.reason);
+  await chargeAiBudget(orgId);
+}
+// Counts the call and refuses it once the org's day is spent.
+async function chargeAiBudget(orgId) {
+  const rows = await query(
+    `INSERT INTO ai_usage (org_id, day, calls) VALUES (?, (NOW() AT TIME ZONE 'UTC')::date, 1)
+     ON CONFLICT (org_id, day) DO UPDATE SET calls = ai_usage.calls + 1 RETURNING calls`, [orgId]);
+  if (rows[0] && Number(rows[0].calls) > AI_DAILY_CALLS()) throw new AiOffError("ai_budget");
 }
 
 // An Anthropic client for ONE org. Each messages.create / messages.stream asks
@@ -100,4 +117,4 @@ async function recordAiFallback(orgId, surface, err) {
   return reason;
 }
 
-module.exports = { AI_OFF_MESSAGE, AiOffError, aiGate, requireAi, anthropicFor, transcribeAudio, recordAiFallback, fallbackReason };
+module.exports = { AI_OFF_MESSAGE, AiOffError, chargeAiBudget, AI_DAILY_CALLS, aiGate, requireAi, anthropicFor, transcribeAudio, recordAiFallback, fallbackReason };
