@@ -8940,7 +8940,7 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
   if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organisation." });
   if (!WHOLE_IMPORT_SHAPES.has(imp.shape)) {
     return res.status(400).json({ error: "shape_not_reversible",
-      message: "A deposit and a gift file that created its own donors reverse as a whole. Any other import is undone gift by gift, on the record." });
+      message: "A deposit, a gift file, and a file with one row per gift reverse as a whole. Any other import is undone gift by gift, on the record." });
   }
   if (!(await mayUndoImport(req, imp.actor_user_id)))
     return res.status(403).json({ error: "not_yours", message: UNDO_NOT_YOURS });

@@ -2143,7 +2143,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
           onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("agent",{agentView:"changed"});}}>
           <div style={{flex:1,minWidth:0}}>
-            <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{ro.title}</div>
+            {/* Not attn-donor-name: a readout is not a person, and that class
+                is how the smoke walk finds the names that must open a profile. */}
+            <div className="attn-readout-title" style={{fontSize:15,fontWeight:700,color:T.ink}}>{ro.title}</div>
             <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
               {ro.lines.filter(l=>l.kind!=="data_problems").slice(0,2).map(l=>l.sentence).join(", ")}.{" "}
               <span style={{color:T.ink,fontWeight:600}}>Next: see who, and what to do about each.</span>
