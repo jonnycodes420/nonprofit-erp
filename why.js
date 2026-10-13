@@ -169,7 +169,7 @@ async function appeal(orgId, { campaign } = {}) {
       if (d < 0) less.push({ ...row(x.donorId, "donor", x.donorId, x.name, x.last, d, `${fmt(x.cents)} this time, ${fmt(l.cents)} last time`), lastCents: l.cents });
       else if (d > 0) more.push(row(x.donorId, "donor", x.donorId, x.name, x.last, d, `${fmt(x.cents)} this time, ${fmt(l.cents)} last time`));
     } else if (before.has(x.donorId)) back.push(row(x.donorId, "donor", x.donorId, x.name, x.last, x.cents, "Gave before, but not to last year's campaign"));
-    else newcomers.push(row(x.donorId, "donor", x.donorId, x.name, x.last, x.cents, "Their first gift to the organisation"));
+    else newcomers.push(row(x.donorId, "donor", x.donorId, x.name, x.last, x.cents, "Their first gift to the organization"));
   }
   const byAmt = (a, b) => Math.abs(b.amount) - Math.abs(a.amount) || a.name.localeCompare(b.name);
   [lapsed, timing, less, more, newcomers, back].forEach(a => a.sort(byAmt));
@@ -190,10 +190,10 @@ async function appeal(orgId, { campaign } = {}) {
       definition: "Each person who gave to both campaigns and gave more this time: this time minus last time." }),
     reason("new", "New donors", newcomers, {
       phrase: `${spell(n(newcomers))} new ${n(newcomers) === 1 ? "donor" : "donors"} gave`,
-      definition: "Each person whose first gift to the organisation came through this campaign, with what they gave." }),
+      definition: "Each person whose first gift to the organization came through this campaign, with what they gave." }),
     reason("back", "Donors who skipped last year's campaign", back, {
       phrase: `${spell(n(back))} ${n(back) === 1 ? "donor" : "donors"} who skipped last year's campaign gave`,
-      definition: "Each person who had given to the organisation before but not to last year's campaign, with what they gave this time." }),
+      definition: "Each person who had given to the organization before but not to last year's campaign, with what they gave this time." }),
   ].filter(r => r.count > 0).sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
 
   const thisCents = tg.reduce((s, g) => s + g.cents, 0), lastCents = lg.reduce((s, g) => s + g.cents, 0);
@@ -339,7 +339,7 @@ async function call(orgId, { user } = {}, deps = {}) {
 function channelOf(g) {
   if (g.event_id) return "At an event";
   if (g.giving_page_id || g.stripe_payment_id || /card|online|stripe|paypal/i.test(g.payment_method || "")) return "Online";
-  if (/che(ck|que)/i.test(g.payment_method || "")) return "By cheque";
+  if (/che(ck|que)/i.test(g.payment_method || "")) return "By check";
   return "Another way";
 }
 async function retentionCohort(orgId, year, md) {

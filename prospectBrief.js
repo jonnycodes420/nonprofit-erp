@@ -35,7 +35,7 @@ async function build(orgId, donorId) {
   const line = (section, text, source) => lines.push({ section, text, source });
 
   // Who
-  line("Who", `${d.name}${d.kind === "organisation" ? ", an organisation" : ""}${d.city ? `, ${[d.city, d.state].filter(Boolean).join(", ")}` : ""}.`, REC);
+  line("Who", `${d.name}${d.kind === "organisation" ? ", an organization" : ""}${d.city ? `, ${[d.city, d.state].filter(Boolean).join(", ")}` : ""}.`, REC);
   if (d.assigned_to_name) line("Who", `Relationship owner: ${d.assigned_to_name}.`, REC); else notKnown.push("Relationship owner: nobody is assigned.");
   if (d.stage) line("Who", `Stage: ${d.stage}.`, REC);
   if (d.employer) line("Who", `Employer on file: ${d.employer}.`, REC); else if (d.kind !== "organisation") notKnown.push("Employer: not on file.");
@@ -78,7 +78,7 @@ async function build(orgId, donorId) {
 
   const fileName = `Prospect brief, ${d.name}, ${t}.txt`;
   return { title: `Prospect brief: ${d.name}`, date: t, fileName, persona: "Researcher",
-    sources: ["Steward's own record", "screening results, where a provider returned them", "the IRS public file, where the organisation was looked up"],
+    sources: ["Steward's own record", "screening results, where a provider returned them", "the IRS public file, where the organization was looked up"],
     lines, notKnown };
 }
 

@@ -128,7 +128,7 @@ export const CASH_ON_HAND_SENTENCE =
 export function stripeBalanceSentence({ availableCents = 0, pendingCents = 0, cashOnHandText = "" } = {}) {
   if (int(availableCents) === 0 && int(pendingCents) === 0) {
     return "Stripe shows $0 because it has already paid everything it held out to your bank. " +
-      `Cash on hand${cashOnHandText ? ` (${cashOnHandText})` : ""} is your ledger's figure: every gift, cheque and ` +
+      `Cash on hand${cashOnHandText ? ` (${cashOnHandText})` : ""} is your ledger's figure: every gift, check and ` +
       "payment Steward has recorded, minus what has gone out, wherever the money now sits.";
   }
   return "This is money Stripe is still holding for you. When it pays out it reaches your bank, " +

@@ -37,7 +37,7 @@ const TYPE_META = {
   event:   { label: "Events", bg: T.greenDk, bar: T.greenDk, ink: T.white },
   journey: { label: "Journey steps", bg: T.white, bar: T.gold, ink: T.ink, outline: true },
   send:    { label: "Campaign sends", bg: T.white, bar: T.ink, ink: T.ink, outline: true },
-  pledge:  { label: "Pledge instalments", bg: "rgba(201,168,76,0.12)", bar: T.gold, ink: T.ink },
+  pledge:  { label: "Pledge installments", bg: "rgba(201,168,76,0.12)", bar: T.gold, ink: T.ink },
   membership:{ label: "Memberships ending", bg: "rgba(201,168,76,0.12)", bar: T.greenDk, ink: T.ink },
   auction: { label: "Auctions closing", bg: "rgba(15,26,18,0.10)", bar: T.gold, ink: T.ink },
   campaign:{ label: "Campaign and page end dates", bg: T.white, bar: T.greenDk, ink: T.ink, outline: true },
@@ -417,7 +417,7 @@ function Summary({ kind, items, scope, range, onClose, onOpen }) {
   const meetings = items.filter(i => i.type === "meeting" && !i.logged).sort((a, b) => String(a.start).localeCompare(String(b.start)));
   const flagged = items.filter(i => i.conflict);
   const parts = [["meeting", "meeting", "meetings"], ["step", "next step or task", "next steps and tasks"], ["deadline", "grant deadline", "grant deadlines"], ["shift", "shift", "shifts"], ["event", "event", "events"],
-    ["journey", "journey step", "journey steps"], ["send", "campaign send", "campaign sends"], ["pledge", "pledge instalment", "pledge instalments"]]
+    ["journey", "journey step", "journey steps"], ["send", "campaign send", "campaign sends"], ["pledge", "pledge installment", "pledge installments"]]
     .filter(([t]) => count(t)).map(([t, one, many]) => `${count(t)} ${count(t) === 1 ? one : many}`);
   const who = scope === "mine" ? "You have" : "The calendar has";
   return (

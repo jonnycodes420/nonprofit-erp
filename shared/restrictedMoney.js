@@ -95,7 +95,7 @@ export function balanceSentence(b, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!b) return "";
   if (!b.restricted) {
-    return `${fm(b.awardedCents)} awarded, unrestricted — the organisation decides where it goes.`;
+    return `${fm(b.awardedCents)} awarded, unrestricted — the organization decides where it goes.`;
   }
   if (b.overspent) {
     return `${fm(-b.remainingCents)} more has been spent against this award than the funder has paid. Check the spending entries or the payments.`;

@@ -94,7 +94,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
             <strong style={{ minWidth: 160 }}>{l.name}</strong>
             <span>{fmtFull(l.price)}</span>
             <span style={{ color: T.ink3 }}>{l.kind === "sponsor" ? "sponsorship" : `worth ${fmtFull(l.fmv)}, so ${fmtFull(l.deductible)} deductible`}</span>
-            {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organisation pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
+            {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organization pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
             <span style={{ marginLeft: "auto", color: T.ink3 }}>{l.capacity == null ? `${l.taken} taken` : `${l.taken} of ${l.capacity} taken`}</span>
             {l.kind === "sponsor" && (editBenefits && editBenefits.id === l.id
               ? <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -183,7 +183,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
       </Card>
 
       {guests?.recognition?.length > 0 && <Card style={{ padding: "16px 18px" }} data-testid="event-recognition">
-        <div style={h}>For the programme</div>
+        <div style={h}>For the program</div>
         {guests.recognition.map((r, i) => <div key={i} style={{ fontSize: 14, color: T.ink, padding: "3px 0" }}>{r}</div>)}
       </Card>}
     </div>

@@ -87,7 +87,7 @@ export function GrantAwardPlan({ grantId, isReadOnly, onChanged }) {
   if (!d) return null;
   return (
     <div data-testid="grant-award" style={card}>
-      <div style={eyebrow}>The award, paid in instalments</div>
+      <div style={eyebrow}>The award, paid in installments</div>
       <div data-testid="grant-award-sentence" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.sentence}</div>
       {d.installments.length > 0 && (
         <div style={{ marginTop: 8 }}>

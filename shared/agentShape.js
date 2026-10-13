@@ -62,8 +62,8 @@ export const STATUSES = [STATUS_PLANNED, STATUS_ACTIVE, STATUS_PAUSED, STATUS_DO
 export const AGENT_TOOLS = [
   // ── READ ─────────────────────────────────────────────────────────────────
   { name: "find_people", needsHuman: "never", writes: false,
-    what: "Find donors and people in this organisation by their own giving, dates, stage, fund, tags or type.",
-    why: "Reading is the whole point. Every row it can reach belongs to this organisation." },
+    what: "Find donors and people in this organization by their own giving, dates, stage, fund, tags or type.",
+    why: "Reading is the whole point. Every row it can reach belongs to this organization." },
   { name: "count", needsHuman: "never", writes: false,
     what: "Count or total the rows a find returned.",
     why: "Arithmetic over rows it already has." },
@@ -73,7 +73,7 @@ export const AGENT_TOOLS = [
   // reason, is undoable for thirty days, and appears on one Activity screen.
   { name: "draft_note", needsHuman: "never", writes: true, undoable: true,
     entity: "agent_drafts",
-    what: "Write a draft in the organisation's own words and put it in her queue.",
+    what: "Write a draft in the organization's own words and put it in her queue.",
     why: "A draft is not a send. It sits in her queue until she presses send." },
   { name: "create_task", needsHuman: "never", writes: true, undoable: true,
     entity: "tasks",
@@ -159,8 +159,8 @@ export const AGENT_TOOLS = [
     why: "Becomes a gift card the person confirms; the Agent itself records nothing." },
   { name: "enrol_sequence", needsHuman: "never", writes: true, undoable: true,
     entity: "sequence_enrollments",
-    what: "Enrol somebody in a sequence SHE wrote and SHE turned on.",
-    why: "BUILD-94's rule already holds here: she wrote every word and she turned it on. Enrolment does not add a word she did not write." },
+    what: "Enroll somebody in a sequence SHE wrote and SHE turned on.",
+    why: "BUILD-94's rule already holds here: she wrote every word and she turned it on. Enrollment does not add a word she did not write." },
 
   // ── WRITE, ONLY WITH HER SIGNATURE ───────────────────────────────────────
   { name: "queue_for_send", needsHuman: "never", writes: true, undoable: true,
@@ -334,7 +334,7 @@ export const DRAFTS_SCHEMA = {
         properties: {
           donorId: { type: "string", description: "The id of the person this draft is for, from the list." },
           subject: { type: "string", description: "A short subject line." },
-          body: { type: "string", description: "The note itself, in plain sentences, signed off as the organisation." },
+          body: { type: "string", description: "The note itself, in plain sentences, signed off as the organization." },
         } } },
   },
 };
@@ -513,7 +513,7 @@ function clauseFor(tool, group, byId, nameIt) {
     case "log_note": return n === 1 ? (w ? `log a note on ${w}'s record` : "log a note") : (w ? `log notes on ${w}` : `log ${n} notes`);
     case "set_stage": return n === 1 ? `move ${who || "them"} to ${s0.stage || "a new stage"}` : `move ${w || "them"} to a new stage`;
     case "add_tag": return w ? `tag ${w} "${s0.tag || ""}"` : `add the tag "${s0.tag || ""}"`;
-    case "enrol_sequence": return `enrol ${w || "them"} in a sequence you wrote`;
+    case "enrol_sequence": return `enroll ${w || "them"} in a sequence you wrote`;
     case "queue_for_send": return `put ${n === 1 ? "a message" : n + " messages"} in your send queue`;
     case "send_email": return `send ${n === 1 ? "a message" : n + " messages"} you signed for`;
     case "mark_volunteer": return n === 1 ? `make ${who || "them"} a volunteer` : `make ${who || n + " people"} volunteers`;
@@ -556,7 +556,7 @@ export function describeStep(step, byId = new Map()) {
     case "log_note": return `Log a note on ${who}'s record.`;
     case "set_stage": return `Move ${who} to ${step.stage || "a new stage"}.`;
     case "add_tag": return `Tag ${who} "${step.tag || ""}".`;
-    case "enrol_sequence": return `Enrol ${who} in a sequence you wrote.`;
+    case "enrol_sequence": return `Enroll ${who} in a sequence you wrote.`;
     case "queue_for_send": return `Put a message to ${who} in your send queue.`;
     case "send_email": return `Send a message to ${who}.`;
     case "mark_volunteer": return `Tag ${who} Volunteer, on the same record.`;

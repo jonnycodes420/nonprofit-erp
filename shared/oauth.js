@@ -205,7 +205,7 @@ export const PROVIDERS = {
     pkce: true,
     tokenStyle: "body",
     restricted: true,
-    reviewNote: "Microsoft requires publisher verification, and an organisation's own admin may need to grant consent before its staff can connect.",
+    reviewNote: "Microsoft requires publisher verification, and an organization's own admin may need to grant consent before its staff can connect.",
     sandboxNote: "Connect a Microsoft developer tenant first.",
   },
   // PayPal is deliberately ABSENT as an OAuth provider. Its native onboarding
@@ -229,7 +229,7 @@ export const vendorKeyOf = k => PROVIDERS[k]?.vendor || k;
 export const PAYPAL_ACTION =
   "Connect with your PayPal client ID and secret.";
 export const PAYPAL_WHY =
-  "PayPal's one-click connection is waiting on their partner programme. Connecting with your own client ID and secret works the same way, and Steward already listens for PayPal's webhooks.";
+  "PayPal's one-click connection is waiting on their partner program. Connecting with your own client ID and secret works the same way, and Steward already listens for PayPal's webhooks.";
 // Kept as the two sentences joined, for anything that wants one string.
 export const PAYPAL_WAITING = `${PAYPAL_ACTION} ${PAYPAL_WHY}`;
 

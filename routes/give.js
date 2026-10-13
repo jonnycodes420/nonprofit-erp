@@ -229,7 +229,7 @@ app.get("/pos/mapping", requireAuth, wrap(async (req, res) => {
       ORDER BY date DESC LIMIT 50`, [orgId]);
   res.json({
     items, events, classes: POS.CLASS_META, unmapped: items.filter(i => !i.mapped).length,
-    definition: "Everything the register has sold, and what your organisation says each one is. Anything nobody has said about is counted as revenue and never as a gift.",
+    definition: "Everything the register has sold, and what your organization says each one is. Anything nobody has said about is counted as revenue and never as a gift.",
   });
 }));
 
@@ -754,7 +754,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     attentionSentence: needsAttention.length
       ? `${needsAttention.length} ${needsAttention.length === 1 ? "connection needs" : "connections need"} a look: ${needsAttention.map(c => c.label).join(", ")}.`
       : null,
-    definition: "Every way money reaches this organisation, whether Steward can see it, and whether what arrived matches what was given. Gifts and dollars are the last thirty days, counted from the gift rows themselves.",
+    definition: "Every way money reaches this organization, whether Steward can see it, and whether what arrived matches what was given. Gifts and dollars are the last thirty days, counted from the gift rows themselves.",
   });
 }));
 
@@ -815,7 +815,7 @@ app.get("/connections/:id/sales", requireAuth, wrap(async (req, res) => {
       eventCents: Number(r.event_cents) || 0, otherCents: Number(r.other_cents) || 0 })),
     count: rows.length, totalCents: sum("total_cents"), giftCents: sum("gift_cents"),
     eventCents: sum("event_cents"), otherCents: sum("other_cents"),
-    definition: "Every sale the register took through this connection in the last thirty days. Only the lines your organisation classified as a donation became gifts; the rest is revenue and is never on a giving receipt.",
+    definition: "Every sale the register took through this connection in the last thirty days. Only the lines your organization classified as a donation became gifts; the rest is revenue and is never on a giving receipt.",
   });
 }));
 
@@ -3080,7 +3080,7 @@ const donateHandler = async (req, res) => {
   let auctionWin = null;
   if (auctionPayToken) {
     auctionWin = await AC.resolvePayToken(query, auctionPayToken);
-    if (!auctionWin || auctionWin.orgId !== org.id) return res.status(400).json({ error: "This pay link is no longer valid. Ask the organisation for a new one." });
+    if (!auctionWin || auctionWin.orgId !== org.id) return res.status(400).json({ error: "This pay link is no longer valid. Ask the organization for a new one." });
     if (auctionWin.item.paid_gift_id || auctionWin.item.paid_payment_id) return res.status(409).json({ error: "This item has already been paid for." });
     baseCents = AC.cents(auctionWin.item.high_amount);
     email = auctionWin.item.bidder_email;
@@ -3430,7 +3430,7 @@ const donateHandler = async (req, res) => {
       if (cur.checkout_session_id) {
         try {
           const prev = await stripe.checkout.sessions.retrieve(cur.checkout_session_id, {}, acct);
-          if (prev && prev.status === "complete") return { refused: "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organisation." };
+          if (prev && prev.status === "complete") return { refused: "A payment for this item is already going through. If it does not show as paid in a few minutes, ask the organization." };
           if (prev && prev.status === "open") await stripe.checkout.sessions.expire(cur.checkout_session_id, {}, acct);
         } catch (e) {
           console.error(`[auction] could not close the earlier checkout for ${itemId}:`, e.message);
@@ -3613,8 +3613,8 @@ app.post("/gift-starts/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
   const decision = await donorMailDecision("gift_unfinished", r.email, orgId);
   if (!decision.send) return res.status(409).json({ error: "mail_refused", reason: decision.reason,
     sentence: decision.reason === "demo_org" || (decision.reason === "org_emails_disabled" && (await query("SELECT is_demo_org FROM orgs WHERE id=?", [orgId]))[0]?.is_demo_org)
-      ? "This is a demonstration organisation, so Steward emails nobody. On a real account this note would go to them now."
-      : decision.reason === "org_emails_disabled" ? "Email is turned off for your organisation, so nothing was sent. An admin can turn it on in Settings."
+      ? "This is a demonstration organization, so Steward emails nobody. On a real account this note would go to them now."
+      : decision.reason === "org_emails_disabled" ? "Email is turned off for your organization, so nothing was sent. An admin can turn it on in Settings."
       : decision.reason === "not_onboarded" ? "Nothing was sent. Email turns on once your donor file is in."
       : "Nothing was sent: Steward will not email this address." });
   // Claim it before sending, so two presses cannot send two notes.
@@ -5629,7 +5629,7 @@ app.post("/express/:orgSlug/open", portalLinkIpLimiter, wrap(async (req, res) =>
     defaultIndex: ladder ? ladder.defaultIndex : 0,
     coverFeesEnabled: org.cover_fees_enabled !== false,
     coverFeeRateSentence: R.rateSentence(R.orgRates(org).card),
-    definition: "One tap uses the card you saved with this organisation. Steward never sees your card number.",
+    definition: "One tap uses the card you saved with this organization. Steward never sees your card number.",
   });
 }));
 

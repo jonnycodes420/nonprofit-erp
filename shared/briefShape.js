@@ -35,7 +35,7 @@
 
 // ── THE SECTIONS, IN THE ORDER SHE READS THEM ─────────────────────────────
 export const BRIEF_SECTIONS = [
-  { key: "giving",        title: "Their giving",        source: "gifts, in this organisation's own words" },
+  { key: "giving",        title: "Their giving",        source: "gifts, in this organization's own words" },
   { key: "relationships", title: "Who they are to you", source: "household, related people and soft credits" },
   { key: "proposal",      title: "The open ask",        source: "the proposal on file, if there is one" },
   { key: "conversations", title: "Last five conversations", source: "logged conversations, quoted" },
@@ -216,7 +216,7 @@ export function sectionTitle(key) {
 // The line at the foot of the page. It is not decoration: a brief is read in a
 // car on the way to an ask, and the reader has to know what it is and is not.
 export const BRIEF_FOOTER =
-  "Written from this organisation's own records. Every line above rests on a row you can open. " +
+  "Written from this organization's own records. Every line above rests on a row you can open. " +
   "Steward has not estimated this person's means and cannot.";
 
 export function droppedSentence(dropped = []) {

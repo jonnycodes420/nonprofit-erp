@@ -123,7 +123,7 @@ export function GrantImport({ onClose, parseFile, onDone }) {
                 <summary style={{ fontSize: 13, color: T.ink2, cursor: "pointer" }}>The funders, and how each was matched</summary>
                 {plan.funders.map(f => (
                   <div key={f.name} style={{ fontSize: 13, color: T.ink, padding: "5px 0", borderTop: "1px solid " + T.bg3 }}>
-                    {f.name} <span style={{ color: T.ink3 }}>· {f.willCreate ? "new organisation record" : f.how === "ein" ? "matched by EIN" : "matched by name"} · {f.grants} {f.grants === 1 ? "grant" : "grants"}</span>
+                    {f.name} <span style={{ color: T.ink3 }}>· {f.willCreate ? "new organization record" : f.how === "ein" ? "matched by EIN" : "matched by name"} · {f.grants} {f.grants === 1 ? "grant" : "grants"}</span>
                   </div>))}
               </details>)}
             {plan.refused?.length > 0 && (

@@ -126,7 +126,7 @@ export function SecurityPanel({ isAdmin }) {
         <div style={{ fontSize: 14, color: T.ink, marginBottom: 8 }}>
           Two-factor is <strong>{st ? (st.enabled ? "on" : "off") : "…"}</strong> for you
           {st?.enabled ? `, with ${st.method === "email" ? "a code by email" : "an authenticator app"}. ${st.recoveryCodesLeft} recovery code${st.recoveryCodesLeft === 1 ? "" : "s"} left.` : "."}
-          {st?.orgRequires ? " Your organisation requires it for everyone." : st?.orgRequiresForAdmins ? " Your organisation requires it for administrators." : ""}
+          {st?.orgRequires ? " Your organization requires it for everyone." : st?.orgRequiresForAdmins ? " Your organization requires it for administrators." : ""}
         </div>
         {st && !st.enabled && !setup && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -149,7 +149,7 @@ export function SecurityPanel({ isAdmin }) {
           <div style={{ ...small, marginTop: 10 }}>To make new recovery codes{st.mustKeep ? "" : ", or to turn two-factor off"}, enter a current code.</div>
           {codeBox("A current code", newCodes, "Make new recovery codes")}
           {!st.mustKeep && <button type="button" onClick={off} disabled={busy || !code} style={{ ...btn, marginTop: 8 }}>Turn two-factor off</button>}
-          {st.mustKeep && <div style={{ ...small, marginTop: 6 }}>It stays on: {st.orgRequires || st.orgRequiresForAdmins ? "your organisation requires it." : "super-admin accounts always use it."}</div>}
+          {st.mustKeep && <div style={{ ...small, marginTop: 6 }}>It stays on: {st.orgRequires || st.orgRequiresForAdmins ? "your organization requires it." : "super-admin accounts always use it."}</div>}
         </>}
         {isAdmin && st && !st.demo && <div style={{ marginTop: 16, borderTop: "1px solid " + T.bg2, paddingTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink }}>
@@ -205,7 +205,7 @@ export function SecurityPanel({ isAdmin }) {
       {isAdmin && <div style={card}>
         <SectionLabel>Your data</SectionLabel>
         <div style={{ ...small, marginBottom: 8 }}>
-          Everything Steward holds for your organisation, every table, in one file. Passwords and sign-in secrets are left out.
+          Everything Steward holds for your organization, every table, in one file. Passwords and sign-in secrets are left out.
         </div>
         <button type="button" onClick={downloadAll} disabled={busy} style={btn}>Download everything</button>
       </div>}

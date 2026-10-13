@@ -99,7 +99,7 @@ function MegaResources() {
       <div className="col">
         <h5>Help</h5>
         <Mi href="/faq" icon="help" b="FAQ" />
-        <Mi href="/help" icon="chat" b="Help centre" />
+        <Mi href="/help" icon="chat" b="Help center" />
         <Mi href={OPEN_API_HREF} icon="code" b="Developers and API" />
         <Mi href="/whats-new" icon="clock" b="What's new" />
       </div>
@@ -130,7 +130,7 @@ const MEGAS = [["plat", "Solutions", MegaPlatform], ["why", "Why switch", MegaWh
 const DRAWER = [
   ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/onboarding", "Onboarding and support"], ["/features", "All features"]]],
   ["Why switch", [["/why", "The case for retention"], ["/move", "Moving to Steward"], ["/for", "Who it's for"], ["/security", "Security and trust"], ["/about", "About"], ["/leadership", "Leadership"], ["/partners", "Partners"]]],
-  ["Learn", [["/guides", "Guides"], ["/templates", "Templates"], ["/articles", "Articles"], ["/glossary", "Glossary"], ["/research", "Research"], ["/tools", "Free tools"], ["/faq", "FAQ"], ["/help", "Help centre"]]],
+  ["Learn", [["/guides", "Guides"], ["/templates", "Templates"], ["/articles", "Articles"], ["/glossary", "Glossary"], ["/research", "Research"], ["/tools", "Free tools"], ["/faq", "FAQ"], ["/help", "Help center"]]],
 ];
 
 function Header() {
@@ -193,7 +193,7 @@ function Header() {
 const FOOTER = [
   ["Solutions", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
   ["Learn", [["/why", "The case for retention"], ["/articles", "Articles"], ["/guides", "Guides"], ["/templates", "Templates"], ["/research", "Research"], ["/tools", "Free tools"], ["/partners", "Partners"], ["/faq", "FAQ"]]],
-  ["Customer resources", [["/login", "Log in"], ["/help", "Help centre"], [OPEN_API_HREF, "API documentation"], ["/whats-new", "What's new"], ["/move", "Moving to Steward"]]],
+  ["Customer resources", [["/login", "Log in"], ["/help", "Help center"], [OPEN_API_HREF, "API documentation"], ["/whats-new", "What's new"], ["/move", "Moving to Steward"]]],
   ["Company", [["/about", "About us"], ["/leadership", "Leadership"], ["/security", "Security and trust"], ["/for", "Who it's for"], ["/partners", "Partner with us"], ["/contact", "Contact"]]],
   ["Featured guides", [["/guides/first-year-retention", "The first-year retention plan"], ["/guides/major-donor-visits", "Major donor visits for small shops"], ["/articles/state-of-retention", "The state of donor retention"]]],
 ];

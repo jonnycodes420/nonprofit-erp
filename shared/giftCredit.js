@@ -60,7 +60,7 @@ export function normaliseTributeType(raw) {
 }
 
 export function tributePhrase(type) {
-  return type === TRIBUTE_MEMORY ? "in memory of" : type === TRIBUTE_HONOR ? "in honour of" : "";
+  return type === TRIBUTE_MEMORY ? "in memory of" : type === TRIBUTE_HONOR ? "in honor of" : "";
 }
 
 const toCents = v => Math.round(Number(v) * 100);
@@ -115,7 +115,7 @@ export function tributeNoticeBody({ notifyName, donorName, honoureeName, type, o
     "",
     `${who} has made a gift to ${orgName} ${phrase} ${honoureeName}.`,
     type === TRIBUTE_MEMORY
-      ? `We are so sorry for your loss, and we are honoured that ${honoureeName} is remembered this way.`
+      ? `We are so sorry for your loss, and we are honored that ${honoureeName} is remembered this way.`
       : `We wanted you to know that ${honoureeName} is being celebrated this way.`,
     "",
     "With gratitude,",

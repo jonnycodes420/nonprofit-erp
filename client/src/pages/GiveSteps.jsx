@@ -409,10 +409,10 @@ export default function GiveSteps({
           {spec.details.tribute ? (
             <div className="give-tribute" style={{ marginBottom: 10 }}>
               <label style={{ display: "block" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Is this gift in someone's honour?</span>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Is this gift in someone's honor?</span>
                 <select className="give-tribute-type" value={tributeType} onChange={e => setTributeType(e.target.value)} style={{ ...inp, marginTop: 4 }}>
                   <option value="">No</option>
-                  <option value="honor">In honour of</option>
+                  <option value="honor">In honor of</option>
                   <option value="memory">In memory of</option>
                 </select>
               </label>
@@ -435,7 +435,7 @@ export default function GiveSteps({
                       <span style={{ fontSize: 13, fontWeight: 600 }}>Their email</span>
                       <input className="give-notify-email" type="email" value={notifyEmail}
                         onChange={e => setNotifyEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-                      <span style={{ fontSize: 12, color: MUTED }}>Someone at the organisation writes to them; this is never sent automatically.</span>
+                      <span style={{ fontSize: 12, color: MUTED }}>Someone at the organization writes to them; this is never sent automatically.</span>
                     </label>
                   ) : null}
                 </>
@@ -479,7 +479,7 @@ export default function GiveSteps({
           <label style={{ display: "block", marginBottom: 10 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>Email</span>
             <input className="give-email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-            <span className="give-email-kept" style={{ fontSize: 12, color: MUTED }}>Your receipt goes here. It is saved when you continue, so {spec.orgName || "this organisation"} can let you know if your gift does not go through.</span>
+            <span className="give-email-kept" style={{ fontSize: 12, color: MUTED }}>Your receipt goes here. It is saved when you continue, so {spec.orgName || "this organization"} can let you know if your gift does not go through.</span>
           </label>
 
           {spec.details.employerMatch ? (
@@ -571,7 +571,7 @@ export default function GiveSteps({
               <input type="checkbox" checked={rememberMe} onChange={e => setRememberMe(e.target.checked)} />{" "}
               Remember my card so I can give again in one tap.
               <span style={{ display: "block", fontSize: 12, color: MUTED, marginTop: 3, marginLeft: 22 }}>
-                It is kept with {spec.orgName || "this organisation"}&rsquo;s own payment provider, not with Steward, and we email you a link when you want to use it.
+                It is kept with {spec.orgName || "this organization"}&rsquo;s own payment provider, not with Steward, and we email you a link when you want to use it.
               </span>
             </label>
           ) : null}
@@ -585,7 +585,7 @@ export default function GiveSteps({
               naming a method that the account has not switched on would be a
               claim about somebody else's settings. */}
           <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
-            You will finish on Stripe&rsquo;s secure page. Card, Apple Pay, Google Pay, a US bank account and PayPal appear there wherever this organisation and your device support them.
+            You will finish on Stripe&rsquo;s secure page. Card, Apple Pay, Google Pay, a US bank account and PayPal appear there wherever this organization and your device support them.
           </div>
           {submitErr ? <div className="give-err" style={{ fontSize: 13, color: ERR, marginBottom: 10 }}>{submitErr}</div> : null}
           <button type="button" className="give-pay" onClick={submit} disabled={submitting} style={{ ...btn, opacity: submitting ? 0.6 : 1 }}>

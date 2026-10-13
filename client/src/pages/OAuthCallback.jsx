@@ -85,7 +85,7 @@ export default function OAuthCallback() {
       const r = await apiFetch("/oauth/xero/tenant", { method: "POST", body: JSON.stringify({ tenantId: id }) });
       setState({ phase: "done", sentence: r.sentence }); setTenants(null);
     } catch (e) {
-      setState({ phase: "failed", sentence: e?.body?.sentence || "That organisation was not saved." });
+      setState({ phase: "failed", sentence: e?.body?.sentence || "That organization was not saved." });
     }
   };
 
@@ -110,7 +110,7 @@ export default function OAuthCallback() {
         </div>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 24, color: PAL.ink, marginBottom: 10 }}>
           {state.phase === "done" ? "Connected."
-            : state.phase === "choose" ? "Which organisation?"
+            : state.phase === "choose" ? "Which organization?"
             : state.phase === "working" ? "One moment." : "Nothing was connected."}
         </div>
         <div style={{ fontSize: 14.5, lineHeight: 1.6, color: PAL.ink }}>{state.sentence}</div>

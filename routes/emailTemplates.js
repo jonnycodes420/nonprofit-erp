@@ -520,7 +520,7 @@ app.get("/watch/:orgSlug/:provider/:videoId", videoLimiter, wrap(async (req, res
   const videoId = String(req.params.videoId || "");
   const NEUTRAL = { band: "#1a6b4a", bandFg: "#ffffff", displayName: "", logoDataUri: null, logoAbsUrl: null };
   const notFound = brand => res.status(404).send(PP.publicPage({ title: "Not found", brand: brand || NEUTRAL, footer: "Sent with Steward.",
-    body: `<div class="card"><h1>That video is not here.</h1><p class="muted">The link may be incomplete. Ask the organisation that sent it for a fresh one.</p></div>` }));
+    body: `<div class="card"><h1>That video is not here.</h1><p class="muted">The link may be incomplete. Ask the organization that sent it for a fresh one.</p></div>` }));
   const slug = String(req.params.orgSlug || "");
   if (!/^[a-z0-9-]{1,80}$/i.test(slug) || !VIDEO_ID[provider] || !VIDEO_ID[provider].test(videoId)) return notFound();
   const [org] = await query(`SELECT id, name FROM orgs WHERE org_slug=?`, [slug]);

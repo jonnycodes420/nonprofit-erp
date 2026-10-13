@@ -5,6 +5,7 @@ import * as RATES from "../../../shared/processingRates.js";
 import { useParams } from "react-router-dom";
 import { API } from "../api";
 import { T, fmtMoney } from "./publicTheme";
+import { fmtFull } from "../lib/money";
 import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
 // BUILD-95 §5B — the ONE widget renderer, shared with the portal.
@@ -1060,7 +1061,7 @@ export default function Donate() {
                 {ex.firstName ? `Welcome back, ${ex.firstName}.` : "Welcome back."}
               </div>
               <div style={{ fontSize: 14, color: T.ink2, lineHeight: 1.6, marginBottom: 16 }}>
-                One tap gives to {ex.orgName || org?.name || "this organisation"} using
+                One tap gives to {ex.orgName || org?.name || "this organization"} using
                 {" "}{ex.card?.last4 ? `your ${ex.card.brand || "card"} ending ${ex.card.last4}` : "the card you saved"}.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))", gap: 8, marginBottom: 8 }}>
@@ -1622,9 +1623,9 @@ export default function Donate() {
             <input type="checkbox" checked={coverFees} onChange={e => setCoverFees(e.target.checked)}
               style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
             <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
-              Add <strong>${(feeCents / 100).toFixed(2)}</strong> to help cover card-processing costs
+              Add <strong>{fmtFull(feeCents / 100)}</strong> to help cover card-processing costs
               {isRecurring ? ` on each ${frequency === "monthly" ? "monthly" : "annual"} gift` : ""},
-              so {org.name} receives your full ${effectiveAmount.toFixed(2)}.
+              so {org.name} receives your full {fmtFull(effectiveAmount)}.
             </span>
           </label>
         )}
@@ -1680,7 +1681,7 @@ export default function Donate() {
           </div>
           <input type="email" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} style={inp} required />
           <div className="give-email-kept" style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-            Your email is saved when you press Give, so {th.displayName || org?.name || "this organisation"} can let you know if your gift does not go through.
+            Your email is saved when you press Give, so {th.displayName || org?.name || "this organization"} can let you know if your gift does not go through.
           </div>
         </div>
 

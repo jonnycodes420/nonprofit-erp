@@ -121,7 +121,7 @@ export function outcomeLanguage(text) {
 // The sentence offered in place of an outcome Steward cannot back. It is a
 // PROMPT to the human, not a placeholder that reads like content.
 export const OUTCOMES_PROMPT =
-  "Steward does not hold programme outcomes — attendance, results, what changed for the people you serve. Nobody has entered them, so nothing here can state them. Write this section yourself; the figures above are the parts Steward can back.";
+  "Steward does not hold program outcomes — attendance, results, what changed for the people you serve. Nobody has entered them, so nothing here can state them. Write this section yourself; the figures above are the parts Steward can back.";
 
 export const OUTLINE_FOOTER =
   "Every figure above is rendered by Steward from its own rows. Sentences that could not cite a row were left out and counted.";
@@ -202,12 +202,12 @@ export function validateOutline(raw, { rows = new Set(), ungrounded = null } = {
 // nobody recorded.
 export const OUTLINE_SECTIONS = [
   { key: "promised", heading: "What we said we would do",
-    source: "the grant's programme and the proposal on file" },
+    source: "the grant's program and the proposal on file" },
   { key: "money_in", heading: "What the funder paid",
     source: "payments applied to the award" },
   { key: "money_out", heading: "What we spent against it",
     source: "spending entered by hand against this grant" },
-  { key: "activity", heading: "The programme's giving and people in the period",
+  { key: "activity", heading: "The program's giving and people in the period",
     source: "gifts to this grant's fund, and the people who gave them" },
   { key: "outcomes", heading: "What changed for the people you serve",
     source: null },       // NOTHING. Steward holds no outcomes; the human writes it.

@@ -121,14 +121,14 @@ const SHAPE_CHOICE = {
 // become?" dropdown both read it, so the two cannot drift.
 const TX_ROLE_LABELS = {
   donorName: "Donor name", donorEmail: "Email", firstName: "First name", lastName: "Last name",
-  orgName: "Organisation name", donorType: "Donor type", donorId: "Donor ID",
+  orgName: "Organization name", donorType: "Donor type", donorId: "Donor ID",
   amount: "Gift amount", date: "Gift date", type: "Gift type", campaign: "Campaign / fund",
   fund: "Fund", paymentMethod: "Payment method", notes: "Notes",
   externalId: "Gift / transaction ID", stage: "Payment status",
   phone: "Phone", address: "Address", city: "City", state: "State", zip: "ZIP",
   owner: "Assigned officer (portfolio owner)",
   softCreditName: "Soft credit to", softCreditAmount: "Soft credit amount",
-  tributeName: "In honour or memory of", tributeType: "Tribute type",
+  tributeName: "In honor or memory of", tributeType: "Tribute type",
   tributeNotify: "Tribute: who to tell", matchEmployer: "Matching employer",
   wealthRating: "Wealth screen rating", wealthCapacity: "Wealth screen capacity",
   wealthDate: "Wealth screen date",
@@ -3009,7 +3009,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                   write with count and examples. */}
               {payload?.semantics?.unrecognizedTypes?.length > 0 && (
                 <div style={{background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
-                  <strong>Gift types we don't recognise:</strong>{" "}
+                  <strong>Gift types we don't recognize:</strong>{" "}
                   {payload.semantics.unrecognizedTypes.map(u => `“${u.type}” (${u.count}${u.examples?.[0] ? `, e.g. line ${u.examples[0].line}` : ""})`).join(" · ")}
                   {": "}these rows import as ordinary gifts with the type kept as written.
                 </div>
@@ -3042,7 +3042,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
               </div>
               {headersUnrecognized && (
                 <div style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
-                  Most of these column headers aren't ones Steward recognises, one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                  Most of these column headers aren't ones Steward recognizes, one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
                 </div>
               )}
               {/* BUILD-101 Part 6 — a membership file, and whose. */}
@@ -3093,7 +3093,7 @@ function DonorImportFile({ onClose, onImported, withHistory = false, org = null,
                     The columns are mapped.{" "}
                     {npsp.object===NPSP_OBJECT_OPPORTUNITY
                       ? NPSP_PRESET.cashRule
-                      : "An account named like a household is a PERSON; only an organisation account becomes an organisation."}
+                      : "An account named like a household is a PERSON; only an organization account becomes an organization."}
                   </div>
                   {/* A refusal Steward understood and could not use is said out
                       loud, with both column names in it. Silence here is how

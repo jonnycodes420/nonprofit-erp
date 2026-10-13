@@ -186,7 +186,7 @@ const SPREADSHEET_PAGE = {
   ],
   loses: [
     "Formulas, which arrive as the number they worked out",
-    "Cell colours and notes, which are not data Steward can act on",
+    "Cell colors and notes, which are not data Steward can act on",
   ],
   note: null,
 };

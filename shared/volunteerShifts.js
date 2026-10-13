@@ -249,7 +249,7 @@ export const GROUP_KEYS = GROUP_KINDS.map(g => g.key);
 export function validateOpportunity(raw = {}) {
   const errors = [];
   const name = String(raw.name || "").trim().slice(0, 160);
-  if (!name) errors.push({ field: "name", message: "An opportunity needs a name people will recognise." });
+  if (!name) errors.push({ field: "name", message: "An opportunity needs a name people will recognize." });
   const description = String(raw.description || "").trim().slice(0, 4000) || null;
   const location = String(raw.location || "").trim().slice(0, 200) || null;
   const program = String(raw.program || "").trim().slice(0, 120) || null;
@@ -325,7 +325,7 @@ export function validateCredential(raw = {}, today = null) {
 // The thing nobody else does: volunteers who give and givers who volunteer,
 // on one record. These are the two sentences Home and the profile show, and
 // they are built here so both surfaces say the same words.
-export function crossoverSentences({ bothCount, volunteerNeverAskedCount, orgName = "your organisation" }) {
+export function crossoverSentences({ bothCount, volunteerNeverAskedCount, orgName = "your organization" }) {
   const out = [];
   if (bothCount) {
     const one = bothCount === 1;

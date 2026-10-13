@@ -33,23 +33,23 @@ export const CHEQUE_READ_SCHEMA = {
   properties: {
     amountDigits: { type: ["string", "null"], description: "The amount in the box, transcribed EXACTLY as written, digits and punctuation only. null if not legible." },
     amountWords:  { type: ["string", "null"], description: "The amount line, transcribed VERBATIM including any fraction such as 00/100. null if not legible." },
-    payer:        { type: ["string", "null"], description: "The name PRINTED on the cheque (top left), not the signature. null if not legible." },
+    payer:        { type: ["string", "null"], description: "The name PRINTED on the check (top left), not the signature. null if not legible." },
     memo:         { type: ["string", "null"], description: "The memo/for line, verbatim. null if blank or not legible." },
-    chequeNumber: { type: ["string", "null"], description: "The cheque number, top right. null if not legible." },
+    chequeNumber: { type: ["string", "null"], description: "The check number, top right. null if not legible." },
     date:         { type: ["string", "null"], description: "The date line, verbatim as written. null if not legible." },
     unreadable:   { type: "array", items: { type: "string" }, description: "Field names that could not be read, and why in a few words." },
   },
 };
 
 export const CHEQUE_READ_PROMPT = [
-  "You are transcribing a photograph of a paper cheque for a nonprofit's bookkeeper.",
+  "You are transcribing a photograph of a paper check for a nonprofit's bookkeeper.",
   "",
   "Transcribe ONLY what is written. Do not interpret, correct, complete or tidy anything.",
   "",
   "- Transcribe the two amounts SEPARATELY and INDEPENDENTLY. Do not let one influence",
   "  your reading of the other, and never copy one into the other's field. They are",
   "  checked against each other afterwards, which only works if they are read apart.",
-  "- The payer is the name PRINTED on the cheque, not the signature.",
+  "- The payer is the name PRINTED on the check, not the signature.",
   "- A field you cannot read confidently is null, and its name goes in `unreadable`.",
   "  A blank left blank costs one line of typing. A guess costs somebody's record.",
   "- Never infer an amount from the other fields, and never round.",
@@ -133,7 +133,7 @@ export function unsettledSentence(rec, money) {
     return `Only the figures could be read (${f(rec.digits)}). Check them against the line and type the amount.`;
   if (rec.reason === "only the words could be read")
     return `Only the written amount could be read (${f(rec.words)}). Check it against the box and type the amount.`;
-  return "Neither amount could be read. Type it from the cheque.";
+  return "Neither amount could be read. Type it from the check.";
 }
 
 export const CHEQUE_READ_NOTE =

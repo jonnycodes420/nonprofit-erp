@@ -95,7 +95,7 @@ export const MERGE_FIELDS = [
   { key: "last_gift_date",    label: "When they last gave" },
   { key: "fund",              label: "The fund they gave to" },
   { key: "sponsor_name",      label: "Your word for a giver" },
-  { key: "org_name",          label: "Your organisation" },
+  { key: "org_name",          label: "Your organization" },
   { key: "gift",              label: "Your word for a gift" },
 ];
 const TOKEN_RE = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
@@ -155,7 +155,7 @@ export function timezoneGate(org) {
     ok: false,
     reason: "no_timezone",
     message: "A sequence sends on weekday mornings where you are, so Steward has to know where that is. " +
-             "Set your organisation's timezone in Settings and this turns on.",
+             "Set your organization's timezone in Settings and this turns on.",
   };
 }
 

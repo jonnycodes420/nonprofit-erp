@@ -25,7 +25,7 @@
 export const MERGE_FIELDS = [
   { token: "{{first_name}}", label: "First name", sample: "Margaret" },
   { token: "{{donor_name}}", label: "Full name", sample: "Margaret Chen" },
-  { token: "{{org_name}}", label: "Your organisation", sample: "Sparrow Missions" },
+  { token: "{{org_name}}", label: "Your organization", sample: "Sparrow Missions" },
   { token: "{{gift_amount}}", label: "Their last gift", sample: "$250" },
   { token: "{{total_giving}}", label: "Their lifetime giving", sample: "$4,150" },
   { token: "{{year}}", label: "This year", sample: String(new Date().getUTCFullYear()) },
@@ -47,7 +47,7 @@ export function renderMergeFields(html, values = {}) {
   const v = {
     first_name: values.first_name || "Margaret",
     donor_name: values.donor_name || "Margaret Chen",
-    org_name: values.org_name || "your organisation",
+    org_name: values.org_name || "your organization",
     gift_amount: values.gift_amount || "your last gift",
     total_giving: values.total_giving || "$0",
     year: values.year || String(new Date().getUTCFullYear()),
@@ -67,7 +67,7 @@ const p = t => `<p>${t}</p>`;
 // `vocab` is BUILD-86's `t()`; each template is built with the org's own words
 // for a donor and a monthly giver, so a shop that says "partners" never reads
 // the word "donor" in its own appeal.
-export function emailTemplates({ orgName = "your organisation", t = (k) => DEFAULT_WORDS[k] || k } = {}) {
+export function emailTemplates({ orgName = "your organization", t = (k) => DEFAULT_WORDS[k] || k } = {}) {
   const org = orgName;
   const sponsorWord = t("monthly_giver", 1);
   const sponsorWordPl = t("monthly_giver", 2);
@@ -95,7 +95,7 @@ export function emailTemplates({ orgName = "your organisation", t = (k) => DEFAU
       body: [
         p("Hello {{first_name}},"),
         p(`Thank you for giving to ${org}. I am writing to ask whether you would think about giving a small amount every month.`),
-        p("A monthly gift, even a modest one, lets us plan the year instead of guessing at it. It is the steadiest help a small organisation can have."),
+        p("A monthly gift, even a modest one, lets us plan the year instead of guessing at it. It is the steadiest help a small organization can have."),
         p("You can change the amount or stop at any time, and you only need to tell us once."),
         p("If it is not right for you, thank you all the same. Your last gift mattered, and so do you."),
       ].join("\n"),

@@ -58,7 +58,7 @@ export function Status() {
 export function Subprocessors() {
   return <>
     <Hero eyebrow="Security and trust" crumbs={[["Why Steward"], ["Security and trust", "/security"], ["Subprocessors"]]} h="Who else touches <b>your data.</b>"
-      lede="Every company that receives your organisation's or your donors' information when you use Steward, what it gets and why. Built from Steward's own code." noCta />
+      lede="Every company that receives your organization's or your donors' information when you use Steward, what it gets and why. Built from Steward's own code." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
       {SUBPROCESSORS.map(s => <div className="card" key={s.name}><h4>{s.name}</h4><p>{s.what}</p><p style={{ opacity: 0.8 }}>{s.why} {WHEN_WORDS[s.when]}.</p></div>)}
     </div></div></section>
@@ -72,7 +72,7 @@ export function YourData() {
       lede="How you get everything out, how you answer a donor who asks what you hold or asks to be forgotten, and how to reach us." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap prose" style={{ maxWidth: 760 }}>
       <h3>Take everything with you</h3>
-      <p>An owner or admin can download everything Steward holds for your organisation, every table, in one file, from Settings, Security, Download everything. Passwords and sign-in secrets are left out. Spreadsheets of donors and gifts are under Settings, Your data.</p>
+      <p>An owner or admin can download everything Steward holds for your organization, every table, in one file, from Settings, Security, Download everything. Passwords and sign-in secrets are left out. Spreadsheets of donors and gifts are under Settings, Your data.</p>
       <h3>When a donor asks what you hold</h3>
       <p>Open their record, choose More, then Export this person's data. You get one file with their profile, gifts, pledges, receipts, notes, the emails and meetings logged with them, events, volunteer hours and their opt-outs. Only owners and admins can do this, and the download is recorded in your audit log.</p>
       <h3>When a donor asks to be forgotten</h3>
@@ -102,7 +102,7 @@ export function Dpa() {
   };
   return <>
     <Hero eyebrow="Security and trust" crumbs={[["Why Steward"], ["Security and trust", "/security"], ["Data processing agreement"]]} h="Data processing <b>agreement.</b>"
-      lede={d && d.sections ? (d.draft ? `${d.label}. Not published.` : "The terms under which Steward processes your organisation's data.") : "The terms under which Steward will process your organisation's data."} noCta />
+      lede={d && d.sections ? (d.draft ? `${d.label}. Not published.` : "The terms under which Steward processes your organization's data.") : "The terms under which Steward will process your organization's data."} noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap prose" style={{ maxWidth: 760 }}>
       {!d && <p>Loading.</p>}
       {d && !d.sections && <p>{d.sentence}</p>}

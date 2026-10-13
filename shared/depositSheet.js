@@ -112,11 +112,11 @@ export function parseDepositPaste(text) {
 // treasurer writes; the match is a WHOLE TOKEN RUN (BUILD-84's rule), so
 // "transfer" does not fire on "Transferrin Research Fund".
 export const NOT_A_GIFT_RULES = [
-  { kind: "refund", phrases: ["refund", "refunded", "reversal", "returned check", "returned cheque", "nsf", "chargeback"] },
+  { kind: "refund", phrases: ["refund", "refunded", "reversal", "returned check", "returned check", "nsf", "chargeback"] },
   { kind: "transfer", phrases: ["transfer", "bank transfer", "internal transfer", "between accounts", "sweep"] },
   { kind: "grant_draw", phrases: ["grant draw", "grant drawdown", "drawdown", "reimbursement request", "grant reimbursement"] },
   { kind: "store", phrases: ["store", "bookstore", "book sales", "merch", "merchandise", "t shirt", "t shirts", "tshirt sales", "coffee bar", "cafe"] },
-  { kind: "program_fee", phrases: ["program fee", "programme fee", "tuition", "registration fee", "class fee", "camp fee", "retreat fee", "ticket sales", "dues"] },
+  { kind: "program_fee", phrases: ["program fee", "program fee", "tuition", "registration fee", "class fee", "camp fee", "retreat fee", "ticket sales", "dues"] },
   { kind: "rent", phrases: ["rent", "facility use", "hall rental", "building use"] },
   { kind: "interest", phrases: ["interest", "dividend", "bank interest"] },
   { kind: "subtotal", phrases: ["subtotal", "sub total", "total", "deposit total", "slip total", "grand total", "page total"] },
@@ -268,7 +268,7 @@ export function buildDepositPlan({ rows = [], refused = [], donors = [], funds =
                      newDonor: !donor.donorId,
                      reason: fm.via === "blank" ? "no_default_fund" : "unmatched_memo",
                      needs: fm.via === "blank"
-                       ? "No memo, and this organisation has not set an unrestricted default. Say which fund."
+                       ? "No memo, and this organization has not set an unrestricted default. Say which fund."
                        : `Nothing matches the memo "${r.memo}". Say which fund.`,
                      funds: funds.map(f => ({ id: f.id, name: f.name })) });
         continue;
@@ -285,7 +285,7 @@ export function buildDepositPlan({ rows = [], refused = [], donors = [], funds =
     if (inst.near && res.installmentId === undefined) {
       lines.push({ ...base, state: "needs_you", reason: "near_installment", donorId: donor.donorId,
                    donorName: donor.donorName, fundId, fundName,
-                   needs: `This is within ten per cent of an instalment of ${(inst.amountCents / 100).toFixed(2)} due ${inst.dueDate}. Is it that payment, or a separate gift?`,
+                   needs: `This is within ten per cent of an installment of ${(inst.amountCents / 100).toFixed(2)} due ${inst.dueDate}. Is it that payment, or a separate gift?`,
                    nearInstallmentId: inst.nearInstallmentId, funds: funds.map(f => ({ id: f.id, name: f.name })) });
       continue;
     }

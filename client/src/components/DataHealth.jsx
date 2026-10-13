@@ -446,7 +446,7 @@ function MovedPanel({ onDone, isReadOnly, note, demo = false }) {
         <input ref={fileInput} type="file" accept=".csv,text/csv,.txt" onChange={bringIn} disabled={busy || isReadOnly} style={{ display: "none" }} data-testid="dh-ncoa-input" />
         {demo && <button type="button" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} data-testid="dh-ncoa-sample" onClick={useSample}>Use the sample results file</button>}
       </div>
-      {demo && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>This is a demo organisation, so no provider is involved. The sample file answers the way a provider would, using the people on file here.</div>}
+      {demo && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>This is a demo organization, so no provider is involved. The sample file answers the way a provider would, using the people on file here.</div>}
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginTop: 8 }}>{msg}</div>}
       {moves && moves.length > 0 && <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 12 }}>

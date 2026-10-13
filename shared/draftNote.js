@@ -162,13 +162,13 @@ export function pledgeReminderDraft({ donorName, installmentCents, dueDate, pled
   const remaining = pledgeCents != null && paidCents != null && pledgeCents > paidCents
     ? ` That would leave ${money(pledgeCents - paidCents - installmentCents > 0 ? pledgeCents - paidCents - installmentCents : 0)} on the pledge.`
     : "";
-  const middle = `I am writing about the ${amt} instalment${when}. If it has already gone out, please ignore this — and if it is easier to move the date, just say and we will.${remaining}`;
+  const middle = `I am writing about the ${amt} installment${when}. If it has already gone out, please ignore this — and if it is easier to move the date, just say and we will.${remaining}`;
   return { body: wrap(voice, donorName, middle, orgName), voice: voice.ready ? "org_samples" : "default", amount: amt, dueDate: dueDate || null };
 }
 
 // The step a late instalment opens, from ONE place so the thread, the digest
 // and the test all read the same words.
-export const PLEDGE_REMINDER_STEP = { type: "pledge_reminder", label: "Pledge instalment reminder" };
+export const PLEDGE_REMINDER_STEP = { type: "pledge_reminder", label: "Pledge installment reminder" };
 export const PLEDGE_LATE_DAYS = 30;
 
 // ── BUILD-101 Part 2 — the renewal note ────────────────────────────────────

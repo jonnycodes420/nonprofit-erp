@@ -2122,7 +2122,7 @@ sharedRecordUnsubscribe = recordUnsubscribe;
 // ONE button that POSTs. Three states, one page.
 function unsubscribeHtml({ ok, email, orgName, token, done, staff }) {
   const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organisation";
+  const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organization";
   const message = ok && staff
     ? (done
       ? `<h1>The morning email is off</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}will not get the morning email any more. Turn it back on in Settings, under Account.</p>`
