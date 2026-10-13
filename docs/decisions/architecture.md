@@ -93,6 +93,22 @@ Read this when you touch the stack, env vars, project layout, `server.js`/`db.js
 - **Measure scale with the load harness, never against prod.** `scripts/load/` seeds 200 orgs on a
   loopback cluster (`seed-many.js`), stands in for every provider (`standins.js`) and measures screens,
   jobs and imports (`measure.js`, `import-drive.js`); `npm run test:load` is the pass/fail. (SCALE-1)
+- **An org-wide figure a screen shows on every visit is stored, and served only while nothing has
+  changed.** Put `OS.cached(name, { perUser })` (orgSummary.js) after `requireAuth` on its route.
+  Every write to a table with `org_id` (and to `orgs`) records an `org_changes` row from a statement
+  trigger in the same transaction; a stored answer remembers the oldest open transaction when its
+  computation began and is served only while no change for its org is at or above that mark, and
+  only on the org calendar day it was computed for. So no door can leave it stale. The after-change
+  step queues `orgSummaryRefresh`, and `orgSummaryCheck` compares every stored answer with a fresh
+  computation nightly and logs `[org-summary] DIFFERENCE`. Do not store a route whose answer moves
+  with the clock inside a day (`NOW()`, an expiry): it is not a function of the data. A table added
+  to `UNWATCHED` must be one whose writes cannot move a figure; a GET that writes must write only
+  when the value moved (`metric_snapshots`), or it invalidates its own answer. (SCALE-2)
+- **A screen's first reads are one request.** `prefetch(paths)` (client/src/api.js) asks
+  `GET /home/bundle` for them and parks each answer where the component's own `apiFetch(path)`
+  finds it; the bundle answers each path by running its route in-process (`inProcess.js`) as the
+  same person, so the answers are the routes' own bytes. Only paths on `HOME_READS` are accepted.
+  (SCALE-2)
 - **A screen's numbers are one read, not one read per number.** Prod's database is a round trip
   of about 20 ms away, so 50 small queries is a second before any of them is slow. Batch a
   screen's figures into one statement (`figureSources.groupFigureValues` is the pattern) and

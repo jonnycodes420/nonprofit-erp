@@ -92,6 +92,11 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   outcome are banned from rendered text. Nudge subjects are facts. (BUILD-81)
 - **`drift.js` is the one definition and `computeDriftForDonors` the one integration point.** Drift is computed
   on read and never cached without write-path invalidation. Its reasons are spoken sentences about money at risk. (BUILD-76)
+  SCALE-2: the gift-derived half of each person's answer (the assessment, yesterday's state, the recent-pledge
+  marker) is stored in `donor_drift` for one org day and read from there; a statement trigger on `gifts` deletes
+  the rows of everyone a write touched, the after-change step recomputes them at once, and `refreshStoredDrift`
+  recomputes an org for its new day. Flags, subscriptions, open pledges and last contact are still read live.
+  `assessment` is TEXT so it reads back in the order it was written; `DRIFT_STORE_OFF=1` computes everything.
 - **`shared/driftWords.js` is the one place drift is COUNTED and NAMED.** Home, the donor directory and the
   see-all list read it, which is what keeps their counts and their words together. Two rules ride on it: the
   headline dollars sum HIGH confidence only, because a number that includes guesses is not a number a director
