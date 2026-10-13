@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
 import { displayDate } from "../../../shared/displayDate";
 import { driftBadgeLabel } from "../../../shared/driftWords";
+import { phoneDisplay, phoneHref } from "../../../shared/phone.js";
 
 // ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
 // This `T` object is the one place brand color is defined for the whole
@@ -272,9 +273,17 @@ export const STAGES = [
   {id:"qualify",   label:"Qualify",   color:T.gold, hint:"Researching fit & capacity"},
   {id:"cultivate", label:"Cultivate", color:T.greenMid, hint:"Building relationship"},
   {id:"solicit",   label:"Solicit",   color:T.green, hint:"Ready for the ask"},
-  {id:"steward",   label:"Steward",   color:T.greenDk, hint:"Deepen post-gift relationship"},
+  {id:"steward",   label:"Ongoing care", color:T.greenDk, hint:"Deepen post-gift relationship"},   // POLISH-1: the product's own name was a stage
   {id:"lapsed",    label:"Lapsed",    color:T.gold600, hint:"Needs re-engagement"},   // FIX-2 C: overdue is brass, never red
 ];
+// POLISH-1 — a phone number on a screen: formatted, and a tap dials it.
+export function Phone({ value, style }) {
+  const href = phoneHref(value);
+  const text = phoneDisplay(value);
+  return href ? <a href={href} data-phone="" style={{ color: "inherit", textDecoration: "underline", textUnderlineOffset: 3, ...style }}>{text}</a> : <span style={style}>{text}</span>;
+}
+// POLISH-1 — a stage's name on a screen, from STAGES: never its stored key.
+export const stageName = k => (STAGES.find(x => x.id === k) || {}).label || (k ? String(k).charAt(0).toUpperCase() + String(k).slice(1) : "");
 export const STAGE_THRESH = {prospect:[60,120],qualify:[14,30],cultivate:[30,60],solicit:[7,14],steward:[30,90],lapsed:[90,180]};
 // BUILD-88a A.4 — the voice guard reaches these: no em dashes in a rendered
 // sentence. A dash is a pause somebody typed; Steward's own copy uses a full
@@ -721,8 +730,8 @@ export function GlobalStyles() {
       /* Header stays ONE row: compact "←" back (word hidden) beside the donor
          name, the full-width Back bar wasted ~60px of a 700px fold. */
       .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
-      .dph-back{padding:8px 12px!important;font-size:16px!important;min-width:40px!important;min-height:40px!important;}
-      .dph-back-word{display:none!important;}
+      /* POLISH-1: Back is its own small line above the header, word and all. */
+      .dph-back{padding:6px 12px!important;font-size:13px!important;min-height:36px!important;}
       .dph-identity{flex:1 1 auto!important;min-width:0!important;}
       /* Action row: Request Gift is the full-width primary; Impact Summary +
          Edit live behind the "⋯" overflow (they wrapped and misaligned at

@@ -265,7 +265,7 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
   is the one rule; `prospect.js` reads the rows for it; the profile rail, the Donors column, the eighth Ask why
   question, the brief and the seed check all call it. Word for word:
   Their own file gives up to nine signals: a gift at least three times their usual (median) gift, with three or
-  more gifts on file; giving up in each of the last three twelve-month periods; generosity 80 or more; engagement
+  more gifts on file; giving up in each of the last three complete calendar years, net of refunds (the same bars as the profile's Giving by year, POLISH-1); generosity 80 or more; engagement
   Close (67 or more); a monthly gift plus a one-time gift in the last twelve months; gifts to two or more funds or
   campaigns; an event or volunteer hours on file; a gift through a donor-advised fund; a gift matched by an
   employer. **Strong**: three or more signals, one of them the large gift or the rising trend; or a screening file

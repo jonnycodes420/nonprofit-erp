@@ -110,13 +110,13 @@ app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
 // report already use.
 const FIN_FIGURES = [
   { key: "moneyInThisMonth", label: "Money in this month",
-    definition: "Every gift dated in the current month, in your organisation's time zone, whatever it came in through. It is the gifts themselves, not the ledger: imported history and online giving are both here." },
+    definition: "Every gift dated in the current month, in your organization's time zone, whatever it came in through. It is the gifts themselves, not the ledger: imported history and online giving are both here." },
   { key: "restricted", label: "Restricted balance",
-    definition: "What is in funds marked restricted: money that arrived for a named purpose and is not the organisation's to spend on anything else." },
+    definition: "What is in funds marked restricted: money that arrived for a named purpose and is not the organization's to spend on anything else." },
   { key: "unrestricted", label: "Unrestricted balance",
     definition: "What is in funds not marked restricted. This is the money the board can actually direct." },
   { key: "unmatched", label: "Deposits not yet matched",
-    definition: "Gifts recorded as a cheque, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
+    definition: "Gifts recorded as a check, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
 ];
 
 // The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
@@ -219,15 +219,29 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   // health score and not a warning: a list with a count, a sentence and the
   // rows behind it.
   const needsYou = [];
+  // POLISH-1 Part 6: the same gifts, plus the year's giving they are a share
+  // of and how many of them came in from a file, so a large share says WHY in
+  // one line ("$500,811.46 with no fund" was 94% of a year, unexplained).
   const [noFund] = await query(
-    `SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+    `SELECT COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='')::int n,
+            COALESCE(SUM(ROUND(g.amount*100)) FILTER (WHERE COALESCE(g.fund_id,'')=''),0)::bigint cents,
+            COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='' AND g.import_id IS NOT NULL)::int imported,
+            COALESCE(SUM(ROUND(g.amount*100)),0)::bigint all_cents
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-      WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
+      WHERE g.org_id=? AND d.deleted_at IS NULL
         AND g.date >= (CURRENT_DATE - 365)::text`, [orgId]);
-  if (noFund.n) needsYou.push({ key: "noFund", label: "Gifts with no fund", count: noFund.n,
-    amount: toDollars(Number(noFund.cents)),
-    sentence: `${noFund.n} ${noFund.n === 1 ? "gift" : "gifts"} in the last year, ${money.formatCentsPlain(Number(noFund.cents))}, are not assigned to a fund. They are counted in your totals and they are not counted in any fund's balance.`,
-    rows: "noFund" });
+  if (noFund.n) {
+    const share = Number(noFund.all_cents) > 0 ? Number(noFund.cents) / Number(noFund.all_cents) : 0;
+    const why = share < 0.25 ? null
+      : noFund.imported * 2 > noFund.n
+        ? `That is ${Math.round(share * 100)}% of the year's giving. Most of these came in from an imported file without a fund.`
+        : `That is ${Math.round(share * 100)}% of the year's giving. Most of these were recorded without a fund.`;
+    needsYou.push({ key: "noFund", label: "Gifts with no fund", count: noFund.n,
+      amount: toDollars(Number(noFund.cents)),
+      sentence: `${noFund.n} ${noFund.n === 1 ? "gift" : "gifts"} in the last year, ${money.formatCentsPlain(Number(noFund.cents))}, are not assigned to a fund. They are counted in your totals and they are not counted in any fund's balance.`,
+      why, share: Math.round(share * 1000) / 1000, action: why ? "setFund" : null,
+      rows: "noFund" });
+  }
 
   const [unmatchedN] = await query(
     `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -239,7 +253,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
         AND g.date >= (CURRENT_DATE - 90)::text`, [orgId]).catch(() => [{ n: 0 }]);
   if (unmatchedN.n) needsYou.push({ key: "unmatched", label: "Not yet on a deposit", count: unmatchedN.n,
     amount: toDollars(cents.unmatched),
-    sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a cheque, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
+    sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a check, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
     rows: "unmatched" });
 
   // Restricted money with a grant deadline coming. Only AWARDED grants hold
@@ -420,7 +434,7 @@ app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
     }),
     definitions: {
       balance: "Everything that has ever come into this fund, less everything that has gone out of it. Not a period figure.",
-      inPeriod: "Income posted to this fund inside the current month, in your organisation's time zone.",
+      inPeriod: "Income posted to this fund inside the current month, in your organization's time zone.",
       restrictedBy: "The grants and donors whose money went into this fund, largest first. Read from the transactions and the gifts, never from the fund's name.",
     },
     sentence: funds.length
@@ -595,7 +609,7 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
     const [o] = await query("SELECT qbo_sync_enabled FROM orgs WHERE id=?", [req.user.orgId]);
     if (!o || o.qbo_sync_enabled !== true)
       return res.status(403).json({ error: "qbo_not_enabled",
-        sentence: "QuickBooks sync is not turned on for this organisation yet. The bookkeeper file on this page works without it." });
+        sentence: "QuickBooks sync is not turned on for this organization yet. The bookkeeper file on this page works without it." });
   }
   const { values, names } = oauthEnv(key, O.ENV_VARS);
   if (!values.clientId || !values.clientSecret || !values.redirectUri) {
@@ -663,7 +677,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
   // THE WALL: the state names an org and an admin, and the person standing
   // here must be that admin of that org.
   if (claim.orgId !== req.user.orgId || claim.userId !== req.user.userId)
-    return refuse("state_mismatch", "That sign-in was started by somebody else, or for a different organisation. Nothing was connected.");
+    return refuse("state_mismatch", "That sign-in was started by somebody else, or for a different organization. Nothing was connected.");
 
   // Single use, and only if we issued it. The UPDATE is the claim: a second
   // callback with the same state changes no rows and is refused.
@@ -856,7 +870,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
   const needsTenantChoice = key === "xero" && (!tenants || tenants.length !== 1);
   res.json({ ok: true, provider: key, account, needsTenantChoice, tenants,
     sentence: needsTenantChoice
-      ? `${O.PROVIDERS[key].label} is connected. It holds ${tenants ? tenants.length : "several"} organisations, so choose which one Steward should post to before anything is sent.`
+      ? `${O.PROVIDERS[key].label} is connected. It holds ${tenants ? tenants.length : "several"} organizations, so choose which one Steward should post to before anything is sent.`
       : `${O.PROVIDERS[key].label} is connected. Steward asked for ${O.PROVIDERS[key].scopes.length} ${O.PROVIDERS[key].scopes.length === 1 ? "permission" : "permissions"} and holds the tokens encrypted.` });
 }));
 
@@ -1593,7 +1607,7 @@ app.get("/calendar/to-log", requireAuth, wrap(async (req, res) => {
 
 async function ownMeeting(req, res) {
   const [c] = await query(`SELECT * FROM calendar_events WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
-  if (!c) { res.status(404).json({ error: "not_found", sentence: "That meeting is not on this organisation." }); return null; }
+  if (!c) { res.status(404).json({ error: "not_found", sentence: "That meeting is not on this organization." }); return null; }
   if (c.owner_user_id !== req.user.userId) {
     const [me] = await query(`SELECT role FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
     if (!(me && me.role === "admin")) { res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is, or an admin, can log this meeting." }); return null; }
@@ -2249,7 +2263,7 @@ app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
              ...saved.map(a => ({ id: a.id, name: a.name, description: a.description || null, kind: a.kind || null }))],
     fieldsPushed: EM.FIELDS_PUSHED, fieldsSentence: EM.FIELDS_PUSHED_SENTENCE,
     restrictiveSentence: EM.RESTRICTIVE_SENTENCE,
-    definition: "The email tool your organisation sends from. Steward reads who opened, clicked and asked to stop. It adds people to your list only if you turn that on. It never sends the email.",
+    definition: "The email tool your organization sends from. Steward reads who opened, clicked and asked to stop. It adds people to your list only if you turn that on. It never sends the email.",
   });
 }));
 
@@ -2968,7 +2982,7 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
     // Said once, here, because it is the sentence an organisation needs before
     // it hands Steward write access to its books.
     definition: "Steward sends one deposit per payout: the gifts inside it split by fund, the processing fee as a negative line, and a net that equals what hit the bank. It never sends the same payout twice, it never sends event or shop takings as donations, and it sends donor names only if you turn that on.",
-    donorNamesDefault: "Off. Most organisations do not want their donor list mirrored into a bookkeeping system.",
+    donorNamesDefault: "Off. Most organizations do not want their donor list mirrored into a bookkeeping system.",
   });
 }));
 
@@ -3079,7 +3093,7 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
         ["not connected to the accounting system yet", orgId, c.vendor, payoutId]);
       out.refused++;
       out.results.push({ payoutId, status: "not_connected",
-        sentence: `Steward built the deposit and did not send it: this organisation is not connected to ${BK.VENDORS[c.vendor].label} yet. The deposit is held against this payout, so connecting later sends it once.` });
+        sentence: `Steward built the deposit and did not send it: this organization is not connected to ${BK.VENDORS[c.vendor].label} yet. The deposit is held against this payout, so connecting later sends it once.` });
       continue;
     }
     try {
@@ -3199,7 +3213,7 @@ async function qboEnabled(orgId) {
   return o || null;
 }
 const qboOff = res => res.status(403).json({ error: "qbo_not_enabled",
-  sentence: "QuickBooks sync is not turned on for this organisation yet. The bookkeeper file on this page works without it." });
+  sentence: "QuickBooks sync is not turned on for this organization yet. The bookkeeper file on this page works without it." });
 const qboTokenFor = orgId => (conn, force) => accessTokenFor(orgId, conn, "intuit", { force });
 
 // The connection, the mapping and the switches.
@@ -3208,7 +3222,7 @@ app.get("/qbo", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const org = await qboEnabled(orgId);
   if (!org || org.qbo_sync_enabled !== true) return res.json({ enabled: false,
-    sentence: "QuickBooks sync is not turned on for this organisation. The bookkeeper file does the same job by hand." });
+    sentence: "QuickBooks sync is not turned on for this organization. The bookkeeper file does the same job by hand." });
   const c = await qboConnection(orgId);
   const map = QS.readMapping(c);
   const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? ORDER BY name`, [orgId]);
@@ -3606,7 +3620,7 @@ async function qboReadRunView(orgId, runId) {
 app.get("/qbo/read/run", requireAuth, wrap(async (req, res) => {
   const g = await qboReadGate(req, res); if (!g) return;
   const v = await qboReadRunView(g.orgId, String(req.query.id || ""));
-  if (!v) return res.status(404).json({ error: "not_found", sentence: "That read is not on this organisation." });
+  if (!v) return res.status(404).json({ error: "not_found", sentence: "That read is not on this organization." });
   res.json(v);
 }));
 app.post("/qbo/read/save", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -3897,7 +3911,7 @@ app.get("/finance/bookkeeper-flavours", requireAuth, wrap(async (req, res) => {
       columns: f.columns ? f.columns.map(c => c[0]) : null,
     })),
     sentence: "The same rows, in the column order your bookkeeping tool wants. Nothing is added up differently: "
-      + "only the headings change, and Steward checks the rows foot to the cent before it writes any of them.",
+      + "only the headings change, and Steward checks the rows add up to the cent before it writes any of them.",
     caveat: "The QuickBooks and Xero column sets are each vendor's documented import headers. Neither has been run "
       + "through a real import by us, so check the first file before you trust the tenth.",
   });
@@ -3930,7 +3944,7 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
       n => n === 0,
       n => n ? `${n} ${n === 1 ? "gift has" : "gifts have"} no fund. They are in your totals and in no fund's balance.`
              : "Every gift this month names a fund."),
-    await one("banked", "Every cheque is on a deposit",
+    await one("banked", "Every check is on a deposit",
       `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
           AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash')
@@ -3938,8 +3952,8 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
                             AND im.shape='deposit' AND im.reversed_at IS NULL)`,
       [orgId, from, to],
       n => n === 0,
-      n => n ? `${n} ${n === 1 ? "cheque or cash gift is" : "cheque and cash gifts are"} not on a deposit slip.`
-             : "Every cheque and cash gift this month is on a deposit."),
+      n => n ? `${n} ${n === 1 ? "check or cash gift is" : "check and cash gifts are"} not on a deposit slip.`
+             : "Every check and cash gift this month is on a deposit."),
     // A RECEIPT IS A ROW IN `receipts`, not a column on the gift. Writing
     // this against `gifts.receipt_number` would have compiled and counted
     // every gift as un-receipted for ever.
@@ -3969,7 +3983,7 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
   items.push({ key: "export", label: "The bookkeeper's file", count: gifts.n,
     done: gifts.n > 0,
     sentence: gifts.n
-      ? `${gifts.n} ${gifts.n === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(Number(gifts.cents))}. Steward checks the rows foot to the cent before it writes the file.`
+      ? `${gifts.n} ${gifts.n === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(Number(gifts.cents))}. Steward checks the rows add up to the cent before it writes the file.`
       : "No gifts were received this month, so there is nothing to send." });
 
   const open = items.filter(i => !i.done).length;

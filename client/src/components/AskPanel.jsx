@@ -77,7 +77,13 @@ export function AskPanel({ first, scope, isReadOnly, onClose, onStepTaken }) {
     setBusy(false);
   };
   useEffect(() => { if (first) send(first, null); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { endRef.current && endRef.current.scrollIntoView && endRef.current.scrollIntoView({ block: "end", behavior: "smooth" }); }, [thread.length, busy]);
+  // POLISH-1: the question stays in view while Steward works; when the answer
+  // is ready its top comes into view, with a ready line.
+  const lastTurnRef = useRef(null);
+  useEffect(() => {
+    const el = busy ? endRef.current : lastTurnRef.current;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: busy ? "end" : "start", behavior: "smooth" });
+  }, [thread.length, busy]);
   useEffect(() => {
     const k = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
@@ -94,8 +100,9 @@ export function AskPanel({ first, scope, isReadOnly, onClose, onStepTaken }) {
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px", display: "flex", flexDirection: "column", gap: 22 }}>
           {thread.map((x, i) => (
-            <div key={i} data-testid="ask-turn" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div key={i} data-testid="ask-turn" ref={i === thread.length - 1 ? lastTurnRef : null} style={{ display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 8 }}>
               <div data-testid="ask-question" style={{ alignSelf: "flex-end", maxWidth: "85%", background: T.bg, borderRadius: 12, padding: "8px 12px", fontSize: 14, color: T.ink }}>{x.q}</div>
+              {i === thread.length - 1 && (x.a || x.err) && !busy && <div role="status" data-testid="ask-ready" style={{ ...LABEL, color: T.greenDk }}>Answer ready</div>}
               {x.err && <div style={{ fontSize: 14, color: T.ink2 }}>{x.err}</div>}
               {!x.a && !x.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}
               {x.a && <AskAnswer answer={x.a} isReadOnly={isReadOnly} onAsk={followUp} onStepTaken={onStepTaken} last={i === thread.length - 1} />}

@@ -94,7 +94,7 @@ function volunteerPage(title, inner) {
 }
 app.get("/volunteer/log", donateLimiter, wrap(async (req, res) => {
   const t = verifyVolunteerToken(req.query.token);
-  if (!t) return res.status(404).send(volunteerPage("Link expired", "<p>This link has expired or is not valid. Ask the organisation for a new one.</p>"));
+  if (!t) return res.status(404).send(volunteerPage("Link expired", "<p>This link has expired or is not valid. Ask the organization for a new one.</p>"));
   const [p] = await query("SELECT d.name, o.name AS org FROM donors d JOIN orgs o ON o.id = d.org_id WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL", [t.personId, t.orgId]);
   if (!p) return res.status(404).send(volunteerPage("Link expired", "<p>This link is no longer valid.</p>"));
   const orgName = await donorFacingOrgName(t.orgId, p.org).catch(() => p.org);
@@ -710,7 +710,8 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
   // sentence for an admin and not on a coordinator's screen, where the whole
   // point of the role is that giving is not theirs to see. The walk caught
   // this: the rows were stripped and the summary of the rows was not.
-  if (givers && req.user.role !== COORD) parts.push(`${spell(givers)} of them also ${givers === 1 ? "gives" : "give"}`);
+  // POLISH-1: one volunteer is "who also gives", never "one of them".
+  if (givers && req.user.role !== COORD) parts.push(people.length === 1 ? "who also gives" : `${spell(givers)} of them also ${givers === 1 ? "gives" : "give"}`);
   res.json({ people: stripGiving(req, people), year, hundredthsThisYear: total,
     sentence: people.length ? parts.join(", ") + "."
       : "Nobody is marked as a volunteer yet. Tag someone Volunteer on their record, log a shift, import hours, or share the sign-up link, and they join the roster.",
@@ -950,10 +951,29 @@ async function verifySignupToken(token) {
 const LINK_SENTENCE = "Anyone with this link can add themselves to your roster as a Volunteer. Steward does not send it; you share it where your volunteers will see it.";
 const SIGNUP_ACTOR = { id: "system:volunteer-signup", name: "The volunteer, from the sign-up link" };
 
+// POLISH-1 — WHAT REACH HANDS OUT. With the recruitment page published, the
+// link to share IS that page (/volunteer-with/<org>): her words, the
+// opportunities open now and a short form whose submissions wait in Pending
+// applications. The standing link below is the fallback for an org with no
+// page, and it is offered beside the page, never instead of it. Neither one
+// expires; the standing link stops working only when she makes a new one, and
+// Reach says so before she copies it.
+const EXPIRY_SENTENCE = "This link does not expire. It keeps working until you make a new one.";
+const PAGE_EXPIRY_SENTENCE = "This link does not expire. It works while your recruitment page is published.";
 app.get("/volunteer-hub/signup-link", requireAuth, wrap(async (req, res) => {
-  const version = await linkVersion(req.user.orgId);
-  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(req.user.orgId, version)}`,
-    sentence: LINK_SENTENCE });
+  const orgId = req.user.orgId;
+  const version = await linkVersion(orgId);
+  const standing = `${publicAppUrl()}/volunteer/join?token=${signupToken(orgId, version)}`;
+  const [page] = await query(
+    `SELECT o.org_slug FROM orgs o JOIN volunteer_recruitment r ON r.org_id = o.id
+      WHERE o.id = ? AND r.published = TRUE AND COALESCE(o.org_slug, '') <> ''`, [orgId]).catch(() => []);
+  if (page) {
+    return res.json({ kind: "page", url: `${publicAppUrl()}/volunteer-with/${encodeURIComponent(page.org_slug)}`,
+      sentence: "This is your published recruitment page. Whoever applies from it waits in Pending applications until you approve them.",
+      expires: false, expirySentence: PAGE_EXPIRY_SENTENCE,
+      standingUrl: standing, standingSentence: LINK_SENTENCE });
+  }
+  res.json({ kind: "link", url: standing, sentence: LINK_SENTENCE, expires: false, expirySentence: EXPIRY_SENTENCE });
 }));
 
 // A new link; the old one stops working the moment this answers.
@@ -965,14 +985,14 @@ app.post("/volunteer-hub/signup-link/regenerate", requireAuth, checkWriteAccess,
   const version = Number(row && row.v) || 0;
   const a = actor(req);
   await writeAuditLog(orgId, a.id, a.name, "regenerated", "volunteer_signup_link", orgId, { version });
-  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(orgId, version)}`,
+  res.json({ kind: "link", url: `${publicAppUrl()}/volunteer/join?token=${signupToken(orgId, version)}`, expires: false, expirySentence: EXPIRY_SENTENCE,
     sentence: "This is your new link. The old one has stopped working: anyone who opens it is told to ask for the current link. " + LINK_SENTENCE });
 }));
 
 app.get("/volunteer/join", donateLimiter, wrap(async (req, res) => {
   const orgId = await verifySignupToken(req.query.token);
   const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
-  if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid. Ask the organisation for its current link.</p>"));
+  if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid. Ask the organization for its current link.</p>"));
   const orgName = await donorFacingOrgName(o.id, o.name).catch(() => o.name);
   const inp = "width:100%;box-sizing:border-box;border:1px solid #e8e4db;border-radius:8px;padding:10px;font-size:15px;margin:4px 0 12px";
   res.setHeader("Cache-Control", "no-store");
@@ -994,7 +1014,8 @@ app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false 
   const orgId = await verifySignupToken(req.body?.token);
   const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
   if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid.</p>"));
-  const thanks = volunteerPage("Thank you", `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px">Thank you.</h1><p>You are on the volunteer roster. Someone from the organisation will be in touch.</p>`);
+  const orgName = await donorFacingOrgName(o.id, o.name).catch(() => o.name);
+  const thanks = volunteerPage("You're in", `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px">You're in.</h1><p>${escapeHtml(orgName)} will be in touch this week.</p>`);
   if (String(req.body?.website || "").trim()) return res.send(thanks); // the honeypot: a bot is thanked and nothing is written
   const name = String(req.body?.name || "").trim().slice(0, 200);
   const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 200);

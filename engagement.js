@@ -47,7 +47,9 @@ async function touchRows(q, orgId, today, donorId = null) {
   };
 
   // Meetings: the one source (meetings.js), each person on a calendar meeting.
-  const m = meetingsSql(orgId, { from, to: today, eachPerson: true });
+  // POLISH-1: held meetings only, the same rule as Last met (a calendar meeting
+  // later today has not happened yet; its booking line counts below).
+  const m = meetingsSql(orgId, { from, to: today, held: true, eachPerson: true });
   const mRows = await q(
     `SELECT m.id, m.donor_id, m.date, m.kind, m.title FROM (${m.sql}) m JOIN donors d ON d.id = m.donor_id AND d.org_id = ?
       WHERE d.deleted_at IS NULL${dF}`, [...m.args, orgId, ...dA]);
@@ -62,6 +64,10 @@ async function touchRows(q, orgId, today, donorId = null) {
         AND COALESCE(i.metadata->>'cancelled', 'false') <> 'true' AND LEFT(i.date, 10) BETWEEN ? AND ?${dF}`,
     [orgId, from, today, ...dA]);
   for (const r of booked) push("meetings", r, w.BOOKED_POINTS, "Meeting booked");
+  // POLISH-1: a booking still earns its points under meetings, but it is not a
+  // meeting held, so the sentence never says "1 meeting" beside Last met's
+  // "Not met yet" (which reads held meetings only). Marked for reasonOf.
+  for (let i = out.length - 1; i >= 0 && out[i].detail === "Meeting booked"; i--) out[i].booked = true;
 
   const calls = await q(
     `SELECT i.id, i.donor_id, LEFT(i.date, 10) AS date FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
@@ -237,7 +243,11 @@ function reasonOf(w, byPart, lastDate, today) {
   const counted = w.ENGAGEMENT_PARTS.map(k => ({ k, n: byPart[k].count, pts: byPart[k].raw })).filter(x => x.n > 0)
     .sort((a, b) => b.pts - a.pts);
   if (!counted.length) return "No meeting, call, reply, event, ticket, fundraising page, auction bid, membership or volunteer shift in the last 24 months.";
-  const say = x => `${x.n} ${x.n === 1 ? w.TOUCH_POINTS[x.k].one : w.TOUCH_POINTS[x.k].many}`;
+  const say = x => {
+    const b = (byPart[x.k] && byPart[x.k].booked) || 0, held = x.n - b;
+    if (x.k === "meetings" && b) return held ? `${held} ${held === 1 ? "meeting" : "meetings"} (${b} more booked)` : `${b} ${b === 1 ? "meeting" : "meetings"} booked`;
+    return `${x.n} ${x.n === 1 ? w.TOUCH_POINTS[x.k].one : w.TOUCH_POINTS[x.k].many}`;
+  };
   const top = counted.slice(0, 2).map(say).join(" and ");
   return `${top.charAt(0).toUpperCase() + top.slice(1)} in the last 24 months${latestWords(lastDate, today)}.`;
 }
@@ -302,8 +312,8 @@ async function scoreOrg(q, orgId, today) {
   const per = new Map();
   for (const id of people) {
     const ts = tBy.get(id) || [];
-    const byPart = Object.fromEntries(w.ENGAGEMENT_PARTS.map(k => [k, { raw: 0, count: 0 }]));
-    for (const t of ts) { byPart[t.part].raw = round2(byPart[t.part].raw + t.points); byPart[t.part].count++; }
+    const byPart = Object.fromEntries(w.ENGAGEMENT_PARTS.map(k => [k, { raw: 0, count: 0, booked: 0 }]));
+    for (const t of ts) { byPart[t.part].raw = round2(byPart[t.part].raw + t.points); byPart[t.part].count++; if (t.booked) byPart[t.part].booked++; }
     const engRaw = round2(ts.reduce((s, t) => s + t.points, 0));
     const gen = await generosityParts(today, gBy.get(id) || [], sBy.get(id) || []);
     per.set(id, { byPart, engRaw, gen, lastTouch: ts[0] ? ts[0].date : null, pattern: patternOf(gBy.get(id) || [], today) });

@@ -10,7 +10,7 @@
 // HOW THE WORD IS DECIDED (word for word in docs/decisions/major-gifts.md):
 //   Their own file gives up to nine signals: a gift at least three times their
 //   usual gift (with three or more gifts on file); giving up in each of the
-//   last three twelve-month periods; generosity 80 or more; engagement Close
+//   last three complete calendar years (POLISH-1: the chart's own bars); generosity 80 or more; engagement Close
 //   (67 or more); a monthly gift plus a one-time gift in the last twelve months;
 //   gifts to two or more funds or campaigns; an event or volunteer hours on
 //   file; a gift through a donor-advised fund; a matched gift.
@@ -63,6 +63,22 @@ export function trailingYears(gifts, today) {
   return out;
 }
 
+// POLISH-1 · THE TREND IS THE CHART. "Giving up (or down) three years running"
+// reads the last three COMPLETE calendar years, each the person's gifts with
+// any refund taken off: exactly the bars "Giving by year" draws on the same
+// profile, so the sentence and the chart can never disagree. (It used to read
+// three trailing twelve-month windows of gross gifts, which the chart does not
+// show, and on a real record the two pointed different ways.)
+export function calendarYears(gifts, refunds, today) {
+  const y = Number(String(today).slice(0, 4));
+  const out = [0, 0, 0];   // last complete year, the one before, the one before that
+  for (const g of [...(gifts || []), ...(refunds || [])]) {
+    const i = y - 1 - Number(String(g.date).slice(0, 4));
+    if (i >= 0 && i < 3) out[i] += g.cents;
+  }
+  return { years: [y - 1, y - 2, y - 3], totals: out };
+}
+
 // facts = { today, gifts:[{id,date,cents,fund,campaign,method,matched,recurring}], engagement, generosity,
 //           monthly:{cents}|null, events, hours, screening:{provider,screenedOn,capacityLowCents,...}|null }
 export function assess(facts) {
@@ -83,8 +99,11 @@ export function assess(facts) {
     }
   }
   let falling = false;
-  if (y2 > 0 && y1 > y2 && y0 > y1) add("rising", `Giving up three years running (${dollars(y2)}, then ${dollars(y1)}, then ${dollars(y0)} in the last twelve months)`);
-  else if (y2 > 0 && y1 < y2 && y0 < y1) { falling = true; add("falling", `Giving down three years running (${dollars(y2)}, then ${dollars(y1)}, then ${dollars(y0)} in the last twelve months)`, false); }
+  const cal = calendarYears(gifts, (f.refunds || []).filter(r => r && r.cents < 0 && r.date), f.today);
+  const [c0, c1, c2] = cal.totals, [n0, n1, n2] = cal.years;
+  const run3 = `${dollars(c2)} in ${n2}, ${dollars(c1)} in ${n1}, then ${dollars(c0)} in ${n0}`;
+  if (c2 > 0 && c1 > c2 && c0 > c1) add("rising", `Giving up three years running (${run3})`);
+  else if (c2 > 0 && c1 < c2 && c0 < c1) { falling = true; add("falling", `Giving down three years running (${run3})`, false); }
 
   if (Number(f.generosity) >= 80) add("generosity", `Generosity ${Number(f.generosity)} of 100, among your most generous`);
   if (Number(f.engagement) >= 67) add("close", `Engagement ${Number(f.engagement)} of 100, Close`);
@@ -128,7 +147,7 @@ export function assess(facts) {
     const lo = s.capacityLowCents;
     if (lo != null && lo > 0 && lo >= STRONG_CAPACITY_MULTIPLE * annualCents && word !== "strong") { word = "strong"; screeningMoved = true; }
   }
-  return { word, label: LABELS[word], rank: RANK[word], reasons, signals, annualCents, trailing: [y0, y1, y2], screeningMoved };
+  return { word, label: LABELS[word], rank: RANK[word], reasons, signals, annualCents, trailing: [y0, y1, y2], calendar: cal, screeningMoved };
 }
 
 // The one-line summary Who could give more uses: the first two reasons.

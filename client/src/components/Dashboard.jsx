@@ -2,7 +2,7 @@ import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
-import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
+import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
 import { PinnedAnswers } from "./AskPanel";
@@ -32,7 +32,7 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
 import { AskHero } from "./AskRail";
-import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
+import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -1691,6 +1691,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
+              {/* POLISH-1 Part 6: when the count moved overnight with nothing
+                  new, the line says who crossed and who left. */}
+              {driftSinceYesterday(driftData.sinceYesterday) && <span data-testid="drift-since-yesterday"> · {driftSinceYesterday(driftData.sinceYesterday)}</span>}
             </span>
           </span>
           <select aria-label="Order the drift list" data-testid="drift-sort" value={driftSort}
@@ -2805,7 +2808,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           {railBack("Today")}
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,lineHeight:1.2,color:T.ink,marginBottom:2}}>{name}</div>
           <div style={{fontSize:12.5,color:T.ink3,marginBottom:18}}>
-            {d?.stage?capitalize(d.stage):"On file"}{d?.email?` \u00b7 ${d.email}`:""}
+            {d?.stage?stageName(d.stage):"On file"}{d?.email?` \u00b7 ${d.email}`:""}
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:18,marginBottom:18,borderBottom:"1px solid "+T.bg2}}>
             {!!lifetime&&(

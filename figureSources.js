@@ -289,16 +289,22 @@ const DONOR_GIFT_SELECT = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.n
          LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
         WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id = ?`;
 
+const ONLINE_GIFT_SQL = "(g.stripe_payment_id IS NOT NULL OR g.giving_page_id IS NOT NULL OR g.giving_source_id IS NOT NULL)";
 function giftsWhere(p, args) {
   let w = "";
   if (p.fund === "none") w += " AND f.id IS NULL";
   else if (p.fund) { w += " AND f.id = ?"; args.push(p.fund); }
   if (p.restricted !== undefined) { w += " AND COALESCE(f.restricted,false) = ?"; args.push(p.restricted); }
   if (p.campaign) { w += " AND g.campaign_id = ?"; args.push(p.campaign); }
-  // REPORTS-4: online means paid through Stripe (the giving summary's split);
-  // page is the giving page the gift came through.
-  if (p.online === true) w += " AND g.stripe_payment_id IS NOT NULL";
-  else if (p.online === false) w += " AND g.stripe_payment_id IS NULL";
+  // REPORTS-4: online is the giving summary's split; page is the giving page
+  // the gift came through. POLISH-1 Part 6: online is money that was PAID
+  // online, by any door Steward can see: Stripe (its giving pages and
+  // checkout), a giving page, or a connected giving source (PayPal, Zeffy,
+  // Givebutter, Square). A PayPal gift read from the source used to count as
+  // "recorded by hand". An imported gift is offline whatever its old method,
+  // because Steward cannot see how it was paid.
+  if (p.online === true) w += " AND " + ONLINE_GIFT_SQL;
+  else if (p.online === false) w += " AND NOT " + ONLINE_GIFT_SQL;
   if (p.bookkeeper === true) { w += " AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
@@ -378,7 +384,7 @@ const SOURCES = {
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
     params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
-    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online through Stripe" : p.online === false ? " recorded by hand (not paid online)" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
     sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
       let where = giftsWhere(p, args);
@@ -1159,13 +1165,19 @@ const SOURCES = {
       args: [orgId, p.donor],
     }),
   },
+  // POLISH-1 · THE PROFILE FOOTS. The average is the person's itemized giving,
+  // refunds taken off, divided by the number of gifts (a refund is not a gift,
+  // so it lowers the total and not the count). Lifetime is the same rows, so
+  // Lifetime / gifts = Average to the cent; the only thing Lifetime holds that
+  // this does not is an imported total with no gifts behind it, and the tile
+  // says so when there is one. Soft credits and pledges are in neither.
   "donor-average-gift": {
     label: "Average gift",
-    measure: () => "mean",
+    measure: () => "per_gift",
     params: { donor: "id:required" },
-    sentence: () => "Every gift this person has given, added up and divided by how many there are, to the cent. A refund is not a gift and is left out.",
+    sentence: () => "Everything this person has given, gift by gift, with any refund taken off, divided by the number of gifts, to the cent. A refund is not a gift, so it lowers the total but not the count. Soft credits and pledges are not in it.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0`,
+      sql: DONOR_GIFT_SELECT,
       args: [orgId, p.donor], order: "date DESC, id",
     }),
   },
@@ -2418,6 +2430,14 @@ function valueOf(measure, agg) {
   if (measure === "avg") return { value: agg.n > 0 ? Math.round(Number(agg.a) || 0) : 0, cents: null };
   // PARITY-1 — an average of MONEY, to the cent: the rows' own sum in cents
   // divided by their count, so the drawer's total over its count is the figure.
+  // POLISH-1: per gift = the rows' total (refunds included, as negatives)
+  // over the number of rows that are gifts (amount above zero).
+  if (measure === "per_gift") {
+    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const g = Number(agg.g) || 0;
+    const m = g > 0 ? Math.round(c / g) : 0;
+    return { value: money.toDollars(m), cents: m };
+  }
   if (measure === "mean") {
     const c = money.toCents(String(agg.s ?? "0")) ?? 0;
     const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
@@ -2442,7 +2462,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     const all = await def.js(orgId, p, deps);
     const sum = all.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
     const avg = all.length ? all.reduce((s, r) => s + (Number(r.amount) || 0), 0) / all.length : 0;
-    agg = { n: all.length, s: String(money.toDollars(sum)), a: avg, m: String(medianOf(all.map(r => Number(r.amount) || 0))) };
+    agg = { n: all.length, g: all.filter(r => Number(r.amount) > 0).length, s: String(money.toDollars(sum)), a: avg, m: String(medianOf(all.map(r => Number(r.amount) || 0))) };
     pageRows = wantRows ? all.slice((page - 1) * pageSize, page * pageSize) : [];
   } else {
     // `sql` may be an async builder: a source whose SQL needs something only
@@ -2450,8 +2470,9 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // a plain object is a no-op, so every existing source is untouched.
     const { sql, args, order } = await def.sql(orgId, p);
     // SCALE-1: the total and the page are independent reads; one parallel batch.
+    // POLISH-1: g is the rows that are gifts (above zero), for per_gift.
     const [[a], rowsRead] = await Promise.all([
-      query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
+      query(`SELECT COUNT(*)::int AS n, (COUNT(*) FILTER (WHERE amount > 0))::int AS g, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
       wantRows
         ? query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
         : Promise.resolve([]),
@@ -2464,6 +2485,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
+    ...(measure === "per_gift" ? { giftCount: Number(agg.g) || 0 } : {}),
   };
 }
 
@@ -2513,6 +2535,7 @@ async function footCheck(orgId, source, deps = {}) {
   const sum = cents.reduce((x, y) => x + y, 0);
   let rowsFoot, foots;
   if (f.measure === "sum") { rowsFoot = money.toDollars(sum); foots = sum === f.cents; }
+  else if (f.measure === "per_gift") { const g = rows.filter(r => Number(r.amount) > 0).length; const m = g ? Math.round(sum / g) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "mean") { const m = rows.length ? Math.round(sum / rows.length) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "median") { rowsFoot = medianOf(rows.map(r => Number(r.amount) || 0)); foots = Math.round(rowsFoot * 100) === f.cents; }
   else if (f.measure === "avg") { rowsFoot = rows.length ? Math.round(rows.reduce((x, r) => x + (Number(r.amount) || 0), 0) / rows.length) : 0; foots = rowsFoot === f.value; }

@@ -126,7 +126,8 @@ const T = civilToday();
   const qid = pub.body.questions[0].id;
   const form = new URLSearchParams({ name: "Gale Giver", email: "Gale.Giver@PAR3V.local", phone: "555-0199", [`q_${qid}`]: "yes", availability: "Saturdays" });
   const sent = await fetch(`${require("./helpers").BASE}/volunteer-with/parity-vol-t/apply`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: form.toString() });
-  ok("§2 the public application is accepted", sent.status === 200 && /Thank you/.test(await sent.text()));
+  // POLISH-1: the volunteer is told "You're in" and when to expect a reply.
+  ok("§2 the public application is accepted", sent.status === 200 && /You're in\./.test(await sent.text()));
   ok("§2 applying makes no person: still exactly one record with that email", await onFileCount() === 1);
   const pend = await api("GET", "/volunteer-hub/applications", tok);
   const app = (pend.body.applications || []).find(a => a.email === "gale.giver@par3v.local");

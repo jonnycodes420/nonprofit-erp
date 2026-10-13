@@ -11,7 +11,7 @@
 // opens the rows that make it.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, Card } from "./shared";
+import { T, Card, Phone } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { resolveAssetUrl } from "../lib/assetUrl";
@@ -284,7 +284,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
           <div key={b.id} style={{ display: "flex", gap: 10, fontSize: 13, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
             <strong style={{ minWidth: 48 }}>#{b.bidder_number}</strong>
             <span style={{ flex: "1 1 160px" }}><DonorLink id={b.donor_id} onOpen={() => openPerson(b.donor_id)}>{b.name}</DonorLink></span>
-            <span style={{ color: T.ink3, flex: "1 1 160px", wordBreak: "break-all" }}>{b.email}{b.phone ? ` · ${b.phone}` : ""}</span>
+            <span style={{ color: T.ink3, flex: "1 1 160px", wordBreak: "break-all" }}>{b.email}{b.phone ? <> · <Phone value={b.phone} /></> : ""}</span>
             <span style={{ color: T.ink3 }}>{b.bids} bid{b.bids === 1 ? "" : "s"}</span>
           </div>))}
       </Card>

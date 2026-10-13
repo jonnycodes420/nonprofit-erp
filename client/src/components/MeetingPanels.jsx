@@ -226,7 +226,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   const [prefs, setPrefs] = useState(loadTimelinePrefs);
   const { filter, hideMass, view } = prefs;
   const setPref = patch => setPrefs(p => { const n = { ...p, ...patch }; saveTimelinePrefs(n); return n; });
-  const setFilter = f => setPref({ filter: f });
+  const setFilter = f => setPrefs(p => ({ ...p, filter: f }));   // this record only (POLISH-1)
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(12);
   if (!rel) return null;

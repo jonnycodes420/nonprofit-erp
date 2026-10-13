@@ -4240,7 +4240,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
               <div>
                 <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Show other income on the board dashboard</div>
-                <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Steward counts gifts. Earned income, a store, tickets, programme fees, is not tracked here, so this is one figure you type. It appears on its own line under giving and is never added to it.</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Steward counts gifts. Earned income, a store, tickets, program fees, is not tracked here, so this is one figure you type. It appears on its own line under giving and is never added to it.</div>
               </div>
             </label>
             {otherIncomeOn&&(

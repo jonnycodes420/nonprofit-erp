@@ -1,6 +1,8 @@
-# Steward messaging · the source of truth (4 Oct 2026)
+# Steward messaging · the source of truth (4 Oct 2026, competitor rule updated 13 Oct)
 
-Jonathan approved this language on 4 Oct: "this is all gold, I want this language everywhere." Every page, help article, empty state, onboarding screen, demo and email reads from this. Voice: invitation, not pressure. These are people doing sacred work on thin budgets. No em dashes. No competitor names. No unsourced statistics.
+Jonathan approved this language on 4 Oct: "this is all gold, I want this language everywhere." Every page, help article, empty state, onboarding screen, demo and email reads from this. Voice: invitation, not pressure. These are people doing sacred work on thin budgets. No em dashes. No unsourced statistics.
+
+Competitor names (updated 13 Oct, Jonathan): naming another product is fine wherever it helps, for example import sources ("We're moving from Bloomerang"), migration guides, comparison pages and sales material. Keep it factual and fair: no claims about another product we can't back up, and no running anyone down.
 
 ## The vision
 

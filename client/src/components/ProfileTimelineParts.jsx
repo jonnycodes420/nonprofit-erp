@@ -49,7 +49,7 @@ export const TIMELINE_FILTERS = [
 // FIX-24 2a: A STAGE CHANGE, READ. Every writer stores "Moved <from> →
 // <to>: <why>" (or the older "Stage moved from <from> → <to>"). A missing old
 // stage was written as the word "null" before this build; it reads "Not set".
-const STAGE_WORD = { prospect: "Prospect", qualify: "Qualify", cultivate: "Cultivate", solicit: "Solicit", steward: "Steward", lapsed: "Lapsed" };
+const STAGE_WORD = { prospect: "Prospect", qualify: "Qualify", cultivate: "Cultivate", solicit: "Solicit", steward: "Ongoing care", lapsed: "Lapsed" };
 export function stageWord(s) {
   const k = String(s ?? "").trim();
   if (!k || /^(null|undefined|none|not set)$/i.test(k)) return "Not set";
@@ -61,16 +61,17 @@ export function stageMoveOf(note) {
   if (!m) return null;
   return { from: stageWord(m[1]), to: stageWord(m[2]), why: (m[3] || "").trim() };
 }
-const FILTER_KEYS = new Set(TIMELINE_FILTERS.map(f => f[0]));
-
 export function loadTimelinePrefs() {
   const d = { filter: "all", hideMass: false, view: "cards" };
   try {
     const raw = window.localStorage.getItem(PREFS_KEY);
     if (!raw) return d;
     const p = JSON.parse(raw) || {};
+    // POLISH-1: every record opens on All. The filter used to be remembered
+    // across records, so one look at Attachments made every later profile
+    // open on "No files attached". The switch and the view are still kept.
     return {
-      filter: FILTER_KEYS.has(p.filter) ? p.filter : "all",
+      filter: "all",
       hideMass: p.hideMass === true,
       view: p.view === "list" ? "list" : "cards",
     };

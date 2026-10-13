@@ -24,7 +24,7 @@ import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline } from "./ProfileTimeline";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
-import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext, Phone } from "./shared";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
@@ -1153,6 +1153,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
+  // POLISH-1 — a refund is a row with a negative amount, not a gift: it comes
+  // off the total and never adds to the count, the same rule as the glance.
+  const giftCountReal=giftsFull.filter(g=>g.amount>0).length;
+  const refundRows=giftsFull.filter(g=>g.amount<0);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
@@ -1920,9 +1924,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           Code intact, re-enable by uncommenting.
       {showVoiceMemo&&<VoiceMemoModal donor={donor} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>{setShowVoiceMemo(false);if(onInteractionAdded)onInteractionAdded();}}/>}
       */}
-      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
-        <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
-        <div className="dph-identity" style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+      {/* POLISH-1 — ONE HEADER, PHOTO OR NOT. Back is its own small line;
+          below it the mark (photo or initials, one size) sits top-aligned with
+          the name, and everything about the person is one column beside it.
+          Centred rows let the mark and Back float to the middle of a column
+          whose height changed with the person, so a photo moved the name. */}
+      <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px 12px",display:"flex",flexWrap:"wrap",alignItems:"flex-start",gap:"8px 12px",flexShrink:0}}>
+        <div className="dph-backrow" style={{flexBasis:"100%"}}>
+          <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
+        </div>
+        <div className="dph-identity" data-testid="dp-identity" style={{display:"flex",alignItems:"flex-start",gap:12,flex:1,minWidth:0}}>
           {/* BUILD-94 Part 1 — the face. Drop an image on it or click to pick
               one; the old mark was a stage-tinted first letter, which told you
               the stage twice (the pill beside it already says it) and told you
@@ -1936,7 +1947,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   first thing. It is display type now; the email moved to the
                   rail's contact block, where somebody looks when they are
                   about to call. */}
-              <span className="dph-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+              <span className="dph-name" data-testid="dp-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
                 fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{donor.name}</span>
               {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
                   it is brass (the overdue colour), never terracotta. */}
@@ -2002,7 +2013,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             BUTTON with a menu, never a link, because it does something on
             this page rather than going somewhere. Everything that was in the
             row is in the menu, so nothing was dropped. */}
-        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
+        <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",alignSelf:"flex-start",position:"relative"}}>
           {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
               buttons in two different colours (a brass "Log a conversation" and
               an emerald "Request Gift"), so nothing on it was the obvious thing
@@ -2247,7 +2258,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
               <button key={id} role="tab" aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,...activeMark(dpTab===id,"bottom")}}>
                 {label}
-                {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
+                {id==="gifts"&&giftCountReal>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftCountReal}</span>}
                 {id==="related"&&relationships.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{relationships.length}</span>}
                 {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
               </button>
@@ -2653,7 +2664,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
+                  {refundRows.length>0&&<span> · {refundRows.length===1?"a refund":`${refundRows.length} refunds`} of {fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} taken off</span>}
                   {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
                     <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
                   )}
@@ -3771,7 +3783,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/></dd></>}
               {donor.birthday&&<><dt style={{color:RAIL.dim}}>Birthday</dt><dd style={{margin:0}} data-testid="dp-birthday">{birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year)}</dd></>}
               {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}

@@ -49,3 +49,22 @@ export function earlySignsPhrase(medium) {
 // is. Every number has a sentence, and this is that number's.
 export const EARLY_SIGNS_MEANING =
   "donors a little past their own giving rhythm, not far enough to be sure";
+
+// POLISH-1 Part 6 — what moved the count overnight, by name. Drift is read
+// against today, so the count can change at midnight with nothing new in the
+// file; this says who crossed into "past their own pattern" and who left it.
+// Null when nobody moved, so the line only appears when it explains a change.
+export function driftSinceYesterday(s) {
+  if (!s) return null;
+  const names = list => {
+    const n = list.map(x => x.donorName).filter(Boolean);
+    if (n.length <= 2) return n.join(" and ");
+    return `${n.slice(0, 2).join(", ")} and ${n.length - 2} more`;
+  };
+  const crossed = Array.isArray(s.crossed) ? s.crossed : [];
+  const left = Array.isArray(s.left) ? s.left : [];
+  const bits = [];
+  if (crossed.length) bits.push(`since yesterday, ${names(crossed)} passed ${crossed.length === 1 ? "their" : "their own"} usual gap`);
+  if (left.length) bits.push(`${crossed.length ? "" : "since yesterday, "}${names(left)} ${left.length === 1 ? "is" : "are"} no longer counted (${left.every(x => x.now === "lapsed") ? "now lapsed" : "back on pattern or lapsed"})`);
+  return bits.length ? bits.join("; ").replace(/^s/, "S") : null;
+}

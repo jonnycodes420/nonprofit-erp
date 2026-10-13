@@ -402,17 +402,28 @@ export function checkSpec(spec, { normalizeRules, ruleKeys, events = [], campaig
 }
 
 // ── THE FILTERS IN WORDS ──────────────────────────────────────────────────
-// "Gave in 2025 · nothing in 2026 · not deceased"
+// "Gave in 2025 · nothing in 2026 · leaving out anyone marked deceased"
 const WHOLE_YEAR = (from, to) => from && to && from.slice(0, 4) === to.slice(0, 4) && from.slice(5) === "01-01" && to.slice(5) === "12-31";
 const cap = s => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 export function filterWords(rules = {}, ctx = {}) {
   const w = [];
   const evName = id => ((ctx.events || []).find(e => e.id === id) || {}).name || "one event";
-  const span = (f, t) => (WHOLE_YEAR(f, t) ? `in ${f.slice(0, 4)}` : `${f || "any time"} to ${t || "today"}`);
+  // POLISH-1: in words a person uses. "Tagged recaptured · gave 2026-10-01
+  // to 2026-10-31 · not deceased" became "Gave again in October 2026 after
+  // going quiet". A whole month is the month, a day is a day in words.
+  const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const lastDay = f => new Date(Date.UTC(+f.slice(0, 4), +f.slice(5, 7), 0)).getUTCDate();
+  const WHOLE_MONTH = (f, t) => f && t && f.slice(0, 7) === t.slice(0, 7) && f.slice(8) === "01" && +t.slice(8, 10) === lastDay(f);
+  const span = (f, t) => (WHOLE_YEAR(f, t) ? `in ${f.slice(0, 4)}`
+    : WHOLE_MONTH(f, t) ? `in ${MONTHS[+f.slice(5, 7) - 1]} ${f.slice(0, 4)}`
+    : `from ${f ? dayWords(f) : "the start"} to ${t ? dayWords(t) : "today"}`);
+  const LIFE = { new: "gave for the first time in the last 12 months", current: "gave in the last 12 months, as they have every year",
+    recaptured: "gave again after going quiet", lapsed: "gone quiet, nothing in the last 12 months" };
+  const comeback = rules.lifecycle === "recaptured" && (rules.gaveFrom || rules.gaveTo);
   if (rules.role) w.push({ donor: "donors", volunteer: "volunteers", staff_board: "staff and board" }[rules.role] || rules.role);
   if (rules.level) w.push(`${rules.level} donors`);
-  if (rules.lifecycle) w.push(`tagged ${rules.lifecycle}`);
-  if (rules.retained) w.push("tagged retained");
+  if (rules.lifecycle && !comeback) w.push(LIFE[rules.lifecycle] || rules.lifecycle);
+  if (rules.retained) w.push("gave last year and again this year");
   if (rules.monthly) w.push("gives monthly");
   if (rules.volunteer) w.push("has volunteered");
   if (rules.volActive) w.push("an active volunteer");
@@ -420,7 +431,7 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.given === "ever") w.push("has given");
   const amt = rules.gaveOver !== undefined ? `more than $${Number(rules.gaveOver).toLocaleString("en-US")}` : "";
   if (rules.gaveEvent) w.push(`gave ${amt ? amt + " " : ""}to ${evName(rules.gaveEvent)}`);
-  if (rules.gaveFrom || rules.gaveTo) w.push(`gave ${!rules.gaveEvent && amt ? amt + " " : ""}${span(rules.gaveFrom, rules.gaveTo)}`);
+  if (rules.gaveFrom || rules.gaveTo) w.push(`gave ${comeback ? "again " : ""}${!rules.gaveEvent && amt ? amt + " " : ""}${span(rules.gaveFrom, rules.gaveTo)}${comeback ? " after going quiet" : ""}`);
   if (amt && !rules.gaveEvent && !(rules.gaveFrom || rules.gaveTo)) w.push(`gave ${amt} in all`);
   if (rules.notGaveFrom || rules.notGaveTo) w.push(`nothing ${span(rules.notGaveFrom, rules.notGaveTo)}`);
   const cName = id => ((ctx.campaigns || []).find(c => c.id === id) || {}).name || "one campaign";
@@ -448,7 +459,8 @@ export function filterWords(rules = {}, ctx = {}) {
   if (rules.auctionBidder) w.push("registered to bid in an auction");
   if (rules.funder) w.push("funds a grant");
   if (rules.openTask) w.push("an open task");
-  if (rules.notDeceased) w.push("not deceased");
+  // Said gently: "not deceased" read as blunt on a list of people.
+  if (rules.notDeceased) w.push("leaving out anyone marked deceased");
   return w.map((x, i) => (i === 0 ? cap(x) : x));
 }
 

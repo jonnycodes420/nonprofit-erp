@@ -67,7 +67,7 @@ async function loadFacts(orgId, donorIds = null, q = query) {
   const [gifts, scores, subs, events, hours, screening] = await Promise.all([
     q(`SELECT donor_id, id, LEFT(date, 10) AS date, amount::text AS amount, fund_id, COALESCE(campaign_id, NULLIF(campaign, '')) AS camp,
              COALESCE(payment_method, '') || ' ' || COALESCE(type, '') AS method, match_employer_id, recurring_subscription_id
-             FROM gifts WHERE org_id = ? AND amount > 0 AND date IS NOT NULL${only}`, a),
+             FROM gifts WHERE org_id = ? AND amount <> 0 AND date IS NOT NULL${only}`, a),
     q(`SELECT donor_id, engagement, generosity FROM donor_scores WHERE org_id = ?${only}`, a),
     q(`SELECT donor_id, amount::text AS amount, interval FROM recurring_subscriptions
              WHERE org_id = ? AND status IN ('active','past_due','recovering','recovered')${only}`, a),
@@ -77,11 +77,14 @@ async function loadFacts(orgId, donorIds = null, q = query) {
   ]);
   const facts = new Map();
   const get = id => {
-    if (!facts.has(id)) facts.set(id, { today: t, gifts: [], engagement: 0, generosity: 0, monthly: null, events: 0, hours: 0, screening: null });
+    if (!facts.has(id)) facts.set(id, { today: t, gifts: [], refunds: [], engagement: 0, generosity: 0, monthly: null, events: 0, hours: 0, screening: null });
     return facts.get(id);
   };
   for (const id of donorIds || []) get(id);
-  for (const g of gifts) get(g.donor_id).gifts.push({ id: g.id, date: g.date, cents: toC(g.amount), fund: g.fund_id, campaign: g.camp,
+  // POLISH-1: a refund (a negative row) is not a gift; it only comes off the
+  // calendar-year totals the trend reads, as it does on the chart.
+  for (const g of gifts) if (toC(g.amount) < 0) get(g.donor_id).refunds.push({ date: g.date, cents: toC(g.amount) });
+  for (const g of gifts.filter(x => toC(x.amount) > 0)) get(g.donor_id).gifts.push({ id: g.id, date: g.date, cents: toC(g.amount), fund: g.fund_id, campaign: g.camp,
     method: g.method, matched: !!g.match_employer_id, recurring: !!g.recurring_subscription_id });
   for (const s of scores) Object.assign(get(s.donor_id), { engagement: s.engagement, generosity: s.generosity });
   for (const s of subs) {

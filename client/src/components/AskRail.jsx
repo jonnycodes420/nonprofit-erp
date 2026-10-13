@@ -19,6 +19,7 @@ import { T, fmtFull } from "./shared";
 import { AskAnswer } from "./AskPanel";
 import { WhyAnswerBody } from "./WhyAnswer";
 import { errorMessage } from "../lib/domainError";
+import { personIntent } from "../../../shared/askGuide.js";
 
 const LABEL = { fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 };
 const CHIP = { background: T.white, color: T.greenDk, border: "1px solid " + T.bg3, borderRadius: 999, padding: "7px 12px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "left", lineHeight: 1.35 };
@@ -151,7 +152,11 @@ export function AskButtons({ scope, isReadOnly, onStepTaken, testid = "ask-butto
 // anything else is an instruction and goes to Agent, where a plan is read, run
 // and undone (agent.onSend). With Agent off, everything typed is a question.
 const QUESTION_START = /^\s*(why|what|whats|what's|who|whom|whose|how|which|when|where|did|does|do|is|are|was|were|can|could|should|will|show me|list|tell me)\b/i;
-export const isQuestion = t => /\?\s*$/.test(String(t || "")) || QUESTION_START.test(String(t || ""));
+// POLISH-1: "Summarize my call with Emily" has no question mark and starts
+// like an instruction, so it went to the Agent while "What did we talk about
+// with Emily?" came here. A conversation question is a question wherever it
+// is typed, so both get the same answer.
+export const isQuestion = t => /\?\s*$/.test(String(t || "")) || QUESTION_START.test(String(t || "")) || personIntent(t) === "talked";
 const DOORS = { why: "The reasons behind your numbers", what: "Results, and who to call next" };
 export function AskHero({ isReadOnly, onStepTaken, agent }) {
   const [open, setOpen] = useState(null);
@@ -223,7 +228,14 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
     const k = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
   }, [onClose]);
-  useEffect(() => { endRef.current && endRef.current.scrollIntoView && endRef.current.scrollIntoView({ block: "end", behavior: "smooth" }); }, [turns.length, busy]);
+  // POLISH-1: while Steward works, the question stays in view; the moment the
+  // answer is ready its TOP comes into view (not the end of a long answer),
+  // on a phone as on a desk.
+  const lastTurnRef = useRef(null);
+  useEffect(() => {
+    const el = busy ? endRef.current : lastTurnRef.current;
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: busy ? "end" : "start", behavior: "smooth" });
+  }, [turns.length, busy]);
 
   const lastPlan = list => { for (let i = list.length - 1; i >= 0; i--) if (list[i].a && list[i].a.plan) return list[i].a.plan; return null; };
   const lastQuery = list => { const a = list.length && list[list.length - 1].a; return a && a.qplan ? a.qplan : null; };
@@ -288,8 +300,9 @@ export function AskRail({ mode: startMode, replay, scope, isReadOnly, onStepTake
               const a = t.a;
               const said = readAs(a);
               return (
-                <div key={i} data-testid="ask-rail-turn" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div key={i} data-testid="ask-rail-turn" ref={isLast ? lastTurnRef : null} style={{ display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 8 }}>
                   <div data-testid="ask-rail-question" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{t.text}</div>
+                  {isLast && (a || t.err) && !busy && <div role="status" data-testid="ask-ready" style={{ ...LABEL, color: T.greenDk }}>Answer ready</div>}
                   {said && <div data-testid="ask-rail-read-as" style={{ fontSize: 12.5, color: T.ink3 }}>{said}</div>}
                   {t.err && <div style={{ fontSize: 14, color: T.ink2 }}>{t.err}</div>}
                   {!a && !t.err && <div style={{ fontSize: 14, color: T.ink3 }}>Working it out from your own records…</div>}

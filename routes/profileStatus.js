@@ -12,6 +12,7 @@
 const express = require("express");
 const DS = require("../donorStatus");
 const FS = require("../figureSources");
+const money = require("../money");
 const drift = require("../drift");
 const E = require("../engagement");
 const DT = require("../donorTags");
@@ -215,8 +216,22 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
     ["donor-lifetime", "donor-first-gift", "donor-latest-gift-alias", "donor-largest-gift", "donor-average-gift"].map(async k => {
       const key = k === "donor-latest-gift-alias" ? "donor-last-gift" : k;
       const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });
-      return { source: src(key), label: f.label, sentence: f.sentence, value: f.totalRows ? f.value : null, date: f.rows[0] ? f.rows[0].date : null, count: f.totalRows };
+      const count = f.measure === "per_gift" ? f.giftCount : f.totalRows;
+      return { source: src(key), label: f.label, sentence: f.sentence, value: count ? f.value : null, cents: count ? f.cents : null, date: f.rows[0] ? f.rows[0].date : null, count };
     }));
+  // POLISH-1 · THE PROFILE FOOTS. Lifetime, the gift count and the average are
+  // one set of rows: Lifetime / count = Average, unless part of Lifetime is an
+  // imported total with no gifts behind it. What the average leaves out, and
+  // what came off it, is said in words beside it, from the same gifts table.
+  const [r] = await query(
+    `SELECT (COUNT(*) FILTER (WHERE g.amount < 0))::int AS refunds,
+            COALESCE(SUM(g.amount) FILTER (WHERE g.amount < 0), 0)::text AS refunded,
+            COALESCE(SUM(g.amount), 0)::text AS itemized
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL`, [orgId, d.id]);
+  const refundCents = -(money.toCents(String(r.refunded)) ?? 0);
+  const importedCents = lifetime.cents != null ? Math.max(0, lifetime.cents - (money.toCents(String(r.itemized)) ?? 0)) : 0;
+  Object.assign(average, { refunds: r.refunds, refundCents, importedCents });
   const glance = { lifetime, first, latest, largest, average };
   const [hl, close, next] = await Promise.all([
     highlights(orgId, d, today, w),
