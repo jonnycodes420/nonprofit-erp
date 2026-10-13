@@ -101,7 +101,12 @@ function humanCadence(days) {
   return `about every ${Math.round(days / 365.25)} years`;
 }
 
-const fmtAmt = n => "$" + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
+// SCALE-1: one formatter, built once. Number#toLocaleString(locale, opts) is
+// specified as new Intl.NumberFormat(locale, opts).format(n), so the output is
+// the same string; building the formatter per call was 400 ms of a 25k-donor
+// Drift run.
+const AMT_FMT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const fmtAmt = n => "$" + AMT_FMT.format(Number(n || 0));
 
 // ── the core assessment ─────────────────────────────────────────────────────
 //
