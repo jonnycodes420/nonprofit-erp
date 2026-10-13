@@ -79,6 +79,13 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
   a donor puts its action button beside the anchor as a sibling, never nested inside it. (BUILD-81, BUILD-45 D-1)
 - **The rail is `PRIMARY_NAV` (five) plus a `MORE_NAV` disclosure.** More opens itself when the current
   surface lives inside it, a portal-tier org keeps Portal on the rail, and every `TABS` id must be reachable. (BUILD-87 F.3.5)
+- **One voice (POLISH-2).** American spelling in every sentence a person reads (stored values like
+  `'cheque'` stay). One date style, "Oct 8, 2026", through `shared/displayDate.js`; never an ISO date in
+  text. "Log a call" is the only label for logging a conversation. A machine tag (`donorTags.js`) never
+  reaches a screen, and LYBUNT/SYBUNT appear only beside their plain meaning. An all-caps imported
+  surname displays in title case (`shared/displayName.js`, display only). `tests/polish2-voice.test.js`
+  guards all of it.
+
 ## Gotchas
 - **Capture the dialog's opener during render, not in `useEffect`.** React applies a child's `autoFocus` at
   commit, before effects run. Keep the inline `onClose` out of effect dependencies, or every parent render
