@@ -139,22 +139,40 @@ async function fireStripe(evtId, piId, cents, email, name) {
   // time it runs, and a moved snapshot is a change. One read settles the day,
   // as Home's first visit does.
   await readAll(tok, ["/metrics/stewardship-summary?scope=all"]);
-  await forgetStore();
-  const fresh = await readAll(tok);
+  // The claim is about what the store answers: every stored answer, and the
+  // donors list (it reads the stored Drift answers). The other Home reads are
+  // computed on every visit, as before, and some move with the clock inside a
+  // day (Today's "days since"), so two reads of them need not be equal bytes.
+  const CLAIMED = [...STORED, "/donors?limit=50&offset=0&role=donor",
+    `/reports/giving-summary?year=${TODAY.slice(0, 4)}&yearMode=fiscal`];
+  const changeMark = async () => (await q(`SELECT COALESCE(MAX(id),0)::bigint AS m FROM org_changes WHERE org_key=$1`, [ORG])
+    .catch(() => [{ m: -1 }]))[0].m;
+  // A background write for this org (a score recompute, a queued job) is a
+  // real change, and the store is right to refuse its answers then; the pass
+  // is repeated, up to three times, and only a refusal with NO change behind
+  // it counts against the store.
+  let fresh, stored, notStored = CLAIMED, sameBytes = CLAIMED, unexplained = true;
+  for (let attempt = 0; attempt < 3 && (notStored.length || sameBytes.length); attempt++) {
+    await forgetStore();
+    const mark = await changeMark();
+    fresh = await readAll(tok);
+    stored = await readAll(tok, CLAIMED);
+    sameBytes = CLAIMED.filter(p => stored[p].body !== fresh[p].body);
+    notStored = STORED.filter(p => !stored[p].stored);
+    unexplained = String(await changeMark()) === String(mark);
+    if (unexplained) break;
+  }
   ok("§1 every read answers 200", ALL.every(p => fresh[p].status === 200),
     ALL.filter(p => fresh[p].status !== 200).map(p => `${p}:${fresh[p].status}`).join(" "));
   const drifting = driftIds(fresh["/drift?all=1&includeMedium=1"].body);
   ok("§1 the fixture has people Drift lists (else the Drift checks prove nothing)", drifting.length >= 5, drifting.length);
-  const stored = await readAll(tok);
-  const sameBytes = ALL.filter(p => stored[p].body !== fresh[p].body);
-  ok("§1 read again, every answer is the same bytes", sameBytes.length === 0, sameBytes.join(" "));
-  const notStored = STORED.filter(p => !stored[p].stored);
+  ok("§1 read again, every stored answer and the donors list are the same bytes", sameBytes.length === 0, sameBytes.join(" "));
   ok("§1 the org-wide figures were answered from the store the second time", notStored.length === 0, notStored.join(" "));
   const [dd] = await q(`SELECT COUNT(*)::int n FROM donor_drift WHERE org_id=$1 AND computed_for=$2`, [ORG, TODAY]).catch(() => [{ n: -1 }]);
   ok("§1 each person's Drift answer is stored for today (40 people)", dd.n === 40, dd.n);
   await forgetStore();
-  const again = await readAll(tok);
-  const drift2 = ALL.filter(p => again[p].body !== fresh[p].body);
+  const again = await readAll(tok, CLAIMED);
+  const drift2 = CLAIMED.filter(p => again[p].body !== fresh[p].body);
   ok("§1 with the store wiped, a fresh computation gives the same bytes again", drift2.length === 0, drift2.join(" "));
 
   // ── §2 · Home in one request ────────────────────────────────────────────
@@ -163,8 +181,9 @@ async function fireStripe(evtId, piId, cents, email, name) {
     { headers: { authorization: `Bearer ${tok}` } });
   const bundle = b.status === 200 ? await b.json() : {};
   ok("§2 GET /home/bundle answers", b.status === 200, b.status);
+  const single = await readAll(tok, HOME_FIRST);   // the separate reads, straight after
   const bundleOff = HOME_FIRST.filter(p => !bundle[p] || bundle[p].status !== 200 ||
-    JSON.stringify(bundle[p].body) !== JSON.stringify(JSON.parse(fresh[p].body)));
+    JSON.stringify(bundle[p].body) !== JSON.stringify(JSON.parse(single[p].body)));
   ok("§2 each of Home's first reads in the bundle equals the separate read", bundleOff.length === 0, bundleOff.join(" "));
   const refused = await fetch(BASE + "/home/bundle?p=" + encodeURIComponent("/donors/summaries"), { headers: { authorization: `Bearer ${tok}` } });
   ok("§2 a read that is not part of Home is refused, so the bundle is not a general proxy", refused.status === 400, refused.status);
