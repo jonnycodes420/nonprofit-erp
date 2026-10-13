@@ -590,10 +590,10 @@ function MonthlyClose() {
         <input type="month" value={ym} onChange={e => e.target.value && setYm(e.target.value)} aria-label="Month to close" style={{ ...inp, width:170 }}/>
       </div>
       <div style={{ fontSize:12, color:T.ink3, marginBottom:12, lineHeight:1.6 }}>
-        Two files for {monthName}: one row per deposit, for reconciling the bank, and one row per gift, for the record. Steward checks that the rows, the fund totals and its own sum agree to the cent before it will write either.
+        {`Two files for ${monthName}: one row per deposit, for reconciling the bank, and one row per gift, for the record. Steward checks that the rows, the fund totals and its own sum agree to the cent before it will write either.`}
       </div>
       {err && <div role="alert" style={{ fontSize:13, color:T.terra700, marginBottom:10 }}>{err}</div>}
-      {!d && !err && <div style={{ fontSize:12, color:T.ink3 }}>Adding up {monthName}…</div>}
+      {!d && !err && <div style={{ fontSize:12, color:T.ink3 }}>{`Adding up ${monthName}…`}</div>}
       {d && <>
         <div data-testid="close-sentence" style={{ fontSize:14, color:d.balanced ? T.ink : T.terra700, marginBottom:12, lineHeight:1.55 }}>
           {d.giftCount === 0

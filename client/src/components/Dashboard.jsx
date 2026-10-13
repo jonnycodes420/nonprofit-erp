@@ -1717,7 +1717,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             allowed to leave the early ones with no door. */}
         {!homeFold.drift&&driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
           <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
-            {earlySignsPhrase(driftCounts(driftData).medium)}, {EARLY_SIGNS_MEANING}.{" "}
+            {`${earlySignsPhrase(driftCounts(driftData).medium)}, ${EARLY_SIGNS_MEANING}. `}
             <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
           </div>
         )}
@@ -2905,7 +2905,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:34,padding:"2px 0"}}><SkeletonBar width={40} height={28}/></span>
                 :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
               <span style={{fontSize:12,lineHeight:1.35,color:T.ink3}}>
-                {(tile.short||tile.label).split(" ").slice(0,-1).join(" ")}{(tile.short||tile.label).includes(" ")?" ":""}
+                {(tile.short||tile.label).includes(" ")?(tile.short||tile.label).split(" ").slice(0,-1).join(" ")+" ":""}
                 <span style={{whiteSpace:"nowrap"}}>{(tile.short||tile.label).split(" ").slice(-1)[0]}
                 <span tabIndex={0} title={tile.definition} aria-label={tile.definition} data-testid={"rail-def-"+tile.key}
                   onClick={e=>e.stopPropagation()}
