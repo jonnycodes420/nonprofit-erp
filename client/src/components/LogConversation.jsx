@@ -148,9 +148,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 
   return (
     <Modal onClose={onClose} width={460} zIndex={300} padding={24}
-      ariaLabel="Log a conversation" dialogStyle={{ border: "1px solid " + T.bg3 }}>
+      ariaLabel="Log a call" dialogStyle={{ border: "1px solid " + T.bg3 }}>
       <div>
-        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Edit this conversation" : "Log a conversation"}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>{editing ? "Edit this conversation" : "Log a call"}</div>
         <div style={{ fontSize: 12, color: T.ink3, marginBottom: 14 }}>{donor.name}</div>
 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
@@ -169,7 +169,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
               unreadable paragraph. Cmd or Ctrl and Enter still saves. */}
           <textarea ref={lineRef} value={line} onChange={e => setLine(e.target.value)} rows={3}
             onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && line.trim()) save(false); }}
-            placeholder="She asked for the impact report." data-testid="conv-line"
+            placeholder="e.g. She asked for the impact report." data-testid="conv-line"
             style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
         {!editing && ["call_reached", "meeting", "visit"].includes(touch) && (
@@ -267,7 +267,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
             {!tzKnown
-              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone first. Steward will not fire a reminder at a guessed hour.
+              ? <>We'll remind you in your morning email when it's due. To have it email you at a specific time, set your organization&rsquo;s time zone first. Steward will not fire a reminder at a guessed hour.
                   {onNavigate && <>{" "}
                     {/* FIX (2026-09-10) — refusing an action and then leaving
                         the user to hunt for the fix is half a fix. This lands
@@ -279,7 +279,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                   </>}</>
               : sanitizeStepTime(nsTime)
                 ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened, instead of the morning list. It fires on a weekend too.</>
-                : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}
+                : <>We'll remind you in your morning email when it's due. (Or sooner: add a time and it emails you at that moment.) Skipping is recorded as skipped.</>}
           </div>
         </div>}
 

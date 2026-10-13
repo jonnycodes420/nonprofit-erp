@@ -118,7 +118,7 @@ export function statusSentence(status, scope) {
   const n = Number(status) || 0;
   if (n === 401) return "The key was missing or not valid.";
   if (n === 403) return scope ? `The key does not have the "${SCOPES[scope]?.label || scope}" permission.` : "The key is not allowed to do that.";
-  if (n === 404) return "Steward has no such record for this organisation.";
+  if (n === 404) return "Steward has no such record for this organization.";
   if (n === 422) return "The request was understood but something in it was not usable.";
   if (n === 429) return "Too many calls too quickly. This key was asked to slow down.";
   if (n >= 500) return "Something went wrong at Steward's end.";

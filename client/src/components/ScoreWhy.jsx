@@ -39,7 +39,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
         <span data-testid="dp-score-band" style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>No history yet</span>
       </div>
       <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55, marginTop: 4 }}>
-        Steward has no conversations, notes or meetings on file for this person yet, so it cannot say how close they are.
+        No conversations, notes, or meetings are on file yet, so we can't say how close they are.
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
         <button type="button" data-testid="dp-bring-notes" onClick={() => window.dispatchEvent(new Event("steward:history-import"))}
@@ -48,7 +48,7 @@ export function ScoreCard({ donorId, scores, children, onLog }) {
         </button>
         {onLog && <button type="button" data-testid="dp-log-first" onClick={onLog}
           style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontWeight: 700, fontSize: 12.5, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
-          Log a conversation
+          Log a call
         </button>}
       </div>
       {children}

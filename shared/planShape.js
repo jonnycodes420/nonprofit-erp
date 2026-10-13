@@ -67,7 +67,7 @@ export function validateTemplate({ name, steps } = {}) {
   const errors = [];
   const clean = [];
   const n = sanitizeName(name);
-  if (!n) errors.push({ field: "name", message: "Give the plan a name — this is a template the organisation keeps." });
+  if (!n) errors.push({ field: "name", message: "Give the plan a name — this is a template the organization keeps." });
   const list = Array.isArray(steps) ? steps : [];
   if (!list.length) errors.push({ field: "steps", message: "A plan needs at least one step." });
   if (list.length > MAX_STEPS) errors.push({ field: "steps", message: `A plan holds at most ${MAX_STEPS} steps.` });

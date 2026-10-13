@@ -173,7 +173,7 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
     return res.json({ mfaSetupRequired: true, token: setupToken,
       message: isSuperAdmin ? "Super-admin accounts always use two-factor. Set it up to continue."
         : user.mfa_must_setup ? "Your two-factor was reset by an owner. Set it up again to continue."
-        : "Your organisation requires two-factor sign-in. Set it up to continue." });
+        : "Your organization requires two-factor sign-in. Set it up to continue." });
   }
 
   const { token } = await TF.issueSession(user, req, signToken);
@@ -638,7 +638,7 @@ async function checkDemoOrgSends() {
   const bad = rows.filter(r => r.recipient_domain && reachesARealMailbox(r.recipient_domain));
   if (!bad.length) return "clean";
   await opsAlert("demo_org_send",
-    `A demo organisation sent mail to a real address`,
+    `A demo organization sent mail to a real address`,
     bad.map(b => `${b.org_name} (${b.org_id}) sent ${b.n} to ${b.recipient_domain}`).join("; "));
   return `ALERTED: ${bad.length}`;
 }
@@ -689,7 +689,7 @@ app.get("/admin/observability", requireAuth, requireSuperAdmin, wrap(async (req,
       sourceErrors: (sources || []).filter(x => x.last_error).map(x => x.id),
       sentence: realProviderFromDemo.length
         ? `${realProviderFromDemo.length} message${realProviderFromDemo.length === 1 ? "" : "s"} ` +
-          `reached a real mailbox provider from an organisation marked as demonstration data.`
+          `reached a real mailbox provider from an organization marked as demonstration data.`
         : "",
     },
     ticks, sources, agentRuns: agent,

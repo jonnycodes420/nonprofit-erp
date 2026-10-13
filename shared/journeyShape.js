@@ -26,6 +26,7 @@
 //
 // Pure: no DB, no network, no clock, no JSX.
 
+import { displayDate as dateWords } from "./displayDate.js";
 import {
   validateTemplate, MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel,
 } from "./planShape.js";
@@ -75,7 +76,7 @@ export const TRIGGERS = [
     sentence: "Starts each year on the day of somebody's first gift, checked every morning." },
   // PARITY-3 6a — the one PARITY-1 had to skip: there was no birth date.
   { key: "birthday",       label: "Their birthday",
-    sentence: "Starts each year on somebody's birthday, by your organisation's date, checked every morning. Only people with a birthday on file." },
+    sentence: "Starts each year on somebody's birthday, by your organization's date, checked every morning. Only people with a birthday on file." },
   // JOURNEYS-3 — the moments a small team misses. Each is checked every hour
   // by the journey sweep (like anniversaries), in the org's own calendar, and
   // each enrols a person once per event: this membership's end, this plan's
@@ -104,8 +105,8 @@ export const TRIGGERS = [
   // this page, this item, this event, this task, this email.
   { key: "pledge_made", label: "They make a pledge", sweep: true,
     sentence: "Starts when somebody makes a pledge. Once per pledge." },
-  { key: "pledge_late", label: "A pledge instalment is 14 days late", sweep: true,
-    sentence: "Starts when an instalment on somebody's pledge is 14 days past its due date and still unpaid. Once per instalment." },
+  { key: "pledge_late", label: "A pledge installment is 14 days late", sweep: true,
+    sentence: "Starts when an installment on somebody's pledge is 14 days past its due date and still unpaid. Once per installment." },
   { key: "pledge_paid", label: "They pay a pledge in full", sweep: true,
     sentence: "Starts when somebody's pledge is paid in full. Once per pledge." },
   { key: "page_first_gift", label: "They give through a giving page for the first time", sweep: true,
@@ -484,7 +485,7 @@ PRESETS.push(
       { type: "thank", label: "Call to thank them for the pledge", offsetDays: 2 },
       { type: "send",  label: "Send the pledge thank-you",         offsetDays: 5, starter: "thank_you" },
     ] },
-  { key: "pledge_late", name: "Pledge instalment late", trigger: "pledge_late", priority: 70,
+  { key: "pledge_late", name: "Pledge installment late", trigger: "pledge_late", priority: 70,
     blurb: "A kind word, not a bill. Ask if anything has changed.",
     steps: [
       { type: "follow_up", label: "Call and ask how they are", offsetDays: 0 },
@@ -644,7 +645,7 @@ export function validateJourney(input = {}) {
     amountCents = Number(input.amountCents);
     if (!Number.isInteger(amountCents) || amountCents <= 0) {
       errors.push({ field: "amountCents",
-        message: "Set the amount that counts as a big gift for your organisation. There is no universal figure and Steward will not pick one for you." });
+        message: "Set the amount that counts as a big gift for your organization. There is no universal figure and Steward will not pick one for you." });
     }
   } else if (t && t.gift && input.amountCents !== undefined && input.amountCents !== null && input.amountCents !== "") {
     // PARITY-1 Part D — any gift trigger may carry a floor. Optional here.
@@ -814,14 +815,17 @@ export function touchesSentence(steps = []) {
   if (!n) return "No steps yet.";
   const last = Math.max(...steps.map(s => Number(s.offsetDays) || 0));
   const months = Math.round(last / 30);
-  const span = last < 45 ? `${Math.max(1, Math.round(last / 7))} week${Math.round(last / 7) === 1 ? "" : "s"}`
+  // POLISH-2: the plural follows the number shown ("1 touch over 1 week",
+  // never "1 weeks": a same-day step rounded to 0 weeks but showed as 1).
+  const weeks = Math.max(1, Math.round(last / 7));
+  const span = last < 45 ? `${weeks} week${weeks === 1 ? "" : "s"}`
              : `${months} month${months === 1 ? "" : "s"}`;
   return `${n} touch${n === 1 ? "" : "es"} over ${span}. Nothing is sent without you.`;
 }
 
 // Where a donor is, in the words the profile shows.
 export function stepPositionSentence({ seq, total, label, dueDate }) {
-  return `Step ${seq} of ${total} · ${label}${dueDate ? ` · due ${dueDate}` : ""}`;
+  return `Step ${seq} of ${total} · ${label}${dueDate ? ` · due ${dateWords(dueDate) || dueDate}` : ""}`;
 }
 
 export { MAX_STEPS, MAX_OFFSET_DAYS, sanitizeName, sanitizeLabel };

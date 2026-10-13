@@ -242,8 +242,8 @@ const LEFT_OUT_REASONS = {
   sample_donor:    "Sample record, not a real person",
 };
 const ORG_NO_MAIL = {
-  demo_org: "This is the demonstration organisation, so nothing is sent from it. In a real organisation, these people would get it.",
-  org_emails_disabled: "Email is switched off for this organisation, so nothing will be sent until it is switched back on.",
+  demo_org: "This is the demonstration organization, so nothing is sent from it. In a real organization, these people would get it.",
+  org_emails_disabled: "Email is switched off for this organization, so nothing will be sent until it is switched back on.",
   not_onboarded: "Email turns on once your donor file is in.",   // MAIL-1
 };
 function LeftOut({ preview }) {
@@ -277,7 +277,7 @@ function LeftOut({ preview }) {
       )}
       {preview.orgSends === false && (
         <div data-testid="segment-org-no-mail" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
-          {ORG_NO_MAIL[preview.orgReason] || "This organisation is not sending email right now, so nothing will be sent."}
+          {ORG_NO_MAIL[preview.orgReason] || "This organization is not sending email right now, so nothing will be sent."}
         </div>
       )}
     </div>
@@ -1263,7 +1263,7 @@ function EmailToolPanel({ onNavigate }) {
       <div>
         <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>Your email tool</div>
         <div style={{ fontSize: 13, color: T.inkSoft, marginTop: 6, maxWidth: 680, lineHeight: 1.5 }}>
-          The campaigns your organisation sent from Mailchimp or Constant Contact. Steward did not send
+          The campaigns your organization sent from Mailchimp or Constant Contact. Steward did not send
           these and cannot resend one. It reads who opened, who clicked and who asked to stop, and puts
           that on the person's own record.
         </div>
@@ -1450,7 +1450,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // never empty, because an empty gallery is a blank box with extra steps.
   const templates = useMemo(() => (
     gallery?.templates?.length ? gallery.templates
-      : templatesFor({ orgName: data?.org?.name || "your organisation", t })
+      : templatesFor({ orgName: data?.org?.name || "your organization", t })
   ), [gallery, data?.org?.name, t]);
   const brand = gallery?.brand || null;
   // Which sending identity is in force — hers, or Steward's with her name on
@@ -1756,7 +1756,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // is what the first person on the list will open. "Margaret" only when the
   // segment is still empty.
   const previewFirst = segPreview?.first || null;
-  const previewOrgName = gallery?.orgName || data?.org?.name || "your organisation";
+  const previewOrgName = gallery?.orgName || data?.org?.name || "your organization";
   const renderPreview = (html) => renderMergeFields(html || "", {
     first_name: previewFirst?.firstName || "Margaret",
     donor_name: previewFirst?.name || "Margaret Chen",
@@ -1935,7 +1935,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 style={{ ...S.input, width: "100%" }} />
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
                 {form.scheduledAt
-                  ? <>Goes out at that time in {orgTimezone || "your organisation's timezone"}.</>
+                  ? <>Goes out at that time in {orgTimezone || "your organization's timezone"}.</>
                   : <>Leave it empty to send it yourself.</>}
               </div>
             </div>

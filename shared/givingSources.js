@@ -148,7 +148,7 @@ export const PROVIDERS = {
   toast: {
     key: "toast", label: "Toast", mode: "file", recurring: "inferred", pos: true,
     credentialFields: [],
-    help: "Toast's API is behind their partner programme. Until that is approved, export Orders and Payments from Toast and drop the file in; Steward reads the same sales either way.",
+    help: "Toast's API is behind their partner program. Until that is approved, export Orders and Payments from Toast and drop the file in; Steward reads the same sales either way.",
     steps: [
       "Open Toast Web and go to Reports.",
       "Export the Orders report and the Payments report for the period.",

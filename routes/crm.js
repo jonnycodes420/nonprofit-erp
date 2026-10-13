@@ -437,8 +437,8 @@ function sendingDomainPayload(org) {
     sentence: verified
       ? `Your email goes out from ${org.sending_from_email}. Donors see your address and your domain, and nothing of Steward's.`
       : org?.sending_domain
-        ? `Until ${org.sending_domain} verifies, your email goes out from Steward's address with your organisation's name on it, and replies come to you.`
-        : "Your email goes out from Steward's address with your organisation's name on it, and replies come to you. Add your own domain and donors will see yours instead.",
+        ? `Until ${org.sending_domain} verifies, your email goes out from Steward's address with your organization's name on it, and replies come to you.`
+        : "Your email goes out from Steward's address with your organization's name on it, and replies come to you. Add your own domain and donors will see yours instead.",
   };
 }
 
@@ -458,7 +458,7 @@ app.post("/org/sending-domain", requireAuth, requireAdmin, checkWriteAccess, wra
   if (!DOMAIN_RE.test(domain)) return res.status(400).json({ error: `"${domain}" is not a domain Steward can send from.` });
   if (RESERVED_SENDING_DOMAINS.has(domain)) {
     return res.status(400).json({ error: "reserved_domain",
-      message: `${domain} cannot be used: it is either Steward's own, or a mailbox provider you do not control the DNS for. Use a domain your organisation owns.` });
+      message: `${domain} cannot be used: it is either Steward's own, or a mailbox provider you do not control the DNS for. Use a domain your organization owns.` });
   }
   if (fromEmail.split("@")[1] !== domain) {
     return res.status(400).json({ error: "address_domain_mismatch",
@@ -469,7 +469,7 @@ app.post("/org/sending-domain", requireAuth, requireAdmin, checkWriteAccess, wra
   const [taken] = await query("SELECT id FROM orgs WHERE LOWER(sending_domain)=? AND id<>?", [domain, orgId]);
   if (taken) {
     return res.status(409).json({ error: "domain_taken",
-      message: `${domain} is already verified for another organisation on Steward. A sending domain belongs to one organisation; if this is yours, the other organisation has to release it first.` });
+      message: `${domain} is already verified for another organization on Steward. A sending domain belongs to one organization; if this is yours, the other organization has to release it first.` });
   }
 
   // Resend owns the DNS records; Steward stores what it is told and never
@@ -497,12 +497,12 @@ app.post("/org/sending-domain", requireAuth, requireAdmin, checkWriteAccess, wra
   } catch (e) {
     if (/uq_orgs_sending_domain/.test(e.message)) {
       return res.status(409).json({ error: "domain_taken",
-        message: `${domain} was claimed by another organisation a moment ago. A sending domain belongs to one organisation.` });
+        message: `${domain} was claimed by another organization a moment ago. A sending domain belongs to one organization.` });
     }
     throw e;
   }
   writeAuditLog(orgId, req.user.userId, req.user.email, "updated", "sending_domain", domain, {
-    description: `Claimed ${domain} as the organisation's sending domain (from ${fromEmail})`,
+    description: `Claimed ${domain} as the organization's sending domain (from ${fromEmail})`,
     new: { domain, fromEmail },
   }).catch(() => {});
   const [org] = await query(
@@ -580,7 +580,8 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
       WHERE t.org_id = ? AND t.sent_at IS NULL AND t.skipped_at IS NULL
         AND d.deleted_at IS NULL
       ORDER BY g.amount DESC, t.created_at ASC`, [orgId]);
-  const [org] = await query("SELECT voice_samples FROM orgs WHERE id=?", [orgId]);
+  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
   const draftMod = await import("../shared/draftNote.js");
@@ -595,7 +596,9 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
     voice: { ready: voice.ready, samples: voice.count, needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - voice.count) },
     drafts: rows.map(r => ({ id: r.id, donorId: r.donor_id, giftId: r.gift_id, donorName: r.donor_name,
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
-      fundName: r.fund_name || null, body: r.body, voiceUsed: r.voice, opened: !!r.opened_at })),
+      fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
+      // POLISH-2: signed by whoever is reading the queue, since she sends it.
+      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice }) })),
   });
 }));
 
@@ -1329,7 +1332,7 @@ app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
   const u = await meRow(req.user.userId);
   if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
   const o = await orgOf(u.org_id);
-  if (mustKeepMfa(u, o)) return res.status(409).json({ error: u.is_super_admin ? "Super-admin accounts always use two-factor." : "Your organisation requires two-factor sign-in." });
+  if (mustKeepMfa(u, o)) return res.status(409).json({ error: u.is_super_admin ? "Super-admin accounts always use two-factor." : "Your organization requires two-factor sign-in." });
   if (!(await currentCodeOk(u, req.body && req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
   await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL, mfa_method=NULL WHERE id=?`, [u.id]);
   await run(`DELETE FROM mfa_recovery_codes WHERE user_id=?`, [u.id]);
@@ -7240,7 +7243,7 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
     schedule: req.body.installments, frequency: req.body.frequency,
     count: req.body.installmentCount, firstDue: dueDate,
-  }).catch(e => console.error("[pledge] instalments:", e.message));
+  }).catch(e => console.error("[pledge] installments:", e.message));
 
   // WIRE-1: the promise is on the person's timeline the day it is made.
   { const who = await staffWho(req);
@@ -7314,7 +7317,7 @@ app.put("/pledges/:id/installments", requireAuth, checkWriteAccess, wrap(async (
       schedule: req.body.installments, frequency: req.body.frequency,
       count: req.body.installmentCount, firstDue: req.body.firstDue,
     });
-    if (!out.installments) return res.status(400).json({ error: "no_schedule", message: "Give a schedule, or a frequency and a number of instalments." });
+    if (!out.installments) return res.status(400).json({ error: "no_schedule", message: "Give a schedule, or a frequency and a number of installments." });
     // A pledge that now has a schedule is no longer a shell.
     await run("UPDATE pledges SET is_shell=false WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   } catch (e) {
@@ -8308,14 +8311,20 @@ app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+// POLISH-2 Part 6: the Imports list shows files she brought in. A connection's
+// scheduled check ("PayPal - checked 2026-10-12", shape 'source') is that
+// connection's history and is read there (GET /connections/:id/log), so it is
+// left out here unless a caller asks for everything with ?include=checks.
 app.get("/imports", requireAuth, wrap(async (req, res) => {
+  const withChecks = req.query.include === "checks";
   const rows = await query(
     `SELECT id, name, source_filename, shape,
             TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
             committed_at, actor_user_name, rows_in, gifts_created, donors_created,
             donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
             migration_source, thanks_answer
-       FROM imports WHERE org_id=? ORDER BY committed_at DESC, id DESC LIMIT 200`,
+       FROM imports WHERE org_id=? ${withChecks ? "" : "AND COALESCE(shape, '') <> 'source'"}
+      ORDER BY committed_at DESC, id DESC LIMIT 200`,
     [req.user.orgId]);
   res.json({
     imports: rows.map(r => {
@@ -8855,7 +8864,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
   const items = Array.isArray(req.body?.cheques) ? req.body.cheques : [];
   if (!items.length) return res.status(400).json({ error: "no_cheques" });
   if (items.length > cr.CHEQUE_READ_MAX_IMAGES)
-    return res.status(400).json({ error: "too_many", message: `Read at most ${cr.CHEQUE_READ_MAX_IMAGES} cheques at a time.` });
+    return res.status(400).json({ error: "too_many", message: `Read at most ${cr.CHEQUE_READ_MAX_IMAGES} checks at a time.` });
   // BUILD-96 Part 3 — the same gate the agent uses. A photograph of a cheque
   // is the most sensitive image this product holds and it does not leave on a
   // different rule from the one the org read in Settings.
@@ -8865,14 +8874,14 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
       error: "reading_unavailable",
       reason: gate.reason,
       message: gate.reason === "ai_disabled"
-        ? AI_OFF_MESSAGE + ". You can turn it back on in Settings, or type the cheques in."
-        : "Reading cheque photographs is not enabled yet.",
+        ? AI_OFF_MESSAGE + ". You can turn it back on in Settings, or type the checks in."
+        : "Reading check photographs is not enabled yet.",
     });
   }
 
   const TOOL = {
     name: "record_cheque",
-    description: "Record exactly what is written on this cheque.",
+    description: "Record exactly what is written on this check.",
     strict: true,
     input_schema: cr.CHEQUE_READ_SCHEMA,
   };
@@ -8898,7 +8907,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
         tool_choice: { type: "tool", name: "record_cheque" },
         messages: [{ role: "user", content: [
           { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
-          { type: "text", text: "Transcribe this cheque." },
+          { type: "text", text: "Transcribe this check." },
         ] }],
       });
       // Tool inputs are parsed, never string-matched (the 4.6+ escaping rule).
@@ -9199,7 +9208,7 @@ async function stopImportJourneys(orgId, importId, who) {
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organisation." });
+  if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organization." });
   if (!WHOLE_IMPORT_SHAPES.has(imp.shape)) {
     return res.status(400).json({ error: "shape_not_reversible",
       message: "A deposit, a gift file, and a file with one row per gift reverse as a whole. Any other import is undone gift by gift, on the record." });
@@ -9891,8 +9900,8 @@ app.get("/households/:id", requireAuth, wrap(async (req, res) => {
 // is a legacy row and reads as a person (the BUILD-84 rule), so nothing that
 // predates the column is refused.
 const PERSON_ONLY_SENTENCE = (what, name) =>
-  `${name || "That record"} is an organisation, not a person, so it cannot ${what}. ` +
-  `Organisations have their own list, with grant-cycle language rather than household and estate language.`;
+  `${name || "That record"} is an organization, not a person, so it cannot ${what}. ` +
+  `Organizations have their own list, with grant-cycle language rather than household and estate language.`;
 
 async function validateHouseholdMembers(memberIds, primaryDonorId, orgId, allowHouseholdId) {
   const ids = Array.isArray(memberIds) ? [...new Set(memberIds.filter(Boolean))] : [];
@@ -11286,7 +11295,7 @@ app.put("/proposals/:id", requireAuth, requireCrm, checkWriteAccess, wrap(async 
             amountCents: committedCents, schedule: req.body.installments,
             frequency: req.body.frequency, count: req.body.installmentCount,
             firstDue: String(due).slice(0, 10),
-          }).catch(e => console.error("[proposal] instalments:", e.message));
+          }).catch(e => console.error("[proposal] installments:", e.message));
           const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pid]);
           if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
             ["pli_" + uuid().slice(0, 10), orgId, pid, String(due).slice(0, 10), toDollars(committedCents)]);
@@ -12548,7 +12557,9 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
       [req.user.orgId]).catch(() => [])).map(t => ({ id: t.id, name: t.name })),
     priority: { min: J.PRIORITY_MIN, max: J.PRIORITY_MAX, default: J.PRIORITY_DEFAULT },
     stages: stageRows.map(r => r.stage),
-    tags: tagRows.map(r => r.tag),
+    // POLISH-2: a machine flag (has-refused-rows:N, shares-id:X) is never a
+    // tag she can pick; donorTags.js is the one list of them.
+    tags: tagRows.map(r => r.tag).filter(t => !DTAGS.isInternalTag(t)),
     presets: J.PRESETS.map(p => ({ ...p, touches: J.touchesSentence(p.steps) })),
     // FIX-5 — the team, so a step can name a person as its owner instead of
     // always falling to the relationship owner.
@@ -12611,6 +12622,7 @@ app.get("/journeys/suggest-big-gift", requireAuth, wrap(async (req, res) => {
   // Rounded on purpose, and it is not a gift: it is a THRESHOLD being offered
   // for her to accept or type over, and it is carried in cents from here on.
   const suggested = Math.max(step, Math.round(p90 / step) * step);
+  const DDp = await import("../shared/displayDate.js");
   const rows = await query(
     `SELECT g.id, g.amount::float amount, g.date, d.id AS donor_id, d.name AS donor_name
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -12624,7 +12636,7 @@ app.get("/journeys/suggest-big-gift", requireAuth, wrap(async (req, res) => {
     // $4,000.50 shown as $4,001 in the rows behind a number is the whole
     // reason the money seam exists.
     rows: rows.map(r => ({ id: r.donor_id, giftId: r.id, name: r.donor_name,
-      reason: `${sentenceMoney(r.amount)} on ${r.date}` })),
+      reason: `${sentenceMoney(r.amount)} on ${DDp.displayDate(r.date)}` })),
   });
 }));
 
@@ -12985,6 +12997,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
   if (!t) return res.status(404).json({ error: "Not found" });
   const J = await journeyMod();
   const PL = await planMod();
+  const DD = await import("../shared/displayDate.js");
 
   // The donor, and the DATE THE TRIGGER WOULD HAVE FIRED ON — which is what
   // the offsets count from, not today. A first gift in October means month 3
@@ -13006,15 +13019,15 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
         GROUP BY d.id, d.name HAVING COUNT(g.id)=1
         ORDER BY MIN(g.date) DESC LIMIT 1`, [orgId]);
     if (r) { donor = r; from = String(r.date).slice(0, 10);
-             basis = `First gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+             basis = `First gift $${Number(r.amount).toLocaleString("en-US")} · ${DD.displayDate(from)}`; }
   } else if (t.trigger_key === "gift_over") {
     const r = await newestGift(Number(t.trigger_amount_cents) || 0);
     if (r) { donor = r; from = String(r.date).slice(0, 10);
-             basis = `Gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+             basis = `Gift $${Number(r.amount).toLocaleString("en-US")} · ${DD.displayDate(from)}`; }
   }
   if (!donor) {
     const r = await newestGift(0);
-    if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${from}`; }
+    if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${DD.displayDate(from)}`; }
   }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
@@ -13038,7 +13051,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
     if (real.length) {
       return res.json({
         donor: { id: live.donor_id, name: live.name,
-                 basis: `In this journey since ${String(live.applied_on).slice(0, 10)}` },
+                 basis: `In this journey since ${DD.displayDate(String(live.applied_on).slice(0, 10))}` },
         from: String(live.applied_on).slice(0, 10),
         live: true,
         steps: real.map(s => ({
@@ -13092,6 +13105,7 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
 // A GET, and it writes nothing: no plan, no step, no thread.
 app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
+  const DDj = await import("../shared/displayDate.js");
   const PL = await planMod();
   const J = await journeyMod();
   const [donor] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
@@ -13122,7 +13136,7 @@ app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
     // JOURNEYS-3 — the other journeys they are in; they can be in this one too.
     alsoIn: inNow.filter(p => p.template_id !== t.id).map(p => p.template_name),
     sentence: first
-      ? `${donor.name} would start with "${first.label}", due ${first.dueDate}. Nothing is sent. Every step waits for you.`
+      ? `${donor.name} would start with "${first.label}", due ${DDj.displayDate(first.dueDate)}. Nothing is sent. Every step waits for you.`
       : "That journey has no steps yet.",
   });
 }));
@@ -13230,7 +13244,7 @@ async function journeyStats(orgId, t) {
       { key: "onTime", label: "Steps on time", value: onTime, rows: "onTime",
         sentence: "People who have completed at least one step on or before the day it was due." },
       { key: "late", label: "Steps late", value: late, rows: "late",
-        sentence: "People with a step completed after its due date, or still waiting past it. Late is brass, not a failure." },
+        sentence: "People with a step completed after its due date, or still waiting past it. Late is okay. It isn't failure." },
       { key: "skipped", label: "Steps skipped", value: skipped, rows: "skipped",
         sentence: "People where somebody decided not to do a step and said why. The reason is on each row." },
       { key: "secondGift", label: "Gave again within a year", value: secondGift, rows: "secondGift",
@@ -13744,10 +13758,10 @@ async function briefRowsFor(orgId, donorId) {
   const money = require("../money");
   const givingWord = t("giver_singular") || "donor";
 
-  lines.push(`person:${donor.id} — ${donor.name}${donor.kind === "organisation" ? " (an organisation)" : ""}, `
+  lines.push(`person:${donor.id} — ${donor.name}${donor.kind === "organisation" ? " (an organization)" : ""}, `
     + `${money.formatCentsPlain(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
-    + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organisation calls somebody like this a ${givingWord}.`);
+    + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organization calls somebody like this a ${givingWord}.`);
 
   // GIFTS — the last twelve, each its own row, with its fund and how it came in.
   const gifts = await query(
@@ -13888,16 +13902,16 @@ app.post("/donors/:id/brief", requireAuth, requireCrm, checkWriteAccess, wrap(as
   const system = [
     "You are writing a one-page brief for a fundraiser who is about to go and see somebody.",
     "",
-    "You are given ROWS from this organisation's own records. Each row starts with a reference of the form kind:id.",
+    "You are given ROWS from this organization's own records. Each row starts with a reference of the form kind:id.",
     "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
     "",
     "RULES, and the first one is the whole job:",
     "- You may say NOTHING about this person that is not in the rows. No capacity, no wealth, no means, no guess about what they could give.",
     "- Use no figure that is not in the rows you were handed. Never state a rule about how giving works (no 'donors who give twice usually…').",
     "- A pledge is a promise, not money received. A soft credit is recognition, not their own giving. Say so if you mention them.",
-    "- Quote a conversation rather than summarising away the words the officer chose.",
+    "- Quote a conversation rather than summarizing away the words the officer chose.",
     "- Leave a section out if the rows say nothing about it. Do not pad.",
-    "- Use this organisation's own vocabulary where the rows give it.",
+    "- Use this organization's own vocabulary where the rows give it.",
     "- The headline names who this is and why she is reading it, and contains no figure.",
   ].join("\n");
   const user = [`The rows, on ${ctx.donor.name}:`, "", ...ctx.lines, "", "Write the brief."].join("\n");
@@ -14954,7 +14968,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
   if (!g) return res.status(404).json({ error: "Grant not found" });
   if (!g.funder_donor_id) {
     return res.status(400).json({ code: "funder_not_linked",
-      error: "Link this grant to the funder's organisation record before awarding it — the pledge has to belong to somebody." });
+      error: "Link this grant to the funder's organization record before awarding it — the pledge has to belong to somebody." });
   }
   let awardedCents;
   try { awardedCents = parseMoneyOrThrow(req.body.amountAwarded, "amountAwarded"); }
@@ -14987,7 +15001,7 @@ app.put("/grants/:id/award", requireAuth, requireCrm, checkWriteAccess, wrap(asy
     await writePledgeInstallments(orgId, pledgeId, {
       amountCents: awardedCents, schedule: req.body.installments,
       frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due,
-    }).catch(e => console.error("[grant] instalments:", e.message));
+    }).catch(e => console.error("[grant] installments:", e.message));
     const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
     if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
       ["pli_" + uuid().slice(0, 10), orgId, pledgeId, due, toDollars(awardedCents)]);
@@ -15883,7 +15897,7 @@ async function planGrantImport(orgId, body) {
     pipelineCents, pipeline: toDollars(pipelineCents),
     // NOTHING IS INVENTED HERE AND THE PLAN SAYS SO, so nobody has to read the
     // route to know what an import will and will not touch.
-    writes: ["grants", "funder organisations that were not on file"],
+    writes: ["grants", "funder organizations that were not on file"],
     doesNotWrite: ["gifts", "pledges", "deadlines Steward watches", "follow-ups"],
     plan_: plan,
   };
@@ -16070,7 +16084,7 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
   const fundWord = t("fund_singular") || "fund";
 
   // 1 — THE GRANT ITSELF: what was promised, in the proposal's own fields.
-  lines.push(`grant:${g.id} — a grant from ${g.funder_name || "a funder"} for "${g.program || "no programme named"}", `
+  lines.push(`grant:${g.id} — a grant from ${g.funder_name || "a funder"} for "${g.program || "no program named"}", `
     + `requested ${money.formatCentsPlain(toCents(g.amount_requested) || 0)}, `
     + `awarded ${money.formatCentsPlain(balance.awardedCents)}, currently ${g.status}`
     + `${g.fund_name ? `, designated to the ${fundWord} "${g.fund_name}"` : ""}`
@@ -16227,17 +16241,17 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
   const system = [
     "You are drafting the OUTLINE of a report to a funder about a grant. A human will write the report from it and send it.",
     "",
-    "You are given ROWS from this organisation's own records. Each row starts with a reference of the form kind:id.",
+    "You are given ROWS from this organization's own records. Each row starts with a reference of the form kind:id.",
     "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
     "",
     "RULES, and the first one is the whole job:",
-    "- YOU MAY NOT STATE AN OUTCOME. This organisation's records hold money, dates, documents and people — they do not hold",
+    "- YOU MAY NOT STATE AN OUTCOME. This organization's records hold money, dates, documents and people — they do not hold",
     "  attendance, results, or what changed for anybody. Do not write that anyone was served, reached, helped or improved.",
     "  The outcomes section is a PROMPT to the human who knows; say plainly that the records cannot supply it.",
     "- Use no figure that is not in the rows you were handed, and state no rule about how grants or giving work.",
     "- A document row means a file EXISTS. You have not read it. Never say what a proposal or report said.",
     "- Money still owed by the funder is not money received, and money received is not money spent. Keep them apart.",
-    "- Quote a conversation rather than summarising away the words the officer chose.",
+    "- Quote a conversation rather than summarizing away the words the officer chose.",
     "- Leave a section out if the rows say nothing about it. Do not pad.",
     "- The headline names the grant and the period, and contains no figure.",
     "",
@@ -16245,7 +16259,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
     ...O.OUTLINE_SECTIONS.map(s => `- ${s.heading} — ${s.source || "NOTHING IN THE RECORDS. Say so; do not invent it."}`),
   ].join("\n");
   const user = [
-    `The rows, on the ${ctx.grant.funder_name || "funder"} grant for "${ctx.grant.program || "no programme named"}", `
+    `The rows, on the ${ctx.grant.funder_name || "funder"} grant for "${ctx.grant.program || "no program named"}", `
       + `period ${ctx.period.from} to ${ctx.period.to}:`,
     "", ...ctx.lines, "", "Draft the outline.",
   ].join("\n");
@@ -17149,7 +17163,7 @@ app.post("/api/v1/gifts", apiLimiter, requireApiKey, requireScope("write:gifts")
   if (!Number.isFinite(amount) || amount <= 0) return res.status(422).json({ error: "invalid_request", message: "A gift needs a positive amount." });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(422).json({ error: "invalid_request", message: "A gift needs a date as YYYY-MM-DD." });
   const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [personId, orgId]);
-  if (!d) return res.status(404).json({ error: "not_found", message: "Steward has no such person for this organisation." });
+  if (!d) return res.status(404).json({ error: "not_found", message: "Steward has no such person for this organization." });
 
   // IDEMPOTENT BY THE CALLER'S OWN KEY. An integration that retries after a
   // timeout must not record the gift twice, and the caller is the only party
@@ -17181,7 +17195,7 @@ app.post("/api/v1/notes", apiLimiter, requireApiKey, requireScope("write:notes")
   const note = String(req.body?.note || "").trim().slice(0, 4000);
   if (!personId || !note) return res.status(422).json({ error: "invalid_request", message: "A note needs a personId and a note." });
   const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [personId, orgId]);
-  if (!d) return res.status(404).json({ error: "not_found", message: "Steward has no such person for this organisation." });
+  if (!d) return res.status(404).json({ error: "not_found", message: "Steward has no such person for this organization." });
   const type = ["call", "meeting", "email", "note"].includes(String(req.body?.type)) ? req.body.type : "note";
   const id = "int_" + uuid().slice(0, 8);
   await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by) VALUES (?,?,?,?,?,?,?)`,
@@ -19645,8 +19659,9 @@ app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, 
   const [open] = await query(
     "SELECT id, next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL",
     [orgId, req.params.id]);
+  const DDt = await import("../shared/displayDate.js");
   if (open) return res.status(409).json({ error: "thread_open",
-    message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${open.due_date}.`,
+    message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${DDt.displayDate(open.due_date)}.`,
     thread: { id: open.id, label: open.next_step_label, due: open.due_date } });
 
   // FIX-19: an ownerId from the body is an active user of THIS org, or the
@@ -26096,7 +26111,7 @@ async function publicEvent(slug) {
   const rows = await query(
     `SELECT * FROM events WHERE public_slug=? AND status <> 'cancelled' LIMIT 2`, [String(slug || "")]);
   if (rows.length > 1) {
-    console.error(`[events] public slug "${slug}" is claimed by ${rows.length} organisations — refusing to guess`);
+    console.error(`[events] public slug "${slug}" is claimed by ${rows.length} organizations — refusing to guess`);
     return null;
   }
   return rows[0] || null;
@@ -26141,7 +26156,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   }
   if (!e) return res.status(404).send(evPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this event has been taken down. Ask the organisation for its current link.</p></div>` }));
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this event has been taken down. Ask the organization for its current link.</p></div>` }));
   const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
   const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
@@ -26173,7 +26188,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
       <form method="post" action="${slugPath}/waitlist">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
-        <p class="small">Leave your name and ${esc(brand.displayName || "the organisation")} will be in touch if a place comes free. Nothing is charged and you are under no obligation.</p>
+        <p class="small">Leave your name and ${esc(brand.displayName || "the organization")} will be in touch if a place comes free. Nothing is charged and you are under no obligation.</p>
         <label>Your name<input name="name" required autocomplete="name"></label>
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
         <button class="btn quiet" type="submit">Put me on the waiting list</button>
@@ -26289,7 +26304,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
 
   res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, wide: true, body: `${style}
     ${problem ? `<div class="err">${esc(problem)}</div>` : ""}
-    ${req.query.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organisation")} will be in touch if a place comes free.</div>` : ""}
+    ${req.query.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organization")} will be in touch if a place comes free.</div>` : ""}
     ${req.query.gave === "1" ? `<div class="ok">Thank you. Your gift went through, and your receipt is on its way by email.</div>` : ""}
     ${hero}
     <div class="card when" data-testid="event-when">
@@ -26306,8 +26321,8 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     ${giveCard}
     ${share}
     <p class="small" style="text-align:center">${isOver && !canTakeACard ? "" : canTakeACard
-      ? `Your card is taken by ${esc(brand.displayName || "the organisation")}'s own payment account. Steward never holds the money and never sees the card.`
-      : `Registering here tells ${esc(brand.displayName || "the organisation")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
+      ? `Your card is taken by ${esc(brand.displayName || "the organization")}'s own payment account. Steward never holds the money and never sees the card.`
+      : `Registering here tells ${esc(brand.displayName || "the organization")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
   ` }));
 }));
 
@@ -26361,7 +26376,7 @@ app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
     return res.send(withRefresh(evPage({ title: `Thank you · ${e.name}`, brand, body: `
       <div class="card">
         <h1>Thank you. Your payment went through.</h1>
-        <p class="muted">We are putting you on the list now. This page finds you within a few seconds; if it does not, your email receipt is your proof of payment and ${esc(brand.displayName || "the organisation")} has the record.</p>
+        <p class="muted">We are putting you on the list now. This page finds you within a few seconds; if it does not, your email receipt is your proof of payment and ${esc(brand.displayName || "the organization")} has the record.</p>
         ${whenWhere}
       </div>` })));
   }
@@ -26377,7 +26392,7 @@ app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
     <div class="card" style="text-align:center">
       <h2 style="text-align:left">Your ticket</h2>
       ${code ? `<img src="${code}" alt="Your ticket code" style="width:210px;height:210px;display:block;margin:12px auto 6px">` : ""}
-      <p class="small" style="text-align:left">Show this at the door. It is read by ${esc(brand.displayName || "the organisation")} and says which ticket this is; it carries nothing else about you.</p>
+      <p class="small" style="text-align:left">Show this at the door. It is read by ${esc(brand.displayName || "the organization")} and says which ticket this is; it carries nothing else about you.</p>
       <a class="btn quiet" href="/you/${esc(orgSlug)}">Keep it on your page</a>
       <p class="small" style="text-align:left">Your page holds this ticket, your receipts and anything else you have with ${esc(brand.displayName || "us")}. It opens with a link to your email and never asks for a password.</p>
     </div>` }));
@@ -26558,7 +26573,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
       <div class="ok">You are on the list for ${esc(e.name)}.</div>
       <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
       <p>${esc(level.name)}${level.kind === "ticket" && qty > 1 ? ` · ${qty} places` : ""}${guests.length ? ` · ${guests.length} ${guests.length === 1 ? "guest" : "guests"} named` : ""}.</p>
-      <p class="small">${esc(brand.displayName || "The organisation")} will be in touch about paying. Nothing was charged here${Number(level.fmv) > 0 ? `, and when it is, ${esc(evMoney(deductible))} of it will be tax deductible` : ""}.</p>
+      <p class="small">${esc(brand.displayName || "The organization")} will be in touch about paying. Nothing was charged here${Number(level.fmv) > 0 ? `, and when it is, ${esc(evMoney(deductible))} of it will be tax deductible` : ""}.</p>
     </div>` }));
 }));
 
@@ -27720,7 +27735,7 @@ async function donorLock(orgId, row) {
   const n = Math.max((g && g.n) || 0, Number(row.gift_count) || 0);
   if (!n) return { locked: false, reason: null, giftCount: 0 };
   const isOrg = row.kind === "organisation" || row.kind === "organization";
-  const who = isOrg ? (String(row.name || "").trim() || "This organisation")
+  const who = isOrg ? (String(row.name || "").trim() || "This organization")
                     : (String(row.name || "").trim().split(/\s+/)[0] || "This person");
   return {
     locked: true, giftCount: n,
@@ -27914,7 +27929,7 @@ async function storeChequeImage({ orgId, dataUri }) {
     });
     return { assetId: asset.id };
   } catch (e) {
-    console.error("[cheque] resize failed:", e.message);
+    console.error("[check] resize failed:", e.message);
     return { error: "We couldn't process that photo. Try taking it again in better light." };
   }
 }
@@ -28090,9 +28105,9 @@ app.get("/settings/inbound-email", requireAuth, wrap(async (req, res) => {
     sentence: !INBOUND_EMAIL_ENABLED
       ? "BCC logging is not switched on for this Steward yet."
       : !orgOn
-        ? "BCC logging is off for this organisation."
+        ? "BCC logging is off for this organization."
         : `BCC ${address} on an email to a donor and Steward files it on their record. `
-          + "It is one address for the whole organisation, and Steward knows it came from you because you sent it. "
+          + "It is one address for the whole organization, and Steward knows it came from you because you sent it. "
           + "A message that names nobody on file is held for you to place, or stored nowhere at all.",
     unmatched: held.map(h => ({
       id: h.id, kind: h.kind, from: h.from_email, to: h.to_emails, subject: h.subject,

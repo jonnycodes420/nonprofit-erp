@@ -57,7 +57,7 @@ export const PROVIDERS = {
     help: "Steward asks Mailchimp for permission once. You stay signed in to Mailchimp and keep sending from there.",
     steps: [
       "Click Connect and sign in to Mailchimp.",
-      "Choose the account the organisation sends from.",
+      "Choose the account the organization sends from.",
       "Approve the request.",
       "Back in Steward, pick which audience to keep in step.",
     ],

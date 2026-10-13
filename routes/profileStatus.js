@@ -173,7 +173,7 @@ async function nextAction(orgId, d, today, status, glanceLast, viewerMaySee = fa
   const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, d.id]);
   let step, why;
   if (thread) {
-    step = thread.next_step_label; why = `This is the open next step, due ${thread.due_date}.`;
+    step = thread.next_step_label; why = `This is the open next step, due ${(await import("../shared/displayDate.js")).displayDate(thread.due_date) || thread.due_date}.`;
     // FIX-24 2c: with no proposal open, the step cannot be "send the proposal".
     const NA = await import("../shared/nextStepAgree.js");
     const PS = await import("../shared/proposalShape.js");

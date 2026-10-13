@@ -278,7 +278,7 @@ export function HoursImportModal({ onClose, onDone, Modal, Papa, presets }) {
     Papa.parse(file, { header: true, skipEmptyLines: true, complete: r => {
       const headers = r.meta.fields || [];
       const key = presets.detectHoursPreset(headers);
-      if (!key) { setMsg("This does not look like a Wranglr or VolunteerHub hours export."); setPlan(null); return; }
+      if (!key) { setMsg("This does not look like a VolunteerHub or shift-scheduling hours export."); setPlan(null); return; }
       const map = presets.mapHoursColumns(headers, key);
       setPlan({ key, label: presets.HOURS_PRESETS[key].label, ...presets.rowsToShifts(r.data, map) });
     } });

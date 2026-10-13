@@ -97,7 +97,7 @@ export function sectionsFor(counts = {}) {
 // email we know and whose records are somewhere else. Say so plainly rather
 // than showing five headings and no content.
 export function nothingYetLine(orgName) {
-  return `There is nothing on your page yet. When ${orgName || "the organisation"} records a membership, a ticket, a shift or a gift for you, it appears here.`;
+  return `There is nothing on your page yet. When ${orgName || "the organization"} records a membership, a ticket, a shift or a gift for you, it appears here.`;
 }
 
-export const CARD_SENTENCE = "Show this at the door. The code is read by the organisation and says who you are; it carries nothing else.";
+export const CARD_SENTENCE = "Show this at the door. The code is read by the organization and says who you are; it carries nothing else.";

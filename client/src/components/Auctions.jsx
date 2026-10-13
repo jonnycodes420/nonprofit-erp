@@ -169,7 +169,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
             a.status === "archived" ? "The page is live again." : "Archived: the public page is down. Bids and winners are kept.")}>
             {a.status === "archived" ? "Restore" : "Archive"}</button>
         </div>
-        <p style={{ fontSize: 12, color: T.ink3, margin: "8px 0 0" }}>Times are in your organisation's timezone ({d.timezone}). Bidding stops at the closing time to the second, by the server's clock.</p>
+        <p style={{ fontSize: 12, color: T.ink3, margin: "8px 0 0" }}>Times are in your organization's timezone ({d.timezone}). Bidding stops at the closing time to the second, by the server's clock.</p>
       </Card>
 
       <Card style={{ padding: "16px 18px" }}>

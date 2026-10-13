@@ -26,6 +26,7 @@
 //
 // Pure: no DB, no clock, no JSX. `today` is always a parameter.
 
+import { displayDate as dateWords } from "./displayDate.js";
 export const RESTRICTED_METRICS = [
   { key: "awarded", label: "Awarded",
     definition: "What the funder said yes to, in the award letter." },
@@ -95,7 +96,7 @@ export function balanceSentence(b, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!b) return "";
   if (!b.restricted) {
-    return `${fm(b.awardedCents)} awarded, unrestricted — the organisation decides where it goes.`;
+    return `${fm(b.awardedCents)} awarded, unrestricted — the organization decides where it goes.`;
   }
   if (b.overspent) {
     return `${fm(-b.remainingCents)} more has been spent against this award than the funder has paid. Check the spending entries or the payments.`;
@@ -104,8 +105,8 @@ export function balanceSentence(b, formatMoney) {
   if (b.outstandingCents > 0) parts.push(`${fm(b.outstandingCents)} still owed by the funder`);
   if (b.releaseDate) {
     parts.push(b.released
-      ? `released on ${b.releaseDate}`
-      : `not spendable until ${b.releaseDate}`);
+      ? `released on ${dateWords(b.releaseDate) || b.releaseDate}`
+      : `not spendable until ${dateWords(b.releaseDate) || b.releaseDate}`);
   }
   return parts.join(", ") + ".";
 }

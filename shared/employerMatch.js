@@ -227,14 +227,14 @@ export async function resolveEmployerMatch(employerName, {
 export function matchSentence(programme, { giftCents = 0, orgName = "", fmtCents = c => `$${(c / 100).toFixed(2)}` } = {}) {
   if (!programme) return null;
   const bits = [];
-  bits.push(`${programme.employerName} matches gifts to organisations like ${orgName || "this one"}.`);
+  bits.push(`${programme.employerName} matches gifts to organizations like ${orgName || "this one"}.`);
   if (programme.ratio) bits.push(`They match ${programme.ratio}.`);
   if (giftCents > 0 && programme.ratio === "1:1") {
     const eligible = programme.minCents && giftCents < programme.minCents ? false : true;
     if (eligible) bits.push(`That would turn your ${fmtCents(giftCents)} into ${fmtCents(giftCents * 2)}.`);
   }
   if (programme.minCents && giftCents > 0 && giftCents < programme.minCents) {
-    bits.push(`Their programme starts at ${fmtCents(programme.minCents)}.`);
+    bits.push(`Their program starts at ${fmtCents(programme.minCents)}.`);
   }
   if (programme.note) bits.push(programme.note);
   return bits.join(" ");

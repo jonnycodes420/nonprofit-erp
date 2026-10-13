@@ -311,7 +311,7 @@ if (!backgroundTicksDisabled()) {
   // a second scheduler. It opens threads and sends nothing, so it is safe to
   // run hourly: the `threads_one_open` index makes a repeat a no-op, and
   // `reminder_thread_id` makes it a no-op per instalment too.
-  every("processPledgeInstallmentReminders", 60 * 60 * 1000, () => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)), 70000);
+  every("processPledgeInstallmentReminders", 60 * 60 * 1000, () => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-installment thread(s) opened`)), 70000);
   // BUILD-101 Part 2 — memberships ride the same family. Opens threads, sends nothing.
   every("processMembershipRenewals", 60 * 60 * 1000, () => recordTick("processMembershipRenewals", processMembershipRenewals).then(o => o.opened && console.log(`[membership] ${o.opened} renewal thread(s) opened`)), 80000);
 }

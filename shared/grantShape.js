@@ -99,7 +99,7 @@ export function funderProblem(donor) {
   if (kind !== "organisation" && kind !== "organization") {
     return {
       code: "funder_must_be_an_organisation",
-      message: `${donor.name || "That record"} is a person. A grant is a request to an institution. A cheque from an individual is a gift, and counting it as a grant puts it in the wrong half of every report. Add the foundation as an organisation and link them as its program officer.`,
+      message: `${donor.name || "That record"} is a person. A grant is a request to an institution. A check from an individual is a gift, and counting it as a grant puts it in the wrong half of every report. Add the foundation as an organization and link them as its program officer.`,
     };
   }
   return null;
@@ -110,9 +110,9 @@ export function funderProblem(donor) {
 // carries dates, and it is the one an auditor asks about.
 export const RESTRICTIONS = [
   { key: "unrestricted",       label: "Unrestricted",        dated: false, restricted: false,
-    blurb: "the organisation decides where it goes" },
+    blurb: "the organization decides where it goes" },
   { key: "program_restricted", label: "Program-restricted",  dated: false, restricted: true,
-    blurb: "it must be spent on the programme named in the proposal" },
+    blurb: "it must be spent on the program named in the proposal" },
   { key: "capital",            label: "Capital",             dated: false, restricted: true,
     blurb: "it must be spent on the building or the equipment it was given for" },
   { key: "time_restricted",    label: "Time-restricted",     dated: true,  restricted: true,
@@ -170,7 +170,7 @@ export function validateGrant(input = {}, { mode = "create" } = {}) {
 
   if (need("program")) {
     if (!sanitizeProgram(input.program)) {
-      errors.push({ field: "program", message: "Say what the grant is for: the programme, in your own words." });
+      errors.push({ field: "program", message: "Say what the grant is for: the program, in your own words." });
     }
   }
   if (need("amountRequestedCents")) {

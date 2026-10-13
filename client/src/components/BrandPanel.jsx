@@ -19,9 +19,9 @@ import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL } from "./Uploader";
 
 const LOGO_MAX_BYTES = 15 * 1024 * 1024;
 const COLOR_FIELDS = [
-  ["primary_color", "primaryColor", "Main colour", "The band across the top of your pages and emails."],
-  ["accent_color", "accentColor", "Accent colour", "Small touches: rules and highlights."],
-  ["button_color", "buttonColor", "Button colour", "Left empty, buttons use your main colour."],
+  ["primary_color", "primaryColor", "Main color", "The band across the top of your pages and emails."],
+  ["accent_color", "accentColor", "Accent color", "Small touches: rules and highlights."],
+  ["button_color", "buttonColor", "Button color", "Left empty, buttons use your main color."],
 ];
 const inp = { boxSizing: "border-box", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink, background: T.white, fontFamily: "inherit" };
 const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "14px 0 4px" };
@@ -96,7 +96,7 @@ export default function BrandPanel({ onChanged }) {
 
       <div style={lbl}>Logo</div>
       <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={LOGO_MAX_BYTES} compact shape="square"
-        hint="PNG, JPEG, GIF, WebP or SVG. A PNG with a clear background looks best on your colour."
+        hint="PNG, JPEG, GIF, WebP or SVG. A PNG with a clear background looks best on your color."
         preview={logoSrc || null} label={logoSrc ? "Replace logo" : "Drag your logo here, or browse"}
         onFile={({ dataUrl }) => set("logo", dataUrl)}
         onRemove={() => set("logo", "")} />
@@ -109,9 +109,9 @@ export default function BrandPanel({ onChanged }) {
               onChange={e => set(col, e.target.value)}
               style={{ width: 40, height: 38, border: "1px solid " + T.bg3, borderRadius: 8, background: T.white, padding: 2, cursor: "pointer" }} />
             <input style={{ ...inp, width: 120, fontFamily: "monospace" }} value={val(col)} aria-label={label}
-              placeholder={col === "button_color" ? "main colour" : "#rrggbb"} onChange={e => set(col, e.target.value.trim())} />
+              placeholder={col === "button_color" ? "main color" : "#rrggbb"} onChange={e => set(col, e.target.value.trim())} />
             {col === "button_color" && val(col) && (
-              <button type="button" onClick={() => set(col, "")} style={{ background: "none", border: "none", color: T.ink3, fontSize: 12, cursor: "pointer", textDecoration: "underline", minHeight: 38 }}>Use the main colour</button>
+              <button type="button" onClick={() => set(col, "")} style={{ background: "none", border: "none", color: T.ink3, fontSize: 12, cursor: "pointer", textDecoration: "underline", minHeight: 38 }}>Use the main color</button>
             )}
           </div>
           <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3, lineHeight: 1.4 }}>{hint}</div>
@@ -124,7 +124,7 @@ export default function BrandPanel({ onChanged }) {
         {Object.entries(TYPE_PAIRINGS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
       </select>
 
-      {badColor && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>A colour is written as # followed by six letters or numbers.</div>}
+      {badColor && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10 }}>A color is written as # followed by six letters or numbers.</div>}
       {note && <div style={{ fontSize: 12.5, color: T.ink, marginTop: 10, lineHeight: 1.5 }}>{note}</div>}
       {err && <div role="alert" style={{ fontSize: 12.5, color: T.ink, marginTop: 10, lineHeight: 1.5 }}>{err}</div>}
       <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>

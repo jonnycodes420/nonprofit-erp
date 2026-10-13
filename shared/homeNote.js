@@ -227,8 +227,8 @@ export function pledgeSentence(latePledgeInstallments) {
   const n = Number(latePledgeInstallments) || 0;
   if (n < 1) return null;
   return n === 1
-    ? "One pledge instalment is late."
-    : `${cap(spell(n))} pledge instalments are late.`;
+    ? "One pledge installment is late."
+    : `${cap(spell(n))} pledge installments are late.`;
 }
 
 // ── BUILD-101 Part 2 — memberships expiring this month ───────────────────

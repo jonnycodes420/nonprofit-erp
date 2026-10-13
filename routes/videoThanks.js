@@ -159,7 +159,7 @@ app.get("/donors/:id/video-thanks", requireAuth, wrap(async (req, res) => {
 const esc = s => PP.escapeHtml(s);
 function notFound(res, brand) {
   return res.status(404).send(PP.publicPage({ title: "Not found", brand: brand || DEFAULT_BRAND, footer: "Sent with Steward.",
-    body: `<div class="card"><h1>That video is not here.</h1><p class="muted">The link may be incomplete. Ask the organisation that sent it for a fresh one.</p></div>` }));
+    body: `<div class="card"><h1>That video is not here.</h1><p class="muted">The link may be incomplete. Ask the organization that sent it for a fresh one.</p></div>` }));
 }
 
 app.get("/v/:token", videoLimiter, wrap(async (req, res) => {

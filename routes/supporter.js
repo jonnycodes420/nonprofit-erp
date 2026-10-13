@@ -231,7 +231,7 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const esc = PPG.escapeHtml;
   if (!org) return res.status(404).send(youPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
-    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">Ask the organisation for its current link.</p></div>` }));
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">Ask the organization for its current link.</p></div>` }));
   const brand = await brandOf(org.id, org.name);
   res.setHeader("Cache-Control", "no-store");
   const manifest = `<link rel="manifest" href="/you/${esc(org.org_slug)}/manifest.webmanifest">`
@@ -372,7 +372,7 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
       return `<div class="card">
         <h2>Your regular gift</h2>
         <p class="muted">${esc(s)}</p>
-        <p class="small">Changing it takes you to ${esc(brand.displayName || "the organisation")}'s giving page, which is where the card is held. Steward never holds your card.</p>
+        <p class="small">Changing it takes you to ${esc(brand.displayName || "the organization")}'s giving page, which is where the card is held. Steward never holds your card.</p>
         <a class="btn quiet" href="/portal/${esc(org.org_slug)}">Change, pause or stop it</a>
       </div>`;
     }).join("");

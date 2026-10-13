@@ -219,7 +219,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
 
       {tab === "brand" && (LazyBrandPanel
         ? <Suspense fallback={<Spin />}><LazyBrandPanel onChanged={load} /></Suspense>
-        : <div style={card}>Your brand (logo, colours and type) is set on your donor page settings, and every email reads it when it is shown or sent.</div>)}
+        : <div style={card}>Your brand (logo, colors and type) is set on your donor page settings, and every email reads it when it is shown or sent.</div>)}
       {tab === "media" && (LazyMediaLibrary
         ? <Suspense fallback={<Spin />}><LazyMediaLibrary /></Suspense>
         : <div style={card}>Your photos and videos will be kept here, ready for any email or page.</div>)}

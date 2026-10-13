@@ -38,7 +38,7 @@ export const ENTITIES = {
       state:           { label: "State", sql: "d.state", type: "text" },
       zip:             { label: "ZIP", sql: "d.zip", type: "text" },
       stage:           { label: "Stage", sql: "d.stage", type: "text" },
-      kind:            { label: "Person or organisation", sql: "COALESCE(d.kind,'person')", type: "text" },
+      kind:            { label: "Person or organization", sql: "COALESCE(d.kind,'person')", type: "text" },
       lifetime:        { label: "Lifetime giving", sql: "COALESCE(d.total_giving,0)", type: "money" },
       gift_count:      { label: "Number of gifts", sql: "COALESCE(d.gift_count,0)", type: "number" },
       first_gift_date: { label: "First gift date", sql: "NULLIF(d.first_gift_date,'')", type: "date" },
@@ -74,7 +74,7 @@ export const ENTITIES = {
       acknowledged_via:{ label: "Thanked how", sql: "g.acknowledged_via", type: "text" },
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },
-      donor_kind:      { label: "Donor is person or organisation", sql: "COALESCE(d.kind,'person')", type: "text" },
+      donor_kind:      { label: "Donor is person or organization", sql: "COALESCE(d.kind,'person')", type: "text" },
       // BUILD-102 (Steward Give) Part 5 — which email brought this gift in. Stored
       // on the gift, so the question is answered over the SAME rows every money
       // figure comes from rather than in a separate analytics product nobody
@@ -364,8 +364,8 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
 // `today`/fiscal boundaries are resolved by the server at run time, so a saved
 // "this year" is this year every time it runs.
 export const STANDARD_REPORTS = [
-  { key: "lybunt", name: "LYBUNT", question: "Who gave last year and not yet this year?", kind: "handler", handler: "lybunt", params: { yearMode: "fiscal" } },
-  { key: "sybunt", name: "SYBUNT", question: "Who gave in some earlier year and not this one?", kind: "handler", handler: "sybunt", params: { yearMode: "fiscal" } },
+  { key: "lybunt", name: "Gave last year, not this year", question: "Who gave last year and not yet this year?", kind: "handler", handler: "lybunt", params: { yearMode: "fiscal" } },
+  { key: "sybunt", name: "Gave before, not this year", question: "Who gave in some earlier year and not this one?", kind: "handler", handler: "sybunt", params: { yearMode: "fiscal" } },
   { key: "first-time", name: "First-time donors this year", question: "Who gave for the very first time this year?", kind: "builder",
     def: { entity: "people", columns: ["name", "first_gift_date", "lifetime", "email"], filter: { op: "and", rules: [{ field: "first_gift_date", cmp: "on_or_after", value: "{{fyStart}}" }] }, sort: { field: "first_gift_date", dir: "desc" } } },
   { key: "by-fund", name: "Donors by fund", question: "How much came in to each fund this year, and from how many gifts?", kind: "builder",

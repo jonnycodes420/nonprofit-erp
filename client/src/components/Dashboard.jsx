@@ -30,6 +30,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { MorningBrief } from "./MeetingPanels";
 import { MailboxBanner } from "./InboxConnect";
 import { displayDateShort } from "../../../shared/displayDate";
+import { displayName } from "../../../shared/displayName.js";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
 import { AskHero } from "./AskRail";
@@ -226,7 +227,7 @@ const SETUP_ITEM_META = {
   conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
   // INT-BUILD-1 Part 0 — the viewer's OWN inbox, so it ticks per person.
   inbox:      { label: "Connect your inbox",             why: "Gmail or Outlook; your conversations with people on file log themselves",     cta: "Connect", nav: ["settings", { section: "connections", focus: "inbox" }] },
-  team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
+  team:       { label: "Invite your team",               why: "add your fundraisers so everyone sees their own donors",                       cta: "Invite",  nav: ["settings", { section: "team" }] },
   // BUILD-83 Part 5.3 — the closer.
   sustainers: { label: "Move your monthly givers",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
 };
@@ -892,7 +893,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     if(item.action==="matching_gift")return "View donor →";
     if(item.action==="thank")return "Log thank-you →";
     if(item.action==="email")return "Log email →";
-    return "Log call →";
+    return "Log a call →";
   };
 
   const ROW_COLOR={note:T.greenMid,milestone:T.gold,lapsed:T.terracotta,thank:T.green,email:T.greenDk,recurring:T.terracotta,matching_gift:T.green};
@@ -1014,7 +1015,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const chipStyle={display:"flex",alignItems:"center",gap:6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px 3px 3px",cursor:"pointer",fontSize:11,maxWidth:180};
     const inner=<>
       <PersonMark id={id} name={name} size={20}/>
-      <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span>
+      <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{displayName(name)}</span>
       {detail&&<span style={{color:T.ink3,whiteSpace:"nowrap",flexShrink:0}}>{detail}</span>}
     </>;
     return id?<DonorLink id={id} onOpen={onClick} style={chipStyle}>{inner}</DonorLink>:<button onClick={onClick} style={chipStyle}>{inner}</button>;
@@ -1750,7 +1751,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             allowed to leave the early ones with no door. */}
         {!homeFold.drift&&driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
           <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
-            {earlySignsPhrase(driftCounts(driftData).medium)}, {EARLY_SIGNS_MEANING}.{" "}
+            {`${earlySignsPhrase(driftCounts(driftData).medium)}, ${EARLY_SIGNS_MEANING}. `}
             <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
           </div>
         )}
@@ -1780,7 +1781,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donorId});}}>
                     <PersonMark id={r.donorId} name={r.donorName} size={38}/>
                     <div style={{flex:1,minWidth:0}}>
-                      <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donorName}</div>
+                      <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{displayName(r.donorName)}</div>
                       <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
                       {/* ENGAGE-1 — engagement on the row; an early sign says when they have gone quiet too. */}
                       {r.engagement!=null&&<div style={{fontSize:11.5,color:r.earlySign?T.gold700:T.ink3,marginTop:2}}>{r.earlySign||`Engagement ${r.engagement}`}</div>}
@@ -1871,8 +1872,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             language, and never a Re-engage button. */}
         {driftData.institutional?.length > 0 && (
           <div style={{...cPad,...(onPanel?{marginTop:12,paddingTop:14}:{}),borderTop:"1px solid "+T.bg3}}>
-            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-              Institutional giving: foundations, DAFs, churches and businesses
+            <div style={{fontSize:12,fontWeight:800,color:T.ink3,marginBottom:6}}>
+              Institutional giving: foundations, donor-advised funds, churches and businesses
             </div>
             {driftData.institutional.slice(0,8).map(inst=>(
               <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
@@ -1885,7 +1886,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 </span>
               </div>
             ))}
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organisations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organizations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
           </div>
         )}
       </div>
@@ -2034,7 +2035,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             changes colour by status is not the same mark everywhere. */}
         <PersonMark id={t.donorId} name={t.donorName} size={38}/>
         <div style={{flex:1,minWidth:0}}>
-          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{t.donorName}</div>
+          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{displayName(t.donorName)}</div>
           {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two
               columns saying one thing between them; a person says it in a
               breath, so the row does too. */}
@@ -2058,7 +2059,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               states. "Overdue 14 days" on the right and "Overdue 14 days"
               underneath is the same duplication this row was rebuilt to end —
               the same class as BUILD-85's own `supersedes` rule. */}
-          {t.rank?.why&&!/^Overdue /i.test(t.rank.why)&&(
+          {t.rank?.why&&!/^(Overdue |\d+ days? late)/i.test(t.rank.why)&&(
             <div style={{fontSize:12,color:t.overdue?T.gold700:T.ink3,marginTop:3,fontWeight:500}}>{t.rank.why}</div>
           )}
           <div className="attn-meta" style={{marginTop:3,fontSize:11,color:T.ink3}}>
@@ -2072,7 +2073,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {/* A deferred step says so, and says what it was first promised
                 for. Moving the due date without saying you moved it would be
                 the product quietly editing somebody's commitment. */}
-            {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
+            {t.nextStep.originalDue?` · moved from ${displayDateShort(t.nextStep.originalDue,new Date())}`:""}
           </div>
         </div>
         {/* ONE FACT ON THE RIGHT, with its label under it — Drift puts the
@@ -2084,7 +2085,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 sentence read ONE figure (shared/threadFigures.js). When the
                 row has been open longer than it has been late, the figure is
                 how long it has waited, and the label says so. */}
-            {t.overdue?`${rowFigure(t)} day${rowFigure(t)===1?"":"s"}`:(t.band==="today"?"Today":String(t.nextStep.due).slice(5))}
+            {t.overdue?`${rowFigure(t)} day${rowFigure(t)===1?"":"s"}`:(t.band==="today"?"Today":displayDateShort(t.nextStep.due,new Date()))}
           </div>
           <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
             {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
@@ -2135,7 +2136,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               openRailDonor(f.donorId);}}>
             <PersonMark id={f.donorId} name={f.donorName} size={38}/>
             <div style={{flex:1,minWidth:0}}>
-              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{f.donorName}</div>
+              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{displayName(f.donorName)}</div>
               <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
                 {f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift stopped`:"Their recurring gift stopped"}
                 {failedOn?` ${agoPhrase(age)}`:""} when the card was declined.{" "}
@@ -2189,7 +2190,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
           </div>
           <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
-            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{String(ro.forDate||"").slice(5)}</div>
+            <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{displayDateShort(ro.forDate,new Date())}</div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>readout</div>
           </div>
         </a>
@@ -2506,7 +2507,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               <PersonMark id={d.donorId} name={d.donorName} size={30}/>
               <div style={{flex:"1 1 180px",minWidth:0,display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 <DonorLink id={d.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:d.donorId})}
-                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{d.donorName}</DonorLink>
+                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{displayName(d.donorName)}</DonorLink>
                 <span style={{fontSize:13,color:T.ink2,fontVariantNumeric:"tabular-nums"}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
                 {d.giftDate&&<span style={{fontSize:12.5,color:T.ink3}}>{displayDateShort(d.giftDate,new Date())}</span>}
                 {d.opened&&<span style={{fontSize:11.5,color:T.ink3}}>opened</span>}
@@ -2817,7 +2818,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // a date already past is genuinely overdue and genuinely zero days old,
       // so the meta says how LATE it is, or the day it is due.
       rows:list.map(x=>({id:x.id,label:x.donorName,
-        meta:x.overdue?`${rowFigure(x)>(x.overdueDays||0)?"waiting":"overdue"} ${rowFigure(x)}d`:(x.band==="today"?"today":String(x.nextStep?.due||"").slice(5)),
+        meta:x.overdue?`${rowFigure(x)>(x.overdueDays||0)?"waiting":"overdue"} ${rowFigure(x)}d`:(x.band==="today"?"today":displayDateShort(x.nextStep?.due,new Date())),
         onOpen:()=>openRailDonor(x.donorId,x.id)})),
       empty:key==="today"?"Nothing is due today.":"Nothing is waiting.",
     };
@@ -2871,7 +2872,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{marginBottom:18}}>
               <div style={{fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Next step</div>
               <div style={{fontSize:14,fontWeight:600,color:th.overdue?T.gold700:T.ink,lineHeight:1.4}}>
-                {th.nextStep.label}{th.overdue?" \u00b7 overdue":` \u00b7 due ${String(th.nextStep.due).slice(5)}`}
+                {th.nextStep.label}{th.overdue?" \u00b7 overdue":` \u00b7 due ${displayDateShort(th.nextStep.due,new Date())}`}
               </div>
               {th.rank?.why&&<div style={{marginTop:6,fontSize:12.5,color:T.ink3,lineHeight:1.5}}>{th.rank.why}</div>}
             </div>
@@ -2880,7 +2881,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             {th&&(
               <button onClick={()=>setConvoFor({donor:{id:th.donorId,name:th.donorName},thread:th})} disabled={isReadOnly}
                 style={{background:T.greenDk,border:"none",borderRadius:8,padding:"10px 14px",color:T.white,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
-                Log a conversation
+                Log a call
               </button>
             )}
             <DonorLink id={railView.donorId} onOpen={()=>onNavigate("donors",{selectDonorId:railView.donorId})}
@@ -2945,7 +2946,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 ?<span className="home-rail-n" data-loading="1" aria-label="Loading" style={{display:"block",height:34,padding:"2px 0"}}><SkeletonBar width={40} height={28}/></span>
                 :<span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>}
               <span style={{fontSize:12,lineHeight:1.35,color:T.ink3}}>
-                {(tile.short||tile.label).split(" ").slice(0,-1).join(" ")}{(tile.short||tile.label).includes(" ")?" ":""}
+                {(tile.short||tile.label).includes(" ")?(tile.short||tile.label).split(" ").slice(0,-1).join(" ")+" ":""}
                 <span style={{whiteSpace:"nowrap"}}>{(tile.short||tile.label).split(" ").slice(-1)[0]}
                 <span tabIndex={0} title={tile.definition} aria-label={tile.definition} data-testid={"rail-def-"+tile.key}
                   onClick={e=>e.stopPropagation()}

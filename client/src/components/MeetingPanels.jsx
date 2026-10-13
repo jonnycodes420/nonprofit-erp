@@ -21,6 +21,7 @@
 import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
+import { displayDate } from "../../../shared/displayDate.js";
 import { askConfirm } from "./ConfirmDialog";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
@@ -362,7 +363,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       const g = it.g;
       if (g.matched) {
         title = `Matched gift: ${g.donor_name || "an employee"} gave ${fmtFull(Number(g.amount))}`;
-        body = "Their gift names this organisation as the employer that matches it.";
+        body = "Their gift names this organization as the employer that matches it.";
         return { title, body, meta, by, type };
       }
       title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
@@ -423,7 +424,7 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           </div>;
         } else if (it.kind === "gift") {
           const g = it.g;
-          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{displayDate(g.date)}{g.notes ? ` · ${g.notes}` : ""}</div>;
         } else if (it.kind === "file" && it.f) {
           extra = <AttachmentChips files={[it.f]} canRemove={canWrite}/>;
         }

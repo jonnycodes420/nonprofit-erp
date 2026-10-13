@@ -24,7 +24,7 @@ export const PALETTE_HEX = PALETTE.map(p => p.hex);
 export const isPaletteColour = c => PALETTE_HEX.includes(String(c || "").toLowerCase());
 
 export const DEFAULT_TAX_LANGUAGE = (legalName) =>
-  `${legalName || "This organisation"} is a tax-exempt organisation. No goods or services were provided in exchange for your gift unless this receipt says so. Please keep this for your tax records.`;
+  `${legalName || "This organization"} is a tax-exempt organization. No goods or services were provided in exchange for your gift unless this receipt says so. Please keep this for your tax records.`;
 
 // ── MERGE FIELDS ────────────────────────────────────────────────────────────
 // Each is filled from the donor's own record. A template that uses a field this
@@ -36,7 +36,7 @@ export const MERGE_FIELDS = Object.freeze([
   { key: "gift_amount",     label: "Their latest gift",           sample: "$250" },
   { key: "gift_date",       label: "Date of that gift",           sample: "September 14, 2026" },
   { key: "fund",            label: "Fund of that gift",           sample: "Youth Arts Access" },
-  { key: "tribute",         label: "In memory or honour of",      sample: "in memory of Walter Chen" },
+  { key: "tribute",         label: "In memory or honor of",      sample: "in memory of Walter Chen" },
   { key: "year",            label: "This year",                   sample: "2026" },
   { key: "year_total",      label: "Given this year",             sample: "$1,250" },
   { key: "lifetime_total",  label: "Given in all",                sample: "$4,800" },
@@ -50,10 +50,10 @@ export const MERGE_FIELDS = Object.freeze([
   { key: "shift_where",     label: "Where the shift is",          sample: "12 Wharf Street" },
   { key: "group_name",      label: "Their group",                 sample: "St. Peter's youth group" },
   { key: "group_size",      label: "How many in the group",       sample: "12" },
-  { key: "org_name",        label: "Organisation name",           sample: "Harborlight Youth Collective" },
+  { key: "org_name",        label: "Organization name",           sample: "Harborlight Youth Collective" },
   { key: "signature",       label: "Signature block",             sample: "Dana Reyes\nExecutive Director" },
-  { key: "org_address",     label: "Organisation address",        sample: "12 Wharf Street, Salem, MA 01970" },
-  { key: "tax_language",    label: "Tax language",                sample: "Harborlight Youth Collective is a tax-exempt organisation." },
+  { key: "org_address",     label: "Organization address",        sample: "12 Wharf Street, Salem, MA 01970" },
+  { key: "tax_language",    label: "Tax language",                sample: "Harborlight Youth Collective is a tax-exempt organization." },
 ]);
 export const MERGE_KEYS = MERGE_FIELDS.map(f => f.key);
 
@@ -75,7 +75,7 @@ export const TEMPLATE_KINDS = Object.freeze([
     body: "Dear {{first_name}},\n\nThank you for your gift of {{gift_amount}}. A gift of this size changes what we can do this year, and I wanted to thank you myself.\n\nI would like to show you what it makes possible. I will be in touch to find a time.\n\nWith gratitude,\n{{signature}}" },
   { kind: "thanks_memorial", label: "Thank you: memorial gift", channel: "letter",
     subject: "Thank you for your gift",
-    body: "Dear {{first_name}},\n\nThank you for your gift of {{gift_amount}}, {{tribute}}. It is a generous way to remember someone, and we are honoured you chose {{org_name}}.\n\nWith sympathy and thanks,\n{{signature}}" },
+    body: "Dear {{first_name}},\n\nThank you for your gift of {{gift_amount}}, {{tribute}}. It is a generous way to remember someone, and we are honored you chose {{org_name}}.\n\nWith sympathy and thanks,\n{{signature}}" },
   { kind: "receipt", label: "Receipt", channel: "email",
     subject: "Your receipt from {{org_name}}",
     body: "Dear {{first_name}},\n\nThank you for your gift of {{gift_amount}} on {{gift_date}}. Your receipt is attached.\n\n{{tax_language}}\n\n{{signature}}\n{{org_address}}" },

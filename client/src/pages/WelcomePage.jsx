@@ -600,7 +600,7 @@ export default function WelcomePage() {
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 22px", lineHeight: 1.6 }}>
               Your donors are the people who already believe in you, so this is where Steward starts. Home, Drift
               and the dashboards only have something to say once they are here. Bring a spreadsheet from your current
-              system, a bank or CRM export, or even a rough list. Steward maps the columns it recognises (name,
+              system, a bank or CRM export, or even a rough list. Steward maps the columns it recognizes (name,
               email, fund, payment method, gift date and amount) and asks you about the ones it does not.
             </p>
 

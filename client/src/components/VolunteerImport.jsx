@@ -126,7 +126,7 @@ export function VolunteerImport({ onClose, parseFile, onDone }) {
               {meta && (
                 <div style={{ fontSize: 12, color: T.ink3, marginTop: 8, lineHeight: 1.6 }}>
                   Steward knows {meta.presets.filter(p => p.key !== "spreadsheet").map(p => p.label).join(", ")},
-                  {" "}and reads a plain spreadsheet when it does not recognise the file.
+                  {" "}and reads a plain spreadsheet when it does not recognize the file.
                 </div>
               )}
             </div>

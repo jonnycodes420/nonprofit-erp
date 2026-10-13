@@ -73,7 +73,7 @@ export const RANK_SIGNALS = [
     key: "overdue",
     points: t => Math.min(t.overdueDays || 0, OVERDUE_CAP_DAYS) * 3,
     applies: t => (t.overdueDays || 0) > 0,
-    why: t => `Overdue ${t.overdueDays} day${t.overdueDays === 1 ? "" : "s"}`,
+    why: t => `${t.overdueDays} day${t.overdueDays === 1 ? "" : "s"} late`,
   },
   {
     key: "ask_open",

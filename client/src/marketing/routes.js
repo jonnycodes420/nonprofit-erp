@@ -60,9 +60,9 @@ export const ROUTES = [
   { path: "/security", page: "security", title: T("Built like it's holding someone else's money."), description: "Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so." },
   // TRUST-2: status, subprocessors, your data, and the DPA (a draft until an attorney has read it).
   { path: "/status", page: "status", title: T("Steward status."), description: "Whether Steward is working right now, checked every minute, with 90 days of history counted from stored checks." },
-  { path: "/subprocessors", page: "subprocessors", title: T("Who else touches your data."), description: "Every company that receives your organisation's or your donors' information when you use Steward, what it gets and why." },
+  { path: "/subprocessors", page: "subprocessors", title: T("Who else touches your data."), description: "Every company that receives your organization's or your donors' information when you use Steward, what it gets and why." },
   { path: "/your-data", page: "yourData", title: T("Your data, and your donors' data."), description: "How to take everything with you, answer a donor who asks what you hold, and erase a donor who asks to be forgotten." },
-  { path: "/dpa", page: "dpa", title: T("Data processing agreement."), description: "The terms under which Steward processes your organisation's data." },
+  { path: "/dpa", page: "dpa", title: T("Data processing agreement."), description: "The terms under which Steward processes your organization's data." },
   { path: "/about", page: "about", title: P("About Steward", 6), description: PILLAR[6].short + " Questions reach the founder, by email or on a call." },
   { path: "/partners", page: "partners", title: T("Bring Steward to the nonprofits you advise."), description: "Fundraising consultants, coaches and agencies refer and set up Steward for their clients. Partners earn a share of revenue and get a direct line to the founder." },
   { path: "/contact", page: "contact", title: T("Talk to a person."), description: "Questions about Steward, a move, pricing or a partnership. Email goes straight to the founder." },

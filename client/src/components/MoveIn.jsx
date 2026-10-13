@@ -51,6 +51,9 @@ const centsStr = (c) => {
   return (n < 0 ? "-$" : "$") + s;
 };
 const numStr = (n) => (Math.trunc(Number(n) || 0)).toLocaleString("en-US");
+// POLISH-2: a source label read mid-sentence. "Moving from A spreadsheet" →
+// "Moving from a spreadsheet"; a product name keeps its capital.
+const midSentence = (label) => String(label || "").replace(/^(A|An|The|Your) /, w => w.toLowerCase());
 
 const card = {
   background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: 16,
@@ -125,8 +128,8 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
         Where are your donors today?
       </div>
       <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14, lineHeight: 1.5 }}>
-        Pick the system you are coming from and Steward fills in the mapping for you, so your
-        file opens already matched up. Keep your old system running as long as you like.
+        Tell us where your donors live now and we'll line up the columns for you, so your
+        file opens ready to go. Keep your old system running as long as you like.
       </div>
       {err && <div style={{ color: T.ink2, fontSize: 12.5, marginBottom: 10 }}>{err}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(168px, 1fr))", gap: 10 }}>
@@ -135,7 +138,7 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
             onClick={() => choose(t.key)}
             style={{ textAlign: "left", background: T.bgCard, border: `1px solid ${T.bg3}`,
                      borderRadius: 11, padding: "13px 14px", cursor: saving ? "wait" : "pointer" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{t.label}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>We&rsquo;re moving from {t.label}</div>
             {t.sub && <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3, lineHeight: 1.45 }}>{t.sub}</div>}
           </button>
         ))}
@@ -297,7 +300,7 @@ export function MoveReport({ importId, onClose }) {
           <div style={{ fontSize: 16.5, fontWeight: 800, color: T.ink, lineHeight: 1.45 }}>{r.headline}</div>
           {data.vendor && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 5 }}>
-              From your {data.vendor} export{data.import?.name ? ` · ${data.import.name}` : ""}
+              {`From your ${data.vendor} export${data.import?.name ? ` · ${data.import.name}` : ""}`}
             </div>
           )}
         </div>
@@ -340,13 +343,12 @@ export function MoveReport({ importId, onClose }) {
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: T.ink2, lineHeight: 1.7 }}>
               {r.differences.map((d, i) => (
                 <li key={`l${i}`}>
-                  {d.label}: your file says {d.money ? centsStr(d.file) : numStr(d.file)}, Steward holds{" "}
-                  {d.money ? centsStr(d.held) : numStr(d.held)}.
+                  {`${d.label}: your file says ${d.money ? centsStr(d.file) : numStr(d.file)}, Steward holds ${d.money ? centsStr(d.held) : numStr(d.held)}.`}
                 </li>
               ))}
               {r.mismatchedDonors.map((d, i) => (
                 <li key={`d${i}`}>
-                  {d.name}: your file says {centsStr(d.file)}, Steward holds {centsStr(d.held)}.
+                  {`${d.name}: your file says ${centsStr(d.file)}, Steward holds ${centsStr(d.held)}.`}
                 </li>
               ))}
             </ul>
@@ -490,7 +492,7 @@ export function MoveCard({ isReadOnly = false }) {
   if (!move || !move.source) return null;
 
   const sentence = [
-    move.completedAt ? `Moved from ${move.label}` : `Moving from ${move.label}`,
+    move.completedAt ? `Moved from ${midSentence(move.label)}` : `Moving from ${midSentence(move.label)}`,
     move.startedAt ? `started ${when(move.startedAt)}` : null,
     move.imports ? `${move.imports} import${move.imports === 1 ? "" : "s"}` : null,
   ].filter(Boolean).join(" · ");
@@ -516,7 +518,7 @@ export function MoveCard({ isReadOnly = false }) {
               <button data-testid="move-complete-confirm" onClick={() => act("/move/complete")} disabled={busy}
                 style={{ background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
                          padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                Yes, we've moved
+                Yes, we've moved to Steward
               </button>
               <button onClick={() => setConfirming(false)} disabled={busy}
                 style={{ background: T.bg2, color: T.ink2, border: "none", borderRadius: 8,
@@ -527,7 +529,7 @@ export function MoveCard({ isReadOnly = false }) {
           <button data-testid="move-complete" onClick={() => setConfirming(true)}
             style={{ marginTop: 11, background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
                      padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-            We've moved
+            We've moved to Steward
           </button>
         )
       )}

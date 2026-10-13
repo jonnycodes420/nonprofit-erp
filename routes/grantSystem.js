@@ -350,7 +350,7 @@ app.get("/grants/:id/award-plan", requireAuth, wrap(async (req, res) => {
   const [g] = await query(`SELECT id, funder, funder_donor_id, award_pledge_id, amount_awarded, status FROM grants WHERE id=? AND org_id=?`, [req.params.id, orgId]);
   if (!g) return res.status(404).json({ error: "Grant not found" });
   if (!g.award_pledge_id) return res.json({ pledge: null, installments: [], receivedCents: 0, awardedCents: cents(g.amount_awarded), canRecord: !!g.funder_donor_id,
-    sentence: g.funder_donor_id ? "No award is recorded yet. Record it with its instalments and each payment links itself when it arrives." : "Link this grant to its funder on file before recording the award." });
+    sentence: g.funder_donor_id ? "No award is recorded yet. Record it with its installments and each payment links itself when it arrives." : "Link this grant to its funder on file before recording the award." });
   const [pl] = await query(`SELECT id, amount, status FROM pledges WHERE id=? AND org_id=?`, [g.award_pledge_id, orgId]);
   const inst = await query(
     `SELECT pi.id, pi.seq, pi.due_date, pi.amount, pi.paid_gift_id, pi.paid_at, gf.date AS gift_date, gf.amount AS gift_amount

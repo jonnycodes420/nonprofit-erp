@@ -113,7 +113,7 @@ export const DASHBOARDS = [
       // (the payload puts it on the row) because five numbers under one
       // sentence is four numbers nobody can define.
       { key: "thisWeek", rowsAre: "count", label: "This week", kind: "breakdown",
-        definition: "What was done between Monday and today, in your organisation's timezone. The same figures the Week in Review email carries, counted the same way." },
+        definition: "What was done between Monday and today, in your organization's timezone. The same figures the Week in Review email carries, counted the same way." },
       { key: "concentration", label: "Share of giving from the top donors", kind: "breakdown",
         definition: "How few people it takes to reach ninety per cent of this year's giving, and who they are." },
       { key: "topDonors", rowsAre: "money", label: "Who they are", kind: "breakdown",
@@ -134,7 +134,7 @@ export const DASHBOARDS = [
     key: "recurring",
     label: "Recurring",
     question: "Is the monthly base healthy?",
-    blurb: "The screen a sponsorship-led organisation asks for by name.",
+    blurb: "The screen a sponsorship-led organization asks for by name.",
     metrics: [
       { key: "byStatus", label: "Monthly gifts, by where they stand", kind: "breakdown",
         definition: "Every monthly commitment grouped by where it stands: giving, failing, being recovered, paused, or ended." },

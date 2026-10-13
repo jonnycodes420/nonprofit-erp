@@ -55,9 +55,9 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
         What your letters, emails and receipts look and sound like. The logo is the one you upload under Organization.
       </p>
       <div style={{ ...card, display: "flex", flexDirection: "column", gap: 14 }}>
-        <Swatches label="Main colour" palette={k.palette} value={k.primary} onPick={v => set("primary", v)} disabled={!can} />
-        <Swatches label="Second colour" palette={k.palette} value={k.secondary} onPick={v => set("secondary", v)} disabled={!can} />
-        <div style={{ fontSize: 12, color: T.ink3 }}>Only colours that stay readable on paper and on screen are offered.</div>
+        <Swatches label="Main color" palette={k.palette} value={k.primary} onPick={v => set("primary", v)} disabled={!can} />
+        <Swatches label="Second color" palette={k.palette} value={k.secondary} onPick={v => set("secondary", v)} disabled={!can} />
+        <div style={{ fontSize: 12, color: T.ink3 }}>Only colors that stay readable on paper and on screen are offered.</div>
         {/* A small letterhead, the way a printed letter will open. */}
         <div aria-hidden="true" style={{ border: "1px solid " + T.bg3, borderRadius: 8, overflow: "hidden" }}>
           <div style={{ height: 8, background: k.primary }} />
@@ -78,7 +78,7 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
       </div>
       <div style={{ ...card, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={LABEL}>Your address</div>
-        <textarea aria-label="Organisation address" value={k.address} disabled={!can} onChange={e => set("address", e.target.value)} style={{ ...field, minHeight: 60 }} />
+        <textarea aria-label="Organization address" value={k.address} disabled={!can} onChange={e => set("address", e.target.value)} style={{ ...field, minHeight: 60 }} />
         <div style={LABEL}>Tax language</div>
         <textarea aria-label="Tax language" placeholder={k.taxLanguageDefault} value={k.taxLanguage} disabled={!can} onChange={e => set("taxLanguage", e.target.value)} style={{ ...field, minHeight: 70 }} />
         <div style={{ fontSize: 12, color: T.ink3 }}>Printed at the foot of every receipt and statement, followed by your EIN. Left empty, Steward uses the sentence shown in grey.</div>

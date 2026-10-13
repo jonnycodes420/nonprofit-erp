@@ -776,14 +776,14 @@ function AppShell() {
       <div data-testid="demo-data-banner" role="status" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
         <span style={{flex:1,minWidth:240}}>
           {data.org?.isDemoOrg?(
-            <><strong style={{color:T.gold50}}>This is a demonstration organisation.</strong>{" "}
+            <><strong style={{color:T.gold50}}>This is a demonstration organization.</strong>{" "}
               Everything in it is invented, and Steward will not send email to anyone here: not a
               receipt, not a reminder, not a campaign.</>
           ):(
             <><strong style={{color:T.gold50}}>
               {sampleStatus.sampleDonorCount} sample {sampleStatus.sampleDonorCount===1?"donor is":"donors are"} loaded.</strong>{" "}
               They are invented, they are counted in nothing you report, and Steward will not email
-              them. Everyone else in this organisation still receives mail as normal.</>
+              them. Everyone else in this organization still receives mail as normal.</>
           )}
         </span>
         {sampleStatus?.hasSampleData&&(

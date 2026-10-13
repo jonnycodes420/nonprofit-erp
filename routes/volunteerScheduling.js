@@ -1857,7 +1857,7 @@ app.post("/volunteer-hub/slots/bulk", requireAuth, checkWriteAccess, wrap(async 
   if (action === "settings") {
     const sets = [], params = [];
     if (b.published !== undefined) { sets.push("published=?"); params.push(b.published === true); }
-    if (b.color !== undefined) { if (b.color && !/^#[0-9a-fA-F]{6}$/.test(String(b.color))) return res.status(400).json({ error: "Pick one of the colours." }); sets.push("color=?"); params.push(b.color || null); }
+    if (b.color !== undefined) { if (b.color && !/^#[0-9a-fA-F]{6}$/.test(String(b.color))) return res.status(400).json({ error: "Pick one of the colors." }); sets.push("color=?"); params.push(b.color || null); }
     if (b.venue !== undefined) { sets.push("venue=?"); params.push(String(b.venue || "").trim().slice(0, 160) || null); }
     if (b.locationDetail !== undefined) { sets.push("location_detail=?"); params.push(String(b.locationDetail || "").trim().slice(0, 160) || null); }
     if (b.name !== undefined) { sets.push("name=?"); params.push(String(b.name || "").trim().slice(0, 120) || null); }

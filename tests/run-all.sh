@@ -252,6 +252,7 @@ CORE=(
   hotfix1-profile
   smoke-walk
   polish1-trust
+  polish2-voice
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

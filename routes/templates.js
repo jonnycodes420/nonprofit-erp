@@ -48,7 +48,7 @@ app.put("/brand-kit", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   await READY;
   const b = req.body || {};
   for (const k of ["primary", "secondary"]) {
-    if (b[k] !== undefined && !B.isPaletteColour(b[k])) return res.status(400).json({ error: "Choose a colour from the palette: they are the ones that stay readable on paper." });
+    if (b[k] !== undefined && !B.isPaletteColour(b[k])) return res.status(400).json({ error: "Choose a color from the palette: they are the ones that stay readable on paper." });
   }
   const o = await orgOf(req.user.orgId);
   const clip = (v, n) => (v === undefined ? undefined : String(v || "").trim().slice(0, n));
@@ -95,7 +95,7 @@ async function factsFor(org, donorId) {
     values: {
       first_name: String(d.name || "").trim().split(/\s+/)[0] || "", full_name: d.name || "",
       gift_amount: last ? fmt$(c(last.amount)) : "", gift_date: last ? longDate(last.date) : "", fund: last && last.fund ? last.fund : "",
-      tribute: last && last.tribute_name ? `${last.tribute_type === "memory" ? "in memory of" : "in honour of"} ${last.tribute_name}` : "",
+      tribute: last && last.tribute_name ? `${last.tribute_type === "memory" ? "in memory of" : "in honor of"} ${last.tribute_name}` : "",
       year, year_total: c(tot.yr) > 0 ? fmt$(c(tot.yr)) : "", lifetime_total: c(tot.life) > 0 ? fmt$(c(tot.life)) : "",
       monthly_amount: sub ? fmt$(c(sub.amount)) : "", event_name: ev ? ev.name : "",
       volunteer_hours: vh && vh.hh ? String(vh.hh / 100) : "",
