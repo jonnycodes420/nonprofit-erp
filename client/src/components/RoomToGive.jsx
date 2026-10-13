@@ -41,7 +41,7 @@ export function RoomToGiveBlock({ donorId, isReadOnly }) {
     <div data-testid="dp-room-to-give" data-room-word={r.word} style={{ borderTop: "1px solid " + T.bg2, marginTop: 12, paddingTop: 10 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span style={LABEL}>Room to give</span>
-        <span data-testid="dp-room-word" style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{r.label || ROOM_LABEL[r.word]}</span>
+        <span data-testid="dp-room-word" style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{r.word === "unknown" ? "Not enough history to estimate yet" : (r.label || ROOM_LABEL[r.word])}</span>
       </div>
       {(r.reasons || []).length > 0 && (
         <ul data-testid="dp-room-reasons" style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5, color: T.ink2, lineHeight: 1.55 }}>

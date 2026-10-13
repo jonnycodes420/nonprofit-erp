@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiFetch, API } from "../api";
-import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
+import { T, fmtFull, EmptyState, interactive, Modal, Spin, stageName } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { DonorLink } from "./RecordLink";
@@ -258,7 +258,7 @@ function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor, onDelete = null
       <div style={{ fontSize: 12, color: p.probability == null ? T.ink3 : T.ink2 }}>{p.probability == null ? "not set" : p.probability + "%"}</div>
       <div style={{ fontSize: 12, color: T.ink2 }}>{niceDate(p.expectedClose)}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-        <StageChip stage={p.stage} label={(p.stage || "").charAt(0).toUpperCase() + (p.stage || "").slice(1)} />
+        <StageChip stage={p.stage} label={stageName(p.stage)} />
         {!isReadOnly && (
           <>
             <button onClick={() => onMove(p)} title="Move this proposal"

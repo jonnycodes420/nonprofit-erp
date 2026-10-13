@@ -12,7 +12,7 @@
 // sends nothing.
 import { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch, API } from "../api";
-import { T, Modal } from "./shared";
+import { T, Modal, Phone } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { sanitizeRichText, embedFor } from "../../../shared/richText.js";
@@ -183,7 +183,7 @@ export function ApplicationsView({ isReadOnly, onOpenPerson, onCount }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 800, color: T.ink }}>{a.name}</div>
-              <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{a.email}{a.phone ? ` · ${a.phone}` : ""} · applied {displayDate(String(a.submittedAt).slice(0, 10))}</div>
+              <div style={{ fontSize: 12.5, color: T.ink3, overflowWrap: "anywhere" }}>{a.email}{a.phone ? <> · <Phone value={a.phone} /></> : ""} · applied {displayDate(String(a.submittedAt).slice(0, 10))}</div>
             </div>
             {a.status === "pending" && !isReadOnly && <div style={{ display: "flex", gap: 6 }}>
               <button style={btnPrimary} disabled={busy === a.id} data-testid="app-approve" onClick={() => approve(a)}>Approve</button>

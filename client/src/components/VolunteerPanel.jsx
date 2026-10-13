@@ -7,7 +7,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
 import { Figure } from "./Figure";
-import { T, Modal } from "./shared";
+import { T, Modal, Phone } from "./shared";
 import { AVAILABILITY } from "../../../shared/volunteerApply.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -365,7 +365,7 @@ export function AddVolunteerModal({ person = null, onClose, onDone }) {
             </div>
             {linked ? (
               <div data-testid="vol-add-person" style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, background: T.bg, borderRadius: 8, padding: "8px 10px" }}>
-                <strong>{form.name}</strong>{form.email ? ` · ${form.email}` : ""}{form.phone ? ` · ${form.phone}` : ""}
+                <strong>{form.name}</strong>{form.email ? ` · ${form.email}` : ""}{form.phone ? <> · <Phone value={form.phone} /></> : ""}
                 <div style={{ fontSize: 12, color: T.ink3 }}>From their record. Change these with Edit record.</div>
                 {!person && <button style={{ ...btnLink, marginTop: 4 }} data-testid="vol-add-unlink" onClick={() => { setLinked(null); setForm(blankAdd); }}>Not them: add somebody new</button>}
               </div>

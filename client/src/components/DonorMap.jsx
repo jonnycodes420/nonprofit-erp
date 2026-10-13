@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { T, fmt, STAGES } from "./shared";
+import { T, fmt, STAGES, stageName } from "./shared";
 
 // Fix leaflet default icon paths broken by bundlers
 delete L.Icon.Default.prototype._getIconUrl;
@@ -169,7 +169,7 @@ export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
                   {d.contactName && <div style={{ fontSize: 11, color: T.ink3 }}>{d.contactName}</div>}
                   {d.city && <div style={{ fontSize: 11, color: T.ink3 }}>{[d.city, d.state].filter(Boolean).join(", ")}</div>}
                   <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>Total: {fmt(d.total ?? d.total_giving)}</div>
-                  <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || T.ink3, marginTop: 2, fontWeight: 600, textTransform: "capitalize" }}>{d.stage}</div>
+                  <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || T.ink3, marginTop: 2, fontWeight: 600 }}>{stageName(d.stage)}</div>
                   <button onClick={() => onSelectDonor(d)} style={{ marginTop: 8, background: T.greenDk, border: "none", borderRadius: 6, padding: "5px 10px", color: T.white, fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                     Open profile →
                   </button>

@@ -169,8 +169,9 @@ export function Foot({ data, figure }) {
   const totUnit = UNITS[data.amountKind];
   // REPORTS-4: an average gift is the rows' total over their count; a median
   // is the middle row once they are in order.
-  const money = data.measure === "sum" || data.measure === "mean" || data.measure === "median";
+  const money = data.measure === "sum" || data.measure === "mean" || data.measure === "median" || data.measure === "per_gift";
   const word = data.measure === "sum" ? "Total of every row" : data.measure === "mean" ? "Total of every row, divided by how many there are"
+    : data.measure === "per_gift" ? `Total of every row, refunds taken off, divided by the ${data.giftCount ?? ""} gifts`.replace("the  gifts", "the gifts")
     : data.measure === "median" ? "The middle row, once they are in order of amount" : data.measure === "avg" ? "Average of every row" : "Rows";
   const shown = money ? (totUnit ? unitAmount(data.value, totUnit) : fmtFull(data.value))
     : data.measure === "avg" ? `${data.value}${totUnit ? " " + totUnit : ""}`

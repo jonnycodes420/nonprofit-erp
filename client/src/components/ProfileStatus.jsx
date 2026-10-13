@@ -11,7 +11,7 @@
 // every number and tag carries the source its rows come from.
 import { useContext, useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { T, Modal } from "./shared";
+import { T, Modal, fmtFull } from "./shared";
 import { Figure, FigureContext } from "./Figure";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { displayDate } from "../../../shared/displayDate";
@@ -156,6 +156,16 @@ function Tile({ label, figure, kind = "money", sub }) {
   );
 }
 
+// POLISH-1 · the average says what it is the average OF, and in words what
+// came off it or is not in it, so Lifetime, the count and the average foot.
+function averageSub(a) {
+  if (!a || !a.count) return null;
+  const bits = [`of ${a.count} gift${a.count === 1 ? "" : "s"}`];
+  if (a.refunds > 0) bits.push(`after ${fmtFull(a.refundCents / 100)} refunded`);
+  if (a.importedCents > 0) bits.push(`not counting ${fmtFull(a.importedCents / 100)} given before Steward`);
+  return bits.join(", ");
+}
+
 const monthOf = d => (d ? displayDate(d).replace(/ \d{1,2},/, "") : null);
 
 export function ProfileGlance({ status, onOpenDonor, birthday }) {
@@ -170,7 +180,7 @@ export function ProfileGlance({ status, onOpenDonor, birthday }) {
         <div className="donor-stat-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10 }}>
           <Tile label="First gift" figure={g.first} sub={g.first.value != null ? monthOf(g.first.date) : null} />
           <Tile label="Largest gift" figure={g.largest} sub={g.largest && g.largest.value != null ? monthOf(g.largest.date) : null} />
-          <Tile label="Average gift" figure={g.average} sub={g.average && g.average.count ? `of ${g.average.count} gift${g.average.count === 1 ? "" : "s"}` : null} />
+          <Tile label="Average gift" figure={g.average} sub={averageSub(g.average)} />
         </div>
       )}
       {bday && (

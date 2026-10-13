@@ -18,7 +18,7 @@ const STAGE_META = [
   { id: "qualify", label: "Qualify", hint: "Qualification" },
   { id: "cultivate", label: "Cultivate", hint: "Cultivation" },
   { id: "solicit", label: "Solicit", hint: "Solicitation" },
-  { id: "steward", label: "Steward", hint: "Stewardship" },
+  { id: "steward", label: "Ongoing care", hint: "Stewardship" },
   { id: "lapsed", label: "Lapsed", hint: "Re-engage" },
 ];
 const DESIGNATIONS = [["", "All designations"], ["planned_confirmed", "Planned gift confirmed"], ["planned_prospect", "Planned-giving prospect"], ["estate", "Estate giving"]];

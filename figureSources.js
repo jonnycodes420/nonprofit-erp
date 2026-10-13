@@ -1159,13 +1159,19 @@ const SOURCES = {
       args: [orgId, p.donor],
     }),
   },
+  // POLISH-1 · THE PROFILE FOOTS. The average is the person's itemized giving,
+  // refunds taken off, divided by the number of gifts (a refund is not a gift,
+  // so it lowers the total and not the count). Lifetime is the same rows, so
+  // Lifetime / gifts = Average to the cent; the only thing Lifetime holds that
+  // this does not is an imported total with no gifts behind it, and the tile
+  // says so when there is one. Soft credits and pledges are in neither.
   "donor-average-gift": {
     label: "Average gift",
-    measure: () => "mean",
+    measure: () => "per_gift",
     params: { donor: "id:required" },
-    sentence: () => "Every gift this person has given, added up and divided by how many there are, to the cent. A refund is not a gift and is left out.",
+    sentence: () => "Everything this person has given, gift by gift, with any refund taken off, divided by the number of gifts, to the cent. A refund is not a gift, so it lowers the total but not the count. Soft credits and pledges are not in it.",
     sql: (orgId, p) => ({
-      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0`,
+      sql: DONOR_GIFT_SELECT,
       args: [orgId, p.donor], order: "date DESC, id",
     }),
   },
@@ -2418,6 +2424,14 @@ function valueOf(measure, agg) {
   if (measure === "avg") return { value: agg.n > 0 ? Math.round(Number(agg.a) || 0) : 0, cents: null };
   // PARITY-1 — an average of MONEY, to the cent: the rows' own sum in cents
   // divided by their count, so the drawer's total over its count is the figure.
+  // POLISH-1: per gift = the rows' total (refunds included, as negatives)
+  // over the number of rows that are gifts (amount above zero).
+  if (measure === "per_gift") {
+    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const g = Number(agg.g) || 0;
+    const m = g > 0 ? Math.round(c / g) : 0;
+    return { value: money.toDollars(m), cents: m };
+  }
   if (measure === "mean") {
     const c = money.toCents(String(agg.s ?? "0")) ?? 0;
     const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
@@ -2442,7 +2456,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     const all = await def.js(orgId, p, deps);
     const sum = all.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
     const avg = all.length ? all.reduce((s, r) => s + (Number(r.amount) || 0), 0) / all.length : 0;
-    agg = { n: all.length, s: String(money.toDollars(sum)), a: avg, m: String(medianOf(all.map(r => Number(r.amount) || 0))) };
+    agg = { n: all.length, g: all.filter(r => Number(r.amount) > 0).length, s: String(money.toDollars(sum)), a: avg, m: String(medianOf(all.map(r => Number(r.amount) || 0))) };
     pageRows = wantRows ? all.slice((page - 1) * pageSize, page * pageSize) : [];
   } else {
     // `sql` may be an async builder: a source whose SQL needs something only
@@ -2450,8 +2464,9 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     // a plain object is a no-op, so every existing source is untouched.
     const { sql, args, order } = await def.sql(orgId, p);
     // SCALE-1: the total and the page are independent reads; one parallel batch.
+    // POLISH-1: g is the rows that are gifts (above zero), for per_gift.
     const [[a], rowsRead] = await Promise.all([
-      query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
+      query(`SELECT COUNT(*)::int AS n, (COUNT(*) FILTER (WHERE amount > 0))::int AS g, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a${measure === "median" ? ", PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY amount)::numeric(14,2)::text AS m" : ""} FROM (${sql}) x`, args),
       wantRows
         ? query(`SELECT * FROM (${sql}) x ORDER BY ${orderClause(order)} LIMIT ? OFFSET ?`, [...args, pageSize, (page - 1) * pageSize])
         : Promise.resolve([]),
@@ -2464,6 +2479,7 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     key, params: p, measure, amountKind: def.amountKind || "money", label: def.label, sentence: def.sentence(p, dd),
     value, cents, blank: null,
     rows: pageRows.map(r => shapeRow(r, dd)), page, pageSize, totalRows: Number(agg.n) || 0,
+    ...(measure === "per_gift" ? { giftCount: Number(agg.g) || 0 } : {}),
   };
 }
 
@@ -2513,6 +2529,7 @@ async function footCheck(orgId, source, deps = {}) {
   const sum = cents.reduce((x, y) => x + y, 0);
   let rowsFoot, foots;
   if (f.measure === "sum") { rowsFoot = money.toDollars(sum); foots = sum === f.cents; }
+  else if (f.measure === "per_gift") { const g = rows.filter(r => Number(r.amount) > 0).length; const m = g ? Math.round(sum / g) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "mean") { const m = rows.length ? Math.round(sum / rows.length) : 0; rowsFoot = money.toDollars(m); foots = m === f.cents; }
   else if (f.measure === "median") { rowsFoot = medianOf(rows.map(r => Number(r.amount) || 0)); foots = Math.round(rowsFoot * 100) === f.cents; }
   else if (f.measure === "avg") { rowsFoot = rows.length ? Math.round(rows.reduce((x, r) => x + (Number(r.amount) || 0), 0) / rows.length) : 0; foots = rowsFoot === f.value; }

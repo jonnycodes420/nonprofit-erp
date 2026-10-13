@@ -187,7 +187,7 @@ export const NUMBER_CENSUS = [
     surface: "Pipeline",
     label: "Weighted forecast",
     computation: "SUM(open ask × STAGE_WEIGHT[donor.stage]) with prospect .1 / qualify .2 / cultivate .4 / solicit .7 / steward .9 / lapsed .05",
-    sentence: "Each open ask multiplied by a fixed likelihood for the stage that donor is in — 10% at Prospect, 20% Qualify, 40% Cultivate, 70% Solicit, 90% Steward. Those percentages are a working assumption, not anything measured from your file.",
+    sentence: "Each open ask multiplied by a fixed likelihood for the stage that donor is in — 10% at Prospect, 20% Qualify, 40% Cultivate, 70% Solicit, 90% Ongoing care. Those percentages are a working assumption, not anything measured from your file.",
     where: HOVER,
     testid: "pipe-def-weighted",
   },

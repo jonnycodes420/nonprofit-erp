@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
-import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
+import { T, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -1659,7 +1659,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                         <div style={{ fontSize: 12, fontWeight: 600, color: T.inkInverse, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
                         {d.lastAmount > 0 && <div style={{ fontSize: 10, color: "rgba(240,237,230,0.7)" }}>Last gift: {fmtFull(d.lastAmount)}</div>}
                       </div>
-                      {d.stage && <Pill label={d.stage} color={SC[d.stage] || T.ink3} />}
+                      {d.stage && <Pill label={stageName(d.stage)} color={SC[d.stage] || T.ink3} />}
                     </button>
                   ))}
                   {filteredDonors.length === 0 && <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>No donors to add</div>}

@@ -24,7 +24,7 @@ import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
 import { ProfileTimeline } from "./ProfileTimeline";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
-import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext, Phone } from "./shared";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
@@ -1153,6 +1153,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
+  // POLISH-1 — a refund is a row with a negative amount, not a gift: it comes
+  // off the total and never adds to the count, the same rule as the glance.
+  const giftCountReal=giftsFull.filter(g=>g.amount>0).length;
+  const refundRows=giftsFull.filter(g=>g.amount<0);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
@@ -2247,7 +2251,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
               <button key={id} role="tab" aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,...activeMark(dpTab===id,"bottom")}}>
                 {label}
-                {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
+                {id==="gifts"&&giftCountReal>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftCountReal}</span>}
                 {id==="related"&&relationships.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{relationships.length}</span>}
                 {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
               </button>
@@ -2653,7 +2657,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftCountReal} {giftCountReal===1?"gift":"gifts"}
+                  {refundRows.length>0&&<span> · {refundRows.length===1?"a refund":`${refundRows.length} refunds`} of {fmtFull(-refundRows.reduce((s,g)=>s+g.amount,0))} taken off</span>}
                   {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
                     <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
                   )}
@@ -3771,7 +3776,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/></dd></>}
               {donor.birthday&&<><dt style={{color:RAIL.dim}}>Birthday</dt><dd style={{margin:0}} data-testid="dp-birthday">{birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year)}</dd></>}
               {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}

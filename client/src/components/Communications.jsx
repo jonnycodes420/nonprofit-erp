@@ -5,7 +5,7 @@ import { RecordLink } from "./RecordLink";
 import { tabHref, urlParam } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
+import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal, stageName } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { offerUndo } from "./EditHistory";
 import { TemplateStart } from "./TemplateStart";
@@ -2064,7 +2064,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "major",   label: "Major (>$10k)",   filter: d => d.email && (d.total_giving || 0) >= 10000 },
     { id: "lapsed",  label: "Lapsed",          filter: d => d.email && d.status === "lapsed" },
     { id: "prospect",label: "Prospects",       filter: d => d.email && d.stage === "prospect" },
-    { id: "steward", label: "Stewards",        filter: d => d.email && d.stage === "steward" },
+    { id: "steward", label: "In ongoing care",        filter: d => d.email && d.stage === "steward" },
     { id: "solicit", label: "Ready to Solicit",filter: d => d.email && d.stage === "solicit" },
   ];
   const activeSeg = AUDIENCE_SEGS.find(s => s.id === audienceSeg) || AUDIENCE_SEGS[0];
@@ -2604,7 +2604,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: T.ink }}>{d.name}</span>
                     <span style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.email}</span>
-                    <span style={{ fontSize: 11, color: T.ink3, textTransform: "capitalize" }}>{d.stage || "Not set"}</span>
+                    <span style={{ fontSize: 11, color: T.ink3 }}>{d.stage ? stageName(d.stage) : "Not set"}</span>
                     <span style={{ fontSize: 12, color: T.ink }}>${Number(d.total_giving || 0).toLocaleString()}</span>
                   </div>
                 ))}

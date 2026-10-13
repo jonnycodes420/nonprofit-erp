@@ -4278,7 +4278,7 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   d.gifts = await query(
     `SELECT g.*, f.name AS fund_name
        FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
-      WHERE g.donor_id = ? ORDER BY g.date DESC`, [d.id]);
+      WHERE g.donor_id = ? AND g.org_id = ? ORDER BY g.date DESC`, [d.id, req.user.orgId]);
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.
