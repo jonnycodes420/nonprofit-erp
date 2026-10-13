@@ -10,7 +10,7 @@
 //   1. an em dash anywhere in the marketing source (the house voice uses periods)
 //   2. a banned outcome word: recovered, re-engaged, reengaged, recaptured,
 //      won back, brought back (outcome claims the product cannot prove)
-//   3. a competitor's name anywhere on the marketing pages
+//   3. (retired 13 Oct, POLISH-2) a competitor's name: now allowed, see docs/MESSAGING.md
 //   4. a testimonial or customer quote: the only quotes allowed are the
 //      sourced research QUOTES, and APPROVED_TESTIMONIALS is empty today
 //   5. a research number, quote or source that differs by one character from
@@ -111,19 +111,9 @@ const SERVED_TEXT = { "shared/helpArticles.js": fs.readFileSync(path.join(ROOT, 
     for (const [f, t] of Object.entries({ ...SRC_TEXT, ...SERVED_TEXT })) for (const re of BANNED) if (re.test(t)) hits.push(f + " " + re);
     ok("none of the banned outcome words, on the marketing pages, the help centre or What's new", hits.length === 0, hits);
   }
-  {
-    // Donor-CRM and fundraising-suite vendors. The giving tools Steward
-    // CONNECTS to (Stripe, PayPal, Givebutter, Donorbox, Square, Zeffy,
-    // Mailchimp, Xero, QuickBooks, Zapier) are integrations, named the way the
-    // live landing page already names them, not competitors.
-    const COMPETITORS = ["Bloomerang", "Little Green Light", "LGL", "DonorPerfect", "Neon CRM", "Neon One", "NeonCRM", "Blackbaud",
-      "Raiser's Edge", "Raisers Edge", "eTapestry", "Salesforce", "Nonprofit Success Pack", "NPSP", "Virtuous", "Kindful", "Keela",
-      "Bonterra", "EveryAction", "Network for Good", "Kindsight", "Funraise", "Classy", "Qgiv", "DonorSnap", "CiviCRM", "Arreva",
-      "Donor Tools", "Givesmart", "GiveSmart", "OneCause", "Double the Donation", "Sumac", "Aplos", "Dataro", "Gravyty", "iWave"];
-    const hits = [];
-    for (const [f, t] of Object.entries({ ...SRC_TEXT, ...SERVED_TEXT })) for (const c of COMPETITORS) if (new RegExp("\\b" + c.replace(/'/g, "['’]") + "\\b").test(t)) hits.push(f + " " + c);
-    ok("no competitor name anywhere on the marketing pages, the help centre or What's new", hits.length === 0, hits);
-  }
+  // POLISH-2: the competitor-name check is retired. The rule changed on 13 Oct
+  // (docs/MESSAGING.md): naming another product is fine wherever it helps,
+  // factual and fair. The outcome words above still stand.
   {
     ok("APPROVED_TESTIMONIALS is the (empty) approved list", Array.isArray(research.APPROVED_TESTIMONIALS) && research.APPROVED_TESTIMONIALS.length === 0);
     // Every quotation element in the marketing source is a research quote:

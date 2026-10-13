@@ -15,7 +15,7 @@
 // section the new site does not have; the "no pricing" rule is INVERTED by the
 // approved reference, whose header links Pricing and whose FAQ quotes the
 // published price. What carried forward unchanged: no fabricated social proof,
-// no competitor, no outcome-claim language, no em dash, the © line naming the
+// no outcome-claim language, no em dash, the © line naming the
 // registered legal entity with a computed year, no bracketed placeholder, no
 // auto popup, a clean console, real anchors for navigating CTAs, and the
 // reduced-motion check. New: every route renders with its own title,
@@ -57,7 +57,6 @@ const SOCIAL_PROOF = [
   /\b(customers|nonprofits|organizations|orgs|teams)\s+(use|trust|rely on|switched to)\b/i,
 ];
 const OUTCOME = [/\brecovered\b/i, /\bre-?engaged\b/i, /\brecaptured\b/i, /\bwon back\b/i, /\bbrought back\b/i];
-const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|One)|Blackbaud|Raiser['’]?s Edge|eTapestry|Salesforce|NPSP|Virtuous|Kindful|Keela|Bonterra|EveryAction|Network for Good|Kindsight|Funraise|Classy|Qgiv|DonorSnap|CiviCRM|GiveSmart|OneCause)\b/;
 
 (async () => {
   console.log(`landing-prod-verify → ${BASE}\n`);
@@ -119,7 +118,7 @@ const COMPETITORS = /\b(Bloomerang|Little Green Light|DonorPerfect|Neon ?(CRM|On
      !SOCIAL_PROOF.some(re => re.test(all)), SOCIAL_PROOF.filter(re => re.test(all)).map(String));
   ok("no outcome-claim language (recovered, re-engaged, recaptured, won back, brought back)",
      !OUTCOME.some(re => re.test(all)), OUTCOME.filter(re => re.test(all)).map(String));
-  ok("no competitor named on any page", !COMPETITORS.test(all), (all.match(COMPETITORS) || [])[0]);
+  // POLISH-2: competitor names are allowed since 13 Oct (docs/MESSAGING.md).
   ok("no em dash in the rendered copy of any page (Jonathan's voice uses periods)", !/—/.test(all),
      Object.keys(texts).filter(p => /—/.test(texts[p])));
   // /templates is exempt: its whole point is merge fields like [First name].
