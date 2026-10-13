@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Papa from "papaparse";
 import { apiFetch } from "../api";
+import { allPeople } from "../lib/people";
 import { MoveStart } from "./MoveIn";
 import { buildMoveFileFacts, newRunId } from "../../../shared/movePlan";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
@@ -3673,7 +3674,19 @@ function autoDetectWideConfig(headers, rows) {
 // fixture suite drives the REAL auto-mapping, not a copy.
 
 // ── GiftHistoryImport ──────────────────────────────────────────────────────
-function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome = null }) {
+function GiftHistoryImport({ donors: donorsProp, onClose, onImported, org = null, onOpenHome = null }) {
+  // SCALE-2: the shell no longer holds every donor. Matching a gift file
+  // against the people on file (matchDonorForGift) still needs all of them,
+  // so this import loads the whole-org list itself when it opens, and the
+  // preview waits for it. The matching is unchanged.
+  const [loadedDonors, setLoadedDonors] = useState(null);
+  useEffect(() => {
+    if (donorsProp) return undefined;
+    let live = true;
+    allPeople().then(rows => { if (live) setLoadedDonors(rows); }).catch(() => {});
+    return () => { live = false; };
+  }, [donorsProp]);
+  const donorsReady = donorsProp || loadedDonors;
   const [step, setStep]             = useState("upload");
   const [csvText, setCsvText]       = useState("");
   const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
@@ -3743,8 +3756,13 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
     setYearCols(cols => cols.map(yc => ({ ...yc, date: yearColToDate(yc.col, val) })));
   };
 
-  const buildPreview = () => {
+  const buildPreview = async () => {
     setErr("");
+    let donors = donorsReady;
+    if (!donors) {
+      try { donors = await allPeople(); setLoadedDonors(donors); }
+      catch (e) { setErr(errorMessage(e, "Import failed.")); return; }
+    }
     const gifts = [];
     const refusedDates = [];
     if (effectiveFormat === "wide") {
@@ -4291,7 +4309,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,maxHeight:160,overflowY:"auto"}}>
                               {(()=>{
                                 const q = pickSearch.toLowerCase();
-                                const hits = donors.filter(d=>d.name.toLowerCase().includes(q)||(d.email||"").toLowerCase().includes(q)).slice(0,8);
+                                const hits = (donorsReady || []).filter(d=>d.name.toLowerCase().includes(q)||(d.email||"").toLowerCase().includes(q)).slice(0,8);
                                 return hits.length ? hits.map(d=>(
                                   <div key={d.id} onClick={()=>{setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}));setPickingIdx(null);setPickSearch("");}}
                                     style={{padding:"7px 12px",cursor:"pointer",fontSize:12,color:T.ink,borderBottom:"1px solid "+T.bg2}}>

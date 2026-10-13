@@ -2561,7 +2561,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             starters New Campaign opens on and the designed emails, in four
             sections (EmailTemplates.jsx says the rule). */}
         {nav === "templates" && (
-          <EmailTemplates isReadOnly={isReadOnly} donors={data?.donors || []}
+          <EmailTemplates isReadOnly={isReadOnly}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
             onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")} />
         )}

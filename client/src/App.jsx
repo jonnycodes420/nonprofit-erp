@@ -375,18 +375,18 @@ function AppShell() {
       // 403 (or any failure on a portal-tier org) falls back to empty data.
       const results = await Promise.allSettled([
         apiFetch("/org"),
-        // Lightweight whole-org list (no notes/score_rationale) — the full
-        // GET /donors payload was the last known scaling cliff (21.7MB at
-        // 25k donors). Anything needing the heavy fields (DonorProfile)
-        // fetches GET /donors/:id on demand.
-        apiFetch("/donors/summaries"),
+        // SCALE-2 — THE SHELL NO LONGER DOWNLOADS EVERY DONOR. This read was
+        // /donors/summaries: 24 MB for a 25,000-donor org, on every sign-in.
+        // Every reader of that list now asks the server for what it shows
+        // (lib/people.js, routes/donorLookups.js); `data.donors` stays an
+        // empty list so nothing that still names it breaks.
         apiFetch("/grants"),
         apiFetch("/volunteers"),
         apiFetch("/tasks"),
         apiFetch("/board"),
         apiFetch("/financials"),
       ]);
-      const [orgR,donorsR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
+      const [orgR,grantsR,volunteersR,tasksR,boardR,financialsR]=results;
       if(orgR.status==="rejected")throw orgR.reason;
       const org=orgR.value;
       const portalTier=org?.plan==="portal";
@@ -409,7 +409,7 @@ function AppShell() {
       };
       const adapted=adaptData({
         org,
-        donors:val(donorsR,[]),
+        donors:[],
         grants:val(grantsR,[]),
         volunteers:val(volunteersR,[]),
         tasks:val(tasksR,[]),
@@ -976,7 +976,7 @@ function AppShell() {
     <PlanPicker open={showPlanPicker} onClose={()=>setShowPlanPicker(false)}/>
     {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
         Code intact, re-enable by uncommenting.
-    {showVoiceMemo&&<VoiceMemoModal donors={data.donors} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
+    {showVoiceMemo&&<VoiceMemoModal donors onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
     */}
     {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:T.white,borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <div>

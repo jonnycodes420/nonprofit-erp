@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
+import { usePeoplePicker } from "../lib/people";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
@@ -1272,7 +1273,7 @@ export function EventKiosk({ eventId }) {
 }
 
 // ── Event Detail ────────────────────────────────────────────────────────────
-function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
+function EventDetail({ eventId, onClose, onEventUpdated }) {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editingStatus, setEditingStatus] = useState(null);
@@ -1381,6 +1382,11 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
     setEditSaving(false);
   };
 
+  // SCALE-2: the directory picker asks the server for people as she types
+  // (name or email), rather than filtering a whole-org list held in memory.
+  // Enough rows are asked for that forty remain after the people already here.
+  const attendeeCount = (event?.attendees || []).filter(a => a.donor_id).length;
+  const [pickedPeople] = usePeoplePicker(donorSearch, { match: "either", limit: 40 + attendeeCount, emptyToo: true });
   if (loading || !event) return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ color: "rgba(240,237,230,0.7)", fontSize: 13 }}>Loading…</div>
@@ -1399,11 +1405,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   const topDonor = event.attendees?.filter(a => a.gift_amount > 0).sort((a, b) => b.gift_amount - a.gift_amount)[0];
 
   const existingDonorIds = new Set((event.attendees || []).filter(a => a.donor_id).map(a => a.donor_id));
-  const filteredDonors = (allDonors || []).filter(d =>
-    !existingDonorIds.has(d.id) &&
-    (d.name?.toLowerCase().includes(donorSearch.toLowerCase()) ||
-     d.email?.toLowerCase().includes(donorSearch.toLowerCase()))
-  );
+  const filteredDonors = pickedPeople.filter(d => !existingDonorIds.has(d.id));
 
   const INP_DARK = { background: T.ink, border: "1px solid "+T.green650, borderRadius: 8, padding: "8px 10px", color: T.inkInverse, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 
@@ -1824,7 +1826,6 @@ export function Events({ data, isReadOnly }) {
     return (
       <EventDetail
         eventId={selectedId}
-        donors={data?.donors || []}
         onClose={() => { setSelectedId(null); reload(); }}
         onEventUpdated={reload}
       />

@@ -23,7 +23,7 @@ const HOME_READS = new Set([
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout",
   "/tasks/counts", "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact",
   "/fundraising/overview", "/goals/active", "/drift", "/threads", "/calendar/today", "/calendar/to-log",
-  "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins",
+  "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins", "/donors/birthdays-near", "/donors/counts",
   "/dashboard/today", "/metrics/stewardship-summary", "/dashboard/home", "/thank-yous",
   "/dashboard/stewardship-debt/breakdown", "/dashboard/retention/breakdown",
 ]);

@@ -58,7 +58,8 @@ const G = p => ["GET", p];
 const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout", "/tasks/counts?scope=mine",
   "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact", "/fundraising/overview", "/goals/active", "/drift",
-  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins"];
+  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins",
+  "/donors/birthdays-near"];
 const HOME_SCOPE = s => [`/dashboard/today?scope=${s}`, `/metrics/stewardship-summary?scope=${s}`, `/dashboard/home?scope=${s}`,
   "/thank-yous", `/dashboard/stewardship-debt/breakdown?scope=${s}`, `/dashboard/retention/breakdown?scope=${s}`];
 const bundle = paths => "/home/bundle?" + paths.map(p => "p=" + encodeURIComponent(p)).join("&");

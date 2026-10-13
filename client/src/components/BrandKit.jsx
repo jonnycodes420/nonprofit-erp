@@ -4,6 +4,7 @@
 // address and the tax language. The logo is the existing logo upload.
 import { useState, useEffect, useRef } from "react";
 import { apiFetch, API, getToken } from "../api";
+import { pickPeople, usePeoplePicker } from "../lib/people";
 import { T, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -97,7 +98,14 @@ export function BrandKitManager({ isAdmin, isReadOnly }) {
 export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved, onOpenDrafts }) {
   const [subject, setSubject] = useState(t.subject);
   const [body, setBody] = useState(t.body);
-  const [who, setWho] = useState(donors[0] ? donors[0].id : "");
+  const [who, setWho] = useState("");
+  // SCALE-2: the preview opens on the org's top giver, as it did when the
+  // shell held every donor; read once from the server.
+  useEffect(() => {
+    let live = true;
+    pickPeople({ limit: 1 }).then(r => { if (live && r[0]) setWho(w => w || r[0].id); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [q, setQ] = useState("");
   const [pv, setPv] = useState(null);
   const [msg, setMsg] = useState("");
@@ -134,7 +142,7 @@ export function TemplateEditor({ t, fields, donors, isReadOnly, onClose, onSaved
       }
     } catch (e) { setMsg(e?.data?.sentence || errorMessage(e, "That did not work.")); }
   };
-  const people = q.trim() ? donors.filter(x => (x.name || "").toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
+  const [people] = usePeoplePicker(q, { match: "name", limit: 8 });   // SCALE-2: asked of the server as she types
   const brand = pv && pv.brand;
   return (
     <div data-testid="template-editor" style={{ ...card, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>

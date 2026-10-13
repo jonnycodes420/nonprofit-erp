@@ -52,7 +52,8 @@ const TODAY = day(0);
 const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
   "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout", "/tasks/counts?scope=mine",
   "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact", "/fundraising/overview", "/goals/active", "/drift",
-  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins"];
+  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins",
+  "/donors/birthdays-near"];
 const HOME_SCOPE = ["/dashboard/today?scope=all", "/metrics/stewardship-summary?scope=all", "/dashboard/home?scope=all", "/thank-yous",
   "/dashboard/stewardship-debt/breakdown?scope=all", "/dashboard/retention/breakdown?scope=all"];
 const OTHERS = ["/drift?all=1&includeMedium=1", "/donors?limit=50&offset=0&role=donor", "/reports/giving-summary?yearMode=fiscal",
@@ -164,7 +165,7 @@ async function fireStripe(evtId, piId, cents, email, name) {
   ok("§2 GET /home/bundle answers", b.status === 200, b.status);
   const bundleOff = HOME_FIRST.filter(p => !bundle[p] || bundle[p].status !== 200 ||
     JSON.stringify(bundle[p].body) !== JSON.stringify(JSON.parse(fresh[p].body)));
-  ok("§2 each of Home's 25 reads in the bundle equals the separate read", bundleOff.length === 0, bundleOff.join(" "));
+  ok("§2 each of Home's first reads in the bundle equals the separate read", bundleOff.length === 0, bundleOff.join(" "));
   const refused = await fetch(BASE + "/home/bundle?p=" + encodeURIComponent("/donors/summaries"), { headers: { authorization: `Bearer ${tok}` } });
   ok("§2 a read that is not part of Home is refused, so the bundle is not a general proxy", refused.status === 400, refused.status);
 

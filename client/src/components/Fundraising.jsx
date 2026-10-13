@@ -251,7 +251,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
       )}
 
       {!loading && subtab === "events" && (
-        <EventsDesk orgSlug={orgSlug} donors={data?.donors || []} isReadOnly={isReadOnly} />
+        <EventsDesk orgSlug={orgSlug} isReadOnly={isReadOnly} />
       )}
 
       {!loading && subtab === "acknowledgments" && (
@@ -273,7 +273,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
 
       {/* PARITY-2 Part 4: auctions: items, bids, winners, pay links. */}
       {!loading && subtab === "auctions" && (
-        <AuctionsView donors={data?.donors || []} isReadOnly={isReadOnly} onNavigate={onNavigate} />
+        <AuctionsView isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
 
       {/* BUILD-103 Part 6 — the screen an org runs a walk from. */}

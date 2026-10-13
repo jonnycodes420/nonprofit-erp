@@ -1,8 +1,9 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
-import { apiFetch, prefetch } from "../api";
+import { apiFetch, adaptDonor, prefetch } from "../api";
+import { usePeopleById, peopleCounts } from "../lib/people";
 import { offerUndo } from "./EditHistory";
 import { useAuth } from "../main";
-import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
+import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, loadContextPeople, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark, stageName } from "./shared";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayLong } from "../lib/taskDue";
 import { PinnedAnswers } from "./AskPanel";
@@ -43,7 +44,8 @@ const todayCivil=()=>new Date().toISOString().split("T")[0];
 const HOME_FIRST_READS=["/data-health/notice","/gift-starts/notice","/recurring/exceptions","/readouts/latest","/move",
   "/sequences/home","/agent/daily-line","/threads/health","/org/setup-status","/me/home-layout","/tasks/counts?scope=mine",
   "/dashboard/my-stats","/donors/stage-counts","/recurring/health","/impact","/fundraising/overview","/goals/active","/drift",
-  "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins"];
+  "/threads?scope=mine","/calendar/today","/calendar/to-log","/mailbox","/home/calls","/home/annual-goal","/ask/pins",
+  "/donors/birthdays-near"];
 const homeScopeReads=scope=>[`/dashboard/today?scope=${scope}`,`/metrics/stewardship-summary?scope=${scope}`,
   `/dashboard/home?scope=${scope}`,"/thank-yous",`/dashboard/stewardship-debt/breakdown?scope=${scope}`,
   `/dashboard/retention/breakdown?scope=${scope}`];
@@ -353,9 +355,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // A MODAL here would be a wall in front of every existing org's Home on its
   // next login, and in front of anyone who just wanted to see their queue. One
   // quiet line, her choice, and it goes when she answers OR declines.
-  const wordsOffer=surface==="home"&&isAdmin&&!wordsDone
-    &&!!data.org&&!data.org.vocabularySetAt
-    &&!!(data.donors&&data.donors.length>0);
+  // SCALE-2: "there are donors" is a server count, read only when the offer
+  // could show at all, instead of the length of a whole-org list.
+  const wordsMayOffer=surface==="home"&&isAdmin&&!wordsDone&&!!data.org&&!data.org.vocabularySetAt;
+  const [peopleTotal,setPeopleTotal]=useState(null);
+  useEffect(()=>{
+    if(!wordsMayOffer||peopleTotal!=null)return;
+    peopleCounts().then(c=>setPeopleTotal(c?.total||0)).catch(()=>{});
+  },[wordsMayOffer,peopleTotal]);
+  const wordsOffer=wordsMayOffer&&peopleTotal>0;
 
   // BUILD-57 — the dashboard area is two tabs: Today (the existing section
   // stack) and Recurring (EXCEPTIONS only — counts + a path into the
@@ -795,14 +803,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Guards against a pre-existing /dashboard/today quirk (task rows aren't
   // filtered by donor deleted_at) — if the donor isn't in the live donor
   // list anymore, don't show a queue row nothing can act on.
-  const visibleQueue=queueItems
-    .filter(item=>data.donors.some(d=>d.id===item.donorId))
+  // SCALE-2: "still in the live list" is asked of the server for just these
+  // ids. Until it answers the queue shows nothing, as it did while loading;
+  // if the read fails (null) nobody is hidden for it.
+  const [queuePeople,queuePeopleReady]=usePeopleById(queueItems.map(i=>i.donorId));
+  const queueLive=id=>!!id&&(queuePeople===null||!!queuePeople[id]);
+  const visibleQueue=!queuePeopleReady?[]:queueItems
+    .filter(item=>queueLive(item.donorId))
     .slice(0,6);
   const milestoneCount=queueItems.filter(i=>i.action==="milestone").length;
   // D-1 (BUILD-45): an attention item with no resolvable donor (an orphaned
   // task) is never rendered as a dead link — its row main falls back to a
   // <span>. Surface the count in dev only so orphans don't hide silently.
-  const orphanQueueCount=queueItems.filter(i=>!i.donorId||!data.donors.some(d=>d.id===i.donorId)).length;
+  const orphanQueueCount=!queuePeopleReady?0:queueItems.filter(i=>!queueLive(i.donorId)).length;
   useEffect(()=>{
     if(import.meta.env.DEV&&orphanQueueCount>0)
       console.log(`[dashboard] Needs-attention: ${orphanQueueCount} item(s) with no resolvable donor (rendered non-navigable).`);
@@ -817,9 +830,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     const milestoneLine=milestoneCount>0
       ?`\nMilestone emails pending review: ${milestoneCount} AI-drafted thank-you email(s) awaiting staff approval (donors who just crossed a giving milestone or anniversary).`
       :"";
+    const people=await loadContextPeople().catch(()=>undefined);
     await askClaude(
       `You are a chief development officer. Write a crisp daily briefing. Use bullet points. Be specific with names and numbers. Max 250 words.`,
-      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them, omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
+      `Generate today's development briefing for ${data.org.name}.\nToday: ${todayStr}\n\n${buildContext(data,people)}${milestoneLine}\n\nFormat:\n**TODAY'S PRIORITY CALLS** (top 2-3 donors to contact with specific reason)\n**GRANT ALERTS** (anything urgent in next 30 days)\n**MILESTONE EMAILS** (if any are pending review, mention how many and nudge toward reviewing them, omit this section entirely if none are pending)\n**FINANCIAL PULSE** (1-2 sentences on cash/revenue)\n**ONE THING** (the single most important action today)\n\nBe sharp and specific.`,
       chunk=>setBriefing(chunk)
     );
     setBriefLoading(false);
@@ -2726,11 +2740,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // space, with a way back. Two states, never an empty one: a tab strip would
   // sit there showing three zeros on a quiet morning, which is exactly what
   // makes a product look dead in a demo.
-  const donorById=useMemo(()=>{
-    const m={};
-    for(const d of (data.donors||[])) m[d.id]=d;
-    return m;
-  },[data.donors]);
+  // SCALE-2: the one person the rail opens, read by id when it opens.
+  const [railPeople]=usePeopleById(railView.kind==="donor"?[railView.donorId]:[]);
+  const donorById=railPeople||{};
+  // SCALE-2: birthdays near today from the server (routes/donorLookups.js),
+  // then the same week rule below, so the list is what it was.
+  const [birthdayPeople,setBirthdayPeople]=useState([]);
+  useEffect(()=>{
+    if(surface!=="home")return;
+    let live=true;
+    apiFetch("/donors/birthdays-near").then(rows=>{if(live)setBirthdayPeople((Array.isArray(rows)?rows:[]).map(adaptDonor));}).catch(()=>{});
+    return()=>{live=false;};
+  },[surface]);
   const openRailDonor=(donorId,threadId)=>setRailView({kind:"donor",donorId,threadId});
   // FIX-22: BIRTHDAYS THIS WEEK. today and the six days after it, each a
   // civil date in the organisation's timezone (orgToday.js), matched against
@@ -2740,14 +2761,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const birthdaysThisWeek=useMemo(()=>{
     const days=[0,1,2,3,4,5,6].map(n=>orgTodayPlus(n)).filter(Boolean);
     const out=[];
-    for(const d of (data.donors||[])){
+    for(const d of birthdayPeople){
       const b=d.birthday;
       if(!b||!b.month||!b.day||d.deceased)continue;
       const at=days.findIndex(c=>isBirthdayOn(Number(b.month),Number(b.day),c));
       if(at>=0)out.push({id:d.id,name:d.name,at,label:at===0?"today":`${BIRTH_MONTHS[b.month-1].slice(0,3)} ${b.day}`});
     }
     return out.sort((x,y)=>x.at-y.at||String(x.name).localeCompare(String(y.name)));
-  },[data.donors]);
+  },[birthdayPeople]);
   const railRow=(key,label,meta,onOpen)=>(
     <div key={key} {...interactive(onOpen,{label})}
       className="home-rail-row"
