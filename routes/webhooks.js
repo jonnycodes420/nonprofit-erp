@@ -455,6 +455,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 campaign: evRow.name,
               } : {}),
               orgId, donorId, giftId, amount, date: today,
+              // LIVE-1 — which door, for the after-change step recordGift calls.
+              door: givingPageId ? "giving_page" : "stripe_webhook",
               // BUILD-102 Part 5 — stored ON THE GIFT, so "which email brought
               // this in" is answered by the report builder over the same rows
               // every money figure comes from.

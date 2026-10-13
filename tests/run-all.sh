@@ -142,6 +142,7 @@ CORE=(
   parity2-qbo-sync
   qboin-read
   fix36-history
+  live1-alive
   fix20-qbo-realm-switch
   oauth-state
   int3-optout

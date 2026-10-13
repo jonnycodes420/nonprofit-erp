@@ -38,7 +38,7 @@ const crypto = require("crypto");
 
 // server.js points this at scheduleScores, so a booking moves the stored
 // engagement score on the next debounce rather than at the six-hour tick.
-function changed(orgId) { try { if (module.exports.onChange) module.exports.onChange(orgId); } catch { /* scores are best effort */ } }
+function changed(orgId, ids) { try { if (module.exports.onChange) module.exports.onChange(orgId, ids); } catch { /* scores are best effort */ } }
 const id = p => p + crypto.randomUUID().replace(/-/g, "").slice(0, 12);
 const NEAR_DAYS = 3;
 
@@ -213,7 +213,7 @@ async function applyMeeting(eventId, { actorId = "system:meetings", actorName = 
        JSON.stringify(moved), bookedId, actorId, actorName]);
     applied++;
   }
-  if (applied) changed(orgId);
+  if (applied) changed(orgId, people);
   return { applied };
 }
 

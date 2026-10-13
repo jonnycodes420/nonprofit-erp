@@ -1031,6 +1031,10 @@ if (!backgroundTicksDisabled()) {
 
 async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
   if (typeof _journeyEngine !== "function") return { started: false, reason: "engine_not_mounted" };
+  // LIVE-1 — a caller writing many gifts read once which triggers have a
+  // journey switched on; a trigger with none cannot start anything, so it is
+  // not asked again for every gift.
+  if (opts && opts.armed && !opts.armed.has(trigger)) return { started: false, reason: "no_journey_for_trigger" };
   try { return await _journeyEngine(orgId, donorId, trigger, opts); }
   catch (e) { console.error(`[journey] ${trigger} for ${donorId}:`, e.message); return { started: false, reason: "error" }; }
 }
@@ -1286,13 +1290,13 @@ async function recordGift(o) {
     if (after && Number(after.gift_count) === 1) {
       const ctx = { amount, recurring: !!o.recurring || !!after.stripe_subscription_status,
                     fund: o.fundName || null, source: o.source || null };
-      await enrollInSequences(orgId, o.donorId, "first_gift", ctx);
+      if (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_gift")) await enrollInSequences(orgId, o.donorId, "first_gift", ctx);
     }
     if (o.recurring === true && after) {
       const [priorRec] = await query(
         `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ?
            AND (notes ILIKE '%recurring%' OR type = 'recurring')`, [orgId, o.donorId, giftId]);
-      if (!priorRec || priorRec.n === 0) {
+      if ((!priorRec || priorRec.n === 0) && (!o.armed || !o.armed.sequences || o.armed.sequences.has("first_recurring"))) {
         await enrollInSequences(orgId, o.donorId, "first_recurring",
           { amount, recurring: true, fund: o.fundName || null, source: o.source || null });
       }
@@ -1326,7 +1330,8 @@ async function recordGift(o) {
       // PARITY-1 Part D — every gift trigger carries the gift: its id (the
       // event it is held to, once and only once), its fund and its campaign
       // (what a journey may be narrowed to).
-      const gopts = { amountCents: cents, giftId, fundId: fundId || null, campaignId: o.campaignId || null };
+      const gopts = { amountCents: cents, giftId, fundId: fundId || null, campaignId: o.campaignId || null, importId: o.importId || null,
+                      armed: o.armed && o.armed.journeys ? o.armed.journeys : null };
       if (amount > 0) {
         if (Number(d.gift_count) === 1) {
           await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", gopts);
@@ -1360,9 +1365,6 @@ async function recordGift(o) {
     // PARITY-1 Part D — a gift can move somebody into a group by rule (Mid
     // and Major donors, say). A "joins a group" journey watching one hears
     // about it here, the moment the gift lands, rather than next morning.
-    const [ot] = await query(`SELECT timezone FROM orgs WHERE id=?`, [orgId]);
-    await GR.dynamicJoins(orgId, { donorId: o.donorId, today: orgToday({ timezone: ot && ot.timezone }),   // ORG_TZ_SEAM_OK
-      fire: (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
   } catch (e) { console.error("[journey] gift trigger:", e.message); }
 
 
@@ -1398,9 +1400,18 @@ async function recordGift(o) {
     } catch (e) { console.error("[p2p] soft credit:", e.message); }
   }
 
-  // ENGAGE-1: a gift moves the generosity scores. Recomputed for the whole org
-  // a moment later (a percentile is relative, so one gift can move others).
-  scheduleScores(orgId);
+  // LIVE-1 · THE ONE AFTER-CHANGE STEP. Totals, rhythm, Drift, groups by
+  // rule (a "joins a group" journey hears about it here, the moment the gift
+  // lands) and the engagement recompute, for this person. A caller writing
+  // many gifts at once passes `afterChange: false` and calls the step once
+  // for everybody it touched. The totals were just written above, so the
+  // step does not recompute them. An old history gift starts no journey here
+  // either (FIX-36).
+  if (o.afterChange !== false) {
+    await AFTER.afterChange(orgId, [o.donorId], { door: o.door || "gift_form", history: o.history === true,
+      recalc: false,
+      fire: oldHistory ? null : (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
+  }
   return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
 }
 
@@ -1428,7 +1439,15 @@ function scheduleScores(orgId) {
   if (t.unref) t.unref();
   _scoreTimers.set(orgId, t);
 }
-require("./meetingEffects").onChange = scheduleScores;   // FIX-33
+// LIVE-1 — the after-change step's helpers, handed over once at boot.
+const AFTER = require("./afterChange");
+AFTER.configure({ query, run, GR, orgToday, orgTz, scheduleScores, computeDriftForDonors });
+// FIX-33, and LIVE-1: a meeting synced from the calendar is a change to the
+// people in it, so it runs the after-change step (which schedules the scores).
+require("./meetingEffects").onChange = (orgId, ids) => {
+  if (ids && ids.length) AFTER.afterChangeSoon(orgId, ids, { door: "mail_calendar_sync", recalc: false });
+  else scheduleScores(orgId);
+};
 async function recomputeAllScores() {
   const orgs = await query("SELECT id FROM orgs", []);
   for (const o of orgs) {
@@ -1956,7 +1975,7 @@ async function ingestPosSale(orgId, sale, { sourceId = null, actorId = null, act
       processorFeeAmount: sale.feeCents ? sale.feeCents / 100 : 0,
       notes: `At the register${sale.locationName ? `, ${sale.locationName}` : ""}.`,
       actorId: actorId || SYS_SOURCE.id, actorName: actorName || SYS_SOURCE.name,
-      defaultFund: false,
+      defaultFund: false, door: "giving_source_read",
     }).catch(e => { console.error("[pos] gift:", e.message); return null; });
     giftId = written?.gift?.id || null;
   }
@@ -2180,7 +2199,18 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       const told = await raiseToldFailures(orgId, source, summary.failedRecurring, day);
       summary.threadsOpened = swept.opened + told;
 
+      // LIVE-1 · the one after-change step for everybody this read touched,
+      // then "what this told us". newGiftIds is not part of the stored summary.
+      const newGiftIds = summary.newGiftIds || []; delete summary.newGiftIds;
+      const ac = await AFTER.afterChange(orgId, [...touchedDonors], { door: "giving_source_read", history: isBackfill,
+        fire: (did, gid) => maybeStartJourneyFromServer(orgId, did, "joined_group", { groupId: gid }) });
       const runId = await recordSourceRun(orgId, source, summary, { actorId, actorName, day });
+      if (newGiftIds.length) {
+        await require("./readout").writeReadout(orgId, {
+          sourceKind: "giving_source", sourceId: runId || sourceId, sourceName: source.display_name || source.provider,
+          giftIds: newGiftIds, donorIds: [...touchedDonors], crossings: ac.crossings, becameLate: ac.becameLate, today: day,
+        }).catch(e => console.error("[readout] giving source:", e.message));
+      }
       await run(
         `UPDATE giving_sources
             SET last_synced_at=NOW(), last_tried_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
@@ -2444,8 +2474,11 @@ async function writeSourceRow(orgId, source, row, ctx) {
     // gift from last spring; the gifts of the last 30 days are new to the
     // donor and are treated as new (historyGifts.js). Later syncs are live.
     history: isBackfill, today: day,
+    // LIVE-1 — the read calls the after-change step once, for everyone.
+    door: "giving_source_read", afterChange: false,
   });
   if (written.duplicate) { summary.duplicates++; return; }
+  (summary.newGiftIds = summary.newGiftIds || []).push(written.gift.id);
   summary.giftsCreated++;
   summary.centsCreated += row.amountCents;
   summary.feeCents += row.feeCents;
@@ -4084,6 +4117,8 @@ async function insertShift(orgId, personId, shift, { via, importKey = null, who 
      // clock times when they were logged that way. All optional.
      shift.opportunityId || null, shift.slotId || null, shift.startTime || null, shift.endTime || null]);
   if (rows.length) await markVolunteer(orgId, personId);
+  // LIVE-1 — hours are a change to the person: the one after-change step.
+  if (rows.length) AFTER.afterChangeSoon(orgId, [personId], { door: "volunteer_hours", recalc: false });
   return rows[0]?.id || null;
 }
 
@@ -4119,6 +4154,7 @@ app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeCalls").routers.r0);     // PARITY-1 Part C
+app.use(require("./routes/readouts").routers.r0);     // LIVE-1: what this told us
 app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/search").routers.r0);        // WIRE-1 the one search
 app.use(require("./routes/historyImport").routers.r0); // IMPORT-2 notes and history
@@ -6143,8 +6179,12 @@ async function composeThreadNudgeQueue(orgId, today, opts) {
 // named, with its day count — the BUILD-81 line that made the subject do the
 // work. A brief with no threads falls back to the task sentence rather than
 // inventing a thread that is not there.
-function morningBriefSubject(threads, taskCount, org, meetingCount = 0) {
+function morningBriefSubject(threads, taskCount, org, meetingCount = 0, readoutCount = 0) {
   const total = threads.length + taskCount;
+  // LIVE-1 — a morning whose only news is what yesterday's import told us.
+  if (threads.length === 0 && taskCount === 0 && !meetingCount && readoutCount) {
+    return `What yesterday told us · ${displayNameCase(org.name || "")}`;
+  }
   if (threads.length === 0 && taskCount === 0 && meetingCount) {
     return `${meetingCount} meeting${meetingCount === 1 ? "" : "s"} today · ${displayNameCase(org.name || "")}`;
   }
@@ -6172,7 +6212,7 @@ function morningBriefSubject(threads, taskCount, org, meetingCount = 0) {
 // EVERY THREAD ROW CARRIES ITS REASON. shared/threadRank.js decided the order;
 // this prints the sentence that order was built from, so the list can always
 // answer "why am I looking at this one first?" without the reader guessing.
-function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [] }) {
+function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, meetings = [], readouts = [] }) {
   const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
   const row = t => {
     const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
@@ -6219,6 +6259,14 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
       <table style="margin-top:6px;border-collapse:collapse;width:100%;">${meetings.map(m => `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
         <strong>${digestEsc(m.startsAt ? at(m.startsAt) : "Today")}</strong> · ${digestEsc(m.title || "Meeting")}${(m.people || []).length ? `<span style="color:${SAGE};"> with ${digestEsc(m.people.map(p => p.name).join(", "))}</span>` : ""}</td></tr>`).join("")}</table>
     </div>` : "";
+  // LIVE-1 · WHAT YESTERDAY'S IMPORTS AND READS TOLD US, one line each,
+  // opening "What changed" where every line has its rows and its action.
+  const readoutBlock = readouts.length ? `
+    <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};" data-section="readouts">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">What yesterday told us</div>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${readouts.map(r => `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
+        <a href="${publicAppUrl()}/app/agent?view=changed" style="color:${EMERALD};text-decoration:underline;">${digestEsc(r.headline)}</a></td></tr>`).join("")}</table>
+    </div>` : "";
   const teamBlock = team && team.length ? `
     <div style="margin-top:22px;padding-top:14px;border-top:1px solid #dcd8cd;">
       <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Across the team</div>
@@ -6235,7 +6283,7 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
 
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
-      ${threadBlock}${taskBlock}${meetingBlock}${teamBlock}${footer}
+      ${threadBlock}${readoutBlock}${taskBlock}${meetingBlock}${teamBlock}${footer}
       ${user && user.id && user.email ? `<div style="margin-top:10px;font-size:11px;color:${SAGE};">You get this because the morning email is on in Settings, under Account. <a href="${staffUnsubscribeUrl(user, org.id)}" style="color:${SAGE};text-decoration:underline;">Unsubscribe</a> from the morning email.</div>` : ""}
     </div>`;
 }
@@ -6254,6 +6302,15 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team, 
 // BOTH PREFERENCES STILL MEAN SOMETHING. A user opted out of `daily_tasks`
 // gets a brief with no task section; opted out of `thread_nudge`, no thread
 // section; opted out of both, no email at all and nothing reserved.
+// LIVE-1 · the readouts written since the last weekday morning: yesterday's,
+// or Friday's and the weekend's on a Monday. Their headlines, newest first.
+async function yesterdaysReadouts(orgId, today) {
+  const dow = new Date(today + "T12:00:00Z").getUTCDay();
+  const from = orgTime.addDays(today, dow === 1 ? -3 : -1);
+  return query(`SELECT id, headline, for_date FROM readouts WHERE org_id=? AND removed_at IS NULL AND is_example IS NOT TRUE
+                  AND for_date >= ? AND for_date < ? ORDER BY created_at DESC LIMIT 5`, [orgId, from, today]).catch(() => []);
+}
+
 async function runMorningBriefForOrg(org, { today, send = true }) {
   const out = { sent: [], skipped: [] };
   const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
@@ -6295,7 +6352,11 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
       try { meetingsToday = (await require("./routes/finance").composeTodayMeetings(org.id, u.id, { withLogged: true })).meetings || []; }
       catch (e) { console.error("[morning-brief] meetings:", e.message); }
     }
-    if (tq.list.length === 0 && taskDigest.count === 0 && meetingsToday.length === 0) {
+    // LIVE-1 — yesterday's readouts (Friday's and the weekend's on a Monday),
+    // under the Thread's own setting and weekday rule.
+    const readoutsAll = threadsAllowedToday ? await yesterdaysReadouts(org.id, today) : [];
+    let readoutsY = wantsThreads ? readoutsAll : [];
+    if (tq.list.length === 0 && taskDigest.count === 0 && meetingsToday.length === 0 && readoutsY.length === 0) {
       // WHY there is no email matters to whoever is reading this report: a
       // person who turned both notifications off is not the same as a person
       // with a clear morning, and reporting both as "empty" hides a setting
@@ -6304,23 +6365,23 @@ async function runMorningBriefForOrg(org, { today, send = true }) {
       continue;
     }
 
-    const subject = morningBriefSubject(tq.list, taskDigest.count, org);
+    const subject = morningBriefSubject(tq.list, taskDigest.count, org, 0, readoutsY.length);
     const payload = { recipientUserId: u.id, email: u.email, subject,
-                      threads: tq.list.length, tasks: taskDigest.count, meetings: meetingsToday.length, count: tq.list.length + taskDigest.count };
+                      threads: tq.list.length, tasks: taskDigest.count, meetings: meetingsToday.length, readouts: readoutsY.length, count: tq.list.length + taskDigest.count };
     if (!send) { out.sent.push(payload); continue; }
 
     // Reserve only the ledgers whose section this brief actually carries. A
     // section whose day is already reserved is DROPPED from the body, not
     // re-sent — so a second tick can never repeat a line the user has read.
     let threads = tq.list, more = tq.more, tasks = taskDigest;
-    if (threads.length && !(await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen }))) { threads = []; more = 0; }
+    if ((threads.length || readoutsY.length) && !(await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads.length ? threads[0].daysOpen : 0, readouts: readoutsY.length }))) { threads = []; more = 0; readoutsY = []; }
     let meetings = meetingsToday;
     if ((tasks.count || meetings.length) && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length, meetings: meetings.length }))) { tasks = { rows: [], overdue: [], dueToday: [], count: 0 }; meetings = []; }
-    if (threads.length === 0 && tasks.count === 0 && meetings.length === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+    if (threads.length === 0 && tasks.count === 0 && meetings.length === 0 && readoutsY.length === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
 
-    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today, meetings,
+    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today, meetings, readouts: readoutsY,
                                           team: isAdmin && multiOfficer ? teamRows : null });
-    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org, meetings.length), body)) { out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count, meetings: meetings.length }); if (meetings.length) briefCarriedMeetings.add(u.id); }
+    if (await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org, meetings.length, readoutsY.length), body)) { out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count, meetings: meetings.length }); if (meetings.length) briefCarriedMeetings.add(u.id); }
     else out.skipped.push({ recipientUserId: u.id, reason: "provider_refused" });
   }
   // FIX-12 Part 7a: the opt-in meetings email rides the same morning tick.
@@ -9288,6 +9349,8 @@ async function syncMailboxRun(conn, userId, orgId, providerKey) {
       // drift, LYBUNT, SYBUNT or the stage, and there is no code below that
       // could: the only write is to `interactions` and to an open thread step.
       await closeThreadStepForContact(orgId, donorId, decision.date, intId).catch(() => {});
+      // LIVE-1 — the after-change step, once per sync for everyone it logged.
+      AFTER.afterChangeSoon(orgId, [donorId], { door: "mail_calendar_sync", recalc: false });
     }
 
     // GRANTS-1 · A MESSAGE TO OR FROM A FUNDER CONTACT ALSO LANDS ON THE
@@ -10070,7 +10133,7 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
   if (!giftId && (paid || level.kind === "ticket")) {
     // A ticket is always money (it cannot be pledged); a sponsorship may be.
     const written = await recordGift({
-      orgId, donorId, amount: split.totalCents / 100, date: day, type: "cash",
+      orgId, donorId, amount: split.totalCents / 100, date: day, type: "cash", door: "event_checkin",
       campaign: event.name, notes: `${split.qty} × ${level.name}, ${event.name}`,
       paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
       quidProQuoValue: split.fmvCents / 100,
@@ -11631,6 +11694,9 @@ require("./routes/profileStatus").mount({
 });
 require("./routes/homeCalls").mount({
   actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, uuid, wrap,
+});
+require("./routes/readouts").mount({
+  actor, checkWriteAccess, orgToday, orgTz, query, queueThankYouDraft, requireAuth, run, testMode, uuid, wrap,
 });
 require("./routes/surveys").mount({
   actor, checkWriteAccess, donateLimiter, orgToday, orgTz, query, requireAuth, resolveOrgBrandTheme, run, uuid, wrap,

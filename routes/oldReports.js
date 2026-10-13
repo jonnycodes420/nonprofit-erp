@@ -169,6 +169,10 @@ app.post("/old-reports/batches/:id/files", requireAuth, checkWriteAccess, wrap(a
     }
   }
   const sum = totals ? totals.cents : 0;
+  // LIVE-1 — the after-change step, with nobody: an old report's totals are
+  // the organisation's history and never a person's (REPORTS-5), so this door
+  // touches no one. It still calls the step, so the door map has no gaps.
+  await require("../afterChange").afterChange(orgId, [], { door: "old_reports_import", history: true });
   res.status(201).json({
     sheetId, fileName: file.fileName, kept: true, scanned: !!r.scanned,
     totals: totals ? { count: totals.rows.length, cents: sum, amount: (sum / 100).toFixed(2), fileTotal: totals.fileTotal,

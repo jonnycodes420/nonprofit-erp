@@ -505,6 +505,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
   const lines = await query(`SELECT * FROM qbo_read_lines WHERE org_id=? AND run_id=? AND bucket IN ('gift','ambiguous','unmatched','refund','removed') ORDER BY txn_date, line_key`, [orgId, runId]);
   const res = { recorded: 0, cents: 0, waiting: 0, created: 0, refunded: 0, removed: 0, already: 0 };
   const touched = new Set();
+  const newGiftIds = [];   // LIVE-1: what the readout is about
   const created = new Map();
   for (const l of lines) {
     if (l.bucket === "refund" || l.bucket === "removed") {
@@ -562,6 +563,7 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
         // journey, like any other. A year of history read on the first day
         // opens no year of drafts and starts nothing (FIX-36, historyGifts.js).
         history: true, today,
+        door: "qbo_read", afterChange: false,   // LIVE-1: one step for the whole read, below
       });
     } catch (e) {
       await run(`DELETE FROM qbo_read_gifts WHERE org_id=? AND line_key=? AND gift_id IS NULL`, [orgId, l.line_key]);
@@ -574,12 +576,22 @@ async function saveRun({ orgId, runId, picks = {}, who, today, deps }) {
     await run(`UPDATE qbo_read_gifts SET gift_id=?, updated_at=NOW() WHERE org_id=? AND line_key=?`, [w.gift.id, orgId, l.line_key]);
     await run(`UPDATE qbo_read_lines SET gift_id=?, donor_id=? WHERE id=? AND org_id=?`, [w.gift.id, donorId, l.id, orgId]);
     touched.add(donorId);
+    newGiftIds.push(w.gift.id);
     res.recorded++; res.cents += Number(l.cents);
   }
   await run(`UPDATE imports SET gifts_created=?, donors_created=?, dollars_created=?, rows_in=?, summary_json=?::jsonb WHERE id=? AND org_id=?`,
     [res.recorded, res.created, res.cents / 100, lines.length, JSON.stringify({ qboReadRun: runId, ...res }), importId, orgId]);
   await run(`UPDATE qbo_read_runs SET status='saved', saved_at=NOW(), import_id=? WHERE id=? AND org_id=?`, [importId, runId, orgId]);
-  for (const d of touched) await recalcDonorSummary(d, orgId).catch(() => {});
+  // LIVE-1 · the one after-change step (it recomputes the totals in one
+  // statement; this was a loop of one recompute per person), then the readout.
+  const AFTER = require("./afterChange");
+  const ac = await AFTER.afterChange(orgId, [...touched], { door: "qbo_read", history: true, runTag: importId });
+  if (newGiftIds.length) {
+    await require("./readout").writeReadout(orgId, { sourceKind: "qbo", sourceId: importId, sourceName: "QuickBooks",
+      giftIds: newGiftIds, donorIds: [...touched], crossings: ac.crossings, becameLate: ac.becameLate, today })
+      .catch(e => console.error("[readout] qbo:", e.message));
+  }
+  void recalcDonorSummary;
   const money = c => "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const parts = [`${res.recorded} ${res.recorded === 1 ? "gift" : "gifts"} saved (${money(res.cents)})`];
   if (res.created) parts.push(`${res.created} ${res.created === 1 ? "person" : "people"} created`);

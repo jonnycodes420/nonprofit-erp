@@ -6729,6 +6729,115 @@ async function runSchemaInit(pool) {
   // fewer than two gifts. The closeness word reads it, so a once-a-year donor
   // who gave on time is On track, never Cooling.
   await pool.query(`ALTER TABLE donor_scores ADD COLUMN IF NOT EXISTS pattern TEXT`);
+
+  // ── LIVE-1 · EVERY DOOR FEEDS THE MACHINE ─────────────────────────────────
+  // donor_rhythm: what the one after-change step (afterChange.js) computed for
+  // a person the last time any door touched them. Drift still decides "late"
+  // (drift.js); this row remembers the answer so a readout can say who BECAME
+  // late, which a read-time computation cannot.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_rhythm (
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      rhythm TEXT NOT NULL DEFAULT 'none',
+      cadence_days INTEGER,
+      expected_next TEXT,
+      drift_state TEXT,
+      state_changed_at TIMESTAMPTZ DEFAULT NOW(),
+      giving_this_year NUMERIC NOT NULL DEFAULT 0,
+      giving_last_year NUMERIC NOT NULL DEFAULT 0,
+      largest_gift NUMERIC NOT NULL DEFAULT 0,
+      last_door TEXT,
+      computed_for TEXT,
+      computed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      PRIMARY KEY (org_id, donor_id)
+    )`);
+  // Someone the after-change step saw cross into a group by rule.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS group_crossings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      group_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      door TEXT,
+      crossed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_group_crossings_org ON group_crossings (org_id, crossed_at DESC)`);
+  // A readout: "what this told us", written when an import, a giving-source
+  // read or a QuickBooks read finishes. `lines` holds each line's kind, count,
+  // the donor and gift ids behind it, its action and its Why.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS readouts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      source_kind TEXT NOT NULL,
+      source_id TEXT,
+      title TEXT NOT NULL,
+      headline TEXT NOT NULL,
+      lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+      for_date TEXT NOT NULL,
+      is_example BOOLEAN NOT NULL DEFAULT FALSE,
+      removed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_readouts_org ON readouts (org_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_readouts_source ON readouts (org_id, source_kind, source_id)`);
+  // What staff did with a line: dismissed, restored (the kind put back), or
+  // acted (a task, a draft, a group opened). The learning reads these.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS readout_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      readout_id TEXT,
+      line_kind TEXT NOT NULL,
+      event TEXT NOT NULL,
+      action_kind TEXT,
+      donor_id TEXT,
+      made_id TEXT,
+      acted_on TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      CONSTRAINT readout_events_event CHECK (event IN ('dismissed','restored','acted'))
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_readout_events_org ON readout_events (org_id, line_kind, created_at DESC)`);
+  // Files map themselves: a file's column answers saved against its header
+  // shape, and value answers ("CHK" is a check) saved against the field.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_shape_mappings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      shape_key TEXT NOT NULL,
+      headers JSONB NOT NULL,
+      mapping JSONB NOT NULL,
+      times_used INTEGER NOT NULL DEFAULT 1,
+      is_example BOOLEAN NOT NULL DEFAULT FALSE,
+      last_used_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      UNIQUE (org_id, shape_key)
+    )`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS import_value_mappings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      field TEXT NOT NULL,
+      raw_norm TEXT NOT NULL,
+      raw TEXT NOT NULL,
+      value TEXT NOT NULL,
+      times_used INTEGER NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      UNIQUE (org_id, field, raw_norm)
+    )`);
   // APPEAL-WHY: the campaign a campaign is compared with, when the user chose one.
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS compare_campaign_id TEXT`);
 
@@ -6918,6 +7027,7 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS ever_enabled BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`UPDATE cultivation_templates SET ever_enabled = true WHERE journey_enabled = true AND ever_enabled = false`);
   await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS trigger_event TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS started_import_id TEXT`);   // LIVE-1: the import whose gift started it
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_event_once
                     ON cultivation_plans (org_id, template_id, donor_id, trigger_event) WHERE trigger_event IS NOT NULL`);
   // JOURNEYS-3 · several journeys at once. `exclusive` marks the journeys a

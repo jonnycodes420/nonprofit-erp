@@ -3728,6 +3728,7 @@ async function main() {
   await require("./seed/journeys4-demo").seedJourneys4(q, ORG, { TODAY });   // JOURNEYS-4: a recent win and a recent no-show, in two journeys
   await require("./seed/prospect1-prospects").checkProspect1(q, ORG);   // PROSPECT-1: the words are the ones promised
   await require("./seed/prospect1-prospects").checkKnowsBest(q, ORG);   // FIX-22: a name under who knows them best
+  await require("./seed/live1-demo").seedLive1(q, ORG, { TODAY });   // LIVE-1: an example readout and a learned file mapping
 
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took

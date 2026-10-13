@@ -45,8 +45,9 @@ Every future build is checked against this (WHY-1, `docs/decisions/why.md`).
 - **The actor on every write.** Every insert into an actor table stamps `created_by` /
   `created_by_name`: a user id, or a `system:<path>` identity. Never null on a new write.
 - **One gift path.** A gift is written by `recordGift` (server.js). The bulk writers that
-  predate it (the two import routes, sample data, one webhook branch) are the only
-  exceptions. Add no new ones.
+  predate it (the two import routes for gifts older than 30 days, sample data, one webhook
+  branch) are the only exceptions. Add no new ones. After any write to a person, call the
+  one after-change step (`afterChange.js`, LIVE-1).
 - **One audit write.** Every change is recorded by `middleware/auditTrail.js`, mounted above
   every router. A route never writes an audit row; it may improve the one being written
   (`req.audit.*`). Audit rows are append-only to the application, enforced by a trigger. A new

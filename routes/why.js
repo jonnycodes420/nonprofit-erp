@@ -789,6 +789,65 @@ const NOT_YET = [
   [/\b(monthly|recurring)\b.*\b(drop|down|fell|fall|declin|lower|less)\w*|\bwhy\b.*\b(monthly|recurring) giving\b/i, "why monthly giving changed"],
 ];
 
+// ── LIVE-1 · ASK ABOUT WHAT AN IMPORT TOLD US ─────────────────────────────
+// Two questions, read from the readouts (readout.js) and never recomputed:
+// what a named month's (or the latest) import or read told us, and who came
+// back (lapsed donors who gave again) in a month. Each line's count is a
+// Figure whose source opens exactly that line's people.
+const RO_MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const RO_TELL = /\b(what|anything)\b.*\b(import|file|read|upload)\b.*\b(tell|told|show|say|said|find|found)\b|\bwhat changed\b/i;
+const RO_CAME_BACK = /\bwho\b.*\b(came back|come back|returned|gave again)\b/i;
+async function readoutAnswer(orgId, typed) {
+  const tell = RO_TELL.test(typed), back = RO_CAME_BACK.test(typed);
+  if (!tell && !back) return null;
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const mi = RO_MONTHS.findIndex(m => new RegExp(`\\b${m}\\b`, "i").test(typed));
+  const thisMonth = /\bthis month\b/i.test(typed) || (back && mi < 0);
+  let yr = Number(today.slice(0, 4)), mo = mi >= 0 ? mi + 1 : Number(today.slice(5, 7));
+  if (mi >= 0 && mo > Number(today.slice(5, 7))) yr -= 1;
+  const from = `${yr}-${String(mo).padStart(2, "0")}-01`, to = orgTime.addDays(`${mo === 12 ? yr + 1 : yr}-${String(mo === 12 ? 1 : mo + 1).padStart(2, "0")}-01`, -1);
+  const rows = (mi >= 0 || thisMonth)
+    ? await query(`SELECT * FROM readouts WHERE org_id=? AND removed_at IS NULL AND for_date >= ? AND for_date <= ? ORDER BY created_at DESC`, [orgId, from, to])
+    : await query(`SELECT * FROM readouts WHERE org_id=? AND removed_at IS NULL ORDER BY created_at DESC LIMIT 1`, [orgId]);
+  const RO = require("../readout");
+  const monthWord = RO_MONTHS[mo - 1].charAt(0).toUpperCase() + RO_MONTHS[mo - 1].slice(1);
+  const lineFig = (r, l) => ({ value: l.count, kind: "count", label: l.sentence, definition: l.why,
+                               source: { key: "readout-line", params: { readout: r.id, kind: l.kind } } });
+  const steps = [{ kind: "open", label: "Open What changed", href: "/app/agent?view=changed" }];
+  if (back) {
+    const lines = [];
+    for (const r of rows) for (const l of (typeof r.lines === "string" ? JSON.parse(r.lines) : r.lines || []))
+      if (l.kind === "lapsed_returned" && l.count > 0) lines.push({ r, l });
+    if (!lines.length) return { answered: true, kind: "answer", sentence: `No readout in ${monthWord} found a lapsed donor who came back.`,
+      sentenceParts: [`No readout in ${monthWord} found a lapsed donor who came back.`], figures: {}, table: null, people: null, steps,
+      counted: "Read from the readouts written after each import and read. Steward wrote nothing." };
+    const seen = new Map();
+    for (const { l } of lines) for (const x of l.rows || []) if (!seen.has(x.donorId)) seen.set(x.donorId, x);
+    const names = Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, [...seen.keys()]])).map(d => [d.id, d.name]));
+    const people = [...seen.values()].filter(x => names[x.donorId]).map(x => ({ donorId: x.donorId, name: names[x.donorId], cents: x.cents || 0 }));
+    const n = people.length;
+    return { answered: true, kind: "answer",
+      sentence: `${n} lapsed ${n === 1 ? "donor" : "donors"} came back in ${monthWord}, from ${lines.length === 1 ? lines[0].r.title.replace(/^Your /, "your ") : `${lines.length} readouts`}.`,
+      sentenceParts: [{ fig: "value" }, ` lapsed ${n === 1 ? "donor" : "donors"} came back in ${monthWord}.`],
+      figures: { value: { ...lineFig(lines[0].r, lines[0].l), value: n } },
+      table: { dimension: "Readout", valueLabel: "People", compareLabel: null,
+               rows: lines.map(({ r, l }, i) => ({ label: r.title, value: lineFig(r, l), compare: null, i })) },
+      people, peopleCount: n, peopleSource: lines.length === 1 ? lineFig(lines[0].r, lines[0].l).source : null,
+      steps: [{ kind: "plan", label: "Plan thank-you calls", items: people.slice(0, 5).map(p => ({ donorId: p.donorId, name: p.name, label: "Thank" })), dueIn: 1 }, ...steps],
+      counted: "Each person is on a readout's \"came back\" line: a gift after more than 12 months with no gift. Steward wrote nothing." };
+  }
+  if (!rows.length) return { answered: true, kind: "answer",
+    sentence: mi >= 0 ? `Steward has no readout from ${monthWord}. A readout is written when an import or a read finishes.` : "Steward has no readout yet. One is written when an import or a read finishes.",
+    sentenceParts: [mi >= 0 ? `Steward has no readout from ${monthWord}.` : "Steward has no readout yet."], figures: {}, table: null, people: null, steps,
+    counted: "Read from the readouts. Steward wrote nothing." };
+  const r = rows[0];
+  const shaped = await RO.shapeReadout(orgId, r);
+  return { answered: true, kind: "answer", sentence: shaped.headline + ".", sentenceParts: [shaped.headline + "."], figures: {},
+    table: { dimension: r.title, valueLabel: "People", compareLabel: null,
+             rows: shaped.lines.filter(l => l.kind !== "data_problems").map((l, i) => ({ label: l.sentence, value: lineFig(r, l), compare: null, i })) },
+    people: null, steps, counted: `Read from the readout written on ${r.for_date}. Every count opens its rows. Steward wrote nothing.` };
+}
+
 app.post("/ask", whyAskLimiter, requireAuth, wrap((req, res) => askHandler(req, res)));
 app.post("/ask/preview", whyAskLimiter, requireAuth, wrap((req, res) => ASK_PREVIEW.run(true, () => askHandler(req, res))));
 async function askHandler(req, res) {
@@ -821,6 +880,10 @@ async function askHandler(req, res) {
   if (!raw && typed && !body.plan) {
     const nope = NOT_YET.find(([re]) => re.test(typed));
     if (nope) return askRefuse(req, res, typed, nope[1], C);
+    // LIVE-1 — "what did the September import tell us?", "who came back this
+    // month?": answered from the readouts and the rows behind them.
+    const ro = await readoutAnswer(orgId, typed);
+    if (ro) { await logQuestion(orgId, typed, "readout", ro.answered); return res.json(ro); }
     let intent = G.personIntent(typed);
     const follow = G.isNameFollowUp(typed);
     // "the top five", "what should I ask them for": the last answer's people.
