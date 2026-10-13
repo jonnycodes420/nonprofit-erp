@@ -2748,6 +2748,11 @@ app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, r
   // org (the connection row was missing from this list since INT-2).
   for (const t of ["gift_bookkeeping_syncs", "bookkeeping_customers", "bookkeeping_deposits", "bookkeeping_connections"])
     await run(`DELETE FROM ${t} WHERE org_id=?`, [orgId]).catch(() => {});
+  // SCALE-2: the stored answers (Home's figures, each person's Drift answer)
+  // and the change rows that kept them honest go with the org.
+  await run("DELETE FROM donor_drift WHERE org_id=?", [orgId]).catch(() => {});
+  await run("DELETE FROM org_summary WHERE org_key=?", [orgId]).catch(() => {});
+  await run("DELETE FROM org_changes WHERE org_key=?", [orgId]).catch(() => {});
   await run("DELETE FROM orgs WHERE id=?", [orgId]);
   res.json({ deleted: true });
 }));
