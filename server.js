@@ -1255,7 +1255,7 @@ async function recordGift(o) {
           await onPledgeSettled(orgId, inst.pledge_id).catch(e => console.error("[pledge] settle:", e.message));
         }
       }
-    } catch (e) { console.error("[pledge] instalment auto-apply:", e.message); }
+    } catch (e) { console.error("[pledge] installment auto-apply:", e.message); }
   } else if (o.pledgeId) {
     await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
   }
@@ -1499,8 +1499,8 @@ async function checkGiftExtras(orgId, hardDonorId, giftCents, raw = {}) {
   if (trib) {
     const type = GC.TRIBUTE_TYPES.includes(trib.type) ? trib.type : GC.normaliseTributeType(trib.type);
     const name = String(trib.name || "").trim().slice(0, 200);
-    if (!type) errors.push("a tribute is in honour of someone or in memory of someone");
-    else if (!trib.donorId && !name) errors.push("a tribute names the person it honours");
+    if (!type) errors.push("a tribute is in honor of someone or in memory of someone");
+    else if (!trib.donorId && !name) errors.push("a tribute names the person it honors");
     else out.tribute = {
       type, donorId: trib.donorId ? String(trib.donorId) : null, name,
       notifyName: String(trib.notifyName || "").trim().slice(0, 200) || null,
@@ -2257,7 +2257,7 @@ const SKIP_LISTED_REASONS = {
   no_external_id: "The provider sent no id for this row, so Steward could not be sure it would not be read twice.",
   bad_date: "The date on this row could not be read, and Steward never guesses a date.",
   bad_amount: "The amount on this row could not be read as money.",
-  bad_status: "The provider gave this row a status Steward does not recognise.",
+  bad_status: "The provider gave this row a status Steward does not recognize.",
   fee_exceeds_gross: "The fee on this row is larger than the gift, which means the provider's figures are the wrong way round.",
 };
 const SKIPPED_KEPT = 100;
@@ -2686,7 +2686,16 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
   const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
     : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
-  const [fund] = fundId ? await query("SELECT name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  const [fund] = fundId ? await query("SELECT name, public_name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  // POLISH-2: a donor reads the fund's public name, or "where it's needed
+  // most" for the org's general fund. Never the bookkeeping name of that one.
+  const fundPublic = fund && String(fund.public_name || "").trim() || null;
+  // The general fund is the org's oldest unrestricted fund, the same probe
+  // ensureOrgLedger reads, but READ ONLY: drafting a letter never heals a
+  // ledger or creates a fund (connect2-sources caught the healing version).
+  const [gen] = fund && !fundPublic
+    ? await query("SELECT id FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]) : [];
+  const generalFund = !!gen && gen.id === fundId;
   const draftMod = await import("./shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
   // ── FIX-6 follow-up 8 · THE FACTS THE DRAFT MAY REST ON ─────────────────
@@ -2716,9 +2725,9 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     campaignName: (thisGift && thisGift.campaign) || null,
   };
   const draft = reason === "pledge_completed"
-    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice, ...facts });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she
@@ -4461,7 +4470,7 @@ async function bulkSendAddressGate(orgId) {
   return {
     ok: false,
     reason: "no_mailing_address",
-    message: "Every bulk email has to carry your organisation's mailing address — it is the law for " +
+    message: "Every bulk email has to carry your organization's mailing address — it is the law for " +
              "commercial email, and Gmail and Yahoo both require it. Add it in Settings → Tax Receipts " +
              "and it appears in every footer from then on.",
   };
@@ -4756,7 +4765,7 @@ async function smartAmountsFor(spec, { orgId, givingPageId, personalToken }) {
           AND date >= (CURRENT_DATE - INTERVAL '24 months')::text
           AND amount > 0
         ORDER BY date DESC LIMIT 2000`, [orgId]);
-    if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organisation"; }
+    if (orgRows.length >= S.MIN_SAMPLE) { cents = orgRows.map(r => Number(r.cents)); scope = "this organization"; }
   }
   const dist = S.ladderFromDistribution(cents);
   if (!dist.amountsCents) return null;
@@ -5343,7 +5352,7 @@ async function coverFeePayload(org) {
   return {
     feeRate: { pct: rates.card.pct, flatCents: rates.card.flatCents, capCents: rates.card.capCents },
     feeRateSentence: R.rateSentence(rates.card),
-    coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organisation.`,
+    coverFeeDefinition: `Adds the card processing fee (${R.rateSentence(rates.card)}) so the full amount reaches the organization.`,
   };
 }
 
@@ -6580,7 +6589,7 @@ async function processSequences() {
         // GOOD. Jonathan writes and sends onboarding himself. An enrolment that
         // survived from before is stopped here, with its reason, and sends nothing.
         if (enr.seq_trigger === "onboarding") {
-          console.log(`[mail-policy] stopped onboarding enrolment ${enr.id} (org ${enr.org_id}): the onboarding sequence is off for good (MAIL-1)`);
+          console.log(`[mail-policy] stopped onboarding enrollment ${enr.id} (org ${enr.org_id}): the onboarding sequence is off for good (MAIL-1)`);
           await run(`UPDATE sequence_enrollments SET status='stopped', last_error=? WHERE id=?`,
             ["Not sent: the onboarding sequence is off for good", enr.id]);
           continue;

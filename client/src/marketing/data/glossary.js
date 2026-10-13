@@ -377,7 +377,7 @@ export const GLOSSARY = [
       "Keep pledged money and received money apart in every report. A campaign is not funded until the pledges are paid. How your books count an unconditional pledge is an accounting question, so check with your accountant.",
     ],
     steward: [
-      "In Steward, a pledge lives on the donor's Gifts & Pledges tab with its amount, due date and campaign. When a payment comes in, you pick the pledge it fulfils. A campaign shows raised and pledged as separate figures and never adds them together.",
+      "In Steward, a pledge lives on the donor's Gifts & Pledges tab with its amount, due date and campaign. When a payment comes in, you pick the pledge it fulfills. A campaign shows raised and pledged as separate figures and never adds them together.",
     ],
     related: ["matching-gift", "capital-campaign", "recurring-gift"],
     see: ["/tools/thermometer", "/articles/january-week"],
@@ -508,7 +508,7 @@ export const GLOSSARY = [
       "For a small organization, the risk is that the campaign pulls every donor's attention away from the annual fund. Plan for both: ask campaign donors to keep their regular gift, and keep thanking everyone who gives to either.",
     ],
     steward: [
-      "A campaign in Fundraising has a goal amount, a start date and a deadline, and its public page shows a goal bar that says what it counts. Pledges sit on each donor's Gifts & Pledges tab, and a gift can be marked as a payment on the pledge it fulfils.",
+      "A campaign in Fundraising has a goal amount, a start date and a deadline, and its public page shows a goal bar that says what it counts. Pledges sit on each donor's Gifts & Pledges tab, and a gift can be marked as a payment on the pledge it fulfills.",
       "Only one open proposal per fund is allowed per household, so a couple is not asked twice for the same campaign.",
     ],
     related: ["pledge", "case-for-support", "gift-range-chart"],

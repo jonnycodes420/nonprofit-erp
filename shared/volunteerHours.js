@@ -76,7 +76,7 @@ export function shiftKey({ email, name, date, hundredths, role }) {
 const norm = h => String(h || "").trim().toLowerCase().replace(/[_\s]+/g, " ");
 export const HOURS_PRESETS = {
   wranglr: {
-    label: "Wranglr",
+    label: "A shift-scheduling export",
     confidence: "documented-not-walked",
     columns: {
       name: ["volunteer name", "volunteer", "name", "full name"],

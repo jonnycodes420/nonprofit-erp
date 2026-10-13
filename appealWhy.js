@@ -99,7 +99,7 @@ async function parts(orgId, campaignId, compareId) {
   const more = both.filter(x => x.cents > L.get(x.donorId).cents)
     .map(x => person(x, x.cents - L.get(x.donorId).cents, `${fmt(x.cents)} this time, ${fmt(L.get(x.donorId).cents)} last time`));
   const newcomers = [...T.values()].filter(x => !L.has(x.donorId) && !earlier.has(x.donorId))
-    .map(x => person(x, x.cents, "Their first gift to the organisation"));
+    .map(x => person(x, x.cents, "Their first gift to the organization"));
   const returning = both.map(x => person(x, x.cents, `Gave last time too`));
   return {
     c, p,

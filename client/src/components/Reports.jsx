@@ -39,8 +39,8 @@ import { AskBox } from "./AskPanel";
 const REPORT_DEFS = [
   { key: "giving-summary", label: "Giving summary" },
   { key: "by-group", label: "Gifts by fund" },
-  { key: "lybunt", label: "LYBUNT" },
-  { key: "sybunt", label: "SYBUNT" },
+  { key: "lybunt", label: "Gave last year, not this year" },
+  { key: "sybunt", label: "Gave before, not this year" },
   { key: "retention", label: "Retention" },
   { key: "top-donors", label: "Top donors" },
   // BUILD-17 — the development reporting cadence.
@@ -501,7 +501,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
       const yl = yearMode === "fiscal" ? `FY${d.year}` : d.year;
       const priorLabel = yearMode === "fiscal" ? `FY${d.year - 1}` : String(d.year - 1);
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
-      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "LYBUNT" : "SYBUNT"} /> donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
+      narrative = <><strong><RF f={d.figures?.people} label={active === "lybunt" ? "Gave last year, not this year" : "Gave before, not this year"} /> donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <>: <strong><RF f={d.figures?.atStake} kind="money" label="Last year's giving at stake" /></strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
       table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
         { key: "name", label: "Donor", type: "text", person: true },
@@ -707,8 +707,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
     <div style={{ marginBottom: 14 }}>
       <StartHere dismissKey="reports_intro"
-        line="If you only ever open one report, make it LYBUNT: the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
-        actionLabel="Open LYBUNT" onAction={() => pick("lybunt")} />
+        line="If you only ever open one report, make it this one: the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
+        actionLabel="Open the list" onAction={() => pick("lybunt")} />
     </div>
 
     {/* PARITY-4: Show me: a plain question becomes a list. */}

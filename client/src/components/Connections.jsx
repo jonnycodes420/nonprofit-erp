@@ -577,7 +577,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate, onlyId
               textTransform: "uppercase", color: DOT[c.status] || T.ink3 }}>{(d.statuses?.[c.status]?.label) || c.status}</span>
             {!isReadOnly && isAdmin && c.connected && c.kind === "source" && (
               <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
-                <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>Sync log</button>
+                <button style={btn(false)} data-testid="connection-log" onClick={() => openLog(c)}>History</button>
                 <button style={btn(false)} disabled={busy === c.id} data-testid="connection-check"
                   onClick={() => check(c)}>{busy === c.id ? "Checking…" : "Check now"}</button>
               </span>)}
@@ -1129,13 +1129,13 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   if (inbound) {
     const on = !!(inbound.enabled && inbound.address);
     cards.push({ key: "bcc", section: "inbox", icon: "bcc", name: "BCC address",
-      line: on ? `BCC ${inbound.address} on an email and it is logged to the person it names.` : "One address for the organisation: BCC it on an email and it is logged to the person it names.",
+      line: on ? `BCC ${inbound.address} on an email and it is logged to the person it names.` : "One address for the organization: BCC it on an email and it is logged to the person it names.",
       status: on ? "connected" : "not_connected",
       button: { kind: on ? "manage" : "connect", label: on ? "Manage" : "Connect", opens: true, onClick: () => toggle("bcc"), detail: () => bccPanel } });
   }
   // Books: the bookkeeper file needs nothing connected; it is always ready.
   cards.push({ key: "bookkeeper-file", section: "books", icon: "bookkeeperFile", name: "Bookkeeper file",
-    line: "A monthly file of every gift, by fund and payout, that foots to the cent. Nothing to connect.",
+    line: "A monthly file of every gift, by fund and payout, that adds up to the cent. Nothing to connect.",
     status: "ready", button: { kind: "manage", label: "Manage", onClick: () => onNavigate && onNavigate("finance", "close") } });
   // Build your own.
   if (isAdmin) {

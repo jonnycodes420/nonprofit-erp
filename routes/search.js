@@ -257,7 +257,7 @@ app.get("/search", requireAuth, wrap(async (req, res) => {
     const w = anyOf([dayOn(tzDay), !amt && !day ? { sql: `(im.name ILIKE ? ${E} OR im.source_filename ILIKE ? ${E})`, args: [p, p] } : null]);
     reads.imports = {
       sql: `SELECT im.id, im.name, im.source_filename, ${tzDay} AS day, im.rows_in, im.gifts_created, im.reversed_at
-         FROM imports im WHERE im.org_id = ? AND ${w.sql}
+         FROM imports im WHERE im.org_id = ? AND COALESCE(im.shape, '') <> 'source' AND ${w.sql}
         ORDER BY im.committed_at DESC, im.id LIMIT ${L}`, args: [orgId, ...w.args] };
   }
 

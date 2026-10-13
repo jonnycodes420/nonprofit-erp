@@ -33,6 +33,8 @@ import { askConfirm } from "./ConfirmDialog";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import { civilDays } from "../../../shared/firstThing.js";
+import { displayName } from "../../../shared/displayName.js";
 import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
@@ -45,6 +47,8 @@ import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
+// POLISH-2: how late a step is, said one way ("2 days late"), against the org's today.
+const lateWords=due=>{const n=civilDays(String(due||"").slice(0,10),orgTodayCivil());return n>0?`${n} day${n===1?"":"s"} late`:"Due today";};
 
 const WEALTH_SCORE_DEFINITION = null;
 const WEALTH_SCORE_SOURCE = null;
@@ -1948,7 +1952,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   rail's contact block, where somebody looks when they are
                   about to call. */}
               <span className="dph-name" data-testid="dp-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
-                fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{donor.name}</span>
+                fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{displayName(donor.name,{isOrg:donor.kind==="org"||donor.kind==="organization"})}</span>
               {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
                   it is brass (the overdue colour), never terracotta. */}
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.id==="lapsed"?T.gold100:stage.color+"22",color:stageTone(stage)}}>{stage.label}</span>
@@ -2020,7 +2024,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               to press. Emerald means "this is the button" and exactly one thing
               may mean that; the rest are outlines. */}
           <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-            Log a conversation
+            Log a call
           </button>
           {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
               because one open step per donor is the model and a second button
@@ -2773,9 +2777,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   <input list="gift-people" value={addGiftForm.scName||""} onChange={e=>setAddGiftForm(p=>({...p,scName:e.target.value}))} placeholder="Soft credit to (a person on file)" style={inp} data-testid="gift-sc-name"/>
                   <input value={addGiftForm.scAmount||""} onChange={e=>setAddGiftForm(p=>({...p,scAmount:e.target.value}))} placeholder="Soft credit amount (blank = whole gift)" type="number" style={inp}/>
                   <select value={addGiftForm.tribType||""} onChange={e=>setAddGiftForm(p=>({...p,tribType:e.target.value}))} style={inp} data-testid="gift-trib-type">
-                    <option value="">Not a tribute gift</option><option value="honor">In honour of</option><option value="memory">In memory of</option>
+                    <option value="">Not a tribute gift</option><option value="honor">In honor of</option><option value="memory">In memory of</option>
                   </select>
-                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honours" style={inp} data-testid="gift-trib-name"/>
+                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honors" style={inp} data-testid="gift-trib-name"/>
                   <input value={addGiftForm.tribNotify||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotify:e.target.value}))} placeholder="Tell (e.g. the Lee family)" style={inp}/>
                   <input value={addGiftForm.tribNotifyEmail||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotifyEmail:e.target.value}))} placeholder="Their email or leave blank" style={inp}/>
                   <input list="gift-people" value={addGiftForm.matchEmployer||""} onChange={e=>setAddGiftForm(p=>({...p,matchEmployer:e.target.value}))} placeholder="Employer that will match it" style={inp}/>
@@ -3368,13 +3372,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         })()}
                         {it.suggestedAsk&&<SuggestedAskLine ask={it.suggestedAsk} style={{marginBottom:4}}/>}
                         <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
-                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
+                          {/* POLISH-2: lateness is said once. A late step reads "2 days
+                              late", not that plus "day 4" plus "Overdue Oct 10". */}
+                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:(it.overdue&&/^(Overdue |\d+ days? late)/i.test(it.rank?.why||"")?null:it.rank?.why||null)}
                           {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
                           {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
-                          {" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
+                          {it.overdue?null:<>{" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}</>}
                           {" "}
                           <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
-                            {it.overdue?"Overdue":"Due"} {displayDateShort(it.nextStep.due,new Date())}
+                            {it.overdue?lateWords(it.nextStep.due):<>Due {displayDateShort(it.nextStep.due,new Date())}</>}
                           </span>
                         </div>
                         {/* FIX-33 · a booked meeting IS the next step, with its two moves;
@@ -3534,7 +3540,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </div>
               ))}
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginTop:9}}>
-                <div style={{fontSize:11.5,color:RAIL.dim,lineHeight:1.5}}>{journey.templateName} · started {journey.appliedOn}</div>
+                <div style={{fontSize:11.5,color:RAIL.dim,lineHeight:1.5}}>{journey.templateName} · started {displayDate(journey.appliedOn)}</div>
                 {!isReadOnly&&<span style={{position:"relative",flexShrink:0}}>
                   <button type="button" data-testid="dp-journey-more" aria-haspopup="menu" aria-expanded={journeyMenu} aria-label="Journey options"
                     onClick={()=>setJourneyMenu(o=>!o)}

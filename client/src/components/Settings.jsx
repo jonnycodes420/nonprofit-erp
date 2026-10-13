@@ -211,7 +211,7 @@ function FormEmbedBlock({pageId,status}){
 // them is the same one the server uses. Saving any of these gives the page the
 // three-step form, and the line under the switches says so.
 const FORM_OPTION_ROWS=[
-  ["showTribute","Let donors dedicate a gift","An in honour of / in memory of choice beside the amount."],
+  ["showTribute","Let donors dedicate a gift","An in honor of / in memory of choice beside the amount."],
   ["showEmployerMatch","Ask where the donor works","For employers who match their staff's giving."],
   ["exitNudge","Remind a donor who starts to leave","Once per visit, on a computer, a short note with the amount they chose and a Finish my gift button."],
 ];
@@ -1183,7 +1183,7 @@ function MatchingEmployersCard({isAdmin,isReadOnly}){
       <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,marginTop:12}}>
         Steward does not buy a matching-gift database, so nothing here is guessed: it is the
         list you type. A donor also sees the employer they named on their own record, and
-        Steward opens an expected matching gift when it recognises one.
+        Steward opens an expected matching gift when it recognizes one.
       </div>
     </div>
   );
@@ -1838,9 +1838,27 @@ function DpaDownload(){
   };
   return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
     <SectionLabel>Data processing agreement</SectionLabel>
-    <div style={{fontSize:13,color:T.ink3,marginBottom:10}}>The terms under which Steward processes your organisation's data, and the list of subprocessors.</div>
+    <div style={{fontSize:13,color:T.ink3,marginBottom:10}}>The terms under which Steward processes your organization's data, and the list of subprocessors.</div>
     <button onClick={get} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:700,color:T.ink,cursor:"pointer"}}>Download the DPA</button>
   </div>;
+}
+
+// POLISH-2 Part 6: the Imports tab leads with the one thing it is for. The
+// button opens the same import wizard as Donors, "↑ Import & tools".
+function BringInAFile({onNavigate,isReadOnly}){
+  return (
+    <div data-testid="imports-lead" style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 28px",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+      <div style={{flex:"1 1 280px",fontSize:13,color:T.ink3,lineHeight:1.6}}>
+        A spreadsheet of donors, a gift export, or your old system's file. Steward shows you what it read before anything is saved.
+      </div>
+      <button data-testid="imports-bring-file" disabled={isReadOnly||!onNavigate}
+        onClick={()=>onNavigate&&onNavigate("donors",{openImport:true})}
+        style={{background:T.green,border:"none",borderRadius:8,padding:"10px 18px",color:T.white,fontSize:13,fontWeight:700,
+                cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+        Bring in a file
+      </button>
+    </div>
+  );
 }
 
 function ImportsHistory(){
@@ -1866,7 +1884,7 @@ function ImportsHistory(){
       <SectionLabel>Imports</SectionLabel>
       {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
-        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback, undoing an import is not part of this release.
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. Undo removes everything this import added.
       </div>
       {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
       {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
@@ -2180,7 +2198,7 @@ const UPLOAD_ORDER=["cashapp","venmo"];
 const STATEMENT_LINE="Once a month, drop the statement in.";
 // The bank is not a provider and never will be one, so it is a tile in its own
 // right rather than a row in the registry.
-const BANK_TILE={key:"bank",label:"My bank (Zelle, cheques, anything else)",mode:"file"};
+const BANK_TILE={key:"bank",label:"My bank (Zelle, checks, anything else)",mode:"file"};
 
 // CONNECT-2 · WHICH SQUARE LOCATIONS TAKE GIFTS. Square cannot tell a
 // donation from a lesson fee, so nothing comes in until these are chosen.
@@ -3783,7 +3801,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 
-      {section==="imports"&&<><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
+      {section==="imports"&&<><BringInAFile onNavigate={onNavigate} isReadOnly={isReadOnly}/><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
 
       {/* ── Audit log ─────────────────────────────────────────────────────── */}
       {section==="audit"&&(isAdmin
@@ -3861,7 +3879,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"20px 24px"}}>
           <SectionLabel>Reading and drafting</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6,maxWidth:560}}>
-            Steward&apos;s AI features send what each one needs to Anthropic: cheque photographs to suggest an
+            Steward&apos;s AI features send what each one needs to Anthropic: check photographs to suggest an
             amount, and your records for drafts, briefs, scores, board summaries and Ask Steward, and your grant library pieces for a grant section draft. Voice memos
             are transcribed by OpenAI, which receives the recording only. Nothing is entered or sent until
             you confirm it. This one switch covers all of them.
@@ -3877,8 +3895,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </button>
             <span style={{fontSize:12.5,color:T.ink3}}>
               {aiStatus.enabled
-                ? "Turn this off and Steward sends nothing to Anthropic or OpenAI. Cheque photographs still attach to each line."
-                : "AI is turned off for your organization. Cheque photographs still attach to each line, and nothing is sent to Anthropic or OpenAI."}
+                ? "Turn this off and Steward sends nothing to Anthropic or OpenAI. Check photographs still attach to each line."
+                : "AI is turned off for your organization. Check photographs still attach to each line, and nothing is sent to Anthropic or OpenAI."}
             </span>
           </div>
           {!isAdmin&&(

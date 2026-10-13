@@ -690,7 +690,7 @@ const AGENT_EXECUTORS = {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
     const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [String(step.ownerUserId || ""), ctx.orgId]);
-    if (!u) return { failed: "that colleague is not on this organisation's team" };
+    if (!u) return { failed: "that colleague is not on this organization's team" };
     const [was] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
     if (was.assigned_to === u.id) return { skipped: "already_there" };
     const r = await AC.call(ctx, "PATCH", "/donors/bulk-assign", { ids: [donor.id], assignedTo: u.id });
@@ -1172,7 +1172,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
   const thanks = purpose === "thank_you" || (!purpose && A.isThankYouInstruction(instructionText));
   const tpl = purpose === "funder_update" ? await agentTemplateWords(orgId, "grant_funder_update") : null;
   const [org] = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
-  const orgName = (org && org.name) || "the organisation";
+  const orgName = (org && org.name) || "the organization";
   // Money and days in the words a letter uses ("$4,722", "October 2, 2026"),
   // so a draft never says "4722 on 2026-10-02".
   const longDay = ymd => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || "")); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" }) : "never"; };
@@ -1184,7 +1184,7 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
     "Write one draft for each person listed, using the drafts tool. Nothing is sent: each draft waits for a person to read it.",
     "RULES, and they are not negotiable:",
     "- Use NO number that is not in that person's lines. Never state a rule about how giving works.",
-    "- Call each person what their line calls them. An organisation is a foundation, church or business.",
+    "- Call each person what their line calls them. An organization is a foundation, church or business.",
     `- Plain sentences. No markdown. No placeholders in brackets. Sign off as ${orgName}.`,
     "- Write money and dates as they are given (\"$4,722\", \"October 2, 2026\").",
     "- Never add up, average or compute an amount. Use only the amounts written in that person's lines.",
@@ -1192,8 +1192,8 @@ async function agentDraftInBatches({ A, V, words, client, orgId, userId, who, in
     ...(purpose === "membership_renewal" ? ["- Each draft invites the person to renew their membership: name their level and the date it ends, from their lines."] : []),
     ...(purpose === "auction_pay" ? ["- Each draft congratulates the person on what they won and asks them to pay for it: name each item and its winning bid from their lines. Say the payment link will follow from us; never invent one."] : []),
     ...(purpose === "funder_update" ? ["- Each draft is an update to a funder about the grant in their lines: what it is for and what is due next.",
-      ...(tpl ? [`- Start from the organisation's own funder update template, below, in its order and voice. Replace each bracketed part with words from the person's lines, or leave that sentence out. Never leave a bracket.`, "", "THE TEMPLATE:", tpl.text] : [])] : []),
-    `- Today is ${today} in this organisation's own calendar.`,
+      ...(tpl ? [`- Start from the organization's own funder update template, below, in its order and voice. Replace each bracketed part with words from the person's lines, or leave that sentence out. Never leave a bracket.`, "", "THE TEMPLATE:", tpl.text] : [])] : []),
+    `- Today is ${today} in this organization's own calendar.`,
   ].join("\n");
   const batches = A.draftBatches(people);
   const out = new Array(batches.length);
@@ -1335,9 +1335,9 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
       : "- NOTHING may be sent. `sends` must be 0. Drafts go in her queue.",
     "- Never plan anything that moves money: no gifts, refunds, charges, pledges, receipts or recurring changes.",
     "- Use NO number that is not in the rows below. Never state a rule about how giving works.",
-    "- Call each person what the row calls them. An organisation is a foundation, church or business, never a donor's word.",
+    "- Call each person what the row calls them. An organization is a foundation, church or business, never a donor's word.",
     "- Plain sentences. No markdown.",
-    `- Today is ${today} in this organisation's own calendar. A date you write is YYYY-MM-DD.`,
+    `- Today is ${today} in this organization's own calendar. A date you write is YYYY-MM-DD.`,
     "- A task's due date goes in `dueDays`: whole days from today (a week is 7). Leave `due` null.",
     "- When the rows include GIFTS and she asks for something per gift, return one step per gift, citing the gift id and the giver's id.",
     // AGENT-2: DO THE THING, OR SAY IT CANNOT BE DONE.
@@ -1716,7 +1716,7 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
         // 1 · a tool with no executor is refused. A money tool has no executor.
         if (!AGENT_RUNNABLE.includes(a.tool)) { declined++; withheldReasons.push(`no such tool: ${a.tool}`); outcome(a, A.OUTCOME_NOT_DONE, "Steward has no way to do that"); continue; }
         // 2 · a donor that is not this org's is nobody.
-        if (a.donorId && !byId.has(a.donorId)) { declined++; withheldReasons.push("names somebody not in this organisation"); outcome(a, A.OUTCOME_NOT_DONE, "that record is not in this organisation"); continue; }
+        if (a.donorId && !byId.has(a.donorId)) { declined++; withheldReasons.push("names somebody not in this organization"); outcome(a, A.OUTCOME_NOT_DONE, "that record is not in this organization"); continue; }
         if (a.donorId && !reachableIds.has(a.donorId)) { declined++; withheldReasons.push("deceased, do-not-contact or sample"); outcome(a, A.OUTCOME_NOT_DONE, "the record says not to contact them"); continue; }
         // 3 · A STEP THAT CANNOT CITE A ROW IS NOT TAKEN.
         const cite = A.citationProblems(a, { knownRowIds });
@@ -1857,10 +1857,10 @@ app.post("/help/ask", requireAuth, wrap(async (req, res) => {
   await logQuestion("help", question, found[0]?.slug || "not covered");
   const cite = found.map(a => ({ slug: a.slug, title: a.title, summary: a.summary }));
   if (!found.length) return res.json({ covered: false, answer: null, articles: [],
-    sentence: "The help centre does not cover that yet. Ask a person and we will answer " + REPLY_PROMISE() + "." });
+    sentence: "The help center does not cover that yet. Ask a person and we will answer " + REPLY_PROMISE() + "." });
   const gate = await aiGate(req.user.orgId);
   if (!gate.ok) return res.json({ covered: true, answer: null, articles: cite, aiOff: gate.reason === "ai_disabled",
-    sentence: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE + ". Here is what the help centre says." : "Here is what the help centre says." });
+    sentence: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE + ". Here is what the help center says." : "Here is what the help center says." });
   const PS = await agentPersonasMod();
   const prompt = HS.buildHelpPrompt(question, found, PS.HELP.systemPrompt);
   let answer = null;
@@ -1874,7 +1874,7 @@ app.post("/help/ask", requireAuth, wrap(async (req, res) => {
     answer = r.stop_reason && r.stop_reason !== "end_turn" ? null
       : (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || null;
   } catch (e) { console.error("[help] ask:", e.message); }
-  res.json({ covered: true, answer, articles: cite, sentence: answer ? null : "Here is what the help centre says." });
+  res.json({ covered: true, answer, articles: cite, sentence: answer ? null : "Here is what the help center says." });
 }));
 
 app.get("/help/settings", requireAuth, wrap(async (req, res) => {
@@ -1968,7 +1968,7 @@ app.post("/agent/preview", requireAuth, wrap(async (req, res) => {
   const text = String((req.body && req.body.text) || "").trim().slice(0, 2000);
   if (text.length < 4) return res.status(400).json({ error: "text_required", sentence: "Say what to plan." });
   const gate = await agentGate(req.user.orgId);
-  if (!gate.ok) return res.status(503).json({ error: gate.reason, sentence: "The Agent is not available for this organisation." });
+  if (!gate.ok) return res.status(503).json({ error: gate.reason, sentence: "The Agent is not available for this organization." });
   let built;
   try { built = await agentBuildPlan(req.user.orgId, text, { authorization: A.AUTH_DRAFT, userId: req.user.userId, dryRun: true }); }
   catch (e) {
@@ -2213,7 +2213,7 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
   // inside her org and leave it planned; only somebody who works there can
   // confirm it. BUILD-94's rule, carried over verbatim.
   if (req.user.isSuperAdmin) return res.status(403).json({ error: "turn_on_must_be_theirs",
-    sentence: "Turning this on has to be done by somebody at this organisation." });
+    sentence: "Turning this on has to be done by somebody at this organization." });
 
   // ONCE. The row moves out of 'planned' in the same statement that checks it,
   // so two presses cannot both run it and a gift cannot be recorded twice.
@@ -2444,7 +2444,7 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
       showcase = {
         orgName: "Harborlight Youth Collective",
         isDemoData: true,
-        why: "You have not imported anyone yet, so this is what the Agent would do on the demo organisation's real records — not yours, and not invented.",
+        why: "You have not imported anyone yet, so this is what the Agent would do on the demo organization's real records — not yours, and not invented.",
         instruction: "Thank everyone who gave in the last month, in my voice, and tell me who I should call.",
         people: demo.map(d => ({
           name: d.name,
@@ -2539,7 +2539,7 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
        FROM tribute_notices t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id=? AND t.status='waiting' AND d.deleted_at IS NULL ORDER BY t.created_at ASC LIMIT 200`, [orgId]);
   for (const t of tn) items.push({ kind: "tribute_notice", id: t.id, createdAt: t.created_at, donorId: t.donor_id,
-    title: `A tribute notice: ${t.tribute_type === "honour" || t.tribute_type === "honor" ? "in honour of" : "in memory of"} ${t.honouree_name}`,
+    title: `A tribute notice: ${t.tribute_type === "honour" || t.tribute_type === "honor" ? "in honor of" : "in memory of"} ${t.honouree_name}`,
     who: `From ${t.name}${t.notify_name ? ", to " + t.notify_name : ""}`, body: G.plainText(t.body) });
   const th = await query(
     `SELECT t.id, t.donor_id, t.next_step_label, t.draft_note, t.created_at, d.name
@@ -3005,7 +3005,7 @@ app.post("/sequences/tracked/:id/turn-on", requireAuth, requireAdmin, checkWrite
   if (me && me.is_super_admin === true) {
     return res.status(403).json({
       error: "not_yours_to_turn_on",
-      message: "A sequence is turned on by someone at the organisation, not by Steward. " +
+      message: "A sequence is turned on by someone at the organization, not by Steward. " +
                "Build it, leave it off, and let them read it and press it.",
     });
   }

@@ -463,7 +463,7 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
           </div>))}
         <button type="button" style={btnLink} onClick={() => setF(p => ({ ...p, roles: [...p.roles, { name: "", needed: "1" }] }))}>Add a role</button>
         {!f.roles.length && <><label style={lbl} htmlFor="se-cap">Places (empty for no limit)</label><input id="se-cap" inputMode="numeric" value={f.capacity} onChange={set("capacity")} style={{ ...inp, width: 100 }} /></>}
-        <label style={lbl}>Colour</label>
+        <label style={lbl}>Color</label>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {SHIFT_COLOURS.map(([hex, name]) => (
             <button key={hex} type="button" aria-pressed={f.color === hex} onClick={() => setF(p => ({ ...p, color: hex }))}

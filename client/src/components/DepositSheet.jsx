@@ -213,7 +213,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
           <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginBottom: 16 }}>
             {done.donorsCreated > 0 && <>{done.donorsCreated} new {done.donorsCreated === 1 ? "person" : "people"} added. </>}
             {done.payments > 0 && <>{done.payments} line{done.payments === 1 ? "" : "s"} recorded as {done.payments === 1 ? "a payment" : "payments"}, out of every giving total. </>}
-            {done.installmentsApplied > 0 && <>{done.installmentsApplied} pledge instalment{done.installmentsApplied === 1 ? "" : "s"} applied. </>}
+            {done.installmentsApplied > 0 && <>{done.installmentsApplied} pledge installment{done.installmentsApplied === 1 ? "" : "s"} applied. </>}
             The slip said {cents(done.slipCents)} and the lines come to {cents(done.giftCents + done.notGiftCents)}.
             {done.footed ? " It checks out." : " The database and the plan disagree, open the deposit on the Imports page."}
             {/* BUILD-95 — the photographs, said out loud. A cheque whose image
@@ -221,14 +221,14 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                 holding the cheque RIGHT NOW, which is the only moment taking it
                 again costs nothing. Reported, never swallowed. */}
             {done.chequePhotos > 0 && (
-              <> {done.chequePhotos} cheque{done.chequePhotos === 1 ? "" : "s"} photographed.</>
+              <> {done.chequePhotos} check{done.chequePhotos === 1 ? "" : "s"} photographed.</>
             )}
             {Array.isArray(done.chequeFailures) && done.chequeFailures.length > 0 && (
               <div data-testid="deposit-cheque-failures" style={{ marginTop: 8, color: T.gold700, fontWeight: 600 }}>
                 {done.chequeFailures.length} photo{done.chequeFailures.length === 1 ? "" : "s"} could not be saved
                 (line{done.chequeFailures.length === 1 ? "" : "s"} {done.chequeFailures.map(f => f.line).join(", ")}).
                 The money is recorded. Photograph {done.chequeFailures.length === 1 ? "it" : "them"} again from the gift
-                while you still have the cheque{done.chequeFailures.length === 1 ? "" : "s"}.
+                while you still have the check{done.chequeFailures.length === 1 ? "" : "s"}.
               </div>
             )}
           </div>
@@ -273,17 +273,17 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                 <input type="file" accept="image/*" capture="environment" multiple disabled={reading}
                   style={{ display: "none" }}
                   onChange={e => { (canRead ? readCheques : attachCheques)(e.target.files); e.target.value = ""; }} />
-                {reading ? "Reading…" : "◫ Photograph the cheques"}
+                {reading ? "Reading…" : "◫ Photograph the checks"}
               </label>
               <span style={{ fontSize: 11.5, color: T.ink3 }}>
                 {canRead
                   ? "Steward reads them and fills in the lines. Nothing is recorded until you commit."
-                  : "The photographs attach to each line. Reading the amounts isn't switched on for your organisation."}
+                  : "The photographs attach to each line. Reading the amounts isn't switched on for your organization."}
               </span>
             </div>
             {readNote && (
               <div data-testid="deposit-read-note" style={{ marginBottom: 10, fontSize: 12.5, lineHeight: 1.55, color: T.ink2 }}>
-                Read {readNote.total} cheque{readNote.total === 1 ? "" : "s"};{" "}
+                Read {readNote.total} check{readNote.total === 1 ? "" : "s"};{" "}
                 {readNote.settled} amount{readNote.settled === 1 ? "" : "s"} agreed on both the figures and the words.
                 {/* A cheque carries its amount twice and Steward checks the two
                     against each other. Where they did not settle it says what
@@ -297,7 +297,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             )}
             <textarea value={paste} onChange={e => setPaste(e.target.value)} data-testid="deposit-paste"
               aria-label="Deposit lines"
-              placeholder={"One line per cheque. Name, amount, memo.\n\nMargaret Chen\t250.00\tXenia trip\nWilliam Park\t1,000.00\tck 4417  General Operating"}
+              placeholder={"One line per check. Name, amount, memo.\n\nMargaret Chen\t250.00\tXenia trip\nWilliam Park\t1,000.00\tck 4417  General Operating"}
               style={{ ...inp, width: "100%", minHeight: 170, resize: "vertical", fontFamily: "ui-monospace,SFMono-Regular,Menlo,monospace", fontSize: 12.5 }} />
             <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5 }}>
               Tabs, two spaces or commas between the columns. Or{" "}
@@ -341,13 +341,13 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                             the rear camera straight at the cheque rather than
                             the photo library, which is the difference between
                             a one-tap habit and a chore. */}
-                        <label data-testid={`deposit-cheque-${l.line}`}
+                        <label data-testid={`deposit-check-${l.line}`}
                           style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5,
                                    fontSize: 11.5, fontWeight: 700, cursor: "pointer",
                                    color: cheques[l.line] ? T.greenDk : T.ink3 }}>
                           <input type="file" accept="image/*" capture="environment" style={{ display: "none" }}
                             onChange={e => { readCheque(l.line, e.target.files && e.target.files[0]); e.target.value = ""; }} />
-                          {cheques[l.line] ? "◫ photographed" : "◫ photograph the cheque"}
+                          {cheques[l.line] ? "◫ photographed" : "◫ photograph the check"}
                         </label>
                         {l.state === "needs_you" && (
                           <div style={{ marginTop: 6 }}>
@@ -370,7 +370,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                               ))}
                               {l.nearInstallmentId && (<>
                                 <button onClick={() => resolve(l.line, { installmentId: l.nearInstallmentId })}
-                                  style={{ background: T.greenDk, border: "none", borderRadius: 7, padding: "5px 10px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>It is that instalment</button>
+                                  style={{ background: T.greenDk, border: "none", borderRadius: 7, padding: "5px 10px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>It is that installment</button>
                                 <button onClick={() => resolve(l.line, { installmentId: null })}
                                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 10px", color: T.ink3, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>A separate gift</button>
                               </>)}
@@ -405,8 +405,8 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             {plan.totals.slipCents == null
               ? " · type the slip total so Steward can check its own arithmetic"
               : ` = ${cents(plan.totals.giftCents + plan.totals.notGiftCents + plan.totals.needsCents)} against a slip of ${cents(plan.totals.slipCents)}`}
-            {plan.balanced === true && <span style={{ color: T.greenDk, fontWeight: 700 }}> · it foots</span>}
-            {plan.balanced === false && <span style={{ fontWeight: 700 }}> · it does not foot</span>}
+            {plan.balanced === true && <span style={{ color: T.greenDk, fontWeight: 700 }}> · it checks out</span>}
+            {plan.balanced === false && <span style={{ fontWeight: 700 }}> · it does not add up</span>}
           </div>
 
           {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 10 }}>{err}</div>}

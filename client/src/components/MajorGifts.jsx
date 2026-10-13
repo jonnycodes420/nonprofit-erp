@@ -703,7 +703,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
       )}
       {tpls.length === 0 && canWrite && (
         <div style={{ fontSize: 11, color: T.ink3, marginTop: 10 }}>
-          No plans written yet. Fundraising → Plans is where the organisation keeps them.
+          No plans written yet. Fundraising → Plans is where the organization keeps them.
         </div>
       )}
     </div>

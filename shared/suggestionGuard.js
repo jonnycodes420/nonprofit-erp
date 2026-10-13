@@ -365,7 +365,7 @@ export function guardDraft(text, record = {}) {
     const known = (record.events || []).map(e => tokens(e));
     const word = ev[0].toLowerCase();
     const named = known.some(ts => ts.includes(word) || ts.some(t => variants(word).includes(t)));
-    if (!named && !(record.orgName && tokens(record.orgName).includes(word))) reasons.push(`speaks of a ${word} that is not one of the organisation's events`);
+    if (!named && !(record.orgName && tokens(record.orgName).includes(word))) reasons.push(`speaks of a ${word} that is not one of the organization's events`);
   }
   return { ok: reasons.length === 0, reasons: [...new Set(reasons)] };
 }

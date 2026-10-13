@@ -100,7 +100,7 @@ async function reset() {
       await page.waitForTimeout(2200);
       beforeSteps += 1;                                     // find and open the donor
     }
-    await page.click('button:has-text("Log a conversation")'); beforeSteps += 1;
+    await page.click('button:has-text("Log a call")'); beforeSteps += 1;
     await page.waitForTimeout(500);
     await page.click('button:has-text("Gift received")'); beforeSteps += 1;
     await page.fill('input[placeholder^="One line"]', memo || "Cheque in the post"); beforeSteps += 1;

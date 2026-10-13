@@ -172,7 +172,7 @@ const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
   ok("the agreement has a subprocessor table", /Service Providers \(Subprocessors\)/.test(terms), true);
   ok("...naming Anthropic", /<strong>Anthropic<\/strong>/.test(terms), true);
   ok("...with the brief's purpose wording, verbatim",
-     /reading amounts from cheque photographs an organization chooses to upload/.test(terms) &&
+     /reading amounts from check photographs an organization chooses to upload/.test(terms) &&
      /drafting text from an organization&apos;s own records on its instruction/.test(terms), true);
   ok("...and Resend too — it has held donor names since BUILD-88c and was never named",
      /<strong>Resend<\/strong>/.test(terms), true);
@@ -184,7 +184,7 @@ const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
 
   const settings = read("client/src/components/Settings.jsx");
   ok("Settings carries the one line, verbatim",
-     settings.includes("cheque photographs to suggest an") &&   // FIX-12: one switch for every AI feature, OpenAI named
+     settings.includes("check photographs to suggest an") &&   // FIX-12: one switch for every AI feature, OpenAI named
      settings.includes("Voice memos") && settings.includes("transcribed by OpenAI") &&
      settings.includes("Nothing is entered or sent until"), true);
   ok("...with a switch beside it", /data-testid="settings-ai-toggle"/.test(settings), true);

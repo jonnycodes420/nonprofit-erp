@@ -190,8 +190,8 @@ export default function TermsPage() {
             </tr>
             <tr>
               <td style={S.td}><strong>Anthropic</strong></td>
-              <td style={S.td}>reading amounts from cheque photographs an organization chooses to upload, and drafting text from an organization&apos;s own records on its instruction</td>
-              <td style={S.td}>the cheque photograph alone (no donor record, and no name lookup outside your organization), or the instruction, your vocabulary and the rows Steward selected for it. Images and records are <strong>not retained by the provider for training</strong>. Off until you enable it, and switchable off per organization in Settings</td>
+              <td style={S.td}>reading amounts from check photographs an organization chooses to upload, and drafting text from an organization&apos;s own records on its instruction</td>
+              <td style={S.td}>the check photograph alone (no donor record, and no name lookup outside your organization), or the instruction, your vocabulary and the rows Steward selected for it. Images and records are <strong>not retained by the provider for training</strong>. Off until you enable it, and switchable off per organization in Settings</td>
               <td style={S.td}>United States</td>
             </tr>
             <tr>

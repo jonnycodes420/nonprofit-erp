@@ -303,7 +303,7 @@ async function orgMaySendEmail(orgId, category = mailPolicy.CATEGORY.DONOR) {
 async function demoMailNote(orgId, { what, to }) {
   const gate = await orgMaySendEmail(orgId);
   if (gate.send || gate.reason !== "demo_org") return null;
-  return `Nothing was sent: this is the demonstration organisation. In a real organisation, ${what} would have gone to ${to}.`;
+  return `Nothing was sent: this is the demonstration organization. In a real organization, ${what} would have gone to ${to}.`;
 }
 
 // `pre` is only ever passed by donorMailDecisions below: the person's flags and

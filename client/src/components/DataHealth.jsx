@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card, Modal } from "./shared";
+import { displayDate } from "../../../shared/displayDate.js";
 
 const fmtMoney = c => "$" + (Number(c || 0) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const plural = (n, one, many) => `${n} ${n === 1 ? one : (many || one + "s")}`;
@@ -446,7 +447,7 @@ function MovedPanel({ onDone, isReadOnly, note, demo = false }) {
         <input ref={fileInput} type="file" accept=".csv,text/csv,.txt" onChange={bringIn} disabled={busy || isReadOnly} style={{ display: "none" }} data-testid="dh-ncoa-input" />
         {demo && <button type="button" style={btn(false, busy || isReadOnly)} disabled={busy || isReadOnly} data-testid="dh-ncoa-sample" onClick={useSample}>Use the sample results file</button>}
       </div>
-      {demo && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>This is a demo organisation, so no provider is involved. The sample file answers the way a provider would, using the people on file here.</div>}
+      {demo && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>This is a demo organization, so no provider is involved. The sample file answers the way a provider would, using the people on file here.</div>}
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginTop: 8 }}>{msg}</div>}
       {moves && moves.length > 0 && <>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
@@ -460,7 +461,7 @@ function MovedPanel({ onDone, isReadOnly, note, demo = false }) {
           <label key={m.id} style={{ ...rowStyle, alignItems: "flex-start", cursor: "pointer" }} data-testid="dh-move">
             <input type="checkbox" checked={sel.has(m.id)} onChange={e => setSel(s => { const n = new Set(s); e.target.checked ? n.add(m.id) : n.delete(m.id); return n; })} style={{ marginTop: 3 }} />
             <div style={{ flex: "1 1 260px", minWidth: 0, fontSize: 13 }}>
-              <div style={{ fontWeight: 700, color: T.ink }}>{m.name}{m.move_type ? <span style={{ fontWeight: 400, color: T.ink3 }}> · moved as {TYPE[m.move_type] || m.move_type}</span> : null}{m.move_date ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {m.move_date}</span> : null}</div>
+              <div style={{ fontWeight: 700, color: T.ink }}>{m.name}{m.move_type ? <span style={{ fontWeight: 400, color: T.ink3 }}> · moved as {TYPE[m.move_type] || m.move_type}</span> : null}{m.move_date ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {displayDate(m.move_date)}</span> : null}</div>
               <div style={{ color: T.ink3, overflowWrap: "anywhere" }}>Old: {m.oldLine}</div>
               <div style={{ color: T.ink, overflowWrap: "anywhere" }}>{m.kind === "move" ? `New: ${m.newLine}` : `No forwarding address (${m.words}). Approving marks the address not mailable and keeps it on file.`}</div>
             </div>

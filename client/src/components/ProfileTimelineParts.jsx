@@ -227,7 +227,7 @@ export function AttachFileField({ file, setFile, labelStyle }) {
           </span>
         : <button type="button" onClick={() => ref.current && ref.current.click()} style={linkBtn}>Attach a file</button>}
       <div style={{ fontSize: 11, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>
-        PDF, image, Word, Excel, CSV or text, up to 10 MB. Files are not virus-scanned, so attach only what you trust.
+        PDF, image, Word, Excel, CSV or text, up to 10 MB. We don't scan files for viruses, so only attach files you trust.
       </div>
       {err && <div role="alert" style={{ fontSize: 12, color: T.ink, marginTop: 4 }}>{err}</div>}
     </div>

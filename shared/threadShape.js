@@ -74,7 +74,7 @@ export const NEXT_STEP_TYPES = [
   // BUILD-88b B.2 — a pledge instalment thirty days past due. The label says
   // which promise, because "follow up" tells the officer nothing about what
   // they are walking into, and this is the most delicate note they send.
-  { type: "pledge_reminder",    label: "Pledge instalment reminder" },
+  { type: "pledge_reminder",    label: "Pledge installment reminder" },
   // BUILD-101 Part 2 — a membership inside its renewal window. The thread's
   // own label names the person, the level and the date.
   { type: "membership_renewal", label: "Renew membership" },

@@ -73,7 +73,7 @@ export default function VolunteerPage() {
       <div style={{ ...shell, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
         <div style={{ background: "#fff", borderRadius: 14, padding: "28px 24px", maxWidth: 420, textAlign: "center" }}>
           <div style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 22, marginBottom: 8 }}>This page is not here.</div>
-          <div style={{ fontSize: 14, color: "#6b6b64", lineHeight: 1.6 }}>It may have been unpublished. The organisation can send you the current link.</div>
+          <div style={{ fontSize: 14, color: "#6b6b64", lineHeight: 1.6 }}>It may have been unpublished. The organization can send you the current link.</div>
         </div>
       </div>
     );

@@ -824,7 +824,7 @@ async function main() {
   // touch lately, six have not, so "Who to call" ranks on something real:
   // what they gave last time, and how close they are now.
   const SPRING_TOUCH = [["meeting", "Coffee near the boatyard. Asked how the spring cohort did.", 12],
-                        ["call", "Returned my call about the summer programme.", 30],
+                        ["call", "Returned my call about the summer program.", 30],
                         ["meeting", "Toured the workshop with their daughter.", 55],
                         ["call", "Left a message; they called back the next day.", 140],
                         ["call", "Short call, thanked them for last spring.", 260]];
@@ -1361,7 +1361,7 @@ async function main() {
                    'Restricted to the purchase and fit-out of a second training boat.')
            ON CONFLICT (id) DO NOTHING`,
     [GRANT_ID, ORG, dateIn2(TODAY, 41)]);
-  await ft(dateIn2(TODAY, -74), "Meridian Foundation, first instalment", "Meridian Foundation", 55000, "income", "fund_b72demo_boat", { grantId: GRANT_ID });
+  await ft(dateIn2(TODAY, -74), "Meridian Foundation, first installment", "Meridian Foundation", 55000, "income", "fund_b72demo_boat", { grantId: GRANT_ID });
   await ft(dateIn2(TODAY, -31), "Boat hull and trailer", "Kestrel Marine", 21400, "expense", "fund_b72demo_boat");
   await ft(dateIn2(TODAY, -12), "Outboard and safety kit", "Kestrel Marine", 6250, "expense", "fund_b72demo_boat");
 
@@ -1371,7 +1371,7 @@ async function main() {
   // deadlines inside this month; one awarded grant paid in two instalments,
   // the first received; a library of six pieces; one submitted report from
   // last year that this year's starts from.
-  console.log("[seed] grants (funders, eight stages, instalments, library)…");
+  console.log("[seed] grants (funders, eight stages, installments, library)…");
   {
     const S = "system:seed-demo", SN = "The demo seed";
     const tide = (await q(`SELECT id FROM donors WHERE org_id=$1 AND name='Tidewater Community Foundation'`, [ORG]))[0].id;
@@ -1490,8 +1490,8 @@ async function main() {
     const LIB = [
       ["lib_b72_mission", "mission", "Mission", "Harborlight Youth Collective gives young people on the Gulf coast a place on the water, real skills and a crew who believes in them."],
       ["lib_b72_history", "history", "Our history", "Founded in 2011 by two retired shipwrights with one borrowed skiff, Harborlight now runs year-round programs for 400 young people from three harbor towns."],
-      ["lib_b72_program", "program", "Harbor Skills", "Harbor Skills is a twelve-week program in boat handling, maintenance and safety. Graduates earn a recognised first certificate, and many go on to paid summer work on the docks."],
-      ["lib_b72_budget", "budget", "Organisation budget summary", "Annual budget about $1.1M: programs 78%, management 12%, fundraising 10%. About a third comes from foundations, the rest from individuals, events and fees on a sliding scale."],
+      ["lib_b72_program", "program", "Harbor Skills", "Harbor Skills is a twelve-week program in boat handling, maintenance and safety. Graduates earn a recognized first certificate, and many go on to paid summer work on the docks."],
+      ["lib_b72_budget", "budget", "Organization budget summary", "Annual budget about $1.1M: programs 78%, management 12%, fundraising 10%. About a third comes from foundations, the rest from individuals, events and fees on a sliding scale."],
       ["lib_b72_board", "board_list", "Board of directors", "Eleanor Vance (chair), Marcus Bell (treasurer), Rosa Delgado (secretary), Tom Ashby, Grace Kim, Dr. Alan Ruiz."],
       ["lib_b72_bios", "bios", "Staff bios", "Dana Reyes, executive director: fifteen years in youth development, a licensed captain. Sam Okafor, program director: former harbor pilot and Harborlight graduate."],
     ];
@@ -1556,7 +1556,7 @@ async function main() {
   // with somebody on the waiting list, a company group, hours from
   // check-outs, waivers (one lapsed, one about to), and SIX people who both
   // give and volunteer — the crossing that is the whole point.
-  console.log("[seed] the volunteer programme…");
+  console.log("[seed] the volunteer program…");
   const VOL_OPPS = [
     { id: "vo_b72_shore", name: "Saturday harbor clean-up", slug: "saturday-harbor-clean-up",
       description: "Two hours on the shoreline with gloves, bags and a flask of something hot.",
@@ -1915,7 +1915,7 @@ async function main() {
     `SELECT COALESCE(SUM(hours),0)::float h FROM volunteer_shifts WHERE org_id=$1`, [ORG]);
   console.log(`[assert] volunteers ${volCount.c} · ${Math.round(volHours.h)} hours on file · ${givers.length} of them also give`);
   if (volCount.c < 40) {
-    console.error(`\nREFUSED: the volunteer programme needs at least 40 volunteers and made ${volCount.c}.`);
+    console.error(`\nREFUSED: the volunteer program needs at least 40 volunteers and made ${volCount.c}.`);
     process.exit(1);
   }
 
@@ -1992,7 +1992,7 @@ async function main() {
     await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,personal_goal_amount,story,image_url,status,edit_token,edit_token_hash,team_id,person_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'','active',NULL,$9,$10,$11)`,
       [id, ORG, P2P_PAGE, name, email, slug, goal,
-       "I have watched what this programme does for the kids on this shore. Five kilometres is the least I can do.",
+       "I have watched what this program does for the kids on this shore. Five kilometres is the least I can do.",
        tokenHash(`demo-p2p-${i}-${Date.now()}`), teamId, personId]);
     fundraisers.push({ id, name, email, personId, teamId });
     return id;
@@ -2064,7 +2064,7 @@ async function main() {
     ["mbl_b72_family", "Family", 120, 25, 1,
       ["Everything a Friend has", "Four guest passes to the harbor center", "Early notice of every event"]],
     ["mbl_b72_circle", "Harbor Circle", 500, 60, 2,
-      ["Everything a Family has", "Two seats at the annual dinner", "A morning on the water with the programme staff"]],
+      ["Everything a Family has", "Two seats at the annual dinner", "A morning on the water with the program staff"]],
   ];
   for (const [id, name, price, fmv, pos, benefits] of MEMBERSHIP_LEVELS)
     await q(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,position,created_by,created_by_name)
@@ -2496,7 +2496,7 @@ async function main() {
   // to, so every figure on the Communications screen opens its people.
   const EM_CAMPAIGNS = [
     ["emcamp_b72_spring", "Spring Appeal",      "A harbour worth keeping",      96, 412, 188, 47],
-    ["emcamp_b72_summer", "Summer Programme",   "What your gift built in June", 61, 408, 151, 22],
+    ["emcamp_b72_summer", "Summer Program",   "What your gift built in June", 61, 408, 151, 22],
     ["emcamp_b72_autumn", "Autumn Newsletter",  "Eleven families, one autumn",  17, 415, 174, 31],
   ];
   for (const [id, name, subject, daysAgo, sends, opens, clicks] of EM_CAMPAIGNS) {
@@ -2513,7 +2513,7 @@ async function main() {
     // [donorKey, campaignId, opened, clicked, label]
     ["d_b72_pos1", "emcamp_b72_spring", true,  true,  "the give link"],
     ["d_b72_pos2", "emcamp_b72_spring", true,  false, null],
-    ["d_b72_pos3", "emcamp_b72_autumn", true,  true,  "the programme page"],
+    ["d_b72_pos3", "emcamp_b72_autumn", true,  true,  "the program page"],
     ["d_b72_pos1", "emcamp_b72_autumn", true,  false, null],
   ];
   for (const [donorId, campaignId, opened, clicked, label] of EM_ACTIVITY) {
@@ -3199,7 +3199,7 @@ async function main() {
     const DS = "sv_b72demo_why", VS = "sv_b72demo_vol";
     const why = [{ id: "s1", title: "", questions: [
       { id: "why", type: "many", label: "Why do you give to Harborlight?", required: true,
-        options: ["I believe in the young people", "Someone I know is in the programme", "The arts matter to me", "I was asked by someone I trust", "It is close to home"] },
+        options: ["I believe in the young people", "Someone I know is in the program", "The arts matter to me", "I was asked by someone I trust", "It is close to home"] },
       { id: "likely", type: "scale", label: "How likely are you to give again next year?", required: true },
       { id: "hear", type: "one", label: "How would you like to hear from us?", required: false, options: ["Email", "Post", "A call now and then", "Only at year end"] },
       { id: "visit", type: "yesno", label: "Would you like to visit a session?", required: false },
@@ -3215,9 +3215,9 @@ async function main() {
              VALUES ($1,$2,'why-do-you-give','Why do you give?','Five questions, about two minutes. It helps us thank you properly.','Thank you. Dana reads every one of these.','named','donors',$3::jsonb,'u_b72demo','Dana Reyes'),
                     ($4,$2,'volunteer-season','How was volunteering this season?','Four questions. Be honest; it makes next season better.','Thank you for your time, this season and now.','named','volunteers',$5::jsonb,'u_b72demo','Dana Reyes')`,
       [DS, ORG, JSON.stringify(why), VS, JSON.stringify(vol)]);
-    const WHY = ["I believe in the young people", "Someone I know is in the programme", "The arts matter to me", "I was asked by someone I trust", "It is close to home"];
+    const WHY = ["I believe in the young people", "Someone I know is in the program", "The arts matter to me", "I was asked by someone I trust", "It is close to home"];
     const HEAR = ["Email", "Post", "A call now and then", "Only at year end"];
-    const WORDS = ["Keep sending the photos from the showcase.", "", "My niece went through the programme in 2019. It changed her.", "", "Please call rather than email.", ""];
+    const WORDS = ["Keep sending the photos from the showcase.", "", "My niece went through the program in 2019. It changed her.", "", "Please call rather than email.", ""];
     const givers = donors.filter(d => (d.status === "mid" || d.status === "major") && !driftedIds.includes(d.id)).slice(40, 60);
     for (const [i, d] of givers.entries()) {
       const answers = { why: [WHY[i % 5], ...(i % 3 === 0 ? [WHY[(i + 2) % 5]] : [])], likely: [10, 9, 8, 10, 7, 9, 6, 10, 8, 9][i % 10],
@@ -3739,7 +3739,7 @@ async function main() {
     for (const t of TABLES) {
       try { await q(`ANALYZE ${t}`); } catch (e) { console.warn(`[seed] ANALYZE ${t}: ${e.message}`); }
     }
-    console.log(`[seed] analysed ${TABLES.length} tables so the first filter is planned from real counts`);
+    console.log(`[seed] analyzed ${TABLES.length} tables so the first filter is planned from real counts`);
   }
 
   console.log(`\n─── Harborlight Youth Collective (${ORG}) ───`);

@@ -78,7 +78,7 @@ app.post("/screening/file", requireAuth, mg, wrap(async (req, res) => {
   const ids = await chosen(req);
   if (!ids) return res.status(404).json({ error: "That group was not found." });
   const rows = await P.fileRows(req.user.orgId, ids);
-  if (!rows.length) return res.status(400).json({ error: "Nobody to put in the file. Organisations and erased people are never sent." });
+  if (!rows.length) return res.status(400).json({ error: "Nobody to put in the file. Organizations and erased people are never sent." });
   if (req.audit) req.audit.summary(`Prepared a screening file of ${rows.length} ${rows.length === 1 ? "person" : "people"}`, { count: rows.length, entityType: "donor" });
   const day = await P.today(req.user.orgId);
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -158,7 +158,7 @@ app.delete("/screening", requireAuth, requireAdmin, mg, wrap(async (req, res) =>
   const orgId = req.user.orgId;
   const [{ n }] = await query(`SELECT COUNT(*)::int AS n FROM screening_results WHERE org_id = ?`, [orgId]);
   await run(`DELETE FROM screening_results WHERE org_id = ?`, [orgId]);
-  if (req.audit) req.audit.summary(`Deleted every screening result for the organisation (${n})`, { count: n, entityType: "screening result" });
+  if (req.audit) req.audit.summary(`Deleted every screening result for the organization (${n})`, { count: n, entityType: "screening result" });
   res.json({ deleted: n });
 }));
 
@@ -178,7 +178,7 @@ app.post("/donors/:id/public-filing/refresh", requireAuth, checkWriteAccess, mg,
   const d = await donorRow(orgId, req.params.id);
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const ein = P.cleanEin(d.funder_ein);
-  if (!ein) return res.status(400).json({ error: "Add the organisation's EIN to its record first." });
+  if (!ein) return res.status(400).json({ error: "Add the organization's EIN to its record first." });
   const got = await P.lookupFiling(ein);
   if (got.error) return res.status(400).json({ error: got.error });
   if (got.notLoaded) return res.json({ ein, notLoaded: true, message: got.message, filing: null, notFound: null });

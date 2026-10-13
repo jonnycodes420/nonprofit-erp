@@ -42,7 +42,7 @@ export const BUILT_IN_AUDIENCES = [
   {
     id: "builtin:staff_board",
     name: "Staff and board",
-    description: "The people inside the organisation.",
+    description: "The people inside the organization.",
     mode: "staff_board",
     kind: "builtin",
     tone: "greenDk",

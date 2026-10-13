@@ -17,6 +17,8 @@ import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
 import { useCanMajorGifts, ROOM_LABEL } from "../lib/majorGifts";
 import { ScreeningFileModal, ScreeningImportModal } from "./RoomToGive";
 import { offerUndo } from "./EditHistory";
+import { displayDate } from "../../../shared/displayDate.js";
+import { displayName } from "../../../shared/displayName.js";
 
 // FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
 // the one action on the screen. Lapsed alone keeps a colour, and it is brass.
@@ -461,7 +463,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
         <div style={{flex:1}}/>
         {/* WIRE-1: the list's own filters, saved as a group by rule. Only the
             filters the server runs go in; a filter on this page only does not. */}
-        {!isReadOnly&&groupRules&&<SaveAsGroup name={`Donor list ${new Date().toISOString().slice(0,10)}`} rules={groupRules}
+        {!isReadOnly&&groupRules&&<SaveAsGroup name={`Donor list ${displayDate(new Date())}`} rules={groupRules}
           label="Save these filters as a group" testid="directory-save-group"/>}
         <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle" aria-pressed={selectMode}
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
@@ -676,7 +678,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                     style={{transition:"width 0.12s,height 0.12s"}}/>
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
-                      <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} style={{overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</DonorLink>
+                      <DonorLink id={d.id} onOpen={()=>onSelectDonor(d)} style={{overflow:"hidden",textOverflow:"ellipsis"}}>{displayName(d.name,{isOrg:d.kind==="org"||d.kind==="organization"})}</DonorLink>
                       <DriftBadge drift={d.drift}/>
                     </div>
                     {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}

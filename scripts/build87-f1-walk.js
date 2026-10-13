@@ -184,7 +184,7 @@ function assertDialog(label, m, w, h) {
     const others = [
       ["Fundraising", null,                 /^\+?\s*new campaign$/i,   "New campaign"],
       ["Donors",      /import\s*&?\s*tools/i, /^import donors only/i, "Import donors"],
-      ["Home",        null,                 /^done$/i,                 "Log a conversation"],
+      ["Home",        null,                 /^done$/i,                 "Log a call"],
     ];
     let measured = 1;   // the Edit-campaign dialog above
     const clickByText = (rx) => page.evaluate(r => {

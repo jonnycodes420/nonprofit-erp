@@ -218,7 +218,7 @@ export default function QboRead({ can, demo }) {
               <span style={{ flex: "1 1 160px", minWidth: 0 }}><strong>{l.customer || "No name"}</strong> · {money(l.cents)} · {l.date}</span>
               {reviewing && can ? <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5 }}>
                 <input type="checkbox" checked={picks[l.id] === "create"} onChange={e => setPicks({ ...picks, [l.id]: e.target.checked ? "create" : "" })} />
-                {l.business ? "Create this organisation" : "Create this person"}</label>
+                {l.business ? "Create this organization" : "Create this person"}</label>
                 : <span style={{ color: T.ink3, fontSize: 12.5 }}>{l.giftId ? "Created and saved" : "Waiting"}</span>}
             </div>))}
         </>}

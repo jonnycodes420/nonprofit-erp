@@ -512,7 +512,7 @@ async function downloadPdf(result, orgName) {
   doc.setFont("times", "normal"); doc.setFontSize(26); doc.setTextColor(240, 237, 230);
   doc.text("Lost & Found", M, 46);
   doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(201, 168, 76);
-  doc.text(`A donor audit for ${orgName || "your organisation"} · ${result.today}`, M, 66);
+  doc.text(`A donor audit for ${orgName || "your organization"} · ${result.today}`, M, 66);
   y = 124;
 
   text(result.headline.dollarsAtRisk + " is at risk", { size: 22, bold: true, gap: 28 });

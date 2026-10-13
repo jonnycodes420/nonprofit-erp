@@ -161,7 +161,9 @@ export function filterRail(groups, text) {
   const t = String(text || "").trim().toLowerCase().replace(/\s+/g, " ");
   if (!t) return groups;
   return groups
-    .map(g => ({ ...g, items: g.items.filter(i => String(i.label || "").toLowerCase().includes(t)) }))
+    // POLISH-2: a report's id still finds it ("lybunt" finds "Gave last year,
+    // not this year") now that the label is in plain words.
+    .map(g => ({ ...g, items: g.items.filter(i => String(i.label || "").toLowerCase().includes(t) || String(i.id || "").toLowerCase() === t) }))
     .filter(g => g.items.length > 0);
 }
 

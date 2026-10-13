@@ -790,7 +790,7 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
       const meta = await mailchimpMetadata(O.PROVIDERS[key].metadataUrl, tokens.accessToken);
       if (!meta) {
         return res.status(502).json({ error: "metadata_failed",
-          sentence: `${O.PROVIDERS[key].label} approved the connection but would not say which data centre the account is in, so Steward cannot call it yet. Try connecting again.` });
+          sentence: `${O.PROVIDERS[key].label} approved the connection but would not say which data center the account is in, so Steward cannot call it yet. Try connecting again.` });
       }
       prefix = meta.dc; accountName = meta.accountName;
     }
@@ -940,16 +940,16 @@ app.post("/oauth/xero/tenant", requireAuth, requireAdmin, checkWriteAccess, wrap
   if (!token.ok) return res.status(token.status).json(token.body);
   const tenants = await xeroTenants(token.accessToken);
   if (!tenants) return res.status(502).json({ error: "xero_unreachable",
-    sentence: "Xero did not answer when Steward asked which organisations this connection covers. Nothing was changed." });
+    sentence: "Xero did not answer when Steward asked which organizations this connection covers. Nothing was changed." });
   const wanted = String(req.body?.tenantId || "");
   const match = tenants.find(t => t.id === wanted);
   if (!match) return res.status(400).json({ error: "unknown_tenant", tenants,
-    sentence: "That is not one of the organisations this Xero connection covers, so Steward did not choose it." });
+    sentence: "That is not one of the organizations this Xero connection covers, so Steward did not choose it." });
   await run(`UPDATE bookkeeping_connections SET realm_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [match.id, c.id, orgId]);
   await writeAuditLog(orgId, actor(req).id, actor(req).name, "oauth_tenant_chosen", "connection", "xero",
     { tenantId: match.id, tenantName: match.name }).catch(() => {});
   res.json({ ok: true, tenantId: match.id, tenantName: match.name,
-    sentence: `Steward will post to ${match.name}, and to no other Xero organisation.` });
+    sentence: `Steward will post to ${match.name}, and to no other Xero organization.` });
 }));
 
 // ── A LIVE ACCESS TOKEN, REFRESHED BEFORE IT EXPIRES ──────────────────────
@@ -3712,7 +3712,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
   const [org] = await query("SELECT xero_auto_sync, is_demo_org FROM orgs WHERE id=?", [orgId]);
   const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name`, [orgId]);
   if (!c) return res.json({ connected: false, autoSync: false, funds: [],
-    sentence: "Xero is not connected. Connect it, choose the organisation, and nothing is sent until you press Sync." });
+    sentence: "Xero is not connected. Connect it, choose the organization, and nothing is sent until you press Sync." });
   const map = XS.readMapping(c);
   const gaps = await XS.mappingGaps(orgId, map);
   const sent = await XS.sentSummary(orgId, c.realm_id);
@@ -3730,7 +3730,7 @@ app.get("/xero", requireAuth, wrap(async (req, res) => {
     funds: [...funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
             { id: XS.NO_FUND, name: "No fund named", restricted: false }],
     pending: { count: pending.length, cents: pendingCents,
-      definition: `Every gift dated on or after ${since} that has not been sent to this Xero organisation. Real money only: never a sample, a refund, stock or in-kind.`,
+      definition: `Every gift dated on or after ${since} that has not been sent to this Xero organization. Real money only: never a sample, a refund, stock or in-kind.`,
       rows: pending.slice(0, 50).map(r => ({ giftId: r.id, donorName: r.donor_name, date: String(r.date instanceof Date ? r.date.toISOString() : r.date).slice(0, 10),
         cents: Number(r.cents), fund: r.fund_name || null, problem: r.sync_status === "failed" ? (r.sync_error || "The last try did not finish.") : null })) },
     sent,
@@ -3746,8 +3746,8 @@ app.post("/xero/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
   const XS = xeroSyncMod();
   const orgId = req.user.orgId;
   const c = await XS.connection(orgId);
-  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, and its organisation appears here." });
-  if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+  if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first, and its organization appears here." });
+  if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organization to use first." });
   if (!c.credentials_sealed && process.env.TEST_MODE !== "1")
     return res.status(409).json({ error: "not_signed_in", sentence: "Xero is not signed in yet, so Steward cannot read it. Connect it again." });
   const out = await XS.fetchPreview(xeroCtx(orgId, c));
@@ -3758,7 +3758,7 @@ app.post("/xero/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
       [JSON.stringify({ tenantName: out.organisation.name }), c.id, orgId]);
   }
   res.json({ ...out,
-    sentence: `Steward can read ${out.organisation.name || "this Xero organisation"}: ${out.income.length} income account${out.income.length === 1 ? "" : "s"} and ${out.bank.length} bank account${out.bank.length === 1 ? "" : "s"}. It only read them; nothing was sent to Xero.` });
+    sentence: `Steward can read ${out.organisation.name || "this Xero organization"}: ${out.income.length} income account${out.income.length === 1 ? "" : "s"} and ${out.bank.length} bank account${out.bank.length === 1 ? "" : "s"}. It only read them; nothing was sent to Xero.` });
 }));
 
 // The mapping, saved as one document. Fund ids are checked against THIS org's
@@ -3814,7 +3814,7 @@ app.put("/xero/auto-sync", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   if (on) {
     const c = await XS.connection(orgId);
     if (!c) return res.status(409).json({ error: "not_connected", sentence: "Connect Xero first." });
-    if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organisation to use first." });
+    if (!c.realm_id) return res.status(409).json({ error: "no_tenant", sentence: "Choose which Xero organization to use first." });
     const gaps = await XS.mappingGaps(orgId, XS.readMapping(c));
     if (!gaps.ok) return res.status(409).json({ error: "needs_mapping", sentence: gaps.sentence });
   }
@@ -4113,9 +4113,10 @@ app.post("/finance/funds", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const id = "ff_" + uuid().slice(0, 8);
+  const publicName = String(req.body.public_name || "").trim().slice(0, 120) || null;
   await run(
-    "INSERT INTO fin_funds (id,org_id,name,description,restricted) VALUES (?,?,?,?,?)",
-    [id, req.user.orgId, name, description || "", restricted ? true : false]
+    "INSERT INTO fin_funds (id,org_id,name,description,restricted,public_name) VALUES (?,?,?,?,?,?)",
+    [id, req.user.orgId, name, description || "", restricted ? true : false, publicName]
   );
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [id]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "fund", id, {
@@ -4138,10 +4139,14 @@ app.put("/finance/funds/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
       : String(req.body.aliases || "").split(/[,\n]/);
     aliases = [...new Set(raw.map(a => String(a).trim()).filter(a => a.length >= 2).map(a => a.slice(0, 80)))].slice(0, 25);
   }
+  // POLISH-2: the name donors read. Absent from the body = unchanged.
+  const publicName = req.body.public_name !== undefined
+    ? (String(req.body.public_name || "").trim().slice(0, 120) || null)
+    : (oldFund ? oldFund.public_name || null : null);
   const affected = await run(
-    "UPDATE fin_funds SET name=?,description=?,restricted=?,aliases=?::jsonb WHERE id=? AND org_id=?",
+    "UPDATE fin_funds SET name=?,description=?,restricted=?,aliases=?::jsonb,public_name=? WHERE id=? AND org_id=?",
     [name, description || "", restricted ? true : false,
-     aliases && aliases.length ? JSON.stringify(aliases) : null, req.params.id, req.user.orgId]
+     aliases && aliases.length ? JSON.stringify(aliases) : null, publicName, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Fund not found" });
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [req.params.id]);
