@@ -50,7 +50,7 @@ module.exports = async function part3(h) {
     [`i_${ORG}_otto`, other, "call", day(2), "Otto's call, which must never appear in Wren's answer."],
   ];
   for (const [id, d, type, date, note] of INTS)
-    await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,logged_by_name,created_by,created_by_name) VALUES ($1,$2,$3,$4,$5,$6,'Ask Staff','system:test','test')`,
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,date,note,logged_by_name,created_by) VALUES ($1,$2,$3,$4,$5,$6,'Ask Staff','system:test')`,
       [id, ORG, d, type, date, note]);
   const wrenIds = INTS.filter(x => x[1] === wren).map(x => x[0]);
 
@@ -64,7 +64,7 @@ module.exports = async function part3(h) {
       const ids = (quotes || []).map(x => x.id);
       ok(`§2 ${label}: three quotes, each one of ${NAME}'s own lines`, ids.length === 3 && ids.every(id => wrenIds.includes(id)), ids);
       ok(`§2 ${label}: each quote opens its line on her record`,
-        (quotes || []).every(x => x.donorId === wren && x.open && x.open.selectDonorId === wren && x.open.anchor === `item-${x.id}`), quotes);
+        (quotes || []).length === 3 && quotes.every(x => x.donorId === wren && x.open && x.open.selectDonorId === wren && x.open.anchor === `item-${x.id}`), quotes);
       return ids.join(",");
     };
     for (let n = 1; n <= 3; n++) {
@@ -80,14 +80,14 @@ module.exports = async function part3(h) {
       shapes.push("agent:" + checkQuotes(`Agent pass ${n}`, a.body.read && a.body.read.quotes));
     }
     const kinds = new Set(shapes.map(s => s.split(":")[1]));
-    ok("§1 all six answers quote the same three lines", kinds.size === 1 && shapes.length === 6, shapes);
+    ok("§1 all six answers quote the same three lines", kinds.size === 1 && shapes.length === 6 && [...kinds][0].split(",").length === 3, shapes);
     // The quote's line is on the record it opens.
     const rec = await api("GET", `/donors/${wren}`, tok);
     const onRecord = new Set(((rec.body && rec.body.interactions) || []).map(i => i.id));
     ok("§2 every quoted line is on the record the link opens", wrenIds.every(id => onRecord.has(id)), [...onRecord]);
     const ask2 = await api("POST", "/ask", tok, { text: `What did we talk about with ${NAME}?` });
     ok("§1 the question in other words takes the same path", ask2.body && ask2.body.person && ask2.body.person.intent === "talked"
-      && (ask2.body.quotes || []).map(x => x.id).join(",") === shapes[0].split(":")[1], ask2.body && ask2.body.quotes);
+      && (ask2.body.quotes || []).length === 3 && ask2.body.quotes.map(x => x.id).join(",") === shapes[0].split(":")[1], ask2.body && ask2.body.quotes);
 
     // §3
     const G = await import(path.join(__dirname, "..", "..", "shared", "askGuide.js"));
@@ -100,7 +100,8 @@ module.exports = async function part3(h) {
     const cut = A.compilePlan([], { cannot: long }).cannot;
     const lastWord = cut.replace(/[….]+$/, "").split(" ").pop();
     ok("§4 a long refusal is cut where a word ends", cut.length <= 202 && long.split(/[ ,]+/).includes(lastWord) && /…$/.test(cut), cut);
-    ok("§4 a quote is cut where a word ends", G.clipAtWord("open the retention report today", 22) === "open the retention…", G.clipAtWord("open the retention report today", 22));
+    const clip = typeof G.clipAtWord === "function" ? G.clipAtWord("open the retention report today", 22) : null;
+    ok("§4 a quote is cut where a word ends", clip === "open the retention…", clip);
 
     // §5 — the browser leg.
     await browserLeg(h, tok, li.body, QUESTION);

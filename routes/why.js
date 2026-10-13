@@ -678,7 +678,7 @@ async function talkedAnswer(orgId, donor, typed, userId) {
   const said = r => String(r.note).replace(/([^.!?:;])\s*\n+\s*/g, "$1. ").replace(/\s+/g, " ").trim();
   // A long line is cut where a word ends, never in the middle of one.
   const clipped = r => G.clipAtWord(said(r), 160);
-  const quote = r => `${word(r)} on ${r.date}${r.who ? ` (${r.who})` : ""}: "${clipped(r)}"`;
+  const quote = r => `${word(r)} on ${AQ.dayWords(r.date)}${r.who ? ` (${r.who})` : ""}: "${clipped(r)}"`;
   // A quote that already ends in its own full stop is not given a second one.
   const stop = r => (/[.!?]$/.test(clipped(r)) ? "" : ".");
   const sentence = !n
@@ -687,7 +687,7 @@ async function talkedAnswer(orgId, donor, typed, userId) {
       + (rows.length ? ` The latest was ${quote(rows[0])}${stop(rows[0])}` : "")
       + (rows.length > 1 ? ` Before that, ${rows.slice(1).map(quote).join("; and ")}${stop(rows[rows.length - 1])}` : "");
   // Each quote opens the line it came from: the record, at that line.
-  const quotes = rows.map(r => ({ id: r.id, donorId: d.id, kind: word(r), date: r.date, who: r.who || null, text: clipped(r),
+  const quotes = rows.map(r => ({ id: r.id, donorId: d.id, kind: word(r), date: AQ.dayWords(r.date), who: r.who || null, text: clipped(r),
     open: { tab: "donors", selectDonorId: d.id, anchor: `item-${r.id}` } }));
   const def = await FS.figureSentence(source);
   const out = {
