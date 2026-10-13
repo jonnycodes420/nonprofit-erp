@@ -56,9 +56,11 @@ function logLabels() {
   } };
   walk(path.join(ROOT, "client", "src"));
   for (const f of files) {
-    fs.readFileSync(f, "utf8").split("\n").forEach((line, i) => {
-      const code = line.replace(/\/\/.*$/, "").replace(/\/\*.*?\*\//g, "");
-      if (/^\s*\*/.test(line)) return;
+    // Block comments (including ones that span lines) become blank lines of
+    // the same count, so line numbers still point at the source.
+    const src = fs.readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, " "));
+    src.split("\n").forEach((line, i) => {
+      const code = line.replace(/(^|[^:\\])\/\/.*$/, "$1");
       if (/Log a conversation/i.test(code)) hits.push({ file: path.relative(ROOT, f), line: i + 1, text: line.trim() });
     });
   }
