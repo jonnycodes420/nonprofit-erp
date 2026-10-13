@@ -279,6 +279,14 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   Rhythm panel (past touches from the timeline's sources, planned journey steps and next steps, the
   journey picked or changed there). An empty section is one line with its add button. Drafting,
   Suggested, Brief me, Add a task, Erase and Delete are under More. (FIX-14 Part 3)
+- **The profile's numbers foot.** Lifetime is every gift row, refunds negative; the gift count is the rows
+  above zero; Average gift is Lifetime over the count (figure source `donor-average-gift`, measure
+  `per_gift`), and its line names a refund it took off or an imported total it leaves out. Soft credits
+  and pledges are in none of them. A booked meeting is never counted as a meeting held, so engagement
+  agrees with Last met. "Everything with" opens on All for every record; the filter is not remembered.
+  Phone numbers render through `shared/phone.js` (`<Phone>`), formatted with a tel: link. The stage
+  `steward` is labelled "Ongoing care". The header is the same with or without a photo: Back on its
+  own line, the mark top-aligned with the name. (POLISH-1)
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy

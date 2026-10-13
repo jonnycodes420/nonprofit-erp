@@ -250,6 +250,7 @@ CORE=(
   test-clock-seam
   hotfix1-profile
   smoke-walk
+  polish1-trust
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
