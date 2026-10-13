@@ -237,6 +237,7 @@ CORE=(
   recurring-recovery
   give2-fee-footing
   campaign2-goal-bar
+  giveedit1-pages
   trial-end
   upgrade-checkout
   close-link

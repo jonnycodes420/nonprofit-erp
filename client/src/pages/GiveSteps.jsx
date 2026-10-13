@@ -117,7 +117,8 @@ export default function GiveSteps({
 }) {
   const { card, inp, btn, quiet } = styles;
   const [step, setStep] = useState(0);
-  const [frequency, setFrequency] = useState(spec.amount.defaultFrequency === "monthly" ? "monthly" : "once");
+  // GIVE-EDIT-1 — a form may open on annual too, when it offers it.
+  const [frequency, setFrequency] = useState(["monthly", "annual"].includes(spec.amount.defaultFrequency) ? spec.amount.defaultFrequency : "once");
   const [amountCents, setAmountCents] = useState(spec.amount.amountsCents[1] ?? spec.amount.amountsCents[0] ?? null);
   const [isCustom, setIsCustom] = useState(!spec.amount.amountsCents.length);
   const [customAmt, setCustomAmt] = useState("");
@@ -258,7 +259,7 @@ export default function GiveSteps({
     if (apiBase && orgSlug && startToken) {
       fetch(`${apiBase}/give/${orgSlug}/started`, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ startToken, email: email.trim(), firstName, lastName, amount: chosenCents / 100,
-          frequency: frequency === "monthly" ? "monthly" : "once", givingPageId: formId || undefined }) }).catch(() => {});
+          frequency: frequency === "once" ? "once" : frequency, givingPageId: formId || undefined }) }).catch(() => {});
     }
     setStep(2);
   }
@@ -274,7 +275,7 @@ export default function GiveSteps({
       utm,
       variant: spec.variant === "b" ? "b" : undefined,
       amount: chosenCents / 100,
-      frequency: frequency === "monthly" ? "monthly" : "once",
+      frequency: frequency === "once" ? "once" : frequency,
       fundId: fundId || "",
       firstName, lastName, email, startToken,
       coverFees: showCoverFees && coverFees,
@@ -305,7 +306,7 @@ export default function GiveSteps({
             style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer",
                      fontSize: 18, lineHeight: 1, color: MUTED, padding: 4 }}>&times;</button>
           <div style={{ fontFamily: th.serif, fontSize: 18, lineHeight: 1.3, marginBottom: 10 }}>
-            Your {fmtCents(chosenCents)}{frequency === "monthly" ? " monthly" : ""} gift will make an impact.
+            Your {fmtCents(chosenCents)}{frequency === "monthly" ? " monthly" : frequency === "annual" ? " yearly" : ""} gift will make an impact.
           </div>
           <button type="button" className="give-exit-nudge-finish" onClick={finishFromNudge} style={btn}>Finish my gift</button>
         </div>
@@ -340,7 +341,7 @@ export default function GiveSteps({
                            border: "1px solid " + (frequency === f ? on : HAIRLINE),
                            background: frequency === f ? on : "transparent",
                            color: frequency === f ? onFg : "inherit", fontWeight: 600, fontSize: 14 }}>
-                  {f === "monthly" ? "Monthly" : "One time"}
+                  {f === "monthly" ? "Monthly" : f === "annual" ? "Annual" : "One time"}
                 </button>
               ))}
             </div>
@@ -519,7 +520,7 @@ export default function GiveSteps({
       {step === 2 ? (
         <>
           <div className="give-summary" style={{ fontSize: 15, marginBottom: 6 }}>
-            <strong>{fmtCents(chargedCents)}</strong>{frequency === "monthly" ? " every month" : ""}
+            <strong>{fmtCents(chargedCents)}</strong>{frequency === "monthly" ? " every month" : frequency === "annual" ? " every year" : ""}
             {spec.designation.mode === "fixed" && spec.designation.fundName ? ` to ${spec.designation.fundName}` : ""}
             {spec.designation.mode === "choice" && fundId
               ? ` to ${(spec.designation.options.find(o => o.fundId === fundId) || {}).fundName || ""}` : ""}
@@ -527,6 +528,10 @@ export default function GiveSteps({
           {frequency === "monthly" ? (
             <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
               {fmtCents(chargedCents * 12)} over a year. You can change or stop it any time.
+            </div>
+          ) : frequency === "annual" ? (
+            <div style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
+              Once a year, on this date. You can change or stop it any time.
             </div>
           ) : null}
 
@@ -589,7 +594,7 @@ export default function GiveSteps({
           </div>
           {submitErr ? <div className="give-err" style={{ fontSize: 13, color: ERR, marginBottom: 10 }}>{submitErr}</div> : null}
           <button type="button" className="give-pay" onClick={submit} disabled={submitting} style={{ ...btn, opacity: submitting ? 0.6 : 1 }}>
-            {submitting ? "Taking you to Stripe…" : `Give ${fmtCents(chargedCents)}${frequency === "monthly" ? " a month" : ""}`}
+            {submitting ? "Taking you to Stripe…" : `Give ${fmtCents(chargedCents)}${frequency === "monthly" ? " a month" : frequency === "annual" ? " a year" : ""}`}
           </button>
           <button type="button" className="give-back" onClick={() => { setStep(1); setStepErr(""); }} style={{ ...quiet, display: "block", marginTop: 10 }}>Back</button>
         </>

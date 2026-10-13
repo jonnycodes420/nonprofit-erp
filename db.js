@@ -8035,6 +8035,32 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_sample ON donors (org_id) WHERE is_sample = true`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_sample ON interactions (org_id) WHERE is_sample = true`);
 
+  // ── GIVE-EDIT-1 · EVERY GIVING PAGE IS EDITED IN ONE PLACE ───────────────
+  // The page's own fields (headline, story, photo, goal bar, where the gift
+  // goes, the form's amounts and thank-you) wait in `draft_settings` until a
+  // person publishes; the widgets already wait in `draft`. `show_goal` is the
+  // goal bar's switch, on for every page that existed before.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS draft_settings JSONB`);
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS show_goal BOOLEAN NOT NULL DEFAULT TRUE`);
+  // The org-wide donation form's amounts wait here the same way.
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS form_draft JSONB`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS form_published_at TIMESTAMPTZ`);
+  // Each publish of a page, kept: what went live, who did it and when. A
+  // restore is a publish of an earlier snapshot and is kept the same way.
+  // `page_id` is a giving_pages id, or 'org_form' for the org-wide form.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS giving_page_versions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      page_id TEXT NOT NULL,
+      number INTEGER NOT NULL,
+      snapshot JSONB NOT NULL,
+      restored_from INTEGER,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, page_id, number))`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

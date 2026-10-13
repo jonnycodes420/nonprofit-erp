@@ -991,56 +991,132 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   );
 }
 
+// ── GIVE-EDIT-1 · One row of actions on every page card ──────────────────
+// The volunteer card's row, now on every giving page and on the org's own
+// donation form: Edit the page, Open page, Copy link, QR and embed. One set
+// of labels everywhere.
+const pageActionPrimary = { fontSize: 12, color: T.white, background: T.green, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.green, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" };
+const pageActionQuiet = { fontSize: 12, color: T.ink2, fontWeight: 600, textDecoration: "none", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" };
+
+function PageActions({ editHref, url, live = true, shareOpen, onToggleShare }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    try { navigator.clipboard?.writeText(url); } catch { /* the link is on screen to copy by hand */ }
+    setCopied(true); setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <a data-testid="page-action" href={editHref} style={pageActionPrimary}>Edit the page</a>
+      {url && live && <a data-testid="page-action" href={url} target="_blank" rel="noreferrer" style={pageActionQuiet}>Open page</a>}
+      {url && <button data-testid="page-action" type="button" onClick={copy} style={pageActionQuiet}>{copied ? "Copied" : "Copy link"}</button>}
+      {url && <button data-testid="page-action" type="button" aria-expanded={!!shareOpen} onClick={onToggleShare} style={pageActionQuiet}>QR and embed</button>}
+    </div>
+  );
+}
+
+function SharePanel({ url, embedUrl, filenameBase }) {
+  return (
+    <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+      <QrCodeBlock url={url} filenameBase={filenameBase} />
+      <EmbedCodeBlock url={embedUrl || url} />
+      <div style={{ fontSize: 11.5, color: T.ink3 }}>Width and height are yours to change. A height of 700 shows the whole form without scrolling.</div>
+    </div>
+  );
+}
+
 // ── FIX-13 Part 5 · The organisation's own donation form ─────────────────
 // Moved here from Settings, Integrations: the QR code and the embed code are
 // not connections, they are the org-wide giving page's share tools, and they
 // belong beside the giving pages and forms. Same blocks, same URL.
 function OrgDonationShare({ orgSlug, orgName }) {
-  const [open, setOpen] = useState("");
+  const [open, setOpen] = useState(false);
   if (!orgSlug) return null;
   const url = `${window.location.origin}/give/${orgSlug}`;
-  const quiet = { background: T.white, border: "1px solid " + T.ink, borderRadius: 9, padding: "7px 13px", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
   return (
-    <div data-testid="org-donation-share" style={{ background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", marginBottom: 18 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 260px", minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Your donation form</div>
-          <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2, overflowWrap: "anywhere" }}>{url.replace(/^https?:\/\//, "")}: print its QR code, or embed it on your website.</div>
-        </div>
-        <a href={url} target="_blank" rel="noreferrer" style={{ ...quiet, textDecoration: "none" }}>Open</a>
-        <button type="button" data-testid="org-share-qr" aria-expanded={open === "qr"} onClick={() => setOpen(o => o === "qr" ? "" : "qr")} style={quiet}>QR code</button>
-        <button type="button" data-testid="org-share-embed" aria-expanded={open === "embed"} onClick={() => setOpen(o => o === "embed" ? "" : "embed")} style={quiet}>Embed code</button>
+    <div data-testid="org-donation-share" style={{ background: T.white, border: "1px solid " + T.bg2, borderRadius: 12, padding: "16px 18px", marginBottom: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Your donation form</div>
+        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2, overflowWrap: "anywhere" }}>{url.replace(/^https?:\/\//, "")}: the page every gift link points to when it names no campaign.</div>
       </div>
-      {open === "qr" && <div style={{ marginTop: 14 }}><QrCodeBlock url={url} filenameBase={(orgName || "donate").toLowerCase().replace(/[^a-z0-9]+/g, "-")} /></div>}
-      {open === "embed" && <div style={{ marginTop: 14 }}>
-        <EmbedCodeBlock url={url} />
-        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>Width and height are yours to change. A height of 700 shows the whole form without scrolling.</div>
-      </div>}
+      <PageActions editHref="/portal-editor?form=org" url={url} shareOpen={open} onToggleShare={() => setOpen(o => !o)} />
+      {open && <SharePanel url={url} filenameBase={(orgName || "donate").toLowerCase().replace(/[^a-z0-9]+/g, "-")} />}
     </div>
   );
 }
 
+// GIVE-EDIT-1 · A new giving page starts from a template written in plain,
+// warm words, and opens straight in the editor.
+function NewGivingPage({ onClose }) {
+  const [templates, setTemplates] = useState(null);
+  const [title, setTitle] = useState("");
+  const [busy, setBusy] = useState("");
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    apiFetch("/giving-page-templates").then(r => setTemplates(Array.isArray(r?.templates) ? r.templates : []))
+      .catch(e => { setTemplates([]); setErr(errorMessage(e, "Could not load the templates.")); });
+  }, []);
+  const choose = async (key) => {
+    if (busy) return;
+    setBusy(key); setErr("");
+    try {
+      const row = await apiFetch("/giving-pages", { method: "POST", body: JSON.stringify({ template: key, ...(title.trim() ? { title: title.trim() } : {}) }) });
+      window.location.href = `/portal-editor?page=${encodeURIComponent(row.id)}`;
+    } catch (e) { setErr(errorMessage(e, "Could not start the page.")); setBusy(""); }
+  };
+  return (
+    <Modal onClose={onClose} title="New giving page" subtitle="Pick a starting point. Every word stays yours to change, and nothing changes for donors until you publish." width={520}
+      footer={<button type="button" onClick={onClose} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>}>
+      <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 6 }}>Name it (optional)</label>
+      <input data-testid="new-page-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="The template's own name is used if you leave this blank"
+        style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", fontSize: 14, border: "1px solid " + T.bg3, borderRadius: 10, fontFamily: "inherit", marginBottom: 16 }} />
+      {templates === null ? <div style={{ fontSize: 13, color: T.ink3 }}>Loading the templates…</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {templates.map(t => (
+            <button key={t.key} type="button" data-testid="page-template" data-template={t.key} disabled={!!busy} onClick={() => choose(t.key)}
+              style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px", cursor: busy ? "wait" : "pointer", fontFamily: "inherit" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{busy === t.key ? "Starting…" : t.label}</div>
+              <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2 }}>{t.blurb}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <div style={{ fontSize: 13, color: T.ink, marginTop: 12 }}>{err}</div>}
+    </Modal>
+  );
+}
+
+const draftBadge = <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Draft waiting</span>;
+
 // ── Giving Pages ────────────────────────────────────────────────────────────
 function PagesView({ pages, orgSlug, onNavigate }) {
   const [shareId, setShareId] = useState(null);
+  const [newOpen, setNewOpen] = useState(false);
   const active = pages.filter(p => p.status === "active");
+  const toggleShare = id => setShareId(s => s === id ? null : id);
+  const newButton = (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+      <button type="button" data-testid="new-giving-page" onClick={() => setNewOpen(true)} style={{ background: T.green, border: "none", borderRadius: 10, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>New giving page</button>
+    </div>
+  );
+  void onNavigate;
   if (active.length === 0) {
     return (
       <>
         <OrgDonationShare orgSlug={orgSlug} />
-        <StartHere line="Giving pages are your public, shareable donate pages, one per campaign, each with its own link, QR code, and embed. Create and design them in Settings; their live progress shows up here." actionLabel="Create a giving page →" onAction={() => onNavigate && onNavigate("settings", { section: "giving" })} dismissKey="fundraising_pages_intro" />
+        {newButton}
+        <StartHere line="Giving pages are your public, shareable donate pages, one per campaign, each with its own link, QR code and embed. Start one from a template with New giving page; its live progress shows up here." actionLabel="New giving page" onAction={() => setNewOpen(true)} dismissKey="fundraising_pages_intro" />
         <div style={{ marginTop: 20 }}>
-          <EmptyState title="No live giving pages" message="Publish a giving page in Settings and it will appear here with its own thermometer and share tools." />
+          <EmptyState title="No live giving pages" message="Start one with New giving page and it will appear here with its own numbers and share tools." />
         </div>
+        {newOpen && <NewGivingPage onClose={() => setNewOpen(false)} />}
       </>
     );
   }
   return (
     <div>
       <OrgDonationShare orgSlug={orgSlug} />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
-        <button onClick={() => onNavigate && onNavigate("settings", { section: "giving" })} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Manage in Settings →</button>
-      </div>
+      {newButton}
+      {newOpen && <NewGivingPage onClose={() => setNewOpen(false)} />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 16 }}>
         {active.map(p => {
           // One goal concept: a page linked to a campaign tracks toward THAT
@@ -1053,6 +1129,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
           const pct = goal > 0 ? Math.min(100, Math.round((raised / goal) * 100)) : null;
           const isVol = p.page_kind === "volunteer";
           const url = isVol ? (p.public_url ? `${window.location.origin}${p.public_url}` : "")
+            : p.public_url ? `${window.location.origin}${p.public_url}`
             : (orgSlug ? `${window.location.origin}/give/${orgSlug}/${p.slug}` : "");
           // VOL-PAGE-1 — a volunteer page sits in the same list, and its three
           // numbers open the rows behind them like every other figure here.
@@ -1062,54 +1139,49 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                 <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Volunteer page</span>
                 {!p.published_at && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Not published yet</span>}
+                {p.published_at && p.has_draft && draftBadge}
               </div>
               <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
                 {[["vol_signups", "vol_signups_source", "Sign-ups"], ["vol_shifts_filled", "vol_shifts_filled_source", "Shifts filled"], ["vol_views", "vol_views_source", "Views"]].map(([k, sk, label]) => (
                   <div key={k}>
                     <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>
-                      {p[sk] ? <Figure variant="inline" kind="count" value={Number(p[k] || 0)} label={`${label} · ${p.title}`} source={p[sk]} /> : Number(p[k] || 0).toLocaleString()}
+                      {p[sk] ? <Figure variant="inline" kind="count" value={Number(p[k] || 0)} label={`${label} · ${p.title}`} source={p[sk]} /> : Number(p[k] || 0).toLocaleString("en-US")}
                     </div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
                   </div>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <a href={`/portal-editor?page=${p.id}`} style={{ fontSize: 12, color: T.white, background: T.green, fontWeight: 700, textDecoration: "none", borderRadius: 8, padding: "6px 12px" }}>Edit the page</a>
-                {url && p.published_at && <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.greenMid, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px" }}>Open page</a>}
-                {url && <button onClick={() => setShareId(shareId === p.id ? null : p.id)} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>QR and embed</button>}
-              </div>
-              {shareId === p.id && url && (
-                <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
-                  <QrCodeBlock url={url} filenameBase={`volunteer-page-${p.slug}`} />
-                  <EmbedCodeBlock url={url + "?embed=1"} />
-                </div>
-              )}
+              <PageActions editHref={`/portal-editor?page=${p.id}`} url={url} live={!!p.published_at} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              {shareId === p.id && url && <SharePanel url={url} embedUrl={url + "?embed=1"} filenameBase={`volunteer-page-${p.slug}`} />}
             </div>
           );
+          // GIVE-EDIT-1 — a giving page shows how it is doing the way the
+          // volunteer card does: raised, gifts and views, each opening its rows.
+          const stats = [
+            ["Raised", raisedSource ? <Figure variant="inline" kind="money" value={raised} label={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} source={raisedSource} /> : fmtFull(raised)],
+            ["Gifts", p.gifts_source ? <Figure variant="inline" kind="count" value={Number(p.gifts_count || 0)} label={`Gifts · ${p.title}`} source={p.gifts_source} /> : Number(p.gifts_count || 0).toLocaleString("en-US")],
+            ["Views", p.views_source ? <Figure variant="inline" kind="count" value={Number(p.views || 0)} label={`Views · ${p.title}`} source={p.views_source} /> : Number(p.views || 0).toLocaleString("en-US")],
+          ];
           return (
-            <div key={p.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div key={p.id} data-testid="page-card" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "20px 22px", boxShadow: T.shadow, display: "flex", flexDirection: "column", gap: 14 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, lineHeight: 1.25 }}>{p.title}</div>
-                {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.gold100, color: T.gold700, border: "1px solid " + T.gold300 }}>Counts toward {p.campaign_name}</span>}
+                {linked && p.campaign_name && <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99, background: T.bg, color: T.ink2, border: "1px solid " + T.bg3 }}>Counts toward {p.campaign_name}</span>}
+                {p.has_draft && draftBadge}
               </div>
-              {goal > 0 ? (
+              {goal > 0 && p.show_goal !== false && (
                 <Thermometer raised={raised} goal={goal} percent={pct} raisedSource={raisedSource} raisedLabel={linked ? `Raised toward ${p.campaign_name || "the campaign"}` : `Raised on ${p.title}`} />
-              ) : (
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{raisedSource ? <Figure variant="inline" kind="money" value={raised} label={`Raised on ${p.title}`} source={raisedSource} /> : fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
               )}
-              {url && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: T.greenMid, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px" }}>Open ↗</a>
-                  <button onClick={() => { navigator.clipboard?.writeText(url); }} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>Copy link</button>
-                  <button onClick={() => setShareId(shareId === p.id ? null : p.id)} style={{ fontSize: 12, color: T.ink2, fontWeight: 600, background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>{shareId === p.id ? "Hide share" : "QR / embed"}</button>
-                </div>
-              )}
-              {shareId === p.id && url && (
-                <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
-                  <QrCodeBlock url={url} filenameBase={`giving-page-${p.slug}`} />
-                  <EmbedCodeBlock url={url} />
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 22, flexWrap: "wrap" }}>
+                {stats.map(([label, node]) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>{node}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</div>
+                  </div>
+                ))}
+              </div>
+              <PageActions editHref={`/portal-editor?page=${p.id}`} url={url} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              {shareId === p.id && url && <SharePanel url={url} filenameBase={`giving-page-${p.slug}`} />}
             </div>
           );
         })}

@@ -1023,27 +1023,16 @@ app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false 
   const availability = String(req.body?.availability || "").trim().slice(0, 1000);
   if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
     return res.status(400).send(volunteerPage("Check the form", `<p>Please give your name and an email address.</p><p><a href="/volunteer/join?token=${encodeURIComponent(req.body.token)}">Go back</a></p>`));
-  const knownId = await PM.findPersonId(o.id, { email, name });   // WIRE-1 rule 1
-  let pid;
-  if (knownId) {
-    pid = knownId;
-    await markVolunteer(o.id, pid);
-  } else {
-    pid = "d_" + uuid().slice(0, 10);
-    await run(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
-               VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
-      [pid, o.id, name, email, phone || null, SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]);
-  }
-  // What they said about when and how they can help is for the coordinator:
-  // an internal availability note, never an interaction.
-  if (availability)
-    await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name) VALUES (?,?,?,'availability',?,?,?,?)`,
-      ["vn_" + uuid().slice(0, 12), o.id, pid, availability, orgToday(await orgTz(o.id)), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]); // ORG_TZ_SEAM_OK
-  // THREAD-2a — the new_volunteer journey trigger. AFTER the response is
-  // composed and never in front of it: somebody signing up to help must get
-  // their thank-you page whether or not a journey starts behind it.
-  maybeStartJourneyFromServer(o.id, pid, "new_volunteer", {})
-    .catch(e => console.error("[journey] volunteer trigger:", e.message));
+  // GIVE-EDIT-1: the standing link waits for a person, like the published
+  // volunteer page does. It used to put people straight on the roster
+  // (POLISH-1 found it). Now it is an application in Pending applications,
+  // and Approve is what makes the person a volunteer and starts their journey.
+  const answers = availability
+    ? [{ questionId: "availability_note", question: "When and how they can help", type: "text", answer: availability, answerText: availability }]
+    : [];
+  await run(`INSERT INTO volunteer_applications (id,org_id,name,email,phone,answers,availability,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?::jsonb,'[]'::jsonb,?,?)`,
+    ["vap_" + uuid().slice(0, 12), o.id, name, email, phone || null, JSON.stringify(answers), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]);
   res.send(thanks);
 }));
 }

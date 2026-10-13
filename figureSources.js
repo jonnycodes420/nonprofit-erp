@@ -563,6 +563,36 @@ const SOURCES = {
       args: [orgId, p.page],
     }),
   },
+  // GIVE-EDIT-1 · a giving page card's other two numbers. `gpage`, not
+  // `page`, because the drawer route keeps `page` for paging.
+  "page-gifts": {
+    label: "Gifts through this page",
+    measure: () => "count",
+    params: { gpage: "id:required" },
+    sentence: () => "Each gift given through this page, one row per gift, including gifts through a supporter's own fundraising page under it.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(d.name, 'Someone no longer in Steward') AS name, g.date,
+                   ROUND(g.amount::numeric, 2) AS amount, 'Gift' AS detail
+              FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND g.giving_page_id = ?`,
+      args: [orgId, p.gpage],
+      order: "date DESC, id",
+    }),
+  },
+  "page-views": {
+    label: "Views of this giving page",
+    measure: () => "sum",
+    amountKind: "views",
+    params: { gpage: "id:required" },
+    sentence: () => "Every time the page's donation form was opened, counted once per visit, by day.",
+    sql: (orgId, p) => ({
+      sql: `SELECT fe.id, 'day' AS type, NULL AS donor_id, fe.day AS name, fe.day AS date,
+                   fe.views::numeric AS amount, 'Views that day' AS detail
+              FROM form_events fe WHERE fe.org_id = ? AND fe.form_id = ? AND fe.views > 0`,
+      args: [orgId, p.gpage],
+      order: "date DESC, id",
+    }),
+  },
   // VOL-PAGE-1 · A VOLUNTEER PAGE'S THREE NUMBERS, each opening its rows.
   // Views are the page's own daily counter (form_events, the giving pages'
   // table); a sign-up is each person who sent the page's form; a shift filled

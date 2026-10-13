@@ -19,6 +19,7 @@ const AC = require("../auctionCore");   // PARITY-2 Part 4: the one definition o
 const { requireAuth404 } = require("../auth");      // FIX-20 Part 0: the file doors
 const { getAssetMeta } = require("../assetStore");
 const VP = require("../volunteerPage");   // VOL-PAGE-1: a volunteer page is a giving_pages row of kind volunteer
+const GPE = require("../givingPageEdit");  // GIVE-EDIT-1: a page's own fields, drafted and published in the one editor
 
 const routers = {
   r0: express.Router(),
@@ -1677,6 +1678,8 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
   for (const r of rows) {
     // VOL-PAGE-1: a volunteer page shows its views, sign-ups and shifts
     // filled, each opening its rows, where a giving page shows money.
+    r.has_draft = !!r.draft_settings || (Array.isArray(r.draft) && JSON.stringify(r.draft) !== JSON.stringify(r.published || null));
+    delete r.draft_settings;
     if (r.page_kind === VP.KIND) {
       r.public_url = `/volunteer-page/${orgRow && orgRow.org_slug}/${r.slug}`;
       for (const [k, key] of [["vol_views", "volpage-views"], ["vol_signups", "volpage-signups"], ["vol_shifts_filled", "volpage-shifts"]]) {
@@ -1687,6 +1690,13 @@ app.get("/giving-pages", requireAuth, wrap(async (req, res) => {
     }
     r.raised_source = { key: "page-raised", params: { page: r.id } };
     r.raised_amount = (await FS.figureValue(req.user.orgId, r.raised_source)).value;
+    // GIVE-EDIT-1: a giving card shows raised, gifts and views like the
+    // volunteer card, each opening its rows, and whether edits wait.
+    r.public_url = `/give/${orgRow && orgRow.org_slug}/${r.slug}`;
+    r.gifts_source = { key: "page-gifts", params: { gpage: r.id } };
+    r.gifts_count = (await FS.figureValue(req.user.orgId, r.gifts_source)).value;
+    r.views_source = { key: "page-views", params: { gpage: r.id } };
+    r.views = (await FS.figureValue(req.user.orgId, r.views_source)).value;
     if (r.campaign_id) {
       r.campaign_raised_source = { key: "goal-raised", params: { campaign: r.campaign_id } };
       r.campaign_raised = (await FS.figureValue(req.user.orgId, r.campaign_raised_source)).value;
@@ -1714,7 +1724,13 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   // FIX-7 Part 4 — `p2pEnabled` on the way IN. Creating a campaign with
   // "let supporters fundraise for this" ticked comes through HERE, the one
   // page-creation path, rather than through a second one written beside it.
-  const { title, goalAmount, story, imageUrl, fundId, slug, campaignId, p2pEnabled } = req.body;
+  const { goalAmount, story, imageUrl, fundId, slug, campaignId, p2pEnabled } = req.body;
+  let { title } = req.body;
+  // GIVE-EDIT-1: "New giving page" starts from a template, in its own words,
+  // and opens in the editor. A title she typed wins over the template's.
+  const tpl = req.body.page_kind !== VP.KIND && req.body.template ? GPE.TEMPLATES[req.body.template] : null;
+  if (req.body.page_kind !== VP.KIND && req.body.template && !tpl) return res.status(400).json({ error: "unknown_template" });
+  if (tpl && !(title && String(title).trim())) title = tpl.title;
   if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
   const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
   if (validationErr) return res.status(400).json({ error: validationErr });
@@ -1750,13 +1766,25 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
     const [row] = await query("SELECT * FROM giving_pages WHERE id=?", [id]);
     return res.status(201).json(row);
   }
+  let tplForm = null;
+  if (tpl) {
+    const F = await formConfigMod();
+    const v = F.validateFormConfig(tpl.form, { orgFundIds: [] });
+    if (!v.ok) return res.status(500).json({ error: "template_invalid", message: v.errors[0].message });
+    tplForm = v.config;
+  }
   await run(
-    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, p2p_requires_approval, ends_on, created_by, created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?::date,?,?)`,
-    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, req.body.p2pRequiresApproval === true, endsOn, actor(req).id, actor(req).name]
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, p2p_requires_approval, ends_on, created_by, created_by_name, form_config)
+     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?::date,?,?,?)`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || (tpl ? tpl.story : ""), imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, req.body.p2pRequiresApproval === true, endsOn, actor(req).id, actor(req).name, tplForm ? JSON.stringify(tplForm) : null]
   );
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);
+}));
+
+// GIVE-EDIT-1: the templates "New giving page" offers.
+app.get("/giving-page-templates", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json({ templates: GPE.templateList() });
 }));
 
 app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -2365,7 +2393,119 @@ app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, re
     // The palette the editor may offer for THIS surface, from the one registry.
     widgetTypes: typesForSurface(surfaceOf(pg)),
     starters: Object.entries(startersOf(pg)).map(([key, st]) => ({ key, label: st.label })),
+    // GIVE-EDIT-1: the page's own fields, live and drafted, beside the blocks.
+    ...(await pageSettingsPayload(pg, req.user.orgId)),
   });
+}));
+
+// ── GIVE-EDIT-1 · THE PAGE'S OWN FIELDS, DRAFTED ─────────────────────────
+async function orgIdsFor(orgId) {
+  const [funds, camps] = await Promise.all([
+    query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name", [orgId]),
+    query("SELECT id, name FROM campaigns WHERE org_id=? ORDER BY name", [orgId]),
+  ]);
+  return { funds, camps, orgFundIds: funds.map(f => String(f.id)), orgCampaignIds: camps.map(c => String(c.id)) };
+}
+async function pageSettingsPayload(pg, orgId) {
+  const F = await formConfigMod();
+  const ids = await orgIdsFor(orgId);
+  const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [orgId]);
+  const slug = o && o.org_slug;
+  const draft = pg.draft_settings && typeof pg.draft_settings === "object" ? GPE.currentSettings(pg, F, ids.orgFundIds) : null;
+  return {
+    settings: GPE.settingsOf(pg, F, ids.orgFundIds),
+    draftSettings: draft,
+    formConfigured: !!(pg.form_config && typeof pg.form_config === "object" && Object.keys(pg.form_config).length),
+    publicUrl: pg.page_kind === VP.KIND ? `/volunteer-page/${slug}/${pg.slug}` : `/give/${slug}/${pg.slug}`,
+    funds: ids.funds, campaigns: ids.camps,
+  };
+}
+
+// PUT /giving-pages/:id/page/settings — a DRAFT of the page's own fields. The
+// live page does not change until somebody presses Publish.
+app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  if (surfaceOf(pg) !== "give") return res.status(400).json({ error: "not_a_giving_page" });
+  const F = await formConfigMod();
+  const ids = await orgIdsFor(req.user.orgId);
+  const patch = { ...((req.body && req.body.settings) || {}) };
+  // A new photo arrives as a data: URI and is stored through the same widget
+  // validator every page photo goes through, so it becomes an asset path.
+  if (patch.imageData) {
+    const v = await validateWidget({ type: "image", image: patch.imageData, caption: "" }, req.user.orgId);
+    if (v.error || !v.widget || !GPE.IMAGE_PATH.test(String(v.widget.image || ""))) return res.status(400).json({ error: (v && v.error) || "That photo could not be read.", errors: [{ field: "imageUrl", message: (v && v.error) || "That photo could not be read." }] });
+    patch.imageUrl = v.widget.image;
+  }
+  delete patch.imageData;
+  const base = GPE.currentSettings(pg, F, ids.orgFundIds);
+  const v = GPE.validateSettings(base, patch, F, ids);
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_page_settings", errors: v.errors });
+  await run(`UPDATE giving_pages SET draft_settings = ?, draft_updated_at = NOW(), updated_at = NOW() WHERE id = ? AND org_id = ?`,
+    [JSON.stringify(v.settings), pg.id, req.user.orgId]);
+  res.json({ ok: true, draftSettings: v.settings });
+}));
+
+// One version row: who put this on the page, and when.
+async function addPageVersion(orgId, pageId, snapshot, who, restoredFrom = null) {
+  const [m] = await query("SELECT COALESCE(MAX(number),0)::int AS n FROM giving_page_versions WHERE org_id=? AND page_id=?", [orgId, pageId]);
+  const id = "gpv_" + uuid().slice(0, 12);
+  await run(`INSERT INTO giving_page_versions (id, org_id, page_id, number, snapshot, restored_from, created_by, created_by_name)
+             VALUES (?,?,?,?,?,?,?,?)`, [id, orgId, pageId, m.n + 1, JSON.stringify(snapshot), restoredFrom, who.id, who.name]);
+  return { id, number: m.n + 1 };
+}
+// The first publish under the editor keeps what was live before it, so even
+// the first edit can be undone.
+async function ensureBaselineVersion(orgId, pg, snapshot) {
+  const [c] = await query("SELECT COUNT(*)::int AS n FROM giving_page_versions WHERE org_id=? AND page_id=?", [orgId, pg.id || pg]);
+  if (c.n) return;
+  await addPageVersion(orgId, pg.id || pg, snapshot, { id: "system:give-edit-1-baseline", name: "As it was before" });
+}
+async function versionsFor(orgId, pageId) {
+  const rows = await query(
+    `SELECT v.id, v.number, v.created_at, v.restored_from, v.created_by, v.created_by_name, u.name AS user_name
+       FROM giving_page_versions v LEFT JOIN users u ON u.id = v.created_by
+      WHERE v.org_id = ? AND v.page_id = ? ORDER BY v.number DESC LIMIT 100`, [orgId, pageId]);
+  return rows.map(r => ({ id: r.id, number: r.number, createdAt: r.created_at, restoredFrom: r.restored_from,
+    baseline: r.created_by === "system:give-edit-1-baseline",
+    byName: r.user_name || r.created_by_name || "Someone on your team" }));
+}
+async function versionPayload(orgId, pageId, id) {
+  return (await versionsFor(orgId, pageId)).find(v => v.id === id) || null;
+}
+
+app.get("/giving-pages/:id/page/history", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  res.json({ versions: await versionsFor(req.user.orgId, pg.id) });
+}));
+
+// Restore puts an earlier version live again in one step. It is itself kept
+// as a version, so a restore can be undone the same way.
+app.post("/giving-pages/:id/page/history/:vid/restore", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const [ver] = await query("SELECT * FROM giving_page_versions WHERE id=? AND org_id=? AND page_id=?", [req.params.vid, req.user.orgId, pg.id]);
+  if (!ver) return res.status(404).json({ error: "not_found" });
+  const snap = typeof ver.snapshot === "string" ? JSON.parse(ver.snapshot) : ver.snapshot;
+  const st = snap.settings || {};
+  const ids = await orgIdsFor(req.user.orgId);
+  // A fund or campaign deleted since is left off rather than pointing nowhere.
+  const fundId = st.fundId && ids.orgFundIds.includes(String(st.fundId)) ? st.fundId : null;
+  const campaignId = st.campaignId && ids.orgCampaignIds.includes(String(st.campaignId)) ? st.campaignId : null;
+  const widgets = Array.isArray(snap.widgets) ? snap.widgets : null;
+  await run(`UPDATE giving_pages SET published = ?, draft = ?, form_position = COALESCE(?, form_position),
+               title = ?, story = ?, image_url = ?, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?, form_config = ?,
+               draft_settings = NULL, published_at = NOW(), draft_updated_at = NOW(), updated_at = NOW()
+             WHERE id = ? AND org_id = ?`,
+    [widgets ? JSON.stringify(widgets) : null, widgets ? JSON.stringify(widgets) : null, snap.formPosition || null,
+     st.title || pg.title, st.story || "", st.imageUrl || "", st.showGoal !== false, st.goalAmount != null ? st.goalAmount : null,
+     fundId, campaignId, st.formConfig ? JSON.stringify(st.formConfig) : null, pg.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
+    widgetPathsOrNull(pg.published), widgetPathsOrNull(widgets), req.user);
+  const v = await addPageVersion(req.user.orgId, pg.id, snap, actor(req), ver.number);
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ ok: true, version: await versionPayload(req.user.orgId, pg.id, v.id) });
 }));
 
 app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -2388,7 +2528,7 @@ app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAcc
              WHERE id = ? AND org_id = ?`,
     [JSON.stringify(v.widgets), pos, pg.id, req.user.orgId]);
   await recordAssetPointerHistory(req.user.orgId, "giving_page.draft", pg.id,
-    widgetPathsOrNull(pg.draft), widgetPathsOrNull(v.widgets), req.user.id, req.user.name);
+    widgetPathsOrNull(pg.draft), widgetPathsOrNull(v.widgets), req.user);
   await pruneWidgetAssets(req.user.orgId);
   res.json({ ok: true, draft: v.widgets, formPosition: pos });
 }));
@@ -2410,24 +2550,110 @@ app.post("/giving-pages/:id/page/starter", requireAuth, requireAdmin, checkWrite
 app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
-  if (!Array.isArray(pg.draft) || !pg.draft.length) return res.status(400).json({ error: "nothing_to_publish" });
-  await run(`UPDATE giving_pages SET published = draft, published_at = NOW(), updated_at = NOW()
-             WHERE id = ? AND org_id = ?`, [pg.id, req.user.orgId]);
-  await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
-    widgetPathsOrNull(pg.published), widgetPathsOrNull(pg.draft), req.user.id, req.user.name);
-  res.json({ ok: true });
+  // GIVE-EDIT-1: a publish carries the blocks, the page's own fields, or both.
+  const hasBlocks = Array.isArray(pg.draft) && pg.draft.length > 0;
+  const ds = pg.draft_settings && typeof pg.draft_settings === "object" ? pg.draft_settings : null;
+  if (!hasBlocks && !ds) return res.status(400).json({ error: "nothing_to_publish" });
+  await ensureBaselineVersion(req.user.orgId, pg, GPE.snapshotOf(pg));
+  if (hasBlocks) {
+    await run(`UPDATE giving_pages SET published = draft, published_at = NOW(), updated_at = NOW()
+               WHERE id = ? AND org_id = ?`, [pg.id, req.user.orgId]);
+    await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
+      widgetPathsOrNull(pg.published), widgetPathsOrNull(pg.draft), req.user);
+  }
+  if (ds) {
+    const F = await formConfigMod();
+    const ids = await orgIdsFor(req.user.orgId);
+    const live = GPE.settingsOf(pg, F, ids.orgFundIds);
+    const next = GPE.currentSettings(pg, F, ids.orgFundIds);
+    // The form is written only when it changed, so a page that never had its
+    // form set up keeps the form it always had after a headline edit.
+    const formChanged = !GPE.sameJson(live.form, next.form);
+    await run(`UPDATE giving_pages SET title = ?, story = ?, image_url = ?, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?,
+                 form_config = CASE WHEN ? THEN ?::jsonb ELSE form_config END,
+                 draft_settings = NULL, published_at = NOW(), updated_at = NOW()
+               WHERE id = ? AND org_id = ?`,
+      [next.title, next.story, next.imageUrl, next.showGoal !== false, next.goalAmount, next.fundId, next.campaignId,
+       formChanged, JSON.stringify(next.form), pg.id, req.user.orgId]);
+    if (live.imageUrl !== next.imageUrl) await recordAssetPointerHistory(req.user.orgId, "giving_page.image", pg.id, live.imageUrl || null, next.imageUrl || null, req.user);
+  }
+  const [after] = await query("SELECT * FROM giving_pages WHERE id = ? AND org_id = ?", [pg.id, req.user.orgId]);
+  const v = await addPageVersion(req.user.orgId, pg.id, GPE.snapshotOf(after), actor(req));
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ ok: true, version: await versionPayload(req.user.orgId, pg.id, v.id) });
 }));
 
 app.post("/giving-pages/:id/page/revert", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
-  await run(`UPDATE giving_pages SET draft = published, draft_updated_at = NOW(), updated_at = NOW()
+  await run(`UPDATE giving_pages SET draft = published, draft_settings = NULL, draft_updated_at = NOW(), updated_at = NOW()
              WHERE id = ? AND org_id = ?`, [pg.id, req.user.orgId]);
   await recordAssetPointerHistory(req.user.orgId, "giving_page.draft", pg.id,
-    widgetPathsOrNull(pg.draft), widgetPathsOrNull(pg.published), req.user.id, req.user.name);
+    widgetPathsOrNull(pg.draft), widgetPathsOrNull(pg.published), req.user);
   // The reverted-away draft's photos are no longer referenced by anything.
   await pruneWidgetAssets(req.user.orgId);
   res.json({ ok: true });
+}));
+
+// ── GIVE-EDIT-1 · THE ORG-WIDE DONATION FORM, IN THE SAME EDITOR ─────────
+// /give/<org> is not a giving_pages row; its amounts are the two ladders on
+// portal_settings. They are drafted, published and kept the same way, under
+// the page id 'org_form'.
+const ORG_FORM = "org_form";
+const ladderOf = (raw, dflt) => {
+  try { const a = typeof raw === "string" ? JSON.parse(raw) : raw; return Array.isArray(a) && a.length ? a.map(Number) : [...dflt]; }
+  catch { return [...dflt]; }
+};
+async function orgFormRow(orgId) {
+  await run(`INSERT INTO portal_settings (org_id) VALUES (?) ON CONFLICT (org_id) DO NOTHING`, [orgId]);
+  const [ps] = await query(`SELECT ps.onetime_amounts, ps.monthly_amounts, ps.form_draft, ps.form_published_at, ps.display_name, o.name, o.org_slug
+                              FROM portal_settings ps JOIN orgs o ON o.id = ps.org_id WHERE ps.org_id = ?`, [orgId]);
+  const live = { onetimeAmounts: ladderOf(ps.onetime_amounts, GIVE_ONETIME_DEFAULT), monthlyAmounts: ladderOf(ps.monthly_amounts, GIVE_MONTHLY_DEFAULT) };
+  const draft = ps.form_draft && typeof ps.form_draft === "object" ? { ...live, ...ps.form_draft } : null;
+  return { ps, live, draft };
+}
+const orgFormSnapshot = live => ({ widgets: null, formPosition: null, settings: { onetimeAmounts: live.onetimeAmounts, monthlyAmounts: live.monthlyAmounts } });
+
+app.get("/org-form/page", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { ps, live, draft } = await orgFormRow(req.user.orgId);
+  res.json({ surface: "orgform", pageKind: "orgform", pageTitle: String(ps.display_name || "").trim() || ps.name,
+    publicUrl: `/give/${ps.org_slug}`, settings: live, draftSettings: draft, publishedAt: ps.form_published_at || null,
+    draft: [], widgetTypes: [], starters: [] });
+}));
+app.put("/org-form/page/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { live, draft } = await orgFormRow(req.user.orgId);
+  const v = GPE.validateOrgForm(draft || live, req.body && req.body.settings);
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_page_settings", errors: v.errors });
+  await run(`UPDATE portal_settings SET form_draft = ? WHERE org_id = ?`, [JSON.stringify(v.settings), req.user.orgId]);
+  res.json({ ok: true, draftSettings: v.settings });
+}));
+app.post("/org-form/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { live, draft } = await orgFormRow(req.user.orgId);
+  if (!draft) return res.status(400).json({ error: "nothing_to_publish" });
+  await ensureBaselineVersion(req.user.orgId, ORG_FORM, orgFormSnapshot(live));
+  await run(`UPDATE portal_settings SET onetime_amounts = ?, monthly_amounts = ?, form_draft = NULL, form_published_at = NOW() WHERE org_id = ?`,
+    [JSON.stringify(draft.onetimeAmounts), JSON.stringify(draft.monthlyAmounts), req.user.orgId]);
+  const v = await addPageVersion(req.user.orgId, ORG_FORM, orgFormSnapshot(draft), actor(req));
+  res.json({ ok: true, version: await versionPayload(req.user.orgId, ORG_FORM, v.id) });
+}));
+app.post("/org-form/page/revert", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await run(`UPDATE portal_settings SET form_draft = NULL WHERE org_id = ?`, [req.user.orgId]);
+  res.json({ ok: true });
+}));
+app.get("/org-form/page/history", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json({ versions: await versionsFor(req.user.orgId, ORG_FORM) });
+}));
+app.post("/org-form/page/history/:vid/restore", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [ver] = await query("SELECT * FROM giving_page_versions WHERE id=? AND org_id=? AND page_id=?", [req.params.vid, req.user.orgId, ORG_FORM]);
+  if (!ver) return res.status(404).json({ error: "not_found" });
+  const snap = typeof ver.snapshot === "string" ? JSON.parse(ver.snapshot) : ver.snapshot;
+  const v0 = GPE.validateOrgForm({}, snap.settings || {});
+  if (!v0.ok) return res.status(400).json({ error: v0.errors[0].message });
+  await orgFormRow(req.user.orgId);
+  await run(`UPDATE portal_settings SET onetime_amounts = ?, monthly_amounts = ?, form_draft = NULL, form_published_at = NOW() WHERE org_id = ?`,
+    [JSON.stringify(v0.settings.onetimeAmounts), JSON.stringify(v0.settings.monthlyAmounts), req.user.orgId]);
+  const v = await addPageVersion(req.user.orgId, ORG_FORM, snap, actor(req), ver.number);
+  res.json({ ok: true, version: await versionPayload(req.user.orgId, ORG_FORM, v.id) });
 }));
 
 app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
@@ -3170,9 +3396,11 @@ const donateHandler = async (req, res) => {
     // switched off must not be able to mint a subscription through a hand-rolled
     // request — that is a recurring charge the org never agreed to take.
     const spec = F.formSpec(cfg, { funds: orgFunds, orgName: "" });
-    const wanted = frequency === "monthly" || frequency === "annual" ? "monthly" : "once";
+    // GIVE-EDIT-1: a yearly gift is asked about on its own, since a form may
+    // now offer one; a form that does not is refused it like monthly.
+    const wanted = frequency === "monthly" || frequency === "annual" ? frequency : "once";
     if (!spec.amount.frequencies.includes(wanted)) {
-      return res.status(400).json({ error: "This form does not offer monthly giving.", code: "frequency_not_offered" });
+      return res.status(400).json({ error: wanted === "annual" ? "This form does not offer yearly giving." : "This form does not offer monthly giving.", code: "frequency_not_offered" });
     }
     // ── BUILD-102 Part 3 — ONLY WHAT THE FORM ASKED IS KEPT ────────────────
     // A tribute from a form that does not show tribute fields, an employer from
@@ -6577,6 +6805,14 @@ async function pruneWidgetAssets(orgId) {
     // EMAIL-1: a photo used only in an email template is still live.
     ...(await query(`SELECT blocks FROM email_templates WHERE org_id = ?`, [orgId])).map(r => ({ draft: r.blocks, published: null })),
   ];
+  // GIVE-EDIT-1: a page's own photo, its drafted photo and every kept
+  // version are live too: a version that can be restored must keep its photos.
+  for (const r of await query(`SELECT image_url, draft_settings->>'imageUrl' AS draft_image FROM giving_pages WHERE org_id = ?`, [orgId]))
+    rows.push({ draft: [{ image: r.image_url }, { image: r.draft_image }], published: null });
+  for (const r of await query(`SELECT snapshot FROM giving_page_versions WHERE org_id = ?`, [orgId])) {
+    const snap = typeof r.snapshot === "string" ? JSON.parse(r.snapshot) : (r.snapshot || {});
+    rows.push({ draft: [...(Array.isArray(snap.widgets) ? snap.widgets : []), { image: snap.settings && snap.settings.imageUrl }], published: null });
+  }
   const keep = rows
     .flatMap(r => [...extractWidgetAssetPaths(r.draft), ...extractWidgetAssetPaths(r.published)])
     .map(p => p.replace("/portal-assets/", ""));

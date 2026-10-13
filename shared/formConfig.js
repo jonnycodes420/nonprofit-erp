@@ -34,6 +34,11 @@
 
 // ── THE SHAPE ──────────────────────────────────────────────────────────────
 export const FREQUENCIES = ["once", "monthly"];
+// GIVE-EDIT-1: a form may also offer, and open on, a gift once a year. Off by
+// default, so every form saved before reads exactly as it did. The donate
+// route already charged "annual" (Stripe's yearly interval) for the org-wide
+// form; this only lets a page's own form offer it.
+export const OPENING_FREQUENCIES = ["once", "monthly", "annual"];
 export const DEFAULT_FREQUENCY = "once";
 
 export const DESIGNATION_MODES = [
@@ -81,6 +86,11 @@ export const DEFAULT_CONFIG = Object.freeze({
   allowOther: true,
   defaultFrequency: DEFAULT_FREQUENCY,
   offerMonthly: true,
+  offerAnnual: false,
+  // GIVE-EDIT-1: whether this page shows the box that lets a donor cover the
+  // fee. The org's own switch (orgs.cover_fees_enabled) still wins; this can
+  // only hide the box, never charge a fee the org turned off.
+  showCoverFee: true,
   designation: { mode: "none", fundId: null, fundIds: [] },
   showTribute: false,
   showEmployerMatch: false,
@@ -152,18 +162,27 @@ export function validateFormConfig(raw, { orgFundIds = [], existingQuestionKeys 
   }
 
   if (input.defaultFrequency !== undefined) {
-    if (!FREQUENCIES.includes(input.defaultFrequency)) {
-      errors.push({ field: "defaultFrequency", message: `A form opens on one-time or monthly.` });
+    if (!OPENING_FREQUENCIES.includes(input.defaultFrequency)) {
+      errors.push({ field: "defaultFrequency", message: `A form opens on one-time, monthly or annual.` });
     } else out.defaultFrequency = input.defaultFrequency;
   }
   if (input.offerMonthly !== undefined) {
     if (typeof input.offerMonthly !== "boolean") errors.push({ field: "offerMonthly", message: "Whether monthly is offered is yes or no." });
     else out.offerMonthly = input.offerMonthly;
   }
+  for (const k of ["offerAnnual", "showCoverFee"]) {
+    if (input[k] !== undefined) {
+      if (typeof input[k] !== "boolean") errors.push({ field: k, message: "That setting is yes or no." });
+      else out[k] = input[k];
+    }
+  }
   // A FORM THAT OPENS ON MONTHLY MUST OFFER MONTHLY. The two settings can
   // contradict each other and the donor would meet a frequency they cannot pick.
   if (out.defaultFrequency === "monthly" && out.offerMonthly === false) {
     errors.push({ field: "offerMonthly", message: "This form opens on monthly giving, so monthly has to be one of the choices." });
+  }
+  if (out.defaultFrequency === "annual" && out.offerAnnual !== true) {
+    errors.push({ field: "offerAnnual", message: "This form opens on a yearly gift, so yearly has to be one of the choices." });
   }
 
   if (input.designation !== undefined) {
@@ -344,14 +363,15 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
       amountsSource: "form",
       amountsSentence: "",
       allowOther: c.allowOther,
-      frequencies: c.offerMonthly ? [...FREQUENCIES] : ["once"],
-      defaultFrequency: c.offerMonthly ? c.defaultFrequency : "once",
+      frequencies: ["once", ...(c.offerMonthly ? ["monthly"] : []), ...(c.offerAnnual ? ["annual"] : [])],
+      defaultFrequency: (c.defaultFrequency === "monthly" && c.offerMonthly) || (c.defaultFrequency === "annual" && c.offerAnnual) ? c.defaultFrequency : "once",
     },
     designation,
     exitNudge: c.exitNudge === true,
     details: { tribute: c.showTribute, employerMatch: c.showEmployerMatch,
                questions: c.questions.map(q => ({ ...q, options: [...q.options] })) },
     thankYou: { ...c.thankYou },
+    showCoverFee: c.showCoverFee !== false,
     // THE SENTENCE UNDER THE FORM. Not a boast and not a fee disclosure — the one
     // fact a donor deciding whether to type a card number wants: where the money
     // goes, and who takes a cut. Steward takes none, and never touches it.

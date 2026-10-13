@@ -3,6 +3,11 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **A giving page's own fields are drafted and published in the one editor** (GIVE-EDIT-1). Headline,
+  story, photo, goal bar, fund/campaign and the form wait in `giving_pages.draft_settings`; Publish writes
+  them with the blocks, never touches the slug, and adds a `giving_page_versions` row with its actor.
+  Restore is a publish of an earlier snapshot. The form is written only when it changed. The org-wide
+  form (`/portal-editor?form=org`, page id `org_form`) works the same way on `portal_settings.form_draft`.
 - **A volunteer page is a `giving_pages` row with `page_kind = 'volunteer'`** (VOL-PAGE-1). It uses the
   "volunteer" surface of `shared/pageWidgets.js`, so the editor, brand, media library, publish, slug,
   embed, Pages list and ⌘K are the giving page's. Every read that means "a page that takes gifts" filters

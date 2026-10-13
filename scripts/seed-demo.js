@@ -2724,6 +2724,15 @@ async function main() {
         thankYou: { message: "", redirectUrl: "" },
         headline: "Every runner, every mile, every scholarship.",
       }), ORG]);
+    // GIVE-EDIT-1: Harbor Run has edits waiting that are not live yet, so a
+    // demo can open the page editor and show the draft beside the live page.
+    // Only the headline, the story and the opening amount change; the live
+    // page reads exactly as it did.
+    await q(`UPDATE giving_pages SET draft_settings = $2::jsonb, draft_updated_at = NOW() WHERE id = $1 AND org_id = $3`,
+      [P2P_PAGE, JSON.stringify({
+        title: "Harbor Run: every mile is a scholarship",
+        story: "Five kilometres along the shore, and every runner raising for the scholarship fund. This year we are aiming for twenty scholarships. Start your own page, or give to a runner you know.",
+      }), ORG]);
     // The org's own suggestion when it asks a one-time donor to go monthly.
     await q(`UPDATE orgs SET form_upsell_monthly_cents = 2500 WHERE id = $1`, [ORG]);
 
