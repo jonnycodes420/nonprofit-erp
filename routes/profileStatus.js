@@ -209,10 +209,11 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const today = await DS.todayFor(orgId);
   const w = DS.windowsFor(today);
-  const status = await DS.statusFor(orgId, d.id, { today });
+  // SCALE-2: the reads below do not depend on each other, so they go side by
+  // side; one after another, each waited its turn for a connection under load.
   // At a glance. Each value is the figure's own, from its source.
   const src = k => ({ key: k, params: { donor: d.id } });
-  const [lifetime, first, latest, largest, average] = await Promise.all(
+  const pGlance = Promise.all(
     ["donor-lifetime", "donor-first-gift", "donor-latest-gift-alias", "donor-largest-gift", "donor-average-gift"].map(async k => {
       const key = k === "donor-latest-gift-alias" ? "donor-last-gift" : k;
       const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });
@@ -223,12 +224,20 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   // one set of rows: Lifetime / count = Average, unless part of Lifetime is an
   // imported total with no gifts behind it. What the average leaves out, and
   // what came off it, is said in words beside it, from the same gifts table.
-  const [r] = await query(
+  const pRefunds = query(
     `SELECT (COUNT(*) FILTER (WHERE g.amount < 0))::int AS refunds,
             COALESCE(SUM(g.amount) FILTER (WHERE g.amount < 0), 0)::text AS refunded,
             COALESCE(SUM(g.amount), 0)::text AS itemized
        FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE g.org_id = ? AND g.donor_id = ? AND d.deleted_at IS NULL`, [orgId, d.id]);
+  const pVh = query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h, MIN(date) AS first, MAX(date) AS last
+                       FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, d.id]);
+  const pMe = query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
+  const pTags = query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
+  const pMeeting = require("../meetingEffects").meetingSetFor(orgId, [d.id]);
+  const pCanSee = require("../prospect").canSee(req.user.userId);
+  const [status, [lifetime, first, latest, largest, average], [r], vhRows, meRows, tagRows, meetingMap, canSee] = await Promise.all([
+    DS.statusFor(orgId, d.id, { today }), pGlance, pRefunds, pVh, pMe, pTags, pMeeting, pCanSee]);
   const refundCents = -(money.toCents(String(r.refunded)) ?? 0);
   const importedCents = lifetime.cents != null ? Math.max(0, lifetime.cents - (money.toCents(String(r.itemized)) ?? 0)) : 0;
   Object.assign(average, { refunds: r.refunds, refundCents, importedCents });
@@ -236,12 +245,11 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   const [hl, close, next] = await Promise.all([
     highlights(orgId, d, today, w),
     closeness(orgId, d, today, w),
-    nextAction(orgId, d, today, status, latest.value, await require("../prospect").canSee(req.user.userId)),
+    nextAction(orgId, d, today, status, latest.value, canSee),
   ]);
   // PARITY-3 — one plain line for a volunteer: "44 hours since 2023, last
   // served May 22", opening the shifts it adds up.
-  const [vh] = await query(`SELECT COALESCE(SUM(ROUND(hours*100)),0)::bigint AS h, MIN(date) AS first, MAX(date) AS last
-                              FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, d.id]);
+  const [vh] = vhRows;
   let volunteer = null;
   if (vh && Number(vh.h) > 0) {
     const hrs = Number(vh.h) / 100, first = String(vh.first).slice(0, 10), last = String(vh.last).slice(0, 10);
@@ -254,15 +262,15 @@ app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
   // FIX-33 · rows of theirs an import could not read: a plain line for an
   // admin, never a tag ("HAS-REFUSED-ROWS:2" under the name), opening the rows.
   let importRefusals = null;
-  const [me] = await query(`SELECT role FROM users WHERE id = ? AND org_id = ?`, [req.user.userId, orgId]);
+  const [me] = meRows;
   if (me && me.role === "admin") {
-    const [t] = await query(`SELECT tags FROM donors WHERE id = ? AND org_id = ?`, [d.id, orgId]);
+    const [t] = tagRows;
     const n = DT.refusedRowsOf(t && t.tags);
     if (n > 0) importRefusals = { count: n, line: refusedLine(n), rowsPath: `/donors/${d.id}/refused-rows` };
   }
   // FIX-33 · a booked meeting answers "Cooling" and "Drifting" on the same
   // line, so nobody calls her twice.
-  const meetingSet = (await require("../meetingEffects").meetingSetFor(orgId, [d.id])).get(d.id) || null;
+  const meetingSet = meetingMap.get(d.id) || null;
   res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts, volunteer, importRefusals, meetingSet });
 }));
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
+import { peopleCounts } from "../lib/people";
 import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
 import { GivingSourcesManager } from "../components/Settings";
@@ -129,7 +130,9 @@ export default function WelcomePage() {
 
   // Step 2 — import
   const [showImportModal, setShowImportModal] = useState(false);
-  const [donorsSnapshot, setDonorsSnapshot] = useState([]);
+  // SCALE-2: how many people are on file, a server count (/donors/counts),
+  // not the length of every donor downloaded.
+  const [donorTotal, setDonorTotal] = useState(0);
   const [importSkipped, setImportSkipped] = useState(false);
   const [loadingDonors, setLoadingDonors] = useState(false);
   // FIX-32 · sample donors are not an import. The count comes from the same
@@ -139,7 +142,7 @@ export default function WelcomePage() {
   const [clearingSample, setClearingSample] = useState(false);
   const loadSampleStatus = () => apiFetch("/org/sample-data-status").then(setSampleStatus).catch(() => setSampleStatus(null));
   const sampleCount = (sampleStatus && sampleStatus.hasSampleData && sampleStatus.sampleDonorCount) || 0;
-  const realDonorCount = Math.max(0, donorsSnapshot.length - sampleCount);
+  const realDonorCount = Math.max(0, donorTotal - sampleCount);
 
   // ── THREAD-2b 2 · the journey step's state ─────────────────────────────
   const [jPresets, setJPresets] = useState([]);
@@ -222,7 +225,7 @@ export default function WelcomePage() {
     // Load any donors that already exist (someone returning mid-flow, or an
     // import from another tab) so the import step shows the imported state
     // instead of re-asking for a list that's already in.
-    apiFetch("/donors/summaries").then(d => setDonorsSnapshot(d || [])).catch(() => {});
+    peopleCounts().then(c => setDonorTotal(c?.total || 0)).catch(() => {});
     loadSampleStatus();
     // Plan tier → whether the Team "Invite your team" step is in the flow.
     apiFetch("/portfolio/officers").then(r => setIsTeam(r?.tier === "team")).catch(() => {});
@@ -238,7 +241,7 @@ export default function WelcomePage() {
     apiFetch("/org/import-health").then(setImportHealth).catch(() => setImportHealth(null));
   }, []);
   const suggestion = useMemo(() => {
-    if (!donorsSnapshot.length) return null;
+    if (!donorTotal) return null;
     // BUILD-80 Part 9 — no goal is auto-set from an unbalanced import. "Win
     // back $604,337 in lapsed giving" was once computed from a file where
     // half the gifts were refused and one was a hundred times too large.
@@ -250,9 +253,9 @@ export default function WelcomePage() {
     // import had just labelled lapsed. A goal is a commitment a human makes.
     // The step still SUGGESTS a shape (what kind of goal, and why) and leaves
     // the number empty; nothing is created until she types one.
-    void importHealth; void donorsSnapshot;
+    void importHealth; void donorTotal;
     return null;
-  }, [donorsSnapshot, importHealth]);
+  }, [donorTotal, importHealth]);
 
   useEffect(() => {
     if (stepKey === "goal" && suggestion && !goalPrefilled) {
@@ -307,9 +310,9 @@ export default function WelcomePage() {
     setShowImportModal(false);
     setLoadingDonors(true);
     try {
-      const donors = await apiFetch("/donors/summaries");
-      setDonorsSnapshot(donors || []);
-    } catch { setDonorsSnapshot([]); }
+      const c = await peopleCounts();
+      setDonorTotal(c?.total || 0);
+    } catch { setDonorTotal(0); }
     await loadSampleStatus();
     setLoadingDonors(false);
   }
@@ -319,8 +322,8 @@ export default function WelcomePage() {
     setClearingSample(true); setError("");
     try {
       await apiFetch("/org/clear-sample-data", { method: "POST" });
-      const donors = await apiFetch("/donors/summaries");
-      setDonorsSnapshot(donors || []);
+      const c = await peopleCounts();
+      setDonorTotal(c?.total || 0);
       await loadSampleStatus();
       setConfirmClearSample(false);
       setShowImportModal(true);
@@ -922,7 +925,7 @@ export default function WelcomePage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {importSkipped && donorsSnapshot.length === 0 && (
+              {importSkipped && donorTotal === 0 && (
                 <button onClick={handleLoadSample} disabled={loadingSample} style={{ width: "100%", background: "transparent", border: `1.5px solid ${greenDk}`, borderRadius: 12, padding: "13px 16px", color: greenDk, fontSize: 14, fontWeight: 700, cursor: loadingSample ? "not-allowed" : "pointer", opacity: loadingSample ? 0.7 : 1, fontFamily: "inherit" }}>
                   {loadingSample ? "Loading sample data…" : "Load sample data & explore →"}
                 </button>

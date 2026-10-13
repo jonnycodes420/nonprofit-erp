@@ -42,9 +42,13 @@ async function freshLogin(email) {
   if (!r.ok) throw new Error(`login ${email}: ${r.status} ${await r.text()}`);
   return (await r.json()).token;
 }
-async function call(token, method, path, body) {
+// SCALE-2: BASES=a,b spreads the users over several web processes (a model
+// of WEB_REPLICAS); each user keeps to one, as a load balancer's session would.
+const BASES = (process.env.BASES || BASE).split(",").map(s => s.trim()).filter(Boolean);
+if (BASES.some(b => !/^http:\/\/(localhost|127\.0\.0\.1)[:/]/.test(b))) { console.error("Refusing: BASES must be loopback."); process.exit(1); }
+async function call(token, method, path, body, base = BASE) {
   const t0 = performance.now();
-  const r = await fetch(BASE + path, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+  const r = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
     body: body ? JSON.stringify(body) : undefined });
   const text = await r.text();
   return { ms: performance.now() - t0, status: r.status, path, bytes: text.length, text };
@@ -55,17 +59,24 @@ async function call(token, method, path, body) {
 // together, the next wave waits for the one before, and the screen is done
 // when its last wave is.
 const G = p => ["GET", p];
+const HOME_FIRST = ["/data-health/notice", "/gift-starts/notice", "/recurring/exceptions", "/readouts/latest", "/move",
+  "/sequences/home", "/agent/daily-line", "/threads/health", "/org/setup-status", "/me/home-layout", "/tasks/counts?scope=mine",
+  "/dashboard/my-stats", "/donors/stage-counts", "/recurring/health", "/impact", "/fundraising/overview", "/goals/active", "/drift",
+  "/threads?scope=mine", "/calendar/today", "/calendar/to-log", "/mailbox", "/home/calls", "/home/annual-goal", "/ask/pins",
+  "/donors/birthdays-near"];
+const HOME_SCOPE = s => [`/dashboard/today?scope=${s}`, `/metrics/stewardship-summary?scope=${s}`, `/dashboard/home?scope=${s}`,
+  "/thank-yous", `/dashboard/stewardship-debt/breakdown?scope=${s}`, `/dashboard/retention/breakdown?scope=${s}`];
+const bundle = paths => "/home/bundle?" + paths.map(p => "p=" + encodeURIComponent(p)).join("&");
 const SCREENS = {
-  shell: () => [[G("/org"), G("/donors/summaries"), G("/grants"), G("/volunteers"), G("/tasks"), G("/board"), G("/financials"),
+  // SCALE-2: the shell no longer reads /donors/summaries (24 MB at 25k donors).
+  shell: () => [[G("/org"), G("/grants"), G("/volunteers"), G("/tasks"), G("/board"), G("/financials"),
                  G("/billing/status"), G("/journeys"), G("/status/summary"), G("/org/sample-data-status")]],
-  home: () => [
-    [G("/data-health/notice"), G("/gift-starts/notice"), G("/recurring/exceptions"), G("/readouts/latest"), G("/move"),
-     G("/sequences/home"), G("/agent/daily-line"), G("/threads/health"), G("/org/setup-status"), G("/me/home-layout"),
-     G("/tasks/counts?scope=mine"), G("/dashboard/my-stats"), G("/donors/stage-counts"), G("/recurring/health"), G("/impact"),
-     G("/fundraising/overview"), G("/goals/active"), G("/drift"), G("/threads?scope=mine"), G("/calendar/today"),
-     G("/calendar/to-log"), G("/mailbox"), G("/home/calls"), G("/home/annual-goal"), G("/ask/pins")],
-    [G("/dashboard/today?scope=all"), G("/metrics/stewardship-summary?scope=all"), G("/dashboard/home?scope=all"), G("/thank-yous"),
-     G("/dashboard/stewardship-debt/breakdown?scope=all"), G("/dashboard/retention/breakdown?scope=all")]],
+  // SCALE-2: Home asks for each wave in ONE request (client/src/api.js
+  // prefetch -> GET /home/bundle); these are the same reads as SCALE-1's 25
+  // and 6, now two calls.
+  // The queue's "still on file" mark comes with /dashboard/today, so Home is
+  // these two requests.
+  home: () => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))]],
   donors: () => [[G("/donors?limit=50&offset=0&role=donor"), G("/org/team"), G("/portfolio/officers"),
                   G("/custom-fields?entity=donor"), G("/donors/custom-field-values/all"), G("/me")]],
   profile: (o) => { const d = `/donors/${o.donorId}`; return [[G(d)],
@@ -85,7 +96,7 @@ async function latency() {
   const users = [];
   for (const n of orgs) {
     const slug = `load${String(n).padStart(3, "0")}`;
-    users.push({ slug, token: await login(`admin@${slug}.load`), donorId: `org_${slug}_d${7 + n}` });
+    users.push({ slug, token: await login(`admin@${slug}.load`), donorId: `org_${slug}_d${7 + n}`, base: BASES[users.length % BASES.length] });
   }
   const per = Object.fromEntries(Object.keys(SCREENS).map(k => [k, { screen: [], status: {}, slowest: {} }]));
   const stopAt = Date.now() + DURATION;
@@ -102,11 +113,12 @@ async function latency() {
       for (const [name, reqs] of Object.entries(SCREENS)) {
         const t0 = performance.now();
         const rs = [];
-        for (const wave of reqs(u)) rs.push(...await Promise.all(wave.map(([m, p, b]) => call(u.token, m, p, b))));
+        for (const wave of reqs(u)) rs.push(...await Promise.all(wave.map(([m, p, b]) => call(u.token, m, p, b, u.base))));
         per[name].screen.push(performance.now() - t0);
+        per[name].bytes = Math.max(per[name].bytes || 0, rs.reduce((n, r) => n + r.bytes, 0));
         for (const r of rs) {
           per[name].status[r.status] = (per[name].status[r.status] || 0) + 1;
-          const k = r.path.replace(/org_load\d+_d\d+/, ":id");
+          const k = r.path.startsWith("/home/bundle") ? `/home/bundle (${r.path.split("&p=").length} reads)` : r.path.replace(/org_load\d+_d\d+/, ":id");
           (per[name].slowest[k] = per[name].slowest[k] || []).push(r.ms);
         }
       }
@@ -117,11 +129,11 @@ async function latency() {
   console.log(`database connections: peak ${connPeak} open, ${activePeak} busy at once`);
   const table = {};
   for (const [name, v] of Object.entries(per)) {
-    table[name] = { n: v.screen.length, p50: Math.round(pct(v.screen, 50)), p95: Math.round(pct(v.screen, 95)), status: v.status,
+    table[name] = { n: v.screen.length, p50: Math.round(pct(v.screen, 50)), p95: Math.round(pct(v.screen, 95)), bytes: v.bytes || 0, status: v.status,
       requests: Object.fromEntries(Object.entries(v.slowest).map(([k, arr]) => [k, { p50: Math.round(pct(arr, 50)), p95: Math.round(pct(arr, 95)) }])) };
   }
   results.latency = table;
-  console.table(Object.fromEntries(Object.entries(table).map(([k, v]) => [k, { n: v.n, p50: v.p50, p95: v.p95, status: JSON.stringify(v.status) }])));
+  console.table(Object.fromEntries(Object.entries(table).map(([k, v]) => [k, { n: v.n, p50: v.p50, p95: v.p95, kb: Math.round(v.bytes / 1024), status: JSON.stringify(v.status) }])));
 }
 
 async function tick() {

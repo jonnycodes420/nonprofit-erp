@@ -10,6 +10,8 @@
 // Every number is a <Figure> with a source (figureSources.js auction-*), so each
 // opens the rows that make it.
 import { useState, useEffect } from "react";
+import { personNamed } from "../lib/people";
+import { PeopleDatalist } from "./PeopleDatalist";
 import { apiFetch } from "../api";
 import { T, Card, Phone } from "./shared";
 import { Figure, FigureContext } from "./Figure";
@@ -34,9 +36,10 @@ const FIGURE_KEYS = [
 function ItemForm({ initial, donors, onSave, onCancel, saving }) {
   const [f, setF] = useState(initial);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
-  const save = () => {
+  const save = async () => {
     const name = f.donorName.trim().toLowerCase();
-    const d = name ? donors.find(x => String(x.name || "").toLowerCase() === name) : null;
+    // SCALE-2: the person with exactly this name, highest giving first, from the server.
+    const d = name ? await personNamed(name).catch(() => null) : null;
     onSave({ title: f.title, category: f.category, description: f.description, donorId: d ? d.id : null,
              fmv: f.fmv || "0", startingBid: f.startingBid, bidIncrement: f.bidIncrement, buyNow: f.buyNow || null,
              photos: f.photos }, name && !d);
@@ -52,7 +55,7 @@ function ItemForm({ initial, donors, onSave, onCancel, saving }) {
         <label style={lab}>Bid increment<input style={inp} inputMode="decimal" value={f.bidIncrement} onChange={e => set("bidIncrement", e.target.value)} /></label>
         <label style={lab}>Buy now (optional)<input style={inp} inputMode="decimal" value={f.buyNow} onChange={e => set("buyNow", e.target.value)} /></label>
       </div>
-      <datalist id="auction-donors">{donors.slice(0, 2000).map(d => <option key={d.id} value={d.name} />)}</datalist>
+      <PeopleDatalist id="auction-donors" text={f.donorName} />
       <label style={lab}>Description<textarea style={{ ...inp, minHeight: 70 }} value={f.description} onChange={e => set("description", e.target.value)} /></label>
       <div>
         <div style={{ ...lab, marginBottom: 6 }}>Photos (up to six; the first leads the item)</div>
@@ -126,7 +129,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   // JOURNEYS-4 · a live auction or a paper bid sheet: the name and the number.
   const saveWinner = async it => {
     const name = wf.name.trim().toLowerCase();
-    const p = name ? donors.find(x => String(x.name || "").toLowerCase() === name) : null;
+    const p = name ? await personNamed(name).catch(() => null) : null;   // SCALE-2
     if (!p) { setMsg("Pick the winner's name from the list, or add the person first."); return; }
     await act(() => apiFetch(`/auction-items/${it.id}/winner`, { method: "POST", body: JSON.stringify({ donorId: p.id, amount: wf.amount }) }), r => r.sentence);
     setWinnerFor(null); setWf({ name: "", amount: "" });
@@ -217,7 +220,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
               </div>
             )}
           </div>))}
-        {winnerFor && <datalist id="auction-winner-donors">{donors.slice(0, 2000).map(p => <option key={p.id} value={p.name} />)}</datalist>}
+        {winnerFor && <PeopleDatalist id="auction-winner-donors" text={wf.name} />}
       </Card>
 
       <Card style={{ padding: "16px 18px" }}>

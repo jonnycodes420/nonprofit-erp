@@ -135,6 +135,12 @@ async function erasePerson(orgId, donorId) {
     await step(`UPDATE donors SET ${sets} WHERE org_id=$1 AND id=$2`, [orgId, donorId]);
     await step(`UPDATE donors SET name=$3, tags='[]', custom_fields='{}'::jsonb, external_donor_ids=NULL, erased_at=NOW() WHERE org_id=$1 AND id=$2`,
       [orgId, donorId, ERASED_NAME]);
+    // SCALE-2: stored answers. A stored Home or Drift answer can carry the
+    // name (the Drift list, the top donors); the writes above already make
+    // every one of them unservable, and these take the bytes away too. Each
+    // recomputes on its next read.
+    await step(`DELETE FROM donor_drift WHERE org_id=$1 AND donor_id=$2`, [orgId, donorId]);
+    await step(`DELETE FROM org_summary WHERE org_key=$1`, [orgId]);
     return { erased: true, rowsTouched: n };
   });
 }

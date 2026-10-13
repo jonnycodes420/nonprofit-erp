@@ -145,6 +145,7 @@ CORE=(
   live1-alive
   fix37-import-thanks
   scale1-queue
+  scale2-same-numbers
   fix20-qbo-realm-switch
   oauth-state
   int3-optout

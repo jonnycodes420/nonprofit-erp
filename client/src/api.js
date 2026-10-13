@@ -129,6 +129,32 @@ const kept = new Map();
 const copy = v => (v && typeof v === "object" ? structuredClone(v) : v);
 export function forgetReads() { kept.clear(); }
 
+// ── SCALE-2: A SCREEN'S FIRST READS IN ONE REQUEST ─────────────────────────
+// Home opened with 25 requests. prefetch(paths) asks for them in ONE
+// (GET /home/bundle) and parks a promise for each path where rule 1 above
+// looks, so the component's own apiFetch(path) is handed the bundle's answer
+// instead of making its own trip. Nothing in the component changes. A path
+// the bundle could not answer (any status but 200) is fetched on its own, so
+// an error reaches the caller exactly as it did before.
+export function prefetch(paths) {
+  const token = getToken();
+  if (!token) return;
+  const want = [...new Set(paths)].filter(p => {
+    const key = token + " " + p;
+    const hit = kept.get(key);
+    return !inFlight.has(key) && !(hit && Date.now() - hit.at < SHARED_TTL_MS);
+  });
+  if (!want.length) return;
+  const bundle = apiFetchNow("/home/bundle?" + want.map(p => "p=" + encodeURIComponent(p)).join("&")).catch(() => null);
+  for (const p of want) {
+    const key = token + " " + p;
+    inFlight.set(key, bundle
+      .then(b => (b && b[p] && b[p].status === 200 && "body" in b[p]) ? b[p].body : apiFetchNow(p))
+      .then(v => { if (SHARED_READS.some(r => r.test(p))) kept.set(key, { at: Date.now(), value: v }); return v; })
+      .finally(() => inFlight.delete(key)));
+  }
+}
+
 export async function apiFetch(path, options = {}) {
   const method = String(options.method || "GET").toUpperCase();
   // FIX-25: a write also forgets the reads in flight. A read asked for after a

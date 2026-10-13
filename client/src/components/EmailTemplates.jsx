@@ -12,6 +12,7 @@
 // only inside the rendered email in the iframe, which is the org's surface.
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { apiFetch } from "../api";
+import { usePeoplePicker } from "../lib/people";
 import { T, Spin, activeMark } from "./shared";
 import { TemplateEditor } from "./BrandKit";
 import { offerUndo } from "./EditHistory";
@@ -360,7 +361,7 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
   // saved. Undo dismisses the draft. Nothing is sent.
   const [who, setWho] = useState(null);
   const [whoQ, setWhoQ] = useState("");
-  const people = whoQ.trim() ? donors.filter(x => (x.name || "").toLowerCase().includes(whoQ.trim().toLowerCase())).slice(0, 8) : [];
+  const [people] = usePeoplePicker(whoQ, { match: "name", limit: 8 });   // SCALE-2: asked of the server as she types
   const draftForPerson = async () => {
     setNote("");
     if (dirty) { setNote("Save first, so the draft holds the words you see."); return; }

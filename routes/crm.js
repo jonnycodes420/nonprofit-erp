@@ -36,6 +36,8 @@ const PM = require("../personMatch");   // WIRE-1 rule 1: one record per person 
 const emailCompose = require("../emailCompose");
 const { requireAuth404 } = require("../auth");   // FIX-20 Part 0: the file doors
 const { rateLimit } = require("../rateLimitStore");   // SCALE-1: shared by every replica
+// SCALE-2: org-wide figures are stored per org and served until something changes.
+const OS = require("../orgSummary");
 // FIX-20 Part 0: the private file doors (conversation attachments, grant
 // documents). Signed-in staff open a handful at a time; this is per IP.
 const fileLimiter = rateLimit("fileLimiter", {
@@ -3012,7 +3014,7 @@ app.put("/org/vocabulary", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 // setup). Only the card's dismissal preference is stored (orgs.setup_card_state).
 const SETUP_DONOR_THRESHOLD = 5; // >5 real donors = "imported" (matches the sample-data loader's real-org bar)
 
-app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
+app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -3026,8 +3028,11 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active' AND COALESCE(page_kind,'give') = 'give'`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
-    query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n, MIN(expires_at) AS next_expiry FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
   ]);
+  // SCALE-2: the stored answer (orgSummary.js) turns over when the next
+  // pending invite expires, the one thing here that moves with the clock.
+  if (inviteRow[0].next_expiry) res.locals.orgSummaryValidUntil = inviteRow[0].next_expiry;
   const donorCount = donorRow[0].n;
   const giftCount = giftRow[0].n;
 
@@ -17985,7 +17990,7 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
 // graceful: a Core org gets Tasks + a giving snapshot, no broken Team headers.
 // The Need-to-do LIST itself is the existing /dashboard/today queue (the client
 // already fetches it) — this endpoint returns the four headers' summary data.
-app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/home", requireAuth, OS.cached("dashboard-home"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const scope = req.query.scope === "all" ? "all" : "mine";
   // THE ORG'S CIVIL DATE, NOT THE UTC DAY. These four counts are Home's Today
@@ -18326,7 +18331,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
            MAX(i.date) AS last_contact
     FROM donors d
-    LEFT JOIN interactions i ON i.donor_id = d.id AND i.type <> ALL(?::text[])
+    -- SCALE-2: "i.org_id = d.org_id" is the tenant rule (a person's
+    -- conversations are in the person's org). Without it this read every
+    -- org's interactions, 2.6M rows on the load database: 560 ms -> 67 ms.
+    LEFT JOIN interactions i ON i.donor_id = d.id AND i.org_id = d.org_id AND i.type <> ALL(?::text[])
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
       AND ${solicitableSql("d")} AND ${donorOnly("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
@@ -18352,7 +18360,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
     SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
     FROM gifts g
-    JOIN donors d ON d.id = g.donor_id
+    -- SCALE-2: "g.org_id = d.org_id" is the tenant rule (a gift's donor is in
+    -- the gift's org); it lets the planner read this org's recent gifts by
+    -- (org_id, date) instead of probing every donor: 43 ms -> 10 ms at 25k.
+    JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id
     WHERE d.org_id = ?
       AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
       AND d.deceased IS NOT TRUE
@@ -18365,7 +18376,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
       SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
       FROM gifts g
-      JOIN donors d ON d.id = g.donor_id
+      JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id   -- SCALE-2: the tenant rule, as above
       WHERE d.org_id = ?
         AND g.amount >= 250
         AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
@@ -18702,7 +18713,14 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   }
 
   items.sort((a, b) => b.priority - a.priority);
-  res.json(items.slice(0, 10));
+  const top = items.slice(0, 10);
+  // SCALE-2: whether each person is still on file (in this org, not deleted),
+  // so Home no longer needs the whole donor list, or a second request, to
+  // hide a row nothing can act on (a task row is not filtered by deleted_at).
+  const onFile = new Set((await query(`SELECT id FROM donors WHERE org_id = ? AND deleted_at IS NULL AND id = ANY(?)`,
+    [orgId, top.map(i => i.donorId).filter(Boolean)])).map(r => r.id));
+  for (const i of top) i.onFile = !!i.donorId && onFile.has(i.donorId);
+  res.json(top);
 }));
 
 // ── BUILD-76 Part 2 — the Drifting surface ─────────────────────────────────
@@ -18713,7 +18731,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
 // see-all view). Rows already handled (a meaningful contact inside the
 // snooze window) are filtered from the LIST but stay in the headline —
 // the money is still at risk until a gift lands.
-app.get("/drift", requireAuth, wrap(async (req, res) => {
+app.get("/drift", requireAuth, OS.cached("drift"), wrap(async (req, res) => {
   const { orgId } = req.user;
   const includeMedium = req.query.includeMedium === "1" || req.query.includeMedium === "true";
   const uncapped = req.query.all === "1" || req.query.all === "true";
@@ -19841,7 +19859,7 @@ app.post("/metrics/reset-baselines", requireAuth, requireAdmin, wrap(async (req,
   res.json({ deleted: del.changes, resnapshotted: true });
 }));
 
-app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
+app.get("/metrics/stewardship-summary", requireAuth, OS.cached("stewardship-summary"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   // ?scope=mine (default) scopes Debt/Retention to the logged-in user's own
   // assigned donors, same as GET /dashboard/today; ?scope=all is org-wide.
@@ -19907,7 +19925,7 @@ app.get("/metrics/stewardship-summary", requireAuth, wrap(async (req, res) => {
 // this surfaces it directly instead of leaving it as one opaque figure.
 // Capped at a page size since a large org could have hundreds of qualifying
 // donors; `count` is the true total so the UI can say "top 50 of 214".
-app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/stewardship-debt/breakdown", requireAuth, OS.cached("debt-breakdown"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
   const scope = req.query.scope === "all" ? "all" : "mine";
@@ -19932,7 +19950,7 @@ app.get("/dashboard/stewardship-debt/breakdown", requireAuth, wrap(async (req, r
 // this list can never disagree: nonRetained.length always equals
 // prevYearCount - retained by construction (set difference vs set
 // intersection of the same two sets).
-app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => {
+app.get("/dashboard/retention/breakdown", requireAuth, OS.cached("retention-breakdown"), wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const PAGE_SIZE = 50;
   const scope = req.query.scope === "all" ? "all" : "mine";
@@ -20443,7 +20461,7 @@ function fundraisingGoalsPortfolio(rows) {
 // needs in one call: the active org goal with pace, this-period momentum vs
 // the prior period (same FY/calendar basis as Finance — one source of truth),
 // campaign + giving-page rollups, and recent real gifts.
-app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
+app.get("/fundraising/overview", requireAuth, OS.cached("fundraising-overview"), wrap(async (req, res) => {
   await PACE_READY;
   await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
@@ -23855,7 +23873,7 @@ app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
   res.json({ ...report, definitions: ACTIVITY_DEFINITIONS });
 }));
 
-app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
+app.get("/reports/:key", requireAuth, OS.cached("report", { perUser: false, when: req => req.params.key === "giving-summary" && !req.query.format }), wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
   let p;
@@ -24869,7 +24887,7 @@ async function queueTaskAssignmentEmail(task, actorUserId, eventKey = null) {
 // Org-scoped. New org with nothing recovered yet → recoveredAmount 0 +
 // watchingRecurringCount, so the client can show a forward-looking line
 // ("watching N recurring donors for failed cards") instead of a fake number.
-app.get("/impact", requireAuth, wrap(async (req, res) => {
+app.get("/impact", requireAuth, OS.cached("impact", { perUser: false }), wrap(async (req, res) => {
   const orgId = req.user.orgId;
 
   // (1) Recovered recurring giving — tracked recoveries ONLY, never total gifts.

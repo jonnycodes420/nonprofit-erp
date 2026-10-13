@@ -33,6 +33,7 @@
 //     button never believes its own guess that a run is still going.
 //   · NO RAW MARKDOWN AND NO COLOUR LITERALS. Every colour is a token.
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { pickPeople } from "../lib/people";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { Workflows } from "./Workflows";
@@ -596,8 +597,18 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     : waitCount ? `${waitCount} ${waitCount === 1 ? "thing is" : "things are"} waiting for you.` : "";
 
   // Examples in HER words: her word for a giver, and a name on her own file.
-  const someone = (data?.donors || []).find(d => d && d.name && d.kind === "organisation")
-    || (data?.donors || []).find(d => d && d.name);
+  // SCALE-2: the first organisation on file by giving, else the first named
+  // person: the same one the whole-org list gave, asked of the server.
+  const [someone, setSomeone] = useState(null);
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const org = await pickPeople({ kind: "organisation", named: true, limit: 1 });
+      const one = org[0] || (await pickPeople({ named: true, limit: 1 }))[0] || null;
+      if (live) setSomeone(one);
+    })().catch(() => {});
+    return () => { live = false; };
+  }, []);
   const examples = [
     `Draft a thank-you to every ${t("giver", 1)} who gave this month`,
     someone ? `Just got a check from ${someone.name} for $250` : `Just got a check for $250 from someone on file`,

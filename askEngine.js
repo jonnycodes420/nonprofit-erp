@@ -98,9 +98,14 @@ function byDonor(rows) {
     x.c += cents(r.amount); x.n++; if (String(r.date) > String(x.date)) x.date = r.date;
     m.set(r.donor_id, x);
   }
-  return [...m.values()].map(x => ({ id: x.id, type: "person", donor_id: x.donor_id, name: x.name, date: x.date,
-    amount: String(dollars(x.c)), detail: `${x.n} ${x.n === 1 ? "gift" : "gifts"}` }))
-    .sort((a, b) => cents(b.amount) - cents(a.amount) || String(a.id).localeCompare(String(b.id)));
+  // SCALE-2: each row's sort key is parsed ONCE, not on every comparison
+  // (n log n money parses over a year of gifts was the largest single cost in
+  // the web process under load). The key is the one the comparison read.
+  return [...m.values()].map(x => {
+    const amount = String(dollars(x.c));
+    return { row: { id: x.id, type: "person", donor_id: x.donor_id, name: x.name, date: x.date,
+      amount, detail: `${x.n} ${x.n === 1 ? "gift" : "gifts"}` }, k: cents(amount) };
+  }).sort((a, b) => b.k - a.k || String(a.row.id).localeCompare(String(b.row.id))).map(e => e.row);
 }
 async function computeGiftMetric(orgId, metric, rows, span) {
   const pos = rows.filter(r => cents(r.amount) > 0);

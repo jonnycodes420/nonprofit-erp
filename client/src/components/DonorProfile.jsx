@@ -10,6 +10,8 @@ import { FunderPanel } from "./FunderPanel";
 import { VolunteerPanel, AddVolunteerModal } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
 import { apiFetch, API, getToken } from "../api";
+import { usePeoplePicker, peopleNamed } from "../lib/people";
+import { PeopleDatalist } from "./PeopleDatalist";
 import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
@@ -936,7 +938,7 @@ function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="H
 }
 
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -1064,8 +1066,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     catch(e){alert(errorMessage(e,"The relationship could not be changed."));}
   };
   const linkedIds=new Set(relationships.map(r=>r.relatedDonorId));
+  // SCALE-2: asked of the server as she types (lib/people.js), enough rows
+  // that eight remain after this person and the people already linked.
+  const [relPicked]=usePeoplePicker(relSearch,{match:"name",limit:9+linkedIds.size});
   const relPickerResults=relSearch.trim()
-    ?allDonors.filter(d=>d.id!==donor.id&&!linkedIds.has(d.id)&&d.name.toLowerCase().includes(relSearch.trim().toLowerCase())).slice(0,8)
+    ?relPicked.filter(d=>d.id!==donor.id&&!linkedIds.has(d.id)).slice(0,8)
     :[];
 
   const [cfData,setCfData]=useState([]);
@@ -1245,6 +1250,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [hhModalOpen,setHhModalOpen]=useState(false);
   const [hhPick,setHhPick]=useState(new Set());
   const [hhSearch,setHhSearch]=useState("");
+  // SCALE-2: the household picker's people from the server, name and email
+  // run together as before; one extra row covers this person being in it.
+  const [hhPeople]=usePeoplePicker(hhSearch,{match:"concat",limit:41,emptyToo:true,enabled:hhModalOpen});
+  // SCALE-2: the gift form's people list follows whichever name field she
+  // typed in last (soft credit, tribute or employer).
+  const [giftPeopleQ,setGiftPeopleQ]=useState("");
+  useEffect(()=>{setGiftPeopleQ(addGiftForm.scName||"");},[addGiftForm.scName]);
+  useEffect(()=>{setGiftPeopleQ(addGiftForm.tribName||"");},[addGiftForm.tribName]);
+  useEffect(()=>{setGiftPeopleQ(addGiftForm.matchEmployer||"");},[addGiftForm.matchEmployer]);
   const refreshSoftCredit=()=>apiFetch(`/donors/${donor.id}/soft-credit`).then(sc=>{
     setSoftCredit(sc);
     if(sc&&sc.householdId)apiFetch(`/households/${sc.householdId}`).then(setHousehold).catch(()=>setHousehold(null));
@@ -1625,21 +1639,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // records, found by exact name. A name that is not on file is said out
   // loud rather than guessed at (an honouree is the exception: a memorial is
   // often for somebody who never gave, so their name alone is enough).
-  const findByName=nm=>{const n=String(nm||"").trim().toLowerCase();if(!n)return null;const hits=allDonors.filter(d=>String(d.name||"").trim().toLowerCase()===n);return hits.length===1?hits[0]:null;};
-  const giftExtrasBody=()=>{
+  // SCALE-2: asked of the server (exact name, both sides trimmed), not a whole-org list.
+  const findByName=async nm=>{const n=String(nm||"").trim().toLowerCase();if(!n)return null;const hits=await peopleNamed(n,2,{trimStored:true});return hits.length===1?hits[0]:null;};
+  const giftExtrasBody=async()=>{
     const f=addGiftForm,out={};
-    if(f.scName){const p=findByName(f.scName);if(!p)throw new Error(`${f.scName} is not in your records. Add them first, then credit them.`);
+    if(f.scName){const p=await findByName(f.scName);if(!p)throw new Error(`${f.scName} is not in your records. Add them first, then credit them.`);
       out.softCredits=[{donorId:p.id,role:"recommender",...(f.scAmount?{amount:Number(f.scAmount)}:{})}];}
-    if(f.tribType&&f.tribName){const h=findByName(f.tribName);
+    if(f.tribType&&f.tribName){const h=await findByName(f.tribName);
       out.tribute={type:f.tribType,donorId:h?h.id:null,name:f.tribName,notifyName:f.tribNotify||null,notifyEmail:f.tribNotifyEmail||null};}
-    if(f.matchEmployer){const e=findByName(f.matchEmployer);if(!e)throw new Error(`${f.matchEmployer} is not in your records. Add the employer first.`);
+    if(f.matchEmployer){const e=await findByName(f.matchEmployer);if(!e)throw new Error(`${f.matchEmployer} is not in your records. Add the employer first.`);
       out.match={employerId:e.id,...(f.matchAmount?{amount:Number(f.matchAmount)}:{})};}
     return out;
   };
   const addGift=async()=>{
     if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
     let extras;
-    try{extras=giftExtrasBody();}catch(e){setGiftErr(e.message);return;}
+    try{extras=await giftExtrasBody();}catch(e){setGiftErr(e.message);return;}
     setGiftErr("");
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
@@ -2506,7 +2521,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
                     <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
                     <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
-                      {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
+                      {hhPeople.filter(x=>x.id!==donor.id&&!x.householdId).slice(0,40).map(x=>{
                         const picked=hhPick.has(x.id);
                         return(
                           <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
@@ -2767,7 +2782,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {/* BUILD-98 Part 1 — soft credit, tribute, matching gift. Closed by
                   default: most gifts are none of these, and three blank rows on
                   every gift is how a form starts to feel like paperwork. */}
-              <datalist id="gift-people">{allDonors.slice(0,2000).map(d=><option key={d.id} value={d.name}/>)}</datalist>
+              <PeopleDatalist id="gift-people" text={giftPeopleQ}/>
               <button type="button" onClick={()=>setGiftMoreOpen(o=>!o)} data-testid="gift-more-toggle"
                 style={{background:"transparent",border:"none",padding:"2px 0",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
                 {giftMoreOpen?"Hide soft credit, tribute and match":"Soft credit, tribute or matching gift"}

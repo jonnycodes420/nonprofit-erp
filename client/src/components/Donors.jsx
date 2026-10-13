@@ -7,10 +7,11 @@ import Papa from "papaparse";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, adaptDonor } from "../api";
+import { allPeople, forgetAllPeople, peopleById, peopleCounts, usePeoplePicker } from "../lib/people";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
-import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, Modal, Spin } from "./shared";
 import { offerUndo } from "./EditHistory";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
@@ -59,11 +60,27 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   // written back below, so a filtered list opens the same in a new tab.
   const[urlList]=useState(()=>window.location.pathname.replace(/\/+$/,"")==="/donors"?donorsListState(window.location.search):{});
   const routerNavigate=useNavigate();
-  const lapsedCount=data.donors.filter(d=>!d.deceased&&!d.doNotContact&&!d.doNotSolicit&&!d.importedSustainer&&(d.stage==="lapsed"||(d.lastGift&&daysDiff(d.lastGift)>365))).length;   // BUILD-77 — the badge matches the (gated) list
+  // SCALE-2: THE SHELL NO LONGER HOLDS EVERY DONOR. The whole-org list is
+  // loaded here only when a view that draws the whole org opens (Team,
+  // Re-engage, the map) or the call list is asked for; everything else asks
+  // the server (lib/people.js). `orgPeople` is null until then.
+  const[orgPeople,setOrgPeople]=useState(null);
+  const patchPeople=fn=>{forgetAllPeople();setOrgPeople(prev=>prev?fn(prev):prev);};
+  // BUILD-77: the badge matches the (gated) list. SCALE-2: counted by the
+  // server with the same rule (routes/donorLookups.js /donors/counts).
+  const[peopleCount,setPeopleCount]=useState(null);
+  const loadPeopleCount=()=>peopleCounts().then(setPeopleCount).catch(()=>{});
+  useEffect(()=>{loadPeopleCount();},[]);
+  const lapsedCount=peopleCount?.reengage||0;
   const[view,setView]=useState(initialView||urlList.view||"directory");
   const[search,setSearch]=useState(urlList.search||"");
-  const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||{id:initialSelectDonorId}:null);
-  const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
+  const[selected,setSelected]=useState(()=>initialSelectDonorId?{id:initialSelectDonorId}:null);
+  const[logTarget,setLogTarget]=useState(null);
+  useEffect(()=>{
+    if(!initialLogDonorId)return;
+    peopleById([initialLogDonorId]).then(m=>{if(m[initialLogDonorId])setLogTarget(m[initialLogDonorId]);}).catch(()=>{});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   // FIX-11 Part 1 — "+ Log → Gift" hands the person to the real gift form on
   // the donor's profile rather than collecting an amount in the touchpoint
   // modal, which produced a note and no gift. Cleared once the profile has
@@ -73,6 +90,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[convoPickerOpen,setConvoPickerOpen]=useState(false);
   const[convoTarget,setConvoTarget]=useState(null);
   const[convoSearch,setConvoSearch]=useState("");
+  // SCALE-2: the picker's people, name or email, from the server as she types.
+  const[convoPeople]=usePeoplePicker(convoSearch,{match:"either",limit:30,emptyToo:true,enabled:convoPickerOpen});
   const[editTarget,setEditTarget]=useState(null);
   // THREAD-3: a delete refused because the person has a live monthly plan.
   const[planBlock,setPlanBlock]=useState(null);   // { id, sentence }
@@ -112,7 +131,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[sampleLoading,setSampleLoading]=useState(false);
   // Server-paginated directory (BUILD-06 Phase A): the Directory view fetches
   // its own 50-row pages with search/stage/owner pushed to query params;
-  // data.donors (now /donors/summaries) keeps feeding the whole-org views
+  // orgPeople (SCALE-2: loaded when one opens) feeds the whole-org views
   // (pipeline/team/re-engage/map) and everything else.
   const DIR_PAGE_SIZE=50;
   const[dirPage,setDirPage]=useState(0);
@@ -164,7 +183,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     if(initialSelectDonorId){
       // FIX-13 Part 6 — a deep link to someone outside the summaries (a
       // non-donor person, a fresh tab) still opens: the full record loads.
-      selectDonor(data.donors.find(x=>x.id===initialSelectDonorId)||{id:initialSelectDonorId});
+      selectDonor({id:initialSelectDonorId});
     }
   },[]);
 
@@ -220,7 +239,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const advFilterCount=filters.tiers.length+filters.stages.length+(filters.pattern?1:0)+(filters.geo.trim()?1:0)+((filters.giftFrom||filters.giftTo)?1:0)+((filters.totalMin||filters.totalMax)?1:0);
   const cfFilterCount=Object.entries(cfFilters).filter(([,v])=>{if(!v||v==="")return false;if(Array.isArray(v))return v.length>0;if(typeof v==="object")return v.from||v.to;return true;}).length;
 
-  const filtered=data.donors
+  const wholeOrgView=view==="team"||view==="reengage"||view==="map";
+  useEffect(()=>{
+    if(!wholeOrgView||orgPeople)return;
+    let live=true;
+    allPeople().then(rows=>{if(live)setOrgPeople(rows);}).catch(e=>console.error(e));
+    return()=>{live=false;};
+  },[wholeOrgView,orgPeople]);
+  const filtered=(orgPeople||[])
     .filter(d=>!search||(d.name+d.email).toLowerCase().includes(search.toLowerCase()))
     .filter(matchesAdvanced)
     .filter(matchesCf);
@@ -251,13 +277,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const patchDirRows=(donorId,patch)=>setDirRows(prev=>prev?prev.map(d=>d.id===donorId?{...d,...patch}:d):prev);
 
   const handleAssign=(donorId,assignedToId,assignedToName)=>{
-    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d)}));
+    patchPeople(list=>list.map(d=>d.id===donorId?{...d,assignedTo:assignedToId,assignedToName}:d));
     patchDirRows(donorId,{assignedTo:assignedToId,assignedToName});
     if(selected?.id===donorId)setSelected(prev=>({...prev,assignedTo:assignedToId,assignedToName}));
   };
 
   const moveToStage=async(donorId,stage)=>{
-    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donorId?{...d,stage}:d)}));
+    patchPeople(list=>list.map(d=>d.id===donorId?{...d,stage}:d));
     patchDirRows(donorId,{stage});
     if(selected?.id===donorId)setSelected(prev=>({...prev,stage}));
     try{await apiFetch(`/donors/${donorId}/stage`,{method:"PATCH",body:JSON.stringify({stage})});}
@@ -266,7 +292,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const handleLogged=(donor,interaction)=>{
     const updated={...donor,lastTouchpoint:interaction.date,interactions:[interaction,...(donor.interactions||[])]};
-    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===donor.id?updated:d)}));
+    patchPeople(list=>list.map(d=>d.id===donor.id?updated:d));
     patchDirRows(donor.id,{lastTouchpoint:interaction.date});
     if(selected?.id===donor.id)setSelected(updated);
     setLogTarget(null);
@@ -398,13 +424,22 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // local state on every refresh, which is especially costly here since
     // reloadDonors() is the general post-action refresh (import, gift log,
     // custom field save…), not a rare path.
+    // SCALE-2: the whole-org list reloads only if a whole-org view has it.
+    forgetAllPeople();
+    loadPeopleCount();
+    setDirReloadKey(k=>k+1); // refresh the Directory's server page too
     try{
-      const donors=await apiFetch("/donors/summaries");
-      setData(prev=>({...prev,donors:donors.map(adaptDonor)}));
-      setDirReloadKey(k=>k+1); // refresh the Directory's server page too
+      if(orgPeople)setOrgPeople(await allPeople());
     }catch(e){console.error(e);}
   };
 
+  // SCALE-2: open someone only if they are still on file (the old list's
+  // .find()), asked of the server by id; otherwise run `orElse`.
+  const openIfOnFile=async(id,orElse)=>{
+    let d=null;
+    try{d=(await peopleById([id]))[id]||null;}catch(e){console.error(e);}
+    if(d)selectDonor(d);else if(orElse)orElse();
+  };
   // Selecting a donor from any view hands DonorProfile a summary row first
   // (instant render), then swaps in the full record — notes, score rationale,
   // Stripe ids — from GET /donors/:id (the summaries list deliberately omits
@@ -445,7 +480,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       interactions:selected?.id===raw.id?(selected.interactions||[]):[],
       lastTouchpoint:selected?.id===raw.id?selected.lastTouchpoint:null,
     };
-    setData(prev=>({...prev,donors:prev.donors.map(d=>d.id===raw.id?adapted:d)}));
+    patchPeople(list=>list.map(d=>d.id===raw.id?adapted:d));
     setDirRows(prev=>prev?prev.map(d=>d.id===raw.id?{...adapted,room:adapted.room||d.room}:d):prev);   // FIX-33: an edit's reply carries no Room to give
     if(selected?.id===raw.id)setSelected(adapted);
     setEditTarget(null);
@@ -457,8 +492,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // seconds; to remove someone for good, Erase on their profile still asks.
     try{
       const r=await apiFetch(`/donors/${id}`,{method:"DELETE"});
-      offerUndo(r,"donor",back=>{setDirReloadKey(k=>k+1);const rec=back&&back.record;if(rec)setData(prev=>prev&&!(prev.donors||[]).some(d=>d.id===rec.id)?{...prev,donors:[...(prev.donors||[]),adaptDonor(rec)]}:prev);});
-      setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
+      offerUndo(r,"donor",back=>{setDirReloadKey(k=>k+1);const rec=back&&back.record;if(rec)patchPeople(list=>list.some(d=>d.id===rec.id)?list:[...list,adaptDonor(rec)]);loadPeopleCount();});
+      patchPeople(list=>list.filter(d=>d.id!==id));loadPeopleCount();
       setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
       setDirTotal(t=>Math.max(0,t-1));
       setSelected(null);
@@ -472,7 +507,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     try{
       const r=await apiFetch(`/donors/${id}/archive`,{method:"POST",body:"{}"});
       setPlanBlock(null);
-      setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==id)}));
+      patchPeople(list=>list.filter(d=>d.id!==id));loadPeopleCount();
       setDirRows(prev=>prev?prev.filter(d=>d.id!==id):prev);
       setDirTotal(t=>Math.max(0,t-1));
       setSelected(null);
@@ -482,8 +517,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
 
   const generateCallList=async()=>{
     setCallLoading(true);setCallList("");
+    const everyone=orgPeople||await allPeople().catch(()=>[]);   // SCALE-2: loaded for this, not on sign-in
     await askClaude(`You are a chief development officer. Be tactical. Max 200 words.`,
-      `Prioritized call list for this week:\n${data.donors.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
+      `Prioritized call list for this week:\n${everyone.map(d=>`${d.name} [${d.stage||"cultivate"}]: ${daysDiff(d.lastTouchpoint||d.lastGift)}d since contact, ${fmtFull(d.lastAmount)} last gift, score ${donorScore(d)??"none (no gifts on file)"}, notes: ${d.notes}`).join("\n")}`,
       chunk=>setCallList(chunk));
     setCallLoading(false);
   };
@@ -502,12 +538,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       lastAmount:parseInt(newDonor.lastAmount)||0,gifts:newDonor.lastAmount?1:0,
       status:"new",stage:newDonor.stage,tags:[],notes:"",interactions:[],lastTouchpoint:null,
       assignedTo:assignTo,assignedToName:assignToName};
-    setData(prev=>({...prev,donors:[...prev.donors,temp]}));
+    patchPeople(list=>[...list,temp]);
     setShowAdd(false);setNewDonor({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});setNewDonorAssignee("");
     try{await apiFetch("/donors",{method:"POST",body:JSON.stringify({...newDonor,stage:newDonor.stage,assignedTo:assignTo,assignedToName:assignToName})});await reloadDonors();}
     catch(e){
       if(e.error==="record_limit"){
-        setData(prev=>({...prev,donors:prev.donors.filter(d=>d.id!==temp.id)}));
+        patchPeople(list=>list.filter(d=>d.id!==temp.id));
         setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
       } else { console.error(e); }
     }
@@ -529,7 +565,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         initialOwner={nmFilter.owner} initialMin={nmFilter.min} onFilterChange={setNmFilter}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-      {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
+      {showGiftImport&&<GiftHistoryImport donors={orgPeople||undefined} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
       {/* REPORTS-5: the second door to the one old-reports wizard. */}
@@ -558,14 +594,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box"}}/>
             </div>
             <div style={{overflowY:"auto",padding:"0 8px 10px"}}>
-              {data.donors.filter(d=>!convoSearch.trim()||(d.name||"").toLowerCase().includes(convoSearch.toLowerCase())||(d.email||"").toLowerCase().includes(convoSearch.toLowerCase())).slice(0,30).map(d=>(
+              {convoPeople.map(d=>(
                 <button key={d.id} onClick={()=>{setConvoPickerOpen(false);setConvoSearch("");setConvoTarget(d);}}
                   style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:8,padding:"9px 10px",cursor:"pointer"}} className="click-card">
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{d.name}</span>
                   {d.email&&<span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{d.email}</span>}
                 </button>
               ))}
-              {data.donors.length===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"6px 10px 12px"}}>No donors yet. Import your donors first, then log the first call.</div>}
+              {peopleCount&&peopleCount.total===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"6px 10px 12px"}}>No donors yet. Import your donors first, then log the first call.</div>}
             </div>
           </div>
         </Modal>
@@ -596,7 +632,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         onNavigate={onNavigate}
         initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
         initialAddGift={giftHandoff&&giftHandoff.donorId===selected.id?giftHandoff:null}
-        isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
+        isReadOnly={isReadOnly} onSelectRelatedDonor={openIfOnFile}/></ErrorBoundary>
       ) : (<>
 
       <div className="donors-toolbar" style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
@@ -707,13 +743,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{role:"donor",search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation,sort:dirSort,household:dirHousehold,...(dirStatus?{[dirStatus.split(":")[0]]:dirStatus.split(":")[1]}:{})}} statusFilter={dirStatus} setStatusFilter={setDirStatus} sortBy={dirSort} setSortBy={setDirSort} household={dirHousehold} clearHousehold={()=>setDirHousehold("")} totalDonors={peopleCount?peopleCount.total:undefined} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
 
-      {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
+      {wholeOrgView&&!orgPeople&&<div style={{display:"flex",justifyContent:"center",padding:"40px 0"}}><Spin/></div>}
+      {view==="team"&&isAdmin&&orgPeople&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 
-      {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
-      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
-      {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);else reloadDonors&&reloadDonors();}}/>}
+      {view==="reengage"&&orgPeople&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
+      {view==="map"&&orgPeople&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
+      {view==="health"&&<DataHealth isReadOnly={isReadOnly} onOpenDonor={id=>openIfOnFile(id,()=>reloadDonors&&reloadDonors())}/>}
       </>)}
     </div>
   );

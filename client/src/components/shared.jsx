@@ -161,6 +161,7 @@ export function interactive(onClick, opts = {}) {
 import { fmt, fmtFull, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
 import { civilDaysAgo } from "../lib/orgToday";
+import { usePeoplePicker, peopleCounts, pickPeople } from "../lib/people";
 export { fmt, fmtFull, quietPhrase };
 // FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
 // `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
@@ -232,7 +233,13 @@ export const SC = { major:T.greenDk,mid:T.greenMid,new:T.gold500,lapsed:T.gold60
 export const askClaude = (system, user, onChunk) => streamAI(system, user, onChunk);
 
 // ── Org Context Builder ────────────────────────────────────────────────────
-export function buildContext(data) {
+// SCALE-2: the donor lines come from the server (/donors/counts and the top
+// sixty by lifetime giving), not from a whole-org list held by the shell.
+export async function loadContextPeople() {
+  const [counts, top] = await Promise.all([peopleCounts(), pickPeople({ limit: 60 })]);
+  return { total: counts?.total || 0, lapsed: counts?.lapsed || 0, top };
+}
+export function buildContext(data, people = { total: 0, lapsed: 0, top: [] }) {
   const rev = data.financials.revenue; const exp = data.financials.expenses;
   const ytdRev = rev.reduce((s,r)=>s+r.individual+r.grants+r.events+r.other,0);
   const ytdExp = exp.reduce((s,e)=>s+e.programs+e.admin+e.fundraising,0);
@@ -240,8 +247,8 @@ export function buildContext(data) {
 MISSION: ${data.org.mission}
 PROGRAMS: ${data.org.programs.join(", ")}
 
-DONORS (${data.donors.length} total, ${data.donors.filter(d=>d.status==="lapsed").length} lapsed${data.donors.length>60?"; top 60 by lifetime giving shown":""}):
-${data.donors.slice(0,60).map(d=>`- ${d.name} [${d.status}]: ${fmtFull(d.total)} lifetime, last gift ${fmtFull(d.lastAmount)} ${daysDiff(d.lastGift)}d ago.${d.notes?" "+d.notes:""}`).join("\n")}
+DONORS (${people.total} total, ${people.lapsed} lapsed${people.total>60?"; top 60 by lifetime giving shown":""}):
+${people.top.slice(0,60).map(d=>`- ${d.name} [${d.status}]: ${fmtFull(d.total)} lifetime, last gift ${fmtFull(d.lastAmount)} ${daysDiff(d.lastGift)}d ago.${d.notes?" "+d.notes:""}`).join("\n")}
 
 GRANTS:
 ${data.grants.map(g=>`- ${g.funder} / ${g.program}: ${fmtFull(g.amount)} [${g.status}] deadline ${g.deadline}. ${g.notes}`).join("\n")}
@@ -1465,9 +1472,9 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
   const mm=String(Math.floor(elapsed/60)).padStart(2,"0");
   const ss=String(elapsed%60).padStart(2,"0");
 
-  const filteredDonors=donors&&search.trim()
-    ?donors.filter(d=>d.name.toLowerCase().includes(search.trim().toLowerCase())).slice(0,8)
-    :[];
+  // SCALE-2: the people come from the server as she types (lib/people.js),
+  // not from a whole-org list held in memory. `donors` = "pick someone".
+  const [filteredDonors,pickPending]=usePeoplePicker(search,{match:"name",limit:8,enabled:!!donors&&!donor});
 
   return(
     <Modal onClose={close} width={460} padding={24} ariaLabel="Voice memo"
@@ -1491,7 +1498,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
                 {d.name}
               </div>
             ))}
-            {search.trim()&&filteredDonors.length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No donors match "{search}"</div>}
+            {search.trim()&&!pickPending&&filteredDonors.length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No donors match "{search}"</div>}
           </div>
         ):(
           <>

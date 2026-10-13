@@ -232,7 +232,14 @@ async function ddlSession() {
 
 // Returns true when the DDL ran, false when the unchanged hash skipped it.
 async function initSchema() {
-  if (await schemaUnchanged()) return false;
+  if (await schemaUnchanged()) {
+    // SCALE-2: the change triggers follow orgSummary.js, not this file's
+    // hash, so a boot on an unchanged schema still brings them up to date
+    // (one read when nothing is missing).
+    const s = await ddlSession();
+    try { await require("./orgSummary").installTriggers(s); } finally { await s.release(); }
+    return false;
+  }
   const ddl = await ddlSession();
   try { await runSchemaInit(ddl); }
   finally { await ddl.release(); }
@@ -6761,6 +6768,44 @@ async function runSchemaInit(pool) {
       created_by_name TEXT,
       PRIMARY KEY (org_id, donor_id)
     )`);
+  // SCALE-2 · the gift-derived half of each person's Drift answer, stored for
+  // one org calendar day (server.js driftGiftAnswers). `assessment` is TEXT,
+  // not JSONB, so it reads back byte for byte in the order it was written.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS donor_drift (
+      org_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      assessment TEXT NOT NULL,
+      yesterday_high BOOLEAN NOT NULL DEFAULT false,
+      pledge_recent BOOLEAN NOT NULL DEFAULT false,
+      refused_rows INTEGER NOT NULL DEFAULT 0,
+      computed_for TEXT NOT NULL,
+      computed_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, donor_id)
+    )`);
+  // Any write to gifts forgets the stored answer of every person it touched,
+  // in the same transaction, whichever door wrote it.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_gift_forgets_drift() RETURNS TRIGGER AS $fn$
+    BEGIN
+      IF TG_OP = 'INSERT' THEN
+        DELETE FROM donor_drift s USING (SELECT DISTINCT org_id, donor_id FROM new_rows) x
+         WHERE s.org_id = x.org_id AND s.donor_id = x.donor_id;
+      ELSIF TG_OP = 'DELETE' THEN
+        DELETE FROM donor_drift s USING (SELECT DISTINCT org_id, donor_id FROM old_rows) x
+         WHERE s.org_id = x.org_id AND s.donor_id = x.donor_id;
+      ELSE
+        DELETE FROM donor_drift s USING (SELECT org_id, donor_id FROM new_rows UNION SELECT org_id, donor_id FROM old_rows) x
+         WHERE s.org_id = x.org_id AND s.donor_id = x.donor_id;
+      END IF;
+      RETURN NULL;
+    END; $fn$ LANGUAGE plpgsql`);
+  for (const [ev, ref] of [["INSERT", "NEW TABLE AS new_rows"], ["DELETE", "OLD TABLE AS old_rows"],
+                           ["UPDATE", "NEW TABLE AS new_rows OLD TABLE AS old_rows"]]) {
+    await pool.query(`DROP TRIGGER IF EXISTS trg_gift_forgets_drift_${ev.toLowerCase()} ON gifts`);
+    await pool.query(`CREATE TRIGGER trg_gift_forgets_drift_${ev.toLowerCase()} AFTER ${ev} ON gifts
+                        REFERENCING ${ref} FOR EACH STATEMENT EXECUTE FUNCTION steward_gift_forgets_drift()`);
+  }
   // Someone the after-change step saw cross into a group by rule.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS group_crossings (
@@ -7701,6 +7746,9 @@ async function runSchemaInit(pool) {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_sync_runs_org ON mailbox_sync_runs (org_id, started_at DESC)`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_error TEXT`);
   await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_tried_at TIMESTAMPTZ`);
+  // SCALE-2 · how far the first read of a new connection has got (0 to 99),
+  // NULL when no first read is under way.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS read_progress SMALLINT`);
   // FIX-34 · each API the connection needs, as last checked (apiCheck.js);
   // a 429 skips the connection until retry_after; the Gmail history id and
   // the calendar's last read time make a run with nothing new one small call;
@@ -7980,8 +8028,17 @@ async function runSchemaInit(pool) {
   // 150k-gift org's sample-gift count. Building them read the 5.8M-gift load
   // database in about 3 s in all.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_sample ON gifts (org_id) WHERE is_sample = true`);
+  // SCALE-2: an employer's record lists the gifts it matched on every profile
+  // open (routes/finance.js /donors/:id/relationship). Without this it read
+  // every gift the org has: 279 ms for a 150k-gift org, on every profile.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_match_employer ON gifts (org_id, match_employer_id) WHERE match_employer_id IS NOT NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_sample ON donors (org_id) WHERE is_sample = true`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_sample ON interactions (org_id) WHERE is_sample = true`);
+
+  // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
+  // watched: one statement trigger per write event on every table with org_id
+  // (orgSummary.js says which few are not, and why).
+  await require("./orgSummary").installTriggers(pool);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.

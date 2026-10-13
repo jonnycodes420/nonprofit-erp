@@ -4,6 +4,7 @@ import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { apiFetch, API, getToken } from "../api";
+import { usePeopleById } from "../lib/people";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
@@ -873,7 +874,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const monthsElapsed = new Date().getMonth() + 1;
 
   // ── Donor lookup for transactions ──
-  const donorById = Object.fromEntries((data.donors || []).map(d => [d.id, d]));
+  // SCALE-2: only the people these transactions name, read by id.
+  const [donorByIdRead] = usePeopleById((Array.isArray(transactions) ? transactions : []).map(t => t && t.donor_id));
+  const donorById = donorByIdRead || {};
 
   // ── Sub-tabs (SectionTabs) ──
   // FIX-1 E — the three questions come first: where restricted money sits,

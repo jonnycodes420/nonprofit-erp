@@ -79,6 +79,7 @@ export function SyncHealth({ h, calendar, onRetry, busy }) {
         {calendar && cell("Meetings found", h.meetingsFound, "health-meetings")}
         {calendar && cell("Dates on your calendar", h.eventsPushed, "health-pushed")}
       </div>
+      {h.reading && <div data-testid="health-reading" role="status" style={{ fontSize: 13, color: T.ink }}>Reading your mailbox: {h.reading.pct}%</div>}
       {h.instant && <div data-testid="health-instant" style={{ fontSize: 13, color: h.instant.on ? T.ink : T.gold700 }}>
         {h.instant.sentence}{h.instant.on ? (h.instant.lastNoticeAt ? ` · last notice ${ago(h.instant.lastNoticeAt)}` : " · no changes since it started") : ""}
       </div>}
@@ -152,6 +153,19 @@ export function InboxConnectCard({ focused = false, isReadOnly = false, onNaviga
   useEffect(() => { apiFetch("/settings/inbound-email").then(r => setBcc(r?.address || "")).catch(() => {}); }, []);
   const connected = !!d?.connected;
   useEffect(() => { if (connected) apiFetch("/calendar/first-sync").then(setFirst).catch(() => {}); }, [connected]);
+  // SCALE-2: while a first read runs in the background, look again every few
+  // seconds so its progress moves and its numbers land when it finishes.
+  const reading = (d?.providers || []).some(p => p.health && p.health.reading);
+  useEffect(() => {
+    if (!reading) return undefined;
+    const t = setTimeout(load, 3000);
+    return () => clearTimeout(t);
+  }, [d, reading]);   // eslint-disable-line react-hooks/exhaustive-deps
+  const [wasReading, setWasReading] = useState(false);
+  useEffect(() => {
+    if (reading) setWasReading(true);
+    else if (wasReading) { setWasReading(false); if (connected) apiFetch("/calendar/first-sync").then(setFirst).catch(() => {}); }
+  }, [reading]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!d) return <div style={card}><div style={h}>Email and calendar</div><div style={{ fontSize: 13, color: T.ink3, marginTop: 8 }}>Loading.</div></div>;
   const providers = d.providers || [];

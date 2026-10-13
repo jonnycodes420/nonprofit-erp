@@ -133,6 +133,12 @@ Read this when you touch anything that sends email: Resend, `donorMailDecision`,
   `mailbox_sync_runs` row, ok or not, with the one plain sentence of what went wrong. The health panel, the Home
   banner, `/health.mailboxSync` and the prod smoke read only those rows. A provider that refuses every request is a
   failed read, never "nothing new". Outlook is asked twice: the inbox by sender, Sent Items by recipient.
+- **A Gmail read asks as many addresses per search as Gmail runs (SCALE-2).** `mailboxFetch.js`: one `{}` group
+  per search up to `GMAIL_QUERY_MAX` encoded characters (6,000); a search Gmail refuses as too long (400, 413,
+  414) is split and every later search shrinks to three quarters of it, so no address is ever dropped. Kept in
+  the old order, so the same messages are kept. A new connection's first read is the `mailboxFirstRead` job, never
+  part of the connect request; it writes `mailbox_connections.read_progress` and the card shows
+  "Reading your mailbox: N%" only while that job is waiting or running.
 - **A calendar event is stored only when someone on file is a guest or is named in the title with a meeting word
   (FIX-33 Part 3b).** Two possible people are kept as candidates and a person picks; the description is still never
   read, so the title is the only text matched.
