@@ -64,12 +64,16 @@ const HOME_SCOPE = s => [`/dashboard/today?scope=${s}`, `/metrics/stewardship-su
   "/thank-yous", `/dashboard/stewardship-debt/breakdown?scope=${s}`, `/dashboard/retention/breakdown?scope=${s}`];
 const bundle = paths => "/home/bundle?" + paths.map(p => "p=" + encodeURIComponent(p)).join("&");
 const SCREENS = {
-  shell: () => [[G("/org"), G("/donors/summaries"), G("/grants"), G("/volunteers"), G("/tasks"), G("/board"), G("/financials"),
+  // SCALE-2: the shell no longer reads /donors/summaries (24 MB at 25k donors).
+  shell: () => [[G("/org"), G("/grants"), G("/volunteers"), G("/tasks"), G("/board"), G("/financials"),
                  G("/billing/status"), G("/journeys"), G("/status/summary"), G("/org/sample-data-status")]],
   // SCALE-2: Home asks for each wave in ONE request (client/src/api.js
   // prefetch -> GET /home/bundle); these are the same reads as SCALE-1's 25
   // and 6, now two calls.
-  home: () => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))]],
+  // The third wave is the queue's "still on file" lookup for the people
+  // /dashboard/today named (lib/people.js usePeopleById); six ids stand in.
+  home: (o) => [[G(bundle(HOME_FIRST))], [G(bundle(HOME_SCOPE("all")))],
+                [G("/donors/lookup?ids=" + [7, 8, 9, 10, 11, 12].map(n => `org_${o.slug}_d${n}`).join(","))]],
   donors: () => [[G("/donors?limit=50&offset=0&role=donor"), G("/org/team"), G("/portfolio/officers"),
                   G("/custom-fields?entity=donor"), G("/donors/custom-field-values/all"), G("/me")]],
   profile: (o) => { const d = `/donors/${o.donorId}`; return [[G(d)],

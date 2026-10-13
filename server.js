@@ -419,7 +419,11 @@ const backgroundTicksDisabled = () => process.env.DISABLE_BACKGROUND_TICKS === "
 // portal) keeps the per-IP limit, and the stricter per-route limiters below
 // still apply on top.
 const generalSkip = (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook";
-const SIGNED_IN_LIMIT = 6000; // per user per 15 minutes: ~400 a minute, sustained
+// per user per 15 minutes: ~400 a minute, sustained. SCALE-2: the load
+// harness (scripts/load/env.sh) raises it, because twenty users with no pause
+// between screens are a measure of the database, not of a person; prod never
+// sets it.
+const SIGNED_IN_LIMIT = Number(process.env.SIGNED_IN_LIMIT) || 6000;
 const PUBLIC_IP_LIMIT = 1000; // per IP per 15 minutes, for requests with no valid token
 const signedInLimiter = rateLimit("signedInLimiter", {
   perReplica: true,   // SCALE-1: in memory on purpose, each replica its share (rateLimitStore.js)

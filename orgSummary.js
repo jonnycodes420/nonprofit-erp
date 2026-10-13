@@ -65,6 +65,9 @@ function schemaSql() {
        computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
        ms INTEGER,
        PRIMARY KEY (org_key, key))`,
+    // A route whose answer turns over at a known moment inside the day (an
+    // invite expiring) says when, in res.locals.orgSummaryValidUntil.
+    `ALTER TABLE org_summary ADD COLUMN IF NOT EXISTS valid_until TIMESTAMPTZ`,
     `CREATE OR REPLACE FUNCTION steward_note_org_change() RETURNS TRIGGER AS $fn$
      BEGIN
        IF TG_OP = 'INSERT' THEN
@@ -146,6 +149,7 @@ function cached(name, { perUser = true, when = null } = {}) {
         const hit = await query(
           `SELECT s.body FROM org_summary s
             WHERE s.org_key = ? AND s.key = ? AND s.computed_for = ?
+              AND (s.valid_until IS NULL OR s.valid_until > NOW())
               AND NOT EXISTS (SELECT 1 FROM org_changes c WHERE c.org_key = s.org_key AND c.xid >= s.snap_xmin)`,
           [orgId, key, today]);
         if (hit.length) {
@@ -163,12 +167,14 @@ function cached(name, { perUser = true, when = null } = {}) {
         if (res.statusCode === 200 && !req[Symbol.for("steward.orgSummary.noStore")]) {
           const text = JSON.stringify(body);
           query(
-            `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms)
-             VALUES (?,?,?,?,?,?::xid8,?,?)
+            `INSERT INTO org_summary (org_key, key, path, user_id, body, snap_xmin, computed_for, ms, valid_until)
+             VALUES (?,?,?,?,?,?::xid8,?,?,?)
              ON CONFLICT (org_key, key) DO UPDATE SET body = EXCLUDED.body, path = EXCLUDED.path, user_id = EXCLUDED.user_id,
-               snap_xmin = EXCLUDED.snap_xmin, computed_for = EXCLUDED.computed_for, computed_at = NOW(), ms = EXCLUDED.ms
+               snap_xmin = EXCLUDED.snap_xmin, computed_for = EXCLUDED.computed_for, computed_at = NOW(), ms = EXCLUDED.ms,
+               valid_until = EXCLUDED.valid_until
              WHERE org_summary.snap_xmin <= EXCLUDED.snap_xmin`,
-            [orgId, key, req.originalUrl, perUser ? req.user.userId : null, text, x, today, Date.now() - t0])
+            [orgId, key, req.originalUrl, perUser ? req.user.userId : null, text, x, today, Date.now() - t0,
+             res.locals.orgSummaryValidUntil || null])
             .then(() => { stats.stores++; }).catch(e => console.error("[org-summary] store", e.message));
         }
         return json(body);
@@ -219,12 +225,12 @@ function scheduleRefresh(orgId) {
 // difference is logged with the org, the route and the first place the two
 // differ; nothing is silently corrected without a line saying so.
 async function checkAll({ log = console, orgId = null } = {}) {
-  const rows = await query(`SELECT org_key, key, path, user_id, body, snap_xmin::text AS snap_xmin, computed_for FROM org_summary
+  const rows = await query(`SELECT org_key, key, path, user_id, body, snap_xmin::text AS snap_xmin, computed_for, valid_until FROM org_summary
                              ${orgId ? "WHERE org_key = ?" : ""}`, orgId ? [orgId] : []);
   const out = { compared: 0, differences: [], skipped: 0 };
   for (const r of rows) {
     const today = deps.orgToday(await deps.orgTz(r.org_key));   // ORG_TZ_SEAM_OK
-    const stillCurrent = r.computed_for === today && !(await query(
+    const stillCurrent = r.computed_for === today && !(r.valid_until && new Date(r.valid_until) <= new Date()) && !(await query(
       `SELECT 1 FROM org_changes WHERE org_key = ? AND xid >= ?::xid8 LIMIT 1`, [r.org_key, r.snap_xmin])).length;
     if (!stillCurrent) { out.skipped++; continue; }
     const fresh = await computeFresh(r).catch(() => null);

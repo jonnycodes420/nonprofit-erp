@@ -3011,7 +3011,7 @@ app.put("/org/vocabulary", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 // setup). Only the card's dismissal preference is stored (orgs.setup_card_state).
 const SETUP_DONOR_THRESHOLD = 5; // >5 real donors = "imported" (matches the sample-data loader's real-org bar)
 
-app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
+app.get("/org/setup-status", requireAuth, OS.cached("setup-status"), wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
@@ -3025,8 +3025,11 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     query(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id = ? AND status = 'active' AND COALESCE(page_kind,'give') = 'give'`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]),
     query(`SELECT COUNT(*)::int AS n FROM users WHERE org_id = ?`, [orgId]),
-    query(`SELECT COUNT(*)::int AS n FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n, MIN(expires_at) AS next_expiry FROM invites WHERE org_id = ? AND accepted_at IS NULL AND expires_at > NOW()`, [orgId]),
   ]);
+  // SCALE-2: the stored answer (orgSummary.js) turns over when the next
+  // pending invite expires, the one thing here that moves with the clock.
+  if (inviteRow[0].next_expiry) res.locals.orgSummaryValidUntil = inviteRow[0].next_expiry;
   const donorCount = donorRow[0].n;
   const giftCount = giftRow[0].n;
 
@@ -18314,7 +18317,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage,
            MAX(i.date) AS last_contact
     FROM donors d
-    LEFT JOIN interactions i ON i.donor_id = d.id AND i.type <> ALL(?::text[])
+    -- SCALE-2: "i.org_id = d.org_id" is the tenant rule (a person's
+    -- conversations are in the person's org). Without it this read every
+    -- org's interactions, 2.6M rows on the load database: 560 ms -> 67 ms.
+    LEFT JOIN interactions i ON i.donor_id = d.id AND i.org_id = d.org_id AND i.type <> ALL(?::text[])
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
       AND ${solicitableSql("d")} AND ${donorOnly("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
@@ -18340,7 +18346,10 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
     SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
     FROM gifts g
-    JOIN donors d ON d.id = g.donor_id
+    -- SCALE-2: "g.org_id = d.org_id" is the tenant rule (a gift's donor is in
+    -- the gift's org); it lets the planner read this org's recent gifts by
+    -- (org_id, date) instead of probing every donor: 43 ms -> 10 ms at 25k.
+    JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id
     WHERE d.org_id = ?
       AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)
       AND d.deceased IS NOT TRUE
@@ -18353,7 +18362,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     query(`
       SELECT g.id AS gift_id, g.amount, g.date, d.id AS donor_id, d.name AS donor_name, d.total_giving
       FROM gifts g
-      JOIN donors d ON d.id = g.donor_id
+      JOIN donors d ON d.id = g.donor_id AND g.org_id = d.org_id   -- SCALE-2: the tenant rule, as above
       WHERE d.org_id = ?
         AND g.amount >= 250
         AND (g.acknowledgement_sent = false OR g.acknowledgement_sent IS NULL)

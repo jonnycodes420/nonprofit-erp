@@ -17,3 +17,6 @@ export ANTHROPIC_API_KEY=sk-ant-load-standin ANTHROPIC_BASE_URL=http://localhost
 export STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789
 export DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 FOUNDER_EMAIL=jonathan@stewardapp.dev
 export MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev
+# SCALE-2: zero-think users outrun the per-person ceiling (6,000 per 15 min)
+# once screens are fast; the run measures the database, not the limiter.
+export SIGNED_IN_LIMIT=1000000

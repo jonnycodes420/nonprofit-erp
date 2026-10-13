@@ -8025,6 +8025,10 @@ async function runSchemaInit(pool) {
   // 150k-gift org's sample-gift count. Building them read the 5.8M-gift load
   // database in about 3 s in all.
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_sample ON gifts (org_id) WHERE is_sample = true`);
+  // SCALE-2: an employer's record lists the gifts it matched on every profile
+  // open (routes/finance.js /donors/:id/relationship). Without this it read
+  // every gift the org has: 279 ms for a 150k-gift org, on every profile.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_match_employer ON gifts (org_id, match_employer_id) WHERE match_employer_id IS NOT NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_sample ON donors (org_id) WHERE is_sample = true`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_org_sample ON interactions (org_id) WHERE is_sample = true`);
 
