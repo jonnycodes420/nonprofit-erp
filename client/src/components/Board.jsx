@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, Spin } from "./shared";
 import { apiFetch, API, getToken } from "../api";
+import { pickPeople } from "../lib/people";
 import { errorMessage } from "../lib/domainError";
 
 export function Board({data, setData, isReadOnly}) {
@@ -66,8 +67,10 @@ export function Board({data, setData, isReadOnly}) {
     const rev=data.financials.revenue; const exp=data.financials.expenses;
     const ytdRev=rev.reduce((s,r)=>s+r.individual+r.grants+r.events+r.other,0);
     const ytdExp=exp.reduce((s,e)=>s+e.programs+e.admin+e.fundraising,0);
+    // SCALE-2: the major donors are read for this brief, not held by the shell.
+    const majors=await pickPeople({status:"major",limit:2000}).catch(()=>[]);
     await askClaude(`You are a nonprofit ED writing a board report. Professional, concise, specific. Max 250 words.`,
-      `Generate a Q2 board briefing for ${data.org.name}.\n\nFinancials: YTD Revenue ${fmtFull(ytdRev)}, Expenses ${fmtFull(ytdExp)}, Net ${fmtFull(ytdRev-ytdExp)}\nFund balances: ${data.financials.funds.map(f=>`${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nActive grants: ${data.grants.filter(g=>g.status==="active").map(g=>`${g.funder} ${fmtFull(g.amount)}`).join(", ")}\nGrant pipeline: ${data.grants.filter(g=>["pending","prospecting"].includes(g.status)).map(g=>`${g.funder} ${fmtFull(g.amount)} [${g.status}]`).join(", ")}\nDonor highlights: ${data.donors.filter(d=>d.status==="major").map(d=>`${d.name} ${fmtFull(d.total)}`).join(", ")}\nOpen tasks: ${data.tasks.filter(t=>!t.done&&t.priority==="high").map(t=>t.title).join("; ")}\n\nFormat: Financial Snapshot, Development Highlights, Grant Update, Action Items for Board`,
+      `Generate a Q2 board briefing for ${data.org.name}.\n\nFinancials: YTD Revenue ${fmtFull(ytdRev)}, Expenses ${fmtFull(ytdExp)}, Net ${fmtFull(ytdRev-ytdExp)}\nFund balances: ${data.financials.funds.map(f=>`${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nActive grants: ${data.grants.filter(g=>g.status==="active").map(g=>`${g.funder} ${fmtFull(g.amount)}`).join(", ")}\nGrant pipeline: ${data.grants.filter(g=>["pending","prospecting"].includes(g.status)).map(g=>`${g.funder} ${fmtFull(g.amount)} [${g.status}]`).join(", ")}\nDonor highlights: ${majors.map(d=>`${d.name} ${fmtFull(d.total)}`).join(", ")}\nOpen tasks: ${data.tasks.filter(t=>!t.done&&t.priority==="high").map(t=>t.title).join("; ")}\n\nFormat: Financial Snapshot, Development Highlights, Grant Update, Action Items for Board`,
       chunk=>setBoardBrief(chunk));
     setBriefLoading(false);
   };

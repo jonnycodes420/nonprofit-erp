@@ -7,6 +7,8 @@
 // server's to decide.
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { personNamed } from "../lib/people";
+import { PeopleDatalist } from "./PeopleDatalist";
 import { T, fmtFull, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -50,8 +52,9 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
     .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "", benefits: "" })));
   const saveBenefits = () => act(() => apiFetch(`/event-levels/${editBenefits.id}`, { method: "PUT", body: JSON.stringify({ benefits: editBenefits.text }) })
     .then(() => setEditBenefits(null)), "Saved. The sponsor card on the page shows it now.");
-  const register = () => {
-    const d = donors.find(x => String(x.name || "").toLowerCase() === reg.who.trim().toLowerCase());
+  const register = async () => {
+    // SCALE-2: the person with exactly this name, highest giving first, from the server.
+    const d = await personNamed(reg.who).catch(() => null);
     const body = d ? { donorId: d.id } : { name: reg.who.trim(), email: reg.email.trim() };
     return act(() => apiFetch(`/events/${event.id}/register`, { method: "POST", body: JSON.stringify({ ...body, levelId: reg.levelId, quantity: Number(reg.quantity) || 1, paid: reg.paid, idempotencyKey: crypto.randomUUID() }) })
       .then(() => setReg(x => ({ ...x, who: "", email: "", quantity: 1 }))), "Registered.");
@@ -140,7 +143,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
 
       {!isReadOnly && levels.length > 0 && <Card style={{ padding: "16px 18px" }}>
         <div style={h}>Register someone</div>
-        <datalist id="event-people">{donors.slice(0, 2000).map(d => <option key={d.id} value={d.name} />)}</datalist>
+        <PeopleDatalist id="event-people" text={reg.who} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <input list="event-people" placeholder="Name" value={reg.who} onChange={e => setReg({ ...reg, who: e.target.value })} style={{ ...inp, width: 200 }} data-testid="event-reg-who" />
           <input placeholder="Email if new" value={reg.email} onChange={e => setReg({ ...reg, email: e.target.value })} style={{ ...inp, width: 180 }} />
