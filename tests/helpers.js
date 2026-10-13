@@ -50,6 +50,8 @@ async function login(email, password = "loadtest1234") {
 }
 
 // Returns { status, body (parsed json or raw text), ms, bytes }
+let autoSettleImports = true;   // FIX-37, see api() below
+function importAutoSettle(on) { autoSettleImports = !!on; }
 async function api(method, path, token, body) {
   const t0 = performance.now();
   const r = await fetch(BASE + path, {
@@ -61,6 +63,14 @@ async function api(method, path, token, body) {
   const ms = performance.now() - t0;
   let parsed = text;
   try { parsed = JSON.parse(text); } catch {}
+  // FIX-37: an import's recent gifts are written behind the screen after it
+  // answers. Every suite reads them as written, so an import call waits for
+  // that work here (`ms` stays the request's own time). The FIX-37 suite,
+  // which watches the work run, turns this off with importAutoSettle(false).
+  if (autoSettleImports && method === "POST" && r.status === 200 && parsed && parsed.recentQueued > 0
+      && /^\/(donors\/import-combined|gifts\/import-history)\b/.test(path)) {
+    await importWorkSettled().catch(() => null);
+  }
   return { status: r.status, body: parsed, text, ms: Math.round(ms), bytes: Buffer.byteLength(text) };
 }
 
@@ -200,6 +210,17 @@ async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
   }
 }
 
+// FIX-37 · an import's recent gifts are written behind the screen, after the
+// request answers. A suite that reads them waits for the work to finish: for
+// one org, or for every org when none is named. Null on timeout.
+async function importWorkSettled(orgId = null, { timeout = 60000 } = {}) {
+  return waitFor(async () => {
+    const [r] = await q(`SELECT COUNT(*)::int AS n FROM import_recent_jobs
+                          WHERE ($1::text IS NULL OR org_id = $1) AND (status = 'running' OR (status = 'done' AND finished_at IS NULL))`, [orgId]);
+    return r && r.n === 0;
+  }, { timeout, interval: 100 });
+}
+
 // The twin, for asserting something did NOT arrive. A negative needs a wait
 // LONGER than a real delivery takes, or it proves nothing: at 500ms against a
 // 1.8s delivery, "no email was sent" passes even when one was. Waiting is the
@@ -207,7 +228,7 @@ async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
 const NEGATIVE_MAIL_WAIT_MS = Number(process.env.NEGATIVE_MAIL_WAIT_MS || 4000);
 const settleNegative = () => new Promise(r => setTimeout(r, NEGATIVE_MAIL_WAIT_MS));
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, importWorkSettled, importAutoSettle, settleNegative, NEGATIVE_MAIL_WAIT_MS };
 
 // ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
 // Both browser suites SKIP cleanly when Playwright or a localhost-API dist is

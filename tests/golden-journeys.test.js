@@ -80,7 +80,7 @@ const http = require("http");
 const path = require("path");
 const { spawn } = require("child_process");
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, BILLING_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, civilToday, civilPlusDays, BILLING_MOCK_PORT, importWorkSettled } = require("./helpers");
 
 const ORG = "org_golden", USER = "u_golden_dana", DANA = "director@golden.harborlight.test", PW = "loadtest1234";
 const today = civilToday();
@@ -261,6 +261,8 @@ async function agentLeg(H) {
   const runId = "imp_golden_" + Date.now().toString(36);
   const imp = await api("POST", "/donors/import-combined", dana, { donors, gifts, importId: runId });
   ok("J1 the import went through and balanced", imp.status === 200 && imp.body.reconciliation && imp.body.reconciliation.balanced === true, imp.body);
+  // FIX-37: the recent gifts are written behind the screen; wait for them.
+  await importWorkSettled(ORG);
   const rr = await api("POST", "/imports", dana, { id: runId, name: "golden.csv", sourceFilename: "golden.csv", shape: "gift_file_with_donors",
     donorsCreated: imp.body.created || 0, giftsCreated: imp.body.giftsInserted || 0, dollars: 5325.75 });
   ok("J1 the run is recorded", rr.status < 300, rr.body);
@@ -504,6 +506,7 @@ async function agentLeg(H) {
       gift: { amount: 120.5, date: today, type: "cash", campaign: "", notes: "" } }]);
     const imp11 = await api("POST", "/donors/import-combined", rae, { donors: g11.donors, gifts: g11.gifts, importId: "imp_gj11_" + Date.now().toString(36) });
     ok("J11 her real file imports", imp11.status === 200, imp11.body);
+    await importWorkSettled(sorg[0].id);   // FIX-37
     const left11 = await q(`SELECT name FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [sorg[0].id]);
     ok("J11 only her real person is on file", left11.length === 1 && left11[0].name === "Ivy Lantern", left11);
   } finally {

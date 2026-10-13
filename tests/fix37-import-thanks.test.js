@@ -26,7 +26,9 @@
 // recordGift (§4). Drop `alreadyThanked` from recordGift and §1 drafts 300.
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays, waitFor, importAutoSettle } = require("./helpers");
+// This suite watches the background work run, so imports here do not wait for it.
+importAutoSettle(false);
 
 const ORG = "org_fix37thanks";
 const ADMIN = "fix37-admin@example.org";
