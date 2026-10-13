@@ -6842,6 +6842,7 @@ async function runSchemaInit(pool) {
       priority INTEGER NOT NULL DEFAULT 5,
       attempts INTEGER NOT NULL DEFAULT 0,
       max_attempts INTEGER NOT NULL DEFAULT 5,
+      backoff_ms INTEGER,
       run_after TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       round TEXT,
       locked_by TEXT,
@@ -6854,6 +6855,7 @@ async function runSchemaInit(pool) {
       created_by TEXT NOT NULL,
       created_by_name TEXT
     )`);
+  await pool.query(`ALTER TABLE job_queue ADD COLUMN IF NOT EXISTS backoff_ms INTEGER`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS job_queue_one_waiting ON job_queue (key) WHERE status = 'waiting'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_ready ON job_queue (status, priority, run_after)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_queue_running_key ON job_queue (key) WHERE status = 'running'`);

@@ -113,7 +113,8 @@ async function claim() {
 }
 
 const BACKOFF_MS = () => Math.max(10, Number(process.env.JOB_BACKOFF_MS) || 30000);
-const backoffMs = attempts => Math.min(30 * 60 * 1000, BACKOFF_MS() * 2 ** Math.max(0, attempts - 1));
+// A row may carry its own base (backoff_ms); otherwise the process's.
+const backoffMs = (attempts, base) => Math.min(30 * 60 * 1000, (Number(base) || BACKOFF_MS()) * 2 ** Math.max(0, attempts - 1));
 
 async function finish(job, err) {
   if (!err) {
@@ -126,7 +127,7 @@ async function finish(job, err) {
     `UPDATE job_queue SET status = ?, finished_at = NOW(), last_error = ?,
             run_after = NOW() + (?::int * INTERVAL '1 millisecond'), failed_at = NOW()
       WHERE id = ? AND locked_by = ?`,
-    [dead ? "dead" : "waiting", msg, dead ? 0 : backoffMs(job.attempts), job.id, WORKER_ID]);
+    [dead ? "dead" : "waiting", msg, dead ? 0 : backoffMs(job.attempts, job.backoff_ms), job.id, WORKER_ID]);
   console.error(`[jobs] ${job.name}${job.org_id ? " " + job.org_id : ""} failed (try ${job.attempts}): ${msg}${dead ? " · stopped" : ""}`);
 }
 

@@ -53,8 +53,8 @@ async function reset() {
   await q(`DELETE FROM job_schedule WHERE name = 'testProbe'`);
 }
 const enqueue = (rows) => Promise.all(rows.map(r => q(
-  `INSERT INTO job_queue (id, name, org_id, key, payload, status, run_after, created_by, created_by_name)
-   VALUES ($1,'testProbe',$2,$3,$4::jsonb,'waiting', NOW() + ($5::int * INTERVAL '1 millisecond'),'system:scale1-test','scale1-queue')
+  `INSERT INTO job_queue (id, name, org_id, key, payload, status, run_after, backoff_ms, created_by, created_by_name)
+   VALUES ($1,'testProbe',$2,$3,$4::jsonb,'waiting', NOW() + ($5::int * INTERVAL '1 millisecond'), 50,'system:scale1-test','scale1-queue')
    ON CONFLICT (key) WHERE status = 'waiting' DO NOTHING`,
   [`job_s1q_${r.key.replace(/\W/g, "")}_${Math.random().toString(36).slice(2, 8)}`, r.org || null, r.key, JSON.stringify(r.payload || {}), r.delayMs || 0])));
 const runs = async () => (await q(`SELECT started_at, finished_at, ok, detail FROM tick_log WHERE name = 'testProbe' ORDER BY started_at`))
@@ -115,6 +115,7 @@ const settled = (keys) => waitFor(async () => {
   await enqueue([{ key: "scale1q:fail", org: ORG_B, payload: { fail: true } }]);
   const dead = await waitFor(async () => (await q(`SELECT * FROM job_queue WHERE key='scale1q:fail' AND status='dead'`))[0], { timeout: 30000 });
   ok("§3 a failing job stops as dead", !!dead);
+  if (!dead) throw new Error("§3 never reached dead; the rest of §3 depends on it");
   ok("§3 after exactly five tries", dead && dead.attempts === 5, `attempts=${dead && dead.attempts}`);
   ok("§3 its error is kept", dead && /probe told to fail/.test(dead.last_error || ""));
   ok("§3 it ran five times, no more", (await runs()).filter(r => r.key === "scale1q:fail").length === 5);
