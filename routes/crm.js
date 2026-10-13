@@ -2420,9 +2420,12 @@ async function composeBoardPack(orgId, opts = {}) {
     if (s.kind === "report" || s.kind === "chart" || s.kind === "missing") addDef(s.title, s.definition, null);
     if (s.kind === "goals") {
       addDef(s.title, s.definition, null);
-      for (const g of s.goals) {
-        addDef(`${g.label} · raised`, "Every gift given to this goal, less any fee the donor covered, and every grant awarded toward it.", g.raised.sentence);
-        addDef(`${g.label} · the goal`, "The target set on this goal's record.", g.target.sentence);
+      // POLISH-1 Part 7: one definition for every goal's two numbers, not
+      // two near-identical lines per goal (eight goals printed sixteen
+      // entries and a page and a half of the same two sentences).
+      if (s.goals.length) {
+        addDef("Raised toward a goal", "Every gift given to the goal, less any processing fee the donor covered, and every grant awarded toward it.", null);
+        addDef("A goal's target", "The target set on the goal's own record.", null);
       }
     }
   }
@@ -2454,7 +2457,7 @@ async function renderBoardPackPdf(pack) {
   const PW = doc.page.width, L = 50, W = PW - 100;
   const fmtMoney = v => "$" + (Math.round((Number(v) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtVal = (kind, v, suffix) => {
-    if (v === null || v === undefined) return "—";
+    if (v === null || v === undefined) return "None yet";   // POLISH-1: never an em dash
     if (kind === "money") return fmtMoney(v);
     if (kind === "percent") return `${v}%`;
     return Number(v).toLocaleString("en-US") + (suffix ? ` ${suffix}` : "");
@@ -2578,12 +2581,20 @@ async function renderBoardPackPdf(pack) {
   }
 
   // ── PAGE NUMBERS, on every page, once the count is known ──
+  // POLISH-1 Part 7: the footer sits below the bottom margin, and pdfkit
+  // answers text written there by starting a NEW page, so a three-page pack
+  // printed as six: three real pages and three blank ones each holding only
+  // its footer (page 4 read "page 1 of 3"). The margin is lifted for the one
+  // line and the line is told not to wrap, so it stays on its own page.
   const range = doc.bufferedPageRange();
   for (let i = 0; i < range.count; i++) {
     doc.switchToPage(range.start + i);
+    const bottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.font("Helvetica").fontSize(8).fillColor(GREY)
       .text(`${pack.orgName} · ${pack.title} · ${pack.period.label} · page ${i + 1} of ${range.count}`,
-        L, doc.page.height - 34, { width: W, align: "center" });
+        L, doc.page.height - 34, { width: W, align: "center", lineBreak: false });
+    doc.page.margins.bottom = bottom;
   }
   doc.end(); await done;
   return Buffer.concat(chunks);
@@ -18712,6 +18723,18 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   const high = drifting.filter(a => a.confidence === "high");
   const medium = drifting.filter(a => a.confidence === "medium");
   const lapsed = [...map.values()].filter(a => a.state === "lapsed");
+  // POLISH-1 Part 6 — the count can move at midnight with nothing new: each
+  // person who crossed into (or out of) "past their own pattern" since
+  // yesterday, by name, from the same map (computeDriftForDonors reads the
+  // same gifts as of yesterday). Home says who, so a 7 becoming an 8 is a
+  // name, not a mystery.
+  const isHigh = a => a.state === "drifting" && a.confidence === "high";
+  const sinceYesterday = {
+    crossed: [...map.values()].filter(a => isHigh(a) && a.wasDriftingHigh === false)
+      .map(a => ({ donorId: a.donorId, donorName: a.donorName, reason: a.reason || null })),
+    left: [...map.values()].filter(a => a.wasDriftingHigh === true && !isHigh(a))
+      .map(a => ({ donorId: a.donorId, donorName: a.donorName, now: a.state === "lapsed" ? "lapsed" : "back on pattern" })),
+  };
 
   // BUILD-76 follow-up — a zero that shows its work. The empty state must
   // name what was checked and who was excluded and why, or a healthy file
@@ -18802,6 +18825,7 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
     // not risk. Kept on the payload as null so a stale client renders nothing.
     lapsedAmount: null,
     cap,
+    sinceYesterday,
     total: surfaced.length,
     list: (uncapped ? surfaced : surfaced.slice(0, cap)).map(row),
   });
@@ -23054,15 +23078,20 @@ async function reportBookkeeper(orgId, p) {
   const chequesNoNumber = out.filter(r => /check|cheque/i.test(String(r.paymentMethod || ""))
     && !String(r.checkNumber || "").trim());
   const noDeposit = out.filter(r => !String(r.deposit || "").trim() && r.cashOrNot === "Cash");
-  const issue = (key, label, rows2, fix) => rows2.length
-    ? { key, label, count: rows2.length, cents: rows2.reduce((s, r) => s + r.cents, 0),
+  // POLISH-1 Part 5: the banner read "57 gifts no fund (46693.95)": the CSV's
+  // bare decimal, printed at a person. `amount` stays the file's shape;
+  // `display` is the money as a person reads it, through the one formatter.
+  // `noun` lets a check be called a check ("11 checks with no number").
+  const issue = (key, label, rows2, fix, noun = "gift") => rows2.length
+    ? { key, label, noun, count: rows2.length, cents: rows2.reduce((s, r) => s + r.cents, 0),
         amount: bkDollars(rows2.reduce((s, r) => s + r.cents, 0)),
+        display: require("../money").formatCents(rows2.reduce((s, r) => s + r.cents, 0)),
         giftIds: rows2.map(r => r.giftId).slice(0, 2000), fix }
     : null;
   const issues = [
-    issue("no_method", "no payment method", noMethod, "Open each gift and say how the money arrived."),
-    issue("no_fund", "no fund", noFund, "Open each gift and designate it, or set a default unrestricted fund."),
-    issue("no_check_number", "a cheque with no number", chequesNoNumber, "Add the number from the cheque or the deposit slip."),
+    issue("no_method", "with no payment method", noMethod, "Open each gift and say how the money arrived."),
+    issue("no_fund", "with no fund", noFund, "Open each gift and designate it, or set a default unrestricted fund."),
+    issue("no_check_number", "with no number", chequesNoNumber, "Add the number from the check or the deposit slip.", "check"),
     issue("no_deposit", "not matched to a deposit", noDeposit, "Record the deposit on the deposit sheet, or match the payout."),
   ].filter(Boolean);
 
@@ -23086,8 +23115,8 @@ async function reportBookkeeper(orgId, p) {
     issues,
     // A sentence, because a count with no sentence is a number nobody acts on.
     issueSentence: issues.length
-      ? issues.map(i => `${i.count} ${i.count === 1 ? "gift has" : "gifts have"} ${i.label}`
-          + (i.cents ? ` (${i.amount})` : "")).join(", ")
+      ? issues.map(i => `${i.count} ${i.noun}${i.count === 1 ? "" : "s"} ${i.label}`
+          + (i.cents ? ` (${i.display})` : "")).join(", ")
         + ". Fix them or export anyway."
       : null,
     balanced: refusals.length === 0,

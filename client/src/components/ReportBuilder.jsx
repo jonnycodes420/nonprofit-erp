@@ -32,10 +32,17 @@ async function download(path, name) {
 
 // ── THE ONE RESULTS TABLE ──────────────────────────────────────────────────
 // cols: { key, label, type, align?, value?(r) raw, render?(r) node, sum?,
-//         sortVal?(r), person? (this cell links the row's person) }
+//         sortVal?(r), person? (this cell links the row's person),
+//         hideWhenEmpty? (POLISH-1: a column empty on every row is not drawn,
+//         so a report never shows "Assigned to: Not set" a thousand times) }
 // personOf(r) → the person id a row opens, or null (a month, a fund).
 // foot: draw the totals row (every `sum` column: money in cents, counts).
-export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLabel = "Total", testid = "report-table" }) {
+// sticky: POLISH-1 Part 6. A long table scrolls inside its own frame with the
+// column headers and the first column held in place, so a number scrolled to
+// row 900, or scrolled sideways on a phone, still says whose and which year.
+export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true, footLabel = "Total", testid = "report-table", sticky = false }) {
+  const isBlank = v => v === null || v === undefined || String(v).trim() === "";
+  const cols = allCols.filter(c => !c.hideWhenEmpty || rows.some(r => !isBlank(c.value ? c.value(r) : r[c.key])));
   // FIX-14 Part 5: on Reports the sort is in the URL (?sort=-total is
   // descending, ?sort=name ascending), so a sorted report reloads, and opens
   // in a new tab, sorted. Rows are all loaded, so the table sorts them here.
@@ -80,13 +87,18 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
           style={{ color: T.ink, fontWeight: 700, textDecoration: "none" }}>{body}</DonorLink>
       : body;
   };
-  return <div className="reports-table-wrap" style={{ overflowX: "auto" }}>
-    <table data-testid={testid} style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+  // Sticky cells need an opaque ground and the separate border model (a
+  // collapsed border scrolls away from a sticky cell in Chrome and Safari).
+  const stickTop = sticky ? { position: "sticky", top: 0, zIndex: 2, background: T.white } : null;
+  const stickLeft = (i, ground) => sticky && i === 0 ? { position: "sticky", left: 0, zIndex: 1, background: ground } : null;
+  return <div className="reports-table-wrap" data-sticky={sticky ? "" : undefined}
+    style={{ overflowX: "auto", ...(sticky ? { overflowY: "auto", maxHeight: "min(72vh, 760px)" } : null) }}>
+    <table data-testid={testid} style={{ width: "100%", fontSize: 13, ...(sticky ? { borderCollapse: "separate", borderSpacing: 0 } : { borderCollapse: "collapse" }) }}>
       <thead>
         <tr>
-          {cols.map(c => {
+          {cols.map((c, ci) => {
             const on = sort?.key === c.key;
-            return <th key={c.key} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} style={{ ...th, textAlign: align(c) }}>
+            return <th key={c.key} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} style={{ ...th, textAlign: align(c), ...stickTop, ...(sticky && ci === 0 ? { left: 0, zIndex: 3 } : null) }}>
               <button type="button" data-sort-key={c.key} onClick={() => setSort(nextSort(sort, c.key))}
                 style={{ all: "unset", cursor: "pointer", font: "inherit", letterSpacing: "inherit", textTransform: "inherit", color: on ? T.ink : T.ink3 }}>
                 {c.label}{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
@@ -101,15 +113,15 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
           return <tr key={r.id || r._pid || i} data-testid="report-row" data-person-id={pid || undefined}
             onClick={pid ? () => open(r) : undefined} className={pid ? "rpt-row-click" : undefined}
             style={{ cursor: pid ? "pointer" : "default" }}>
-            {cols.map(c => <td key={c.key} data-cents={c.type === "money" && summed(c) ? centsOf(raw(c, r)) : undefined}
-              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 96 } : null) }}>{cell(c, r)}</td>)}
+            {cols.map((c, ci) => <td key={c.key} data-cents={c.type === "money" && summed(c) ? centsOf(raw(c, r)) : undefined}
+              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 96 } : null), ...stickLeft(ci, T.white) }}>{cell(c, r)}</td>)}
           </tr>;
         })}
       </tbody>
       {showFoot && <tfoot>
         <tr data-testid="report-total-row">
           {cols.map((c, i) => {
-            const style = { padding: "10px 10px", borderTop: `2px solid ${T.bg3}`, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", textAlign: align(c) };
+            const style = { padding: "10px 10px", borderTop: `2px solid ${T.bg3}`, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", textAlign: align(c), ...(sticky ? { position: "sticky", bottom: 0, zIndex: i === 0 ? 3 : 2, background: T.white, ...(i === 0 ? { left: 0 } : null) } : null) };
             if (summed(c) && c.type === "money") {
               const cents = footCents(rows, r => raw(c, r));
               return <td key={c.key} data-cents={cents} style={style}>{cellText(cents / 100, "money")}</td>;

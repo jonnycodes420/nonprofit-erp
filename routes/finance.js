@@ -116,7 +116,7 @@ const FIN_FIGURES = [
   { key: "unrestricted", label: "Unrestricted balance",
     definition: "What is in funds not marked restricted. This is the money the board can actually direct." },
   { key: "unmatched", label: "Deposits not yet matched",
-    definition: "Gifts recorded as a cheque, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
+    definition: "Gifts recorded as a check, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
 ];
 
 // The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
@@ -219,15 +219,29 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
   // health score and not a warning: a list with a count, a sentence and the
   // rows behind it.
   const needsYou = [];
+  // POLISH-1 Part 6: the same gifts, plus the year's giving they are a share
+  // of and how many of them came in from a file, so a large share says WHY in
+  // one line ("$500,811.46 with no fund" was 94% of a year, unexplained).
   const [noFund] = await query(
-    `SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+    `SELECT COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='')::int n,
+            COALESCE(SUM(ROUND(g.amount*100)) FILTER (WHERE COALESCE(g.fund_id,'')=''),0)::bigint cents,
+            COUNT(*) FILTER (WHERE COALESCE(g.fund_id,'')='' AND g.import_id IS NOT NULL)::int imported,
+            COALESCE(SUM(ROUND(g.amount*100)),0)::bigint all_cents
        FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
-      WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
+      WHERE g.org_id=? AND d.deleted_at IS NULL
         AND g.date >= (CURRENT_DATE - 365)::text`, [orgId]);
-  if (noFund.n) needsYou.push({ key: "noFund", label: "Gifts with no fund", count: noFund.n,
-    amount: toDollars(Number(noFund.cents)),
-    sentence: `${noFund.n} ${noFund.n === 1 ? "gift" : "gifts"} in the last year, ${money.formatCentsPlain(Number(noFund.cents))}, are not assigned to a fund. They are counted in your totals and they are not counted in any fund's balance.`,
-    rows: "noFund" });
+  if (noFund.n) {
+    const share = Number(noFund.all_cents) > 0 ? Number(noFund.cents) / Number(noFund.all_cents) : 0;
+    const why = share < 0.25 ? null
+      : noFund.imported * 2 > noFund.n
+        ? `That is ${Math.round(share * 100)}% of the year's giving. Most of these came in from an imported file without a fund.`
+        : `That is ${Math.round(share * 100)}% of the year's giving. Most of these were recorded without a fund.`;
+    needsYou.push({ key: "noFund", label: "Gifts with no fund", count: noFund.n,
+      amount: toDollars(Number(noFund.cents)),
+      sentence: `${noFund.n} ${noFund.n === 1 ? "gift" : "gifts"} in the last year, ${money.formatCentsPlain(Number(noFund.cents))}, are not assigned to a fund. They are counted in your totals and they are not counted in any fund's balance.`,
+      why, share: Math.round(share * 1000) / 1000, action: why ? "setFund" : null,
+      rows: "noFund" });
+  }
 
   const [unmatchedN] = await query(
     `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
@@ -239,7 +253,7 @@ app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
         AND g.date >= (CURRENT_DATE - 90)::text`, [orgId]).catch(() => [{ n: 0 }]);
   if (unmatchedN.n) needsYou.push({ key: "unmatched", label: "Not yet on a deposit", count: unmatchedN.n,
     amount: toDollars(cents.unmatched),
-    sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a cheque, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
+    sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a check, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
     rows: "unmatched" });
 
   // Restricted money with a grant deadline coming. Only AWARDED grants hold
@@ -3930,7 +3944,7 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
       n => n === 0,
       n => n ? `${n} ${n === 1 ? "gift has" : "gifts have"} no fund. They are in your totals and in no fund's balance.`
              : "Every gift this month names a fund."),
-    await one("banked", "Every cheque is on a deposit",
+    await one("banked", "Every check is on a deposit",
       `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
         WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
           AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash')
@@ -3938,8 +3952,8 @@ app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
                             AND im.shape='deposit' AND im.reversed_at IS NULL)`,
       [orgId, from, to],
       n => n === 0,
-      n => n ? `${n} ${n === 1 ? "cheque or cash gift is" : "cheque and cash gifts are"} not on a deposit slip.`
-             : "Every cheque and cash gift this month is on a deposit."),
+      n => n ? `${n} ${n === 1 ? "check or cash gift is" : "check and cash gifts are"} not on a deposit slip.`
+             : "Every check and cash gift this month is on a deposit."),
     // A RECEIPT IS A ROW IN `receipts`, not a column on the gift. Writing
     // this against `gifts.receipt_number` would have compiled and counted
     // every gift as un-receipted for ever.

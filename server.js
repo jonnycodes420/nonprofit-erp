@@ -6932,6 +6932,13 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
       for (const tg of tags) { const m = /^has-refused-rows:(\d+)$/.exec(String(tg)); if (m) refusedRows += Number(m[1]); }
     } catch { /* unreadable tags never break drift */ }
     const a = driftEngine.assessDrift(gifts, today, { refusedRows });
+    // POLISH-1 Part 6 — the same gifts, read as of yesterday. Drift is
+    // computed against the org's civil today, so the Home count can move at
+    // midnight with nothing new in the file (the PREMIUM-1 walk saw 7 become
+    // 8 across 11:16pm to 12:05am). The readout names who crossed; a pure
+    // second pass over rows already in memory, no extra query.
+    const y = driftEngine.assessDrift(gifts, orgTime.addDays(today, -1), { refusedRows });
+    a.wasDriftingHigh = y.state === "drifting" && y.confidence === "high";
     a.donorId = d.id;
     a.donorName = d.name;
     a.assignedTo = d.assigned_to || null;

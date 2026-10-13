@@ -48,7 +48,7 @@ export const DASHBOARDS = [
       // a number Steward cannot stand behind, because only one half of it comes
       // from the gifts Steward actually holds.
       { key: "otherIncomeThisYear", label: "Other income this year", kind: "money", optional: true,
-        definition: "A figure your organisation keeps elsewhere — earned income, a store, programme fees — typed in Settings. Steward does not track it and never adds it to giving; it is shown so the board can see both." },
+        definition: "A figure your organization keeps elsewhere (earned income, a store, program fees), typed in Settings. Steward does not track it and never adds it to giving; it is shown so the board can see both." },
       { key: "donorCount", label: "People who gave", kind: "count",
         definition: "Distinct givers with at least one gift this fiscal year." },
       { key: "retentionRate", label: "Retention", kind: "percent",
@@ -58,7 +58,7 @@ export const DASHBOARDS = [
         // the moment the rows could be opened.
         definition: "Of the people who gave last calendar year, the share who have given again this one. Blank until there is enough history for the number to mean anything, with the day it will appear." },
       { key: "byDesignation", rowsAre: "money", label: "Giving by designation", kind: "breakdown",
-        definition: "This year's gifts grouped by the fund or programme they were given to. Gifts with no designation are counted as unrestricted." },
+        definition: "This year's gifts grouped by the fund or program they were given to. Gifts with no designation are counted as unrestricted." },
       // FIX-2 A — "Monthly gifts giving" was not English. It was never composed
       // by vocabulary: it was typed that way. People read "Monthly givers".
       { key: "recurringActive", label: "Monthly givers", kind: "count",

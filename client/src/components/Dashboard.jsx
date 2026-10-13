@@ -32,7 +32,7 @@ import { displayDateShort } from "../../../shared/displayDate";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
 import { AskHero } from "./AskRail";
-import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
+import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -1691,6 +1691,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
+              {/* POLISH-1 Part 6: when the count moved overnight with nothing
+                  new, the line says who crossed and who left. */}
+              {driftSinceYesterday(driftData.sinceYesterday) && <span data-testid="drift-since-yesterday"> · {driftSinceYesterday(driftData.sinceYesterday)}</span>}
             </span>
           </span>
           <select aria-label="Order the drift list" data-testid="drift-sort" value={driftSort}

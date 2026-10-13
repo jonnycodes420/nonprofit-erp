@@ -469,6 +469,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
           </div>)}
         </div>
+        {/* POLISH-1 Part 6: "Online $0 (0)" beside a live giving page read as a
+            broken connection. When it is zero, one line says what online
+            counts and so why it can be zero. */}
+        {d.giftCount > 0 && !d.onlineCount && <div data-testid="gs-online-zero" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, margin: "-8px 0 16px" }}>
+          No gift this period was paid online. Online counts gifts paid through your giving pages or a connected giving source like PayPal; gifts brought in from a file count as offline, because Steward can't see how they were paid.
+        </div>}
         {/* A month's unique donors do not add up to the period's (one person
             can give in two months), so that column has no foot. */}
         <ReportTable cols={[
@@ -502,7 +508,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${yearMode === "fiscal" ? "FY" + (d.year - 1) : d.year - 1}` : "Gave prior year", type: "money" },
         { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "Not set"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
         { key: "lifetimeGiving", label: "Lifetime", type: "money" },
-        { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set" },
+        { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set", hideWhenEmpty: true },
         { key: "email", label: "Email", type: "text", render: r => r.email || "Not set" },
       ]} rows={d.rows} />;
     } else if (active === "retention") {
@@ -553,13 +559,13 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
             </div>}
           </div>)}
         </div>
-        <ReportTable personOf={byId} onOpen={openPerson} cols={[
+        <ReportTable sticky personOf={byId} onOpen={openPerson} cols={[
           { key: "name", label: "Donor", type: "text", person: true },
           { key: "y2", label: d.labels.y2, type: "money" },
           { key: "y1", label: d.labels.y1, type: "money" },
           { key: "y0", label: d.labels.y0, type: "money" },
           { key: "changePct", label: "YoY change", type: "pct", render: chg, sortVal: r => r.changePct ?? Infinity },
-          { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set" },
+          { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "Not set", hideWhenEmpty: true },
         ]} rows={d.rows} />
       </>;
     } else if (active === "annual") {

@@ -289,16 +289,22 @@ const DONOR_GIFT_SELECT = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.n
          LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
         WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id = ?`;
 
+const ONLINE_GIFT_SQL = "(g.stripe_payment_id IS NOT NULL OR g.giving_page_id IS NOT NULL OR g.giving_source_id IS NOT NULL)";
 function giftsWhere(p, args) {
   let w = "";
   if (p.fund === "none") w += " AND f.id IS NULL";
   else if (p.fund) { w += " AND f.id = ?"; args.push(p.fund); }
   if (p.restricted !== undefined) { w += " AND COALESCE(f.restricted,false) = ?"; args.push(p.restricted); }
   if (p.campaign) { w += " AND g.campaign_id = ?"; args.push(p.campaign); }
-  // REPORTS-4: online means paid through Stripe (the giving summary's split);
-  // page is the giving page the gift came through.
-  if (p.online === true) w += " AND g.stripe_payment_id IS NOT NULL";
-  else if (p.online === false) w += " AND g.stripe_payment_id IS NULL";
+  // REPORTS-4: online is the giving summary's split; page is the giving page
+  // the gift came through. POLISH-1 Part 6: online is money that was PAID
+  // online, by any door Steward can see: Stripe (its giving pages and
+  // checkout), a giving page, or a connected giving source (PayPal, Zeffy,
+  // Givebutter, Square). A PayPal gift read from the source used to count as
+  // "recorded by hand". An imported gift is offline whatever its old method,
+  // because Steward cannot see how it was paid.
+  if (p.online === true) w += " AND " + ONLINE_GIFT_SQL;
+  else if (p.online === false) w += " AND NOT " + ONLINE_GIFT_SQL;
   if (p.bookkeeper === true) { w += " AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])"; args.push(BOOKKEEPER_EXCLUDED_TYPES); }
   if (p.page === "none") w += " AND g.giving_page_id IS NULL";
   else if (p.page) { w += " AND g.giving_page_id = ?"; args.push(p.page); }
@@ -378,7 +384,7 @@ const SOURCES = {
     // allowlist two lines down and is never interpolated into the SQL; a word
     // this source does not know falls back to the default order.
     params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure", order: "word", group: "id", online: "bool", page: "id", bookkeeper: "bool" },
-    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online through Stripe" : p.online === false ? " recorded by hand (not paid online)" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
+    sentence: (p, dd) => `${p.measure === "mean" ? "The average of every" : p.measure === "median" ? "The middle amount of every" : "Every"} gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.page === "none" ? " not through a giving page" : p.page ? " through this giving page" : ""}${p.online === true ? " paid online: through a giving page, Stripe or a connected giving source" : p.online === false ? " not paid online: recorded by hand or imported from another system" : ""}${p.bookkeeper ? ", leaving out soft and matching credits (which never reached the bank)" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}${p.group ? " from the people in this group" : ""}.`,
     sql: async (orgId, p) => {
       const args = [orgId, p.from, p.to];
       let where = giftsWhere(p, args);

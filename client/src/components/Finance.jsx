@@ -596,7 +596,7 @@ function MonthlyClose() {
             : d.balanced
               ? `${d.giftCount} gift${d.giftCount === 1 ? "" : "s"} totalling ${fmtFull(d.totalCents / 100)}`
                 + (d.feeCents ? `, less ${fmtFull(d.feeCents / 100)} in processing fees, ${fmtFull(d.netCents / 100)} to the bank` : "")
-                + `. It foots: the rows, the fund totals and the database agree to the cent.`
+                + `. It checks out: the rows, the fund totals and the database agree to the cent.`
               : d.exportRefused}
         </div>
 
@@ -613,9 +613,9 @@ function MonthlyClose() {
                     data-testid={"close-issue-" + i.key}
                     style={{ background:"none", border:"none", padding:0, font:"inherit", color:T.greenDk,
                              fontWeight:700, textDecoration:"underline dotted", cursor:"pointer" }}>
-                    {i.count} {i.count === 1 ? "gift" : "gifts"}
+                    {i.count} {i.noun || "gift"}{i.count === 1 ? "" : "s"}
                   </button>
-                  {` ${i.label}`}{i.cents ? ` (${i.amount})` : ""}
+                  {` ${i.label}`}{i.cents ? ` (${i.display || fmtFull(i.cents / 100)})` : ""}
                 </span>
               ))}
               . Fix them or export anyway.
@@ -1574,10 +1574,61 @@ function FinFigure({ f, onOpen }) {
   );
 }
 
+// POLISH-1 Part 6 — "Set a fund for these". One fund, chosen here, put on
+// every gift with no fund through the gift's own edit (PUT /gifts/:id), the
+// same audited write a person makes from the gift itself, so the ledger stamp
+// follows the fund and every change is in the audit log.
+function SetFundModal({ item, onClose, onDone }) {
+  const [funds, setFunds] = useState(null);
+  const [fundId, setFundId] = useState("");
+  const [prog, setProg] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => setFunds([])); }, []);
+  const apply = async () => {
+    setErr("");
+    try {
+      const r = await apiFetch(`/finance/overview/rows?rows=noFund`);
+      const ids = (r.rows || []).map(x => x.id);
+      let done = 0, failed = 0;
+      setProg({ done, total: ids.length });
+      for (let i = 0; i < ids.length; i += 4) {
+        await Promise.all(ids.slice(i, i + 4).map(id =>
+          apiFetch(`/gifts/${id}`, { method: "PUT", body: JSON.stringify({ fund_id: fundId }) }).then(() => { done++; }, () => { failed++; })));
+        setProg({ done, total: ids.length });
+      }
+      if (failed) setErr(`${failed} ${failed === 1 ? "gift" : "gifts"} did not change. Open them from the list to see why.`);
+      else { onDone && onDone(); onClose(); }
+    } catch (e) { setErr(errorMessage(e, "The fund was not set.")); }
+  };
+  return (
+    <Modal onClose={onClose} title="Set a fund for these gifts">
+      <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>
+        {item.count} {item.count === 1 ? "gift" : "gifts"} from the last year, {fmtFull(item.amount)}, have no fund. Pick the fund they belong to and Steward puts it on each one, the same as editing each gift.
+      </div>
+      {funds === null ? <div style={{ fontSize:13, color:T.ink3 }}>Loading your funds…</div> : !funds.length
+        ? <div style={{ fontSize:13, color:T.ink3 }}>You have no funds yet. Add one under Funds first.</div>
+        : <select aria-label="Fund" value={fundId} onChange={e => setFundId(e.target.value)} disabled={!!prog}
+            style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 10px", fontSize:13, color:T.ink, width:"100%" }}>
+            <option value="">Choose a fund</option>
+            {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>}
+      {prog && <div data-testid="set-fund-progress" style={{ fontSize:12.5, color:T.ink3, marginTop:10 }}>{prog.done} of {prog.total} done</div>}
+      {err && <div role="alert" style={{ fontSize:13, color:T.terra700, marginTop:10 }}>{err}</div>}
+      <div style={{ display:"flex", gap:10, marginTop:14 }}>
+        <button type="button" onClick={apply} disabled={!fundId || !!prog}
+          style={{ ...btn(), ...((!fundId || prog) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>Set this fund</button>
+        <button type="button" onClick={onClose} style={{ ...btn(T.white, T.ink), border:"1px solid "+T.bg3 }}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
 function FinOverview({ onNavigate }) {
   const [d, setD] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);
+  const [setFund, setSetFund] = useState(null);
+  const reload = () => apiFetch("/finance/overview").then(setD).catch(() => {});
   useEffect(() => {
     let alive = true;
     apiFetch("/finance/overview").then(r => { if (alive) setD(r); })
@@ -1628,7 +1679,7 @@ function FinOverview({ onNavigate }) {
           ))}
         </div>
         <div style={{ fontSize:12, color:T.ink3, marginTop:10, lineHeight:1.5 }}>
-          Twelve months of gifts, in your organisation&apos;s own months. Every bar opens the gifts behind it.
+          Twelve months of gifts, in your organization&apos;s own months. Every bar opens the gifts behind it.
         </div>
       </Card>
 
@@ -1638,11 +1689,12 @@ function FinOverview({ onNavigate }) {
         <SectionLabel>Needs you</SectionLabel>
         {!d.needsYou.length && (
           <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6, marginTop:6 }}>
-            Nothing is waiting. Every gift is on a fund, every cheque is on a deposit, and no restricted grant has a report due inside sixty days.
+            Nothing is waiting. Every gift is on a fund, every check is on a deposit, and no restricted grant has a report due inside sixty days.
           </div>
         )}
         {d.needsYou.map(n => (
-          <button key={n.key} data-testid={"fin-needs-" + n.key}
+          <div key={n.key}>
+          <button data-testid={"fin-needs-" + n.key}
             onClick={() => openFigure({ rows: n.rows, label: n.label, definition: n.sentence })}
             style={{ display:"block", width:"100%", textAlign:"left", background:"none", border:"none",
                      borderTop:"1px solid "+T.bg2, padding:"11px 2px", cursor:"pointer", fontFamily:"inherit" }}>
@@ -1654,8 +1706,22 @@ function FinOverview({ onNavigate }) {
             </div>
             <div style={{ fontSize:12.5, color:T.ink3, marginTop:3, lineHeight:1.5 }}>{n.sentence}</div>
           </button>
+          {/* POLISH-1 Part 6: a large share says why, in one line, with one action. */}
+          {n.why && (
+            <div data-testid={"fin-needs-why-" + n.key} style={{ fontSize:12.5, color:T.ink2, lineHeight:1.5, padding:"0 2px 11px", display:"flex", gap:10, flexWrap:"wrap", alignItems:"baseline" }}>
+              <span>{n.why}</span>
+              {n.action === "setFund" && (
+                <button type="button" data-testid="fin-set-fund" onClick={() => setSetFund(n)}
+                  style={{ background:"none", border:"none", padding:0, color:T.greenDk, fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit", textDecoration:"underline" }}>
+                  Set a fund for these
+                </button>
+              )}
+            </div>
+          )}
+          </div>
         ))}
       </Card>
+      {setFund && <SetFundModal item={setFund} onClose={() => setSetFund(null)} onDone={reload}/>}
 
       <Definitions4 items={d.figures.map(f => [f.label, f.definition])}/>
 
@@ -1789,8 +1855,8 @@ function DepositSheetCard({ onNavigate, isReadOnly }) {
     <Card>
       <SectionLabel>The deposit sheet</SectionLabel>
       <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, maxWidth:640 }}>
-        Cheques and cash, keyed as one slip that has to foot before Steward will write a single gift.
-        Photograph the cheques and Steward reads the amounts; the two amounts are cross-checked, and a
+        Checks and cash, keyed as one slip that has to foot before Steward will write a single gift.
+        Photograph the checks and Steward reads the amounts; the two amounts are cross-checked, and a
         slip that does not add up is refused rather than half-entered.
       </div>
       <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>

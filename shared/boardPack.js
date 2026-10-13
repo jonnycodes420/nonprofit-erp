@@ -73,7 +73,7 @@ export const PACK_SECTIONS = [
     kind: "figures",
     figures: [
       { key: "givingThisPeriod", label: "Giving this period", kind: "money",
-        definition: "Every gift dated in the period this pack covers. Contributions only. Earned income like store sales or programme fees is not tracked here.",
+        definition: "Every gift dated in the period this pack covers. Contributions only. Earned income like store sales or program fees is not tracked here.",
         source: w => ({ key: "gifts", params: win(w) }) },
       { key: "givingLastYear", label: "The same period last year", kind: "money",
         definition: "Gifts dated in the equivalent stretch of the previous year, so the comparison is like for like.",
