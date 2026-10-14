@@ -220,7 +220,9 @@ async function seed() {
   ok("§4 the profile waits for its open work before it asks for the next move",
      /dpItemsLoaded/.test(profile) && /getAI\(donor,"nextmove",openForNextMove\)/.test(profile));
   ok("§4 …and the open work it passes is the threads, tasks and proposals it already loaded",
-     /openForNextMove=useMemo/.test(profile) && /onOpenProposals=\{setOpenProposals\}/.test(profile));
+     // PROFILE-1 (header): the proposals are read once (useDonorProposals) and
+     // fed to setOpenProposals, whichever tab is showing.
+     /openForNextMove=useMemo/.test(profile) && /useDonorProposals\(donor\.id\)/.test(profile) && /setOpenProposals\(propData\.proposals\.filter/.test(profile));
 
   // ── §5 · Angela Wu is on Sunrise's record ───────────────────────────────
   console.log("\n— §5 · is Angela Wu really on Sunrise's record? —");
@@ -349,8 +351,9 @@ async function seed() {
     // The label is the button's first text node; the count badge beside it is
             // a separate element and is not part of the name.
     const tabs = await page.$$eval('.dp-tabs button', bs => bs.map(b => (b.childNodes[0] || {}).textContent.trim()));
-    ok("§1 the six tabs are Overview · Gifts & Pledges · Funds · Related · Materials · Activity",
-       JSON.stringify(tabs) === JSON.stringify(["Overview", "Gifts & Pledges", "Funds", "Related", "Materials", "Activity"]), tabs);
+    // PROFILE-1 (header): one row of ten tabs replaced the six and the chips.
+    ok("§1 the tabs are Overview · Gifts & pledges · Asks & pipeline · Conversations · Emails · Tasks · Notes · Funds · Related · Files",
+       JSON.stringify(tabs) === JSON.stringify(["Overview", "Gifts & pledges", "Asks & pipeline", "Conversations", "Emails", "Tasks", "Notes", "Funds", "Related", "Files"]), tabs);
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim()).filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
     await browser.close();
