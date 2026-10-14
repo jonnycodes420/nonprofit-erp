@@ -23,7 +23,7 @@ import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
 import { useLocation } from "react-router-dom";
 import { CampaignsView, CategoryBadge, CATEGORY_META, PACE_META, daysLeftText, campaignHref } from "./CampaignsList";
-import { tabHref, urlParam, giftHref } from "../lib/appUrls";
+import { tabHref, urlParam, giftHref, editPageHref } from "../lib/appUrls";
 
 // FIX-14 Part 5: a campaign is /app/fundraising?fr=campaigns&campaign=<id>:
 // the Campaigns part, scrolled to that campaign's card and marked.
@@ -993,8 +993,9 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
 
 // ── GIVE-EDIT-1 · One row of actions on every page card ──────────────────
 // The volunteer card's row, now on every giving page and on the org's own
-// donation form: Edit the page, Open page, Copy link, QR and embed. One set
-// of labels everywhere.
+// donation form: Edit in editor, Open page, Copy link, QR and embed. One set
+// of labels everywhere (FIX-39: "Edit in editor" is the one label for opening
+// any email or page in its editor, with a Back to this screen).
 const pageActionPrimary = { fontSize: 12, color: T.white, background: T.green, fontWeight: 700, textDecoration: "none", border: "1px solid " + T.green, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" };
 const pageActionQuiet = { fontSize: 12, color: T.ink2, fontWeight: 600, textDecoration: "none", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit" };
 
@@ -1006,7 +1007,7 @@ function PageActions({ editHref, url, live = true, shareOpen, onToggleShare }) {
   };
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      <a data-testid="page-action" href={editHref} style={pageActionPrimary}>Edit the page</a>
+      <a data-testid="page-action" data-edit-in-editor="1" href={editHref} style={pageActionPrimary}>Edit in editor</a>
       {url && live && <a data-testid="page-action" href={url} target="_blank" rel="noreferrer" style={pageActionQuiet}>Open page</a>}
       {url && <button data-testid="page-action" type="button" onClick={copy} style={pageActionQuiet}>{copied ? "Copied" : "Copy link"}</button>}
       {url && <button data-testid="page-action" type="button" aria-expanded={!!shareOpen} onClick={onToggleShare} style={pageActionQuiet}>QR and embed</button>}
@@ -1038,7 +1039,7 @@ function OrgDonationShare({ orgSlug, orgName }) {
         <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Your donation form</div>
         <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 2, overflowWrap: "anywhere" }}>{url.replace(/^https?:\/\//, "")}: the page every gift link points to when it names no campaign.</div>
       </div>
-      <PageActions editHref="/portal-editor?form=org" url={url} shareOpen={open} onToggleShare={() => setOpen(o => !o)} />
+      <PageActions editHref={editPageHref("form=org")} url={url} shareOpen={open} onToggleShare={() => setOpen(o => !o)} />
       {open && <SharePanel url={url} filenameBase={(orgName || "donate").toLowerCase().replace(/[^a-z0-9]+/g, "-")} />}
     </div>
   );
@@ -1151,7 +1152,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                   </div>
                 ))}
               </div>
-              <PageActions editHref={`/portal-editor?page=${p.id}`} url={url} live={!!p.published_at} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} live={!!p.published_at} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
               {shareId === p.id && url && <SharePanel url={url} embedUrl={url + "?embed=1"} filenameBase={`volunteer-page-${p.slug}`} />}
             </div>
           );
@@ -1180,7 +1181,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
                   </div>
                 ))}
               </div>
-              <PageActions editHref={`/portal-editor?page=${p.id}`} url={url} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
+              <PageActions editHref={editPageHref(`page=${encodeURIComponent(p.id)}`)} url={url} shareOpen={shareId === p.id} onToggleShare={() => toggleShare(p.id)} />
               {shareId === p.id && url && <SharePanel url={url} filenameBase={`giving-page-${p.slug}`} />}
             </div>
           );

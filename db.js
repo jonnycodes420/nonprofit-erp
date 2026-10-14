@@ -3512,6 +3512,12 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS approved_by_name TEXT`);
   await pool.query(`ALTER TABLE sequence_steps ADD COLUMN IF NOT EXISTS template_id TEXT`);
   await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS template_id TEXT`);
+  // FIX-39 · A TEMPLATE IN USE CHANGES IN TWO STEPS. Saving one that a live
+  // journey reads keeps the new words here; Publish moves them into the live
+  // columns above, which are the only ones a draft or a send ever reads.
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS draft JSONB`);
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS draft_saved_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE email_templates ADD COLUMN IF NOT EXISTS draft_by_name TEXT`);
 
   // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
   // meant on a grant that has not been awarded, and on an awarded one it is what

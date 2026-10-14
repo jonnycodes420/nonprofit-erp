@@ -101,12 +101,17 @@ const reviewedStyle = on => ({ fontSize: 12, fontWeight: 700, color: on ? T.gree
 // Props from Communications: the campaign starters it already loaded (and the
 // builder that opens one), the people to preview a letter with, and the way to
 // Drafts to review.
-export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts }) {
+// FIX-39: `openTemplateId` opens that one template straight away (an "Edit in
+// editor" from a journey, a campaign or a draft), and `onBackFromOpen` is where
+// its Back goes: to the screen that opened it, not to this library.
+export default function EmailTemplates({ isReadOnly, donors = [], campaignStarters = [], previewSubject, onOpenCampaigns, onOpenDrafts, openTemplateId = null, onBackFromOpen = null }) {
   const [tab, setTab] = useState("templates");
   const [data, setData] = useState(null);
   const [letters, setLetters] = useState(null);
   const [err, setErr] = useState("");
-  const [openId, setOpenId] = useState(null);
+  const [openId, setOpenId] = useState(openTemplateId || null);
+  const [openedFrom, setOpenedFrom] = useState(openTemplateId && onBackFromOpen ? openTemplateId : null);
+  useEffect(() => { if (openTemplateId) { setOpenId(openTemplateId); if (onBackFromOpen) setOpenedFrom(openTemplateId); } }, [openTemplateId]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [openLetter, setOpenLetter] = useState(null);
   const [busy, setBusy] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -155,7 +160,9 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
   if (open) {
     return <EmailEditor key={open.id} template={open} isReadOnly={isReadOnly} blockTypes={data.blockTypes || []}
       mergeFields={open.mergeFields || data.mergeFields || []} donors={donors} onOpenDrafts={onOpenDrafts} onOpenCampaigns={onOpenCampaigns}
-      onBack={() => { setOpenId(null); load(); }} onSaved={() => { load(); loadLetters(); }} />;
+      backLabel={openedFrom === open.id ? "Back" : "Back to templates"}
+      onBack={() => { if (openedFrom === open.id && onBackFromOpen) { setOpenedFrom(null); setOpenId(null); onBackFromOpen(); return; } setOpenId(null); load(); }}
+      onSaved={() => { load(); loadLetters(); }} />;
   }
 
   const tabs = [{ id: "templates", label: "Templates" }, { id: "brand", label: "Brand" }, { id: "media", label: "Media library" }];
@@ -182,20 +189,20 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
       how: isLetter ? "Prints with this person's details" : "To one person, as a draft you send",
       review: t.reviewed ? `Reviewed${t.reviewedBy ? " by " + t.reviewedBy : ""}` : "Not yet reviewed", reviewed: !!t.reviewed,
       onOpen: isLetter ? () => setOpenLetter(t) : (isReadOnly && !live.some(x => x.starterKey === "person_" + t.kind)) || busy ? null : () => openBridged("person_" + t.kind),
-      openLabel: busy === "person_" + t.kind ? "Opening…" : "Open" });
+      openLabel: busy === "person_" + t.kind ? "Opening…" : "Edit in editor" });
   }
   for (const t of live) {
     if (BRIDGED.test(t.starterKey || "")) continue;
     cards.push({ id: "designed-" + t.id, store: "designed", section: templateSection("designed", t.starterKey, `${t.name} ${t.purpose || ""}`),
-      name: t.name, medium: "Email", how: t.subject || t.purpose || "Designed with your brand", editor: "email",
-      review: "In your templates", reviewed: true, onOpen: () => setOpenId(t.id), openLabel: "Open", designed: t });
+      name: t.name, medium: "Email", how: (t.subject && previewSubject ? previewSubject(t.subject) : t.subject) || t.purpose || "Designed with your brand", editor: "email",
+      review: "In your templates", reviewed: true, onOpen: () => setOpenId(t.id), openLabel: "Edit in editor", designed: t });
   }
   for (const t of campaignStarters) {
     cards.push({ id: "campaign-" + t.key, store: "campaign", section: templateSection("campaign", t.key, `${t.label} ${t.blurb || ""}`),
       name: t.label, medium: "Email", how: previewSubject ? previewSubject(t.subject) : t.subject, editor: "email",
       review: t.reviewed ? "Reviewed" : "Not yet reviewed", reviewed: !!t.reviewed,
       onOpen: (isReadOnly && !live.some(x => x.starterKey === "campaign_" + t.key)) || busy ? null : () => openBridged("campaign_" + t.key),
-      openLabel: busy === "campaign_" + t.key ? "Opening…" : "Open" });
+      openLabel: busy === "campaign_" + t.key ? "Opening…" : "Edit in editor" });
   }
   for (const s of (data?.starters || [])) {
     cards.push({ id: "starter-" + s.starterKey, store: "designed", section: templateSection("designed", s.starterKey, `${s.name} ${s.purpose || ""}`),
@@ -251,7 +258,7 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
                           <span style={{ fontSize: 14.5, fontWeight: 700, color: T.ink, overflowWrap: "anywhere" }}>{c.name}</span>
                           <span style={{ fontSize: 12, color: T.ink3, overflowWrap: "anywhere" }}>{c.how}</span>
                           <span data-reviewed={c.reviewed ? "1" : "0"} style={reviewedStyle(c.reviewed)}>{c.review}</span>
-                          {c.onOpen && <span style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}
+                          {c.onOpen && <span data-testid={c.openLabel === "Edit in editor" ? "edit-in-editor" : undefined} style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 4 }}>{c.openLabel} &rarr;</span>}
                         </button>
                         {c.designed && (
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
@@ -284,12 +291,22 @@ export default function EmailTemplates({ isReadOnly, donors = [], campaignStarte
 }
 
 // ── THE EDITOR ──────────────────────────────────────────────────────────────
-export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, donors = [], onOpenDrafts, onOpenCampaigns, onBack, onSaved }) {
-  const [name, setName] = useState(template.name);
-  const [subject, setSubject] = useState(template.subject);
-  const [preheader, setPreheader] = useState(template.preheader);
-  const [blocks, setBlocks] = useState(() => withKeys(template.blocks));
-  const [saved, setSaved] = useState(template);
+// FIX-39 · A TEMPLATE IN USE CHANGES IN TWO STEPS. The editor opens on the
+// waiting draft when there is one; Save keeps changes as that draft when a live
+// journey reads the template (the server decides, and says what it would
+// change), and Publish is what makes them the template.
+const withDraft = t => (t && t.draft ? { ...t, ...t.draft } : t);
+export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, donors = [], onOpenDrafts, onOpenCampaigns, onBack, onSaved, backLabel = "Back to templates" }) {
+  const start0 = withDraft(template);
+  const [name, setName] = useState(start0.name);
+  const [subject, setSubject] = useState(start0.subject);
+  const [preheader, setPreheader] = useState(start0.preheader);
+  const [blocks, setBlocks] = useState(() => withKeys(start0.blocks));
+  const [saved, setSaved] = useState(start0);
+  const [hasDraft, setHasDraft] = useState(!!template.hasDraft);
+  const [draftBy, setDraftBy] = useState(template.draftByName || "");
+  const [usage, setUsage] = useState(null);
+  const [publishing, setPublishing] = useState(false);
   const [device, setDevice] = useState("desktop");
   const [dark, setDark] = useState(false);
   const [preview, setPreview] = useState({ html: "", problems: [], loading: true });
@@ -303,6 +320,9 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
   const [pages, setPages] = useState([]);
   const previewSeq = useRef(0);
 
+  useEffect(() => {
+    apiFetch(`/email-templates/${template.id}/usage`).then(setUsage).catch(() => setUsage(null));
+  }, [template.id]);
   useEffect(() => {
     apiFetch("/events").then(r => setEvents(Array.isArray(r) ? r : [])).catch(() => setEvents([]));
     apiFetch("/giving-pages").then(r => setPages(Array.isArray(r) ? r : [])).catch(() => setPages([]));
@@ -342,18 +362,51 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
     setSaving(true); setNote("");
     const before = { name: saved.name, subject: saved.subject, preheader: saved.preheader, blocks: saved.blocks };
     try {
+      const hadDraft = hasDraft;
       const r = await apiFetch(`/email-templates/${template.id}`, { method: "PUT",
         body: JSON.stringify({ name, subject, preheader, blocks: stripKeys(blocks) }) });
-      setSaved(r.template); setBlocks(withKeys(r.template.blocks));
-      offerUndo({ message: "Saved the template.", undoAction: async () => {
-        const x = await apiFetch(`/email-templates/${template.id}`, { method: "PUT", body: JSON.stringify(before) });
-        setSaved(x.template); setName(x.template.name); setSubject(x.template.subject); setPreheader(x.template.preheader); setBlocks(withKeys(x.template.blocks));
+      const now = withDraft(r.template);
+      setSaved(now); setBlocks(withKeys(now.blocks));
+      setHasDraft(!!r.template.hasDraft); setDraftBy(r.template.draftByName || "");
+      if (r.usage) setUsage(r.usage);
+      offerUndo({ message: r.draft ? "Saved as a draft. Nothing that uses this template has changed." : "Saved the template.", undoAction: async () => {
+        // A first draft is undone by throwing it away; anything else by putting the words back.
+        const x = r.draft && !hadDraft
+          ? await apiFetch(`/email-templates/${template.id}/discard-draft`, { method: "POST", body: "{}" })
+          : await apiFetch(`/email-templates/${template.id}`, { method: "PUT", body: JSON.stringify(before) });
+        const back = withDraft(x.template);
+        setSaved(back); setName(back.name); setSubject(back.subject); setPreheader(back.preheader); setBlocks(withKeys(back.blocks));
+        setHasDraft(!!x.template.hasDraft);
         onSaved && onSaved();
         return x;
       } }, "template");
       onSaved && onSaved();
     } catch (e) { setNote(say(e, "It could not be saved.")); }
     setSaving(false);
+  };
+
+  const publish = async () => {
+    if (dirty) { setNote("Save first, so what you publish is what you see."); return; }
+    const what = usage && usage.live ? usage.sentence.split(". Saving")[0] + "." : "Nothing live uses this template.";
+    if (!(await askConfirm({ title: "Publish these changes?", body: `${what} Publishing changes the template they read from now on. Emails already sent stay as they were.`, yes: "Publish" }))) return;
+    setPublishing(true); setNote("");
+    try {
+      const r = await apiFetch(`/email-templates/${template.id}/publish`, { method: "POST", body: "{}" });
+      setSaved(r.template); setHasDraft(false); setDraftBy("");
+      if (r.usage) setUsage(r.usage);
+      setNote("Published. From now on, everything that uses this template reads these words.");
+      onSaved && onSaved();
+    } catch (e) { setNote(say(e, "It could not be published.")); }
+    setPublishing(false);
+  };
+  const discardDraft = async () => {
+    if (!(await askConfirm({ title: "Throw away this draft?", body: "The template goes back to the words that are live now.", yes: "Discard draft" }))) return;
+    try {
+      const r = await apiFetch(`/email-templates/${template.id}/discard-draft`, { method: "POST", body: "{}" });
+      setSaved(r.template); setName(r.template.name); setSubject(r.template.subject); setPreheader(r.template.preheader); setBlocks(withKeys(r.template.blocks));
+      setHasDraft(false); setDraftBy(""); setNote("The draft is gone. The live template did not change.");
+      onSaved && onSaved();
+    } catch (e) { setNote(say(e, "The draft could not be discarded.")); }
   };
 
   // FIX-30 · A ONE-PERSON EMAIL is drafted here for the person chosen, through
@@ -424,13 +477,26 @@ export function EmailEditor({ template, isReadOnly, blockTypes, mergeFields, don
   return (
     <div style={{ padding: "4px 0 40px" }} data-testid="email-editor">
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <button style={btn.quiet} onClick={async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this template have not been saved.", yes: "Leave" })) onBack(); }}>Back to templates</button>
+        <button style={btn.quiet} onClick={async () => { if (!dirty || await askConfirm({ title: "Leave without saving?", body: "Your changes to this template have not been saved.", yes: "Leave" })) onBack(); }}>{backLabel}</button>
         <div style={{ flex: 1 }} />
         <button style={btn.quiet} disabled={isReadOnly} onClick={draftAi}>Draft with AI</button>
         <button style={btn.quiet} disabled={isReadOnly} onClick={test}>Send me a test</button>
         {!template.personKind && <button style={btn.quiet} disabled={isReadOnly} onClick={startCampaign} data-testid="email-start-campaign">Start a campaign</button>}
-        <button style={btn.primary} disabled={isReadOnly || saving || !dirty} onClick={save}>{saving ? "Saving…" : dirty ? "Save" : "Saved"}</button>
+        <button style={hasDraft ? btn.quiet : btn.primary} disabled={isReadOnly || saving || !dirty} onClick={save}>
+          {saving ? "Saving…" : dirty ? (usage && usage.live ? "Save as draft" : "Save") : hasDraft ? "Draft saved" : "Saved"}</button>
+        {hasDraft && <button style={btn.primary} data-testid="template-publish" disabled={isReadOnly || publishing} onClick={publish}>{publishing ? "Publishing…" : "Publish"}</button>}
       </div>
+      {usage && usage.live && (
+        <div data-testid="template-usage" style={{ ...card, marginBottom: 12, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>{usage.sentence}</div>
+      )}
+      {hasDraft && (
+        <div data-testid="template-draft-state" style={{ ...card, marginBottom: 12, fontSize: 13, color: T.ink2, lineHeight: 1.55, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ flex: "1 1 260px" }}>
+            You are editing a draft{draftBy ? ` saved by ${draftBy}` : ""}. What uses this template still reads the published words until you publish.
+          </span>
+          <button style={btn.small} disabled={isReadOnly} onClick={discardDraft} data-testid="template-discard-draft">Discard draft</button>
+        </div>
+      )}
       {note && <div style={{ ...problemBox, marginBottom: 12 }} role="status">{note}
         {/Drafts to review/.test(note) && onOpenDrafts && <> <button style={btn.small} onClick={onOpenDrafts}>Open drafts to review</button></>}
         {/draft campaign|is a draft/.test(note) && !template.personKind && onOpenCampaigns && <> <button style={btn.small} onClick={onOpenCampaigns}>Open campaigns</button></>}

@@ -2,7 +2,10 @@
 //
 //   GET  /email-templates                  the org's saved templates + the starters not yet saved
 //   POST /email-templates                  {starterKey} or {copyOf}: a new saved template
-//   PUT  /email-templates/:id              name, subject, preheader, blocks (validated)
+//   PUT  /email-templates/:id              name, subject, preheader, blocks (validated); a draft when in use
+//   GET  /email-templates/:id/usage        what a publish would change: live journeys that draft from it
+//   POST /email-templates/:id/publish      the waiting draft becomes the template
+//   POST /email-templates/:id/discard-draft
 //   POST /email-templates/:id/archive      hide it (Undo is /restore)
 //   POST /email-templates/:id/restore
 //   POST /email-templates/:id/preview      {device, dark} -> {html, problems}, the org's live brand, sample fields
@@ -130,6 +133,8 @@ const shape = r => {
     subject: r.subject, preheader: r.preheader, blocks: Array.isArray(r.blocks) ? r.blocks : [],
     archived: !!r.archived_at, archivedAt: r.archived_at || null,
     createdByName: r.created_by_name || null, createdAt: r.created_at, updatedAt: r.updated_at,
+    // FIX-39: words saved while the template was in use, waiting for Publish.
+    hasDraft: !!r.draft, draft: r.draft || null, draftSavedAt: r.draft_saved_at || null, draftByName: r.draft_by_name || null,
     // FIX-30: a one-person email names its kind, and types its own fields.
     ...(personKind ? { personKind, mergeFields: personFieldDefs().map(f => ({ token: `{{${f.key}}}`, label: f.label })) } : {}),
   };
@@ -289,12 +294,51 @@ app.post("/email-templates", requireAuth, checkWriteAccess, wrap(async (req, res
   res.status(201).json({ template: shape(await templateRow(orgId, id)) });
 }));
 
-app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+// ── FIX-39 · WHAT A CHANGE TO THIS TEMPLATE REACHES ─────────────────────────
+// Only what reads the template's words LATER is counted, because only that
+// changes when it is published. A journey drafts from the template when each
+// step opens (journeyTemplateDraft), so a live journey is counted: one that is
+// switched on, or still has people in it. A campaign is NOT counted: it copies
+// the blocks into campaigns.email_blocks when it is made, so a scheduled
+// campaign sends what it holds. Sequence steps remember a template_id but no
+// send reads it. A one-person email's words are what every draft of its kind
+// starts from; those are drafts a person sends, so not live. Anything already sent never changes.
+async function templateUsage(orgId, row) {
+  const ref = "template:" + row.id;
+  const journeys = await query(
+    `SELECT t.id, t.name FROM cultivation_templates t
+      WHERE t.org_id=? AND t.archived_at IS NULL
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(t.steps,'[]'::jsonb)) st WHERE st->>'draft' = ?)
+        AND (t.journey_enabled = true OR EXISTS (SELECT 1 FROM cultivation_plans p WHERE p.org_id=t.org_id AND p.template_id=t.id AND p.status='active'))
+      ORDER BY t.name`, [orgId, ref]);
+  const personKind = LIB.personKindOf(row.starter_key);
+  const parts = [];
+  if (journeys.length) parts.push(`${journeys.length} live ${journeys.length === 1 ? "journey" : "journeys"}`);
+  // A one-person email is a draft a person reads and sends, so it is not
+  // "live": saving it changes the next draft, which she sees before it goes.
+  const live = parts.length > 0;
+  const named = journeys.slice(0, 3).map(j => j.name);
+  return {
+    journeys: journeys.map(j => ({ id: j.id, name: j.name })), campaigns: [], sequences: [],
+    personKind: personKind || null, live,
+    sentence: live
+      ? `Used by ${parts.join(" and ")}${named.length ? ` (${named.join(", ")}${journeys.length > 3 ? " and more" : ""})` : ""}. Saving keeps your changes as a draft; nothing changes until you publish. Emails already sent stay as they were.`
+      : personKind
+        ? "Saving changes the next one-person draft of this kind, which you read before it goes. Emails already sent stay as they were."
+        : "Nothing live uses this template, so saving changes it now. Campaigns keep their own copy and emails already sent stay as they were.",
+  };
+}
+
+app.get("/email-templates/:id/usage", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const row = await templateRow(req.user.orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Template not found" });
+  res.json(await templateUsage(req.user.orgId, row));
+}));
+
+async function saveTemplate(req, res, row, b) {
   await READY;
   const orgId = req.user.orgId;
-  const row = await templateRow(orgId, req.params.id);
-  if (!row) return res.status(404).json({ error: "Template not found" });
-  const b = req.body || {};
   const name = b.name != null ? clip(b.name, 120).trim() : row.name;
   if (!name) return res.status(400).json({ error: "name_required", sentence: "Give the template a name." });
   const subject = b.subject != null ? clip(b.subject, 200) : row.subject;
@@ -323,7 +367,16 @@ app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, 
     if (unknown.length) return res.status(400).json({ error: "unknown_fields",
       sentence: `These are not fields a one-person email can fill: ${unknown.map(u => "{{" + u + "}}").join(", ")}. Pick fields from the list.` });
   }
-  await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?`,
+  // FIX-39: in use, and not an explicit publish, it waits as a draft.
+  const usage = await templateUsage(orgId, row);
+  if (usage.live && b.publish !== true) {
+    const who = actor(req);
+    await run(`UPDATE email_templates SET draft=?::jsonb, draft_saved_at=NOW(), draft_by_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+      [JSON.stringify({ name, subject, preheader, blocks }), who.name, row.id, orgId]);
+    if (req.audit) req.audit.entity("email_template", row.id, name);
+    return res.json({ template: shape(await templateRow(orgId, row.id)), draft: true, usage });
+  }
+  await run(`UPDATE email_templates SET name=?, subject=?, preheader=?, blocks=?::jsonb, draft=NULL, draft_saved_at=NULL, draft_by_name=NULL, updated_at=NOW() WHERE id=? AND org_id=?`,
     [name, subject, preheader, JSON.stringify(blocks), row.id, orgId]);
   if (personKind) {
     const who = actor(req);
@@ -334,6 +387,29 @@ app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, 
       ["mt_" + uuid().slice(0, 10), orgId, personKind, words.subject, words.body, who.name, who.id, who.name]);
   }
   if (req.audit) req.audit.entity("email_template", row.id, name);
+  res.json({ template: shape(await templateRow(orgId, row.id)), draft: false, usage });
+}
+app.put("/email-templates/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const row = await templateRow(req.user.orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Template not found" });
+  return saveTemplate(req, res, row, req.body || {});
+}));
+
+// Publish: the waiting words go through the same save (its checks, the
+// one-person store), with publish:true, so there is one way words go live.
+app.post("/email-templates/:id/publish", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const row = await templateRow(req.user.orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Template not found" });
+  if (!row.draft) return res.status(409).json({ error: "no_draft", sentence: "There is no draft waiting to be published." });
+  return saveTemplate(req, res, row, { ...row.draft, publish: true });
+}));
+
+app.post("/email-templates/:id/discard-draft", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const row = await templateRow(orgId, req.params.id);
+  if (!row) return res.status(404).json({ error: "Template not found" });
+  await run(`UPDATE email_templates SET draft=NULL, draft_saved_at=NULL, draft_by_name=NULL WHERE id=? AND org_id=?`, [row.id, orgId]);
+  if (req.audit) req.audit.entity("email_template", row.id, row.name);
   res.json({ template: shape(await templateRow(orgId, row.id)) });
 }));
 

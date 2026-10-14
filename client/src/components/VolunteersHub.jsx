@@ -231,7 +231,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
           <button onClick={() => setAdding(true)} style={btnPrimary} data-testid="vol-add-open">Add a volunteer</button>
           <button onClick={() => setImporting(true)} style={btnQuiet} data-testid="vol-import-open">Import volunteers</button>
           <span style={{ fontSize: 12.5, color: T.ink3 }}>
-            Add one person, or bring a file from VolunteerHub, SignUpGenius or a spreadsheet.
+            Add one person, or bring a file from VolunteerHub, SignUpGenius, Wranglr or a spreadsheet.
           </span>
         </div>
       )}
@@ -290,7 +290,7 @@ function RosterView({ roster, narrow, onOpen, onAdd, onImport, onSignupLink, isR
                     padding: "44px 24px", gap: 14, textAlign: "center" }}>
         <div style={{ fontSize: 17, fontWeight: 700, color: T.ink2 }}>Nobody is on the roster yet</div>
         <div data-testid="vol-empty-lead" style={{ fontSize: 13.5, color: T.ink3, maxWidth: 420, lineHeight: 1.7 }}>
-          Add your first volunteer, import from VolunteerHub, SignUpGenius or a spreadsheet, or share your sign-up link.
+          Add your first volunteer, import from VolunteerHub, SignUpGenius, Wranglr or a spreadsheet, or share your sign-up link.
         </div>
         {!isReadOnly && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>

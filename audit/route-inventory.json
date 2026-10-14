@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-10-13T22:10:04.894Z",
- "count": 1242,
+ "generatedAt": "2026-10-14T15:41:09.683Z",
+ "count": 1245,
  "routes": [
   {
    "method": "POST",
@@ -26248,8 +26248,74 @@
    }
   },
   {
+   "method": "GET",
+   "path": "/email-templates/:id/usage",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
    "method": "PUT",
    "path": "/email-templates/:id",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/publish",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/email-templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/email-templates/:id/discard-draft",
    "line": null,
    "auth": [],
    "sourceSeen": false,

@@ -9,12 +9,13 @@
 // (GET /api-keys/scopes), so a scope added there (read:funds) appears here
 // without a client change. The read set starts ticked, as before; a write is
 // only ever granted by somebody ticking it.
+import { displayDate } from "../../../shared/displayDate";
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, SectionLabel } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
-const day = v => (v ? new Date(v).toLocaleDateString() : null);
+const day = v => (v ? displayDate(new Date(v)) : null);
 
 export function ApiKeysPanel({ isReadOnly }) {
   const [keys, setKeys] = useState(null);

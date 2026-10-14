@@ -254,6 +254,7 @@ CORE=(
   smoke-walk
   polish1-trust
   polish2-voice
+  fix39-campaigns
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

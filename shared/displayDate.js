@@ -33,6 +33,16 @@ export function displayDate(value) {
   return p ? `${MON[p.mo - 1]} ${p.d}, ${p.y}` : "";
 }
 
+// FIX-39 — "Dec 2, 2026, 9:00 AM". A moment someone chose (a scheduled send),
+// read in local time like any Date. A civil date with no time reads as the day.
+export function displayDateTime(value) {
+  const at = value instanceof Date ? value : (/T|\s\d{2}:/.test(String(value || "")) ? new Date(value) : null);
+  if (!at) return displayDate(value);
+  if (isNaN(at.getTime())) return "";
+  const h = at.getHours(), mi = at.getMinutes();
+  return `${displayDate(at)}, ${h % 12 || 12}:${String(mi).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
 // "Sep 27" when the date falls in today's year, "Sep 27, 2025" otherwise.
 // `today` is a civil date string or a Date; without one it is the full form.
 export function displayDateShort(value, today) {
