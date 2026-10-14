@@ -23,6 +23,8 @@ const fs = require("fs");
 const path = require("path");
 
 const ISO_IN_TEXT = /\b\d{4}-\d{2}-\d{2}\b/;
+// FIX-39 — and no "4/27/2026": the browser's numeric style is the same defect.
+const NUMERIC_DATE_IN_TEXT = /\b\d{1,2}\/\d{1,2}\/\d{4}\b/;
 
 const CUT = /\$\{[^`{}]*?(?:\.slice\(\s*0\s*,\s*10\s*\)|\.toISOString\(\))\s*\}/;
 const WORD_BEFORE = /[A-Za-z]{2,}[,:]?\s\$\{[^`{}]*?(?:\.slice\(\s*0\s*,\s*10\s*\)|toISOString\(\))/;
@@ -85,7 +87,7 @@ function scanIsoDates(rootDir) {
   return hits;
 }
 
-module.exports = { scanIsoDates, ISO_IN_TEXT };
+module.exports = { NUMERIC_DATE_IN_TEXT, scanIsoDates, ISO_IN_TEXT };
 
 if (require.main === module) {
   const hits = scanIsoDates(path.resolve(__dirname, "..", ".."));

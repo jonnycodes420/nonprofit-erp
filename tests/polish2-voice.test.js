@@ -25,7 +25,7 @@ const bcrypt = require("bcryptjs");
 const h = require("./helpers");
 const { ok, api, q } = h;
 const { scanEnGb } = require("./polish2/enGb");
-const { scanIsoDates, ISO_IN_TEXT } = require("./polish2/isoDates");
+const { scanIsoDates, ISO_IN_TEXT, NUMERIC_DATE_IN_TEXT } = require("./polish2/isoDates");
 const { scanGlued, GLUED_RENDERED } = require("./polish2/glued");
 const B = require("./polish1/browser-p567");
 
@@ -87,6 +87,11 @@ function logLabels() {
              VALUES ($1,'Polish Two Voice Fixture','polish2-voice',1,'active','team','America/New_York')`, [ORG]);
     await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_polish2_voice',$1,$2,$3,'Dana Voice','admin')`,
       [ORG, ADMIN, bcrypt.hashSync("loadtest1234", 4)]);
+    // FIX-39: one sent and one scheduled campaign, so Communications has dates
+    // for the numeric-date check to read. Not sent anywhere: rows only.
+    await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,sent_at,scheduled_at,recipient_count,open_count,created_by,created_by_name) VALUES
+             ('cmp_p2v_sent',$1,'Spring note','appeal','Hello {{first_name}}','<p>Hi</p>','sent','{}',NOW() - INTERVAL '30 days',NULL,2,1,'system:test','test'),
+             ('cmp_p2v_sched',$1,'Year-end note','appeal','Before the year ends','<p>Hi</p>','scheduled','{}',NULL,NOW() + INTERVAL '30 days',0,0,'system:test','test')`, [ORG]);
     await q(`INSERT INTO donors (id,org_id,name,email,stage,tags,created_by,created_by_name) VALUES
              ('d_p2v_1',$1,'Susan ANDERSON','susan@polish2-voice.test','steward','["Board","has-refused-rows:2","shares-id:D10003"]','system:test','test'),
              ('d_p2v_2',$1,'Heather Parker','heather@polish2-voice.test','steward','["Gala 2025"]','system:test','test')`, [ORG]);
@@ -114,7 +119,8 @@ function logLabels() {
       try {
         const { ctx, page } = await b.signedIn(ADMIN);
         const screens = [["Home", "/dashboard"], ["Journeys", "/app/journeys"], ["Imports", "/app/settings?section=imports"],
-          ["Reports", "/app/reports?report=giving-summary"], ["Gave last year, not this year", "/app/reports?report=lybunt"]];
+          ["Reports", "/app/reports?report=giving-summary"], ["Gave last year, not this year", "/app/reports?report=lybunt"],
+          ["Communications", "/app/communications?subtab=campaigns"], ["Donors", "/donors"], ["Calendar", "/app/calendar"]];
         for (const [name, p] of screens) {
           await page.goto(b.APP + p, { waitUntil: "domcontentloaded", timeout: 45000 });
           await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
@@ -123,6 +129,9 @@ function logLabels() {
           ok(`§render ${name} drew`, text.length > 150, text.length);
           const isoHits = [...text.matchAll(new RegExp(ISO_IN_TEXT.source, "g"))].map(m => text.slice(Math.max(0, m.index - 30), m.index + 14));
           ok(`§render ${name}: no ISO date on screen`, isoHits.length === 0, isoHits.slice(0, 5));
+          // FIX-39: the numeric style too. "4/27/2026" beside "Oct 8, 2026" is two styles.
+          const numHits = [...text.matchAll(new RegExp(NUMERIC_DATE_IN_TEXT.source, "g"))].map(m => text.slice(Math.max(0, m.index - 30), m.index + 14));
+          ok(`§render ${name}: no numeric date on screen`, numHits.length === 0, numHits.slice(0, 5));
           const g = GLUED_RENDERED(text);
           ok(`§render ${name}: no glued words`, g.length === 0, g.slice(0, 5));
           ok(`§render ${name}: no machine tag`, !MACHINE.test(text), (text.match(MACHINE) || [])[0]);

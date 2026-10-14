@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BrandKitManager } from "./BrandKit";
 import { useUrlWriter } from "./RecordLink";
-import { tabHref, urlParam } from "../lib/appUrls";
+import { tabHref, urlParam, editPageHref } from "../lib/appUrls";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
@@ -495,7 +495,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 {isAdmin&&<>
                   {!isVol&&<button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>}
                   {isVol&&<button data-testid="volunteer-page-link" onClick={()=>setVolLink(volLink&&volLink.id===p.id?null:{id:p.id,title:p.title,slug:p.slug})} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Title and link</button>}
-                  <a href={`/portal-editor?page=${p.id}`} style={{background:T.gold500,border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink,cursor:"pointer",textDecoration:"none"}}>Build the page</a>
+                  <a data-testid="edit-in-editor" href={editPageHref(`page=${encodeURIComponent(p.id)}`)} style={{background:T.gold500,border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink,cursor:"pointer",textDecoration:"none"}}>Edit in editor</a>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
                     style={{background:p.status==="active"?T.terra100:T.green100,border:"1px solid "+(p.status==="active"?T.terra200:T.greenDk),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?T.terra700:T.greenDk,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {isVol?(p.status==="active"?"Unpublish":"Publish again"):(p.status==="active"?"Archive":"Reactivate")}
@@ -3598,7 +3598,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{fontSize:11,color:T.greenDk,marginTop:1}}>Account: {stripe.accountId}</div>
               </div>
             </div>
-            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
+            <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?displayDate(new Date(stripe.connectedAt)):""}</div>
           </div>
         ):stripe?.onboardingStarted?(
           <div data-testid="stripe-unfinished" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
@@ -3606,7 +3606,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{stripe.checked?"Stripe setup isn't finished":"Steward couldn't check with Stripe just now"}</div>
               <div style={{fontSize:13,color:T.ink2}}>{stripe.checked
                 ?"Your Stripe account exists, but Stripe can't take donations on it until onboarding is complete. Finish it on Stripe's site; it picks up where you left off."
-                :"Your Stripe account was set up on "+(stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
+                :"Your Stripe account was set up on "+(stripe.connectedAt?displayDate(new Date(stripe.connectedAt)):"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
             </div>
             {isAdmin&&stripe.checked&&<button onClick={connectStripe} disabled={stripeLoading}
               style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>

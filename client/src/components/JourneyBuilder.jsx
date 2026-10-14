@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { T, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
-import { tabHref, urlParam } from "../lib/appUrls";
+import { tabHref, urlParam, editTemplateHref } from "../lib/appUrls";
 import { offerUndo } from "./EditHistory";
 
 // ── FIX-5 · JOURNEYS: YOURS, AND PREMIUM ──────────────────────────────────
@@ -581,8 +581,15 @@ function StepEditor({ step, index, total, data, editable, onSet, onAdd, onDuplic
         </label>
       </div>
       {step.draft && (
-        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-          Steward writes it for you to read. It is still yours to send.
+        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 6, lineHeight: 1.5, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span>Steward writes it for you to read. It is still yours to send.</span>
+          {/* FIX-39: the email this step drafts from, opened in the email editor. */}
+          {String(step.draft).startsWith("template:") && (
+            <a data-testid="edit-in-editor" href={editTemplateHref(String(step.draft).slice(9))}
+              style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 12px", textDecoration: "none", background: T.white }}>
+              Edit in editor
+            </a>
+          )}
         </div>
       )}
 

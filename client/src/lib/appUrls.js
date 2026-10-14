@@ -35,6 +35,9 @@ const QUERY_KEYS = [
   ["audienceId", "audience"],
   // SEARCH-2: ⌘K opens the calendar on a meeting's day, and Settings on one import.
   ["day", "day"], ["importId", "import"],
+  // FIX-39: "Edit in editor" opens one email template, and `back` is the
+  // screen it came from, so the editor's Back returns there.
+  ["templateId", "template"], ["back", "back"],
 ];
 
 export function donorHref(id) {
@@ -181,4 +184,23 @@ export function safeNext(next) {
     if (u.origin !== window.location.origin) return null;
     return u.pathname + u.search + u.hash;
   } catch { return null; }
+}
+
+// FIX-39 · EDIT IN EDITOR. A `back` is only ever a path inside this app: it
+// starts with one "/" (never "//", which is another host) and carries no
+// scheme. Anything else is ignored and the editor's Back does what it did.
+export function safeBack(v) {
+  const s = String(v || "");
+  return /^\/(?!\/)[^\s\\]*$/.test(s) && !/^\/[a-z]+:/i.test(s) ? s : null;
+}
+export function hereForBack() {
+  return typeof window === "undefined" ? "/dashboard" : window.location.pathname + window.location.search;
+}
+// The email editor on one template, with a Back to where you are now.
+export function editTemplateHref(templateId, back = hereForBack()) {
+  return tabHref("communications", { subtab: "templates", templateId, back });
+}
+// The shared page editor (VOL-PAGE-1, GIVE-EDIT-1) on one page or the org form.
+export function editPageHref(query, back = hereForBack()) {
+  return `/portal-editor?${query}&back=${encodeURIComponent(back)}`;
 }

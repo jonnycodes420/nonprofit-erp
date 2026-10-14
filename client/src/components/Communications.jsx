@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { SurveysPanel } from "./Surveys";
 import EmailTemplates from "./EmailTemplates";
 import { RecordLink } from "./RecordLink";
-import { tabHref, urlParam } from "../lib/appUrls";
+import { tabHref, urlParam, safeBack } from "../lib/appUrls";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, activeMark, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal, stageName } from "./shared";
@@ -16,7 +16,9 @@ import { errorMessage } from "../lib/domainError";
 // the box from ever being blank if that call fails.
 import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor, starterEdited } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
-import { campaignStats, sentWord, openRateWord } from "../../../shared/campaignKind";
+import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, filterCampaigns } from "../../../shared/campaignKind";
+import { displayDate, displayDateTime } from "../../../shared/displayDate";
+import { CalendarDays } from "lucide-react";
 import { AgentDraftReview, agentDraftsIn } from "./AgentDraftReview";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
@@ -134,20 +136,27 @@ const S = {
   })[variant],
 };
 
+// FIX-39 — an item in a row's More menu: a real button, with words.
+const menuItem = { background: "transparent", border: "none", textAlign: "left", padding: "8px 12px", fontSize: 13, color: T.ink, cursor: "pointer", borderRadius: 6, fontFamily: "inherit" };
+
+// FIX-39 — a subject line as she reads it in a list: merge tags filled with
+// the same sample the preview uses ("Before the year ends, Margaret"), never braces.
+const subjectPreview = subject => renderMergeFields(subject || "", {}).replace(/<[^>]*>/g, "");
+
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_META = {
-  draft:     { label: "Draft",     color: T.ink3, bg: T.ink3 + "18" },
-  scheduled: { label: "Scheduled", color: T.green500, bg: T.green500 + "18" },
-  sending:   { label: "Sending",   color: T.gold600, bg: T.gold600 + "18" },
-  sent:      { label: "Sent",      color: T.white,    bg: T.greenMid },
+  draft:     { label: statusWord("draft"),     color: T.ink3, bg: T.ink3 + "18" },
+  scheduled: { label: statusWord("scheduled"), color: T.green500, bg: T.green500 + "18" },
+  sending:   { label: statusWord("sending"),   color: T.gold600, bg: T.gold600 + "18" },
+  sent:      { label: statusWord("sent"),      color: T.white,    bg: T.greenMid },
   // WHY-1 Part 8 — HONEST "SENT". Nothing went: Failed, in brass (a problem,
   // not a destructive confirm, so never red). Some went: "Sent to N of M",
   // and the badge opens the failed rows.
-  failed:    { label: "Failed",    color: T.ink,      bg: T.gold500 },
-  partial:   { label: "Sent",      color: T.ink,      bg: T.gold500 + "55" },
+  failed:    { label: statusWord("failed"),    color: T.ink,      bg: T.gold500 },
+  partial:   { label: statusWord("sent"),      color: T.ink,      bg: T.gold500 + "55" },
   // EMAIL-1 — written, and waiting for an admin to approve it. Brass: it needs
   // somebody, it is not a problem.
-  awaiting_approval: { label: "Waiting for approval", color: T.ink, bg: T.gold500 + "55" },
+  awaiting_approval: { label: statusWord("awaiting_approval"), color: T.ink, bg: T.gold500 + "55" },
 };
 function StatusBadge({ status, campaign, onFailed }) {
   const recs = (campaign && campaign.recipients) || [];
@@ -371,7 +380,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
 }
 
 // ── RichEditor (module-level) ─────────────────────────────────────────────────
-function RichEditor({ editorRef, initialHtml, onInput }) {
+function RichEditor({ editorRef, initialHtml, onInput, readOnly }) {
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = initialHtml || "";
     if (onInput) onInput(initialHtml || "");
@@ -411,7 +420,7 @@ function RichEditor({ editorRef, initialHtml, onInput }) {
           </button>
         ))}
       </div>
-      <div ref={editorRef} contentEditable suppressContentEditableWarning
+      <div ref={editorRef} contentEditable={!readOnly} suppressContentEditableWarning
         data-testid="campaign-editor"
         onInput={e => onInput && onInput(e.currentTarget.innerHTML)}
         style={{ minHeight: 260, padding: "14px 16px", background: T.bg, color: T.ink, fontSize: 14, lineHeight: 1.8, outline: "none" }} />
@@ -786,7 +795,7 @@ function TrackedSequences() {
             : preview.steps.map(st => (
               <div key={st.trackKey + "-" + st.stepOrder} style={{ borderBottom: `1px solid ${T.bg2}`, paddingBottom: 12, marginBottom: 12 }}>
                 <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>{st.trackKey} · day {st.dayOffset}</div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{st.subject}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{subjectPreview(st.subject)}</div>
                 <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{st.body}</div>
                 {st.missing.length > 0 && (
                   <div style={{ fontSize: 11.5, color: T.gold700, marginTop: 6 }}>
@@ -1059,7 +1068,7 @@ function AgentDraftsWaiting() {
   );
 }
 
-function MilestoneDraftsPanel({ highlightDraftId }) {
+function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
   const [drafts, setDrafts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
@@ -1188,7 +1197,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
               </div>
             </div>
-            <div style={{ fontSize: 11, color: T.ink3 }}>{new Date(d.created_at).toLocaleDateString()}</div>
+            <div style={{ fontSize: 11, color: T.ink3 }}>{displayDate(new Date(d.created_at))}</div>
           </div>
 
           {editingId === d.id ? (
@@ -1213,6 +1222,11 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
                 {!d.reviewed_at && <button onClick={() => markReviewed(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Mark reviewed</button>}
                 <button onClick={() => startEdit(d)} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Edit</button>
                 <TemplateStart disabled={busyId === d.id} onPick={tpl => fromTemplate(d, tpl)} />
+                {/* FIX-39: a draft made from a template opens that template in the email editor. */}
+                {d.template_id && onEditTemplate && (
+                  <button type="button" data-testid="edit-in-editor" onClick={() => onEditTemplate(d.template_id)}
+                    style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink2, fontSize: 12, cursor: "pointer" }}>Edit in editor</button>
+                )}
                 <button onClick={() => dismiss(d.id)} disabled={busyId === d.id} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Dismiss</button>
               </div>
             </div>
@@ -1404,10 +1418,23 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [failedOnly, setFailedOnly]   = useState(null);   // WHY-1 Part 8: the campaign whose failed rows are showing
   // FIX-6 item 5 — which figure is open, and the rows behind it.
   const [statRows, setStatRows] = useState(null);
+  // FIX-39 — the one table's filter, and which row's More menu is open.
+  const [campFilter, setCampFilter] = useState("all");
+  const [moreFor, setMoreFor] = useState(null);
+  // FIX-39 · EDIT IN EDITOR. Which template the email editor is open on, and
+  // where its Back goes. From inside Communications that is the screen it came
+  // from; from another screen (?template=<id>&back=<path>) it is that path.
+  const [tplOpen, setTplOpen] = useState(() => {
+    const id = urlParam("communications", "template");
+    if (!id) return null;
+    const safe = safeBack(urlParam("communications", "back"));
+    return { id, back: safe ? () => window.location.assign(safe) : () => {} };
+  });
   const [sendResult, setSendResult]   = useState(null);
 
   // Builder
   const [view, setView]               = useState("list"); // list | builder
+  const openTemplateEditor = (id, back) => { setView("list"); setTplOpen({ id, back: back || (() => {}) }); setNav("templates"); };
   // WIRE-1: arriving with a group opens New Campaign (the starting emails),
   // and whichever she picks starts with that group as its audience.
   useEffect(() => { if (presetSeg && !isReadOnly) { setNav("campaigns"); setView("gallery"); } }, []);   // eslint-disable-line react-hooks/exhaustive-deps
@@ -1560,7 +1587,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       // EMAIL-1 — a campaign from a template: its words are the template's
       // blocks, rendered for each person at send. `detach` lets them go.
       fromTemplate: Array.isArray(campaign.email_blocks) && campaign.email_blocks.length > 0, detach: false,
-      status: campaign.status || "draft" });
+      status: campaign.status || "draft", templateId: campaign.template_id || null, source: campaign });
     setApprovalNote("");
     setEditingId(campaign.id);
     setShowSchedule(!!campaign.scheduled_at);
@@ -1581,11 +1608,19 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
   };
 
+  // FIX-39: returns the copy, so "Duplicate to edit" can open it. A campaign
+  // built from a template is copied from that template, so the copy keeps its
+  // blocks instead of becoming a plain email of the rendered words.
   const duplicateCampaign = async (c) => {
     const raw = typeof c.segment === "string" ? JSON.parse(c.segment || "{}") : (c.segment || {});
     const payload = { name: "Copy of " + c.name, subject: c.subject, body: c.body, segment: raw, status: "draft" };
-    try { await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); await loadCampaigns(); }
-    catch (e) { alert(errorMessage(e)); }
+    try {
+      const copy = c.template_id
+        ? await apiFetch("/campaigns/from-template", { method: "POST", body: JSON.stringify({ templateId: c.template_id, name: "Copy of " + c.name }) })
+        : await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
+      await loadCampaigns();
+      return copy;
+    } catch (e) { alert(errorMessage(e)); return null; }
   };
 
   // EMAIL-1 — a template campaign has no editor on screen, so its body is the
@@ -1699,7 +1734,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     } catch (e) { setTestState({ state: "error", message: errorMessage(e) }); }
   };
 
-  const deleteCampaign = async (id) => {
+  const deleteCampaign = async (c) => {
+    const id = c.id;
+    if (!(await askConfirm({ title: `Delete "${c.name}"?`, body: c.sent_at ? "The campaign and its counts leave this list. Nothing already sent is recalled." : "The draft and its words are deleted. You can undo it straight after.", yes: "Delete campaign", danger: true }))) return;
     try { const r = await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); offerUndo(r, "campaign", loadCampaigns); }
     catch (e) { alert(errorMessage(e)); }
   };
@@ -1792,7 +1829,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <button key={mt.id} type="button" data-testid={"my-template-" + mt.id} onClick={() => startFromMyTemplate(mt)}
                     style={{ ...S.btn("ghost"), textAlign: "left", display: "flex", flexDirection: "column", gap: 2, maxWidth: 260 }}>
                     <span style={{ fontWeight: 700, color: T.ink }}>{mt.name}</span>
-                    {mt.subject && <span style={{ fontSize: 12, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 230 }}>{mt.subject}</span>}
+                    {mt.subject && <span style={{ fontSize: 12, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 230 }}>{subjectPreview(mt.subject)}</span>}
                   </button>
                 ))}
               </div>
@@ -1837,6 +1874,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const subjLen = form.subject.length;
     const segSentence = segPreview?.sentence || "";
     const previewName = previewFirst?.firstName || "Margaret";
+    // FIX-39 — a campaign that has gone out opens read-only. Its words are
+    // what people received; the way to change them is a copy.
+    const readOnlySent = !!editingId && ["sent", "sending", "failed"].includes(form.status);
+    const duplicateToEdit = async () => {
+      const copy = await duplicateCampaign(form.source || { id: editingId, name: form.name, subject: form.subject, body: form.bodyHtml, segment: form.seg, template_id: form.templateId });
+      if (copy && copy.id) openBuilder(copy);
+    };
     return (
       // FIX-25: under the app's top bar (z 250), never behind it. At inset 0
       // the bar covered this header, Save draft with it, so no draft could be
@@ -1847,11 +1891,18 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         <div className="cb-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: T.bg2, borderBottom: "1px solid " + T.bg3, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
-            <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{editingId ? "Edit Campaign" : "New Campaign"}</span>
+            <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{readOnlySent ? form.name : editingId ? "Edit campaign" : "New campaign"}</span>
+            {readOnlySent && <StatusBadge status={form.status} campaign={form.source} />}
           </div>
           {/* ONE action, and it is emerald. Everything else here is a way back
               to the draft; scheduling is a link, because a campaign that is
               scheduled is still a campaign that was sent on purpose. */}
+          {readOnlySent ? (
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }} data-testid="campaign-read-only">
+            <span style={{ fontSize: 12.5, color: T.ink2 }}>This campaign has gone out, so it can&rsquo;t change.</span>
+            <button type="button" onClick={duplicateToEdit} disabled={isReadOnly} data-testid="duplicate-to-edit" style={S.btn("send")}>Duplicate to edit</button>
+          </div>
+          ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <button onClick={saveDraft} style={S.btn("ghost")}>Save draft</button>
             {!isAdmin && form.status !== "awaiting_approval" && (
@@ -1867,11 +1918,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {sending ? <><Spin /> Sending…</> : recipCount == null ? "Counting…" : `↑ Send to ${recipCount.toLocaleString()}`}
                 </button>)}
           </div>
+          )}
         </div>
 
         {/* Two-panel body. FIX-26: on a phone the three columns stack and the
             body scrolls as one page (.cb-body in GlobalStyles). */}
         <div className="cb-body" style={{ display: "flex", flex: 1, minHeight: 0 }}>
+          {/* FIX-39: a sent campaign's fields are shown, never editable. */}
+          <fieldset disabled={readOnlySent} style={{ display: "contents" }}>
           {/* Left: settings */}
           <div className="cb-col cb-settings" style={{ width: 320, flexShrink: 0, padding: 20, borderRight: "1px solid " + T.bg3, overflowY: "auto", display: "flex", flexDirection: "column", gap: 18, background: T.white }}>
 
@@ -1972,13 +2026,22 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   This email is built from a template. Each person&rsquo;s copy is made from it when it goes, with their own name and last gift in it.
                   Change its words in the template.
                 </div>
-                <button type="button" onClick={() => { setForm(f => ({ ...f, detach: true })); setEditorKey(k => k + 1); }}
-                  style={{ ...S.btn("ghost"), alignSelf: "flex-start" }}>Write it as a plain email instead</button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {/* FIX-39: the template opens in the email editor, and its Back comes here. */}
+                  {form.templateId && !readOnlySent && (
+                    <button type="button" data-testid="edit-in-editor" onClick={() => openTemplateEditor(form.templateId, () => { setNav("campaigns"); if (form.source) openBuilder(form.source); })}
+                      style={{ ...S.btn("ghost") }}>Edit in editor</button>
+                  )}
+                  <button type="button" onClick={() => { setForm(f => ({ ...f, detach: true })); setEditorKey(k => k + 1); }}
+                    style={{ ...S.btn("ghost"), alignSelf: "flex-start" }}>Write it as a plain email instead</button>
+                </div>
               </div>
             ) : (
-              <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} onInput={setLiveHtml} />
+              <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} onInput={setLiveHtml} readOnly={readOnlySent} />
             )}
           </div>
+
+          </fieldset>
 
           {/* Right: THE EMAIL, at the width it will be read at. Not a preview
               of the markup — the same renderer the send uses, with the first
@@ -2011,7 +2074,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             )}
 
             {/* SEND ME A TEST — one copy, to her, and it counts against nothing. */}
-            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+            {!readOnlySent && <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
               <button onClick={sendTest} disabled={testState?.state === "sending"} data-testid="send-me-a-test"
                 style={{ ...S.btn("ghost"), fontWeight: 700, color: T.ink, cursor: testState?.state === "sending" ? "not-allowed" : "pointer" }}>
                 {testState?.state === "sending" ? <><Spin /> Sending…</> : "Send me a test"}
@@ -2027,7 +2090,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               {sendingIdentity?.sentence && (
                 <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.55 }}>{sendingIdentity.sentence}</div>
               )}
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -2038,24 +2101,25 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   }
 
   // ── Section nav items (horizontal top tabs) ─────────────────────────────────
+  // FIX-39: no icons on these tabs. They were nine unrelated symbols, not the app's set.
   const NAV = [
-    { id: "hub",        label: "Overview",   icon: "◉" },
-    { id: "campaigns",  label: "Campaigns",  icon: "✉" },
+    { id: "hub",        label: "Overview" },
+    { id: "campaigns",  label: "Campaigns" },
     // One tab for every template: letters, one-person emails, campaign
     // starters and the EMAIL-1 designed emails (WIRE-1-ADDENDUM).
-    { id: "templates",  label: "Templates",  icon: "⊞" },
-    { id: "audience",   label: "Audience",   icon: "◈" },
-    { id: "analytics",  label: "Analytics",  icon: "⬡" },
-    { id: "sequences",  label: "Sequences",  icon: "⟳" },
+    { id: "templates",  label: "Templates" },
+    { id: "audience",   label: "Audience" },
+    { id: "analytics",  label: "Analytics" },
+    { id: "sequences",  label: "Sequences" },
     // INT-3 — the campaigns she sent from Mailchimp or Constant Contact. A
     // separate entry from "Campaigns" on purpose: those are the ones Steward
     // sent and she can open and edit, these are somebody else's sends that
     // Steward only reports on, and running them together would suggest she
     // could resend one from here.
-    { id: "emailtool",  label: "Your email tool", icon: "◌" },
-    { id: "milestones", label: "Drafts to review", icon: "✦" },
+    { id: "emailtool",  label: "Your email tool" },
+    { id: "milestones", label: "Drafts to review" },
     // SURVEY-1 — ask donors and volunteers; "Send this survey" fills Drafts to review.
-    { id: "surveys",    label: "Surveys",    icon: "?" },
+    { id: "surveys",    label: "Surveys" },
   ];
 
   // ── Audience tab segments ───────────────────────────────────────────────────
@@ -2078,6 +2142,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   // and the whole screen read as broken rather than as empty.
   const cstats = campaignStats(campaigns);
   const emailCampaigns = cstats.emails;
+  // FIX-39 — what the table shows, and the server's counts for each row.
+  const shownCampaigns = filterCampaigns(emailCampaigns, campFilter);
+  const sentById = Object.fromEntries(sentRows.map(r => [r.id, r]));
   const sentCampaigns = cstats.totalSentRows;
   const allTimeSent   = cstats.totalSent;
   const allTimeOpen   = sentCampaigns.reduce((s, c) => s + (c.open_count || 0), 0);
@@ -2089,7 +2156,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     <div className="comm-layout" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Section nav — horizontal tabs across the top of the content area */}
       <SectionTabs className="comm-tabbar"
-        tabs={NAV.map(n => ({ ...n, badge: n.id === "campaigns" && campaigns.length > 0 ? campaigns.length : undefined }))}
+        tabs={NAV.map(n => ({ ...n, badge: n.id === "campaigns" && emailCampaigns.length > 0 ? emailCampaigns.length : undefined }))}
         active={nav} onSelect={setNav} />
 
       {/* Main content */}
@@ -2195,7 +2262,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                             <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
                               {c.status === "sent"
                                 ? `Sent to ${(c.recipient_count || 0).toLocaleString()}`
-                                : c.status === "sending" ? "Sending…" : "Draft"}
+                                : c.status === "sending" ? "Sending…" : statusWord(c.status)}
                             </div>
                           </div>
                           {c.status === "sent" && rate !== null && (
@@ -2327,50 +2394,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               ))}
             </div>
 
-            {/* ── BUILD-94 Part 4 — WHAT WENT, AND WHAT CAME BACK ───────
-                The two things she will look for on day one. COUNTS ONLY:
-                nothing per person, anywhere (steward-data-handling.md). */}
-            {sentRows.length > 0 && (
-              <div data-testid="sent-campaigns" style={{ border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden", background: T.white }}>
-                <div style={{ padding: "10px 16px", borderBottom: "1px solid " + T.bg2, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>
-                  Sent
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
-                        <th style={{ padding: "8px 16px", fontWeight: 600 }}>Campaign</th>
-                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Delivered</th>
-                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Opened</th>
-                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Unsubscribed</th>
-                        <th style={{ padding: "8px 16px", fontWeight: 600 }}>When</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sentRows.map(r => (
-                        <tr key={r.id} style={{ borderTop: "1px solid " + T.bg2 }}>
-                          <td style={{ padding: "10px 16px", color: T.ink, fontWeight: 600 }}>
-                            <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: r.id })} data-record-link="email-campaign"
-                              onOpen={() => setExpandedId(r.id)}>{r.name}</RecordLink></td>
-                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.delivered}{r.failed ? <span style={{ color: T.gold700 }}> · {r.failed} failed</span> : null}</td>
-                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.opened}{r.openRate != null ? ` (${r.openRate}%)` : ""}</td>
-                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.unsubscribed}</td>
-                          <td style={{ padding: "10px 16px", color: T.ink3 }}>
-                            {r.status === "scheduled"
-                              ? `scheduled${r.scheduled_at ? " · " + new Date(r.scheduled_at).toLocaleString() : ""}`
-                              : (r.sent_at ? new Date(r.sent_at).toLocaleDateString() : r.status)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ padding: "8px 16px", borderTop: "1px solid " + T.bg2, fontSize: 11.5, color: T.ink3, lineHeight: 1.5 }}>
-                  Opens are counted per campaign. Steward never shows who opened what.
-                </div>
-              </div>
-            )}
-
             {/* ── FIX-6 item 5 · EVERY FIGURE OPENS ITS ROWS ────────────
                 The count and the list behind it come from ONE computation
                 (shared/campaignKind.js), so a number cannot stop matching the
@@ -2384,7 +2407,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{c.name}</div>
                       <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
                         {sentWord(c)}{Number(c.recipient_count) > 0 ? ` · ${openRateWord(c)} opened` : ""}
-                        {c.sent_at ? ` · ${new Date(c.sent_at).toLocaleDateString()}` : c.scheduled_at ? ` · scheduled ${new Date(c.scheduled_at).toLocaleDateString()}` : ""}
+                        {c.sent_at ? ` · ${displayDate(new Date(c.sent_at))}` : c.scheduled_at ? ` · scheduled ${displayDateTime(new Date(c.scheduled_at))}` : ""}
                       </div>
                     </div>
                   ))}
@@ -2409,7 +2432,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               </div>
             )}
 
-            {/* Campaign table */}
+            {/* ── FIX-39 · ONE TABLE ───────────────────────────────────────
+                There used to be two: a "Sent" table (which also listed a
+                campaign waiting for approval) above this one, with the same
+                rows twice. One table now, under four filters, and the tab's
+                count is the number of rows under "All". The Sent and Opened
+                counts are the server's (/campaigns/sent), COUNTS ONLY:
+                nothing per person, anywhere. */}
             {loading ? (
               <div style={{ color: T.ink3, fontSize: 13, padding: "40px 0", textAlign: "center" }}>Loading…</div>
             ) : emailCampaigns.length === 0 ? (
@@ -2419,65 +2448,92 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 line="Your first campaign doesn't need to be clever, a plain thank-you to everyone who gave this year is the highest-return email in fundraising. Three warm sentences; Steward handles the sending, the footer, and who opened it."
                 actionLabel={isReadOnly?undefined:"Write that thank-you →"} onAction={()=>openBuilder()}/>
             ) : (
-              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                {/* Table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "10px 16px", background: T.bg2, borderBottom: "1px solid " + T.bg3, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
-                  <span>Campaign</span>
-                  <span>Segment</span>
-                  <span>Status</span>
-                  <span>Sent</span>
-                  <span>Open Rate</span>
-                  <span>Date</span>
-                  <span>Actions</span>
+              <div data-testid="campaigns-table" style={{ border: "1px solid " + T.bg3, borderRadius: 12, background: T.white }}>
+                <style>{`
+                  .fx39-row { display: grid; grid-template-columns: minmax(0,2fr) minmax(0,1.2fr) 150px 80px 90px 150px 210px; gap: 10px; align-items: center; padding: 12px 16px; }
+                  .fx39-head { font-size: 11px; font-weight: 700; color: ${T.ink3}; letter-spacing: 0.04em; padding-top: 10px; padding-bottom: 10px; }
+                  .fx39-cell { min-width: 0; font-size: 13px; color: ${T.ink2}; }
+                  .fx39-cell[data-label]::before { content: none; }
+                  @media (max-width: 900px) {
+                    .fx39-head { display: none; }
+                    .fx39-row { grid-template-columns: 1fr 1fr; row-gap: 8px; }
+                    .fx39-row > .fx39-name, .fx39-row > .fx39-actions { grid-column: 1 / -1; }
+                    .fx39-cell[data-label]::before { content: attr(data-label); display: block; font-size: 11px; font-weight: 700; color: ${T.ink3}; margin-bottom: 2px; }
+                  }
+                `}</style>
+                <div role="tablist" aria-label="Show campaigns" style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "10px 16px", borderBottom: "1px solid " + T.bg2 }}>
+                  {CAMPAIGN_FILTERS.map(f => {
+                    const n = filterCampaigns(emailCampaigns, f.id).length;
+                    const on = campFilter === f.id;
+                    return (
+                      <button key={f.id} type="button" role="tab" aria-selected={on} data-testid={"camp-filter-" + f.id}
+                        onClick={() => setCampFilter(f.id)}
+                        style={{ fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, cursor: "pointer", borderRadius: 99, padding: "5px 12px",
+                                 border: "1px solid " + (on ? T.ink : T.bg3), background: on ? T.ink : T.white, color: on ? T.white : T.ink2 }}>
+                        {f.label} {n}
+                      </button>
+                    );
+                  })}
                 </div>
-                {emailCampaigns.map(c => {
+                <div className="fx39-row fx39-head" aria-hidden="true">
+                  <span>Campaign</span><span>Who it goes to</span><span>Status</span><span>Sent</span><span>Opened</span><span>Date</span><span></span>
+                </div>
+                {shownCampaigns.length === 0 && (
+                  <div data-testid="camp-filter-empty" style={{ padding: "14px 16px", fontSize: 13, color: T.ink3, borderTop: "1px solid " + T.bg2 }}>
+                    No campaign here yet.
+                  </div>
+                )}
+                {shownCampaigns.map(c => {
                   const raw = typeof c.segment === "string" ? JSON.parse(c.segment || "{}") : (c.segment || {});
                   const recs = c.recipients || [];
-                  const sentCt = c.recipient_count || recs.filter(r => r.sent_at).length || 0;
-                  const openCt = c.open_count || recs.filter(r => r.opened_at).length || 0;
+                  const sr = sentById[c.id] || null;
+                  const sentCt = sr ? sr.delivered : (c.recipient_count || recs.filter(r => r.sent_at).length || 0);
+                  const openCt = sr ? sr.opened : (c.open_count || recs.filter(r => r.opened_at).length || 0);
                   const openRate = sentCt > 0 ? Math.round(openCt / sentCt * 100) : 0;
+                  const gone = ["sent", "sending", "failed"].includes(c.status) || !!c.sent_at;
                   const isOpen = expandedId === c.id;
-
                   return (
-                    <div key={c.id} style={{ borderTop: "1px solid " + T.bg3 }}>
-                      {/* Row */}
-                      <div
-                        style={{ display: "grid", gridTemplateColumns: "1fr 140px 100px 70px 90px 100px 100px", padding: "12px 16px", gap: 8, alignItems: "center", cursor: "pointer", transition: "background 0.1s" }}
-                        onClick={() => setExpandedId(isOpen ? null : c.id)}
-                        onMouseEnter={e => { e.currentTarget.style.background = T.bg3; setHoveredRowId(c.id); }}
-                        onMouseLeave={e => { e.currentTarget.style.background = "transparent"; setHoveredRowId(null); }}
-                      >
-                        <div>
+                    <div key={c.id} data-testid="camp-row" data-status={c.status} style={{ borderTop: "1px solid " + T.bg2 }}>
+                      <div className="fx39-row">
+                        <div className="fx39-cell fx39-name">
                           <RecordLink to={tabHref("communications", { subtab: "campaigns", campaignId: c.id })} data-record-link="email-campaign"
                             onOpen={() => setExpandedId(isOpen ? null : c.id)}
-                            style={{ display: "block", fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? T.greenDk : T.ink, transition: "color 0.1s" }}>{c.name}</RecordLink>
-                          <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
+                            style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: T.ink }}>{c.name}</RecordLink>
+                          <div data-testid="camp-subject" style={{ fontSize: 12, color: T.ink3, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {c.subject ? subjectPreview(c.subject) : "No subject yet"}
+                          </div>
                         </div>
-                        <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
-                        <div><StatusBadge status={c.status} campaign={c} onFailed={() => { setExpandedId(c.id); setFailedOnly(c.id); }} /></div>
-                        <div style={{ fontSize: 13, color: sentCt > 0 ? T.ink : T.ink3 }} data-testid="camp-row-sent">{sentWord(c)}</div>
-                        <div>
-                          {sentCt > 0 ? (
-                            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: openRate >= 25 ? T.greenMid : openRate >= 15 ? T.gold600 : T.ink3 }}>{openRate}%</span>
-                              <div style={{ height: 3, background: T.bg3, borderRadius: 99 }}>
-                                <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? T.greenMid : T.gold500, borderRadius: 99 }} />
-                              </div>
+                        <div className="fx39-cell" data-label="Who it goes to" style={{ fontSize: 12.5 }}>{segLabel(raw)}</div>
+                        <div className="fx39-cell" data-label="Status">
+                          <StatusBadge status={c.status} campaign={c} onFailed={() => { setExpandedId(c.id); setFailedOnly(c.id); }} />
+                        </div>
+                        <div className="fx39-cell" data-label="Sent" data-testid="camp-row-sent" style={{ color: sentCt > 0 ? T.ink : T.ink3 }}>
+                          {gone ? sentCt.toLocaleString("en-US") : "Not yet"}
+                        </div>
+                        <div className="fx39-cell" data-label="Opened" data-testid="camp-row-rate" style={{ color: sentCt > 0 ? T.ink : T.ink3 }}>
+                          {gone && sentCt > 0 ? `${openCt.toLocaleString("en-US")} (${openRate}%)` : "Not yet"}
+                        </div>
+                        <div className="fx39-cell" data-label="Date" data-testid="camp-row-date" style={{ fontSize: 12.5 }}>
+                          {c.sent_at ? displayDate(new Date(c.sent_at))
+                            : c.scheduled_at ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                                <CalendarDays size={14} strokeWidth={1.75} aria-label="Scheduled for" />{displayDateTime(new Date(c.scheduled_at))}</span>
+                            : "Not set"}
+                        </div>
+                        <div className="fx39-cell fx39-actions" style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap", position: "relative" }}>
+                          {gone
+                            ? <button type="button" data-testid="camp-view" onClick={() => openBuilder(c)} style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 12.5 }}>View</button>
+                            : <button type="button" data-testid="edit-in-editor" disabled={isReadOnly} onClick={() => openBuilder(c)} style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 12.5 }}>Edit in editor</button>}
+                          <button type="button" data-testid="camp-more" aria-haspopup="menu" aria-expanded={moreFor === c.id}
+                            onClick={() => setMoreFor(moreFor === c.id ? null : c.id)}
+                            style={{ ...S.btn("ghost"), padding: "5px 10px", fontSize: 12.5 }}>More</button>
+                          {moreFor === c.id && (
+                            <div role="menu" data-testid="camp-more-menu"
+                              style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, zIndex: 20, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 24px rgba(15,26,18,0.12)", padding: 4, minWidth: 150, display: "flex", flexDirection: "column" }}>
+                              <button type="button" role="menuitem" disabled={isReadOnly} onClick={() => { setMoreFor(null); duplicateCampaign(c); }} style={menuItem}>Duplicate</button>
+                              {isAdmin && c.status !== "sending" && (
+                                <button type="button" role="menuitem" data-testid="camp-delete" onClick={() => { setMoreFor(null); deleteCampaign(c); }} style={menuItem}>Delete</button>
+                              )}
                             </div>
-                          ) : <span style={{ fontSize: 11, color: T.ink3 }} data-testid="camp-row-rate">{openRateWord(c)}</span>}
-                        </div>
-                        <div style={{ fontSize: 11, color: T.ink3 }}>
-                          {c.sent_at ? new Date(c.sent_at).toLocaleDateString() : c.scheduled_at ? "⏰ " + new Date(c.scheduled_at).toLocaleDateString() : "Not set"}
-                        </div>
-                        {/* Actions */}
-                        <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
-                          <button title="Edit" onClick={() => openBuilder(c)}
-                            style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>✎</button>
-                          <button title="Duplicate" onClick={() => duplicateCampaign(c)}
-                            style={{ background: "transparent", border: "none", color: T.ink3, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>⊕</button>
-                          {isAdmin && c.status !== "sending" && (
-                            <button title="Delete" onClick={() => deleteCampaign(c.id)}
-                              style={{ background: "transparent", border: "none", color: T.terracotta, cursor: "pointer", fontSize: 14, padding: "2px 4px", borderRadius: 4 }}>✕</button>
                           )}
                         </div>
                       </div>
@@ -2490,7 +2546,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           {/* Stats */}
                           {c.status === "sent" && sentCt > 0 && (
                             <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-                              {[["Sent", sentCt, T.ink], ["Opened", openCt, T.greenMid], ["Open Rate", openRate + "%", openRate >= 25 ? T.greenMid : T.gold600], ["Failed", recs.filter(r => r.failure_reason).length, T.terracotta]].map(([lbl, val, col]) => (
+                              {[["Sent", sentCt, T.ink], ["Opened", openCt, T.greenMid], ["Open rate", openRate + "%", openRate >= 25 ? T.greenMid : T.gold600], ["Unsubscribed", sr ? sr.unsubscribed : 0, T.ink], ["Failed", sr ? sr.failed : recs.filter(r => r.failure_reason).length, T.ink]].map(([lbl, val, col]) => (
                                 <div key={lbl} style={{ background: T.bg2, borderRadius: 8, padding: "10px 14px", flex: 1 }}>
                                   <div style={{ fontSize: 10, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{lbl}</div>
                                   <div style={{ fontSize: 20, fontWeight: 800, color: col, marginTop: 2 }}>{val}</div>
@@ -2500,7 +2556,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           )}
                           {/* Draft/scheduled/sent actions */}
                           <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                            {c.status !== "sent" && c.status !== "failed" && <button onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit</button>}
+                            {c.status !== "sent" && c.status !== "failed" && c.status !== "sending" && <button type="button" data-testid="edit-in-editor" onClick={() => openBuilder(c)} style={S.btn("subtle")}>Edit in editor</button>}
                             {c.status === "awaiting_approval" && (isAdmin
                               ? <button onClick={() => approveCampaign(c)} data-testid="campaign-approve" style={S.btn("send")}>Approve</button>
                               : <span style={{ fontSize: 12.5, color: T.ink2, alignSelf: "center" }}>Waiting for an admin to approve it.</span>)}
@@ -2551,6 +2607,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     </div>
                   );
                 })}
+                <div style={{ padding: "8px 16px", borderTop: "1px solid " + T.bg2, fontSize: 11.5, color: T.ink3, lineHeight: 1.5 }}>
+                  Opens are counted per campaign. Steward never shows who opened what.
+                </div>
               </div>
             )}
           </div>
@@ -2561,7 +2620,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             starters New Campaign opens on and the designed emails, in four
             sections (EmailTemplates.jsx says the rule). */}
         {nav === "templates" && (
-          <EmailTemplates isReadOnly={isReadOnly}
+          <EmailTemplates isReadOnly={isReadOnly} key={tplOpen ? "open-" + tplOpen.id : "library"}
+            openTemplateId={tplOpen ? tplOpen.id : null} onBackFromOpen={tplOpen ? () => { const b = tplOpen.back; setTplOpen(null); b(); } : null}
             campaignStarters={templates} previewSubject={s => renderPreview(s)}
             onOpenCampaigns={() => setNav("campaigns")} onOpenDrafts={() => setNav("milestones")} />
         )}
@@ -2671,7 +2731,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     <span style={{ fontSize: 11, color: T.ink3, width: 16, textAlign: "right" }}>#{i + 1}</span>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{c.name}</div>
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{c.recipient_count} sent · {new Date(c.sent_at).toLocaleDateString()}</div>
+                      <div style={{ fontSize: 11, color: T.ink3 }}>{c.recipient_count} sent · {displayDate(new Date(c.sent_at))}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 16, fontWeight: 800, color: c.rate >= 25 ? T.greenMid : T.gold600 }}>{c.rate}%</div>
@@ -2706,7 +2766,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "emailtool" && <EmailToolPanel onNavigate={onNavigate} />}
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
-        {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}
+        {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId} onEditTemplate={id => openTemplateEditor(id, () => setNav("milestones"))}/>}
         {nav === "surveys" && <SurveysPanel isReadOnly={isReadOnly} orgName={data?.org?.name || ""} onOpenDrafts={() => setNav("milestones")} />}
       </div>
     </div>

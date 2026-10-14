@@ -210,7 +210,7 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
     await page.waitForSelector('[data-testid="page-card"]', { timeout: 20000 }).catch(() => {});
     const rows = await page.evaluate(() => [...document.querySelectorAll('[data-testid="page-card"],[data-testid="volunteer-page-card"],[data-testid="org-donation-share"]')]
       .map(c => [...c.querySelectorAll('[data-testid="page-action"]')].map(b => b.textContent.trim())));
-    const want = JSON.stringify(["Edit the page", "Open page", "Copy link", "QR and embed"]);
+    const want = JSON.stringify(["Edit in editor", "Open page", "Copy link", "QR and embed"]);   // FIX-39: one label everywhere
     const [{ n: cards }] = await q(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id=$1 AND status='active'`, [ORG]);
     ok("§12 a card for every page, and one for the donation form", rows.length === cards + 1, { rows: rows.length, cards });
     ok("§12 every card has the same four buttons", rows.length > 0 && rows.every(r => JSON.stringify(r) === want), rows);

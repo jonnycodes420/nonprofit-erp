@@ -52,6 +52,35 @@ export function splitCampaigns(rows) {
   return { emails, goals };
 }
 
+// ── FIX-39 · ONE WORD FOR EVERY STATUS ───────────────────────────────────
+// The only place an email campaign's status becomes words. A code that is not
+// here reads "Draft" rather than reaching the screen as `awaiting_approval`
+// (tests/fix39-campaigns.test.js reads every Communications tab for codes).
+export const STATUS_WORDS = {
+  draft: "Draft",
+  awaiting_approval: "Waiting for approval",
+  scheduled: "Scheduled",
+  sending: "Sending",
+  sent: "Sent",
+  failed: "Failed",
+};
+export function statusWord(code) {
+  return STATUS_WORDS[String(code || "").toLowerCase()] || "Draft";
+}
+
+// The filters over the one table. "All" is the default and the tab's count is
+// its length, so the number on the tab is the number of rows under it.
+export const CAMPAIGN_FILTERS = [
+  { id: "all",       label: "All",       has: () => true },
+  { id: "drafts",    label: "Drafts",    has: s => s === "draft" || s === "awaiting_approval" },
+  { id: "scheduled", label: "Scheduled", has: s => s === "scheduled" || s === "sending" },
+  { id: "sent",      label: "Sent",      has: s => s === "sent" || s === "failed" },
+];
+export function filterCampaigns(emails, filterId) {
+  const f = CAMPAIGN_FILTERS.find(x => x.id === filterId) || CAMPAIGN_FILTERS[0];
+  return (emails || []).filter(c => f.has(String(c.status || "draft").toLowerCase()));
+}
+
 // ── WHAT A NUMBER SAYS WHEN THERE IS NOTHING TO SAY ──────────────────────
 // The brief's rule, in one place so the pills and the rows cannot disagree:
 // zero is "0" and it MEANS zero; a campaign that has not gone out yet has no
@@ -60,12 +89,12 @@ export function sentWord(campaign) {
   const n = Number((campaign && campaign.recipient_count) || 0);
   if (n > 0) return n.toLocaleString("en-US");
   const status = String((campaign && campaign.status) || "").toLowerCase();
-  return ["draft", "scheduled", "awaiting_approval"].includes(status) || !campaign.sent_at ? "Not sent yet" : "0";
+  return ["draft", "scheduled", "awaiting_approval"].includes(status) || !campaign.sent_at ? "Not yet" : "0";
 }
 
 export function openRateWord(campaign) {
   const sent = Number((campaign && campaign.recipient_count) || 0);
-  if (!sent) return "Not sent yet";
+  if (!sent) return "Not yet";
   const opened = Number((campaign && campaign.open_count) || 0);
   return Math.round((opened / sent) * 100) + "%";
 }

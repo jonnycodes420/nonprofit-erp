@@ -276,7 +276,7 @@ function MergesPanel({ onDone, isReadOnly }) {
         <div key={m.id} style={rowStyle}>
           <div style={{ flex: "1 1 240px", fontSize: 13, color: T.ink }}>
             <b>{m.merged_name}</b> into <b>{m.kept_name}</b>
-            <div style={{ fontSize: 12, color: T.ink3 }}>{new Date(m.created_at).toLocaleDateString()} by {m.created_by_name || "staff"}{m.bulk ? ", in a bulk merge" : ""}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>{displayDate(new Date(m.created_at))} by {m.created_by_name || "staff"}{m.bulk ? ", in a bulk merge" : ""}</div>
           </div>
           <button style={btn(false, isReadOnly)} disabled={isReadOnly} onClick={() => undo(m)}>Undo</button>
         </div>
