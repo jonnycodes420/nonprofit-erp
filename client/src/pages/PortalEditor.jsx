@@ -128,7 +128,12 @@ export default function PortalEditor() {
   // editor; `?page=gp_…` a giving or volunteer page; nothing, the portal.
   const editorParams = new URLSearchParams(window.location.search);
   // FIX-39: "Edit in editor" says where it came from; Back goes there.
-  const backTo = safeBack(editorParams.get("back"));
+  // FIX-39: a `back` is the screen in the app that opened the editor. It is
+  // only ever a path on THIS site: safeBack refuses anything else, and the
+  // link is built on our own origin, so the URL cannot send anyone elsewhere.
+  const backPath = safeBack(editorParams.get("back"));
+  const hasBack = !!backPath;
+  const backHref = hasBack ? window.location.origin + backPath : "/dashboard";
   const givingPageId = editorParams.get("page") || "";
   const isOrgForm = !givingPageId && editorParams.get("form") === "org";
   const isPageEditor = !!givingPageId || isOrgForm;
@@ -381,7 +386,7 @@ export default function PortalEditor() {
   if (err && widgets === null) {
     return <div style={{ padding: 40, fontFamily: "system-ui" }}>
       <p>{err}</p>
-      <a href={backTo || "/dashboard"} style={{ color: E.green }}>{backTo ? "← Back" : "← Back to Steward"}</a>
+      <a href={backHref} style={{ color: E.green }}>{hasBack ? "← Back" : "← Back to Steward"}</a>
     </div>;
   }
   if (widgets === null || !ps) return <div style={{ padding: 40, fontFamily: "system-ui", color: E.muted }}>Loading the editor…</div>;
@@ -530,7 +535,7 @@ export default function PortalEditor() {
       `}</style>
       {/* ── Top chrome ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
-        <a data-testid="editor-back" href={backTo || "/dashboard"} style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{backTo ? "← Back" : "← Steward"}</a>
+        <a data-testid="editor-back" href={backHref} style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>{hasBack ? "← Back" : "← Steward"}</a>
         <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{isVolunteer ? "Volunteer page" : surface === "give" ? "Giving page" : surface === "orgform" ? "Donation form" : "Portal editor"}</span>
         {surface !== "portal"
           ? <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>{meta?.pageTitle || "Page"}</span>

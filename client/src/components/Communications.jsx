@@ -141,7 +141,8 @@ const menuItem = { background: "transparent", border: "none", textAlign: "left",
 
 // FIX-39 — a subject line as she reads it in a list: merge tags filled with
 // the same sample the preview uses ("Before the year ends, Margaret"), never braces.
-const subjectPreview = subject => renderMergeFields(subject || "", {}).replace(/<[^>]*>/g, "");
+// It is rendered as text, never as HTML, so React escapes whatever it holds.
+const subjectPreview = subject => renderMergeFields(subject || "", {});
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 const STATUS_META = {
@@ -1423,12 +1424,13 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [moreFor, setMoreFor] = useState(null);
   // FIX-39 · EDIT IN EDITOR. Which template the email editor is open on, and
   // where its Back goes. From inside Communications that is the screen it came
-  // from; from another screen (?template=<id>&back=<path>) it is that path.
+  // from; from another screen (?template=<id>&back=<path>) it is that path,
+  // on this site's own origin only (safeBack refuses anything else).
   const [tplOpen, setTplOpen] = useState(() => {
     const id = urlParam("communications", "template");
     if (!id) return null;
-    const safe = safeBack(urlParam("communications", "back"));
-    return { id, back: safe ? () => window.location.assign(safe) : () => {} };
+    const backPath = safeBack(urlParam("communications", "back"));
+    return { id, back: backPath ? () => window.location.assign(window.location.origin + backPath) : () => {} };
   });
   const [sendResult, setSendResult]   = useState(null);
 
