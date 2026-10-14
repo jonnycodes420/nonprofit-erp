@@ -678,17 +678,20 @@ const SOURCES = {
     sentence: (p, dd) => `The givers, largest first, whose gifts dated ${dd(p.from)} to ${dd(p.to)} make up ninety per cent of that giving.`,
     sql: (orgId, p) => topGiversSql(orgId, p),
   },
+  // PROFILE-1 (header + tabs) · `donor` narrows it to one person for the
+  // profile rail's Thank-yous card, and there a refund (a negative row) is
+  // not a gift waiting for thanks.
   unthanked: {
     label: "Gifts not yet thanked",
     measure: () => "count",
-    params: { since: "date:required" },
-    sentence: (p, dd) => `Every gift dated on or after ${dd(p.since)}, the day you started with Steward, with no thank-you logged.`,
+    params: { since: "date:required", donor: "id" },
+    sentence: (p, dd) => `Every gift${p.donor ? " from this person" : ""} dated on or after ${dd(p.since)}, the day you started with Steward, with no thank-you logged.${p.donor ? " A refund is not a gift waiting for thanks." : ""}`,
     sql: (orgId, p) => ({
       sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount, NULL::text AS detail
               FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
              WHERE g.org_id = ? AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false) = false
-               AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false`,
-      args: [orgId, p.since],
+               AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false${p.donor ? " AND g.donor_id = ? AND g.amount > 0" : ""}`,
+      args: [orgId, p.since, ...(p.donor ? [p.donor] : [])],
     }),
   },
   "thanks-marked": {
@@ -1172,6 +1175,43 @@ const SOURCES = {
       sql: `${DONOR_GIFT_SELECT} AND g.date >= ? AND g.date <= ?`,
       args: [orgId, p.donor, p.from, p.to], order: "date DESC, id",
     }),
+  },
+  // PROFILE-1 (header + tabs) · WHERE ONE PERSON'S GIFTS CAME FROM. The rail's
+  // Connected and Recurring cards each open their gifts through this. The
+  // origins do not overlap, so the Connected cards add up to the person's
+  // online giving and no gift is counted under two of them: a giving page
+  // first, then a connected source, then Stripe on its own, then QuickBooks.
+  // `ref` names the page, the source or the plan; it is a bound argument,
+  // never part of the SQL.
+  "donor-gifts-from": {
+    label: "Gifts from one place",
+    measure: () => "sum",
+    params: { donor: "id:required", origin: "word:required", ref: "id" },
+    sentence: p => ({
+      page: `Every gift from this person that came through ${p.ref ? "this giving page" : "a giving page"}.`,
+      source: "Every gift from this person read from this connected giving source, leaving out any that came through a giving page.",
+      stripe: "Every gift from this person paid through Stripe outside a giving page or a connected source.",
+      quickbooks: "Every gift from this person that Steward read from your QuickBooks books.",
+      plan: "Every gift this monthly plan has charged so far.",
+      recurring: "Every gift this schedule in a connected source has brought in so far.",
+    }[p.origin] || "Every gift from this person from this place."),
+    sql: (orgId, p) => {
+      const args = [orgId, p.donor];
+      let w;
+      if (p.origin === "page") { w = " AND g.giving_page_id IS NOT NULL"; if (p.ref) { w += " AND g.giving_page_id = ?"; args.push(p.ref); } }
+      else if (p.origin === "source") { if (!p.ref) throw new FigureParamError("ref names the source."); w = " AND g.giving_page_id IS NULL AND g.giving_source_id = ?"; args.push(p.ref); }
+      else if (p.origin === "stripe") w = " AND g.giving_page_id IS NULL AND g.giving_source_id IS NULL AND g.stripe_payment_id IS NOT NULL";
+      else if (p.origin === "quickbooks") w = " AND g.giving_page_id IS NULL AND g.giving_source_id IS NULL AND g.stripe_payment_id IS NULL AND g.read_from_vendor = 'quickbooks'";
+      else if (p.origin === "plan") { if (!p.ref) throw new FigureParamError("ref names the plan."); w = " AND g.recurring_subscription_id = ?"; args.push(p.ref); }
+      else if (p.origin === "recurring") {
+        if (!p.ref) throw new FigureParamError("ref names the schedule.");
+        w = ` AND EXISTS (SELECT 1 FROM giving_recurring r WHERE r.id = ? AND r.org_id = g.org_id AND r.donor_id = g.donor_id
+                           AND r.source_id = g.giving_source_id AND r.recurring_ref = g.provider_recurring_ref)`;
+        args.push(p.ref);
+      }
+      else throw new FigureParamError("origin is page, source, stripe, quickbooks, plan or recurring.");
+      return { sql: DONOR_GIFT_SELECT + w, args, order: "date DESC, id" };
+    },
   },
   // PARITY-1 Part 1b · AT A GLANCE. Each figure in the profile's glance block
   // is one of these, so each opens the gift (or gifts) it is.

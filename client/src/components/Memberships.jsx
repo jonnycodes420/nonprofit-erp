@@ -23,6 +23,8 @@ const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, canc
 const usd = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: T.ink, background: T.white };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
+// PROFILE-1 (header) — the About card's one small link per cell.
+const aboutLink = { background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 12.5, fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" };
 const primaryBtn = { background: T.gold500, border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
 const newKey = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()) + Math.random());
 
@@ -42,7 +44,7 @@ function StatusPill({ status }) {
 }
 
 // ── On the person's record ──────────────────────────────────────────────────
-export function MembershipPanel({ donor, isReadOnly, onChanged }) {
+export function MembershipPanel({ donor, isReadOnly, onChanged, bare = false }) {
   const [data, setData] = useState(null);
   const [levels, setLevels] = useState([]);
   const [form, setForm] = useState(null); // {levelId, paymentMethod, key}
@@ -53,7 +55,10 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
   };
   useEffect(() => { load(); }, [donor.id]);
   // An org that sells no memberships sees nothing here.
-  if (!data || (!data.memberships.length && !levels.length)) return null;
+  // PROFILE-1 (header): `bare` is the About card's cell, which carries its own
+  // heading, so the panel draws only its value and its one link.
+  if (!data || (!data.memberships.length && !levels.length)) return bare && data
+    ? <div data-testid="membership-panel" data-empty="1" style={{ fontSize: 13, color: T.ink3 }}>Not a member yet.</div> : null;
   const cur = data.current;
   // One form, two acts: joining (no current membership) or renewing the one
   // they hold. A renewal's new term starts the day after the old one ends.
@@ -70,17 +75,17 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
   const chosen = form && levels.find(l => l.id === form.levelId);
   // FIX-14 Part 3 — never a member and nothing being typed: one line and its add button.
   if (!data.memberships.length && !form) return (
-    <div data-testid="membership-panel" data-empty="1" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "4px 2px" }}>
-      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>
-      <span style={{ fontSize: 12.5, color: T.ink3 }}>Not a member yet.</span>
-      {!isReadOnly && levels.length > 0 && <button style={{ ...quietBtn, marginLeft: "auto" }} data-testid="membership-add"
-        onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>Add a membership</button>}
+    <div data-testid="membership-panel" data-empty="1" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: bare ? 0 : "4px 2px" }}>
+      {!bare && <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>}
+      <span style={{ fontSize: bare ? 13 : 12.5, color: T.ink3 }}>Not a member yet.</span>
+      {!isReadOnly && levels.length > 0 && <button style={bare ? aboutLink : { ...quietBtn, marginLeft: "auto" }} data-testid="membership-add"
+        onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>{bare ? "Add" : "Add a membership"}</button>}
       {msg && <div style={{ fontSize: 12, color: T.ink3, width: "100%" }}>{msg}</div>}
     </div>
   );
   return (
-    <div data-testid="membership-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>
+    <div data-testid="membership-panel" style={bare ? { display: "flex", flexDirection: "column", gap: 8 } : { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {!bare && <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>}
       {cur ? (
         <div data-testid="membership-current" title={data.sentence} aria-label={data.sentence} tabIndex={0}>
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{cur.level_name}</span>{" "}

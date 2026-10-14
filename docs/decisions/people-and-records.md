@@ -274,8 +274,12 @@ Read this when you touch the person record: donors, organisations, non-donors, h
 - **A note's suggestion is a chip, never a write.** Next step, spouse to household and planned-giving
   prospect come from the after-meeting engine (AI switch, the simple reader as fallback) and change
   nothing until a person presses one (`POST /interactions/:id/chips`). (FIX-14)
-- **The profile has one of everything.** One timeline ("Everything with", calls and notes included),
-  one next step (the rail, with Edit/Delete/Undo), one ask ("The ask": stage, proposals, moves), one
+- **The profile is one header, one row of tabs and a full-height rail (PROFILE-1 header, 14 Oct).** The
+  seven numbers are in the header and nowhere else; the tabs replace the old chips; the rail's cards come
+  from one read (`GET /donors/:id/rail`) and a card with nothing to say is not drawn. Anything added to the
+  profile gets a row in `docs/profile-1/inventory.md`, which `tests/profile1-everything-clicks` reads.
+- **The profile has one of everything.** One timeline (the list tabs and Lately, calls and notes included),
+  one next step (the rail, with Edit/Delete/Undo), one ask (the Overview's card; every row on Asks & pipeline), one
   Rhythm panel (past touches from the timeline's sources, planned journey steps and next steps, the
   journey picked or changed there). An empty section is one line with its add button. Drafting,
   Suggested, Brief me, Add a task, Erase and Delete are under More. (FIX-14 Part 3)

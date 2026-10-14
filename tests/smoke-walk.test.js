@@ -74,7 +74,8 @@ function routes() {
   return [...ids];
 }
 
-const PROFILE_TABS = ["overview", "gifts", "funds", "related", "materials", "activity"];
+// PROFILE-1 (header): one row of ten tabs, found by data-tab.
+const PROFILE_TABS = ["overview", "gifts", "asks", "conversations", "emails", "tasks", "notes", "funds", "related", "files"];
 // The rail shows a LABEL, the registry holds an id; the two differ for three
 // tabs and a walk that assumed they matched would skip them.
 const LABELS = { dashboard: "Home", board: "Dashboards", portal: "Donor Portal", agent: "Agent", workflows: "Agent", p2p: "Peer-to-peer" };
@@ -511,7 +512,7 @@ async function demoDoor(browser) {
         await page.goto(`${APP}/donors/${d.id}`, { waitUntil: "domcontentloaded", timeout: 45000 }).catch(e => trouble.push("navigation: " + e.message.slice(0, 120)));
         await page.waitForTimeout(1300);
       } else {
-        const btn = page.locator(`.dp-tabs button`).filter({ hasText: new RegExp(tab === "gifts" ? "Gifts" : tab, "i") }).first();
+        const btn = page.locator(`.dp-tabs [data-tab="${tab}"]`).first();
         if (await btn.count()) { await btn.click(); await page.waitForTimeout(700); }
         else { ok(`donor ${d.id} — the ${tab} tab is on the profile`, false, "tab not found"); continue; }
       }
