@@ -2272,7 +2272,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   })}
                 </div>
                 {cur?<div data-testid="dp-ask-open" style={{fontSize:13.5,color:T.ink,lineHeight:1.5}}>
-                  <strong>{fmtFull(cur.askAmount)}</strong>{cur.purpose?<> for {cur.purpose}</>:null}
+                  <strong><Figure variant="cell" kind="money" value={Number(cur.askAmount)||0} label="The open ask" source={{key:"donor-open-ask",params:{donor:donor.id}}}/></strong>{cur.purpose?<> for {cur.purpose}</>:null}
                   <span style={{color:T.ink3}}> · {PROPOSAL_STAGE_LABEL[cur.stage]||cur.stage}{cur.createdAt?`, opened ${displayDateShort(String(cur.createdAt).slice(0,10),new Date())}`:""}</span>
                   {openProposals.length>1&&<span style={{color:T.ink3}}> · and {openProposals.length-1} more</span>}
                 </div>:<div data-testid="dp-ask-none" style={{fontSize:13,color:T.ink3}}>No open ask.</div>}

@@ -1002,6 +1002,75 @@ const SOURCES = {
     },
   },
   // What a connected inbox put on the record, for the connect page.
+  // FIX-40 · EVERY EMAIL A CAMPAIGN SENT. One row per person a campaign went
+  // to (campaign_recipients with a sent time), which is what each campaign's
+  // recipient_count counts, so Communications' Total emails sent and each bar
+  // of Sends per month foot to these rows. `from`/`to` narrow it to a month,
+  // `campaign` to one campaign. Opens are never shown per person here.
+  "emails-sent": {
+    label: "Emails sent",
+    measure: () => "count",
+    params: { from: "date", to: "date", campaign: "id" },
+    sentence: (p, dd) => `Every email a campaign sent, one row per person it went to${p.campaign ? ", for this campaign" : ""}${p.from ? `, from ${dd(p.from)}` : ""}${p.to ? ` to ${dd(p.to)}` : ""}. Who opened what is never shown.`,
+    sql: (orgId, p) => {
+      const args = [orgId];
+      let w = "";
+      if (p.campaign) { w += " AND cr.campaign_id = ?"; args.push(p.campaign); }
+      if (p.from) { w += " AND cr.sent_at >= ?::date"; args.push(p.from); }
+      if (p.to) { w += " AND cr.sent_at < (?::date + 1)"; args.push(p.to); }
+      return {
+        sql: `SELECT cr.id, 'email' AS type, d.id AS donor_id, COALESCE(d.name, cr.email) AS name, cr.sent_at::date AS date,
+                     NULL::numeric AS amount, c.name AS detail
+                FROM campaign_recipients cr
+                JOIN campaigns c ON c.id = cr.campaign_id AND c.org_id = cr.org_id
+                LEFT JOIN donors d ON d.id = cr.donor_id AND d.org_id = cr.org_id AND d.deleted_at IS NULL
+               WHERE cr.org_id = ? AND cr.sent_at IS NOT NULL${w}`,
+        args, order: "date DESC, id",
+      };
+    },
+  },
+  // FIX-40 · YOUR EMAIL TOOL'S "GIFTS WITHIN 30 DAYS". The gifts from the people
+  // who opened or clicked this campaign, dated from the day it went out to 30
+  // days after: giftsNearSend's window (shared/emailMarketing.js), so the cell
+  // and these rows are the same gifts. Beside the campaign, never credited to it.
+  "email-tool-gifts": {
+    label: "Gifts within 30 days",
+    measure: () => "sum",
+    params: { campaign: "id:required" },
+    sentence: () => "Gifts from the people who opened or clicked this campaign, dated from the day it went out to 30 days after. Shown beside it, not credited to it: Steward cannot know what made somebody give.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, g.date, ROUND(g.amount::numeric, 2) AS amount,
+                   COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
+              FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+             WHERE g.org_id = ? AND d.deleted_at IS NULL
+              AND g.amount > 0
+              AND g.donor_id IN (SELECT a.donor_id FROM email_marketing_activity a
+                                  WHERE a.org_id = g.org_id AND a.campaign_id = ? AND a.donor_id IS NOT NULL)
+              AND EXISTS (SELECT 1 FROM email_marketing_campaigns c
+                           WHERE c.id = ? AND c.org_id = g.org_id AND c.sent_at IS NOT NULL
+                             AND g.date >= to_char((c.sent_at AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD')
+                             AND g.date <= to_char((c.sent_at AT TIME ZONE 'UTC')::date + 30, 'YYYY-MM-DD'))`,
+      args: [orgId, p.campaign, p.campaign],
+      order: "date DESC, id",
+    }),
+  },
+  // FIX-40 · ONE OFFICER'S PORTFOLIO, the Donors page's chip "717 · $4,020,376.66":
+  // donors assigned to them in a pipeline stage (prospect through ongoing care,
+  // or lapsed), the same JOIN GET /portfolio/officers counts with.
+  "officer-portfolio": {
+    label: "Portfolio",
+    measure: () => "sum",
+    params: { officer: "id:required" },
+    sentence: () => "Every donor assigned to this person who is in a pipeline stage (prospect through ongoing care, or lapsed), with what each has given in total.",
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, d.last_gift_date AS date,
+                   ROUND(COALESCE(d.total_giving, 0)::numeric, 2) AS amount, 'Given in total' AS detail
+              FROM donors d
+             WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.assigned_to = ?
+               AND COALESCE(d.stage, d.suggested_stage) IN ('prospect','qualify','cultivate','solicit','steward','lapsed')`,
+      args: [orgId, p.officer], order: "amount DESC, id",
+    }),
+  },
   "mailbox-emails": {
     label: "Emails logged from your inbox",
     measure: () => "count",

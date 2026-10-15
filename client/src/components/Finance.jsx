@@ -1165,7 +1165,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 Your giving history lives in Reports
               </div>
               <div style={{ fontSize:12, color:T.ink2, lineHeight:1.5 }}>
-                {fmtFull(summary.unledgeredGiving)} of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
+                {/* FIX-40: the amount opens where that giving lives */}
+                <button type="button" onClick={() => onNavigate("reports")} className="figure-inline"
+                  style={{ background:"none", border:"none", padding:0, font:"inherit", color:"inherit", fontWeight:700, cursor:"pointer" }}>{fmtFull(summary.unledgeredGiving)}</button> of imported giving{summary.giftHistoryCount ? ` across ${summary.giftHistoryCount.toLocaleString()} gifts` : ""} isn't in this ledger.
                 The ledger tracks <strong>money moving through Steward</strong> connect Stripe or log a transaction. Your full giving record is in Reports.
               </div>
             </div>

@@ -2897,8 +2897,12 @@ app.get("/email-marketing/campaigns/:id/people", requireAuth, wrap(async (req, r
   const which = String(req.query.which || "opens");
   const [c] = await query(`SELECT * FROM email_marketing_campaigns WHERE id=? AND org_id=?`, [req.params.id, orgId]);
   if (!c) return res.status(404).json({ error: "Not found" });
+  // FIX-40 · "delivered" is everyone the tool told Steward about for this
+  // campaign. The tool reports a delivered COUNT but not its whole send list,
+  // so the sentence below says how many of them Steward can name.
   const clause = which === "clicks" ? "a.clicked = true"
                : which === "unsubscribes" ? "a.unsubscribed = true"
+               : which === "delivered" ? "true"
                : "a.opened = true";
   const rows = await query(
     `SELECT a.donor_id, a.email, a.opened, a.clicked, a.clicked_label, a.unsubscribed, a.occurred_at,
@@ -2919,11 +2923,24 @@ app.get("/email-marketing/campaigns/:id/people", requireAuth, wrap(async (req, r
   // list and not in her CRM.
   const counted = which === "clicks" ? Number(c.clicks) || 0
                 : which === "unsubscribes" ? Number(c.unsubscribes) || 0
+                : which === "delivered" ? Number(c.sends) || 0
                 : Number(c.opens) || 0;
   const named = rows.length;
   const verb = which === "clicks" ? "clicked" : which === "unsubscribes" ? "unsubscribed" : "opened";
+  const PROVIDER = { mailchimp: "Mailchimp", constantcontact: "Constant Contact", constant_contact: "Constant Contact" };
+  const campaign = { id: c.id, name: c.name, sentAt: c.sent_at, subject: c.subject || null,
+                     provider: PROVIDER[c.provider] || c.provider, sends: Number(c.sends) || 0 };
+  if (which === "delivered") {
+    return res.json({
+      campaign, which, total: named, counted,
+      people: rows.map(r => ({ donorId: r.donor_id, name: r.donor_name || r.email, email: r.email,
+        opened: r.opened === true, clicked: r.clicked === true, clickedLabel: r.clicked_label || null,
+        unsubscribed: r.unsubscribed === true, at: r.occurred_at })),
+      sentence: `${campaign.provider} delivered it to ${counted.toLocaleString()}. It tells Steward only about the people who opened, clicked or asked to stop, so Steward can name ${named.toLocaleString()} of them.`,
+    });
+  }
   res.json({
-    campaign: { id: c.id, name: c.name, sentAt: c.sent_at },
+    campaign,
     which,
     people: rows.map(r => ({ donorId: r.donor_id, name: r.donor_name || r.email, email: r.email,
       opened: r.opened === true, clicked: r.clicked === true, clickedLabel: r.clicked_label || null,
