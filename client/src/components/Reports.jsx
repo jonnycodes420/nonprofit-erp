@@ -481,7 +481,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
           { key: "month", label: "Month", type: "month" },
           { key: "gifts", label: "Gifts", type: "count", render: r => r.source ? <Figure variant="cell" kind="count" value={r.gifts} label={`Gifts in ${r.month}`} source={{ ...r.source, params: { ...r.source.params, measure: "count" } }} /> : r.gifts },
           { key: "total", label: "Total", type: "money", render: cellFig("money", "Given that month") },
-          { key: "donors", label: "Unique donors", type: "number" },
+          // FIX-40: each month's givers open, through the same "givers" source the period's count uses.
+          { key: "donors", label: "Unique donors", type: "number", render: r => r.source ? <Figure variant="cell" kind="count" value={r.donors} label={`Donors who gave in ${r.month}`} source={{ key: "givers", params: (({ measure, ...rest }) => rest)(r.source.params || {}) }} /> : r.donors },
         ]} rows={d.monthly} />
       </>;
     } else if (active === "by-group") {

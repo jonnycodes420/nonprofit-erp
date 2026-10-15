@@ -119,9 +119,9 @@ export function EmailsReceived({ donorId, firstName }) {
         ? <div style={{ fontSize: 13, color: T.ink3 }}>No campaign, sequence, journey email or thank-you on file for {firstName || "this person"} yet.</div>
         : rows.map(e => (
           <button key={e.kind + e.ref} type="button" data-testid="dp-email-received-row" data-kind={e.kind} onClick={() => setOpen(e.open.path)}
-            style={{ display: "flex", width: "100%", gap: 12, alignItems: "baseline", textAlign: "left", background: "none", border: "none", borderTop: "1px solid " + T.bg3, padding: "8px 0", cursor: "pointer", font: "inherit" }}>
+            style={{ display: "flex", flexWrap: "wrap", width: "100%", columnGap: 12, rowGap: 2, alignItems: "baseline", textAlign: "left", background: "none", border: "none", borderTop: "1px solid " + T.bg3, padding: "8px 0", cursor: "pointer", font: "inherit" }}>
             <span style={{ fontSize: 11, color: T.ink3, minWidth: 104 }}>{KIND[e.kind] || e.kind}</span>
-            <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: T.ink, textDecoration: "underline" }}>{e.subject || e.title}
+            <span style={{ flex: "1 1 220px", minWidth: 0, fontSize: 13, color: T.ink, textDecoration: "underline" }}>{e.subject || e.title}
               {e.subject && e.title && e.subject !== e.title && <span style={{ color: T.ink3, textDecoration: "none" }}> · {e.title}</span>}</span>
             <span style={{ fontSize: 12, color: T.ink3, whiteSpace: "nowrap" }}>{e.sentAt ? displayDateTime(e.sentAt) : ""}</span>
           </button>

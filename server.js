@@ -5252,6 +5252,9 @@ async function runCampaignSend(campaign, org, donors) {
         } else {
           const bodyHtml = await legacyCampaignBody(campaign.body, donor, org.name, year);
           htmlFull = brandHeader + bodyHtml + footer + pixel;
+          // FIX-40 · the subject gets the same tags as the body. It went out raw,
+          // so a donor read "Thank you, {{first_name}}" in her inbox.
+          personSubject = await legacyCampaignBody(campaign.subject || "", donor, org.name, year);
         }
 
         try {

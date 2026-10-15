@@ -7,9 +7,9 @@ reads (`tab · selector · how`). `how` is `link` (a real link to a profile), `r
 
 | Tab | What | Was | Now | Probe |
 |---|---|---|---|---|
-| Overview | Emails sent (0, and wrong: it summed only the six newest campaigns, all drafts) | plain | every email sent, one row per person (`emails-sent`) | hub · `[data-testid=hub-stat][data-source-key=emails-sent]` · rows |
-| Overview | Open rate | plain | the sent campaigns, each with its rate | hub · `button[data-testid=hub-stat]` · tab |
-| Overview | Sequences running | plain | Sequences | hub · `button[data-testid=hub-stat]` · tab |
+| Overview | Emails sent (0, and wrong: it summed only the six newest campaigns, all drafts) | plain | every email sent, one row per person (`emails-sent`) | hub · `[data-testid=hub-stat-sent]` · rows |
+| Overview | Open rate | plain | the sent campaigns, each with its rate | hub · `[data-testid=hub-stat-rate]` · tab |
+| Overview | Sequences running | plain | Sequences | hub · `[data-testid=hub-stat-sequences]` · tab |
 | Overview | Recent sends rows | plain | a sent campaign opens its page; a draft opens Campaigns | hub · `[data-testid=hub-recent]` · page |
 | Overview | Audience counts in the rail (1,158, 55, 569 …) | plain | a group's count opens its members (`group-members`); the others open the screen their people live on | hub · `[data-testid=hub-audience-count] button` · rows |
 | Campaigns | Sent (180) | plain | that campaign's emails, one row per person (`emails-sent` with `campaign`) | campaigns · `[data-testid=camp-sent-open]` · rows |

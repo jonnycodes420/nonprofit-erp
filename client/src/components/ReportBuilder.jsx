@@ -118,7 +118,8 @@ export function ReportTable({ cols: allCols, rows, personOf, onOpen, foot = true
           </tr>;
         })}
       </tbody>
-      {showFoot && <tfoot>
+      {/* FIX-40: the foot is the sum of the rows above it, each of which opens; it is plain on purpose. */}
+      {showFoot && <tfoot data-plain-on-purpose="the total of the rows above">
         <tr data-testid="report-total-row">
           {cols.map((c, i) => {
             const style = { padding: "10px 10px", borderTop: `2px solid ${T.bg3}`, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", textAlign: align(c), ...(sticky ? { position: "sticky", bottom: 0, zIndex: i === 0 ? 3 : 2, background: T.white, ...(i === 0 ? { left: 0 } : null) } : null) };

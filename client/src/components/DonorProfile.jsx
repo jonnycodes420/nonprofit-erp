@@ -1978,7 +1978,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   first thing. It is display type now; the email moved to the
                   rail's contact block, where somebody looks when they are
                   about to call. */}
-              <span className="dph-name" data-testid="dp-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+              <span className="dph-name" data-testid="dp-name" data-plain-on-purpose="the page is this person" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
                 fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{displayName(donor.name,{isOrg:donor.kind==="org"||donor.kind==="organization"})}</span>
               {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
                   it is brass (the overdue colour), never terracotta. */}

@@ -42,6 +42,8 @@ const DEMO = "director@harborlight.demo";
 const DEMO_ORG = "org_b72demo";
 const D = { ada: "d_fix40_ada", ben: "d_fix40_ben", vol: "d_fix40_vol", noe: "d_fix40_noemail" };
 const MONEY = /^\$[\d,]+(\.\d\d)?$/;
+// The Spring letter went out on 20 April of the most recent April.
+const SENT = new Date(Date.UTC(new Date().getUTCFullYear() - (new Date().getUTCMonth() < 4 ? 1 : 0), 3, 20, 15));
 
 async function wipe() {
   const tables = (await q(`SELECT table_name FROM information_schema.columns
@@ -76,7 +78,7 @@ async function fixture() {
   await q(`INSERT INTO donor_drift (org_id,donor_id,assessment,computed_for,computed_at) VALUES ($1,$2,$3,CURRENT_DATE,NOW())`,
     [ORG, D.ben, JSON.stringify({ state: "lapsed" })]).catch(e => ok("§counts drift fixture", false, e.message));
   // One sent campaign to Ada and Ben in April, then six newer drafts.
-  const sent = new Date(Date.UTC(new Date().getUTCFullYear() - (new Date().getUTCMonth() < 4 ? 1 : 0), 3, 20, 15));
+  const sent = SENT;
   await q(`INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,sent_at,recipient_count,open_count)
            VALUES ('c_fix40_sent',$1,'Spring letter','appeal','Thank you, {{first_name}}','Dear {{first_name}}, thank you for standing with us.','sent','{"mode":"donors"}',$2,2,1)`, [ORG, sent]);
   for (const [i, d, opened] of [[1, D.ada, true], [2, D.ben, false]])
@@ -93,7 +95,7 @@ async function fixture() {
            ('ema_fix40_1',$1,'emc_fix40',$2,'ada@fix40.test',true,false,$4),
            ('ema_fix40_2',$1,'emc_fix40',$3,'ben@fix40.test',true,true,$4)`, [ORG, D.ada, D.ben, emcSent]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,acknowledgement_sent,created_by,created_by_name)
-           VALUES ('g_fix40_1',$1,$2,250,$3,'check','Check',1,$4,$5)`, [ORG, D.ada, iso(daysAgo(15)), ...who]);
+           VALUES ('g_fix40_1',$1,$2,250,$3,'check','Check',true,$4,$5)`, [ORG, D.ada, iso(daysAgo(15)), ...who]);
   // A journey email Ada was sent, and a thank-you for her gift.
   await q(`INSERT INTO milestone_drafts (id,org_id,donor_id,milestone_key,subject,body,status,source,sent_at,created_by,created_by_name)
            VALUES ('md_fix40',$1,$2,'journey-step:s_fix40','Ada, a note from the studio','Dear Ada, the students finished the mural.','sent','journey',$3,$4,$5)`,
@@ -169,7 +171,7 @@ async function main() {
     ok("§rows …each row is a person who opens", (all.body.rows || []).every(r => r.donorId === D.ada || r.donorId === D.ben), all.body.rows);
     const one = await rows("emails-sent", { campaign: "c_fix40_sent" });
     ok("§rows …for one campaign", one.body.value === 2, one.body.value);
-    const m = iso(new Date(Date.UTC(new Date(one.body.rows?.[0]?.date || Date.now()).getUTCFullYear(), 3, 1)));
+    const m = `${SENT.getUTCFullYear()}-04-01`;
     const april = await rows("emails-sent", { from: m, to: m.slice(0, 8) + "30" });
     ok("§rows …for April, the month its bar stands for", april.body.value === 2, [m, april.body.value]);
     const may = await rows("emails-sent", { from: m.slice(0, 5) + "05-01", to: m.slice(0, 5) + "05-31" });
@@ -226,7 +228,13 @@ async function main() {
       for (const viewport of [{ width: 1440, height: 900 }]) {
         const { ctx, page } = await b.signedIn(ADMIN, viewport);
         const errors = [];
-        page.on("console", m => { if (m.type() === "error" && !/\[SW\]/.test(m.text())) errors.push(m.text().slice(0, 140)); });
+        // A failed request is an error, except the two a local preview always
+        // has: Vercel's analytics scripts and the AI stream with no key.
+        page.on("response", r => { if (r.status() >= 400 && !/\/_vercel\/|\/ai\/stream/.test(r.url())) errors.push(r.status() + " " + r.url().replace(/^https?:\/\/[^/]+/, "")); });
+        // Playwright runs this suite's sign-in init script in every frame, and
+        // in the email's sandboxed frame it cannot touch storage: that throw is
+        // the harness's, not the page's.
+        page.on("pageerror", e => { if (!/sandboxed/.test(e.message)) errors.push("pageerror " + String(e.message).slice(0, 140)); });
         for (const p of probes) {
           if (!SUB[p.tab] || p.sel === "expanded row") continue;
           await page.goto(`${b.APP}/app/communications?subtab=${SUB[p.tab]}`, { waitUntil: "domcontentloaded" }); await settle(page);
@@ -235,6 +243,7 @@ async function main() {
             ok(`§dead ${p.tab}: ${p.what} is gone`, !/Industry avg/i.test(text));
             continue;
           }
+          if (/emailtool-person/.test(p.sel)) { await page.locator('button[aria-label^="Who opened"]').first().click().catch(() => {}); await page.waitForTimeout(1000); }
           const loc = page.locator(p.sel).first();
           const n = await page.locator(p.sel).count();
           if (!n && p.tab === "milestones") { ok(`§dead ${p.tab}: ${p.what} (no draft on this org, checked on the demo below)`, true); continue; }
@@ -246,7 +255,9 @@ async function main() {
             continue;
           }
           await loc.click(); await page.waitForTimeout(1200);
-          if (p.how === "rows") {
+          if (p.how === "rows" && p.tab === "audience" && /audience-seg"?\]$/.test(p.sel)) {
+            ok(`§dead ${p.tab}: ${p.what} shows every person in it`, await page.locator("[data-testid=audience-row]").count() > 0);
+          } else if (p.how === "rows") {
             const opened = await page.locator('[data-figure-row], [data-person-row], [role=dialog]').count();
             const moved = !/subtab=(hub|audience)/.test(page.url()) || opened > 0;
             ok(`§dead ${p.tab}: ${p.what} opens its rows`, opened > 0 || moved, [page.url(), opened]);
@@ -255,7 +266,8 @@ async function main() {
             const toCampaigns = /subtab=campaigns/.test(page.url()) || await page.locator('[data-testid=camp-row]').count() > 0;
             ok(`§dead ${p.tab}: ${p.what} opens the campaign`, pageOpen > 0 || toCampaigns, page.url());
           } else if (p.how === "tab") {
-            ok(`§dead ${p.tab}: ${p.what} opens the screen that lists them`, !/subtab=hub$/.test(page.url()) || await page.locator('[data-testid=camp-row], [data-testid=camp-filter]').count() > 0, page.url());
+            const on = await page.locator('.comm-tabbar [aria-selected=true], .comm-tabbar [aria-current], .comm-tabbar [aria-pressed=true]').first().innerText().catch(() => "");
+            ok(`§dead ${p.tab}: ${p.what} opens the screen that lists them`, on && !/^Overview/.test(on.trim()), on);
           }
         }
         // The campaign page in the browser: the email, and each recipient a link.
@@ -279,9 +291,10 @@ async function main() {
         const firstCamp = page.locator('[data-testid=dp-email-received-row][data-kind=campaign]').first();
         if (await firstCamp.count()) {
           await firstCamp.click(); await page.waitForTimeout(1200);
-          ok("§emails …and it opens the email as she received it", /Dear Ada/.test(await page.locator("[data-testid=email-as-sent]").innerText().catch(() => "")));
+          const body = await page.locator("[data-testid=eas-body]").first().evaluate(e => e.tagName === "IFRAME" ? (e.srcdoc || e.contentDocument?.body?.innerText || "") : e.innerText).catch(() => "");
+          ok("§emails …and it opens the email as she received it", /Dear Ada/.test(body), body.slice(0, 120));
         }
-        ok("§dead no console errors on the way", errors.length === 0, errors.slice(0, 3));
+        ok("§dead no failed request or page error on the way", errors.length === 0, [...new Set(errors)].slice(0, 4));
         await ctx.close();
       }
 

@@ -1297,8 +1297,8 @@ function EmailToolPanel({ onNavigate }) {
       )}
 
       {!!rows.length && (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflowX: "auto", background: "#fff" }}>
+          <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: T.cream, textAlign: "left" }}>
                 <th style={{ padding: "10px 12px", color: T.ink }}>Campaign</th>
@@ -2217,10 +2217,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   {/* FIX-40 · each opens: every email sent, the sent
                       campaigns, the sequences. */}
                   {[
-                    { label: "Emails sent", value: (hub.stats.totalSent || 0).toLocaleString(), source: { key: "emails-sent", params: {} }, n: hub.stats.totalSent || 0 },
-                    { label: "Open rate", value: hub.stats.openRate === null ? "Not sent yet" : hub.stats.openRate + "%", go: () => { setCampFilter("sent"); setNav("campaigns"); } },
-                    { label: "Sequences running", value: hub.stats.activeSequences, go: () => setNav("sequences") },
-                  ].map(({ label, value, source, n, go }) => {
+                    { label: "Emails sent", id: "sent", value: (hub.stats.totalSent || 0).toLocaleString(), source: { key: "emails-sent", params: {} }, n: hub.stats.totalSent || 0 },
+                    { label: "Open rate", id: "rate", value: hub.stats.openRate === null ? "Not sent yet" : hub.stats.openRate + "%", go: () => { setCampFilter("sent"); setNav("campaigns"); } },
+                    { label: "Sequences running", id: "sequences", value: hub.stats.activeSequences, go: () => setNav("sequences") },
+                  ].map(({ label, id, value, source, n, go }) => {
                     const inner = (
                       <>
                         <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
@@ -2229,8 +2229,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     );
                     const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132, textAlign: "left" };
                     return source
-                      ? <OpenRows key={label} testid="hub-stat" source={source} title={label} value={n} style={box}>{inner}</OpenRows>
-                      : <button key={label} type="button" data-testid="hub-stat" onClick={go} style={{ ...box, font: "inherit", cursor: "pointer" }}>{inner}</button>;
+                      ? <OpenRows key={label} testid={"hub-stat-" + id} source={source} title={label} value={n} style={box}>{inner}</OpenRows>
+                      : <button key={label} type="button" data-testid={"hub-stat-" + id} onClick={go} style={{ ...box, font: "inherit", cursor: "pointer" }}>{inner}</button>;
                   })}
                 </div>
               )}

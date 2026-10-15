@@ -55,6 +55,9 @@ export function AudienceTab({ onEmailSegment }) {
   const cols = giving ? "1fr 200px 120px 110px" : "1fr 200px 120px";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="audience-tab">
+      {/* At phone width a row is the name and what they gave; the email and
+          stage are on the profile the name opens. */}
+      <style>{`@media (max-width: 640px){ .aud-grid{grid-template-columns:minmax(0,1fr) auto !important} .aud-email,.aud-stage{display:none} }`}</style>
       <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Audience</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {d.segments.map(s => (
@@ -79,15 +82,15 @@ export function AudienceTab({ onEmailSegment }) {
         <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>Nobody is in this audience today.</div>
       ) : (
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: cols, padding: "9px 16px", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
-            <span>Name</span><span>Email</span><span>Stage</span>{giving && <span>Given in total</span>}
+          <div className="aud-grid" style={{ display: "grid", gridTemplateColumns: cols, padding: "9px 16px", fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+            <span>Name</span><span className="aud-email">Email</span><span className="aud-stage">Stage</span>{giving && <span>Given in total</span>}
           </div>
           {shown.map(p => (
-            <div key={p.id} data-testid="audience-row" className="audience-row"
+            <div key={p.id} data-testid="audience-row" className="audience-row aud-grid"
               style={{ display: "grid", gridTemplateColumns: cols, padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center", minWidth: 0 }}>
               <DonorLink id={p.id} style={{ fontWeight: 600, color: T.ink }}>{p.name}</DonorLink>
-              <span style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.email}</span>
-              <span style={{ fontSize: 11.5, color: T.ink3 }}>{p.stage ? stageName(p.stage) : "Not set"}</span>
+              <span className="aud-email" style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.email}</span>
+              <span className="aud-stage" style={{ fontSize: 11.5, color: T.ink3 }}>{p.stage ? stageName(p.stage) : "Not set"}</span>
               {giving && <span style={{ fontSize: 12.5, color: T.ink }}>
                 <Figure variant="cell" kind="money" value={p.totalGiving} label={`${p.name}, given in total`}
                   source={{ key: "donor-lifetime", params: { donor: p.id } }} />
