@@ -225,3 +225,51 @@ export function ProfileGlance({ status, onOpenDonor, birthday }) {
     </div>
   );
 }
+
+// PROFILE-1 (header) · the glance's pieces, each where the new profile reads
+// it: the highlights on the Overview, and the next line with its Why? inside
+// the ask card. The tiles went to the header (ProfileHeaderFigures.jsx), the
+// birthday to the line under the name, the volunteer line to the rail.
+export function Highlights({ status, onOpenDonor }) {
+  if (!status || !status.highlights || !status.highlights.length) return null;
+  return (
+    <div data-testid="dp-highlights" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px" }}>
+      <div style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>Highlights</div>
+      <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 4 }}>
+        {status.highlights.map(h => (
+          <li key={h.key} style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>
+            <Opens source={h.source} title={h.text} explanation="The gifts this fact is drawn from." testid={`dp-highlight-${h.key}`} onSelectDonor={onOpenDonor}
+              style={{ textAlign: "left", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{h.text}</Opens>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export function NextLine({ status }) {
+  const [why, setWhy] = useState(false);
+  if (!status || !status.next) return null;
+  return (
+    <div data-testid="dp-next-line" style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>
+      <span style={{ fontWeight: 600 }}>{status.next.text}</span>{" "}
+      <button type="button" data-testid="dp-next-why" onClick={() => setWhy(w => !w)} aria-expanded={why}
+        style={{ background: "transparent", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+        Why?
+      </button>
+      {why && (
+        <div data-testid="dp-next-why-text" style={{ fontSize: 12.5, color: T.ink3, marginTop: 4 }}>
+          {status.next.why}{status.next.ask ? ` ${status.next.ask.sentence}` : ""}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function VolunteerLine({ status, onOpenDonor, color }) {
+  if (!status || !status.volunteer) return null;
+  return (
+    <Opens source={status.volunteer.source} title={status.volunteer.sentence} explanation={status.volunteer.sentence} testid="dp-glance-volunteer-open" onSelectDonor={onOpenDonor}
+      style={{ textAlign: "left", textDecoration: "underline dotted", textUnderlineOffset: 3, color }}>{status.volunteer.line}</Opens>
+  );
+}

@@ -753,6 +753,16 @@ export function GlobalStyles() {
       .dph-desktop-act{display:none!important;}
       .dph-more{display:flex!important;align-items:center!important;justify-content:center!important;min-width:48px!important;min-height:48px!important;}
       .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      /* PROFILE-1 (header): the header's seven numbers are a two-column grid
+         inside the header at 390, each with a hairline above it. */
+      .dph-figures{grid-template-columns:repeat(2,minmax(0,1fr))!important;margin:6px -14px -10px!important;padding:0 0 8px!important;}
+      .dph-fig{border-left:none!important;border-top:1px solid ${T.bg3};padding:9px 14px 4px!important;}
+      .dph-fig:nth-child(-n+2){border-top:none;}
+      .dp-about-grid{grid-template-columns:1fr!important;}
+      .dp-about-grid>div{border-left:none!important;border-top:1px solid ${T.bg3}!important;}
+      .dp-about-grid>div:first-child{border-top:none!important;}
+      [data-testid="dp-tabs"]{position:static!important;}
+      [data-testid="dp-stage-bar"]{grid-template-columns:repeat(3,minmax(0,1fr))!important;}
       /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
          not a color fill, the §9 gradient ban is about bars/thermometers). */
       /* mask stops only use ALPHA, ink stands in for opaque (allowlist-clean) */

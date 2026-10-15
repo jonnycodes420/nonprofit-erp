@@ -160,13 +160,13 @@ function ProposalForm({ open, onClose, onSaved, meta, donorId, existing, donorNa
 // Committed asks which door the money came through and writes exactly one of
 // the two. Declined asks for a reason from the list. Reopening a decline asks
 // out loud, because the server refuses a silent one.
-function MoveModal({ open, onClose, onSaved, meta, proposal }) {
+function MoveModal({ open, onClose, onSaved, meta, proposal, initialStage = null }) {
   const [stage, setStage] = useState("");
   const [kind, setKind] = useState("pledge");
   const [reason, setReason] = useState("");
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open && proposal) { setStage(proposal.stage); setKind("pledge"); setReason(""); setErr(""); } }, [open, proposal]);
+  useEffect(() => { if (open && proposal) { setStage(initialStage || proposal.stage); setKind("pledge"); setReason(""); setErr(""); } }, [open, proposal]);
   if (!open || !proposal) return null;
 
   const committing = (stage === "committed" || stage === "stewarding") && !proposal.pledgeId && !proposal.giftId;
@@ -373,15 +373,49 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
 // ── THE PROFILE PANEL (above giving history) ───────────────────────────────
 // The brief puts proposals above giving history because an open ask is what an
 // officer is here to look at; the history is the evidence behind it.
-export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals, title = "Proposals", addLabel = "+ New proposal", testid = "donor-proposals-panel", children = null, after = null }) {
+// PROFILE-1 (header) — ONE READ OF A PERSON'S ASKS. The profile's ask card
+// (Overview) and the Asks & pipeline tab show the same proposals, so the
+// profile reads them once here and hands the result to both.
+export function useDonorProposals(donorId) {
   const [d, setD] = useState(null);
-  const [adding, setAdding] = useState(false);
-  const [moving, setMoving] = useState(null);
-  const [editing, setEditing] = useState(null);
   const load = useCallback(() => {
     apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
   }, [donorId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setD(null); load(); }, [load]);
+  return [d, load];
+}
+
+// PROFILE-1 (header) — the ask card's two buttons. Mark won opens the same
+// Move dialog the row's Move does, already on Committed; Update opens the
+// row's Edit. Every save is the proposal's own PUT, so the audit write logs it.
+export function ProposalQuickActions({ proposal, data, reload, donorId, donorName, isReadOnly }) {
+  const [moving, setMoving] = useState(null);
+  const [editing, setEditing] = useState(null);
+  if (!proposal || !data) return null;
+  const meta = { stages: data.stages, probabilities: data.probabilities, declineReasons: data.declineReasons, funds: [], officers: [] };
+  const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, color: T.ink, cursor: isReadOnly ? "not-allowed" : "pointer", fontFamily: "inherit" };
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <button type="button" data-testid="dp-ask-mark-won" disabled={isReadOnly} onClick={() => setMoving({ ...proposal, _to: "committed" })} style={btn}>Mark won</button>
+      <button type="button" data-testid="dp-ask-update" disabled={isReadOnly} onClick={() => setEditing(proposal)} style={btn}>Update</button>
+      <MoveModal open={!!moving} onClose={() => setMoving(null)} onSaved={reload} meta={meta} proposal={moving} initialStage={moving && moving._to} />
+      <ProposalForm open={!!editing} onClose={() => setEditing(null)} onSaved={reload} meta={meta} donorId={donorId} existing={editing} donorName={donorName} />
+    </div>
+  );
+}
+
+export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals, title = "Proposals", addLabel = "+ New proposal", testid = "donor-proposals-panel", children = null, after = null, data = undefined, reload = null }) {
+  const [own, setD] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [moving, setMoving] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const shared = data !== undefined;
+  const d = shared ? data : own;
+  const load = useCallback(() => {
+    if (shared) { reload && reload(); return; }
+    apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
+  }, [donorId, shared, reload]);
+  useEffect(() => { if (!shared) load(); }, [load, shared]);
   // HOTFIX-1 — the open proposals go up to the profile, so "what do I do
   // next" can name one instead of saying nothing is open. One fetch, one
   // owner; the profile does not fetch this route a second time.

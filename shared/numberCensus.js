@@ -108,6 +108,17 @@ export const NUMBER_CENSUS = [
     testid: "dp-tile-def-Open ask",
   },
 
+  // PROFILE-1 (header) — the second of the header's seven numbers.
+  {
+    id: "profile.thisYear",
+    surface: "Donor profile",
+    label: "This year",
+    computation: "figureSources donor-gifts-between — SUM of this donor's gifts rows dated 1 January of the org's current year to the org's civil today; a refund comes off it",
+    sentence: "Every gift on this record since 1 January this year, added up. A refund comes off it. Click it for the gifts behind it.",
+    where: HOVER,
+    testid: "dp-tile-def-This year",
+  },
+
   // INT-BUILD-1 — the two figures a calendar and an inbox make possible.
   {
     id: "profile.lastMet",

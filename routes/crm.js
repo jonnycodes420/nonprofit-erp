@@ -4246,6 +4246,10 @@ const PROFILE_FIGURE_BLANKS = {
     blank: "Nobody here has met this person yet, on a connected calendar or logged by hand. The first meeting shows here the day it happens.",
     short: "Not met yet.",
   },
+  thisYear: {
+    blank: "Nothing given yet this year. A gift dated this year shows here the day it is recorded.",
+    short: "Nothing yet this year.",
+  },
   lastEmail: {
     blank: "No email with this person is on the record. Connect your inbox, or BCC Steward, and the next one lands here.",
     short: "No email yet.",
@@ -4265,13 +4269,30 @@ async function donorProfileFigures(orgId, donorId, today) {
     // INT-BUILD-1 — the header reads Lifetime, Last gift, Last met, Last email.
     ["lastMet",   { key: "donor-last-met",   params: { donor: donorId, today } }],
     ["lastEmail", { key: "donor-last-email", params: { donor: donorId, today } }],
+    // PROFILE-1 (header) — This year, beside Lifetime in the header's row.
+    ["thisYear",  { key: "donor-gifts-between", params: { donor: donorId, from: `${String(today).slice(0, 4)}-01-01`, to: today } }],
   ];
+  // PROFILE-1 (header) — the line under three of the numbers is read off the
+  // figure's own first row (the same rows its drawer opens), so the date under
+  // Last gift is the date of the gift that number is.
+  const UNDER = {
+    lastGift: r => r.date ? { date: String(r.date).slice(0, 10) } : null,
+    lastMet: r => ({ date: String(r.date || "").slice(0, 10) || null, what: String(r.name || "").split("\n")[0].slice(0, 60) || null }),
+    lastEmail: r => ({ date: String(r.date || "").slice(0, 10) || null, direction: /^From them/.test(r.detail || "") ? "replied" : /^To them/.test(r.detail || "") ? "sent" : null }),
+  };
   const got = await Promise.all(wanted.map(async ([k, source]) => {
     const f = await figureSources.figureValue(orgId, source, deps);
     const empty = !f.totalRows;
+    let under = null;
+    if (!empty && UNDER[k]) {
+      const full = await figureSources.figure(orgId, source, deps, { page: 1, pageSize: 1 });
+      const r = full && full.rows && full.rows[0];
+      under = r ? UNDER[k](r) : null;
+    }
     return [k, {
       value: empty ? null : f.value,
       cents: empty ? null : f.cents,
+      under,
       source,
       blank: empty ? PROFILE_FIGURE_BLANKS[k].blank : null,
       blankShort: empty ? PROFILE_FIGURE_BLANKS[k].short : null,
@@ -4336,6 +4357,171 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   d.figures = await donorProfileFigures(
     req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   res.json(d);
+}));
+
+// ═══ PROFILE-1 (header + tabs) · THE RAIL, IN ONE READ ═══════════════════════
+// The facts the profile's ink rail adds beside Next step and the scores: the
+// giving rhythm LIVE-1 stored, a monthly plan, gifts waiting for a thank-you,
+// what is coming up, how to reach them, volunteering and where their gifts
+// come from. A card with nothing to say is null or an empty list, never an
+// empty object, so the client leaves it out. Every number carries the source
+// its rows open from. A read only: nothing here writes or heals.
+const RAIL_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const railMeetings = require("../meetings");
+const railMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 });
+const RAIL_PROVIDER_WORD = { paypal: "PayPal", zeffy: "Zeffy", givebutter: "Givebutter", square: "Square", stripe: "Stripe", quickbooks: "QuickBooks" };
+function railNextBirthday(month, day, today) {
+  if (!month || !day) return null;
+  const y = +today.slice(0, 4);
+  const on = yr => {
+    const leap = yr % 4 === 0 && (yr % 100 !== 0 || yr % 400 === 0);
+    const d = month === 2 && day === 29 && !leap ? 28 : day;
+    return `${yr}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  };
+  const thisYear = on(y);
+  return thisYear >= today ? thisYear : on(y + 1);
+}
+app.get("/donors/:id/rail", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId, id = req.params.id;
+  const [d] = await query(
+    `SELECT id, name, email, phone, address, address2, city, state, zip, country, birth_month, birth_day,
+            deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email, email_unreachable, address_unmailable
+       FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const plus = n => { const t = new Date(today + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  const horizon = plus(60);
+  const since = await orgStewardStart(orgId);
+  const val = s => figureSources.figureValue(orgId, s);
+  const [rhy, subs, srcRec, unthanked, events, meetingsAhead, steps, vh, origins, suppressed] = await Promise.all([
+    query(`SELECT rhythm, expected_next FROM donor_rhythm WHERE org_id = ? AND donor_id = ?`, [orgId, id]),
+    query(`SELECT id, amount, interval, status, TO_CHAR(current_period_end, 'YYYY-MM-DD') AS next_charge
+             FROM recurring_subscriptions
+            WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered','paused')
+            ORDER BY (status IN ('past_due','recovering')) DESC, amount DESC LIMIT 1`, [orgId, id]),
+    query(`SELECT r.id, r.amount_cents, r.interval, r.expected_next, r.status, s.provider, s.display_name
+             FROM giving_recurring r JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
+            WHERE r.org_id = ? AND r.donor_id = ? AND r.status <> 'ended' AND s.status <> 'disconnected'
+            ORDER BY r.amount_cents DESC LIMIT 1`, [orgId, id]),
+    since ? query(`SELECT g.id, g.amount, g.date,
+                          (SELECT t.id FROM thank_you_drafts t WHERE t.org_id = g.org_id AND t.gift_id = g.id
+                              AND t.sent_at IS NULL AND t.skipped_at IS NULL ORDER BY t.created_at DESC LIMIT 1) AS draft_id
+                     FROM gifts g
+                    WHERE g.org_id = ? AND g.donor_id = ? AND COALESCE(g.is_sample,false) = false
+                      AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false) = false AND g.amount > 0
+                    ORDER BY g.date DESC, g.id DESC`, [orgId, id, since]) : [],
+    query(`SELECT e.id, e.name, LEFT(e.date::text, 10) AS date FROM event_attendees ea JOIN events e ON e.id = ea.event_id AND e.org_id = ea.org_id
+            WHERE ea.donor_id = ? AND ea.org_id = ? AND LEFT(e.date::text, 10) >= ?
+              AND COALESCE(ea.status, '') NOT IN ('cancelled','canceled','declined')
+            ORDER BY e.date ASC LIMIT 6`, [id, orgId, today]),
+    railMeetings.meetingsWith(orgId, id, { held: false, limit: 50 }),
+    query(`SELECT st.id, st.label, st.due_date, p.template_name
+             FROM cultivation_plan_steps st JOIN cultivation_plans p ON p.id = st.plan_id AND p.org_id = st.org_id
+            WHERE st.org_id = ? AND p.donor_id = ? AND p.status = 'active' AND st.status IN ('open','pending')
+              AND st.due_date >= ? AND st.due_date <= ?
+            ORDER BY st.due_date ASC LIMIT 6`, [orgId, id, today, horizon]),
+    query(`SELECT COALESCE(SUM(hours), 0)::float AS h, TO_CHAR(MAX(date::date), 'YYYY-MM-DD') AS last
+             FROM volunteer_shifts WHERE org_id = ? AND person_id = ?`, [orgId, id]),
+    query(`SELECT CASE WHEN g.giving_page_id IS NOT NULL THEN 'page'
+                       WHEN g.giving_source_id IS NOT NULL THEN 'source'
+                       WHEN g.stripe_payment_id IS NOT NULL THEN 'stripe'
+                       WHEN g.read_from_vendor = 'quickbooks' THEN 'quickbooks' END AS origin,
+                  CASE WHEN g.giving_page_id IS NULL THEN g.giving_source_id END AS ref,
+                  COUNT(*)::int AS n
+             FROM gifts g WHERE g.org_id = ? AND g.donor_id = ?
+              AND (g.giving_page_id IS NOT NULL OR g.giving_source_id IS NOT NULL OR g.stripe_payment_id IS NOT NULL OR g.read_from_vendor = 'quickbooks')
+            GROUP BY 1, 2`, [orgId, id]),
+    d.email ? query(`SELECT 1 AS y FROM email_suppressions WHERE LOWER(email) = LOWER(?) AND (org_id = ? OR org_id IS NULL) LIMIT 1`, [d.email, orgId]) : [],
+  ]);
+  const lifetimeSrc = { key: "donor-lifetime", params: { donor: id } };
+
+  // GIVING RHYTHM: LIVE-1's stored rhythm, said once.
+  let rhythm = null;
+  const r = rhy[0];
+  if (r && (r.rhythm !== "none" || r.expected_next)) {
+    const exp = r.expected_next ? String(r.expected_next).slice(0, 10) : null;
+    const DR = require("../drift");
+    const sentence = (r.rhythm === "yearly" || r.rhythm === "year_end") && exp
+      ? `Gives every ${RAIL_MONTHS[+exp.slice(5, 7) - 1]}` : (DR.RHYTHM_WORDS[r.rhythm] || DR.RHYTHM_WORDS.none);
+    rhythm = { sentence, expectedNext: exp, late: !!exp && exp < today, source: lifetimeSrc };
+  }
+
+  // RECURRING: a monthly plan Steward charges, else a schedule in a source.
+  let recurring = null;
+  if (subs[0]) {
+    const s = subs[0], failed = ["past_due", "recovering"].includes(s.status);
+    const source = { key: "donor-gifts-from", params: { donor: id, origin: "plan", ref: s.id } };
+    const word = s.interval === "year" ? "yearly" : "monthly";
+    recurring = { amount: Number(s.amount), interval: s.interval || "month", nextCharge: failed || s.status === "paused" ? null : s.next_charge || null,
+      failed, paused: s.status === "paused",
+      sentence: failed ? `The card on their ${word} gift is failing` : s.status === "paused" ? `Their ${word} gift is paused` : `Gives ${railMoney(s.amount)} ${word}`,
+      source, given: await val(source) };
+  } else if (srcRec[0]) {
+    const s = srcRec[0], amount = Number(s.amount_cents) / 100;
+    const source = { key: "donor-gifts-from", params: { donor: id, origin: "recurring", ref: s.id } };
+    const via = RAIL_PROVIDER_WORD[s.provider] || s.display_name;
+    recurring = { amount, interval: s.interval || "month", nextCharge: s.expected_next ? String(s.expected_next).slice(0, 10) : null,
+      failed: s.status === "missed", paused: false,
+      sentence: s.status === "missed" ? `A ${via} gift they give on a schedule did not come in` : `Gives ${railMoney(amount)} ${s.interval === "year" ? "yearly" : "monthly"} through ${via}`,
+      source, given: await val(source) };
+  }
+  if (recurring && recurring.given) recurring.given = { value: recurring.given.value, count: recurring.given.totalRows };
+
+  // THANK-YOUS: the gifts the 0.6 rule says are still owed one.
+  const thankYousSource = since ? { key: "unthanked", params: { since, donor: id } } : null;
+  // Each gift opens the waiting list it is one row of.
+  const thankYous = unthanked.map(g => ({ giftId: g.id, amount: Number(g.amount), date: String(g.date).slice(0, 10),
+    draftId: g.draft_id || null, source: thankYousSource }));
+
+  // COMING UP: the next sixty days, soonest first.
+  const comingUp = [];
+  const bd = railNextBirthday(Number(d.birth_month) || 0, Number(d.birth_day) || 0, today);
+  if (bd && bd <= horizon) comingUp.push({ kind: "birthday", label: "Birthday", date: bd });
+  for (const e of events) comingUp.push({ kind: "event", label: e.name, date: e.date, id: e.id });
+  for (const m of meetingsAhead) if (m.date && m.date >= today && m.date <= horizon) comingUp.push({ kind: "meeting", label: m.title || "Meeting", date: m.date, id: m.id });
+  for (const st of steps) comingUp.push({ kind: "journey", label: st.label, date: String(st.due_date).slice(0, 10), id: st.id, journey: st.template_name });
+  comingUp.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  // VOLUNTEERING: the profile's own volunteer-hours source, lifetime.
+  const h = vh[0] && Number(vh[0].h) || 0;
+  const volunteering = h > 0 ? { hours: Math.round(h * 100) / 100, lastShift: vh[0].last || null,
+    source: { key: "volunteer-hours", params: { from: "1900-01-01", to: "2999-12-31", donor: id } } } : null;
+
+  // CONNECTED: one card per place their gifts came from.
+  const srcIds = [...new Set(origins.filter(o => o.origin === "source" && o.ref).map(o => o.ref))];
+  const srcNames = srcIds.length ? await query(`SELECT id, provider, display_name FROM giving_sources WHERE org_id = ? AND id = ANY(?)`, [orgId, srcIds]) : [];
+  const nameOf = Object.fromEntries(srcNames.map(s => [s.id, s]));
+  const connected = await Promise.all(origins.filter(o => o.origin).map(async o => {
+    const params = { donor: id, origin: o.origin, ...(o.origin === "source" ? { ref: o.ref } : {}) };
+    const source = { key: "donor-gifts-from", params };
+    const f = await val(source);
+    const s = o.origin === "source" ? nameOf[o.ref] : null;
+    const provider = o.origin === "source" ? (s ? s.provider : "source") : o.origin;
+    const label = o.origin === "page" ? "A giving page" : o.origin === "source" ? (RAIL_PROVIDER_WORD[provider] || (s && s.display_name) || "A connected source")
+      : RAIL_PROVIDER_WORD[o.origin];
+    return { provider, label, count: f.totalRows, total: f.value, source };
+  }));
+  connected.sort((a, b) => b.total - a.total);
+
+  // CONTACT: how to reach them, and every flag that says not to, plainly.
+  // The country is said only when it is not the default and there is an
+  // address to go with it ("US" alone is not an address).
+  const street = [d.address, d.address2, [d.city, [d.state, d.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")]
+    .map(x => String(x || "").trim()).filter(Boolean);
+  const country = String(d.country || "").trim();
+  const address = street.length ? [...street, ...(country && !/^(us|usa|united states)$/i.test(country) ? [country] : [])].join(", ") : null;
+  const flags = [];
+  if (d.deceased) flags.push({ key: "deceased", label: "Deceased" });
+  if (d.do_not_contact) flags.push({ key: "do_not_contact", label: "Do not contact" });
+  if (d.do_not_solicit) flags.push({ key: "do_not_solicit", label: "Do not solicit" });
+  if (d.do_not_mail) flags.push({ key: "do_not_mail", label: "Do not mail" });
+  if (d.do_not_email || suppressed.length) flags.push({ key: "do_not_email", label: "No email: opted out" });
+  if (d.email_unreachable) flags.push({ key: "email_unreachable", label: "Email bounced" });
+  if (d.address_unmailable) flags.push({ key: "address_unmailable", label: "Address returned mail" });
+  const contact = { email: d.email || null, phone: d.phone || null, address, preferred: null, flags };
+
+  res.json({ today, rhythm, recurring, thankYous, thankYousSource: thankYous.length ? thankYousSource : null,
+    comingUp: comingUp.slice(0, 6), volunteering, connected, contact });
 }));
 
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {

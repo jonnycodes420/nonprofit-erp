@@ -222,19 +222,13 @@ TILE_BG.service = T.white;
 const KIND_LABEL = { email: "Email", meeting: "Meeting", gift: "Gift", task: "Task", file: "File", service: "Volunteer service" };
 const TYPE_WORD = { meeting: "Meeting", call: "Call", visit: "Visit", ask: "Ask", stewardship: "Stewardship", event: "Event", letter: "Letter", text: "Text" };
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
-  tasks = [], attachments = [], service = [], canWrite = false }) {
-  const [prefs, setPrefs] = useState(loadTimelinePrefs);
-  const { filter, hideMass, view } = prefs;
-  const setPref = patch => setPrefs(p => { const n = { ...p, ...patch }; saveTimelinePrefs(n); return n; });
-  const setFilter = f => setPrefs(p => ({ ...p, filter: f }));   // this record only (POLISH-1)
-  const [openId, setOpenId] = useState(null);
-  const [limit, setLimit] = useState(12);
-  if (!rel) return null;
-  const first = firstNameOf(donor?.name) || "them";
+// PROFILE-1 (header) — THE TIMELINE'S ROWS, BUILT ONCE. The profile's tabs
+// (Conversations, Emails, Tasks, Notes, Files) and the Overview's Lately list
+// are this one list filtered, and the tab row's counts are its lengths, so a
+// count and the tab it labels cannot disagree.
+export function buildTimelineItems({ rel, gifts = [], interactions = [], tasks = [], attachments = [], service = [] }) {
+  if (!rel) return { items: [], fileItems: [] };
   const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
-  const filesBy = {};
-  for (const f of attachments || []) (filesBy[f.interactionId] = filesBy[f.interactionId] || []).push(f);
   const calendarMeetingIds = new Set((rel.past || []).map(e => e.id));
   const items = [];
   for (const t of rel.emailThreads || []) items.push({ kind: "email", bucket: "email", id: "t:" + t.key, date: t.lastDate, t });
@@ -281,6 +275,32 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
     .concat(mailFiles.map(mf => ({ kind: "file", bucket: "file", id: "mf:" + mf.interactionId,
       date: String(mf.date || "").slice(0, 10), mf })))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return { items, fileItems };
+}
+export function timelineCounts(built) {
+  const c = { file: built.fileItems.length };
+  for (const it of built.items) c[it.bucket] = (c[it.bucket] || 0) + 1;
+  return c;
+}
+
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null,
+  tasks = [], attachments = [], service = [], canWrite = false, fixed = null, subChips = null, lately = 0, onSeeAll = null }) {
+  // PROFILE-1 (header): `fixed` is a profile tab (one kind, no chip row);
+  // `subChips` are the other kinds that tab also offers; `lately` is the
+  // Overview's short list of the newest few, of any kind.
+  const [prefs, setPrefs] = useState(() => ({ ...loadTimelinePrefs(), ...(fixed ? { filter: fixed } : {}) }));
+  const { filter, hideMass } = prefs;
+  const view = lately ? "cards" : prefs.view;
+  const setPref = patch => setPrefs(p => { const n = { ...p, ...patch }; saveTimelinePrefs(n); return n; });
+  const setFilter = f => setPrefs(p => ({ ...p, filter: f }));   // this record only (POLISH-1)
+  const [openId, setOpenId] = useState(null);
+  const [limit, setLimit] = useState(lately || 12);
+  if (!rel) return null;
+  const first = firstNameOf(donor?.name) || "them";
+  const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
+  const filesBy = {};
+  for (const f of attachments || []) (filesBy[f.interactionId] = filesBy[f.interactionId] || []).push(f);
+  const { items, fileItems } = buildTimelineItems({ rel, gifts, interactions, tasks, attachments, service });
   const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0), meeting: items.filter(i => i.kind === "meeting").length };
   // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
   const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
@@ -374,21 +394,25 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
   };
   const loggedOf = it => it.logged || (it.m && byId[it.m.interactionId]) || null;
   return (
-    <section aria-label="Conversations and meetings" data-testid="dp-timeline" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>
+    <section aria-label={lately ? "Lately" : "Conversations and meetings"} data-testid={lately ? "dp-lately" : "dp-timeline"} data-fixed={fixed || undefined} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {lately ? <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Lately</h2>
+      : <div style={{ display: "flex", justifyContent: fixed ? "flex-end" : "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        {!fixed && <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>}
+        {fixed && subChips && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginRight: "auto" }} role="group" aria-label="Show">
+          {TIMELINE_FILTERS.filter(([k]) => subChips.includes(k) && (k === fixed || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
+        </div>}
         <div role="group" aria-label="View" style={{ display: "inline-flex", gap: 2, padding: 2, border: "1px solid " + CHIP_EDGE, borderRadius: 10 }}>
           {seg("cards", "Timeline")}{seg("list", "List")}
         </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
+      </div>}
+      {!fixed && !lately && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }} role="group" aria-label="Show">
         {TIMELINE_FILTERS.filter(([k]) => (k !== "service" || (service || []).length > 0) && ((k !== "stage" && k !== "activity") || items.some(i => i.bucket === k))).map(([k, l]) => chip(k, l))}
-      </div>
-      {(filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
+      </div>}
+      {!lately && (filter === "all" || filter === "email") && massCount > 0 && <label data-testid="dp-hide-mass" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", alignSelf: "flex-start" }}>
         <input type="checkbox" checked={hideMass} onChange={e => setPref({ hideMass: e.target.checked })} style={{ accentColor: T.greenDk }}/>
         Hide mass emails <span style={{ color: T.ink3 }}>(campaigns, appeals and sequence steps sent to many people)</span>
       </label>}
-      {quietInbox && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
+      {quietInbox && !lately && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
         {onConnect ? <button type="button" onClick={onConnect} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Connect your inbox</button> : "Connect your inbox"} to see emails and meetings.
       </div>}
       {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>{filter === "file" ? "No files attached to conversations or notes yet." : filter === "task" ? `No tasks for ${first}.` : "Nothing here yet."}</div>}
@@ -457,7 +481,9 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           </div>
         );
       })}
-      {shown.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shown.length - limit)} more</button>}
+      {!lately && shown.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shown.length - limit)} more</button>}
+      {lately > 0 && onSeeAll && <button type="button" data-testid="dp-lately-see-all" onClick={onSeeAll}
+        style={{ background: "none", border: "none", padding: 0, alignSelf: "flex-start", color: T.greenDk, fontWeight: 700, fontSize: 14, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>See everything with {first}</button>}
     </section>
   );
 }
@@ -561,7 +587,7 @@ export function ConversationChips({ interactionId, onChanged }) {
 }
 
 // ── THE RAIL ────────────────────────────────────────────────────────────────
-export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythmSlot = null, inboxConnected = true }) {
+export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythmSlot = null, inboxConnected = true, yearOnly = false }) {
   const [booking, setBooking] = useState(false);
   const [invite, setInvite] = useState(false);
   const [title, setTitle] = useState("");
@@ -591,13 +617,15 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
   const H = ({ children, gold }) => <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: gold ? T.gold : T.sage400 }}>{children}</div>;
   const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
   return (
-    <div data-testid="dp-rail-relationship" style={{ display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
-      {nextSlot || <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+    <div data-testid="dp-rail-relationship" style={yearOnly ? { display: "flex", flexDirection: "column", gap: 16, padding: "16px 0", borderTop: "1px solid " + T.green650 } : { display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
+      {/* PROFILE-1 (header): yearOnly is the profile's rail, which draws Next
+          step, Coming up and the journey as cards of its own. */}
+      {!yearOnly && (nextSlot || <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <H gold>Next step</H>
         <div style={{ fontFamily: SERIF, fontSize: 26, lineHeight: 1.2 }}>{rel.nextStep?.label || "Nothing planned yet."}</div>
         {rel.nextStep?.due && <div style={{ fontSize: 14, color: T.sage400 }}>Due {relDay(rel.nextStep.due)}</div>}
-      </div>}
-      {rhythmSlot || <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      </div>)}
+      {!yearOnly && (rhythmSlot || <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <H>Meeting rhythm · last 12 months</H>
         <div role="img" aria-label={rel.rhythmSentence} title={rel.rhythmSentence}
           style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 5 }}>
@@ -613,8 +641,8 @@ export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythm
           {n ? `${n} meeting${n === 1 ? "" : "s"} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} month${Math.round(monthsElapsed / n) === 1 ? "" : "s"}` : ""}.` : "No meetings yet this year."}
           {next ? ` The next one is ${relDay(next.date || next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.date || next.startsAt)}.` : ""}
         </div>
-      </div>}
-      {(inboxConnected || (rel.upcoming || []).length > 0) && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      </div>)}
+      {!yearOnly && (inboxConnected || (rel.upcoming || []).length > 0) && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <H>Coming up</H>
         {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.date || e.startsAt)}</span>}/>)}
         {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing coming up, on a calendar or logged ahead.</div>}

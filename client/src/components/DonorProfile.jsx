@@ -24,10 +24,13 @@ import { InboxNudge, useMailbox } from "./InboxConnect";
 import { RecordLink } from "./RecordLink";
 import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle, MEETING_ACTION } from "./MeetingPanels";
-import { ProfileTimeline } from "./ProfileTimeline";
+import { ProfileTimeline, useTimelineExtras } from "./ProfileTimeline";
+import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
+import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
+import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext, Phone } from "./shared";
-import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
+import { ProposalsPanel, PlanPanel, BriefPanel, useDonorProposals, ProposalQuickActions } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { ItemMenu, EditedMarker, offerUndo, HistoryList } from "./EditHistory";
@@ -42,7 +45,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
-import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance, ImportRefusalsLine } from "./ProfileStatus";
+import { useDonorStatus, StatusTags, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
@@ -806,7 +809,7 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
 // off, and it says why — the SERVER's sentence (GET /people/:id), and the
 // server refuses the removal too, so the chip and the rule cannot disagree.
 const ROLE_CHIPS=PERSON_TYPES.filter(t=>t.key!=="other");
-function RoleLine({donor,isReadOnly}){
+function RoleLine({donor,isReadOnly,birthday=""}){
   const [types,setTypes]=useState(donor.personTypes||["donor"]);
   const [lock,setLock]=useState({locked:false,reason:null});
   // FIX-8 Part B.2 — the year the roles line says "since". It comes from the
@@ -859,6 +862,8 @@ function RoleLine({donor,isReadOnly}){
   return (
     <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
       {roleWords&&<span style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
+      {/* PROFILE-1 (header): the birthday is on the same line as "Donor since". */}
+      {birthday&&<span data-testid="dp-header-birthday" style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords?"· ":""}Birthday {birthday}</span>}
       {!isReadOnly&&missing.length>0&&(
         <button type="button" data-testid="role-add" aria-haspopup="menu" aria-expanded={openAdd}
           aria-label="Add a role" title="Add a role" onClick={()=>setOpenAdd(o=>!o)}
@@ -902,40 +907,23 @@ const SUGGEST_KINDS = ["nextmove", "outreach", "email", "callscript"];
 // The proposal stages, by their own labels, so the next-step row can name one
 // without retyping the list shared/proposalShape.js already owns.
 const PROPOSAL_STAGE_LABEL = Object.fromEntries(PROPOSAL_STAGES.map(s => [s.key, s.label]));
+const OPEN_PROPOSAL_KEYS = PROPOSAL_STAGES.filter(s => s.kind === "open").map(s => s.key);
 
-// ── THE RAIL'S PALETTE (PROFILE-1) ─────────────────────────────────────────
-// Ink ground, light text. Nothing new enters the four colours: the ground is
-// T.ink, panels are the existing elevated ink, hairlines are the existing
-// on-dark border token, and the two greys are CREAM AT REDUCED OPACITY
-// (T.sage400/600) — the design system's own answer for secondary text on ink,
-// because warm grey scores about 2.0:1 there and would rightly be refused.
-const RAIL = {
-  bg:    T.ink,          // the rail's ground — must differ from the column's
-  panel: T.bgElevated,   // a card inside the rail
-  line:  T.green650,     // hairline / input edge on dark
-  text:  T.inkInverse,   // primary text on ink
-  dim:   T.sage400,      // secondary text on ink
-};
-
-// One shape for every rail section: a hairline above it, an uppercase title,
-// an optional action beside the title, and an optional fold. A folded section
-// says how much is inside ON ITS LABEL, so folding never hides a count.
-function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="Hide", foldShutLabel="Show", testid, first=false }) {
-  const [open,setOpen]=useState(!fold);
-  const btn={background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"};
-  return (
-    <section data-testid={testid} data-rail-section={fold?(open?"open":"folded"):"plain"}
-      style={{borderTop:first?"none":"1px solid "+RAIL.line,padding:first?"0 0 16px":"16px 0"}}>
-      <h4 style={{margin:"0 0 10px",fontSize:10.5,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:RAIL.dim,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
-        <span>{title}</span>
-        {fold
-          ? <button onClick={()=>setOpen(o=>!o)} aria-expanded={open} style={btn}>{open?foldOpenLabel:foldShutLabel}</button>
-          : (actionNode || null)}
-      </h4>
-      {open&&children}
-    </section>
-  );
-}
+// PROFILE-1 (header) — THE TAB ROW. One row under the header replaces the old
+// six tabs AND the "Everything with" chips: Conversations, Emails, Tasks,
+// Notes and Files are the old chips' filtered timelines. Materials folded into
+// Files; the old Activity tab's log is the timeline itself (Lately and the
+// kind tabs), and its History moved to Files.
+const PROFILE_TABS = [
+  ["overview", "Overview"], ["gifts", "Gifts & pledges"], ["asks", "Asks & pipeline"],
+  ["conversations", "Conversations"], ["emails", "Emails"], ["tasks", "Tasks"],
+  ["notes", "Notes"], ["funds", "Funds"], ["related", "Related"], ["files", "Files"],
+];
+// Which timeline kind each list tab shows, and the other kinds it offers.
+const TAB_KIND = { conversations: "conversation", emails: "email", tasks: "task", notes: "note", files: "file" };
+const TAB_SUBCHIPS = { conversations: ["conversation", "stage", "activity", "service"] };
+// The stage bar on the ask card, in the order a relationship moves.
+const STAGE_BAR = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 
 
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
@@ -990,7 +978,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     catch(e){ setEraseMsg(e?.message||"The erasure did not run. Nothing was changed."); }
     setEraseBusy(false);
   };
-  const loadRel=()=>apiFetch(`/donors/${donor.id}/relationship`).then(setRel).catch(()=>setRel(null));
+  // PROFILE-1 (header): whatever re-reads the relationship re-reads the rail.
+  const loadRel=()=>{ if(typeof loadRailRef.current==="function")loadRailRef.current(); return apiFetch(`/donors/${donor.id}/relationship`).then(setRel).catch(()=>setRel(null)); };
+  const loadRailRef=useRef(null);
   useEffect(()=>{ setRel(null); loadRel(); },[donor.id]);
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
@@ -1018,6 +1008,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // next step is shown as typed.
   const [proposalsKnown,setProposalsKnown]=useState(false);
   const setOpenProposals=useCallback(ps=>{setOpenProposalsRaw(ps);setProposalsKnown(true);},[]);
+  // PROFILE-1 (header) — the proposals are read once, here, and handed to the
+  // ask card and to the Asks & pipeline tab, so the rail's next step knows
+  // about an open ask whichever tab is showing.
+  const [propData,reloadProps]=useDonorProposals(donor.id);
+  useEffect(()=>{ if(propData)setOpenProposals(propData.proposals.filter(p=>OPEN_PROPOSAL_KEYS.includes(p.stage))); },[propData,setOpenProposals]);
   const loadDpThread=(initial)=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
     if(initial!==true)setStepNonce(n=>n+1);   // FIX-27 Part 5: after a save, the summary reads the same step
     setDpItems(Array.isArray(r.list)?r.list:[]);
@@ -1166,6 +1161,21 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // off the total and never adds to the count, the same rule as the glance.
   const giftCountReal=giftsFull.filter(g=>g.amount>0).length;
   const refundRows=giftsFull.filter(g=>g.amount<0);
+  // PROFILE-1 (header) — the timeline's rows, built once: the tab row's
+  // counts and every list tab read this one list, with the tasks, files and
+  // shifts read once beside it.
+  const tlExtras=useTimelineExtras(donor.id, localInts??donor.interactions);
+  const tlCounts=useMemo(()=>timelineCounts(buildTimelineItems({rel,gifts:giftsFull,interactions:localInts??donor.interactions??[],...tlExtras})),
+    [rel,giftsFull,localInts,donor.interactions,tlExtras.tasks,tlExtras.attachments,tlExtras.service]);
+  // PROFILE-1 (header) — the rail's facts in one read (GET /donors/:id/rail).
+  // A card whose fact is missing is not drawn; a failed read draws one line.
+  const [railData,setRailData]=useState(null);
+  const [railErr,setRailErr]=useState(false);
+  const loadRail=()=>apiFetch(`/donors/${donor.id}/rail`).then(r=>{setRailData(r||null);setRailErr(false);}).catch(()=>setRailErr(true));
+  loadRailRef.current=loadRail;
+  useEffect(()=>{setRailData(null);loadRail();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[donor.id,donor.interactions?.length||0]);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
@@ -1591,7 +1601,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   },[donor.id,interactionCount]);
 
   useEffect(()=>{
-    if(dpTab==="materials")loadMaterials();
+    if(dpTab==="files")loadMaterials();
     if(dpTab==="funds"&&!fundAffinity)loadFundAffinity();
   },[dpTab,donor.id]);
 
@@ -1866,12 +1876,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     const h=typeof window!=="undefined"?decodeURIComponent(window.location.hash.slice(1)):"";
     const m=h.match(/^(gift|pledge|plan|item)-(.+)$/);
     if(!m&&h!=="gifts")return undefined;
-    const wantTab=m&&m[1]==="item"?"activity":"gifts";
+    // PROFILE-1 (header): a timeline entry lives on the tab of its kind.
+    const itemType=m&&m[1]==="item"?String(((localInts??donor.interactions??[]).find(i=>i.id===m[2])||{}).type||""):"";
+    const wantTab=m&&m[1]==="item"?(itemType==="note"?"notes":itemType==="email"?"emails":"conversations"):"gifts";
     if(m&&m[1]==="gift"&&!giftsFull.length)return undefined;
     const el=m?document.getElementById(h):null;
     if(!el){
       if(dpTab!==wantTab&&(dpTab==="overview"||h==="gifts"))setDpTab(wantTab);
-      if(wantTab==="activity"){ if(actMode!=="log")setActMode("log"); if(actFilter!=="all")setActFilter("all"); }
       return undefined;
     }
     if(el.dataset.marked)return undefined;
@@ -1983,13 +1994,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 ("+ Volunteer", "+ Staff and board") where the reader expects
                 facts, so the header said what this person IS and what you
                 could do to them in the same breath, in the same shape. */}
-            <RoleLine donor={donor} isReadOnly={isReadOnly}/>
-            {/* PARITY-1 — the giving level, lifecycle and Retained, each
-                opening its donors, and the closeness word with its facts. */}
-            <StatusTags status={status}/>
+            <RoleLine donor={donor} isReadOnly={isReadOnly} birthday={donor.birthday?birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year):""}/>
+            {/* PROFILE-1 (header) — tags and groups on one line: the giving
+                level, lifecycle and Retained (each opening its donors), the
+                record's own tags, then the groups with "Add to a group". */}
+            <div data-testid="dp-header-tags" style={{display:"flex",alignItems:"center",gap:"4px 10px",flexWrap:"wrap"}}>
+              <StatusTags status={status}/>
+              {donor.tags?.length>0&&<div data-testid="dp-record-tags" style={{display:"flex",gap:5,flexWrap:"wrap",marginTop:5}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
+              {/* PARITY-1 Part D — the groups this person is in. */}
+              <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}/>
+            </div>
+            {/* The Close line, under the tags. */}
             <ClosenessLine status={status}/>
-            {/* PARITY-1 Part D — the groups this person is in. */}
-            <ProfileGroups donorId={donor.id} isReadOnly={isReadOnly}/>
             {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
                 to read donors.total_giving while the tile below it now reads
                 the gifts themselves (figureSources donor-lifetime), and on the
@@ -2129,7 +2145,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 <div key={t} data-testid={`dp-suggested-${t}`}>
                   <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
                   <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
-                    From <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
+                    From <button onClick={()=>{setSuggestOpen(false);setDpTab("conversations");}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
                     {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
                   </div>
                 </div>
@@ -2166,6 +2182,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
             onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
         </div>
+        {/* PROFILE-1 (header) — the seven numbers, across the header's
+            bottom edge. Each opens the rows the old box opened. */}
+        {(figs||donor.figures)&&<ProfileHeaderFigures figures={figs||donor.figures} glance={status&&status.glance}/>}
       </div>
 
       <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
@@ -2174,121 +2193,37 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             CONTRASTING ground and a contrast between two inherited values is
             not a contrast anybody can check. See docs/decisions/design-system.md. */}
         <div data-testid="dp-main-column" style={{overflowY:"auto",background:T.bg,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
-          {/* Tab Nav */}
-          {/* ── THE FOUR FIGURES (PROFILE-1) ────────────────────────────
-              Lifetime, Last gift, Last contact, Open ask — the four numbers an
-              officer opens this record to check, above the tabs because they
-              are true of the person and not of whichever tab is showing.
-
-              Each one is a <Figure> with a SOURCE, so clicking it opens the
-              rows behind it and those rows foot to the cent (the "every number
-              opens" rule; figureSources.js holds the four donor-scoped
-              sources, and the server hands over the value and the source
-              together so the two can never be computed twice). The `?` beside
-              the label is the census definition, unchanged and still keyboard
-              reachable — the definition and the drill-through are different
-              affordances and each keeps its own. */}
-          {(figs||donor.figures)&&(
-            <div className="donor-stat-grid" data-testid="dp-figures" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,padding:"18px 20px 4px 24px",flexShrink:0}}>
-              {PROFILE_FIGURES.map(({key,label,kind,suffix,def})=>{
-                const f=(figs||donor.figures)[key];
-                if(!f)return null;
-                return (
-                  <div key={key} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                    <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
-                      {label}
-                      {/* BUILD-100 — the definition travels with the number, on
-                          the dashboards' hover convention: reachable by keyboard,
-                          because a tooltip nobody can tab to is a definition that
-                          does not exist for half the people who need it. */}
-                      <span tabIndex={0} title={def} aria-label={def} data-testid={"dp-tile-def-"+label}
-                        style={{marginLeft:5,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,
-                                borderRadius:99,width:13,height:13,display:"inline-flex",alignItems:"center",
-                                justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>
-                    </div>
-                    {/* A BLANK IS SAID, NOT GUESSED (the design system's own
-                        rule). An inline <Figure> draws an em dash when it has
-                        no value, which on this row read as "we are not going
-                        to tell you"; the short sentence says what will appear
-                        there and when. There is nothing to open, so there is
-                        no button either. */}
-                    {/* BUILD-100 — the overdue colour stays on Last contact.
-                        The DAYS are the server's figure now, but whether they
-                        are late is still moveUrgency's judgment against this
-                        donor's stage, and it is brass when they are (never
-                        terracotta: overdue is late, not dangerous). The
-                        inline Figure inherits its colour, so it is set here. */}
-                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",lineHeight:1.1,
-                                 color:T.ink}}>
-                      {f.value===null||f.value===undefined
-                        ?<span data-figure={"profile."+key} data-figure-key={"profile."+key} data-blank=""
-                          /* FIX-8 Part B.4 — an absence is a SENTENCE, so it is
-                             set in the body face. It was already quiet at
-                             12.5px, but it inherited the display serif from
-                             the figure above it, which is the face this app
-                             uses for numbers and headings. */
-                          style={{fontSize:12.5,fontWeight:400,color:T.ink3,lineHeight:1.45,
-                            fontFamily:"'DM Sans',system-ui,sans-serif"}}>{f.blankShort||f.blank}</span>
-                        :<Figure value={f.value} kind={kind} suffix={suffix&&Number(f.value)===1?suffix.replace(/s$/,""):(suffix||"")} label={label} definition={def}
-                          source={f.source} blank={f.blank} blankShort={f.blankShort}
-                          figureKey={"profile."+key} variant="inline"/>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* PARITY-1 — AT A GLANCE is one block: the four tiles above, then
-              first, largest and average gift, the highlights and the next
-              action with its suggested ask. Lifetime and Last gift are the
-              tiles above, never repeated here. */}
-          <ProfileGlance status={status} birthday={donor.birthday}/>
-          {/* ASK-3: Why and What, scoped to this person. */}
-          <div data-testid="dp-ask" style={{padding:"8px 20px 2px 24px",flexShrink:0}}>
-            <AskButtons scope={{donor:{id:donor.id,name:donor.name}}} isReadOnly={isReadOnly} testid="donor-ask"/>
-          </div>
-          <div style={{padding:"10px 20px 4px 24px",flexShrink:0}}>
-          {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
-              other empty sections (FIX-14 Part 3), instead of an empty chart. */}
-          {!giftLoading&&!(giftsFull.length||gifts.length)
-          ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
-            <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
-            {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>{setDpTab("gifts");setAddGiftOpen(true);}}
-              style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
-          </div>
-          :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
-            {giftLoading
-              ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
-              :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
-            <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
-              Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
-            </div>
-          </div>}
-          </div>
-
-          {/* FIX-8 Part A.1 — the profile's own tab strip wraps rather than
-              scrolls, for the same reason the section strip does: it
-              overflowed by a rounding pixel and drew a bar. `.dp-tabs` keeps
-              its phone scroll in the media block. */}
-          <div className="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0}}>
-            {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
-              <button key={id} role="tab" aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,...activeMark(dpTab===id,"bottom")}}>
+          {/* ── PROFILE-1 (header) · ONE ROW OF TABS ──────────────────────
+              Directly under the header, left-aligned. It replaces the old six
+              tabs and the "Everything with" chips; it scrolls sideways at 390
+              (and only it does). Each count is the length of the list it
+              opens. */}
+          <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,padding:"0 12px",position:"sticky",top:0,zIndex:5}}>
+            {PROFILE_TABS.map(([id,label])=>{
+              const n=id==="gifts"?giftCountReal:id==="asks"?(openProposals.length+opps.filter(o=>o.status==="open").length)
+                :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0):null;
+              return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13,fontWeight:dpTab===id?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",...activeMark(dpTab===id,"bottom")}}>
                 {label}
-                {id==="gifts"&&giftCountReal>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftCountReal}</span>}
-                {id==="related"&&relationships.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{relationships.length}</span>}
-                {id==="materials"&&materials.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{materials.length}</span>}
-              </button>
-            ))}
+                {n!=null&&<span data-tab-count={id} style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{n}</span>}
+              </button>;
+            })}
           </div>
 
-          {/* Overview tab */}
+          {/* ── OVERVIEW (PROFILE-1 header) ──────────────────────────────
+              Top to bottom: the next meeting, How did it go?, Lately, the ask,
+              Highlights, then About. Everything else that lived here has a
+              tab of its own now (docs/profile-1/inventory.md says where). */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
-            {/* INT-BUILD-1 Part 3 — the next meeting with its brief, then one
-                timeline of every email thread, meeting and gift. */}
             {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={()=>{loadRel();loadDpThread();}}/>}
+            {/* FIX-33 · once the meeting time has passed, the profile asks. */}
+            {(()=>{
+              const due=(rel?.past||[]).find(m=>!m.loggedAt&&m.startsAt&&Date.now()-new Date(m.endsAt||m.startsAt).getTime()<7*864e5);
+              if(!due||isReadOnly)return null;
+              return <section data-testid="dp-how-did-it-go" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"space-between"}}>
+                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>How did it go? {due.title}, {displayDateShort(String(due.date||due.startsAt).slice(0,10),new Date())}</div>
+                <button type="button" onClick={()=>setLogMeeting(due)} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>Write it down</button>
+              </section>;
+            })()}
             {/* FIX-14 Part 1 — what Steward heard in the newest conversation
                 logged by hand: a next step with its date, the spouse named,
                 a planned gift mentioned. Each is a chip; nothing changes until
@@ -2311,26 +2246,138 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   onInteractionAdded&&onInteractionAdded();}}/>
               </section>;
             })()}
-            {/* FIX-33 · once the meeting time has passed, the profile asks. */}
-            {(()=>{
-              const due=(rel?.past||[]).find(m=>!m.loggedAt&&m.startsAt&&Date.now()-new Date(m.endsAt||m.startsAt).getTime()<7*864e5);
-              if(!due||isReadOnly)return null;
-              return <section data-testid="dp-how-did-it-go" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap",justifyContent:"space-between"}}>
-                <div style={{fontSize:14,fontWeight:700,color:T.ink}}>How did it go? {due.title}, {displayDateShort(String(due.date||due.startsAt).slice(0,10),new Date())}</div>
-                <button type="button" onClick={()=>setLogMeeting(due)} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>Write it down</button>
-              </section>;
-            })()}
-            {rel&&<ProfileTimeline canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {/* LATELY — the last three things that happened, of any kind, each
+                opening its record; "See everything" opens Conversations. */}
+            {rel&&<ProfileTimeline lately={3} onSeeAll={()=>setDpTab("conversations")} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
-            {/* FIX-14 Part 3 — ONE OF EVERYTHING. One timeline (above), then the
-                ask, the giving, the household, planned giving, membership and
-                sequences, in that order. The next step lives once, in the rail;
-                drafting, Suggested, Brief me, Erase and Delete are under More. */}
-            {/* ── THE ASK ── the stage, the open ask and its history, in one place. */}
-            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
-              title="The ask" addLabel="+ New ask" testid="dp-the-ask"
+            {/* THE ASK — one card: the stage bar, the open ask, the suggested
+                next ask with Why?, Mark won and Update. Everything else the old
+                section held is on the Asks & pipeline tab. */}
+            {(()=>{
+              const cur=openProposals[0]||null;
+              const curStage=donor.stage||"cultivate";
+              return <section data-testid="dp-ask-card" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12}}>
+                  <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>The ask</div>
+                  <button type="button" data-testid="dp-ask-open-tab" onClick={()=>setDpTab("asks")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Open Asks &amp; pipeline</button>
+                </div>
+                <div role="radiogroup" aria-label="Stage" data-testid="dp-stage-bar" style={{display:"grid",gridTemplateColumns:`repeat(${STAGES.length},minmax(0,1fr))`,gap:3}}>
+                  {STAGES.map(st=>{
+                    const on=curStage===st.id;
+                    return <button key={st.id} type="button" role="radio" aria-checked={on} data-stage={st.id} disabled={isReadOnly||!isTeam}
+                      onClick={()=>{ if(!on) onStageChange(donor.id,st.id); }}
+                      style={{background:on?T.greenDk:T.bg,color:on?T.white:T.ink3,border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:6,padding:"7px 4px",fontSize:11.5,fontWeight:on?700:500,cursor:isReadOnly?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{st.label}</button>;
+                  })}
+                </div>
+                {cur?<div data-testid="dp-ask-open" style={{fontSize:13.5,color:T.ink,lineHeight:1.5}}>
+                  <strong>{fmtFull(cur.askAmount)}</strong>{cur.purpose?<> for {cur.purpose}</>:null}
+                  <span style={{color:T.ink3}}> · {PROPOSAL_STAGE_LABEL[cur.stage]||cur.stage}{cur.createdAt?`, opened ${displayDateShort(String(cur.createdAt).slice(0,10),new Date())}`:""}</span>
+                  {openProposals.length>1&&<span style={{color:T.ink3}}> · and {openProposals.length-1} more</span>}
+                </div>:<div data-testid="dp-ask-none" style={{fontSize:13,color:T.ink3}}>No open ask.</div>}
+                <NextLine status={status}/>
+                {scores&&scores.suggestedAsk&&!(status&&status.next&&status.next.ask)&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:0}}/>}
+                {cur&&<ProposalQuickActions proposal={cur} data={propData} reload={reloadProps} donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly||!isTeam}/>}
+              </section>;
+            })()}
+            <Highlights status={status}/>
+            {/* ASK-3: Why and What, scoped to this person (moved from above the tabs). */}
+            <div data-testid="dp-ask">
+              <AskButtons scope={{donor:{id:donor.id,name:donor.name}}} isReadOnly={isReadOnly} testid="donor-ask"/>
+            </div>
+            {/* ABOUT — one card, two by two: Household, Planned giving,
+                Membership and Sequence, each with its value and one link. */}
+            {(()=>{
+              const cell={minWidth:0,display:"flex",flexDirection:"column",gap:6,padding:"12px 14px"};
+              const head={fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3};
+              const link={background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",alignSelf:"flex-start"};
+              const anyPg=DESIGNATION_OPTS.some(([k])=>hasDesignation(k));
+              return <section data-testid="dp-about" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
+                <div style={{padding:"12px 14px 0",fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>About {firstNameOf(donor.name)||donor.name}</div>
+                <div className="dp-about-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))"}}>
+                  <div data-testid="dp-household" style={cell}>
+                    <span style={head}>Household</span>
+                    {household
+                      ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:13,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
+                      :<span style={{fontSize:13,color:T.ink3}}>Not in a household</span>}
+                    {household
+                      ?<button type="button" data-testid="dp-household-see" style={link} onClick={()=>setDpTab("related")}>See who's in it</button>
+                      :!isReadOnly&&<button type="button" data-testid="dp-household-add" style={link} onClick={()=>setHhModalOpen(true)}>Add</button>}
+                  </div>
+                  <div data-testid="dp-planned-giving" style={{...cell,borderLeft:"1px solid "+T.bg3}}>
+                    <span style={head}>Planned giving</span>
+                    <span style={{fontSize:13,color:anyPg?T.ink:T.ink3}}>{anyPg?DESIGNATION_OPTS.filter(([k])=>hasDesignation(k)).map(([,l])=>l).join(", "):"Nothing noted"}</span>
+                    {!isReadOnly&&!pgOpen&&<button type="button" data-testid="dp-planned-giving-add" style={link} onClick={()=>setPgOpen(true)}>{anyPg?"Change":"Add"}</button>}
+                    {pgOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
+                        <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly}
+                          aria-pressed={on} data-designation={k} data-on={on?"1":"0"}
+                          style={{background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",...activeMark(on,"bottom")}}>
+                          {on?"✓ ":""}{label}
+                        </button>);})}
+                      <button type="button" style={link} onClick={()=>setPgOpen(false)}>Done</button>
+                    </div>}
+                  </div>
+                  <div data-testid="dp-membership-cell" style={{...cell,borderTop:"1px solid "+T.bg3}}>
+                    <span style={head}>Membership</span>
+                    <MembershipPanel donor={donor} isReadOnly={isReadOnly} bare/>
+                  </div>
+                  <div data-testid="dp-sequences" style={{...cell,borderTop:"1px solid "+T.bg3,borderLeft:"1px solid "+T.bg3}}>
+                    <span style={head}>Sequence</span>
+                    {seqToast?<span style={{fontSize:13,color:T.ink}}>{seqToast}</span>:<span style={{fontSize:13,color:T.ink3}}>{sequences.length?"Not enrolled from here yet":"No sequences running"}</span>}
+                    {isTeam&&!isReadOnly&&sequences.length>0&&!seqOpen&&<button type="button" data-testid="dp-sequence-enroll" style={link} onClick={()=>{setSeqOpen(true);setSeqId("");}}>Enroll</button>}
+                    {seqOpen&&<div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                      <select aria-label="Sequence" value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1,minWidth:0}}>
+                        <option value="">Select sequence…</option>
+                        {sequences.map(sq=><option key={sq.id} value={sq.id}>{sq.name}</option>)}
+                      </select>
+                      <button disabled={!seqId||seqLoading} onClick={async()=>{
+                        if(!seqId)return;setSeqLoading(true);
+                        try{
+                          await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
+                          const seqName=sequences.find(sq=>sq.id===seqId)?.name||"sequence";
+                          setSeqToast(`Enrolled in "${seqName}"`);
+                          setSeqOpen(false);setSeqId("");
+                        }catch(e){alert(errorMessage(e, "Could not enroll"));}
+                        setSeqLoading(false);
+                      }} style={{background:seqId?T.greenDk:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:T.ink3,fontSize:12,fontWeight:700,cursor:seqId?"pointer":"not-allowed"}}>
+                        {seqLoading?"…":"Enroll"}
+                      </button>
+                      <button onClick={()=>{setSeqOpen(false);setSeqId("");}} aria-label="Cancel" style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                    </div>}
+                  </div>
+                </div>
+              </section>;
+            })()}
+            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
+            {/* Matching-gift flag — from a curated static list (matchingGifts.js
+                on the backend), not a live vendor feed; source/last-verified
+                is surfaced on hover so this reads as informed, not magic. */}
+            {donor.matchingGift&&(
+              <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
+                style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
+                <div>
+                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio}. Ask {donor.name.split(" ")[0]} to submit a match request.</div>
+                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed. Verify current terms before outreach.</div>
+                </div>
+              </div>
+            )}
+
+            {/* BUILD-100 Part 7 — A FUNDER IS AN ORGANISATION ON FILE, so its
+                type, its EIN, its grants and every document signed with it
+                live on its own record rather than a second one. */}
+            {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
+              onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
+
+          </div>}
+
+          {/* ── ASKS & PIPELINE (PROFILE-1 header) — everything the old "The
+              ask" section held that the Overview's card does not: every
+              proposal row, moves and pipeline asks, New ask, the weighted line. */}
+          {dpTab==="asks"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} data={propData||null} reload={reloadProps}
+              title="Asks & pipeline" addLabel="+ New ask" testid="dp-the-ask"
               after={<div style={{marginTop:12}}>
               {/* Pipeline: Moves & Asks (BUILD-15). Every plan has it (FIX-32). */}
               {lockMajor(
@@ -2385,16 +2432,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {/* The stage, and the smart moves that argue for changing it. Both
               are the major-gifts layer, which every plan includes (FIX-32). */}
           {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:12}}>
-            <div style={{fontSize:11.5,fontWeight:700,color:T.ink3,marginBottom:7}}>Stage</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {STAGES.map(s=>{
-                const on=(donor.stage||"cultivate")===s.id;
-                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
-                  style={{background:on?T.greenDk:T.bg,border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:8,padding:"6px 11px",color:on?T.white:T.ink,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
-                  {s.label}
-                </button>;
-              })}
-            </div>
             <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}} data-testid="dp-ask-suggest">
               {/* FIX-24 2c: The Ask says the same next step as the rail; the
                   stage's general advice only when there is no open step. */}
@@ -2430,120 +2467,37 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {scores&&scores.suggestedAsk&&<SuggestedAskLine ask={scores.suggestedAsk} style={{margin:"0 0 10px"}}/>}
             </ProposalsPanel>)}
 
-            {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
-                BUILD-100 renamed it ("Score 77/99" → "Giving strength") and
-                said plainly what it was not, and that was the right first move
-                and not the last one. What it could not fix is the SHAPE: a
-                number out of 99, in display type, beside one person's name, is
-                read as a verdict on that person however carefully it is
-                labelled — and the officer reading it is about to decide how
-                much to ask them for.
-                It survives as a COLUMN on the directory and the re-engage
-                list, where it is a sort order across a list rather than a
-                judgement on the one record somebody opened, and it carries its
-                definition there (see shared/numberCensus.js). The score itself
-                is untouched: `donorScore` still computes it, the lists still
-                show it, and turning the tile back on is this array.
-                The three that stay each carry their own sentence now, on the
-                keyboard-reachable hover BUILD-100 built for the fourth. */}
-            {/* BUILD-57 §2c — the lifetime figure and the itemized gift list
-                legitimately differ when history arrived as an imported TOTAL
-                (aggregate import writes total_giving/gift_count with no gift
-                rows — the documented reason Top Donors' lifetime scope reads
-                the column). Unlabeled, the two numbers read as a bug on a
-                demo screen; so the gap explains itself, always. */}
-            {!giftLoading&&donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
-              <div className="dp-unitemized-note" style={{fontSize:11.5,color:T.ink3,lineHeight:1.5,margin:"-8px 2px 0"}}>
-                Lifetime includes <strong style={{color:T.ink2}}>{fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> recorded
-                as an imported total: giving that predates Steward and was never itemized as individual gifts.
-              </div>
-            )}
+          </div>}
 
-            {/* PROFILE-1 — the cultivation plan and "Brief me" moved to the
-                rail, with the rest of how-we-manage-them. The reading column
-                keeps what she came to read. */}
+          {/* Gifts & Pledges tab */}
+          {dpTab==="gifts"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {/* PROFILE-1 (header) — Giving by year heads the Gifts tab. */}
+          <div>
+          {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
+              other empty sections (FIX-14 Part 3), instead of an empty chart. */}
+          {!giftLoading&&!(giftsFull.length||gifts.length)
+          ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
+            <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
+            {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>setAddGiftOpen(true)}
+              style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
+          </div>
+          :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
+            {giftLoading
+              ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
+              :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
+            <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
+              Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
+            </div>
+          </div>}
+          </div>
 
-            {/* PARITY-1 — Giving by year moved up into the at-a-glance block. */}
             {yearDrill&&(
               <MetricBreakdownPanel open onClose={()=>setYearDrill(null)}
                 title={`Giving in ${yearDrill}`}
                 explanation={`Every gift ${donor.name} gave between 1 January and 31 December ${yearDrill}, as it is recorded on this record.`}
                 source={{key:"gifts",params:{donor:donor.id,from:`${yearDrill}-01-01`,to:`${yearDrill}-12-31`}}}/>
-            )}
-
-            {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
-            <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household and relationships</span>
-                {household
-                  ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:12,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
-                  :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
-                {household&&<EditedMarker item={household}/>}
-                {household&&!isReadOnly&&<button data-testid="dp-household-rename" onClick={async()=>{
-                    const name=window.prompt("Household name",household.name||"");
-                    if(!name||!name.trim()||name.trim()===household.name)return;
-                    try{await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({name:name.trim()})});refreshSoftCredit();}
-                    catch(e){alert(errorMessage(e,"The household could not be renamed."));}}}
-                  style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Rename</button>}
-                {household
-                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
-                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
-              </div>
-              {household&&(
-                <>
-                  <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.hardCredit||0} label="Hard credit" definition="This person's own lifetime giving: the gifts credited to them." source={softCredit.householdSources.hardCredit}/>:fmtFull(softCredit?.hardCredit||0)}</div></div>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.softCredit||0} label="Soft credit" definition="The lifetime giving of everyone else in this household, credited to this person through the household." source={softCredit.householdSources.softCredit}/>:fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{household.combined_source?<Figure variant="inline" kind="money" value={household.combined_giving} label="Household combined" definition="Each person in this household, with their lifetime giving. Someone who was deleted is not counted." source={household.combined_source}/>:fmtFull(household.combined_giving)}</div></div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                    {household.members.map(m=>(
-                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
-                        {/* BUILD-94 Part 1 — a household is the one place a
-                            row names several people at once; faces are what
-                            tell them apart at a glance. */}
-                        <PersonMark id={m.id} name={m.name} size={22}/>
-                        <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
-                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
-                        <span style={{marginLeft:"auto",color:T.ink3}} onClick={e=>e.stopPropagation()}>{m.source?<Figure variant="cell" kind="money" value={m.total_giving} label={`${m.name}: lifetime giving`} source={m.source}/>:fmtFull(m.total_giving)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
-                </>
-              )}
-              {hhModalOpen&&(
-                <Modal onClose={()=>setHhModalOpen(false)} width={440} zIndex={1000}
-                  backdrop="rgba(15,26,18,0.5)" blur={false} padding={20}
-                  ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
-                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
-                    <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
-                    <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
-                      {hhPeople.filter(x=>x.id!==donor.id&&!x.householdId).slice(0,40).map(x=>{
-                        const picked=hhPick.has(x.id);
-                        return(
-                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
-                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
-                            <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
-                            <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                      <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
-                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?T.greenDk:T.bg3,color:T.white,border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
-                    </div>
-                  </div>
-                </Modal>
-              )}
-            </div>
-            {householdTotal!=null&&(
-              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}} onClick={e=>e.stopPropagation()}>{householdTotalSource?<Figure variant="inline" kind="money" value={householdTotal} label="Household total" definition="This person and everyone linked to them as a spouse or household member, each with their lifetime giving. Someone who was deleted is not counted." source={householdTotalSource}/>:fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
-              </div>
             )}
 
             {/* BUILD-98 Part 1 — soft credit on OTHER people's gifts. Hard
@@ -2585,100 +2539,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>
             )}
 
-            {/* FIX-14 Part 3 — planned giving is its own line, one line until something is marked. */}
-            {(()=>{const anyOn=DESIGNATION_OPTS.some(([k])=>hasDesignation(k));const open=anyOn||pgOpen;return(
-              <div data-testid="dp-planned-giving" style={open?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}:{padding:"4px 2px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:open?7:0}}>Planned giving</div>
-                {!open&&<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Nothing noted</span>}
-                {!open&&!isReadOnly&&<button onClick={()=>setPgOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Note planned giving</button>}
-                {open&&<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-                  {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
-                    <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                      aria-pressed={on} data-designation={k} data-on={on?"1":"0"}
-                      style={{background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",...activeMark(on,"bottom")}}>
-                      {on?"✓ ":""}{label}
-                    </button>
-                  );})}
-                </div>}
-              </div>);})()}
-            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
-            <MembershipPanel donor={donor} isReadOnly={isReadOnly}/>
-
-                    {/* Folded by default: the things she opens when she needs them, and
-              not before. Each one says how much is inside on its own label,
-              so folding never hides a count. */}
-          {isTeam&&sequences.length>0&&(
-            <div data-testid="dp-sequences" style={{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Sequences</span>
-              </div>
-              {seqToast&&<div style={{background:T.bg,borderLeft:"3px solid "+T.green500,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.ink,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"transparent",border:"1px dashed "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.ink,cursor:"pointer"}}>+ Enroll in sequence</button>
-                :<>
-                  <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
-                    <option value="">Select sequence…</option>
-                    {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <button disabled={!seqId||seqLoading} onClick={async()=>{
-                    if(!seqId)return;setSeqLoading(true);
-                    try{
-                      await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
-                      const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
-                      setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
-                      setSeqOpen(false);setSeqId("");
-                    }catch(e){alert(errorMessage(e, "Could not enroll"));}
-                    setSeqLoading(false);
-                  }} style={{background:seqId?T.greenDk:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:T.ink3,fontSize:12,fontWeight:700,cursor:seqId?"pointer":"not-allowed"}}>
-                    {seqLoading?"…":"Enroll"}
-                  </button>
-                  <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
-                </>}
-              </div>
-            </div>
-          )}
-
-
-            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
-            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
-            {/* Matching-gift flag — from a curated static list (matchingGifts.js
-                on the backend), not a live vendor feed; source/last-verified
-                is surfaced on hover so this reads as informed, not magic. */}
-            {donor.matchingGift&&(
-              <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
-                style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
-                <div>
-                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio}. Ask {donor.name.split(" ")[0]} to submit a match request.</div>
-                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed. Verify current terms before outreach.</div>
-                </div>
-              </div>
-            )}
-
-            {/* BUILD-100 Part 7 — A FUNDER IS AN ORGANISATION ON FILE, so its
-                type, its EIN, its grants and every document signed with it
-                live on its own record rather than a second one. */}
-            {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
-              onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
-
-            {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
-            {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
-
-            {isAdmin&&eraseOpen&&(<Modal onClose={()=>setEraseOpen(false)} width={520} title="Erase this person">
-              <div data-testid="dp-erase-confirm" style={{fontSize:13.5,color:T.ink,lineHeight:1.55}}>
-                <strong>Erase {donor.name}?</strong> Their name, contact details, notes, tags, photo and every logged email, meeting and conversation are removed for good. Their gifts stay as anonymous gifts, so your books, the receipts already issued and every total still match to the cent. If they asked not to be emailed, their address stays on your do-not-email list so they are never mailed again. This cannot be undone.
-                <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <input value={eraseWord} onChange={e=>setEraseWord(e.target.value)} placeholder="Type ERASE" aria-label="Type ERASE to confirm"
-                    style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",fontSize:13,fontFamily:"inherit",width:140}}/>
-                  <button disabled={eraseWord!=="ERASE"||eraseBusy} onClick={erasePerson}
-                    style={{background:eraseWord==="ERASE"?T.terracotta:T.bg3,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:eraseWord==="ERASE"?"pointer":"not-allowed"}}>{eraseBusy?"Erasing…":"Erase for good"}</button>
-                  <button onClick={()=>setEraseOpen(false)} style={{background:"none",border:"none",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
-                </div>
-                {eraseMsg&&<div role="status" style={{marginTop:8}}>{eraseMsg}</div>}
-              </div>
-            </Modal>)}
-          </div>}
-
-          {/* Gifts & Pledges tab */}
-          {dpTab==="gifts"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
@@ -3097,6 +2957,49 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               links. No auto-detection (matching last name, address, etc.) —
               a real fast-follow idea, not built here. */}
           {dpTab==="related"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+            {/* PROFILE-1 (header) — the household, in full, moved here from the Overview. */}
+            {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
+            <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household and relationships</span>
+                {household
+                  ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:12,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
+                  :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
+                {household&&<EditedMarker item={household}/>}
+                {household&&!isReadOnly&&<button data-testid="dp-household-rename" onClick={async()=>{
+                    const name=window.prompt("Household name",household.name||"");
+                    if(!name||!name.trim()||name.trim()===household.name)return;
+                    try{await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({name:name.trim()})});refreshSoftCredit();}
+                    catch(e){alert(errorMessage(e,"The household could not be renamed."));}}}
+                  style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:11,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Rename</button>}
+                {household
+                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
+                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
+              </div>
+              {household&&(
+                <>
+                  <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.hardCredit||0} label="Hard credit" definition="This person's own lifetime giving: the gifts credited to them." source={softCredit.householdSources.hardCredit}/>:fmtFull(softCredit?.hardCredit||0)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{softCredit?.householdSources?<Figure variant="inline" kind="money" value={softCredit.softCredit||0} label="Soft credit" definition="The lifetime giving of everyone else in this household, credited to this person through the household." source={softCredit.householdSources.softCredit}/>:fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{household.combined_source?<Figure variant="inline" kind="money" value={household.combined_giving} label="Household combined" definition="Each person in this household, with their lifetime giving. Someone who was deleted is not counted." source={household.combined_source}/>:fmtFull(household.combined_giving)}</div></div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {household.members.map(m=>(
+                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                        {/* BUILD-94 Part 1 — a household is the one place a
+                            row names several people at once; faces are what
+                            tell them apart at a glance. */}
+                        <PersonMark id={m.id} name={m.name} size={22}/>
+                        <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
+                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
+                        <span style={{marginLeft:"auto",color:T.ink3}} onClick={e=>e.stopPropagation()}>{m.source?<Figure variant="cell" kind="money" value={m.total_giving} label={`${m.name}: lifetime giving`} source={m.source}/>:fmtFull(m.total_giving)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
+                </>
+              )}
+            </div>
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
@@ -3156,9 +3059,35 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             }
           </div>}
 
-          {dpTab==="materials"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+          {/* ── THE LIST TABS (PROFILE-1 header) ──────────────────────────
+              Conversations, Emails, Tasks, Notes and Files are the old
+              "Everything with" chips, each its own tab with the Timeline / List
+              switch. Files also holds what the Materials tab held, and the
+              record's History (from the old Activity tab). */}
+          {TAB_KIND[dpTab]&&<div data-testid={"dp-tab-"+dpTab} style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:16}}>
+            {dpTab==="conversations"&&!isReadOnly&&<div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button onClick={()=>setStwOpen(v=>!v)} data-testid="dp-log-stewardship" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log stewardship</button>
+              <button onClick={onLogTouchpoint} data-testid="dp-log-touchpoint" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log a touchpoint</button>
+            </div>}
+            {dpTab==="conversations"&&stwOpen&&<div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderRadius:12,padding:"14px 16px"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Log Stewardship Touch</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+                  <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
+                    {[["thank_you","Thank You Sent"],["recognition","Recognition"],["gift_sent","Gift Sent"],["impact_update","Impact Update"],["appreciation_event","Appreciation Event"],["holiday_card","Holiday Card"],["birthday","Birthday"],["other","Other"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                  </select>
+                  <input value={stwForm.date} onChange={e=>setStwForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
+                  <input value={stwForm.detail} onChange={e=>setStwForm(p=>({...p,detail:e.target.value}))} placeholder="What was sent/done (e.g. signed book, tote bag)" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
+                  <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
+                </div>
+              </div>}
+            {dpTab==="notes"&&donor.notes&&<div data-testid="dp-record-notes" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{donor.notes}</div>}
+            {dpTab==="files"&&<>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Donor Materials</div>
+              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Files</div>
             </div>
             <Uploader accept={[]} readAs="none" busy={matUploading}
               label={matUploading?"Uploading…":"Drop a file here, or browse: proposals, letters, research (any file type)"}
@@ -3183,172 +3112,55 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 ))}
               </div>
             )}
-          </div>}
-
-          {/* Activity tab */}
-          {dpTab==="activity"&&<div style={{padding:"20px 20px 24px 24px",display:"flex",flexDirection:"column",gap:14}}>
-            {/* Mode toggle */}
-            <div style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden",alignSelf:"flex-start"}}>
-              {[["log","Activity Log"],["timeline","Stewardship Timeline"],["history","History"]].map(([m,l])=>(
-                <button key={m} onClick={()=>setActMode(m)} style={{background:actMode===m?T.white:"transparent",border:"none",padding:"8px 16px",color:actMode===m?T.ink:T.ink3,fontSize:12,fontWeight:actMode===m?700:400,cursor:"pointer"}}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            {/* INT-BUILD-1 Part 0 — one quiet line until the viewer connects. */}
-            <InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>
-
-            {/* FIX-11 Part 1 — ONE sentence for a gift on the timeline, in one
-                place, so the Activity Log and the Stewardship Timeline cannot
-                disagree about the same gift. What Jonathan saw instead was the
-                raw form ("Amount: 100,000 Designation: General Operating
-                Payment Method: ACH Acknowledgement Sent: no"), twice. */}
-            {actMode==="log"&&<>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {["all","call","meeting","email","gift","event","stewardship","note"].map(t=>(
-                    <button key={t} aria-pressed={actFilter===t} onClick={()=>setActFilter(t)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,cursor:"pointer",fontWeight:400,textTransform:"capitalize",...activeMark(actFilter===t,"bottom")}}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
-                  <button onClick={onLogTouchpoint} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
-                </div>
-              </div>
-              {stwOpen&&<div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderRadius:12,padding:"14px 16px"}}>
-                <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Log Stewardship Touch</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                  <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
-                    {[["thank_you","Thank You Sent"],["recognition","Recognition"],["gift_sent","Gift Sent"],["impact_update","Impact Update"],["appreciation_event","Appreciation Event"],["holiday_card","Holiday Card"],["birthday","Birthday"],["other","Other"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}
-                  </select>
-                  <input value={stwForm.date} onChange={e=>setStwForm(p=>({...p,date:e.target.value}))} type="date" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <input value={stwForm.detail} onChange={e=>setStwForm(p=>({...p,detail:e.target.value}))} placeholder="What was sent/done (e.g. signed book, tote bag)" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
-                  <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
-                  <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
-                </div>
-              </div>}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
-                  const typeIcon="•";
-                  // BUILD-88a A.1 — the row LINKS to its gift and holds no copy
-                  // of the amount; the money is read off the gift itself.
-                  const linkedGift=i.gift_id?giftsFull.find(g=>g.id===i.gift_id):null;
-                  const typeColor={call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700,material:T.ink3}[i.type]||T.ink3;
-                  return(<div key={i.id||i.date} id={i.id?`item-${i.id}`:undefined} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
-                    <div style={{fontSize:16,flexShrink:0,marginTop:1,color:typeColor}}>{typeIcon}</div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,fontWeight:700,color:typeColor,textTransform:"capitalize"}}>{(i.type||"note").replace(/_/g," ")}</span>
-                        <span style={{fontSize:11,color:T.ink3}}>{displayDate(i.date)}</span>
-                        {/* BUILD-88a A.4 — a colleague is a FIRST NAME. "by Admin User"
-                            is the software talking to itself. */}
-                        {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(i.logged_by_name)}</span>}
-                        <EditedMarker item={i}/>
-                      </div>
-                      {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{giftTimelineLine(linkedGift,giftFundName(linkedGift))}</div>}
-                      {(()=>{const txt=linkedGift?stripGiftAmountPrefix(i.note):i.note;
-                        return txt?<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{txt}</div>:null;})()}
-                    </div>
-                    {i.id&&!isReadOnly&&<ItemMenu label={(i.type||"entry").replace(/_/g," ")}
-                      onEdit={i.gift_id||i.type==="gift"?null:()=>setEditingInt(i)} onDelete={()=>deleteInteraction(i)}/>}
-                  </div>);
-                })}
-                {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).length===0&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No activity logged yet</div>}
-              </div>
             </>}
-
-            {/* FIX-14 Part 2 — everything that happened to this record, from
-                the audit log, newest first, each a plain sentence. */}
-            {actMode==="history"&&<HistoryList donorId={donor.id}/>}
-
-            {actMode==="timeline"&&(()=>{
-              const ints=localInts??donor.interactions??[];
-              const sortedGiftsForTimeline=[...giftsFull].sort((a,b)=>new Date(a.date)-new Date(b.date));
-              const firstGiftDate=sortedGiftsForTimeline[0]?.date;
-              const largestGift=sortedGiftsForTimeline.reduce((m,g)=>g.amount>m.amount?g:m,{amount:0,date:""});
-              // BUILD-88a A.1 — A GIFT APPEARS ONCE. The record used to draw
-              // the same gift twice: a "First gift $5,000" milestone from the
-              // gift row AND a "Gift received: $5,000" line from an interaction
-              // written beside it with the amount copied into its text. That is
-              // what the Renee Castillo demo record was showing. The gift row is
-              // the fact; a milestone is a LABEL ON it, not a second card, and a
-              // linked timeline entry renders its money from the gift.
-              const giftIdsOnTimeline=new Set(ints.filter(i=>i.gift_id).map(i=>i.gift_id));
-              const milestoneFor=g=>{
-                if(!g||!g.id)return null;
-                if(g.date===firstGiftDate&&g.id===sortedGiftsForTimeline[0]?.id)return "First gift";
-                if(largestGift.amount>0&&g.id===largestGift.id&&g.date!==firstGiftDate)return "Largest gift";
-                return null;
-              };
-              const milestones=[];
-              // A gift with no timeline entry of its own (imported history, or a
-              // gift logged before A.1) still earns its card — once.
-              for(const g of sortedGiftsForTimeline){
-                if(giftIdsOnTimeline.has(g.id))continue;
-                const m=milestoneFor(g);
-                milestones.push({date:g.date,icon:m?"✦":"•",label:m||"Gift",
-                  desc:`${giftTimelineLine(g,giftFundName(g))}${m==="First gift"?" · the relationship began":""}`,
-                  color:T.gold500,big:!!m});
-              }
-              if(firstGiftDate){
-                // FIX-14 Part 1 — civil arithmetic on the date's own text, compared
-                // with the org's today (this round-tripped through UTC).
-                const fg=String(firstGiftDate).slice(0,10);
-                const annStr=/^\d{4}-\d{2}-\d{2}$/.test(fg)?(Number(fg.slice(0,4))+1)+fg.slice(4):"";
-                if(annStr&&annStr<=orgTodayCivil())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:T.gold500,big:true});
-              }
-              let cumulative=0;
-              sortedGiftsForTimeline.forEach(g=>{
-                const prev=cumulative;cumulative+=g.amount;
-                const crossed=[10000,25000,50000,100000,250000].filter(t=>prev<t&&cumulative>=t);
-                crossed.forEach(t=>milestones.push({date:g.date,icon:"✦",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:T.gold500,big:true}));
-              });
-
-              const events=[
-                ...ints.filter(i=>["call","meeting","email","gift","event","stewardship","stage_change","planned_gift","ask"].includes(i.type)).map(i=>{
-                  const g=i.gift_id?sortedGiftsForTimeline.find(x=>x.id===i.gift_id):null;
-                  const m=g?milestoneFor(g):null;
-                  return{
-                    date:i.date,
-                    icon:m?"✦":"•",
-                    label:m||(i.type||"note").replace(/_/g," "),
-                    desc:g?(()=>{const t=stripGiftAmountPrefix(i.note);
-                      return `${giftTimelineLine(g,giftFundName(g))}${t?` · ${t}`:""}`;})():(i.note||""),
-                    color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
-                    big:!!m,
-                    loggedBy:i.logged_by_name,
-                  };
-                }),
-                ...milestones,
-              ].sort((a,b)=>new Date(b.date)-new Date(a.date));
-
-              if(events.length===0)return<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No timeline events yet. Log touchpoints and gifts to build the relationship arc.</div>;
-
-              return(<div style={{position:"relative",paddingLeft:28}}>
-                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, "+T.greenDk+", "+T.gold500+"44)"}}/>
-                {events.map((ev,i)=>(
-                  <div key={i} style={{position:"relative",marginBottom:ev.big?20:14}}>
-                    <div style={{position:"absolute",left:-28,width:ev.big?20:16,height:ev.big?20:16,borderRadius:"50%",background:ev.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:ev.big?11:9,border:`2px solid ${T.white}`,boxShadow:`0 0 0 2px ${ev.color}44`,top:0,flexShrink:0,zIndex:1}}>
-                      {ev.icon}
+            {dpTab==="conversations"&&<InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>}
+            {rel?<ProfileTimeline key={dpTab} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
+            {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
+              <h2 style={{margin:0,fontSize:13,letterSpacing:"0.12em",fontWeight:600,textTransform:"uppercase"}}>History</h2>
+              <HistoryList donorId={donor.id}/>
+            </section>}
+          </div>}
+          {/* Dialogs any tab can open (PROFILE-1 header). */}
+              {hhModalOpen&&(
+                <Modal onClose={()=>setHhModalOpen(false)} width={440} zIndex={1000}
+                  backdrop="rgba(15,26,18,0.5)" blur={false} padding={20}
+                  ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
+                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
+                    <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
+                    <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
+                      {hhPeople.filter(x=>x.id!==donor.id&&!x.householdId).slice(0,40).map(x=>{
+                        const picked=hhPick.has(x.id);
+                        return(
+                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
+                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
+                            <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
+                            <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
+                          </label>
+                        );
+                      })}
                     </div>
-                    <div style={{background:ev.big?T.gold500+"08":T.white,border:`1px solid ${ev.big?T.gold500+"40":T.bg3}`,borderRadius:10,padding:ev.big?"12px 14px":"9px 13px",marginLeft:4}}>
-                      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-                        <span style={{fontSize:12,fontWeight:ev.big?800:700,color:ev.color,textTransform:"capitalize"}}>{ev.label}</span>
-                        <span style={{fontSize:11,color:T.ink3}}>{displayDate(ev.date)}</span>
-                        {ev.loggedBy&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(ev.loggedBy)}</span>}
-                      </div>
-                      {ev.desc&&<div style={{fontSize:12,color:T.ink,marginTop:2,lineHeight:1.4}}>{ev.desc}</div>}
+                    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                      <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
+                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?T.greenDk:T.bg3,color:T.white,border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
                     </div>
                   </div>
-                ))}
-              </div>);
-            })()}
-          </div>}
+                </Modal>
+              )}
+            {isAdmin&&eraseOpen&&(<Modal onClose={()=>setEraseOpen(false)} width={520} title="Erase this person">
+              <div data-testid="dp-erase-confirm" style={{fontSize:13.5,color:T.ink,lineHeight:1.55}}>
+                <strong>Erase {donor.name}?</strong> Their name, contact details, notes, tags, photo and every logged email, meeting and conversation are removed for good. Their gifts stay as anonymous gifts, so your books, the receipts already issued and every total still match to the cent. If they asked not to be emailed, their address stays on your do-not-email list so they are never mailed again. This cannot be undone.
+                <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <input value={eraseWord} onChange={e=>setEraseWord(e.target.value)} placeholder="Type ERASE" aria-label="Type ERASE to confirm"
+                    style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",fontSize:13,fontFamily:"inherit",width:140}}/>
+                  <button disabled={eraseWord!=="ERASE"||eraseBusy} onClick={erasePerson}
+                    style={{background:eraseWord==="ERASE"?T.terracotta:T.bg3,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:eraseWord==="ERASE"?"pointer":"not-allowed"}}>{eraseBusy?"Erasing…":"Erase for good"}</button>
+                  <button onClick={()=>setEraseOpen(false)} style={{background:"none",border:"none",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+                </div>
+                {eraseMsg&&<div role="status" style={{marginTop:8}}>{eraseMsg}</div>}
+              </div>
+            </Modal>)}
         </div>
 
         {/* ── THE RAIL (PROFILE-1) ────────────────────────────────────────
@@ -3789,10 +3601,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           )}
 
             </div>;
-            return rel?<RelationshipRail rel={rel} donor={donor} onReload={loadRel} nextSlot={nextNode} rhythmSlot={rhythmNode} inboxConnected={inboxConnected}/>
-              :<div style={{display:"flex",flexDirection:"column",gap:30,paddingBottom:24}}>{nextNode}{rhythmNode}</div>;
-          })()}
-
+            // PROFILE-1 (header) — THE RAIL'S ORDER. Next step and the scores;
+            // Giving rhythm, Recurring, Thank-yous, Coming up; This year and
+            // Book a visit; Contact; Relationship owner; Journey;
+            // Volunteering; Connected. Then the folded cards as before.
+            const R=railData||{};
+            return <>
+              <div style={{paddingBottom:16}}>{nextNode}</div>
+              {railErr&&<div data-testid="dp-rail-error" style={{fontSize:12.5,color:RAIL.dim,padding:"8px 0"}}>Some of this person's facts could not be loaded just now.</div>}
+              <RhythmCard rhythm={R.rhythm}/>
+              <RecurringCard recurring={R.recurring}/>
+              <ThankYousCard thankYous={R.thankYous} source={R.thankYousSource} donorId={donor.id}/>
+              <ComingUpCard items={R.comingUp} onNavigate={onNavigate}/>
+              {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel} inboxConnected={inboxConnected} yearOnly/>}
           {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
               email lived in the header's name row, competing with the name
               for the first read, while this section, which already held the
@@ -3800,13 +3621,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               sat below the stage picker and the quick actions. Nothing here
               is new: the section is the one that already existed, moved to
               where somebody looks when they are about to pick up the phone. */}
-          <RailSection title="Contact" testid="dp-rail-contact" first>
+          <RailSection title="Contact" testid="dp-rail-contact">
             <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
               {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
               {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
               {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}><Phone value={donor.phone}/></dd></>}
-              {donor.birthday&&<><dt style={{color:RAIL.dim}}>Birthday</dt><dd style={{margin:0}} data-testid="dp-birthday">{birthdayLabel(donor.birthday.month,donor.birthday.day,donor.birthday.year)}</dd></>}
-              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
+              {/* PROFILE-1 (header): the birthday is under the name and in Coming
+                  up; a monthly plan is the Recurring card. */}
+              <ContactExtras contact={railData&&railData.contact}/>
               {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
             </dl>
           </RailSection>
@@ -3831,6 +3653,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>}
             </div>
           </RailSection>
+
+              <div style={{borderTop:"1px solid "+RAIL.line,padding:"16px 0"}}>{rhythmNode}</div>
+              <VolunteeringCard volunteering={R.volunteering}/>
+              <ConnectedCard connected={R.connected}/>
+            </>;
+          })()}
 
           {cfData.length>0&&(()=>{
             // BUILD-78 5.1 — custom fields in position order, empty fields

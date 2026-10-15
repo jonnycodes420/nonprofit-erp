@@ -10,13 +10,14 @@ import { RelationshipTimeline } from "./MeetingPanels";
 import { ATTACHMENTS_CHANGED } from "./ProfileTimelineParts";
 import { VOLUNTEER_HOURS_CHANGED } from "./VolunteerPanel";
 
-export function ProfileTimeline(props) {
-  const donorId = props.donor && props.donor.id;
+// PROFILE-1 (header) — the tasks, files and volunteer shifts beside the
+// timeline, read ONCE per profile: the tab row's counts and every tab's list
+// come from the same three reads.
+export function useTimelineExtras(donorId, ints) {
   const [tasks, setTasks] = useState([]);
   const [attachments, setAttachments] = useState([]);
   // PARITY-3 Part 1 — every logged shift is on the timeline as Volunteer service.
   const [service, setService] = useState([]);
-  const ints = props.interactions;
   // FIX-22 · the files follow the interactions (an email that arrives carries
   // its attachments), so they reload when the list changes. Tasks and volunteer
   // hours do not, and used to reload with it: every profile asked twice.
@@ -44,7 +45,16 @@ export function ProfileTimeline(props) {
     window.addEventListener(VOLUNTEER_HOURS_CHANGED, loadService);
     return () => { alive = false; window.removeEventListener(VOLUNTEER_HOURS_CHANGED, loadService); };
   }, [donorId]);
-  return <RelationshipTimeline {...props} tasks={tasks} attachments={attachments} service={service}/>;
+  return { tasks, attachments, service };
+}
+
+export function ProfileTimeline({ extras = null, ...props }) {
+  if (extras) return <RelationshipTimeline {...props} tasks={extras.tasks} attachments={extras.attachments} service={extras.service}/>;
+  return <OwnExtras {...props}/>;
+}
+function OwnExtras(props) {
+  const extras = useTimelineExtras(props.donor && props.donor.id, props.interactions);
+  return <RelationshipTimeline {...props} tasks={extras.tasks} attachments={extras.attachments} service={extras.service}/>;
 }
 
 export default ProfileTimeline;
