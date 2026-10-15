@@ -29,6 +29,7 @@ import { buildTimelineItems, timelineCounts } from "./MeetingPanels";
 import { ProfileHeaderFigures } from "./ProfileHeaderFigures";
 import { RAIL, RailSection, RhythmCard, RecurringCard, ThankYousCard, ComingUpCard, VolunteeringCard, ConnectedCard, ContactExtras } from "./ProfileRail";
 import { AttachFileField, uploadAttachment } from "./ProfileTimelineParts";
+import { EmailsReceived } from "./EmailAsSent";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext, Phone } from "./shared";
 import { ProposalsPanel, PlanPanel, BriefPanel, useDonorProposals, ProposalQuickActions } from "./MajorGifts";
 import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
@@ -3114,6 +3115,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             )}
             </>}
             {dpTab==="conversations"&&<InboxNudge firstName={firstNameOf(donor.name)} onNavigate={onNavigate}/>}
+            {dpTab==="emails"&&<EmailsReceived donorId={donor.id} firstName={firstNameOf(donor.name)}/>}
             {rel?<ProfileTimeline key={dpTab} fixed={TAB_KIND[dpTab]} subChips={TAB_SUBCHIPS[dpTab]||null} extras={tlExtras} canWrite={!isReadOnly} inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>:<div style={{padding:16,textAlign:"center"}}><Spin/></div>}
             {dpTab==="files"&&<section data-testid="dp-history" style={{display:"flex",flexDirection:"column",gap:10}}>
               <h2 style={{margin:0,fontSize:13,letterSpacing:"0.12em",fontWeight:600,textTransform:"uppercase"}}>History</h2>

@@ -4207,6 +4207,7 @@ app.use(require("./routes/grantLibrary").routers.r0);  // GRANTS-1 library, docu
 app.use(require("./routes/grantMail").routers.r0);     // GRANTS-1 email in
 app.use(require("./routes/grantReports").routers.r0);
 app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
+app.use(require("./routes/emailsSent").routers.r0);    // FIX-40 every email as sent, and who it went to
 app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
@@ -5167,6 +5168,25 @@ async function campaignAudience(campaign, orgId) {
 const emailCompose = require("./emailCompose");
 emailCompose.configure({ displayNameCase });
 
+// FIX-40 · A LEGACY (non-block) CAMPAIGN'S MERGE FIELDS, FILLED FOR ONE
+// PERSON. The send and the "as sent" page (routes/emailsSent.js) both call
+// this, so the page shows exactly the words the send would write today.
+async function legacyCampaignBody(body, donor, orgName, year) {
+  const firstName   = donor.name.split(" ")[0];
+  const lastName    = donor.name.split(" ").slice(1).join(" ");
+  const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
+  const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
+  const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
+  return (body || "")
+    .replace(/{{first_name}}/g,   firstName)
+    .replace(/{{last_name}}/g,    lastName)
+    .replace(/{{donor_name}}/g,   donor.name)
+    .replace(/{{org_name}}/g,     displayNameCase(orgName))
+    .replace(/{{gift_amount}}/g,  giftAmount)
+    .replace(/{{total_giving}}/g, totalGiving)
+    .replace(/{{year}}/g,         year);
+}
+
 async function runCampaignSend(campaign, org, donors) {
   const BACKEND_URL = process.env.BACKEND_URL || "https://nonprofit-erp-production.up.railway.app";
   {
@@ -5230,20 +5250,7 @@ async function runCampaignSend(campaign, org, donors) {
             continue;
           }
         } else {
-          const firstName   = donor.name.split(" ")[0];
-          const lastName    = donor.name.split(" ").slice(1).join(" ");
-          const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
-          const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
-          const giftAmount  = giftRows[0] ? `$${Number(giftRows[0].amount).toLocaleString()}` : "your previous gift";
-
-          const bodyHtml = (campaign.body || "")
-            .replace(/{{first_name}}/g,   firstName)
-            .replace(/{{last_name}}/g,    lastName)
-            .replace(/{{donor_name}}/g,   donor.name)
-            .replace(/{{org_name}}/g,     displayNameCase(org.name))
-            .replace(/{{gift_amount}}/g,  giftAmount)
-            .replace(/{{total_giving}}/g, totalGiving)
-            .replace(/{{year}}/g,         year);
+          const bodyHtml = await legacyCampaignBody(campaign.body, donor, org.name, year);
           htmlFull = brandHeader + bodyHtml + footer + pixel;
         }
 
@@ -11869,6 +11876,10 @@ require("./routes/grantLibrary").mount(GRANTS1_CTX);
 require("./routes/grantMail").mount(GRANTS1_CTX);
 require("./routes/grantReports").mount(GRANTS1_CTX);
 require("./routes/sheets").mount(GRANTS1_CTX);
+require("./routes/emailsSent").mount({
+  query, requireAuth, wrap, emailCompose, legacyCampaignBody, sequenceMergeValues, seqReady: SEQ_READY,
+  orgSendingIdentity, orgToday, orgTz,
+});
 require("./routes/oldReports").mount(GRANTS1_CTX);
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
