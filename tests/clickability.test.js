@@ -78,8 +78,10 @@ ok(has(grantBoard, "stages: f.stages.includes(s.key) ? f.stages.filter(x => x !=
 ok(has(grantBoard, "(!f.stages.length || f.stages.includes(g.status))"), "Grant list respects the stage filter");
 ok(has(grantBoard, 'data-record-link="grant"') && has(grantBoard, "onOpen={() => onOpenGrant(g.id)}"), "Grant names on the board and list open the grant (record links)");
 ok(/import \{[^}]*interactive[^}]*\} from "\.\/shared"/.test(comms), "Communications imports interactive");
-ok(has(comms, "onClick: () => setNav(\"campaigns\")"), "Comms 'Campaigns Sent' card → Campaigns subtab");
-ok(has(comms, 'interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}`'), "Comms 'Best Campaign' card → Campaigns subtab");
+// FIX-40: Campaigns sent opens the Campaigns subtab filtered to Sent, and the
+// best campaign opens its own page (the email as sent and who it went to).
+ok(has(comms, 'data-testid="analytics-campaigns-sent" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}'), "Comms 'Campaigns sent' card → the sent campaigns");
+ok(has(comms, 'data-testid="analytics-best" onClick={() => setAsSent(`/campaigns/${bestCampaign.id}/as-sent`)}'), "Comms 'Best campaign' card → the campaign's page");
 // Donors entity rows already navigate (pre-existing) — spot-check they carry onSelectDonor.
 // FIX-13 Part 6 — the row opens through rowClick (a Cmd-click on it opens a new tab) and the name is a real link.
 ok(has(donors, "onClick={rowClick(donorHref(d.id),()=>onSelectDonor(d))}"), "Donors TeamView rows open the donor profile");
