@@ -3,6 +3,7 @@
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
 import { useState, useEffect } from "react";
+import { Figure } from "./Figure";
 import { EXPLANATION as ENGAGEMENT_EXPLANATION, bandFor } from "../../../shared/engagementWeights.js";
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
@@ -514,7 +515,7 @@ function DirectoryView({statusFilter="",setStatusFilter,donors,loading,serverTot
                   {teamPortfolios&&isAdmin&&<input type="color" value={col||T.greenDk} onChange={e=>saveOfficerColor(o.id,e.target.value)} style={{position:"absolute",inset:0,opacity:0,width:14,height:14,cursor:"pointer"}}/>}
                 </label>
                 <span style={{fontSize:12,color:T.ink,fontWeight:600}}>{o.name}</span>
-                <span style={{fontSize:11,color:T.ink3}}>{o.portfolio_count} · {fmtFull(o.portfolio_giving)}</span>
+                <span style={{fontSize:11,color:T.ink3}}>{/* FIX-40: both open the portfolio's donors */}<Figure variant="cell" value={Number(o.portfolio_count)} label={`${o.name}'s portfolio`} source={{key:"officer-portfolio",params:{officer:o.id}}}/> · <Figure variant="cell" kind="money" value={Number(o.portfolio_giving)} label={`${o.name}'s portfolio, given in total`} source={{key:"officer-portfolio",params:{officer:o.id}}}/></span>
               </div>
             );
           })}

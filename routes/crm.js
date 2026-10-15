@@ -20219,9 +20219,9 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
   );
   const result = await Promise.all(campaigns.map(async c => {
     const recipients = await query(
-      `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name
+      `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name, d.id AS donor_id
        FROM campaign_recipients cr
-       LEFT JOIN donors d ON d.id = cr.donor_id
+       LEFT JOIN donors d ON d.id = cr.donor_id AND d.org_id = cr.org_id AND d.deleted_at IS NULL
        WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
       [c.id]
     );
@@ -20278,9 +20278,9 @@ app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
   );
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   const recipients = await query(
-    `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name
+    `SELECT cr.id, cr.email, cr.sent_at, cr.opened_at, cr.failure_reason, d.name as donor_name, d.id AS donor_id
      FROM campaign_recipients cr
-     LEFT JOIN donors d ON d.id = cr.donor_id
+     LEFT JOIN donors d ON d.id = cr.donor_id AND d.org_id = cr.org_id AND d.deleted_at IS NULL
      WHERE cr.campaign_id = ? ORDER BY cr.created_at DESC`,
     [rows[0].id]
   );
@@ -21103,6 +21103,50 @@ async function hubMailState(orgId) {
   return { sends: true, from: ident ? ident.from : null, sentence: ident ? `Your email goes out from ${ident.from}.` : null };
 }
 
+// FIX-40 · AUDIENCE, COUNTED BY THE RULES A CAMPAIGN SENDS BY. The tab used to
+// filter the whole donor list in the browser with rules of its own: "All
+// Donors" was everyone with an email (volunteers and staff too, 1,206 against
+// 1,158 donors), and "Lapsed" read a status nothing sets (0). Each segment is
+// now filterBySegment's, over the same people audienceRoster counts (everyone
+// with an email), and "Gone quiet" is the Why rail's rule (routes/why.js):
+// stage lapsed, or Drift says past their own gap. A volunteer coordinator gets
+// no giving column (VOL-2's rule).
+app.get("/communications/audience", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const coordinator = req.user.role === "volunteer_coordinator";
+  const donors = await query(
+    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL", [orgId]);
+  const drift = await query("SELECT donor_id, assessment FROM donor_drift WHERE org_id = ?", [orgId]).catch(() => []);
+  const quiet = new Set(drift.filter(r => {
+    let a = r.assessment; try { if (typeof a === "string") a = JSON.parse(a); } catch { a = null; }
+    return a && (a.state === "drifting" || a.state === "lapsed");
+  }).map(r => r.donor_id));
+  const all = filterBySegment(donors, { mode: "donors" });
+  const byStage = st => all.filter(d => d.stage === st);
+  const SEGS = [
+    { id: "all", label: "All donors", rows: all,
+      definition: "Every donor with an email address. People who only volunteer or work here are not in it." },
+    { id: "major", label: "Major ($10,000+)", rows: filterBySegment(all, { mode: "major" }),
+      definition: "Donors with an email address who have given $10,000 or more in total." },
+    { id: "lapsed", label: "Gone quiet", rows: all.filter(d => d.stage === "lapsed" || quiet.has(d.id)),
+      definition: "Donors with an email address who are past their own usual gap between gifts, or marked lapsed. The same rule as Why." },
+    { id: "prospect", label: "Prospects", rows: byStage("prospect"), definition: "Donors with an email address at the Prospect stage." },
+    { id: "steward", label: "In ongoing care", rows: byStage("steward"), definition: "Donors with an email address at the Ongoing care stage." },
+    { id: "solicit", label: "Ready to solicit", rows: byStage("solicit"), definition: "Donors with an email address at the Solicit stage." },
+  ];
+  const everyone = await query("SELECT id, person_types FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]);
+  const donorTotal = everyone.filter(d => PT.isDonor(d)).length;
+  res.json({
+    donorTotal,
+    segments: SEGS.map(s => ({
+      id: s.id, label: s.label, count: s.rows.length, definition: s.definition,
+      rows: s.rows.slice().sort((a, b) => (Number(b.total_giving) || 0) - (Number(a.total_giving) || 0))
+        .map(d => ({ id: d.id, name: d.name, email: d.email, stage: d.stage,
+                     ...(coordinator ? {} : { totalGiving: Number(d.total_giving) || 0 }) })),
+    })),
+  });
+}));
+
 app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [roster, campaigns, seqs] = await Promise.all([
@@ -21114,9 +21158,17 @@ app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
              FROM sequences s WHERE s.org_id=? AND s.trigger <> 'onboarding'
             ORDER BY s.created_at DESC LIMIT 5`, [orgId]).catch(() => []),
   ]);
-  const sent = campaigns.filter(c => c.status === "sent");
-  const totalSent = sent.reduce((n, c) => n + (c.recipient_count || 0), 0);
-  const totalOpen = sent.reduce((n, c) => n + (c.open_count || 0), 0);
+  // FIX-40 · THE TOTALS COUNT EVERY SENT EMAIL CAMPAIGN, not the six newest
+  // rows the Recent sends list shows. With six drafts newer than the one appeal
+  // that went out, Overview said 0 emails sent while Analytics said 180. Both
+  // now read campaignStats over the same rows (shared/campaignKind.js).
+  const CK = await import("../shared/campaignKind.js");
+  const every = await query(
+    `SELECT id, status, subject, body, sent_at, scheduled_at, recipient_count, open_count, goal_amount, email_blocks
+       FROM campaigns WHERE org_id=?`, [orgId]);
+  const cs = CK.campaignStats(every);
+  const totalSent = cs.totalSent;
+  const totalOpen = cs.totalSentRows.reduce((n, c) => n + (Number(c.open_count) || 0), 0);
   res.json({
     ...roster,
     mail: await hubMailState(orgId),

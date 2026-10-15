@@ -20,6 +20,10 @@ import { campaignStats, sentWord, openRateWord, statusWord, CAMPAIGN_FILTERS, fi
 import { displayDate, displayDateTime } from "../../../shared/displayDate";
 import { CalendarDays } from "lucide-react";
 import { AgentDraftReview, agentDraftsIn } from "./AgentDraftReview";
+import { AudienceTab, SendsPerMonth, EmailToolGifts, OpenRows } from "./CommsOpens";
+import { Figure } from "./Figure";
+import { DonorLink } from "./RecordLink";
+import { EmailAsSentPanel } from "./EmailAsSent";
 
 // WIRE-1-ADDENDUM: "Templates" and "Email templates" were one thing twice, so
 // they are one Templates tab now. An old link to either (?subtab=templates,
@@ -202,15 +206,15 @@ const TIER_OPTS  = ["transformational", "major", "mid", "small", "micro"];
 // one segment that deliberately crosses every type: it IS the Mailchimp
 // audience, and it is what she is paying them $100 a month for.
 const SEG_MODES  = [
-  { id: "all",         label: "All Donors" },
+  { id: "all",         label: "All donors" },
   { id: "everyone",    label: "Everyone with an email" },
   { id: "volunteers",  label: "Volunteers" },
   { id: "staff_board", label: "Staff and board" },
   { id: "donors",      label: "Donors" },
-  { id: "major",       label: "Major >$10k" },
+  { id: "major",       label: "Major ($10,000+)" },
   { id: "lapsed",      label: "Lapsed" },
-  { id: "byStage",     label: "By Stage" },
-  { id: "byTier",      label: "By Tier" },
+  { id: "byStage",     label: "By stage" },
+  { id: "byTier",      label: "By tier" },
   { id: "manual",      label: "Manual" },
   // WIRE-1: any Group, kept by hand or by a rule. The server resolves it to
   // its members at send time (resolveSegmentSpec, mode "audience").
@@ -430,20 +434,6 @@ function RichEditor({ editorRef, initialHtml, onInput, readOnly }) {
 }
 
 // ── Mini bar chart (Analytics) ────────────────────────────────────────────────
-function BarChart({ data }) {
-  const max = Math.max(...data.map(d => d.v), 1);
-  return (
-    <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
-      {data.map((d, i) => (
-        <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: T.greenDk, borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
-          <div style={{ fontSize: 9, color: T.ink3 }}>{d.label}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Campaign donation link copy button ────────────────────────────────────────
 function CampaignLinkBtn({ campaignId, campaignName }) {
   const [loading, setLoading] = useState(false);
@@ -1191,8 +1181,12 @@ function MilestoneDraftsPanel({ highlightDraftId, onEditTemplate }) {
         <div key={d.id} ref={el => { rowRefs.current[d.id] = el; }} style={{ background: T.white, border: (highlightDraftId === d.id ? "2px solid " + T.gold : "1px solid " + T.bg3), boxShadow: highlightDraftId === d.id ? "0 0 0 3px " + T.gold + "22" : "none", borderRadius: 12, padding: 18, transition: "box-shadow 0.3s" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{d.donor_name}</div>
-              <div style={{ fontSize: 12, color: T.ink3 }}>{d.donor_email} · {fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>
+                {d.donor_id ? <DonorLink id={d.donor_id} data-testid="draft-person" style={{ color: T.ink }}>{d.donor_name}</DonorLink> : d.donor_name}
+              </div>
+              <div style={{ fontSize: 12, color: T.ink3 }}>{d.donor_email} · {d.donor_id
+                ? <Figure variant="cell" kind="money" value={Number(d.donor_total_giving || 0)} label={`${d.donor_name}, lifetime giving`} source={{ key: "donor-lifetime", params: { donor: d.donor_id } }} />
+                : fmtFull(d.donor_total_giving || 0)} lifetime giving</div>
               <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
                 {d.source && d.source.startsWith("workflow:") ? "Drafted by a workflow" : d.source === "journey" ? "From a journey step" : "Milestone draft"}
                 {d.reviewed_at ? <strong style={{ color: T.greenMid }}> · Reviewed</strong> : null}
@@ -1253,11 +1247,12 @@ function EmailToolPanel({ onNavigate }) {
     apiFetch("/email-marketing/campaigns")
       .then(setD).catch(e => setErr(errorMessage(e, "That did not load.")));
   }, []);
-  const openRows = (c, which) => {
+  // FIX-40 · `page` opens the campaign's own page (what the tool reports about
+  // it, then the people it can name); otherwise the people behind one number.
+  const openRows = (c, which, page) => {
     apiFetch(`/email-marketing/campaigns/${c.id}/people?which=${which}`)
-      .then(r => setOpen(r)).catch(e => setErr(errorMessage(e, "Those rows did not load.")));
+      .then(r => setOpen({ ...r, page: !!page })).catch(e => setErr(errorMessage(e, "Those rows did not load.")));
   };
-  const money = cents => "$" + (Number(cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const pct = r => r === null || r === undefined ? "" : Math.round(r * 100) + "%";
   // A DATE FORMATTER, NOT A MONEY ONE. `fmtFull` is currency, and it printed
   // "$0" in the Sent column for every campaign: a date rendered as nothing,
@@ -1302,8 +1297,8 @@ function EmailToolPanel({ onNavigate }) {
       )}
 
       {!!rows.length && (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflowX: "auto", background: "#fff" }}>
+          <table style={{ width: "100%", minWidth: 640, borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: T.cream, textAlign: "left" }}>
                 <th style={{ padding: "10px 12px", color: T.ink }}>Campaign</th>
@@ -1317,9 +1312,19 @@ function EmailToolPanel({ onNavigate }) {
             <tbody>
               {rows.map(c => (
                 <tr key={c.id} style={{ borderTop: `1px solid ${T.line}` }}>
-                  <td style={{ padding: "10px 12px", color: T.ink, fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button {...interactive(() => openRows(c, "delivered", true), { label: `Open ${c.name}` })} data-testid="emailtool-name"
+                      style={{ background: "none", border: "none", padding: 0, color: T.ink, fontWeight: 600, cursor: "pointer", textDecoration: "underline", textAlign: "left", font: "inherit" }}>
+                      {c.name}
+                    </button>
+                  </td>
                   <td style={{ padding: "10px 12px", color: T.inkSoft }}>{sentDay(c.sentAt)}</td>
-                  <td style={{ padding: "10px 12px", color: T.ink }}>{c.sends.toLocaleString()}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button {...interactive(() => openRows(c, "delivered"), { label: `Who ${c.name} went to` })} data-testid="emailtool-delivered"
+                      style={{ background: "none", border: "none", padding: 0, color: T.green, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                      {c.sends.toLocaleString()}
+                    </button>
+                  </td>
                   <td style={{ padding: "10px 12px" }}>
                     <button {...interactive(() => openRows(c, "opens"), { label: `Who opened ${c.name}` })}
                       style={{ background: "none", border: "none", padding: 0, color: T.green,
@@ -1337,9 +1342,7 @@ function EmailToolPanel({ onNavigate }) {
                   <td style={{ padding: "10px 12px", color: T.ink }}>
                     {/* "none" rather than a dash: no em dashes reach a screen,
                         and a word says what an empty cell means. */}
-                    {c.giftsWithin
-                      ? `${c.giftsWithin} · ${money(c.giftCentsWithin)}`
-                      : <span style={{ color: T.inkSoft }}>none</span>}
+                    <EmailToolGifts campaign={c} />
                   </td>
                 </tr>
               ))}
@@ -1353,7 +1356,15 @@ function EmailToolPanel({ onNavigate }) {
       )}
 
       {open && (
-        <Modal onClose={() => setOpen(null)} title={`${open.campaign.name}: ${open.which}`}>
+        <Modal onClose={() => setOpen(null)} title={open.page ? open.campaign.name : `${open.campaign.name}: ${open.which === "delivered" ? "who it went to" : open.which}`}>
+          {open.page && (
+            <div data-testid="emailtool-campaign-page" style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 14px", fontSize: 13, marginBottom: 14 }}>
+              <span style={{ color: T.inkSoft }}>Subject</span><span style={{ color: T.ink }}>{open.campaign.subject || "Not reported by the email tool"}</span>
+              <span style={{ color: T.inkSoft }}>Sent</span><span style={{ color: T.ink }}>{sentDay(open.campaign.sentAt)} from {open.campaign.provider}</span>
+              <span style={{ color: T.inkSoft }}>Delivered</span><span style={{ color: T.ink }}>{Number(open.campaign.sends || 0).toLocaleString()}</span>
+              <span style={{ color: T.inkSoft }}>Body</span><span style={{ color: T.inkSoft }}>Steward does not read the email's body or the list name from {open.campaign.provider}. Open it there to see the words.</span>
+            </div>
+          )}
           {/* The tool's count and the people Steward can name are two numbers,
               and the sentence says so rather than letting 188 open onto three
               rows as though that footed. */}
@@ -1364,7 +1375,9 @@ function EmailToolPanel({ onNavigate }) {
             {open.people.map((p, i) => (
               <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12,
                                     padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
-                <span style={{ color: T.ink }}>{p.name}</span>
+                {p.donorId
+                  ? <DonorLink id={p.donorId} data-testid="emailtool-person" style={{ color: T.ink, fontWeight: 600 }}>{p.name}</DonorLink>
+                  : <span style={{ color: T.ink }} title="An address on the list that is not a person on file here">{p.name}</span>}
                 <span style={{ color: T.inkSoft, fontSize: 12 }}>
                   {p.clicked ? (p.clickedLabel ? `clicked ${p.clickedLabel}` : "clicked") : p.opened ? "opened" : ""}
                 </span>
@@ -1454,7 +1467,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [allDonors, setAllDonors]     = useState([]);
 
   // Audience tab segment preview
-  const [audienceSeg, setAudienceSeg] = useState("all");
+  // FIX-40 · the campaign page: the email as sent, when, and to whom.
+  const [asSent, setAsSent] = useState(null);
   const [newBtnHover, setNewBtnHover] = useState(false);
   const [hoveredRowId, setHoveredRowId] = useState(null);
 
@@ -1535,17 +1549,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const avgOpen   = totalSent > 0 ? Math.round(totalOpen / totalSent * 100) : 0;
     const active    = campaigns.filter(c => c.status === "sending" || c.status === "scheduled").length;
     return { totalSent, avgOpen, active };
-  }, [campaigns]);
-
-  // ── Monthly send chart data ─────────────────────────────────────────────────
-  const monthlyChart = useMemo(() => {
-    const map = {};
-    campaigns.filter(c => c.sent_at).forEach(c => {
-      const k = new Date(c.sent_at).toLocaleString("default", { month: "short" });
-      map[k] = (map[k] || 0) + (c.recipient_count || 0);
-    });
-    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-    return months.filter(m => map[m] !== undefined).map(m => ({ label: m, v: map[m] || 0 })).slice(-6);
   }, [campaigns]);
 
   // ── Analytics (must be before any early return — Rules of Hooks) ────────────
@@ -2124,18 +2127,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "surveys",    label: "Surveys" },
   ];
 
-  // ── Audience tab segments ───────────────────────────────────────────────────
-  const AUDIENCE_SEGS = [
-    { id: "all",     label: "All Donors",      filter: d => !!d.email },
-    { id: "major",   label: "Major (>$10k)",   filter: d => d.email && (d.total_giving || 0) >= 10000 },
-    { id: "lapsed",  label: "Lapsed",          filter: d => d.email && d.status === "lapsed" },
-    { id: "prospect",label: "Prospects",       filter: d => d.email && d.stage === "prospect" },
-    { id: "steward", label: "In ongoing care",        filter: d => d.email && d.stage === "steward" },
-    { id: "solicit", label: "Ready to Solicit",filter: d => d.email && d.stage === "solicit" },
-  ];
-  const activeSeg = AUDIENCE_SEGS.find(s => s.id === audienceSeg) || AUDIENCE_SEGS[0];
-  const audDonors = allDonors.filter(activeSeg.filter);
-
   // ── Analytics ───────────────────────────────────────────────────────────────
   // FIX-6 item 5 — OVER EMAIL CAMPAIGNS ONLY. `campaigns` holds fundraising
   // goals too (shared/campaignKind.js says why), and counting them here is
@@ -2163,6 +2154,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
       {/* Main content */}
       <div className="comm-main" style={{ flex: 1, minHeight: 0 }}>
+        {/* FIX-40 · a campaign's own page: the email as sent and who it went to. */}
+        {asSent && <EmailAsSentPanel path={asSent} onClose={() => setAsSent(null)} />}
 
         {/* CAN-SPAM postal-address prompt — terracotta = needs-attention */}
         {orgPostalAddress === null && (
@@ -2221,16 +2214,24 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               {/* the three numbers that describe sending, not people */}
               {hub && (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {/* FIX-40 · each opens: every email sent, the sent
+                      campaigns, the sequences. */}
                   {[
-                    { label: "Emails sent", value: (hub.stats.totalSent || 0).toLocaleString() },
-                    { label: "Open rate", value: hub.stats.openRate === null ? "Not set" : hub.stats.openRate + "%" },
-                    { label: "Sequences running", value: hub.stats.activeSequences },
-                  ].map(({ label, value }) => (
-                    <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132 }}>
-                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</div>
-                    </div>
-                  ))}
+                    { label: "Emails sent", id: "sent", value: (hub.stats.totalSent || 0).toLocaleString(), source: { key: "emails-sent", params: {} }, n: hub.stats.totalSent || 0 },
+                    { label: "Open rate", id: "rate", value: hub.stats.openRate === null ? "Not sent yet" : hub.stats.openRate + "%", go: () => { setCampFilter("sent"); setNav("campaigns"); } },
+                    { label: "Sequences running", id: "sequences", value: hub.stats.activeSequences, go: () => setNav("sequences") },
+                  ].map(({ label, id, value, source, n, go }) => {
+                    const inner = (
+                      <>
+                        <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</span>
+                        <span style={{ display: "block", fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</span>
+                      </>
+                    );
+                    const box = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132, textAlign: "left" };
+                    return source
+                      ? <OpenRows key={label} testid={"hub-stat-" + id} source={source} title={label} value={n} style={box}>{inner}</OpenRows>
+                      : <button key={label} type="button" data-testid={"hub-stat-" + id} onClick={go} style={{ ...box, font: "inherit", cursor: "pointer" }}>{inner}</button>;
+                  })}
                 </div>
               )}
 
@@ -2257,7 +2258,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                     {hub.campaigns.map((c, i) => {
                       const rate = c.recipient_count > 0 ? Math.round((c.open_count || 0) / c.recipient_count * 100) : null;
                       return (
-                        <li key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
+                        <li key={c.id} data-testid="hub-recent" {...interactive(() => c.status === "sent" ? setAsSent(`/campaigns/${c.id}/as-sent`) : setNav("campaigns"), { label: `Open ${c.name}` })}
+                          style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", cursor: "pointer",
                                                 borderBottom: i < hub.campaigns.length - 1 ? "1px solid " + T.bg2 : "none" }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
@@ -2298,8 +2300,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           <span aria-hidden style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0,
                             background: T[a.tone] || T.greenMid, transform: "translateY(-1px)" }} />
                           <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink }}>{a.name}</span>
-                          <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
-                            {a.count.toLocaleString()}
+                          <span data-testid="hub-audience-count" style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+                            {/* FIX-40 · a group's count opens its members; the
+                                others open the screen their people live on,
+                                the same place the link under them goes. */}
+                            {a.kind === "group"
+                              ? <Figure variant="cell" value={a.count} label={a.name} source={{ key: "group-members", params: { group: a.id } }} />
+                              : onNavigate
+                                ? <button type="button" onClick={() => onNavigate(a.livesOn.tab, a.livesOn.filter ? { personType: a.livesOn.filter } : {})}
+                                    aria-label={`${a.name}: ${a.count}. Opens ${a.livesOn.label}.`} className="figure-inline"
+                                    style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer" }}>{a.count.toLocaleString()}</button>
+                                : a.count.toLocaleString()}
                           </span>
                         </div>
                         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.45, paddingLeft: 15 }}>
@@ -2510,10 +2521,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           <StatusBadge status={c.status} campaign={c} onFailed={() => { setExpandedId(c.id); setFailedOnly(c.id); }} />
                         </div>
                         <div className="fx39-cell" data-label="Sent" data-testid="camp-row-sent" style={{ color: sentCt > 0 ? T.ink : T.ink3 }}>
-                          {gone ? sentCt.toLocaleString("en-US") : "Not yet"}
+                          {gone && sentCt > 0
+                            ? <OpenRows testid="camp-sent-open" source={{ key: "emails-sent", params: { campaign: c.id } }} title={`Emails ${c.name} sent`} value={sentCt}>{sentCt.toLocaleString("en-US")}</OpenRows>
+                            : gone ? "0" : "Not yet"}
                         </div>
                         <div className="fx39-cell" data-label="Opened" data-testid="camp-row-rate" style={{ color: sentCt > 0 ? T.ink : T.ink3 }}>
-                          {gone && sentCt > 0 ? `${openCt.toLocaleString("en-US")} (${openRate}%)` : "Not yet"}
+                          {gone && sentCt > 0
+                            ? <button type="button" data-testid="camp-rate-open" onClick={() => setAsSent(`/campaigns/${c.id}/as-sent`)} className="figure-inline"
+                                aria-label={`${c.name}: ${openRate}% opened. Opens the campaign.`}
+                                style={{ background: "none", border: "none", padding: 0, font: "inherit", color: "inherit", cursor: "pointer" }}>{`${openCt.toLocaleString("en-US")} (${openRate}%)`}</button>
+                            : "Not yet"}
                         </div>
                         <div className="fx39-cell" data-label="Date" data-testid="camp-row-date" style={{ fontSize: 12.5 }}>
                           {c.sent_at ? displayDate(new Date(c.sent_at))
@@ -2589,7 +2606,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                               </div>
                               {(failedOnly === c.id ? recs.filter(r => r.failure_reason) : recs.slice(0, 30)).map(r => (
                                 <div key={r.id} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px", padding: "8px 12px", borderTop: "1px solid " + T.bg2, fontSize: 12, gap: 8, alignItems: "center" }}>
-                                  <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>
+                                  {r.donor_id
+                                    ? <DonorLink id={r.donor_id} style={{ color: T.ink, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</DonorLink>
+                                    : <span style={{ color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.donor_name || r.email}</span>}
                                   <span style={{ color: r.opened_at ? T.greenMid : r.failure_reason ? T.terracotta : r.sent_at ? T.ink3 : T.gold600 }}
                                     title={r.failure_reason || undefined}>
                                     {r.opened_at ? "Opened" : r.failure_reason ? "Failed" : r.sent_at ? "Delivered" : "Pending"}
@@ -2629,125 +2648,73 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         )}
 
         {/* ── AUDIENCE ──────────────────────────────────────────────────────── */}
-        {nav === "audience" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Audience</h2>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {AUDIENCE_SEGS.map(s => {
-                const cnt = allDonors.filter(s.filter).length;
-                return (
-                  <button key={s.id} aria-pressed={audienceSeg === s.id} onClick={() => setAudienceSeg(s.id)}
-                    style={{
-                      background: T.white,
-                      border: "1px solid " + T.bg3,
-                      borderRadius: 8, padding: "7px 14px", cursor: "pointer",
-                      color: T.ink3,
-                      fontSize: 12, fontWeight: 400,
-                      display: "flex", alignItems: "center", gap: 6,
-                      ...activeMark(audienceSeg === s.id, "bottom"),
-                    }}>
-                    {s.label}
-                    <span style={{ background: audienceSeg === s.id ? T.white : T.bg3, borderRadius: 99, padding: "1px 7px", fontSize: 11, color: audienceSeg === s.id ? T.ink : T.ink3 }}>{cnt}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {allDonors.length === 0 ? (
-              <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>Loading donors…</div>
-            ) : audDonors.length === 0 ? (
-              <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>No donors in this segment.</div>
-            ) : (
-              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: T.bg2, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
-                  <span>Donor</span><span>Email</span><span>Stage</span><span>Total Giving</span>
-                </div>
-                {audDonors.slice(0, 50).map(d => (
-                  <div key={d.id} style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "10px 16px", borderTop: "1px solid " + T.bg3, fontSize: 13, gap: 8, alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, color: T.ink }}>{d.name}</span>
-                    <span style={{ color: T.ink3, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.email}</span>
-                    <span style={{ fontSize: 11, color: T.ink3 }}>{d.stage ? stageName(d.stage) : "Not set"}</span>
-                    <span style={{ fontSize: 12, color: T.ink }}>${Number(d.total_giving || 0).toLocaleString()}</span>
-                  </div>
-                ))}
-                {audDonors.length > 50 && <div style={{ padding: "9px 16px", fontSize: 11, color: T.ink3, borderTop: "1px solid " + T.bg3 }}>+{audDonors.length - 50} more</div>}
-              </div>
-            )}
-
-            <button
-              onClick={() => { setNav("campaigns"); openBuilder(); }}
-              style={{ ...S.btn("primary"), alignSelf: "flex-start" }}>
-              Email This Segment →
-            </button>
-          </div>
-        )}
+        {nav === "audience" && <AudienceTab onEmailSegment={() => { setNav("campaigns"); openBuilder(); }} />}
 
         {/* ── ANALYTICS ─────────────────────────────────────────────────────── */}
         {nav === "analytics" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Analytics</h2>
 
-            {/* All-time stats */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
-              {[
-                // Total Sent / Open Rate have no filtered-list destination → static.
-                { label: "Total Emails Sent", value: allTimeSent.toLocaleString() },
-                { label: "Overall Open Rate",  value: overallRate + "%", note: "Industry avg ~20%" },
-                { label: "Campaigns Sent",     value: sentCampaigns.length, onClick: () => setNav("campaigns") },
-              ].map(({ label, value, note, onClick }) => (
-                <div key={label} {...interactive(onClick, { label: `View ${label}` })}
-                  style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
-                  <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
-                  <div style={{ fontSize: 28, fontWeight: 800, color: T.ink }}>{value}</div>
-                  {note && <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>{note}</div>}
-                </div>
-              ))}
+            {/* FIX-40 · every number opens. Total emails sent opens every email
+                sent (figure source emails-sent); the open rate and Campaigns
+                sent open the sent campaigns. The "Industry avg ~20%" line had
+                no source and is gone, with nothing in its place. */}
+            <div className="comm-stats" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+              <Figure label="Total emails sent" value={allTimeSent} figureKey="comms-total-sent"
+                source={{ key: "emails-sent", params: {} }} />
+              <div className="fig-tile" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12 }}>
+                <button type="button" data-testid="analytics-open-rate" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}
+                  aria-label="Overall open rate. Opens the sent campaigns, each with its own rate."
+                  style={{ textAlign: "left", background: "transparent", border: "none", width: "100%", padding: "16px 18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
+                  <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>Overall open rate</span>
+                  <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, lineHeight: 1.1 }}>{allTimeSent > 0 ? overallRate + "%" : "Not sent yet"}</span>
+                </button>
+              </div>
+              <div className="fig-tile" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12 }}>
+                <button type="button" data-testid="analytics-campaigns-sent" onClick={() => { setCampFilter("sent"); setNav("campaigns"); }}
+                  aria-label="Campaigns sent. Opens those campaigns."
+                  style={{ textAlign: "left", background: "transparent", border: "none", width: "100%", padding: "16px 18px 12px", cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
+                  <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>Campaigns sent</span>
+                  <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, lineHeight: 1.1 }}>{sentCampaigns.length.toLocaleString("en-US")}</span>
+                </button>
+              </div>
             </div>
 
-            {/* Best campaign */}
             {bestCampaign && (
-              <div {...interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}` })}
-                style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2 }}>{bestCampaign.name}</div>
-                  <div style={{ fontSize: 12, color: T.ink3 }}>{bestCampaign.rate}% open rate · {bestCampaign.recipient_count} sent</div>
-                </div>
+              <button type="button" data-testid="analytics-best" onClick={() => setAsSent(`/campaigns/${bestCampaign.id}/as-sent`)}
+                style={{ textAlign: "left", font: "inherit", cursor: "pointer", background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 16 }}>
+                <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best campaign</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2, textDecoration: "underline" }}>{bestCampaign.name}</div>
+                <div style={{ fontSize: 12, color: T.ink3 }}>{bestCampaign.rate}% open rate, {Number(bestCampaign.recipient_count).toLocaleString("en-US")} sent</div>
+              </button>
+            )}
+
+            {sentCampaigns.length > 0 && (
+              <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 14 }}>Sends per month, last 12 months</div>
+                <SendsPerMonth campaigns={sentCampaigns} />
               </div>
             )}
 
-            {/* Monthly chart */}
-            {monthlyChart.length > 0 && (
-              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink, marginBottom: 14 }}>Sends Per Month</div>
-                <BarChart data={monthlyChart} />
-              </div>
-            )}
-
-            {/* Top 5 by open rate */}
             {topByOpen.length > 0 && (
-              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", borderBottom: "1px solid " + T.bg3, fontSize: 12, fontWeight: 700, color: T.ink }}>Top Campaigns by Open Rate</div>
+              <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid " + T.bg3, fontSize: 13, fontWeight: 700, color: T.ink }}>Top campaigns by open rate</div>
                 {topByOpen.map((c, i) => (
-                  <div key={c.id} style={{ display: "flex", alignItems: "center", padding: "11px 16px", borderTop: i > 0 ? "1px solid " + T.bg3 : undefined, gap: 12 }}>
-                    <span style={{ fontSize: 11, color: T.ink3, width: 16, textAlign: "right" }}>#{i + 1}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>{c.name}</div>
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{c.recipient_count} sent · {displayDate(new Date(c.sent_at))}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: c.rate >= 25 ? T.greenMid : T.gold600 }}>{c.rate}%</div>
-                      <div style={{ height: 3, width: 60, background: T.bg3, borderRadius: 99, marginTop: 3 }}>
-                        <div style={{ height: "100%", width: `${Math.min(c.rate, 100)}%`, background: c.rate >= 25 ? T.greenMid : T.gold500, borderRadius: 99 }} />
-                      </div>
-                    </div>
-                  </div>
+                  <button key={c.id} type="button" data-testid="analytics-top-row" onClick={() => setAsSent(`/campaigns/${c.id}/as-sent`)}
+                    style={{ display: "flex", width: "100%", alignItems: "center", padding: "11px 16px", border: "none", borderTop: i > 0 ? "1px solid " + T.bg3 : "none", gap: 12, background: "none", font: "inherit", cursor: "pointer", textAlign: "left" }}>
+                    <span style={{ fontSize: 11, color: T.ink3, width: 16, textAlign: "right" }}>{i + 1}</span>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 600, color: T.ink, textDecoration: "underline" }}>{c.name}</span>
+                      <span style={{ display: "block", fontSize: 11.5, color: T.ink3 }}>{Number(c.recipient_count).toLocaleString("en-US")} sent, {displayDate(new Date(c.sent_at))}</span>
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{c.rate}%</span>
+                  </button>
                 ))}
               </div>
             )}
 
             {sentCampaigns.length === 0 && (
-              <div style={{ background: T.bg2, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
+              <div style={{ background: T.white, borderRadius: 12, padding: 40, textAlign: "center", color: T.ink3, fontSize: 14 }}>
                 Send your first campaign to see analytics.
               </div>
             )}
