@@ -11,6 +11,7 @@
 //
 // Everything reads routes/groups.js. A group by rule is the donor list's own
 // filter, worked out fresh every time, so nothing here stores who is in one.
+import RemoveMenu from "./RemoveMenu";
 import { useCallback, useEffect, useState } from "react";
 import { Zap } from "lucide-react";
 import { apiFetch } from "../api";
@@ -434,8 +435,9 @@ export default function GroupsPage({ isReadOnly, onNavigate, initialGroupId }) {
                   {g.name}{g.kind === "dynamic" && <LightningMark />}
                 </button>
                 <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{g.description || g.sentence}</div>
-                <div style={{ fontSize: 13, color: T.ink2 }}>
-                  <Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} /> {g.count === 1 ? "person" : "people"}
+                <div style={{ fontSize: 13, color: T.ink2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span><Figure variant="inline" kind="count" label={`People in ${g.name}`} value={g.count} definition={list.countSentence} source={g.countSource} /> {g.count === 1 ? "person" : "people"}</span>
+                  <RemoveMenu kind="group" id={g.id} disabled={isReadOnly} onDone={load} />
                 </div>
               </div>
             ))}

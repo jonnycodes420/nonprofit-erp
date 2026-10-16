@@ -18,6 +18,7 @@ import { portalScaleVars } from "../lib/portalScale";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PageRenderer } from "../components/PortalWidgets";
 import { VolunteerProvider } from "../components/VolunteerBlocks";
+import Picture from "../components/Picture";
 
 const HAIR = "#e8e4db";
 
@@ -102,6 +103,7 @@ export default function VolunteerPage() {
         </header>
       )}
       <main className="vp-wrap">
+        {page.page && page.page.cover && <div style={{ marginBottom: 18 }}><Picture value={page.page.cover} alt={page.page.title} ratio="16 / 9" radius={14} testid="page-cover" /></div>}
         <VolunteerProvider data={page.data} orgSlug={orgSlug} pageSlug={pageSlug} hasGroup={hasGroup}>
           <PageRenderer page={{ widgets }} ctx={{ me: null, theme, orgSlug, volData: page.data }} />
         </VolunteerProvider>

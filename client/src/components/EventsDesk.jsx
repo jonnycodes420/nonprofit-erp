@@ -17,6 +17,32 @@ import { tabHref, urlParam, donorHref } from "../lib/appUrls";
 import { EventKiosk } from "./Events";
 import { EventPageEditor } from "./EventPageEditor";
 import { SaveAsGroup } from "./Groups";
+import RemoveMenu, { removeMany } from "./RemoveMenu";
+import PhotoField from "./PhotoField";
+import Picture from "./Picture";
+
+// FIX-41: a ticket type's or sponsorship level's optional small picture. The
+// thumbnail (or "Add a picture") opens the one picture control; it saves at once.
+function LevelPicture({ level, disabled, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState("");
+  const save = async p => {
+    setErr("");
+    try { await apiFetch(`/pictures/event_level/${level.id}`, { method: "PUT", body: JSON.stringify({ picture: p }) }); onSaved && onSaved(); }
+    catch (e) { setErr(errorMessage(e, "That photo did not save.")); }
+  };
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
+      <button type="button" disabled={disabled} onClick={() => setOpen(o => !o)} data-testid="event-level-picture"
+        aria-label={level.picture ? `Change the picture for ${level.name}` : `Add a picture for ${level.name}`}
+        style={{ width: 36, height: 36, padding: 0, borderRadius: 7, overflow: "hidden", border: "1px dashed " + T.bg3, background: T.bg, cursor: disabled ? "default" : "pointer", fontSize: 9, fontWeight: 700, color: T.ink3, fontFamily: "inherit", lineHeight: 1.1 }}>
+        {level.picture ? <Picture value={level.picture} alt={level.name} ratio="1 / 1" radius={0} width={120} /> : "Add a photo"}
+      </button>
+      {open && !disabled && <span style={{ width: 160 }}><PhotoField variant="small" name={level.name} value={level.picture} onChange={save} testid="event-level-photo" /></span>}
+      {err && <span role="alert" style={{ fontSize: 11.5, color: T.ink }}>{err}</span>}
+    </span>
+  );
+}
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = primary => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -36,8 +62,10 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const [marks, setMarks] = useState({});
   // EVENTS-2 — who asked to be told if a place comes free.
   const [wait, setWait] = useState(null);
+  // FIX-41: guests ticked for Remove selected.
+  const [picked, setPicked] = useState(() => new Set());
   const load = () => {
-    apiFetch(`/events/${event.id}/levels`).then(r => { setLevels(r.levels || []); setReg(x => ({ ...x, levelId: x.levelId || r.levels?.[0]?.id || "" })); }).catch(() => {});
+    apiFetch(`/events/${event.id}/levels`).then(r => { setLevels(r.levels || []); setReg(x => ({ ...x, levelId: x.levelId || (r.levels || []).find(l => !l.retired)?.id || "" })); }).catch(() => {});
     apiFetch(`/events/${event.id}/guests`).then(setGuests).catch(e => setMsg(errorMessage(e, "Could not load the guest list.")));
     apiFetch(`/events/${event.id}/waitlist`).then(setWait).catch(() => setWait(null));
   };
@@ -94,11 +122,14 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
         <div style={h}>Tickets and sponsorships</div>
         {levels.map(l => (
           <div key={l.id} style={{ display: "flex", gap: 10, fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+            <LevelPicture level={l} disabled={isReadOnly} onSaved={load} />
             <strong style={{ minWidth: 160 }}>{l.name}</strong>
             <span>{fmtFull(l.price)}</span>
             <span style={{ color: T.ink3 }}>{l.kind === "sponsor" ? "sponsorship" : `worth ${fmtFull(l.fmv)}, so ${fmtFull(l.deductible)} deductible`}</span>
             {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organization pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
             <span style={{ marginLeft: "auto", color: T.ink3 }}>{l.capacity == null ? `${l.taken} taken` : `${l.taken} of ${l.capacity} taken`}</span>
+            {l.retired && <span data-testid="event-level-retired" style={{ fontSize: 11, fontWeight: 800, color: T.ink3, border: "1px solid " + T.bg3, borderRadius: 6, padding: "1px 7px" }}>Retired</span>}
+            <RemoveMenu kind={l.kind === "sponsor" ? "sponsor_level" : "ticket_type"} id={l.id} disabled={isReadOnly || l.retired} onDone={load} />
             {l.kind === "sponsor" && (editBenefits && editBenefits.id === l.id
               ? <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6 }}>
                   <textarea value={editBenefits.text} onChange={e => setEditBenefits({ ...editBenefits, text: e.target.value })} rows={4}
@@ -138,6 +169,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
             <span style={{ color: T.ink3 }}>{w.offered_at ? `offered ${displayDate(String(w.offered_at).slice(0, 10))}` : `number ${w.position}`}</span>
             {!isReadOnly && !w.taken_at && <button onClick={() => offer(w)} style={{ ...btn(false), marginLeft: "auto" }} data-testid="event-waitlist-offer">
               {w.offered_at ? "Offer again" : "Offer a place"}</button>}
+            <RemoveMenu kind="waitlist" id={w.id} disabled={isReadOnly} onDone={load} />
           </div>))}
       </Card>}
 
@@ -147,7 +179,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <input list="event-people" placeholder="Name" value={reg.who} onChange={e => setReg({ ...reg, who: e.target.value })} style={{ ...inp, width: 200 }} data-testid="event-reg-who" />
           <input placeholder="Email if new" value={reg.email} onChange={e => setReg({ ...reg, email: e.target.value })} style={{ ...inp, width: 180 }} />
-          <select value={reg.levelId} onChange={e => setReg({ ...reg, levelId: e.target.value })} style={inp}>{levels.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
+          <select value={reg.levelId} onChange={e => setReg({ ...reg, levelId: e.target.value })} style={inp}>{levels.filter(l => !l.retired).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
           <input type="number" min={1} max={50} value={reg.quantity} onChange={e => setReg({ ...reg, quantity: e.target.value })} style={{ ...inp, width: 60 }} />
           {levels.find(l => l.id === reg.levelId)?.kind === "sponsor" &&
             <label style={{ fontSize: 13, color: T.ink, display: "flex", gap: 5 }}><input type="checkbox" checked={reg.paid} onChange={e => setReg({ ...reg, paid: e.target.checked })} style={{ accentColor: T.greenDk }} />Paid now</label>}
@@ -161,6 +193,8 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           <div style={h}>Guest list</div>
           <span style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {!isReadOnly && guests?.guests?.length > 0 && <button onClick={() => setDoor(d => !d)} style={btn(!door)} data-testid="event-door-checkin">{door ? "Close check-in" : "Check in at the door"}</button>}
+            {!isReadOnly && picked.size > 0 && <button data-testid="event-remove-selected" style={btn(false)}
+              onClick={() => removeMany({ kind: "guest", ids: [...picked], onDone: () => { setPicked(new Set()); load(); } })}>Remove selected ({picked.size})</button>}
             {!isReadOnly && guests?.guests?.length > 0 && <button onClick={saveAttendance} disabled={!Object.keys(marks).length} style={btn(false)} data-testid="event-save-attendance">Save attendance</button>}
             {/* WIRE-1: the guest list as a group by rule, kept up to date. */}
             {!isReadOnly && guests?.guests?.length > 0 && <SaveAsGroup name={`${event.name} guests`} rules={{ registeredEvent: event.id }} label="Save these guests as a group" testid="event-save-group" />}
@@ -170,7 +204,9 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
         {!guests ? <div style={{ color: T.ink3, fontSize: 13 }}>Loading…</div> : guests.guests.length === 0
           ? <div style={{ color: T.ink3, fontSize: 13 }}>Nobody has registered yet.</div>
           : guests.guests.map(g => (
-            <div key={g.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+            <div key={g.id} data-testid="event-guest-row" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+              {!isReadOnly && <input type="checkbox" aria-label={`Select ${g.name}`} data-testid="event-guest-pick" checked={picked.has(g.id)} style={{ accentColor: T.greenDk }}
+                onChange={e => setPicked(x => { const n = new Set(x); if (e.target.checked) n.add(g.id); else n.delete(g.id); return n; })} />}
               {/* FIX-27 Part 6: a guest's name opens their person. */}
               <strong style={{ minWidth: 170 }}>{g.donor_id
                 ? <RecordLink to={donorHref(g.donor_id)} data-testid="event-guest-name" style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{g.name}</RecordLink>
@@ -181,6 +217,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
                 {["attended", "no_show"].map(st => (
                   <button key={st} onClick={() => setMarks(m => ({ ...m, [g.id]: st }))} disabled={isReadOnly}
                     style={{ ...btn(false), padding: "4px 9px", background: (marks[g.id] || g.status) === st ? T.bg2 : T.white }}>{st === "attended" ? "Came" : "Didn't come"}</button>))}
+                <RemoveMenu kind="guest" id={g.id} disabled={isReadOnly} onDone={load} />
               </span>
             </div>))}
       </Card>

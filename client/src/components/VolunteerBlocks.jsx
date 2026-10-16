@@ -16,6 +16,7 @@
 // block rendered without one still draws, it just cannot hand a choice on.
 import { createContext, useContext, useState } from "react";
 import { API } from "../api";
+import Picture from "./Picture";
 
 const PAL = {
   hair: "#e8e4db",
@@ -138,8 +139,12 @@ function ShiftPicker({ w, ctx }) {
             <div style={{ fontSize: 15, fontWeight: 700 }}>{shiftLabel(s)}</div>
             <div style={{ fontSize: 13, color: PAL.bodyDark }}>{s.oppName}</div>
             {Array.isArray(s.roles) && s.roles.length > 0 ? (
-              <div style={{ ...muted, fontSize: 12.5 }}>
-                {s.roles.map(r => `${r.name}: ${filledLine(r)}${r.full ? " (full)" : ""}`).join(" · ")}
+              <div style={{ ...muted, fontSize: 12.5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {s.roles.map((r, k) => (
+                  <span key={r.id || k} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    {r.picture && <span style={{ width: 28, flex: "none" }}><Picture value={r.picture} alt={r.name} ratio="1 / 1" radius={6} width={96} testid="role-picture" /></span>}
+                    {`${r.name}: ${filledLine(r)}${r.full ? " (full)" : ""}`}{k < s.roles.length - 1 ? " ·" : ""}
+                  </span>))}
               </div>
             ) : (
               <div style={{ ...muted, fontSize: 12.5 }}>{filledLine(s)} · {openLine(s)}</div>

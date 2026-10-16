@@ -37,12 +37,13 @@
 
 const express = require("express");
 const AC = require("../auctionCore");
+const PIC = require("../pictures");
 const figureSources = require("../figureSources");
 const orgTime = require("../orgTime");
 
 const routers = { r0: express.Router() };
 const COOKIE_PREFIX = "stw_auc_";
-const TITLE_MAX = 160, DESC_MAX = 4000, CAT_MAX = 60, PHOTOS_MAX = 6;
+const TITLE_MAX = 160, DESC_MAX = 4000, CAT_MAX = 60, PHOTOS_MAX = PIC.PHOTOS_MAX;   // FIX-41: five, the first is the main one
 
 // The words a redirect may carry back to the public page. A code, never
 // text from the request, so the page never prints what somebody put in a URL.
@@ -175,13 +176,19 @@ function readItem(b, { partial = false } = {}) {
   return { out, errors };
 }
 
-async function storePhotos(orgId, list) {
+// FIX-41: a photo is { url, alt, fx, fy } (pictures.js); a bare string (a
+// data URI or a stored path, the older shape) still arrives and is read the
+// same way, with the item's title as its words.
+async function storePhotos(orgId, list, title) {
   if (!Array.isArray(list)) return { photos: undefined };
   const photos = [];
   for (const p of list.slice(0, PHOTOS_MAX)) {
-    const r = await storeAuctionPhoto(orgId, p);
+    const src = p && typeof p === "object" ? (p.url || p.image || p.src) : p;
+    const r = await storeAuctionPhoto(orgId, src);
     if (r.error) return { error: r.message || "That photo could not be read." };
-    if (r.url) photos.push(r.url);
+    if (!r.url) continue;
+    const meta = p && typeof p === "object" ? p : {};
+    photos.push(PIC.readPicture({ url: r.url, alt: String(meta.alt || "").trim() || title || "", fx: meta.fx, fy: meta.fy }));
   }
   return { photos };
 }
@@ -306,13 +313,14 @@ app.get("/auctions/:id", requireAuth, wrap(async (req, res) => {
       payUrl: `${publicAppUrl()}/auction/pay/${AC.payToken(st.id, st.bid_id)}`,
     } : null;
     return {
-      id: st.id, title: st.title, description: st.description, category: st.category, photos: st.photos || [],
+      id: st.id, title: st.title, description: st.description, category: st.category, photos: PIC.readPhotos(st.photos),
       donorId: st.donor_id, donorName: st.donor_name,
       fmv: Number(st.fmv), startingBid: Number(st.starting_bid), bidIncrement: Number(st.bid_increment),
       buyNow: st.buy_now == null ? null : Number(st.buy_now),
       highBid: st.high_amount == null ? null : Number(st.high_amount), bidCount: st.bid_count,
       highBidder: st.bid_id ? { name: st.bidder_name, bidderNumber: st.bidder_number, donorId: st.bidder_donor_id } : null,
       closed: !!st.closed, boughtNow: !!st.bought_now, winner,
+      retired: !!st.retired_at, unassigned: !!st.unassigned_at && !st.bid_id,   // FIX-41
       inKindGiftId: st.in_kind_gift_id, paidGiftId: st.paid_gift_id, paidAt: st.paid_at,
       deductibleOfWin: winner ? AC.dollars(AC.deductibleCents(AC.cents(st.high_amount), AC.cents(st.fmv))) : null,
     };
@@ -360,7 +368,7 @@ app.post("/auctions/:id/items", requireAuth, checkWriteAccess, wrap(async (req, 
     if (!d) errors.push("That donor is not one of yours.");
   }
   if (errors.length) return res.status(400).json({ error: errors.join(" "), errors });
-  const ph = await storePhotos(orgId, req.body.photos || []);
+  const ph = await storePhotos(orgId, req.body.photos || [], out.title);
   if (ph.error) return res.status(400).json({ error: ph.error });
   const id = "aui_" + uuid().replace(/-/g, "").slice(0, 12);
   const [pos] = await query(`SELECT COALESCE(MAX(position),0)+1 AS p FROM auction_items WHERE auction_id=? AND org_id=?`, [a.id, orgId]);
@@ -402,7 +410,7 @@ app.put("/auction-items/:id", requireAuth, checkWriteAccess, wrap(async (req, re
     if (!d) errors.push("That donor is not one of yours.");
   }
   if (errors.length) return res.status(400).json({ error: errors.join(" "), errors });
-  const ph = await storePhotos(orgId, b.photos);
+  const ph = await storePhotos(orgId, b.photos, out.title || item.title);
   if (ph.error) return res.status(400).json({ error: ph.error });
   const sets = [], args = [];
   const put = (c, v) => { sets.push(`${c}=?`); args.push(v); };
@@ -569,14 +577,37 @@ app.post("/auctions/:id/winner-emails", requireAuth, checkWriteAccess, wrap(asyn
     if (!byPerson.has(k)) byPerson.set(k, { donorId: k, name: s.bidder_name, items: [] });
     byPerson.get(k).items.push(s);
   }
-  const made = await writeDrafts(req, a, `auction-winner:${a.id}`, [...byPerson.values()], p => {
-    const lines = p.items.map(s => `${s.title}: ${fmt(AC.cents(s.high_amount))}\nPay here: ${publicAppUrl()}/auction/pay/${AC.payToken(s.id, s.bid_id)}`);
-    return {
-      subject: p.items.length === 1 ? `You won ${p.items[0].title}` : `You won ${p.items.length} items in ${a.title}`,
-      body: `Hi ${firstName(p.name)},\n\nCongratulations: you had the winning bid in ${a.title}.\n\n${lines.join("\n\n")}\n\nEach link takes you to a secure payment page run by ${orgName}'s own payment account. Your receipt will show the part of your bid that is tax deductible: the amount over each item's fair market value.\n\nThank you for supporting ${orgName}.`,
-    };
-  });
+  const made = await writeDrafts(req, a, `auction-winner:${a.id}`, [...byPerson.values()], p => winnerNote(a, p, orgName));
   res.json({ made, winners: byPerson.size, unreachable });
+}));
+
+// The winner's note, in one place: the drafts above and the preview below
+// read the same words.
+function winnerNote(a, p, orgName) {
+  const lines = p.items.map(s => `${s.title}: ${fmt(AC.cents(s.high_amount))}\nPay here: ${publicAppUrl()}/auction/pay/${AC.payToken(s.id, s.bid_id)}`);
+  return {
+    subject: p.items.length === 1 ? `You won ${p.items[0].title}` : `You won ${p.items.length} items in ${a.title}`,
+    body: `Hi ${firstName(p.name)},\n\nCongratulations: you had the winning bid in ${a.title}.\n\n${lines.join("\n\n")}\n\nEach link takes you to a secure payment page run by ${orgName}'s own payment account. Your receipt will show the part of your bid that is tax deductible: the amount over each item's fair market value.\n\nThank you for supporting ${orgName}.`,
+  };
+}
+
+// FIX-41: WHAT THE WINNER WILL SEE, before anything is written for them: the
+// note for one won item with the item's main photo above it, the same photo
+// the pay page leads with. A read; it writes and sends nothing.
+app.get("/auction-items/:id/winner-preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const item = await loadItem(orgId, req.params.id);
+  if (!item) return res.status(404).json({ error: "Not found" });
+  const a = await loadAuction(orgId, item.auction_id);
+  const [st] = (await AC.itemStates(query, orgId, item.auction_id)).filter(x => x.id === item.id);
+  const brand = await resolveOrgBrandTheme(orgId).catch(() => null);
+  const orgName = (brand && brand.displayName) || "us";
+  const sample = st && st.bid_id ? st : { ...(st || item), high_amount: (st && st.starting_bid) || item.starting_bid, bid_id: "preview" };
+  const name = st && st.bid_id ? st.bidder_name : "";
+  const note = winnerNote(a, { name, items: [sample] }, orgName);
+  const photo = PIC.readPhotos(item.photos)[0] || null;
+  res.json({ ...note, photo: photo ? { ...photo, alt: photo.alt || item.title } : null, hasWinner: !!(st && st.bid_id),
+    sentence: st && st.bid_id ? `What ${st.bidder_name} will see.` : "What the winner will see, at the starting bid. Nobody has won it yet." });
 }));
 
 // FIX-20 Part 1: a person refunded the flagged payment in Stripe and says so.
@@ -612,7 +643,7 @@ app.get("/auction/pay/:token", donateLimiter, wrap(async (req, res) => {
   const [org] = await query(`SELECT stripe_connected, stripe_account_id FROM orgs WHERE id=?`, [orgId]);
   const canPay = !!(org && org.stripe_connected && org.stripe_account_id);
   const problem = MESSAGES[String(req.query.m || "")];
-  const photo = Array.isArray(item.photos) && item.photos[0];
+  const photo = PIC.readPhotos(item.photos)[0];
   let body;
   if (item.paid_gift_id) {
     body = `<div class="card"><h1>Paid. Thank you.</h1><div class="ok">${esc(item.title)}, ${esc(fmt(amountC))}. Your receipt is on its way by email.</div></div>`;
@@ -622,7 +653,7 @@ app.get("/auction/pay/:token", donateLimiter, wrap(async (req, res) => {
     body = `
       ${problem ? `<div class="${problem[0] === "ok" ? "ok" : "err"}">${esc(problem[1])}</div>` : ""}
       <div class="card">
-        ${photo ? `<img src="${esc(photo)}" alt="" style="width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin:0 0 12px">` : ""}
+        ${photo ? `<div style="margin:0 0 12px">${PIC.pictureHtml({ ...photo, alt: photo.alt || item.title }, { ratio: "4 / 3", radius: 10 })}</div>` : ""}
         <h1>You won ${esc(item.title)}</h1>
         <p class="muted">${esc(auction.title)} · bidder #${esc(item.bidder_number)}, ${esc(item.bidder_name)}</p>
         <div class="row"><h2>Your winning bid</h2><span class="pill open">${esc(fmt(amountC))}</span></div>
@@ -647,7 +678,8 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
   const tz = await tzOf(a.org_id);
   const brand = await resolveOrgBrandTheme(a.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
   const bidder = await bidderFor(req, a);
-  const states = await AC.itemStates(query, a.org_id, a.id);
+  // FIX-41: a retired item is off the public page; its bids stay on record.
+  const states = (await AC.itemStates(query, a.org_id, a.id)).filter(st => !st.retired_at);
   const mine = bidder ? new Set((await query(`SELECT DISTINCT item_id FROM auction_bids WHERE bidder_id=? AND org_id=?`, [bidder.id, a.org_id])).map(r => r.item_id)) : new Set();
   const now = new Date();
   const notOpen = new Date(a.opens_at) > now, allClosed = new Date(a.closes_at) <= now;
@@ -663,11 +695,11 @@ app.get("/auction/:slug", donateLimiter, wrap(async (req, res) => {
     const high = AC.cents(st.high_amount), minNext = AC.minNextBidCents(st);
     const buyNowC = AC.cents(st.buy_now);
     const you = youOf(st, bidder && bidder.id, mine);
-    const photos = Array.isArray(st.photos) ? st.photos : [];
+    const photos = PIC.readPhotos(st.photos);
     const canBid = bidder && !st.closed && !st.not_open;
     return `<div class="card" id="i-${esc(st.id)}" data-item="${esc(st.id)}">
-      ${photos[0] ? `<img src="${esc(photos[0])}" alt="" style="width:100%;max-height:300px;object-fit:cover;border-radius:10px;margin:0 0 10px;display:block">` : ""}
-      ${photos.length > 1 ? `<div style="display:flex;gap:6px;overflow-x:auto;margin:0 0 10px">${photos.slice(1).map(p => `<img src="${esc(p)}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;flex:none">`).join("")}</div>` : ""}
+      ${photos[0] ? `<div style="margin:0 0 10px" data-item-photo>${PIC.pictureHtml({ ...photos[0], alt: photos[0].alt || st.title }, { ratio: "4 / 3", radius: 10, sizes: "(max-width: 760px) 100vw, 640px" })}</div>` : ""}
+      ${photos.length > 1 ? `<div style="display:flex;gap:6px;overflow-x:auto;margin:0 0 10px">${photos.slice(1).map(p => `<img src="${esc(p.url)}" alt="${esc(p.alt || st.title)}" style="width:64px;height:64px;object-fit:cover;object-position:${PIC.focusCss(p)};border-radius:8px;flex:none">`).join("")}</div>` : ""}
       <div class="row"><h2>${esc(st.title)}</h2>${st.category ? `<span class="pill shut">${esc(st.category)}</span>` : ""}</div>
       ${st.description ? `<p class="small" style="white-space:pre-line">${esc(st.description)}</p>` : ""}
       <p style="margin:8px 0 2px"><strong data-high>${high == null ? `Starting bid ${esc(fmt(AC.cents(st.starting_bid)))}` : `${st.closed ? "Winning bid" : "High bid"} ${esc(fmt(high))}`}</strong>
@@ -775,7 +807,8 @@ app.get("/auction/:slug/status", donateLimiter, wrap(async (req, res) => {
   const a = await publicAuction(req.params.slug);
   if (!a) return res.status(404).json({ error: "Not found" });
   const bidder = await bidderFor(req, a);
-  const states = await AC.itemStates(query, a.org_id, a.id);
+  // FIX-41: a retired item is off the public page; its bids stay on record.
+  const states = (await AC.itemStates(query, a.org_id, a.id)).filter(st => !st.retired_at);
   const mine = bidder ? new Set((await query(`SELECT DISTINCT item_id FROM auction_bids WHERE bidder_id=? AND org_id=?`, [bidder.id, a.org_id])).map(r => r.item_id)) : new Set();
   res.json({
     closesAt: a.closes_at, opensAt: a.opens_at,
@@ -943,7 +976,7 @@ app.post("/auction/:slug/bid", donateLimiter, express.urlencoded({ extended: fal
               (LEAST(au.closes_at, COALESCE(i.closed_at, au.closes_at)) <= clock_timestamp()) AS closed,
               (au.opens_at > clock_timestamp()) AS not_open
          FROM auction_items i JOIN auctions au ON au.id=i.auction_id AND au.org_id=i.org_id
-        WHERE i.id=? AND i.auction_id=? AND i.org_id=? FOR UPDATE OF i`, [itemId, a.id, a.org_id]);
+        WHERE i.id=? AND i.auction_id=? AND i.org_id=? AND i.retired_at IS NULL FOR UPDATE OF i`, [itemId, a.id, a.org_id]);
     if (!it) return "no_item";
     if (it.not_open) return "not_open";
     if (it.closed) return "closed";

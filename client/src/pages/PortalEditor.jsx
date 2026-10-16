@@ -23,6 +23,8 @@ import { resolvePairing, resolveCardStyle, TYPE_PAIRINGS, CARD_STYLES } from "..
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
+import PhotoField from "../components/PhotoField";
+import Picture from "../components/Picture";
 import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { askConfirm } from "../components/ConfirmDialog";
@@ -300,6 +302,11 @@ export default function PortalEditor() {
     if (v === undefined) delete next[k];
     dsRef.current = next; setDs(next); scheduleSettingsSave(next);
   };
+  // FIX-41: the cover is two settings saved together (its path and its words/focus).
+  const setSettings = (patch) => {
+    const next = { ...(dsRef.current || {}), ...patch };
+    dsRef.current = next; setDs(next); scheduleSettingsSave(next);
+  };
   const setFormSetting = (patch) => {
     const cur = dsRef.current || {};
     const next = { ...cur, form: { ...(cur.form || {}), ...patch } };
@@ -484,7 +491,7 @@ export default function PortalEditor() {
   // An unbuilt giving page shows its title, story and photo, as it does live.
   const unbuiltPage = surface === "give" && ds ? (
     <div data-testid="unbuilt-preview">
-      {draftPhoto && <img src={draftPhoto} alt="" style={{ width: "100%", maxHeight: 260, objectFit: "cover", borderRadius: 12, display: "block", marginBottom: 14 }} />}
+      {draftPhoto && <div style={{ marginBottom: 14 }}><Picture value={ds.imageData ? draftPhoto : { url: ds.imageUrl, ...(ds.imageMeta || {}) }} alt={ds.title} ratio="16 / 9" radius={12} /></div>}
       <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 28, lineHeight: 1.2, marginBottom: 10 }}>{ds.title}</div>
       {String(ds.story || "").split(/\n{2,}/).filter(Boolean).map((t, i) => <p key={i} style={{ fontSize: 15, lineHeight: 1.6, margin: "0 0 10px" }}>{t}</p>)}
     </div>
@@ -575,6 +582,22 @@ export default function PortalEditor() {
         <button data-testid="editor-publish" onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
       </div>
       {err && <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
+      {/* FIX-41 · THE COVER PHOTO, AT THE TOP OF THE EDITOR, in every mode. The
+          one picture control; it drafts like every other field and goes live
+          on Publish. */}
+      {(surface === "give" || isVolunteer) && ds && (
+        <div data-testid="editor-cover" style={{ background: E.cream, color: E.ink, padding: "10px 16px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid " + E.line }}>
+          <div style={{ flex: "0 1 220px", minWidth: 160 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Cover photo</div>
+            <div style={{ fontSize: 11.5, lineHeight: 1.45, opacity: 0.8 }}>The picture at the top of the page. People give more to a page they can see.</div>
+          </div>
+          <div style={{ flex: "1 1 280px", maxWidth: 420 }}>
+            <PhotoField variant="cover" name={ds.title || meta?.pageTitle || ""} testid="editor-cover-photo"
+              value={ds.imageUrl ? { url: ds.imageUrl, ...(ds.imageMeta || {}) } : null}
+              onChange={p => setSettings(p ? { imageUrl: p.url, imageMeta: { alt: p.alt, fx: p.fx, fy: p.fy } } : { imageUrl: "", imageMeta: { alt: "", fx: 0.5, fy: 0.5 } })} />
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* ── Left rail: Design mode — the theme + page-detail controls (the
@@ -825,11 +848,9 @@ function WidgetOptions({ w, funds, camps, volData, onChange, onClose }) {
   const imgUploader = (value, set, label = "Photo", onPickItem = null) => (
     <>
       <div style={lbl}>{label}</div>
-      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-        shape="wide" preview={value ? (String(value).startsWith("data:") ? value : resolveAssetUrl(value)) : null}
-        label={value ? "Replace" : "Drag a photo here, or browse, or drop one straight onto the widget"}
-        onFile={({ dataUrl }) => set(dataUrl)}
-        onRemove={() => set(null)} />
+      {/* FIX-41: the one picture control, as on the cover and every item. */}
+      <PhotoField variant="cover" noAlt value={value || null} name={w.heading || w.caption || ""} testid="widget-photo"
+        onChange={p => set(p ? p.url : null)} />
       {libraryBtn("photo", item => (onPickItem ? onPickItem(item) : set(item.url)))}
     </>
   );
@@ -1144,11 +1165,7 @@ function DetailsRail({ ds, onSet, onSetForm, errors, funds, camps, hero, onHeroH
       <textarea data-testid="details-story" style={{ ...inp, minHeight: 120, resize: "vertical", lineHeight: 1.5 }} value={ds.story || ""} onChange={e => onSet("story", e.target.value)} placeholder="What this gift makes possible, in your own words." />
       <FieldError errors={errors} prefix="story" />
       <div style={lbl}>Photo</div>
-      <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-        shape="banner" preview={photo || null}
-        label={photo ? "Replace photo" : "Drag a photo here, or browse"}
-        onFile={({ dataUrl }) => onSet("imageData", dataUrl)}
-        onRemove={() => { onSet("imageData", undefined); onSet("imageUrl", ""); }} />
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.45 }}>{photo ? "The cover photo is set at the top of the editor." : "Add a cover photo at the top of the editor."}</div>
       <FieldError errors={errors} prefix="image" />
       <div style={{ fontSize: 11.5, color: E.muted, marginTop: 8, lineHeight: 1.45 }}>Colors and logo come from your brand, in the Design tab, so every page looks like yours.</div>
 

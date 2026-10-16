@@ -22,6 +22,7 @@ import { T } from "./publicTheme";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import ShareRow from "./ShareRow";
+import Picture from "../components/Picture";
 
 // `en-US`, named (the EVENTS-2 rule): $12.50 must never read as $13.
 function fmtPrice(n) {
@@ -82,6 +83,7 @@ function LevelCard({ l, th, card, orgSlug, prefill, mine, isMember }) {
     <div data-testid="membership-card" data-level={l.id}
       style={{ ...card, padding: 22, display: "flex", flexDirection: "column", gap: 10, minWidth: 0,
                border: mine ? `2px solid ${th.primary}` : card.border }}>
+      {l.picture && <div style={{ width: 96 }}><Picture value={l.picture} alt={l.name} ratio="1 / 1" radius={10} width={240} testid="level-picture" /></div>}
       <div style={{ fontSize: 22, color: T.ink, fontFamily: th.serif, lineHeight: 1.2 }}>{l.name}</div>
       <div style={{ fontSize: 15, color: T.ink }}>
         <strong style={{ fontSize: 24, color: th.primary }}>{fmtPrice(l.price)}</strong>{" "}
@@ -160,6 +162,7 @@ export default function MembershipsPage({ orgSlug, th, BASE, card, portalBase, s
     <div style={BASE}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet" />
       <div style={{ width: "100%", maxWidth: 1040, boxSizing: "border-box" }} data-testid="memberships-page">
+        {data.cover && <div style={{ maxWidth: 760, margin: "0 auto 20px" }}><Picture value={data.cover} alt="Become a member" ratio="16 / 9" radius={16} testid="page-cover" /></div>}
         <div style={{ textAlign: "center", marginBottom: 22 }}>
           {th.logo ? (
             <img src={th.logo} alt={th.displayName || data.orgName}
