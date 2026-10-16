@@ -1615,12 +1615,17 @@ async function orgStewardStart(orgId) {
   // start date exists to prevent. The first donor this org created IS the
   // first committed import; the org's own creation is only the fallback for a
   // shop that has not imported yet.
+  // The DAY is the org's, not the database session's: TO_CHAR of a
+  // timestamptz formats in the session's zone, so on a UTC database a donor
+  // created at 9pm in New York started "tomorrow", and that evening's gifts
+  // were dropped from the thank-yous owed (found by RECONCILE-1's CI run).
+  const tz = await orgTzName(orgId);
   const [row] = await query(
     `SELECT TO_CHAR(COALESCE(
         (SELECT MIN(created_at) FROM donors WHERE org_id = ?),
         (SELECT created_at FROM orgs WHERE id = ?),
         NOW()
-      ), 'YYYY-MM-DD') AS d`, [orgId, orgId]);
+      ) AT TIME ZONE ?, 'YYYY-MM-DD') AS d`, [orgId, orgId, tz]);
   return row && row.d ? String(row.d) : null;
 }
 
