@@ -14,6 +14,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from 
 // which read like a log line ("Chen is at day 7.").
 import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { rowFigure } from "../../../shared/threadFigures";
+import { Figure } from "./Figure";
 import { firstThingSentences } from "../../../shared/firstThing.js";
 import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
@@ -1305,6 +1306,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
                 <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+                {/* RECONCILE-1: what this goal is measured against. When Steward
+                    has no gifts for last year, the old report she chose stands
+                    in, and says so. */}
+                {goal.lastYear&&<div data-testid="goal-last-year" style={{fontSize:12.5,color:T.ink3,marginTop:4}}>
+                  Last year: <Figure variant="inline" kind="money" value={goal.lastYear.value} label={goal.lastYear.label} definition={goal.lastYear.note} source={goal.lastYear.source}/>{goal.lastYear.imported?", from your old system":""}
+                </div>}
               </div>
 
               {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving

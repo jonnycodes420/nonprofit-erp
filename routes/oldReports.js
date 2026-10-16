@@ -20,6 +20,7 @@
 const express = require("express");
 const F = require("../interactionFiles");
 const O = require("../oldReports");
+const R = require("../reconcile");
 
 const routers = { r0: express.Router() };
 const ASSET_KIND = "sheetfile";   // the same kind of kept file as SHEETS-1, kept live the same way
@@ -150,11 +151,12 @@ app.post("/old-reports/batches/:id/files", requireAuth, checkWriteAccess, wrap(a
   const title = String(b.title || "").trim().slice(0, 200) || file.fileName.replace(/\.[^.]+$/, "");
   const periodLabel = from && to ? (from.slice(5) === "01-01" && to.slice(5) === "12-31" && from.slice(0, 4) === to.slice(0, 4) ? from.slice(0, 4) : `${from} to ${to}`) : null;
   await run(`INSERT INTO stored_sheets (id,org_id,kind,title,period_label,file_name,content_type,bytes,asset_id,sheet_name,headers,rows,unplaced,grant_ids,
-                                        batch_id,report_kind,source_system,period_from,period_to,guess_why,scanned,page_count,created_by,created_by_name)
-             VALUES (?,?,'old_report',?,?,?,?,?,?,?,?::jsonb,?::jsonb,'{}'::jsonb,'[]'::jsonb,?,?,?,?,?,?,?,?,?,?)`,
+                                        batch_id,report_kind,source_system,period_from,period_to,guess_why,scanned,page_count,created_by,created_by_name,mapping)
+             VALUES (?,?,'old_report',?,?,?,?,?,?,?,?::jsonb,?::jsonb,'{}'::jsonb,'[]'::jsonb,?,?,?,?,?,?,?,?,?,?,?::jsonb)`,
     [sheetId, orgId, title, periodLabel, file.fileName, file.contentType, file.buffer.length, asset.id, b.sheetName ? String(b.sheetName).slice(0, 120) : null,
      JSON.stringify(r.table ? r.table.headers : []), JSON.stringify(r.table ? r.table.rows : []),
-     batch.id, kind, system, from, to, b.why ? String(b.why).slice(0, 600) : null, !!r.scanned, r.pages, who.id, who.name]);
+     batch.id, kind, system, from, to, b.why ? String(b.why).slice(0, 600) : null, !!r.scanned, r.pages, who.id, who.name,
+     b.mapping && typeof b.mapping === "object" ? JSON.stringify(b.mapping) : null]);
 
   if (totals) {
     // A board report's total-raised row, a giving summary and a by-fund table
@@ -173,8 +175,11 @@ app.post("/old-reports/batches/:id/files", requireAuth, checkWriteAccess, wrap(a
   // the organisation's history and never a person's (REPORTS-5), so this door
   // touches no one. It still calls the step, so the door map has no gaps.
   await require("../afterChange").afterChange(orgId, [], { door: "old_reports_import", history: true });
+  // RECONCILE-1: checked against Steward as it comes in, and said in one line.
+  const check = r.table ? await R.checkAndStore(orgId, sheetId, who).catch(e => { console.error("[reconcile] on import", e.message); return null; }) : null;
   res.status(201).json({
     sheetId, fileName: file.fileName, kept: true, scanned: !!r.scanned,
+    check: check ? { status: check.status, sentence: check.sentence, checkedAt: check.checkedAt } : null,
     totals: totals ? { count: totals.rows.length, cents: sum, amount: (sum / 100).toFixed(2), fileTotal: totals.fileTotal,
       footsToFile: totals.footsToFile, setAside: totals.setAside.map(x => x.reason) } : null,
     sentence: totals
@@ -202,8 +207,11 @@ app.get("/old-reports", requireAuth, wrap(async (req, res) => {
     `SELECT s.id, s.kind, s.title, s.period_label, s.period_from, s.period_to, s.file_name, s.content_type, s.bytes, s.report_kind,
             s.source_system, s.scanned, s.page_count, s.guess_why, s.batch_id, s.created_at, s.created_by_name,
             (SELECT COUNT(*)::int FROM historical_totals h WHERE h.org_id = s.org_id AND h.sheet_id = s.id) AS totals,
-            (SELECT COALESCE(SUM(h.amount), 0)::text FROM historical_totals h WHERE h.org_id = s.org_id AND h.sheet_id = s.id) AS total_amount
-       FROM stored_sheets s
+            (SELECT COALESCE(SUM(h.amount), 0)::text FROM historical_totals h WHERE h.org_id = s.org_id AND h.sheet_id = s.id) AS total_amount,
+            (SELECT COALESCE(SUM(h.amount), 0)::text FROM historical_totals h WHERE h.org_id = s.org_id AND h.sheet_id = s.id AND h.counts_as_giving) AS giving_amount,
+            c.result->>'status' AS check_status, c.result->>'sentence' AS check_sentence, c.checked_at,
+            (SELECT json_agg(json_build_object('from', b.period_from, 'to', b.period_to)) FROM old_report_baselines b WHERE b.org_id = s.org_id AND b.sheet_id = s.id) AS baselines
+       FROM stored_sheets s LEFT JOIN old_report_checks c ON c.sheet_id = s.id AND c.org_id = s.org_id
       WHERE s.org_id = ? AND s.kind IN ('old_report', 'board_report') AND s.removed_at IS NULL
       ORDER BY COALESCE(s.period_to, s.period_label, '') DESC, s.created_at DESC`, [req.user.orgId]);
   res.json({ reports: rows.map(r => ({
@@ -215,9 +223,111 @@ app.get("/old-reports", requireAuth, wrap(async (req, res) => {
     reportKindLabel: (O.KINDS[r.report_kind || (r.kind === "board_report" ? "board_report" : "other")] || O.KINDS.other).label,
     system: r.source_system ? ((O.SYSTEMS[r.source_system] || {}).label || "A spreadsheet") : (r.kind === "board_report" ? "A spreadsheet" : null),
     scanned: !!r.scanned, pages: r.page_count, why: r.guess_why, batchId: r.batch_id, createdAt: r.created_at, createdByName: r.created_by_name || "",
-    totals: r.totals, totalAmount: Number(r.total_amount),
+    totals: r.totals, totalAmount: Number(r.total_amount), givingAmount: Number(r.giving_amount),
+    check: r.check_status ? { status: r.check_status, sentence: r.check_sentence, checkedAt: r.checked_at } : null,
+    baselines: r.baselines || [],
     source: r.totals ? { key: "historical-totals", params: { from: "1900-01-01", to: "2999-12-31", sheet: r.id } } : null,
   })), typesSentence: O.TYPES_SENTENCE });
+}));
+
+// ── RECONCILE-1 · CHECKED AGAINST STEWARD ──────────────────────────────
+//   GET  /old-reports/:id/check              the latest check (run once if it never was)
+//   POST /old-reports/:id/check              check it again now
+//   POST /old-reports/:id/add-person         add one person the report names and Steward has no record of
+//   POST /old-reports/:id/add-person/undo    take that person back out (only one this added, with nothing since)
+//   POST /old-reports/fund-map               map a report's fund to one of yours ({label, fundId}; fundId null removes)
+//   POST /old-reports/baseline               use a report as the total for a period ({from, to, sheetId}; null clears)
+// None of these creates a gift. Each write is recorded by the one audit write.
+async function sheetOf(req, res) {
+  const [s] = await query(`SELECT id, title, file_name, period_from, period_to FROM stored_sheets WHERE id=? AND org_id=? AND kind='old_report' AND removed_at IS NULL`, [req.params.id, req.user.orgId]);
+  if (!s) { res.status(404).json({ error: "Not found" }); return null; }
+  return s;
+}
+const checkOut = c => c && { ...c, checkable: R.CHECKABLE, notCheckable: R.NOT_CHECKABLE };
+
+app.get("/old-reports/:id/check", requireAuth, wrap(async (req, res) => {
+  const s = await sheetOf(req, res); if (!s) return;
+  const have = await R.stored(req.user.orgId, s.id);
+  // A report brought in before checks existed is checked on first look, and
+  // the answer is shown, not kept: a GET writes nothing. "Check again" keeps it.
+  res.json({ check: checkOut(have || { ...(await R.checkSheet(req.user.orgId, s.id)), checkedAt: null }) });
+}));
+
+app.post("/old-reports/:id/check", requireAuth, wrap(async (req, res) => {
+  const s = await sheetOf(req, res); if (!s) return;
+  res.json({ check: checkOut(await R.checkAndStore(req.user.orgId, s.id, await whoOf(req))) });
+}));
+
+app.post("/old-reports/:id/add-person", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const s = await sheetOf(req, res); if (!s) return;
+  const name = String((req.body || {}).name || "").trim().slice(0, 200);
+  const email = String((req.body || {}).email || "").trim().toLowerCase().slice(0, 254);
+  if (!name && !email) return res.status(400).json({ error: "no_name", sentence: "Say who to add: a name or an email." });
+  // Not twice: the same email, or the same whole name with no email to tell them apart.
+  const [dup] = await query(`SELECT id, name FROM donors WHERE org_id=? AND deleted_at IS NULL AND ((?::text <> '' AND LOWER(email) = ?) OR (?::text = '' AND LOWER(TRIM(name)) = LOWER(?)))`,
+    [orgId, email, email, email, name]);
+  if (dup) return res.status(409).json({ error: "already_here", donorId: dup.id, sentence: `${dup.name} is already in Steward.` });
+  const who = await whoOf(req);
+  const id = "d_" + C.uuid().slice(0, 8);
+  await run(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types)
+             VALUES (?,?,?,?,'new','prospect',0,0,?,?,?,?,?,'["donor"]'::jsonb)`,
+    [id, orgId, name || email, email, `Added from ${s.file_name}, an old report that names them.`, who.id, who.name, who.id, who.name]);
+  await require("../afterChange").afterChange(orgId, [id], { door: "old_reports_import", history: true, recalc: false });
+  const check = await R.checkAndStore(orgId, s.id, who);
+  res.status(201).json({ donorId: id, name: name || email, sentence: `Added ${name || email} to Steward. No gift was made from the report.`, check: checkOut(check) });
+}));
+
+app.post("/old-reports/:id/add-person/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const s = await sheetOf(req, res); if (!s) return;
+  const donorId = String((req.body || {}).donorId || "");
+  const [d] = await query(`SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL AND notes = ?
+                             AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = donors.org_id AND g.donor_id = donors.id)`,
+    [donorId, orgId, `Added from ${s.file_name}, an old report that names them.`]);
+  if (!d) return res.status(409).json({ error: "cannot_undo", sentence: "That person has gifts now, or was not added from this report, so they stay." });
+  await run(`UPDATE donors SET deleted_at = NOW() WHERE id=? AND org_id=?`, [d.id, orgId]);
+  const check = await R.checkAndStore(orgId, s.id, await whoOf(req));
+  res.json({ ok: true, sentence: `Took ${d.name} back out.`, check: checkOut(check) });
+}));
+
+app.post("/old-reports/fund-map", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const label = String((req.body || {}).label || "").trim().slice(0, 200);
+  const fundId = (req.body || {}).fundId ? String(req.body.fundId) : null;
+  const key = R.nameKey(label);
+  if (!key) return res.status(400).json({ error: "no_label", sentence: "Say which fund on the report." });
+  if (fundId) {
+    const [f] = await query(`SELECT id FROM fin_funds WHERE id=? AND org_id=?`, [fundId, orgId]);
+    if (!f) return res.status(404).json({ error: "no_fund", sentence: "That fund is not one of yours." });
+  }
+  const [prev] = await query(`SELECT fund_id FROM old_report_fund_maps WHERE org_id=? AND label_key=?`, [orgId, key]);
+  const who = await whoOf(req);
+  if (fundId) await run(`INSERT INTO old_report_fund_maps (id,org_id,label_key,label,fund_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)
+                         ON CONFLICT (org_id, label_key) DO UPDATE SET fund_id = EXCLUDED.fund_id, created_by = EXCLUDED.created_by, created_by_name = EXCLUDED.created_by_name`,
+    ["orfm_" + C.uuid().replace(/-/g, "").slice(0, 14), orgId, key, label, fundId, who.id, who.name]);
+  else await run(`DELETE FROM old_report_fund_maps WHERE org_id=? AND label_key=?`, [orgId, key]);
+  await R.recheckOrg(orgId);
+  res.json({ ok: true, previousFundId: prev ? prev.fund_id : null,
+    sentence: fundId ? `${label} on your old reports now reads as one of your funds. No gift moved.` : `${label} is no longer mapped.` });
+}));
+
+app.post("/old-reports/baseline", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const b = req.body || {};
+  const DAY = /^\d{4}-\d{2}-\d{2}$/;
+  if (!DAY.test(String(b.from || "")) || !DAY.test(String(b.to || ""))) return res.status(400).json({ error: "bad_period", sentence: "The period needs a first and a last day." });
+  const [prev] = await query(`SELECT sheet_id FROM old_report_baselines WHERE org_id=? AND period_from=? AND period_to=?`, [orgId, b.from, b.to]);
+  const who = await whoOf(req);
+  if (b.sheetId) {
+    const [h] = await query(`SELECT 1 FROM historical_totals WHERE org_id=? AND sheet_id=? AND counts_as_giving AND period_from >= ? AND period_to <= ? LIMIT 1`, [orgId, String(b.sheetId), b.from, b.to]);
+    if (!h) return res.status(400).json({ error: "no_total", sentence: "That report has no total raised for that period." });
+    await run(`INSERT INTO old_report_baselines (org_id,period_from,period_to,sheet_id,created_by,created_by_name) VALUES (?,?,?,?,?,?)
+               ON CONFLICT (org_id, period_from, period_to) DO UPDATE SET sheet_id = EXCLUDED.sheet_id, created_by = EXCLUDED.created_by, created_by_name = EXCLUDED.created_by_name, created_at = NOW()`,
+      [orgId, b.from, b.to, String(b.sheetId), who.id, who.name]);
+  } else await run(`DELETE FROM old_report_baselines WHERE org_id=? AND period_from=? AND period_to=?`, [orgId, b.from, b.to]);
+  res.json({ ok: true, previousSheetId: prev ? prev.sheet_id : null,
+    sentence: b.sheetId ? "Goals and the giving summary now compare against this report's total for that year, labelled as from your old system, while Steward has no gifts for it." : "Steward no longer uses an old report as that year's total." });
 }));
 }
 

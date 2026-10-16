@@ -257,6 +257,7 @@ CORE=(
   fix39-campaigns
   profile1-everything-clicks
   fix40-comms-opens
+  reconcile1-checks
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
