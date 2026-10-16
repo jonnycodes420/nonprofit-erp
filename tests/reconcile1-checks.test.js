@@ -130,6 +130,11 @@ async function opensAndFoots(tok, src, cents, kind) {
   const [eve] = await q(`SELECT id, deleted_at, created_by FROM donors WHERE org_id=$1 AND email='eve@rc1.test'`, [ORG]);
   ok("§add Add this person adds Eve, stamped with who did it", add.status === 201 && eve && !eve.deleted_at && eve.created_by === "u_rc1", [add.body, eve]);
   ok("§add …and the check now lists two people, not three", (add.body.check?.causes || []).find(c => c.key === "missing_people")?.people?.length === 2, add.body.check?.causes);
+  // Found by the walk: once added, her report amount is a person in Steward
+  // with no gifts there, said so, never "can't tell why".
+  const addCauses = add.body.check?.causes || [];
+  ok("§add …and her $120 is said as 'in Steward with no gifts there', nothing left unexplained",
+    addCauses.find(c => c.key === "no_gifts_in_steward")?.cents === 12000 && !addCauses.some(c => c.key === "cannot_tell"), addCauses.map(c => [c.key, c.cents]));
   const again = await api("POST", `/old-reports/${sheet}/add-person`, tok, { name: "Eve Margin", email: "eve@rc1.test" });
   ok("§add the same person is never added twice", again.status === 409, again.body);
   const undo = await api("POST", `/old-reports/${sheet}/add-person/undo`, tok, { donorId: add.body.donorId });

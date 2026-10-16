@@ -100,7 +100,7 @@ async function seedReconcile1(q, ORG) {
   await q(`INSERT INTO portal_assets (id,org_id,kind,content_type,bytes,storage,data) VALUES ($1,$2,'sheetfile',$3,$4,'db',$5)
            ON CONFLICT (id) DO UPDATE SET deleted_at = NULL`, [assetId, ORG, type, buf.length, buf.toString("base64")]);
   const guess = O.guessReport({ fileName: "donorperfect-giving-by-donor-and-fund-2024.csv", headers: table.headers, rows: table.rows, text: "" });
-  await q(`UPDATE stored_sheets SET title='Giving by donor and fund, 2024', file_name='donorperfect-giving-by-donor-and-fund-2024.csv',
+  await q(`UPDATE stored_sheets SET title='DonorPerfect giving by donor and fund', file_name='donorperfect-giving-by-donor-and-fund-2024.csv',
                   bytes=$3, asset_id=$4, headers=$5::jsonb, rows=$6::jsonb, mapping=$7::jsonb, guess_why=$8, report_kind='by_fund', source_system='donorperfect'
             WHERE id=$1 AND org_id=$2`,
     [SHEET, ORG, buf.length, assetId, JSON.stringify(table.headers), JSON.stringify(table.rows), JSON.stringify(mapping), guess.why]);

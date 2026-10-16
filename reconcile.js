@@ -270,9 +270,10 @@ async function checkSheet(orgId, sheetId) {
       let peopleOut = null;
       if (people && people.some(p => p.hasAmount)) peopleOut = await checkPeople(orgId, sheet, kind, P, people, unmapped);
       if (peopleOut) {
-        lines.push({ key: "people", label: `People named, ${pl}`, kind: "count", reportCents: peopleOut.total, stewardCents: peopleOut.matched, steward: peopleOut.matched,
-          status: peopleOut.total === peopleOut.matched && !peopleOut.differing.length ? "matches" : "differs",
-          note: `${plural(peopleOut.matched, "person", "people")} found in Steward, ${plural(peopleOut.same, "matches", "match")} to the cent.` });
+        // Said in words under the table, not as a line: "found in Steward" is
+        // a match, not a figure with rows of its own.
+        peopleOut.note = `The report names ${plural(peopleOut.total, "person", "people")}: ` + (`${plural(peopleOut.matched, "person", "people")} found in Steward, ${plural(peopleOut.same, "matches", "match")} to the cent`
+            + (peopleOut.differing.some(x => x.onlyByFund) ? `; ${plural(peopleOut.differing.filter(x => x.onlyByFund).length, "differs", "differ")} only by gifts to a fund Steward has no match for.` : "."));
         out.people = peopleOut;
       }
       out.lines.push(...lines);
@@ -319,6 +320,7 @@ async function checkPeople(orgId, sheet, kind, P, people, unmapped) {
     const st = p.donorIds.reduce((s, id) => s + (by.get(id) || 0), 0);
     if (p.cents === st) { res.same++; continue; }
     res.differing.push({ name: p.stewardName || p.name, email: p.email, donorId: p.donorId, reportCents: p.cents, stewardCents: st, mappedCents: inFunds,
+      onlyByFund: inFunds === st,
       records: p.donorIds.map(id => ({ donorId: id, cents: by.get(id) || 0, source: { key: "gifts", params: { ...span, donor: id } } })),
       source: { key: "gifts", params: { ...span, donor: p.donorId } }, rows: p.rows });
   }
@@ -356,7 +358,7 @@ async function whyDiffer(orgId, { P, pl, reportTotal, stewardTotal, people, unma
   // 3. Person by person: a gift dated just outside the period, a soft credit
   //    the report counts, a refund Steward subtracts.
   if (people) {
-    const near = { out: [], soft: [], refund: [] };
+    const near = { out: [], soft: [], refund: [], none: [] };
     for (const p of people.differing) {
       const d = p.mappedCents - p.stewardCents;
       if (!d) continue;
@@ -372,6 +374,7 @@ async function whyDiffer(orgId, { P, pl, reportTotal, stewardTotal, people, unma
         near.out.push({ name: p.name, donorId: p.donorId, cents: d, date: String(g.date).slice(0, 10) });
         continue;
       }
+      if (d > 0 && p.stewardCents === 0) { near.none.push({ name: p.name, donorId: p.donorId, cents: d }); continue; }
       if (d > 0) {
         const [sc] = await query(`SELECT COALESCE(SUM(s.amount),0)::text AS s FROM gift_soft_credits s JOIN gifts g ON g.id = s.gift_id AND g.org_id = s.org_id
                                    WHERE s.org_id=? AND s.donor_id=? AND g.date >= ? AND g.date <= ?`, [orgId, p.donorId, P.from, P.to]);
@@ -383,6 +386,8 @@ async function whyDiffer(orgId, { P, pl, reportTotal, stewardTotal, people, unma
     const sum = xs => xs.reduce((s, x) => s + x.cents, 0);
     if (near.out.length) { const c = sum(near.out); explained += c; causes.push({ key: "outside_period", cents: c, people: near.out,
       sentence: `${plural(near.out.length, "gift", "gifts")} in Steward ${near.out.length === 1 ? "is" : "are"} dated just outside ${pl}, within ${NEAR_DAYS} days of its edge: ${money(c)}.` }); }
+    if (near.none.length) { const c = sum(near.none); explained += c; causes.push({ key: "no_gifts_in_steward", cents: c, people: near.none,
+      sentence: `${plural(near.none.length, "person is", "people are")} in Steward with no gifts there for ${pl}: ${money(c)} the report counts from them never came over.` }); }
     if (near.soft.length) { const c = sum(near.soft); explained += c; causes.push({ key: "soft_credit", cents: c, people: near.soft,
       sentence: `The report counts ${money(c)} of soft credits as these people's giving. Steward counts a gift once, for the person who gave it.` }); }
     if (near.refund.length) { const c = sum(near.refund); explained += c; causes.push({ key: "refund", cents: c, people: near.refund,

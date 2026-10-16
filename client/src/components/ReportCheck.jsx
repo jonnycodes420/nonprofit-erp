@@ -23,7 +23,7 @@ const shown = (l, c) => l.kind === "money" ? money(c) : Number(c).toLocaleString
 const STATUS = { matches: "Matches", differs: "Differs", not_checked: "Not checked" };
 
 function StewardCell({ l }) {
-  if (l.steward === null || l.steward === undefined) return <span style={{ color: T.ink3 }}>{l.note && l.status === "not_checked" ? "Not checked" : "None"}</span>;
+  if (l.steward === null || l.steward === undefined) return <span style={{ color: T.ink3 }}>{l.status === "not_checked" ? "" : "None"}</span>;
   return <Figure variant="inline" kind={l.kind === "money" ? "money" : "count"} value={l.steward} label={`Steward: ${l.label}`} source={l.source} />;
 }
 
@@ -60,7 +60,7 @@ export default function ReportCheck({ report, onNavigate, onChanged }) {
     offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch("/old-reports/fund-map", { method: "POST", body: JSON.stringify({ label, fundId: r.previousFundId }) }); after(null); return x; } }, "fund");
   });
   const recheck = () => act("recheck", async () => after(await apiFetch(`/old-reports/${report.id}/check`, { method: "POST", body: "{}" })));
-  const useAsBaseline = p => act("base:" + p.from, async () => {
+  const setAsBaseline = p => act("base:" + p.from, async () => {
     const r = await apiFetch("/old-reports/baseline", { method: "POST", body: JSON.stringify({ from: p.from, to: p.to, sheetId: report.id }) });
     onChanged && onChanged();
     offerUndo({ message: r.sentence, undoAction: async () => { const x = await apiFetch("/old-reports/baseline", { method: "POST", body: JSON.stringify({ from: p.from, to: p.to, sheetId: r.previousSheetId }) }); onChanged && onChanged(); return x; } }, "baseline");
@@ -82,23 +82,19 @@ export default function ReportCheck({ report, onNavigate, onChanged }) {
       {err && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{err}</div>}
 
       {(c.lines || []).length > 0 && (
-        <div style={{ overflowX: "auto", border: "1px solid " + T.bg3, borderRadius: 10 }}>
-          <table data-testid="report-check-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 420 }}>
-            <thead><tr style={{ textAlign: "left", color: T.ink3 }}>
-              {["Line", "The report", "Steward", ""].map(h => <th key={h} style={{ padding: "7px 10px", borderBottom: "1px solid " + T.bg3, fontWeight: 700 }}>{h}</th>)}
-            </tr></thead>
-            <tbody>{c.lines.map(l => (
-              <tr key={l.key} data-testid="report-check-row" data-status={l.status} style={{ borderTop: "1px solid " + T.bg3, verticalAlign: "top" }}>
-                <td style={{ padding: "7px 10px", color: T.ink, fontWeight: 600 }}>{l.label}{l.note && <div style={{ fontWeight: 400, color: T.ink3, fontSize: 11.5, marginTop: 2 }}>{l.note}</div>}</td>
-                <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}>{shown(l, l.reportCents)}</td>
-                <td style={{ padding: "7px 10px", whiteSpace: "nowrap" }}><StewardCell l={l} /></td>
-                <td style={{ padding: "7px 10px", whiteSpace: "nowrap", fontWeight: 700, color: l.status === "differs" ? T.gold700 : T.ink }}>
-                  {STATUS[l.status]}{l.status === "differs" && l.stewardCents !== null && l.stewardCents !== undefined ? ` by ${shown(l, Math.abs(l.reportCents - l.stewardCents))}` : ""}
-                  {l.action && l.action.kind === "connect_quickbooks" && <div><button type="button" style={{ ...btn(false), marginTop: 4 }} onClick={() => onNavigate && onNavigate("settings", { section: "connections" })}>Connect QuickBooks</button></div>}
-                  {l.imports && l.imports.length > 0 && <div style={{ marginTop: 4 }}><button type="button" style={btn(false)} data-testid="report-check-open-import" onClick={() => onNavigate && onNavigate("settings", { section: "data", focus: l.imports[0].id })}>Open the import that brought these gifts</button></div>}
-                </td>
-              </tr>))}</tbody>
-          </table>
+        <div data-testid="report-check-table" role="table" aria-label="The report against Steward, line by line" style={{ border: "1px solid " + T.bg3, borderRadius: 10, fontSize: 12.5 }}>
+          {c.lines.map((l, i) => (
+            <div key={l.key} role="row" data-testid="report-check-row" data-status={l.status}
+              style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", padding: "8px 12px", borderTop: i ? "1px solid " + T.bg3 : "none", alignItems: "baseline" }}>
+              <div role="rowheader" style={{ flex: "1 1 220px", minWidth: 0, color: T.ink, fontWeight: 600 }}>{l.label}{l.note && <div style={{ fontWeight: 400, color: T.ink3, fontSize: 11.5, marginTop: 2 }}>{l.note}</div>}</div>
+              <div role="cell" style={{ flex: "0 0 auto", minWidth: 110, color: T.ink }}><span style={{ color: T.ink3 }}>Report </span>{shown(l, l.reportCents)}</div>
+              <div role="cell" style={{ flex: "0 0 auto", minWidth: 130, color: T.ink }}>{l.status === "not_checked" ? null : <><span style={{ color: T.ink3 }}>Steward </span><StewardCell l={l} /></>}</div>
+              <div role="cell" style={{ flex: "0 0 auto", minWidth: 120, fontWeight: 700, color: l.status === "differs" ? T.gold700 : T.ink }}>
+                {STATUS[l.status]}{l.status === "differs" && l.stewardCents !== null && l.stewardCents !== undefined ? ` by ${shown(l, Math.abs(l.reportCents - l.stewardCents))}` : ""}
+                {l.action && l.action.kind === "connect_quickbooks" && <div><button type="button" style={{ ...btn(false), marginTop: 4 }} onClick={() => onNavigate && onNavigate("settings", { section: "connections" })}>Connect QuickBooks</button></div>}
+                {l.imports && l.imports.length > 0 && <div style={{ marginTop: 4 }}><button type="button" style={btn(false)} data-testid="report-check-open-import" onClick={() => onNavigate && onNavigate("settings", { section: "data", focus: l.imports[0].id })}>Open the import that brought these gifts</button></div>}
+              </div>
+            </div>))}
         </div>)}
 
       {(c.causes || []).length > 0 && (
@@ -129,11 +125,12 @@ export default function ReportCheck({ report, onNavigate, onChanged }) {
             </div>))}
         </div>)}
 
+      {people && people.note && <div data-testid="report-check-people" style={{ fontSize: 13, color: T.ink, lineHeight: 1.5 }}>{people.note}</div>}
       {people && people.differing.length > 0 && (
         <details style={{ fontSize: 13, color: T.ink }}>
           <summary style={{ cursor: "pointer", fontWeight: 700 }}>{people.differing.length} {people.differing.length === 1 ? "person differs" : "people differ"}, largest first</summary>
           <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {people.differing.slice(0, 50).map(p => <li key={p.donorId}>{p.name}: the report {money(p.reportCents)}, Steward {(p.records || [p]).map((x, i) => <span key={x.donorId}>{i ? " + " : ""}<Figure variant="inline" kind="money" value={(x.cents ?? x.stewardCents) / 100} label={`Steward: ${p.name}`} source={x.source} /></span>)}{(p.records || []).length > 1 ? ` (Steward keeps ${p.records.length} records for them)` : ""}</li>)}
+            {people.differing.slice(0, 50).map(p => <li key={p.donorId}>{p.name}: the report {money(p.reportCents)}, Steward {(p.records || [p]).map((x, i) => <span key={x.donorId}>{i ? " + " : ""}<Figure variant="inline" kind="money" value={(x.cents ?? x.stewardCents) / 100} label={`Steward: ${p.name}`} source={x.source} /></span>)}{(p.records || []).length > 1 ? ` (Steward keeps ${p.records.length} records for them)` : ""}{p.onlyByFund ? ", only by gifts to a fund Steward has no match for" : ""}</li>)}
           </ul>
         </details>)}
 
@@ -157,7 +154,7 @@ export default function ReportCheck({ report, onNavigate, onChanged }) {
               <div key={p.from} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: T.ink }}>
                 {inUse
                   ? <span data-testid="report-baseline-in-use">In use as {p.label}'s total, from your old system, wherever Steward has no gifts for {p.label}.</span>
-                  : <button type="button" style={btn(false)} disabled={!!busy} data-testid="report-use-baseline" onClick={() => useAsBaseline(p)}>Use as last year's total</button>}
+                  : <button type="button" style={btn(false)} disabled={!!busy} data-testid="report-use-baseline" onClick={() => setAsBaseline(p)}>Use as last year's total</button>}
                 <button type="button" style={btn(false)} data-testid="report-goal-from" onClick={() => setGoalFor(p)}>Set this year's goal from it</button>
               </div>);
           })}

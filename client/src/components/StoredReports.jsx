@@ -95,7 +95,7 @@ export default function StoredReports({ onNavigate }) {
                         definition={`What ${r.fileName} said, imported from ${r.system || "your old system"}. Kept beside Steward's numbers, never added into them.`} />, from your old system.
                     </div>)}
                   {/* RECONCILE-1: what Steward found when it checked this report. */}
-                  {r.kind === "old_report" && <CheckStatus check={r.check} />}
+                  {r.kind === "old_report" && checking !== r.id && <CheckStatus check={r.check} />}
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
                     {r.kind === "old_report" && !r.scanned && <button type="button" style={btn(checking !== r.id)} data-testid="stored-check" onClick={() => setChecking(checking === r.id ? null : r.id)}>{checking === r.id ? "Close the check" : "See the check"}</button>}
                     <button type="button" style={{ ...btn(false), maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }} data-testid="stored-file" onClick={() => download(r.id, r.fileName).catch(e => setMsg(e.message))}>{r.fileName}</button>
