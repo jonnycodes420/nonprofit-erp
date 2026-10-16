@@ -10,6 +10,7 @@
 // the level's fair-market value), so nothing here totals money of its own.
 // Every count carries its sentence on hover, from the server.
 
+import RemoveMenu from "./RemoveMenu";
 import { Figure } from "./Figure";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
@@ -17,6 +18,7 @@ import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { isPlainLeftClick } from "../lib/appUrls";
+import PhotoField from "./PhotoField";
 
 const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled", renewed: "Renewed" };
 const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3, renewed: T.ink3 };
@@ -151,12 +153,14 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
   const [msg, setMsg] = useState("");
   const [settings, setSettings] = useState(null);
   const [lapsed, setLapsed] = useState(null);
+  const [cover, setCover] = useState(null);   // FIX-41
   const loadLevels = () => apiFetch("/membership-levels").then(r => setLevels(r.levels || [])).catch(() => setLevels([]));
   const loadList = () => {
     const qs = new URLSearchParams(); if (status) qs.set("status", status); if (sort === "expiry_desc") qs.set("sort", "expiry_desc");
     apiFetch("/memberships?" + qs.toString()).then(setList).catch(() => setList({ members: [], byStatus: {}, sentence: "" }));
   };
-  useEffect(() => { loadLevels(); apiFetch("/org/membership-settings").then(setSettings).catch(() => setSettings(null)); }, []);
+  useEffect(() => { loadLevels(); apiFetch("/org/membership-settings").then(setSettings).catch(() => setSettings(null));
+    apiFetch("/pictures/membership_cover/org").then(r => setCover(r.picture)).catch(() => setCover(null)); }, []);
   const saveSettings = async patch => {
     setMsg("");
     try { await apiFetch("/org/membership-settings", { method: "PUT", body: JSON.stringify(patch) }); setSettings(await apiFetch("/org/membership-settings")); }
@@ -227,6 +231,13 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
           <span>days, then lapses. Steward drafts the renewal note; nothing is sent.</span>
         </div>)}
 
+      {/* FIX-41: the membership page's cover photo, at the top of what shapes the page. */}
+      <section data-testid="editor-cover" style={{ maxWidth: 520 }}>
+        <h3 style={{ margin: "0 0 6px", fontSize: 16, color: T.ink }}>Membership page cover photo</h3>
+        <PhotoField variant="cover" name="Become a member" disabled={isReadOnly} testid="editor-cover-photo" value={cover}
+          onChange={async p => { setMsg(""); try { const r = await apiFetch("/pictures/membership_cover/org", { method: "PUT", body: JSON.stringify({ picture: p }) }); setCover(r.picture); setMsg(p ? "The cover photo is on your membership page." : "The cover photo is off your membership page."); } catch (e) { setMsg(errorMessage(e, "That photo did not save.")); } }} />
+      </section>
+
       <section>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: T.ink }}>Levels</h3>
@@ -263,6 +274,7 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
                   try { await navigator.clipboard.writeText(url); setMsg(`Link copied: ${url}`); } catch { setMsg(url); } }}>Copy join link</button>}
               {!isReadOnly && l.active && (
                 <button style={linkBtn} data-testid="level-hide" onClick={() => setHidden(l, !l.hidden)}>{l.hidden ? "Show on page" : "Hide from page"}</button>)}
+              <RemoveMenu kind="membership_level" id={l.id} disabled={isReadOnly || !isAdmin || !l.active} onDone={loadLevels} />
               {!isReadOnly && (
                 <button style={linkBtn} data-testid="level-edit"
                   onClick={() => setEdit({ id: l.id, name: l.name, description: l.description || "", benefits: (l.benefits || []).join("\n"),
@@ -282,6 +294,9 @@ export function MembersView({ isReadOnly, isAdmin = false, onNavigate, orgSlug =
                     <option value="12_months">12 months</option><option value="1_month">Monthly</option><option value="calendar_year">Calendar year</option><option value="lifetime">Lifetime</option>
                   </select>
                 </div>
+                {/* FIX-41: an optional small picture on the level's card. It saves at once. */}
+                <PhotoField variant="small" name={edit.name} testid="level-picture" value={l.picture}
+                  onChange={async p => { try { await apiFetch(`/pictures/membership_level/${l.id}`, { method: "PUT", body: JSON.stringify({ picture: p }) }); loadLevels(); } catch (e) { setMsg(errorMessage(e, "That photo did not save.")); } }} />
                 <textarea aria-label="Description" placeholder="A sentence or two for the card on your membership page" rows={2} value={edit.description} onChange={e => setEdit({ ...edit, description: e.target.value })} style={{ ...inp, fontFamily: "inherit" }} />
                 <textarea aria-label="Benefits" placeholder="Benefits, one per line" rows={3} value={edit.benefits} onChange={e => setEdit({ ...edit, benefits: e.target.value })} style={{ ...inp, fontFamily: "inherit" }} />
                 {!isAdmin && <div style={{ fontSize: 12, color: T.ink3 }}>An admin sets a level's price, the value of its benefits and its term.</div>}

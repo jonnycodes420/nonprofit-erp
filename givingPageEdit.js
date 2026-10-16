@@ -62,12 +62,20 @@ const TEMPLATES = {
 };
 const templateList = () => Object.entries(TEMPLATES).map(([key, t]) => ({ key, label: t.label, blurb: t.blurb }));
 
+// FIX-41: a cover's words for a screen reader and its focal point (0..1).
+function readImageMeta(v) {
+  const m = v && typeof v === "object" ? v : {};
+  const n = x => { const f = Number(x); return Number.isFinite(f) ? Math.min(1, Math.max(0, Math.round(f * 1000) / 1000)) : 0.5; };
+  return { alt: String(m.alt || "").slice(0, 200), fx: n(m.fx ?? 0.5), fy: n(m.fy ?? 0.5) };
+}
+
 // ── THE SETTINGS OF A PAGE, AS THE EDITOR SEES THEM ───────────────────────
 function settingsOf(row, F, orgFundIds) {
   return {
     title: String(row.title || ""),
     story: String(row.story || ""),
     imageUrl: String(row.image_url || ""),
+    imageMeta: readImageMeta(row.image_meta),   // FIX-41: the cover's words and focal point
     showGoal: row.show_goal !== false,
     goalAmount: row.goal_amount != null ? Number(row.goal_amount) : null,
     fundId: row.fund_id || null,
@@ -107,6 +115,7 @@ function validateSettings(base, patch, F, { orgFundIds = [], orgCampaignIds = []
     if (u && !IMAGE_PATH.test(u) && !/^https:\/\/\S{1,1990}$/.test(u)) errors.push({ field: "imageUrl", message: "Choose a photo, or use a full https:// address." });
     else out.imageUrl = u;
   }
+  if (p.imageMeta !== undefined) out.imageMeta = readImageMeta(p.imageMeta);
   if (p.showGoal !== undefined) {
     if (typeof p.showGoal !== "boolean") errors.push({ field: "showGoal", message: "Whether the goal shows is yes or no." });
     else out.showGoal = p.showGoal;
@@ -151,7 +160,7 @@ function snapshotOf(row) {
     widgets: Array.isArray(row.published) ? row.published : null,
     formPosition: row.form_position || null,
     settings: {
-      title: row.title, story: row.story || "", imageUrl: row.image_url || "",
+      title: row.title, story: row.story || "", imageUrl: row.image_url || "", imageMeta: readImageMeta(row.image_meta),
       showGoal: row.show_goal !== false,
       goalAmount: row.goal_amount != null ? Number(row.goal_amount) : null,
       fundId: row.fund_id || null, campaignId: row.campaign_id || null,
@@ -184,4 +193,5 @@ function validateOrgForm(base, patch) {
   return { ok: errors.length === 0, errors, settings: errors.length ? null : out };
 }
 
-module.exports = { TEMPLATES, templateList, settingsOf, currentSettings, validateSettings, sameJson, snapshotOf, validateOrgForm, IMAGE_PATH };
+module.exports = {
+  readImageMeta, TEMPLATES, templateList, settingsOf, currentSettings, validateSettings, sameJson, snapshotOf, validateOrgForm, IMAGE_PATH };

@@ -92,7 +92,7 @@ async function pageData(orgId, widgets = []) {
   ]);
   const ids = slots.map(s => s.id);
   const [roles, counts] = ids.length ? await Promise.all([
-    query(`SELECT id, slot_id, name, needed FROM volunteer_slot_roles WHERE slot_id = ANY(?) ORDER BY sort, name, id`, [ids]),
+    query(`SELECT id, slot_id, name, needed, picture FROM volunteer_slot_roles WHERE slot_id = ANY(?) ORDER BY sort, name, id`, [ids]),
     query(`SELECT slot_id, role_id,
                   COUNT(*) FILTER (WHERE status IN ('confirmed','completed'))::int AS filled,
                   COUNT(*) FILTER (WHERE status = 'waitlisted')::int AS waitlisted
@@ -103,7 +103,7 @@ async function pageData(orgId, widgets = []) {
     const mine = roles.filter(r => r.slot_id === s.id).map(r => {
       const c = countOf(s.id, r.id);
       const needed = r.needed == null ? null : Number(r.needed);
-      return { id: r.id, name: r.name, needed, filled: c.filled, waitlisted: c.waitlisted, full: needed != null && c.filled >= needed };
+      return { id: r.id, name: r.name, needed, filled: c.filled, waitlisted: c.waitlisted, full: needed != null && c.filled >= needed, picture: r.picture || null };
     });
     let needed, filled, waitlisted;
     if (mine.length) {

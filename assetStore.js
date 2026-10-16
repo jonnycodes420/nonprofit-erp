@@ -269,8 +269,16 @@ async function collectLiveAssetRefs(orgId) {
   // PARITY-2 Part 4: an auction item's photos are on a public page and in a
   // winner's pay page; a live item keeps them.
   for (const r of await query(`SELECT photos FROM auction_items${w}`, p)) {
-    for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
+    // FIX-41: a photo is { url, alt, fx, fy } now; an older row holds a bare path.
+    for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph && typeof ph === "object" ? ph.url : ph);
   }
+  // FIX-41: the small picture on a ticket type, sponsorship level, membership
+  // level or volunteer role, and the membership page's cover.
+  for (const t of ["event_levels", "membership_levels", "volunteer_slot_roles"]) {
+    for (const r of await query(`SELECT picture FROM ${t}${w}`, p).catch(() => [])) add(r.picture && r.picture.url);
+  }
+  for (const r of await query(`SELECT membership_cover FROM portal_settings${w}`, p).catch(() => [])) add(r.membership_cover && r.membership_cover.url);
+  for (const r of await query(`SELECT image_url FROM peer_fundraisers${w}`, p).catch(() => [])) add(r.image_url);
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }

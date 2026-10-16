@@ -947,7 +947,7 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
     // FIX-34 Y · THE FUNDS THE "GIFTS GO TO" PICKER OFFERS, from the same
     // answer as the sources. The picker read `r.funds` off /finance/funds,
     // which answers with a bare array, so it offered no fund at all.
-    funds: (await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false
+    funds: (await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false AND retired_at IS NULL
                           ORDER BY restricted ASC, name ASC`, [req.user.orgId]))
       .map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
     obviousFundId: await soleGeneralFundId(req.user.orgId),
@@ -2204,7 +2204,7 @@ app.get("/forms/:id/public", wrap(async (req, res) => {
       message: "This form is closed.",
     });
   }
-  const funds = await query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [page.org_id]);
+  const funds = await query("SELECT id, name FROM fin_funds WHERE org_id=? AND retired_at IS NULL ORDER BY name ASC", [page.org_id]);
   res.json({
     closed: false,
     org: { name: orgName, slug: page.org_slug,
@@ -2426,10 +2426,16 @@ async function pageSettingsPayload(pg, orgId) {
 app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
-  if (surfaceOf(pg) !== "give") return res.status(400).json({ error: "not_a_giving_page" });
+  // FIX-41: a volunteer page has no Details rail, but it has a cover photo,
+  // drafted and published the same way. Only the cover is taken from it.
+  const volunteerCover = surfaceOf(pg) === VP.KIND;
+  if (surfaceOf(pg) !== "give" && !volunteerCover) return res.status(400).json({ error: "not_a_giving_page" });
   const F = await formConfigMod();
   const ids = await orgIdsFor(req.user.orgId);
-  const patch = { ...((req.body && req.body.settings) || {}) };
+  const sent = (req.body && req.body.settings) || {};
+  const patch = volunteerCover
+    ? Object.fromEntries(["imageUrl", "imageData", "imageMeta"].filter(k => sent[k] !== undefined).map(k => [k, sent[k]]))
+    : { ...sent };
   // A new photo arrives as a data: URI and is stored through the same widget
   // validator every page photo goes through, so it becomes an asset path.
   if (patch.imageData) {
@@ -2443,6 +2449,12 @@ app.put("/giving-pages/:id/page/settings", requireAuth, requireAdmin, checkWrite
   if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_page_settings", errors: v.errors });
   await run(`UPDATE giving_pages SET draft_settings = ?, draft_updated_at = NOW(), updated_at = NOW() WHERE id = ? AND org_id = ?`,
     [JSON.stringify(v.settings), pg.id, req.user.orgId]);
+  // FIX-41: a drafted cover is a pointer too, and its history says who saved
+  // it. Until now only Publish wrote a row, so a cover saved and then replaced
+  // before publishing left no trace of who had put it there.
+  if ((base.imageUrl || "") !== (v.settings.imageUrl || "")) {
+    await recordAssetPointerHistory(req.user.orgId, "giving_page.draft_image", pg.id, base.imageUrl || null, v.settings.imageUrl || null, req.user);
+  }
   res.json({ ok: true, draftSettings: v.settings });
 }));
 
@@ -2495,11 +2507,11 @@ app.post("/giving-pages/:id/page/history/:vid/restore", requireAuth, requireAdmi
   const campaignId = st.campaignId && ids.orgCampaignIds.includes(String(st.campaignId)) ? st.campaignId : null;
   const widgets = Array.isArray(snap.widgets) ? snap.widgets : null;
   await run(`UPDATE giving_pages SET published = ?, draft = ?, form_position = COALESCE(?, form_position),
-               title = ?, story = ?, image_url = ?, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?, form_config = ?,
+               title = ?, story = ?, image_url = ?, image_meta = ?::jsonb, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?, form_config = ?,
                draft_settings = NULL, published_at = NOW(), draft_updated_at = NOW(), updated_at = NOW()
              WHERE id = ? AND org_id = ?`,
     [widgets ? JSON.stringify(widgets) : null, widgets ? JSON.stringify(widgets) : null, snap.formPosition || null,
-     st.title || pg.title, st.story || "", st.imageUrl || "", st.showGoal !== false, st.goalAmount != null ? st.goalAmount : null,
+     st.title || pg.title, st.story || "", st.imageUrl || "", JSON.stringify(GPE.readImageMeta(st.imageMeta)), st.showGoal !== false, st.goalAmount != null ? st.goalAmount : null,
      fundId, campaignId, st.formConfig ? JSON.stringify(st.formConfig) : null, pg.id, req.user.orgId]);
   await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
     widgetPathsOrNull(pg.published), widgetPathsOrNull(widgets), req.user);
@@ -2569,11 +2581,11 @@ app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWrite
     // The form is written only when it changed, so a page that never had its
     // form set up keeps the form it always had after a headline edit.
     const formChanged = !GPE.sameJson(live.form, next.form);
-    await run(`UPDATE giving_pages SET title = ?, story = ?, image_url = ?, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?,
+    await run(`UPDATE giving_pages SET title = ?, story = ?, image_url = ?, image_meta = ?::jsonb, show_goal = ?, goal_amount = ?, fund_id = ?, campaign_id = ?,
                  form_config = CASE WHEN ? THEN ?::jsonb ELSE form_config END,
                  draft_settings = NULL, published_at = NOW(), updated_at = NOW()
                WHERE id = ? AND org_id = ?`,
-      [next.title, next.story, next.imageUrl, next.showGoal !== false, next.goalAmount, next.fundId, next.campaignId,
+      [next.title, next.story, next.imageUrl, JSON.stringify(GPE.readImageMeta(next.imageMeta)), next.showGoal !== false, next.goalAmount, next.fundId, next.campaignId,
        formChanged, JSON.stringify(next.form), pg.id, req.user.orgId]);
     if (live.imageUrl !== next.imageUrl) await recordAssetPointerHistory(req.user.orgId, "giving_page.image", pg.id, live.imageUrl || null, next.imageUrl || null, req.user);
   }
@@ -2657,6 +2669,13 @@ app.post("/org-form/page/history/:vid/restore", requireAuth, requireAdmin, check
 }));
 
 app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  // FIX-41: a page with gifts, fundraisers or sign-ups is archived, never
+  // deleted, whichever door asks (removal.js decides; POST /removals archives).
+  const [pk] = await query("SELECT COALESCE(page_kind,'give') AS k FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (pk) {
+    const plan = await require("../removal").plan(query, pk.k === "volunteer" ? "volunteer_page" : "giving_page", req.user.orgId, req.params.id);
+    if (plan.mode === "archive") return res.status(409).json({ error: "page_in_use", message: plan.body });
+  }
   const { changes } = await run("DELETE FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
@@ -2786,6 +2805,7 @@ app.get("/peer-fundraisers/manage/:token", fundraiserManageLimiter, wrap(async (
 
   res.json({
     name: f.name, slug: f.slug, story: f.story, imageUrl: f.image_url,
+    cover: f.image_url ? { url: f.image_url, ...(f.image_meta || {}) } : null,   // FIX-41
     personalGoalAmount: f.personal_goal_amount != null ? parseFloat(f.personal_goal_amount) : null,
     status: f.status,
     raisedAmount: raisedCents / 100,
@@ -2854,7 +2874,7 @@ app.get("/giving-pages/:id/fundraisers", requireAuth, wrap(async (req, res) => {
   const pageRows = await query("SELECT id FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!pageRows.length) return res.status(404).json({ error: "Not found" });
   const rows = await query(
-    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
+    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.giving_page_id=? AND pf.org_id=? ORDER BY raised_amount DESC, pf.created_at DESC`,
     [req.params.id, req.user.orgId]
@@ -3058,7 +3078,7 @@ app.put("/peer-fundraisers/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   }
   if (status !== undefined) await run("UPDATE peer_fundraisers SET status=?, updated_at=NOW() WHERE id=? AND org_id=?", [status, req.params.id, req.user.orgId]);
   const updated = await query(
-    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.status, pf.created_at, pf.updated_at,
+    `SELECT pf.id, pf.giving_page_id, pf.name, pf.email, pf.slug, pf.personal_goal_amount, pf.story, pf.image_url, pf.image_meta, pf.status, pf.created_at, pf.updated_at,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE peer_fundraiser_id = pf.id), 0) AS raised_amount
      FROM peer_fundraisers pf WHERE pf.id=? AND pf.org_id=?`,
     [req.params.id, req.user.orgId]
@@ -3265,7 +3285,7 @@ const donateHandler = async (req, res) => {
   let baseCents = toCents(amount);                       // BUILD-73: the money seam
   let eventLevel = null, eventRow = null, eventHoldId = null, eventMemberPriced = false;
   if (eventLevelId) {
-    [eventLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=?", [eventLevelId, org.id]);
+    [eventLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=? AND retired_at IS NULL", [eventLevelId, org.id]);
     if (eventLevel) [eventRow] = await query("SELECT * FROM events WHERE id=? AND org_id=? AND status <> 'cancelled'", [eventLevel.event_id, org.id]);
     if (!eventLevel || !eventRow) return res.status(400).json({ error: "This ticket is no longer available." });
     // EVENTS-2 — A SEAT IS HELD WHILE SOMEBODY PAYS, and a hold counts against
@@ -3926,7 +3946,7 @@ app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: fals
   // the page somebody is standing on names ONE event, and a level id from
   // another of the org's events would have been sold through it. Scoped here,
   // the same way POST /e/:slug/register and /e/:slug/waitlist already do it.
-  const [lvl] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+  const [lvl] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=? AND retired_at IS NULL",
     [String(req.body?.levelId || ""), ev.id, ev.org_id]);
   if (!lvl) return back("That option is no longer available.");
 

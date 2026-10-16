@@ -10,11 +10,14 @@
 // person onto a role. To send is the queue of reminders and thank-yous
 // Steward drafted: nothing reaches a volunteer until somebody here presses
 // Send.
+import RemoveMenu, { removeMany } from "./RemoveMenu";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { offerUndo } from "./EditHistory";
+import PhotoField from "./PhotoField";
+import Picture from "./Picture";
 import { displayDate } from "../../../shared/displayDate";
 import { addDaysCivil } from "../../../shared/volunteerShifts.js";
 
@@ -29,6 +32,27 @@ const lbl = { display: "block", fontSize: 12, fontWeight: 700, color: T.ink3, ma
 const COLOUR_NAMES = { "#0d5c3a": "Emerald", "#c9a84c": "Brass", "#0f1a12": "Ink" };
 const VIEWS = [{ id: "day", label: "Day" }, { id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "list", label: "List" }];
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+// FIX-41: a volunteer role's optional small picture, through the one picture control.
+function RolePicture({ role, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState("");
+  const save = async p => {
+    setErr("");
+    try { const r = await apiFetch(`/pictures/volunteer_role/${role.id}`, { method: "PUT", body: JSON.stringify({ picture: p }) }); onSaved(r.picture); }
+    catch (e) { setErr(errorMessage(e, "That photo did not save.")); }
+  };
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 4 }}>
+      <button type="button" onClick={() => setOpen(o => !o)} data-testid="role-picture" aria-label={role.picture ? `Change the picture for ${role.name}` : `Add a picture for ${role.name}`}
+        style={{ width: 36, height: 36, padding: 0, borderRadius: 7, overflow: "hidden", border: "1px dashed " + T.bg3, background: T.bg, cursor: "pointer", fontSize: 9, fontWeight: 700, color: T.ink3, fontFamily: "inherit", lineHeight: 1.1 }}>
+        {role.picture ? <Picture value={role.picture} alt={role.name} ratio="1 / 1" radius={0} width={120} /> : "Add a photo"}
+      </button>
+      {open && <span style={{ width: 160 }}><PhotoField variant="small" name={role.name} value={role.picture} onChange={save} testid="role-photo" /></span>}
+      {err && <span role="alert" style={{ fontSize: 11.5, color: T.ink }}>{err}</span>}
+    </span>
+  );
+}
 
 function mondayOf(iso) {
   const d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10)));
@@ -189,6 +213,9 @@ export function ScheduleView({ isReadOnly, narrow, onOpenPerson, initialSlot }) 
           <option value="">Every opportunity</option>
           {data.opportunities.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
+        {/* FIX-41: the chosen opportunity (a volunteer role) can be removed:
+            retired when people have signed up for it, deleted when nobody has. */}
+        {opp && !isReadOnly && <RemoveMenu kind="volunteer_role" id={opp} label="Role" removeLabel="Remove this role" onDone={() => { setOpp(""); load(); }} />}
         {!isReadOnly && <button style={btnPrimary} data-testid="sched-new" onClick={() => setCreating(true)}>New shift</button>}
       </div>
       <div style={{ fontSize: 12.5, color: T.ink3 }}>{data.sentence}</div>
@@ -339,7 +366,9 @@ function BulkBar({ ids, shifts, onDone, onClear }) {
         <button style={btnQuiet} onClick={() => setMode("settings")}>Change settings</button>
         <button style={btnQuiet} onClick={() => downloadCsv(`/volunteer-hub/slots/export.csv?ids=${ids.join(",")}`, "shifts.csv").catch(() => setErr("The export did not download."))}>Export CSV</button>
         <button style={btnQuiet} onClick={() => setMode("message")}>Draft a message</button>
-        <button style={btnDanger} onClick={() => setMode("delete")}>Delete</button>
+        {/* FIX-41: the one Remove. A shift people are on is retired (off the
+            public pages, their sign-ups kept); an empty one is deleted. */}
+        <button style={btnDanger} data-testid="sched-remove-selected" onClick={() => removeMany({ kind: "shift", ids, onDone: () => onDone("") })}>Remove</button>
         <button style={btnLink} onClick={onClear}>Clear</button>
       </div>
       {mode === "copy" && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -364,9 +393,6 @@ function BulkBar({ ids, shifts, onDone, onClear }) {
         <textarea aria-label="Message" rows={4} placeholder="Dear {{first_name}}," value={body} onChange={e => setBody(e.target.value)} style={inp} />
         <div><button style={btnPrimary} disabled={busy} onClick={() => go({ action: "message", subject, body })}>Write the drafts</button></div>
       </div>}
-      {mode === "delete" && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13 }}>Delete {ids.length} {ids.length === 1 ? "shift" : "shifts"}{people ? `, taking ${people} ${people === 1 ? "person" : "people"} off them` : ""}? Steward will not write to anybody.</span>
-        <button style={{ ...btnPrimary, background: T.terra700 }} disabled={busy} onClick={() => go({ action: "delete" })}>Delete</button></div>}
       {err && <div role="alert" style={{ fontSize: 13 }}>{err}</div>}
     </div>
   );
@@ -395,7 +421,7 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
     venue: shift ? shift.ownVenue || shift.venue || "" : "", locationDetail: shift ? shift.locationDetail || "" : "",
     published: shift ? shift.published !== false : true, capacity: shift && shift.capacity != null ? String(shift.capacity) : "",
     notes: shift ? shift.notes || "" : "",
-    roles: shift ? (shift.roles || []).map(r => ({ id: r.id, name: r.name, needed: String(r.needed) })) : [],
+    roles: shift ? (shift.roles || []).map(r => ({ id: r.id, name: r.name, needed: String(r.needed), picture: r.picture || null })) : [],
   }));
   useEffect(() => { if (!editing && !f.opportunityId && opps[0]) setF(p => ({ ...p, opportunityId: opps[0].id })); }, [opps]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [busy, setBusy] = useState(false);
@@ -460,6 +486,8 @@ export function ShiftEditor({ shift, opportunities = [], date, startTime, endTim
             <input aria-label={`Role ${i + 1} name`} placeholder="Sorting" value={r.name} onChange={e => setRole(i, "name", e.target.value)} style={{ ...inp, flex: 2, minWidth: 0 }} />
             <input aria-label={`Role ${i + 1} people needed`} inputMode="numeric" value={r.needed} onChange={e => setRole(i, "needed", e.target.value)} style={{ ...inp, width: 64 }} />
             <button type="button" style={btnQuiet} aria-label={`Remove role ${i + 1}`} onClick={() => setF(p => ({ ...p, roles: p.roles.filter((_, j) => j !== i) }))}>Remove</button>
+            {/* FIX-41: a saved role may take a small picture; it saves at once. */}
+            {r.id && <RolePicture role={r} onSaved={pic => setRole(i, "picture", pic)} />}
           </div>))}
         <button type="button" style={btnLink} onClick={() => setF(p => ({ ...p, roles: [...p.roles, { name: "", needed: "1" }] }))}>Add a role</button>
         {!f.roles.length && <><label style={lbl} htmlFor="se-cap">Places (empty for no limit)</label><input id="se-cap" inputMode="numeric" value={f.capacity} onChange={set("capacity")} style={{ ...inp, width: 100 }} /></>}

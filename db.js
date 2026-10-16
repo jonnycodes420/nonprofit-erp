@@ -6317,6 +6317,15 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_deleted_records_org ON deleted_records (org_id, created_at DESC)`);
 
+  // FIX-41 REMOVAL. Something with money or people attached is RETIRED, not
+  // deleted: hidden from new use, kept on every past record (removal.js).
+  // These say when and by whom. Undo puts back what the columns were.
+  for (const t of ["event_levels", "membership_levels", "volunteer_slots", "fin_funds", "campaigns", "volunteer_opportunities"]) {
+    if (t !== "volunteer_opportunities") await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS retired_by TEXT`);
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS retired_by_name TEXT`);
+  }
+
   // APPEND-ONLY, ENFORCED BY THE DATABASE, not by a convention about which
   // routes exist. A trail that can be edited is not a trail, and the person
   // most motivated to edit it is the person it incriminates. No screen and no
@@ -7271,6 +7280,14 @@ async function runSchemaInit(pool) {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_auction_items_auction ON auction_items (org_id, auction_id, position)`);
+  // FIX-41: an item with bids is retired, not deleted (removal.js). Removing a
+  // winner returns the item to unassigned: bids made up to that instant stay on
+  // record but no longer make anyone the winner. No payment is touched
+  // (auctionCore TOP_BIDS_SQL reads it).
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS retired_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS retired_by TEXT`);
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS retired_by_name TEXT`);
+  await pool.query(`ALTER TABLE auction_items ADD COLUMN IF NOT EXISTS unassigned_at TIMESTAMPTZ`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS auction_bidders (
       id TEXT PRIMARY KEY,
@@ -8066,6 +8083,18 @@ async function runSchemaInit(pool) {
       created_by_name TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       UNIQUE (org_id, page_id, number))`);
+
+  // FIX-41 PICTURES · every page and item can have a picture. A picture is
+  // { url, alt, fx, fy } (pictures.js): the words a screen reader says and the
+  // focal point a phone crop keeps. A slot that already had a url column keeps
+  // it and gains its words and focus beside it; a new slot is one JSONB column.
+  await pool.query(`ALTER TABLE event_levels ADD COLUMN IF NOT EXISTS picture JSONB`);
+  await pool.query(`ALTER TABLE membership_levels ADD COLUMN IF NOT EXISTS picture JSONB`);
+  await pool.query(`ALTER TABLE volunteer_slot_roles ADD COLUMN IF NOT EXISTS picture JSONB`);
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS hero_meta JSONB`);
+  await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS image_meta JSONB`);
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS image_meta JSONB`);
+  await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS membership_cover JSONB`);
 
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id

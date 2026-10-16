@@ -20502,7 +20502,7 @@ async function fundraisingCampaignRows(orgId) {
   await PACE_READY;
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
-            donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public
+            donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public, retired_at
      FROM campaigns WHERE org_id = ? AND goal_amount IS NOT NULL AND goal_amount > 0
      ORDER BY created_at DESC`,
     [orgId]
@@ -20571,6 +20571,7 @@ async function fundraisingCampaignRows(orgId) {
       heroCrop: parseCrop(c.hero_crop),
       heroFocal: { x: Math.min(1, Math.max(0, Number(c.hero_focal_x ?? 0.5) || 0.5)), y: Math.min(1, Math.max(0, Number(c.hero_focal_y ?? 0.5) || 0.5)) },
       goalProgressPublic: c.goal_progress_public === true,
+      retired: !!c.retired_at,   // FIX-41: kept on every report; the Campaigns list marks it
       ...pace,
     };
   });
@@ -21454,7 +21455,7 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
   if (!org) return res.status(404).json({ error: "Not found" });
   const [ev] = await query("SELECT id, name, date, location, description FROM events WHERE id=? AND org_id=? AND status <> 'cancelled' AND is_sample IS NOT TRUE", [req.params.eventId, org.id]);
   if (!ev) return res.status(404).json({ error: "Not found" });
-  const levels = await query("SELECT * FROM event_levels WHERE event_id=? AND org_id=? ORDER BY kind DESC, position, price", [ev.id, org.id]);
+  const levels = await query("SELECT * FROM event_levels WHERE event_id=? AND org_id=? AND retired_at IS NULL ORDER BY kind DESC, position, price", [ev.id, org.id]);
   const out = [];
   for (const l of levels) out.push(eventLevelPayload(l, await levelTaken(l.id)));
   res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
@@ -21473,14 +21474,15 @@ app.get("/org/:orgSlug/volunteer-page/:pageSlug/public", donateLimiter, wrap(asy
   const [org] = await query(`SELECT o.id, o.name, o.org_slug, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`,
     [req.params.orgSlug]);
   if (!org) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
-  const [page] = await query(`SELECT id, title, slug, published FROM giving_pages
+  const [page] = await query(`SELECT id, title, slug, published, image_url, image_meta FROM giving_pages
      WHERE org_id = ? AND slug = ? AND page_kind = ? AND status = 'active' AND published IS NOT NULL`, [org.id, req.params.pageSlug, VP.KIND]);
   if (!page || !Array.isArray(page.published) || !page.published.length) return res.status(404).json({ error: "not_found", message: "This page could not be found." });
   const widgets = (await resolveWidgetsPublic(org, page.published, { pageId: page.id, today: orgToday(await orgTz(org.id)) }))   // ORG_TZ_SEAM_OK
     .filter(w => w.type !== "volquote" || (w.permission === true && w.text && w.name));
   const data = await VP.pageData(org.id, page.published);
   res.json({ org: { id: org.id, name: String(org.display_name || "").trim() || org.name, slug: org.org_slug },
-    theme: giveThemePayload(org), page: { id: page.id, title: page.title, slug: page.slug }, widgets, data });
+    theme: giveThemePayload(org), page: { id: page.id, title: page.title, slug: page.slug,
+      cover: page.image_url ? { url: page.image_url, ...(page.image_meta || {}) } : null }, widgets, data });   // FIX-41
 }));
 
 // The same data for the editor's live preview, before anything is published.
@@ -21571,6 +21573,8 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
     org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
+      // FIX-41: the cover with its words and focal point (pictures.js).
+      cover: page.image_url ? { url: page.image_url, ...(page.image_meta || {}) } : null,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
       raisedAmount: parseFloat(page.raised_amount) || 0,
       // GIVE-EDIT-1: the goal bar's switch, set in the page editor.
@@ -22098,6 +22102,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null, p2pEnabled: page.p2p_enabled === true },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
+      cover: f.image_url ? { url: f.image_url, ...(f.image_meta || {}) } : null,
       personalGoalAmount: f.personal_goal_amount != null ? parseFloat(f.personal_goal_amount) : null,
       raisedAmount: parseFloat(f.raised_amount) || 0,
       raisedSentence: P2Pm.publicRaisedSentence({ name: f.name, raisedCents, goalCents }),
@@ -25453,7 +25458,9 @@ function eventLevelPayload(l, taken = 0) {
     memberPrice: l.member_price == null ? null : Number(l.member_price),
     deductible: (rbCentsEv(l.price) - rbCentsEv(l.fmv)) / 100, capacity: l.capacity, taken,
     remaining: l.capacity == null ? null : Math.max(0, l.capacity - taken), recognition: l.recognition,
-    benefits: Array.isArray(l.benefits) ? l.benefits : [] };
+    picture: l.picture || null,   // FIX-41
+    benefits: Array.isArray(l.benefits) ? l.benefits : [],
+    retired: !!l.retired_at };   // FIX-41: kept on every guest, hidden from new use
 }
 
 // Find the person by id, or by email, or create them — the same shape a
@@ -25477,6 +25484,7 @@ function membershipLevelPayload(l, counts = null) {
   const priceCents = mbCents(l.price), fmvCents = mbCents(l.fmv);
   return { id: l.id, name: l.name, price: priceCents / 100, fmv: fmvCents / 100, deductible: (priceCents - fmvCents) / 100,
     term: l.term, termLabel: MB ? MB.TERM_LABEL[l.term] : l.term, scope: l.scope,
+    picture: l.picture || null,   // FIX-41
     benefits: Array.isArray(l.benefits) ? l.benefits : [], active: l.active !== false,
     // PARITY-2 Part 1: the card's words, whether it is on the public page,
     // where it sorts, and the one frequency it may renew on by itself.
@@ -25754,7 +25762,7 @@ function publicLevelPayload(l) {
   const p = membershipLevelPayload(l);
   return { id: p.id, name: p.name, price: p.price, fmv: p.fmv, deductible: p.deductible, term: p.term, termLabel: p.termLabel,
            priceSuffix: p.priceSuffix, description: p.description, scope: p.scope, benefits: p.benefits,
-           autoRenew: !!p.autoRenewFrequency, autoRenewFrequency: p.autoRenewFrequency };
+           autoRenew: !!p.autoRenewFrequency, autoRenewFrequency: p.autoRenewFrequency, picture: p.picture };
 }
 
 // PARITY-2 Part 1: THE MEMBERSHIP PAGE (`/give/:orgSlug?memberships`). Every
@@ -25763,7 +25771,7 @@ function publicLevelPayload(l) {
 app.get("/org/:orgSlug/memberships/public", wrap(async (req, res) => {
   await MB_READY;
   const [org] = await query(
-    `SELECT o.id, o.name, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug=?`,
+    `SELECT o.id, o.name, ps.membership_cover, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug=?`,
     [req.params.orgSlug]);
   if (!org) return res.status(404).json({ error: "Not found" });
   const levels = await query(
@@ -25771,6 +25779,7 @@ app.get("/org/:orgSlug/memberships/public", wrap(async (req, res) => {
       ORDER BY position, price, name`, [org.id]);
   res.json({ orgName: String(org.display_name || "").trim() || org.name, slug: req.params.orgSlug,
     theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true,
+    cover: org.membership_cover || null,   // FIX-41: the membership page's cover photo
     levels: levels.map(publicLevelPayload) });
 }));
 
@@ -25867,6 +25876,7 @@ app.post("/events/:id/register", requireAuth, checkWriteAccess, wrap(async (req,
   if (!event) return res.status(404).json({ error: "Event not found" });
   const [level] = await query("SELECT * FROM event_levels WHERE id=? AND event_id=? AND org_id=?", [String(req.body?.levelId || ""), event.id, orgId]);
   if (!level) return res.status(404).json({ error: "Level not found" });
+  if (level.retired_at) return res.status(400).json({ error: `${level.name} is retired. Choose a current ticket type.` });
   const qty = Number(req.body?.quantity || 1);
   if (!Number.isInteger(qty) || qty < 1 || qty > EV.MAX_QTY) return res.status(400).json({ error: `quantity is 1 to ${EV.MAX_QTY}` });
   const who = actor(req);
@@ -26401,8 +26411,8 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
   const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
   const levels = await query(
-    `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits
-       FROM event_levels WHERE org_id=? AND event_id=? ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
+    `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition, benefits, picture
+       FROM event_levels WHERE org_id=? AND event_id=? AND retired_at IS NULL ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
   const esc = PPG.escapeHtml;
   res.setHeader("Cache-Control", "no-store");
   // EMBEDDABLE, the same rule the donation form follows.
@@ -26447,7 +26457,10 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
           ? (l.kind === "sponsor" ? "Sponsor and pay" : "Buy and pay")
           : (l.kind === "sponsor" ? "Sponsor" : "Register")}</button>
       </form>`;
+    // FIX-41: a level's own small picture, in a fixed square beside its name.
+    const lpic = require("../pictures").readPicture(l.picture);
     return `<div class="card${l.kind === "sponsor" ? " sponsor" : ""}" data-level-kind="${esc(l.kind)}">
+      ${lpic ? `<div style="float:right;width:72px;margin:0 0 8px 12px">${require("../pictures").pictureHtml({ ...lpic, alt: lpic.alt || l.name }, { ratio: "1 / 1", radius: 10, sizes: "72px" })}</div>` : ""}
       <div class="row"><h2>${esc(l.name)}</h2>${soldOut
         ? `<span class="pill shut">Sold out</span>`
         : `<span class="pill open">${esc(evMoney(l.price))}</span>`}</div>
@@ -26474,7 +26487,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
     ? `<div class="hero video"><iframe src="${esc(video.embedUrl)}" title="${esc(e.name)}" loading="lazy"
          allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`
     : /^\/portal-assets\/pa_[a-f0-9]{24}$/.test(String(e.hero_image_url || ""))
-    ? `<div class="hero"><img src="${esc(e.hero_image_url)}?w=1280" srcset="${esc(e.hero_image_url)}?w=640 640w, ${esc(e.hero_image_url)}?w=1280 1280w, ${esc(e.hero_image_url)}?w=1920 1920w" sizes="(max-width: 760px) 100vw, 720px" alt=""></div>`
+    ? `<div class="hero"><img src="${esc(e.hero_image_url)}?w=1280" srcset="${esc(e.hero_image_url)}?w=640 640w, ${esc(e.hero_image_url)}?w=1280 1280w, ${esc(e.hero_image_url)}?w=1920 1920w" sizes="(max-width: 760px) 100vw, 720px" alt="${esc((e.hero_meta && e.hero_meta.alt) || e.name)}" style="object-position:${require("../pictures").focusCss(require("../pictures").readPicture({ url: e.hero_image_url, ...(e.hero_meta || {}) }))}"></div>`
     : "";
   const day = EPG.civil(e.date), lastDay = EPG.civil(e.end_date);
   const dateWords = lastDay && lastDay !== day ? `${evDayWords(day)} to ${evDayWords(lastDay)}` : evDayWords(day);
@@ -26518,7 +26531,7 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
 
   const style = `<style>
     .hero{margin:0 0 14px;border-radius:14px;overflow:hidden;background:#0f1a12}
-    .hero img{display:block;width:100%;height:auto;max-height:420px;object-fit:cover}
+    .hero img{display:block;width:100%;aspect-ratio:16/9;height:auto;object-fit:cover}
     .hero.video{position:relative;padding-top:56.25%}
     .hero.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
     .when p{margin:0 0 4px}
@@ -26722,7 +26735,7 @@ app.post("/e/:slug/waitlist", donateLimiter, express.urlencoded({ extended: fals
   if (String(req.body?.website || "").trim()) return done();
   const name = String(req.body?.name || "").trim().slice(0, 200);
   const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 320);
-  const [level] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+  const [level] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=? AND retired_at IS NULL",
     [String(req.body?.levelId || ""), e.id, e.org_id]);
   if (!name || !email.includes("@") || !level) {
     return res.redirect(303, `/e/${encodeURIComponent(e.public_slug)}?problem=${encodeURIComponent("A name and an email, so they can reach you if a place comes free.")}`);
@@ -26759,7 +26772,7 @@ app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: fals
     return res.status(400).send(evPage({ title: "Almost", brand, body:
       `<div class="card"><div class="err">A name and an email, so they know who is coming and how to reach you.</div>${back}</div>` }));
   }
-  const [level] = await query("SELECT * FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+  const [level] = await query("SELECT * FROM event_levels WHERE id=? AND event_id=? AND org_id=? AND retired_at IS NULL",
     [String(req.body?.levelId || ""), e.id, e.org_id]);
   if (!level) return res.status(400).send(evPage({ title: "Almost", brand, body:
     `<div class="card"><div class="err">That option is no longer available.</div>${back}</div>` }));

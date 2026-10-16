@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { removeOne } from "./RemoveMenu";
 import { BrandKitManager } from "./BrandKit";
 import { useUrlWriter } from "./RecordLink";
 import { tabHref, urlParam, editPageHref } from "../lib/appUrls";
@@ -394,13 +395,11 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     setSaving(false);
   }
 
-  async function deletePage(p){
-    if(!(await askConfirm({title:`Delete "${p.title}"?`,body:"This removes the page and its shareable link for good. Gifts already given through it are not deleted. This cannot be undone.",yes:"Delete page",danger:true})))return;
-    try{
-      await apiFetch(`/giving-pages/${p.id}`,{method:"DELETE"});
-      setPages(prev=>prev.filter(x=>x.id!==p.id));
-      if(shareOpenId===p.id)setShareOpenId(null);
-    }catch(e){alert(errorMessage(e, "Failed to delete giving page"));}
+  // FIX-41: the one Remove. A page with gifts, fundraisers or sign-ups is
+  // archived, never deleted; one with none is deleted; Undo either way.
+  function deletePage(p){
+    const reload=()=>apiFetch("/giving-pages").then(r=>setPages(r||[])).catch(()=>{});
+    return removeOne({kind:p.page_kind==="volunteer"?"volunteer_page":"giving_page",id:p.id,onDone:()=>{if(shareOpenId===p.id)setShareOpenId(null);reload();}});
   }
 
   const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14,fontFamily:"inherit"};
@@ -500,9 +499,9 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                     style={{background:p.status==="active"?T.terra100:T.green100,border:"1px solid "+(p.status==="active"?T.terra200:T.greenDk),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?T.terra700:T.greenDk,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {isVol?(p.status==="active"?"Unpublish":"Publish again"):(p.status==="active"?"Archive":"Reactivate")}
                   </button>
-                  <button onClick={()=>deletePage(p)}
-                    style={{background:"transparent",border:"1px solid "+T.terra200,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.terra700,cursor:"pointer"}}>
-                    Delete
+                  <button onClick={()=>deletePage(p)} data-testid="page-remove" data-kind={p.page_kind==="volunteer"?"volunteer_page":"giving_page"}
+                    style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>
+                    Remove
                   </button>
                 </>}
               </div>

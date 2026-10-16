@@ -15,10 +15,11 @@ import { PeopleDatalist } from "./PeopleDatalist";
 import { apiFetch } from "../api";
 import { T, Card, Phone } from "./shared";
 import { Figure, FigureContext } from "./Figure";
-import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
-import { resolveAssetUrl } from "../lib/assetUrl";
+import { PhotoList } from "./PhotoField";
+import Picture from "./Picture";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
+import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -33,7 +34,32 @@ const FIGURE_KEYS = [
   ["auction-unsold", "count"], ["auction-bidders", "count"],
 ];
 
-function ItemForm({ initial, donors, onSave, onCancel, saving }) {
+// FIX-41: what the winner's note will look like, with the item's main photo.
+function WinnerPreview({ itemId }) {
+  const [p, setP] = useState(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open || p) return;
+    apiFetch(`/auction-items/${itemId}/winner-preview`).then(setP).catch(() => setP({ error: true }));
+  }, [open, itemId, p]);
+  return (
+    <div data-testid="auction-winner-preview">
+      <button type="button" style={btn(false)} onClick={() => setOpen(o => !o)}>{open ? "Hide the winner email" : "Preview the winner email"}</button>
+      {open && p && !p.error && (
+        <div style={{ marginTop: 8, border: "1px solid " + T.bg3, borderRadius: 10, padding: 14, background: T.white, maxWidth: 520 }}>
+          <div style={{ fontSize: 12, color: T.ink3, marginBottom: 6 }}>{p.sentence}</div>
+          {p.photo
+            ? <div style={{ marginBottom: 10 }}><Picture value={p.photo} ratio="4 / 3" radius={10} width={640} testid="winner-preview-photo" /></div>
+            : <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }}>No photo yet. Add one above and the winner sees it here.</div>}
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{p.subject}</div>
+          <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: "pre-wrap", lineHeight: 1.55 }}>{p.body}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemForm({ initial, donors, onSave, onCancel, saving, itemId = null }) {
   const [f, setF] = useState(initial);
   const set = (k, v) => setF(x => ({ ...x, [k]: v }));
   const save = async () => {
@@ -57,19 +83,11 @@ function ItemForm({ initial, donors, onSave, onCancel, saving }) {
       </div>
       <PeopleDatalist id="auction-donors" text={f.donorName} />
       <label style={lab}>Description<textarea style={{ ...inp, minHeight: 70 }} value={f.description} onChange={e => set("description", e.target.value)} /></label>
-      <div>
-        <div style={{ ...lab, marginBottom: 6 }}>Photos (up to six; the first leads the item)</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-          {f.photos.map((p, i) => (
-            <div key={i} style={{ position: "relative" }}>
-              <img src={p.startsWith("data:") ? p : resolveAssetUrl(p)} alt="" style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, display: "block" }} />
-              <button type="button" aria-label="Remove photo" onClick={() => set("photos", f.photos.filter((_, j) => j !== i))}
-                style={{ position: "absolute", top: 2, right: 2, ...btn(false), padding: "0 6px", fontSize: 12 }}>×</button>
-            </div>))}
-        </div>
-        {f.photos.length < 6 && <Uploader accept={IMAGE_ACCEPT} acceptLabel={IMAGE_ACCEPT_LABEL} maxBytes={IMAGE_MAX_BYTES} compact
-          label="Drag a photo here, or browse" onFile={({ dataUrl }) => set("photos", [...f.photos, dataUrl])} />}
+      <div style={{ maxWidth: 420 }}>
+        <div style={{ ...lab, marginBottom: 6 }}>Photos (up to five; the first is the main one)</div>
+        <PhotoList value={f.photos} onChange={v => set("photos", v)} name={f.title} max={5} testid="auction-item-photos" />
       </div>
+      {itemId && <WinnerPreview itemId={itemId} />}
       <p style={{ fontSize: 12, color: T.ink3, margin: 0 }}>
         The fair market value is your number: what the winner receives. Only what they pay over it is deductible, and their receipt says so.
       </p>
@@ -85,6 +103,7 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
   const [editing, setEditing] = useState(null);   // null | "new" | item id
+  const [picked, setPicked] = useState(() => new Set());   // FIX-41: items ticked for Remove selected
   const [winnerFor, setWinnerFor] = useState(null);   // JOURNEYS-4: the item whose winner is being recorded
   const [wf, setWf] = useState({ name: "", amount: "" });
   const [saving, setSaving] = useState(false);
@@ -175,19 +194,26 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
       <Card style={{ padding: "16px 18px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <div style={{ ...h, marginBottom: 0 }}>Items</div>
-          {editing == null && <button style={btn(true)} disabled={isReadOnly} onClick={() => setEditing("new")} data-testid="auction-add-item">Add an item</button>}
+          <span style={{ display: "flex", gap: 6 }}>
+            {!isReadOnly && picked.size > 0 && <button style={btn(false)} data-testid="auction-remove-selected"
+              onClick={() => removeMany({ kind: "auction_item", ids: [...picked], onDone: () => { setPicked(new Set()); load(); } })}>Remove selected ({picked.size})</button>}
+            {editing == null && <button style={btn(true)} disabled={isReadOnly} onClick={() => setEditing("new")} data-testid="auction-add-item">Add an item</button>}
+          </span>
         </div>
         {editing === "new" && <ItemForm initial={EMPTY_ITEM} donors={donors} saving={saving} onSave={saveItem} onCancel={() => setEditing(null)} />}
         {d.items.length === 0 && editing !== "new" && <p style={{ fontSize: 13, color: T.ink3 }}>No items yet. Add the first one: a title, a photo, who gave it and what it is worth.</p>}
         {d.items.map(it => editing === it.id
-          ? <div key={it.id} style={{ padding: "10px 0", borderBottom: "1px solid " + T.bg3 }}><ItemForm initial={itemInitial(it)} donors={donors} saving={saving} onSave={saveItem} onCancel={() => setEditing(null)} /></div>
+          ? <div key={it.id} style={{ padding: "10px 0", borderBottom: "1px solid " + T.bg3 }}><ItemForm initial={itemInitial(it)} itemId={it.id} donors={donors} saving={saving} onSave={saveItem} onCancel={() => setEditing(null)} /></div>
           : (
-          <div key={it.id} data-auction-item={it.id} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div key={it.id} data-auction-item={it.id} style={{ display: "flex", gap: 12, padding: "10px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap", alignItems: "flex-start", opacity: it.retired ? 0.6 : 1 }}>
+            {!isReadOnly && !it.retired && <input type="checkbox" aria-label={`Select ${it.title}`} data-testid="auction-item-pick" checked={picked.has(it.id)} style={{ accentColor: T.greenDk, marginTop: 4 }}
+              onChange={e => setPicked(x => { const n = new Set(x); if (e.target.checked) n.add(it.id); else n.delete(it.id); return n; })} />}
             {it.photos[0]
-              ? <img src={resolveAssetUrl(it.photos[0])} alt="" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, flex: "none" }} />
-              : <div style={{ width: 56, height: 56, borderRadius: 8, background: T.bg2, flex: "none" }} />}
+              ? <div style={{ width: 56, flex: "none" }}><Picture value={it.photos[0]} alt={it.title} ratio="1 / 1" radius={8} width={160} testid="auction-item-thumb" /></div>
+              : <button type="button" disabled={isReadOnly} onClick={() => setEditing(it.id)} data-testid="auction-item-add-photo"
+                  style={{ width: 56, height: 56, borderRadius: 8, background: T.bg, border: "1px dashed " + T.bg3, flex: "none", fontSize: 10.5, fontWeight: 700, color: T.ink3, cursor: "pointer", fontFamily: "inherit", padding: 2 }}>Add a photo</button>}
             <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{it.title}{it.category ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {it.category}</span> : null}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{it.title}{it.category ? <span style={{ fontWeight: 400, color: T.ink3 }}> · {it.category}</span> : null}{it.retired ? <span data-testid="auction-item-retired" style={{ fontWeight: 400, color: T.ink3 }}> · Retired, off the public page</span> : null}</div>
               <div style={{ fontSize: 12.5, color: T.ink3 }}>
                 {it.donorId ? <>Donated by <DonorLink id={it.donorId} onOpen={() => openPerson(it.donorId)}>{it.donorName}</DonorLink> · </> : "No donor named · "}
                 worth {money(it.fmv)} · starts {money(it.startingBid)}, +{money(it.bidIncrement)}{it.buyNow != null ? ` · buy now ${money(it.buyNow)}` : ""}
@@ -204,7 +230,11 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
                 : <button style={btn(false)} disabled={isReadOnly || !it.donorId || !(it.fmv > 0)}
                     title={!it.donorId ? "Say who donated it first." : !(it.fmv > 0) ? "Enter its fair market value first." : "Records the item as an in-kind gift on the donor's record, at its fair market value. Once."}
                     onClick={() => act(() => apiFetch(`/auction-items/${it.id}/in-kind`, { method: "POST" }), `Recorded ${money(it.fmv)} in-kind from ${it.donorName}.`)}>Record as in-kind gift</button>}
-              {it.bidCount === 0 && <button style={btn(false)} disabled={isReadOnly} onClick={() => act(() => apiFetch(`/auction-items/${it.id}`, { method: "DELETE" }), "Item removed.")}>Remove</button>}
+              {/* FIX-41: one More menu. Remove retires an item with bids
+                  (off the public page, bids kept) and deletes one without;
+                  Remove winner returns it to unassigned, never touching a payment. */}
+              <RemoveMenu kind="auction_item" id={it.id} disabled={isReadOnly || it.retired} onDone={load}
+                items={[it.winner && !it.paidGiftId && { label: "Remove winner", onClick: () => removeOne({ kind: "auction_winner", id: it.id, onDone: load }) }]} />
               {!it.paidGiftId && winnerFor !== it.id && <button style={btn(false)} disabled={isReadOnly} data-testid={"auction-record-winner-" + it.id}
                 title="For a live auction or a paper bid sheet: who won it, and for how much. It closes the item."
                 onClick={() => { setWinnerFor(it.id); setWf({ name: "", amount: "" }); }}>Record the winner</button>}

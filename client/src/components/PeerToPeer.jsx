@@ -8,6 +8,8 @@
 // Its totals equal the public page's in cents, because both are the same live
 // SUM over the same gift rows — never a stored counter. The identity is
 // printed on the screen rather than assumed: teams + solo + direct = the page.
+import RemoveMenu from "./RemoveMenu";
+import PhotoField from "./PhotoField";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, Card } from "./shared";
@@ -93,7 +95,7 @@ function FundraiserDetail({ f, page, orgSlug, canEdit, onSaved }) {
     setErr("");
     try {
       await apiFetch(`/peer-fundraisers/${f.id}`, { method: "PUT", body: JSON.stringify({
-        name: edit.name, story: edit.story, imageUrl: edit.imageUrl,
+        name: edit.name, story: edit.story,
         personalGoalAmount: edit.goal === "" ? null : edit.goal }) });
       setEdit(null); onSaved(`${edit.name}'s page is saved.`);
     } catch (e) { setErr(errorMessage(e, "That did not save.")); }
@@ -129,11 +131,16 @@ function FundraiserDetail({ f, page, orgSlug, canEdit, onSaved }) {
       {canEdit && (edit ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={h}>Their page</div>
+          {/* FIX-41: the page's cover photo, first, through the one picture control. It saves at once. */}
+          <div style={{ maxWidth: 420 }} data-testid="editor-cover">
+            <PhotoField variant="cover" name={edit.name} testid="editor-cover-photo"
+              value={edit.cover || (edit.imageUrl ? { url: edit.imageUrl } : null)}
+              onChange={async p => { setErr(""); try { const r = await apiFetch(`/pictures/p2p_cover/${f.id}`, { method: "PUT", body: JSON.stringify({ picture: p }) }); setEdit(x => ({ ...x, cover: r.picture, imageUrl: r.picture ? r.picture.url : "" })); } catch (e) { setErr(errorMessage(e, "That photo did not save.")); } }} />
+          </div>
           <input aria-label="Name" value={edit.name} onChange={e => setEdit(x => ({ ...x, name: e.target.value }))} style={inp} />
           <textarea aria-label="Story" rows={4} value={edit.story} onChange={e => setEdit(x => ({ ...x, story: e.target.value }))} style={{ ...inp, fontFamily: "inherit" }} />
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             <input aria-label="Goal" placeholder="Goal ($)" type="number" value={edit.goal} onChange={e => setEdit(x => ({ ...x, goal: e.target.value }))} style={{ ...inp, width: 110 }} />
-            <input aria-label="Photo URL" placeholder="Photo URL (https://)" value={edit.imageUrl} onChange={e => setEdit(x => ({ ...x, imageUrl: e.target.value }))} style={{ ...inp, flex: 1, minWidth: 180 }} />
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button style={btn(true)} onClick={save} data-testid="p2p-fundraiser-save">Save</button>
@@ -144,7 +151,7 @@ function FundraiserDetail({ f, page, orgSlug, canEdit, onSaved }) {
       ) : (
         <div>
           <button style={btn(false)} data-testid="p2p-fundraiser-edit"
-            onClick={() => setEdit({ name: f.name, story: f.story || "", imageUrl: f.imageUrl || "", goal: f.goalCents ? String(f.goalCents / 100) : "" })}>
+            onClick={() => setEdit({ name: f.name, story: f.story || "", imageUrl: f.imageUrl || "", cover: f.cover || (f.imageUrl ? { url: f.imageUrl, ...(f.imageMeta || f.image_meta || {}) } : null), goal: f.goalCents ? String(f.goalCents / 100) : "" })}>
             Edit their page
           </button>
         </div>
@@ -519,6 +526,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
                   ? `${tm.name} comes off the public site and stops taking gifts. Its past gifts still count. You can put it back.`
                   : `${tm.name} goes back on the public site and can take gifts again.`}
                 onConfirm={() => takedown("team", tm.id, tm.status === "active" ? "archived" : "active", tm.name)} />}
+              <RemoveMenu kind="p2p_team" id={tm.id} disabled={isReadOnly || !isAdmin} onDone={load} />
             </div>))}
           {newTeam && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
             <input placeholder="Team name" value={newTeam.name} onChange={e => setNewTeam(x => ({ ...x, name: e.target.value }))} style={{ ...inp, width: 190 }} />
@@ -569,6 +577,7 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
                   : f.status === "pending" ? `${f.name}'s page goes public and can take gifts.`
                   : `${f.name}'s page goes back on the public site and can take gifts again.`}
                 onConfirm={() => takedown("fundraiser", f.id, f.status === "active" ? "archived" : "active", f.name, f.status)} />}
+              <RemoveMenu kind="p2p_page" id={f.id} disabled={isReadOnly || !isAdmin} onDone={load} />
               {openF === f.id && <FundraiserDetail f={f} page={d.page} orgSlug={orgSlug} canEdit={!isReadOnly && isAdmin}
                 onSaved={m => { setMsg(m); load(); }} />}
             </div>))}

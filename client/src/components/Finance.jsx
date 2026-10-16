@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import RemoveMenu from "./RemoveMenu"; // FIX-41: a fund's Remove, on the funds list only
 import { RestrictedView } from "./RestrictedView";
 import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
@@ -1387,6 +1388,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <RecordLink to={tabHref("finance", { subtab: "transactions", fundId: f.id })} data-record-link="fund-txns"
                   style={{ ...ghostBtn, display:"inline-flex", alignItems:"center" }} onOpen={() => gotoTxns({ fund: f.id })}>View txns →</RecordLink>
                 <button style={ghostBtn} onClick={() => setEditFund(f)}>Edit</button>
+                {f.retired_at ? <span style={{ fontSize: 11, color: T.ink3 }}>Retired</span> : <RemoveMenu kind="fund" id={f.id} onDone={() => apiFetch("/finance/funds").then(x => setFunds(Array.isArray(x) ? x : [])).catch(() => {})} />}{/* FIX-41 */}
               </div>
             );
           })}

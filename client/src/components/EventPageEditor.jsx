@@ -12,6 +12,7 @@ import { T } from "./shared";
 import { askConfirm } from "./ConfirmDialog";
 import { errorMessage } from "../lib/domainError";
 import { resolveAssetUrl } from "../lib/assetUrl";
+import PhotoField from "./PhotoField";
 import { suggestEventSlug, parseEventVideo, galleryShows, civil, VIDEO_HOSTS_SENTENCE } from "../../../shared/eventPage";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 14, color: T.ink, fontFamily: "inherit", boxSizing: "border-box", minWidth: 0 };
@@ -49,10 +50,12 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
     } catch (e) { setMsg(errorMessage(e, "That photograph did not upload.")); }
     setBusy(false);
   };
-  const removeHero = async () => {
+  const setCover = async p => {
     setBusy(true); setMsg("");
-    try { await apiFetch(`/events/${eventId}/hero`, { method: "POST", body: JSON.stringify({ image: "" }) }); await load(); setMsg("The picture is off the page."); }
-    catch (e) { setMsg(errorMessage(e, "That did not come off.")); }
+    try {
+      await apiFetch(`/pictures/event_cover/${eventId}`, { method: "PUT", body: JSON.stringify({ picture: p }) });
+      await load(); setMsg(p ? "The cover photo is on the page." : "The cover photo is off the page.");
+    } catch (e) { setMsg(errorMessage(e, "That photo did not save.")); }
     setBusy(false);
   };
   const removePhoto = async p => {
@@ -73,6 +76,15 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
         {published
           ? <>Live at <a href={ev.public_page_url} target="_blank" rel="noreferrer" data-testid="event-page-link" style={{ color: T.greenDk, fontWeight: 700, wordBreak: "break-all" }}>{ev.public_page_url}</a>. People buy tickets, sponsor, give and add it to their calendar there.</>
           : "Not published yet. Give it an address and people can buy tickets, sponsor and give from it."}
+      </div>
+
+      {/* FIX-41: the cover photo leads the editor, as on every page. */}
+      <div style={{ marginBottom: 14, maxWidth: 520 }} data-testid="editor-cover">
+        <div style={head}>Cover photo</div>
+        <PhotoField variant="cover" name={ev.name} disabled={isReadOnly || busy} testid="editor-cover-photo"
+          value={ev.hero_image_url ? { url: ev.hero_image_url, ...(ev.hero_meta || {}) } : null}
+          onChange={setCover} />
+        {form.heroVideoUrl && video && <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>A film is set, so the film shows at the top of the page in place of the photo.</div>}
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
@@ -100,18 +112,6 @@ export function EventPageEditor({ eventId, isReadOnly, today }) {
       </div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16 }}>
-        <div>
-          <div style={head}>Picture</div>
-          {ev.hero_image_url
-            ? <img src={resolveAssetUrl(ev.hero_image_url) + "?w=640"} alt="" style={{ display: "block", width: "100%", maxHeight: 180, objectFit: "cover", borderRadius: 10, marginBottom: 8 }} />
-            : <div style={{ fontSize: 13, color: T.ink3, marginBottom: 8 }}>No picture yet. A wide photograph works best.</div>}
-          {!isReadOnly && <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <label style={{ ...btn(false), display: "inline-block" }}>{ev.hero_image_url ? "Replace" : "Add a picture"}
-              <input type="file" accept="image/*" hidden data-testid="event-hero-file"
-                onChange={e => { const f = [...e.target.files]; e.target.value = ""; if (f.length) upload(`/events/${eventId}/hero`, f.slice(0, 1), "The picture is on the page."); }} /></label>
-            {ev.hero_image_url && <button disabled={busy} style={btn(false)} onClick={removeHero}>Remove</button>}
-          </div>}
-        </div>
         <div>
           <div style={head}>Photographs from the night</div>
           <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8, lineHeight: 1.5 }} data-testid="event-gallery-note">

@@ -264,7 +264,7 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
           onNew={() => !isReadOnly && setModal({ mode: "new" })}
           templates={(tpl, reload) => <CampaignTemplates data={tpl} reload={reload} isReadOnly={isReadOnly} onCreated={out => { load(); if (out && out.campaignId) openCampaign(out.campaignId); }} onOpenCampaign={openCampaign} />}
           planPanel={id => <CampaignPlanPanel campaignId={id} isReadOnly={isReadOnly} />}
-          onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} />
+          onEdit={c => !isReadOnly && setModal({ mode: "edit", campaign: c })} onRemoved={load} />
       )}
 
       {!loading && subtab === "pages" && (

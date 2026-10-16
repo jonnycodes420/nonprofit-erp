@@ -608,6 +608,8 @@ app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/ca
 // EMAIL-1: a photo added to the media library is a camera photo too
 // (routes/media.js PHOTO_MAX_BYTES, 15MB decoded). Move both or neither.
 app.use("/media/photos", express.json({ limit: "22mb" }));
+// FIX-41: the one picture upload door takes a camera photo too (pictures.js).
+app.use("/pictures/upload", express.json({ limit: "22mb" }));
 // CLEAN-1: a returned change-of-address file for a large file of people.
 app.use("/data-health/ncoa/results", express.json({ limit: "20mb" }));
 // PARITY-2 Part 3: an event's hero and its gallery take a camera photo too.
@@ -4196,6 +4198,7 @@ app.use(require("./routes/volunteer").routers.r0);
 // place; the catch-all /volunteer/:slug there defers to them by name.
 app.use(require("./routes/volunteerScheduling").routers.r0);
 app.use(require("./routes/surveys").routers.r0);   // SURVEY-1
+app.use(require("./pictures").routers.r0);   // FIX-41: the one picture upload and save doors
 app.use(require("./routes/videoThanks").routers.r0);   // PARITY-1 Part F
 app.use(require("./routes/templates").routers.r0);   // COMMS-2
 app.use(require("./routes/why").routers.r0);         // WHY-1
@@ -4218,6 +4221,7 @@ app.use(require("./routes/groups").routers.r0);        // PARITY-1 Part D
 app.use(require("./routes/search").routers.r0);        // WIRE-1 the one search
 app.use(require("./routes/historyImport").routers.r0); // IMPORT-2 notes and history
 app.use(require("./routes/auctions").routers.r0);      // PARITY-2 Part 4
+app.use(require("./routes/removal").routers.r0);       // FIX-41 the one remove
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -11940,6 +11944,13 @@ async function storeAuctionPhoto(orgId, v) {
     width: norm.width ?? dims.width, height: norm.height ?? dims.height });
   return { url: asset.path };
 }
+// FIX-41 PICTURES · one upload door and one save door for every picture slot.
+require("./pictures").mount({ query, run, requireAuth, checkWriteAccess, wrap, putThemeAsset, normalizeUploadImage,
+  checkThemeImageDimensions, uploadImageError, recordAssetPointerHistory, ASSET_ID_RE });
+require("./routes/removal").mount({
+  actor, checkWriteAccess, query, queryTx, requireAuth, run, runTx, uuid, withTransaction, wrap,
+  itemStates: require("./auctionCore").itemStates,
+});
 require("./routes/auctions").mount({
   processAuctionUnpaid, requireAdmin,   // WIRE-1: the won-but-unpaid sweep's ops door
   processUnansweredMail,   // THREAD-3: the needs-a-reply sweep's ops door

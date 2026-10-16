@@ -24,6 +24,7 @@ import { displayDate } from "../../../shared/displayDate";
 // so the membership page can use the row too.
 import ShareRow from "./ShareRow";
 import MembershipsPage from "./MembershipsPage";
+import Picture from "../components/Picture";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -1331,11 +1332,8 @@ export default function Donate() {
                 ← Part of {givingPage.title}
               </a>
             )}
-            {peerFundraiser.imageUrl && (
-              <img src={peerFundraiser.imageUrl} alt={peerFundraiser.name}
-                style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 16, marginBottom: 20, display: "block" }}
-                onError={e => { e.target.style.display = "none"; }}
-              />
+            {(peerFundraiser.cover || peerFundraiser.imageUrl) && (
+              <div style={{ marginBottom: 20 }}><Picture value={peerFundraiser.cover || peerFundraiser.imageUrl} alt={peerFundraiser.name} ratio="16 / 9" radius={16} testid="page-cover" /></div>
             )}
             <div style={{ textAlign: "center", marginBottom: 18 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Fundraising for {org.name}</div>
@@ -1418,13 +1416,12 @@ export default function Donate() {
             </div>
           )}
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 28, order: 2 }}>
-            {builtPage}
-            {!builtPage && givingPage.imageUrl && (
-              <img src={givingPage.imageUrl} alt={givingPage.title}
-                style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 16, marginBottom: 20, display: "block" }}
-                onError={e => { e.target.style.display = "none"; }}
-              />
+            {/* FIX-41: the cover leads the page in a fixed 16:9 box, built or not,
+                unless the page already opens with a picture block of its own. */}
+            {(givingPage.cover || givingPage.imageUrl) && !(Array.isArray(givingPage.page) && givingPage.page[0] && givingPage.page[0].type === "hero" && givingPage.page[0].image) && (
+              <div style={{ marginBottom: 20 }}><Picture value={givingPage.cover || givingPage.imageUrl} alt={givingPage.title} ratio="16 / 9" radius={16} testid="page-cover" /></div>
             )}
+            {builtPage}
             {!builtPage && (
               <div style={{ textAlign: "center", marginBottom: 18 }}>
                 {!isCampaignPage && <>
