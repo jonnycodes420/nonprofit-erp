@@ -14,6 +14,7 @@ import { offerUndo } from "./EditHistory";
 import SheetImport from "./SheetImport";
 import OldReportsImport from "./OldReportsImport";
 import { Figure } from "./Figure";
+import ReportCheck, { CheckStatus } from "./ReportCheck";
 
 const btn = primary => ({ background: primary ? T.greenDk : T.white, color: primary ? T.white : T.ink, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 8, padding: "7px 13px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" });
 const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", minWidth: 0 };
@@ -28,8 +29,9 @@ async function download(id, name) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-export default function StoredReports() {
+export default function StoredReports({ onNavigate }) {
   const [list, setList] = useState(null);
+  const [checking, setChecking] = useState(null);
   const [open, setOpen] = useState(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -92,11 +94,15 @@ export default function StoredReports() {
                       Pulled in: {r.totals} {r.totals === 1 ? "total" : "totals"} adding up to <Figure variant="inline" kind="money" value={r.totalAmount} label={`From ${r.system || "your old system"}: ${r.title}`} source={r.source}
                         definition={`What ${r.fileName} said, imported from ${r.system || "your old system"}. Kept beside Steward's numbers, never added into them.`} />, from your old system.
                     </div>)}
+                  {/* RECONCILE-1: what Steward found when it checked this report. */}
+                  {r.kind === "old_report" && <CheckStatus check={r.check} />}
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+                    {r.kind === "old_report" && !r.scanned && <button type="button" style={btn(checking !== r.id)} data-testid="stored-check" onClick={() => setChecking(checking === r.id ? null : r.id)}>{checking === r.id ? "Close the check" : "See the check"}</button>}
                     <button type="button" style={{ ...btn(false), maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }} data-testid="stored-file" onClick={() => download(r.id, r.fileName).catch(e => setMsg(e.message))}>{r.fileName}</button>
                     {!r.scanned && <button type="button" style={btn(false)} onClick={() => show(r.id)}>{open && open.id === r.id ? "Close the table" : "Open the table"}</button>}
                     <button type="button" style={btn(false)} onClick={() => remove(r)}>Take off</button>
                   </div>
+                  {checking === r.id && <ReportCheck report={r} onNavigate={onNavigate} onChanged={load} />}
                   {open && open.id === r.id && (open.headers || []).length > 0 && (
                     <div style={{ overflowX: "auto", border: "1px solid " + T.bg3, borderRadius: 10, marginTop: 10, maxHeight: 420 }}>
                       <table data-testid="stored-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>

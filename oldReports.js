@@ -303,8 +303,11 @@ function guessMapping(headers = []) {
   const amount = [/^(total|amount|gift amount|gift total|gift_total|total amount|total giving|revenue|raised|total raised|donation amount|prior year total|last year|last year giving)$/, /amount|total|giving|revenue|raised/];
   for (const re of amount) { const i = find(re); if (i >= 0) { m.amount = i; break; } }
   // A name over a code: "Fund Description" before "GL Code".
-  for (const re of [/^(fund name|fund description|campaign name|appeal name|account name|constituent name|donor name)$/,
-                    /^(fund|campaign|appeal|designation|name|constituent|donor)$/, /^(gl code|gl_code|solicit code|fund code)$/]) {
+  // RECONCILE-1: a fund before a person, when a report has both ("Donor
+  // Name, Fund Description, Gift Total" is a by-fund report naming people).
+  for (const re of [/^(fund name|fund description|campaign name|appeal name)$/, /^(fund|campaign|appeal|designation)$/,
+                    /^(account name|constituent name|donor name)$/,
+                    /^(name|constituent|donor)$/, /^(gl code|gl_code|solicit code|fund code)$/]) {
     const i = find(re); if (i >= 0 && i !== m.amount) { m.label = i; break; }
   }
   const period = find(/^(year|fiscal year|period|month|quarter)$/);

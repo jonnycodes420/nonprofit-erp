@@ -2002,7 +2002,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   // for it and an old system's report covers exactly that stretch: the old
   // report's number stands in, and the label and sentence say where it is from.
   if (key === "board" && !(values.revenueLastYear > 0) && lastYearSource) {
-    const h = await figureSources.historicalGiving(orgId, lastYearSource.params.from, lastYearSource.params.to);
+    const h = await figureSources.historicalGiving(orgId, lastYearSource.params.from, lastYearSource.params.to, { baseline: true });
     if (h) { values.revenueLastYear = h.value; extra.revenueLastYear = { source: h.source, imported: h }; }
   }
   const metrics = def.metrics
@@ -2391,7 +2391,7 @@ async function composeBoardPack(orgId, opts = {}) {
           // system's report that covers exactly it (and no filter it cannot
           // honour): the old report's number, labelled, never added in.
           if (f && def.key === "givingLastYear" && !(f.value > 0) && window.prev && !Object.values(filters || {}).some(Boolean)) {
-            const h = await figureSources.historicalGiving(orgId, window.prev.from, window.prev.to);
+            const h = await figureSources.historicalGiving(orgId, window.prev.from, window.prev.to, { baseline: true });
             if (h) f = { ...f, label: `${f.label}, from your old system`, value: h.value, cents: h.cents, source: h.source, sentence: h.note, note: h.note, blank: null };
           }
           figures.push(f);
@@ -20005,10 +20005,25 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
     }
   }
 
+  // RECONCILE-1 · LAST YEAR, FOR A TOTAL-RAISED GOAL. Steward's gifts for the
+  // same stretch a year earlier; when Steward has none, the old report she
+  // chose with "Use as last year's total", labelled as from her old system.
+  let lastYear = null;
+  if (goal.goal_type === "total_raised") {
+    const back = d => `${Number(String(d).slice(0, 4)) - 1}${String(d).slice(4, 10)}`;
+    const ly = { key: "gifts", params: { from: back(goal.period_start), to: back(goal.period_end) } };
+    const f = await figureSources.figureValue(req.user.orgId, ly);
+    if (f.value > 0) lastYear = { value: f.value, source: ly, label: "The same stretch last year", imported: false };
+    else {
+      const h = await figureSources.historicalGiving(req.user.orgId, ly.params.from, ly.params.to, { baseline: true });
+      if (h) lastYear = { value: h.value, source: h.source, label: "The same stretch last year, from your old system", imported: true, note: h.note };
+    }
+  }
+
   res.json({
     label: goal.label, goalType: goal.goal_type, goalAmount, currentAmount, percent, rawPercent, over,
     periodStart: goal.period_start, periodEnd: goal.period_end,
-    recentAmount, recentDonorCount,
+    recentAmount, recentDonorCount, lastYear,
   });
 }));
 
@@ -22702,7 +22717,7 @@ async function reportGivingSummary(orgId, p) {
   // system's report that covers exactly that stretch stands in, labelled; and
   // the period itself says what the old system said for it, beside Steward's.
   if (comparison && !(comparison.value > 0)) {
-    const h = await figureSources.historicalGiving(orgId, comparison.from, comparison.to);
+    const h = await figureSources.historicalGiving(orgId, comparison.from, comparison.to, { baseline: true });
     if (h) comparison = { ...comparison, value: h.value, cents: h.cents, source: h.source, imported: true, label: `${comparison.label}, from your old system`, definition: h.note };
   }
   return comparison;
