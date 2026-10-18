@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home tile mockup</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{--ink:#0f1a12;--ink3:#5a554f;--ground:#f7f5f0;--line:#e8e4db;--white:#fff;--emerald:#0d5c3a;--brass:#c9a84c;--cream:#f0ede6}
+*{box-sizing:border-box} body{margin:0;background:var(--ground);color:var(--ink);font-family:"DM Sans",system-ui,sans-serif}
+.stamp{position:fixed;top:12px;right:12px;background:var(--brass);color:var(--ink);font-weight:700;font-size:12px;padding:6px 10px;border-radius:6px;z-index:9}
+.wrap{display:flex;min-height:100vh}
+.rail{width:220px;background:var(--ink);color:var(--cream);padding:20px 16px;font-size:14px;flex:none}
+.rail div{padding:7px 8px;border-radius:6px;opacity:.8} .rail .on{background:#1a2e1f;opacity:1}
+.badge{background:var(--brass);color:var(--ink);font-size:11px;font-weight:700;border-radius:9px;padding:1px 7px;margin-left:6px}
+main{flex:1;padding:28px 32px;max-width:1180px}
+h1{font-size:26px;margin:0 0 4px} .sub{color:var(--ink3);margin:0 0 20px}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}
+.card{background:var(--white);border:1px solid var(--line);border-radius:12px;padding:18px}
+.ghost{color:var(--ink3);font-size:14px;min-height:140px} .ghost b{color:var(--ink)}
+.tile{border:2px solid var(--emerald)}
+.tile .k{font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3)}
+.tile .line{font-size:16px;margin:8px 0 12px;line-height:1.4}
+.tile .num{font-weight:700;color:var(--emerald);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.bars{display:flex;align-items:flex-end;gap:3px;height:56px;margin:4px 0 6px}
+.bar{flex:1;background:var(--emerald);opacity:.75;border-radius:2px 2px 0 0;min-width:3px}
+.axis{display:flex;justify-content:space-between;font-size:11px;color:var(--ink3)}
+.waiting{display:inline-block;margin-top:14px;color:var(--emerald);font-weight:600;text-decoration:none}
+.note{font-size:12px;color:var(--ink3);margin-top:10px}
+@media (max-width:700px){.stamp{position:static;display:inline-block;margin:12px 16px 0} .rail{display:none} main{padding:18px 16px} .grid{grid-template-columns:1fr} h1{font-size:22px}}
+</style></head><body>
+<div class="stamp">Mockup, not built</div>
+<div class="wrap">
+<nav class="rail"><div class="on">Home</div><div>People</div><div>Fundraising <span class="badge">5</span></div><div>Communications</div><div>Reports</div></nav>
+<main>
+<h1>Good morning, Dana</h1><p class="sub">Sunday, October 18. Here is what needs you today.</p>
+<div class="grid">
+ <div class="card ghost"><b>Today</b><br><br>The existing Home panel stays exactly as it is. This mockup only shows where the new tile would sit.</div>
+ <div class="card tile" data-testid="mock-thank-clock">
+  <div class="k">Gift to thank-you</div>
+  <div class="line">Average time from gift to thank-you, last 30 days: <span class="num">2.4 days</span></div>
+  <div class="bars"><span class="bar" style="height:78%" title="3.1 days"></span><span class="bar" style="height:70%" title="2.8 days"></span><span class="bar" style="height:65%" title="2.6 days"></span><span class="bar" style="height:85%" title="3.4 days"></span><span class="bar" style="height:55%" title="2.2 days"></span><span class="bar" style="height:48%" title="1.9 days"></span><span class="bar" style="height:62%" title="2.5 days"></span><span class="bar" style="height:100%" title="4.0 days"></span><span class="bar" style="height:68%" title="2.7 days"></span><span class="bar" style="height:60%" title="2.4 days"></span><span class="bar" style="height:50%" title="2.0 days"></span><span class="bar" style="height:72%" title="2.9 days"></span><span class="bar" style="height:90%" title="3.6 days"></span><span class="bar" style="height:57%" title="2.3 days"></span><span class="bar" style="height:45%" title="1.8 days"></span><span class="bar" style="height:65%" title="2.6 days"></span><span class="bar" style="height:55%" title="2.2 days"></span><span class="bar" style="height:60%" title="2.4 days"></span><span class="bar" style="height:75%" title="3.0 days"></span><span class="bar" style="height:52%" title="2.1 days"></span><span class="bar" style="height:42%" title="1.7 days"></span><span class="bar" style="height:62%" title="2.5 days"></span><span class="bar" style="height:70%" title="2.8 days"></span><span class="bar" style="height:50%" title="2.0 days"></span><span class="bar" style="height:48%" title="1.9 days"></span><span class="bar" style="height:65%" title="2.6 days"></span><span class="bar" style="height:57%" title="2.3 days"></span><span class="bar" style="height:55%" title="2.2 days"></span><span class="bar" style="height:45%" title="1.8 days"></span><span class="bar" style="height:52%" title="2.1 days"></span></div>
+  <div class="axis"><span>30 days ago</span><span>today</span></div>
+  <a class="waiting" href="#">3 gifts waiting to be confirmed</a>
+  <div class="note">From when a gift arrives (the check date or the email) to when its thank-you is sent, or marked thanked by a call or a note. The number opens its gifts, slowest first.</div>
+ </div>
+ <div class="card ghost"><b>Calls to make</b><br><br>Unchanged.</div>
+ <div class="card ghost"><b>Thank-yous</b><br><br>Unchanged.</div>
+</div>
+</main></div></body></html>

@@ -259,6 +259,7 @@ CORE=(
   fix40-comms-opens
   fix41-remove-and-pictures
   reconcile1-checks
+  capture1-zero-day
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

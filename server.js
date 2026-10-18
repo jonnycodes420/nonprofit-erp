@@ -657,6 +657,13 @@ app.use((req, res, next) =>
   req.method === "POST" && /^\/old-reports\/(read|preview|batches\/[^/]+\/files)$/.test(req.path)
     ? express.json({ limit: "40mb" })(req, res, next)
     : next());
+// CAPTURE-1: a batch of check photos (each <=10MB decoded, capture.js
+// MAX_BYTES; the client scales photos down first) in one request. THIS LIMIT
+// AND THAT CAP ARE ONE DECISION: move both or neither.
+app.use((req, res, next) =>
+  req.method === "POST" && req.path === "/capture/upload"
+    ? express.json({ limit: "40mb" })(req, res, next)
+    : next());
 // PARITY-1 Part B — a file on a conversation or a note is capped at 10MB of
 // DECODED file (interactionFiles.FILE_MAX_BYTES), ~13.7MB of base64 plus the
 // JSON around it. THIS LIMIT AND THAT CAP ARE ONE DECISION: move both or neither.
@@ -1135,7 +1142,11 @@ async function recordGift(o) {
                 // came in on (so the whole read undoes in one step), the cheque
                 // number the bookkeeper typed, and the vendor it was read from,
                 // which is what keeps the send side from posting it back.
-                "import_id", "check_number", "read_from_vendor"];
+                "import_id", "check_number", "read_from_vendor",
+                // CAPTURE-1: when the gift came in (the check's date or the
+                // email's arrival), for the gift-to-thanked clock. Only capture
+                // states it; the clock reads created_at for every other door.
+                "received_at"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -1153,7 +1164,8 @@ async function recordGift(o) {
                 o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
                 o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
                 o.utmSource || null, o.utmMedium || null, o.utmCampaign || null,
-                o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null];
+                o.importId || null, o.checkNumber ? String(o.checkNumber).slice(0, 24) : null, o.readFromVendor || null,
+                o.receivedAt || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -4212,6 +4224,7 @@ app.use(require("./routes/grantReports").routers.r0);
 app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadsheets
 app.use(require("./routes/emailsSent").routers.r0);    // FIX-40 every email as sent, and who it went to
 app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
+app.use(require("./routes/capture").routers.r0);       // CAPTURE-1 To confirm
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
@@ -9527,6 +9540,16 @@ async function syncMailboxRun(conn, userId, orgId, providerKey, { progress = fal
                  sentOn: decision.date, receivedAt: m.receivedAt },
       loadAttachments: () => fetchMailboxAttachments(providerKey, token, m),
     }).catch(e => console.error("[mailbox] grant routing:", e.message));
+
+    // CAPTURE-1 · A PLEDGE FORM OR A DAF LETTER FROM A PERSON STEWARD KNOWS
+    // becomes a card in To confirm. Only a message logged to exactly one
+    // person reaches here; its PDF and image attachments are read, and kept
+    // only if they become a card (capture.js fromMailboxMessage).
+    await require("./capture").fromMailboxMessage(orgId, {
+      donorIds: decision.donorIds, direction: decision.direction, attachmentCount: decision.attachmentCount,
+      provider: providerKey, messageId: String(m.id), receivedAt: m.receivedAt, actorId, actorName: staffName,
+      loadAttachments: () => fetchMailboxAttachments(providerKey, token, m),
+    }).catch(e => console.error("[mailbox] capture:", e.message));
   }
 
   await run(
@@ -11888,6 +11911,11 @@ require("./routes/emailsSent").mount({
   orgSendingIdentity, orgToday, orgTz,
 });
 require("./routes/oldReports").mount(GRANTS1_CTX);
+// CAPTURE-1: the cards in To confirm, and the one tap that records a gift.
+require("./capture").configure({ query, run, aiGate, anthropicFor, recordAiFallback, putThemeAsset,
+  afterChange: (...a) => AFTER.afterChange(...a) });
+require("./routes/capture").mount({ ...GRANTS1_CTX, recordGift, openGiftThread, openThreadTx, aiGate, checkGiftExtras,
+  giftHooks: require("./routes/crm").giftHooks });
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
 const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,

@@ -3500,6 +3500,68 @@ async function runSchemaInit(pool) {
       PRIMARY KEY (org_id, period_from, period_to)
     )`);
 
+  // ── CAPTURE-1 · NOBODY TYPES A GIFT ──────────────────────────────────────
+  // A check photo, a pledge form, a DAF letter: each becomes ONE card waiting
+  // in "To confirm". A card PROPOSES; money is recorded only by a person's
+  // confirm, through recordGift. `read` holds what Steward read and never a
+  // routing or account number (capture.js scrubBank, asserted by the test).
+  // A low-stakes card (an address change) is applied at once and keeps what it
+  // replaced in `applied`, undoable for 30 days.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS capture_items (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      stakes TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'waiting',
+      source TEXT NOT NULL,
+      batch_id TEXT,
+      asset_id TEXT,
+      content_type TEXT, file_name TEXT, page INTEGER,
+      received_at TIMESTAMPTZ,
+      read JSONB, proposal JSONB,
+      ai TEXT, headline TEXT, sentence TEXT,
+      gift_id TEXT, pledge_id TEXT, donor_id TEXT,
+      skip_reason TEXT,
+      applied JSONB, undo_until TIMESTAMPTZ,
+      source_ref TEXT,
+      decided_at TIMESTAMPTZ, decided_by TEXT, decided_by_name TEXT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_capture_items_org ON capture_items (org_id, status)`);
+  // One email attachment makes at most one set of cards, however often the mailbox is read.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_capture_items_ref ON capture_items (org_id, source_ref, page) WHERE source_ref IS NOT NULL`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS capture_batches (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      slip_asset_id TEXT,
+      slip_cents BIGINT,
+      checks_cents BIGINT,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // What this org taught Steward: a memo phrase confirmed into a fund.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS capture_fund_words (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      phrase TEXT NOT NULL,
+      fund_id TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, phrase)
+    )`);
+  // The gift-to-thanked clock. received_at: the check's date or the email's
+  // arrival, whichever is later and not in the future (a live door: when it
+  // came in). thanked_at: a thank-you sent, a thank-you call, or a note marked
+  // thanked. A receipt is not a thank-you, so acknowledgement_sent_at (which a
+  // receipt also sets) is not this clock.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS thanked_at TIMESTAMPTZ`);
+  // The major-gift line: a confirmed gift at or above it also puts a call on the Thread for today.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS major_gift_line_cents INTEGER DEFAULT 100000`);
+
   // ── EMAIL-1 · ONE EDITOR FOR PAGES AND EMAILS ────────────────────────────
   // The media library: every photo and video an org can put on a page or in
   // an email. A photo points at a JPEG in the asset store (inboxes such as

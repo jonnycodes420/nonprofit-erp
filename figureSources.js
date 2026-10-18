@@ -1421,6 +1421,15 @@ const SOURCES = {
       args: [orgId, p.from, p.to],
     }),
   },
+  // CAPTURE-1 · THE GIFT-TO-THANKED CLOCK. The rule is capture.js clockSql,
+  // the one the Acknowledgments line reads; each row's amount is its days.
+  "gift-to-thanked": {
+    label: "Gift to thank-you",
+    measure: () => "mean",
+    params: {},
+    sentence: () => require("./capture").CLOCK_SENTENCE,
+    sql: (orgId) => require("./capture").clockSql(orgId),
+  },
   "one-gift": {
     label: "The gift",
     measure: () => "sum",

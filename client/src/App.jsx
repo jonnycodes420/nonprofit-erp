@@ -6,6 +6,7 @@ import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogi
 import { HelpPanel } from "./components/HelpPanel";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
+import { CAPTURE_CHANGED } from "./components/CaptureInbox";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -46,6 +47,9 @@ import { CustomizeNav } from "./components/CustomizeNav";
 const SIDEBAR_W = 240, SIDEBAR_W_COLLAPSED = 64;
 
 const DUE_BADGE={background:T.terracotta,color:T.white,fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
+// CAPTURE-1: cards waiting in To confirm, on the Fundraising rail item. Brass,
+// the attention colour: something is waiting for her, nothing is wrong.
+const CONFIRM_BADGE={...DUE_BADGE,background:T.gold,color:T.ink};
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
@@ -171,6 +175,15 @@ function AppShell() {
     .then(r=>setPhotoMap((r&&r.photos)||{}))
     .catch(()=>setPhotoMap({}));
   useEffect(()=>{ if(getToken()) loadPhotos(); },[]);
+  // CAPTURE-1: the To confirm count for the rail. Read on load, on every tab
+  // change, and whenever the inbox says a card moved.
+  const [toConfirm,setToConfirm]=useState(0);
+  useEffect(()=>{
+    const read=()=>{ if(getToken()) apiFetch("/capture/count").then(r=>setToConfirm(Number(r&&r.waiting)||0)).catch(()=>{}); };
+    read();
+    window.addEventListener(CAPTURE_CHANGED,read);
+    return ()=>window.removeEventListener(CAPTURE_CHANGED,read);
+  },[tab]);
   const photoCtx={photos:photoMap,refresh:loadPhotos};
 
   // BUILD-94 FIRST RUN — the greeting an organisation gets ONCE. The server
@@ -627,6 +640,9 @@ function AppShell() {
       {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
         ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
         : <span style={{...DUE_BADGE,marginLeft:"auto"}}>{tasksDue}</span>)}
+      {t.id==="fundraising"&&toConfirm>0&&(sidebarCollapsed
+        ? <span aria-label={`${toConfirm} to confirm`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.gold}}/>
+        : <span data-testid="toconfirm-rail-badge" title={`${toConfirm} to confirm`} style={{...CONFIRM_BADGE,marginLeft:"auto"}}>{toConfirm}</span>)}
     </RecordLink>;
   };
 
@@ -1016,6 +1032,7 @@ function AppShell() {
                 <span style={{flex:1}}>{t.label}</span>
                 {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
                 {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
+                {t.id==="fundraising"&&toConfirm>0&&<span style={{...CONFIRM_BADGE,fontSize:10}}>{toConfirm}</span>}
               </RecordLink>
             );
           })}

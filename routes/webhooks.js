@@ -2870,6 +2870,35 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
     }
   }
 
+  // CAPTURE-1 · capture+<slug>@: forward anything (a scan, a letter, a photo)
+  // and it lands in To confirm. Only the org's own staff; anybody else is a
+  // drop with nothing stored. Never logged as a conversation.
+  { const K = require("../capture");
+    const capSlug = K.captureSlug(IE.recipientAddresses(payload), INBOUND_EMAIL_DOMAIN);
+    if (capSlug) {
+      const [corg] = await query("SELECT id FROM orgs WHERE org_slug = ?", [capSlug]);
+      if (!corg) { await recordInboundDrop(null, "unknown_org"); return res.json({ received: true, action: "drop" }); }
+      const cfrom = IE.normalizeEmail(payload.from);
+      const [sender] = cfrom ? await query("SELECT id, name FROM users WHERE org_id = ? AND LOWER(email) = ?", [corg.id, cfrom]) : [];
+      if (!sender) { await recordInboundDrop(corg.id, "sender_not_user"); return res.json({ received: true, action: "drop" }); }
+      const GMc = require("./grantMail");
+      const load = GMc.bccAttachmentLoader(payload, {
+        receivingBase: process.env.RESEND_RECEIVING_BASE_URL || process.env.RESEND_BASE_URL, apiKey: process.env.RESEND_API_KEY });
+      const atts = (await load()) || [];
+      const msgId = GMc.bccMessageId(payload);
+      let cards = 0;
+      const refused = [];
+      for (const [i, a] of atts.entries()) {
+        if (!a || !a.buffer) { refused.push(a && a.fileName || "attachment"); continue; }
+        const r = await K.cardsFromFile(corg.id, a.buffer, a.fileName || "attachment", {
+          source: "forward", receivedAt: payload.date || new Date(), sourceRef: `fwd:${msgId}:${i}`,
+          actorId: "system:capture-forward", actorName: sender.name || cfrom });
+        if (r.refused) refused.push(a.fileName || "attachment");
+        cards += (r.cards || []).length;
+      }
+      return res.json({ received: true, action: "capture", cards, refused: refused.length });
+    } }
+
   // 1 · the org, from the plus-address only.
   const slug = IE.orgSlugFromPayload(payload, INBOUND_EMAIL_DOMAIN);
   if (!slug) { await recordInboundDrop(null, "no_org"); return res.json({ received: true, action: "drop" }); }

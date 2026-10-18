@@ -3740,6 +3740,7 @@ async function main() {
   await require("./seed/live1-demo").seedLive1(q, ORG, { TODAY });   // LIVE-1: an example readout and a learned file mapping
   await require("./seed/fix41-media").seedFix41Media(q, ORG);   // FIX-41: auction, page and volunteer-page photos
   await require("./seed/reconcile1-mismatch").seedReconcile1(q, ORG);   // RECONCILE-1: the 2024 DonorPerfect file differs from Steward by a known amount, for two reasons
+  await require("./seed/capture1-inbox").seedCapture1(q, ORG);   // CAPTURE-1: six cards in To confirm (a batch of checks with its slip, a pledge form, a DAF letter, an address change done for you) + a month of gift-to-thank-you times
 
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took

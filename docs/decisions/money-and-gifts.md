@@ -117,6 +117,19 @@ Read this when you touch gifts, `recordGift`, funds and methods, attribution, ca
   org ticked as donations, and never records a line twice (`qbo_read_gifts`, company + txn + line). (QBO-IN)
 - **A QuickBooks deposit line with a LinkedTxn is a receipt being banked, not a second gift.** Read the
   receipt; skip the deposit line. A deposit line from Stripe/PayPal/Square is a payout and is skipped. (QBO-IN)
+- **A captured document proposes; a person confirms.** A check photo, scan, email attachment or forwarded file is a
+  card in To confirm (`capture_items`). Money (gift, pledge, DAF grant, matching gift, stock) is recorded only by the
+  confirm tap, through `recordGift`, with the image on the gift; low stakes (an address or email change) apply at once
+  with Undo for 30 days. A check's amount is filled only when figures and words agree (BUILD-95). Confirm sends
+  nothing: receipts stay the one-click path a hand-typed gift has, and `gift_received` workflows are not fired from it.
+  A check QuickBooks already read is the same gift (the image is attached to it). A matching-gift letter is a pledge
+  on the employer (`is_match`), linked to the gift it matches. With AI off an emailed attachment is not kept (it
+  cannot be told from a logo); an upload or a forward always becomes a card. (CAPTURE-1)
+- **A routing or account number is never stored.** No read schema has a field for the MICR line, and every stored
+  string from a read is scrubbed; the check image itself is private to the org's staff. (CAPTURE-1)
+- **The thank-you clock is `gifts.received_at` to `gifts.thanked_at`.** Received is the later of the check date and
+  the arrival, never in the future; thanked is a sent thank-you or one marked thanked by a call or a note, never a
+  receipt (a receipt sets `acknowledgement_sent`, which is why that column cannot be the clock). (CAPTURE-1)
 
 ## Gotchas
 - **`normalizeMoney` returns `{value, warn, blank}`, not a number.** Parse through the money seam

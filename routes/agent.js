@@ -2618,7 +2618,7 @@ async function approveWaitingItem(req, kind, id) {
       [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, who.id, actorName, d.gift_id,
        JSON.stringify({ via: "approval_queue", draftId: d.id })]);
     await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
-    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
     await query(
       `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
         WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND next_step_type IN ('thank','thank_you_note') RETURNING id`,
@@ -2666,7 +2666,7 @@ async function approveWaitingItem(req, kind, id) {
       "SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND id = ANY(?) AND acknowledgement_sent IS NOT TRUE", [orgId, d.donor_id, giftIds])).map(g => g.id) : [];
     if (giftIds.length) {
       await run(
-        `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+        `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()),
                           acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                           acknowledged_via=COALESCE(acknowledged_via, 'email')
           WHERE org_id=? AND donor_id=? AND id = ANY(?)`, [who.id, actorName, orgId, d.donor_id, giftIds]);
