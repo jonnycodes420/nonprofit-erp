@@ -190,9 +190,9 @@ const runId = tag => `imp_live1${tag}${Date.now().toString(36)}`;
   }, { timeout: 8000 }).catch(() => null) || await api("GET", "/after-change-log", tok);
   const ran = new Set((log.body?.runs || []).map(x => x.door));
   const doors = log.body?.doors || [];
-  ok("§4 the door list is the twelve in the map", doors.length === 12, doors);
+  ok("§4 the door list is the thirteen in the map", doors.length === 13, doors);   // CAPTURE-1 added `capture`
   const SRC = ["server.js", "qboRead.js", "meetingEffects.js", "routes/crm.js", "routes/webhooks.js", "routes/historyImport.js",
-               "routes/oldReports.js"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
+               "routes/oldReports.js", "capture.js", "routes/capture.js"].map(f => fs.readFileSync(path.join(__dirname, "..", f), "utf8")).join("\n");
   for (const d of doors) {
     if (ran.has(d)) ok(`§4 ${d}: driven, and the step ran for it`, true);
     else ok(`§4 ${d}: the code that runs this door calls the step with its name`,
