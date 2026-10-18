@@ -147,7 +147,9 @@ export default function OldReportsImport({ onClose, onDone }) {
 
         {result ? (
           <div data-testid="old-reports-done" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {result.done.map(d => <div key={d.sheetId} style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.sentence}</div>)}
+            {result.done.map(d => <div key={d.sheetId} style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.sentence}
+              {/* RECONCILE-1: the import's readout says what the check found. */}
+              {d.check && <div data-testid="old-reports-check" style={{ marginTop: 4 }}><strong>Checked against Steward:</strong> {d.check.sentence} Past reports shows the check line by line.</div>}</div>)}
             {result.undone ? <div style={{ fontSize: 13, color: T.ink3 }}>The import was taken back out.</div> : (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button type="button" style={btn(true)} onClick={onClose}>Done</button>

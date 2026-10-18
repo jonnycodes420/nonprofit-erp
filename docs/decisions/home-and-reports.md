@@ -383,3 +383,15 @@ The system behind the pivot's staff-facing retention engine (see "Strategic pivo
   and says "gave after", never "because".
 - The newest readout of the last 7 days is one row on the Thread (the stopped-card row's shape, no Done);
   the morning email has "What yesterday told us"; the Agent's context and Ask read the same rows.
+
+## RECONCILE-1 · an old report is checked, never trusted or added in (2026-10-15)
+
+- `reconcile.js` is the one check of an imported report against Steward. It reads only through
+  figureSources, so each Steward figure it shows is a source that opens and foots.
+- A reason for a difference is said only when it is computed from rows; whatever is left over is
+  "Steward can't tell why", with the rows on each side. Never a guess, never the AI.
+- An old report stands in for a comparison (giving summary, Board, board pack, Goals) only after
+  "Use as last year's total" (`old_report_baselines`). Shown beside Steward's number, it needs no click.
+- No step of the check, and no fix-it, writes a gift. Adding a missing person writes a person.
+- Checkable kinds and the reason for each that is not are `CHECKABLE` / `NOT_CHECKABLE` in reconcile.js.
+

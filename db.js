@@ -3459,6 +3459,47 @@ async function runSchemaInit(pool) {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_historical_totals_org ON historical_totals (org_id, period_from, period_to)`);
 
+  // ── RECONCILE-1 · AN OLD REPORT, CHECKED AGAINST STEWARD ─────────────────
+  // The mapping a file was pulled in with, so the check reads the same columns.
+  await pool.query(`ALTER TABLE stored_sheets ADD COLUMN IF NOT EXISTS mapping JSONB`);
+  // The latest check of one imported report against Steward's own figures
+  // (reconcile.js): what matched, what differed and why. Re-run on import, on
+  // a fix and whenever gifts change; one row per report, replaced each time.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS old_report_checks (
+      sheet_id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      result JSONB NOT NULL,
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by TEXT NOT NULL, created_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_old_report_checks_org ON old_report_checks (org_id)`);
+  // A fund or campaign name on an old report, mapped by a person to one of
+  // the org's own funds. Only the check reads it; no gift moves.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS old_report_fund_maps (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      label_key TEXT NOT NULL,
+      label TEXT NOT NULL,
+      fund_id TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, label_key)
+    )`);
+  // "Use as last year's total": the one old report a person chose to stand
+  // for a period when Steward has no gifts in it. Set only by a click.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS old_report_baselines (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      period_from TEXT NOT NULL,
+      period_to TEXT NOT NULL,
+      sheet_id TEXT NOT NULL,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (org_id, period_from, period_to)
+    )`);
+
   // ── EMAIL-1 · ONE EDITOR FOR PAGES AND EMAILS ────────────────────────────
   // The media library: every photo and video an org can put on a page or in
   // an email. A photo points at a JPEG in the asset store (inboxes such as
