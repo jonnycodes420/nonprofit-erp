@@ -682,9 +682,14 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   await seedOrg(A, "a");
   await seedOrg(B, "b");
 
+  // redirect: "manual" — a probe reads THIS server's answer and never leaves
+  // it. Following a 302 sent the anonymous probe of GET /gmail/callback on to
+  // the app's OAuth landing page: on CI that is the live www.stewardapp.dev
+  // (every run fetched production, and the day its connection reset the suite
+  // died as "fetch failed"); locally it is a port nobody listens on.
   const mfetch = async (method, p, token, body, raw) => {
     const r = await fetch(M + p, {
-      method,
+      method, redirect: "manual",
       headers: { "Content-Type": raw ? "application/octet-stream" : "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
       body: body == null ? undefined : (raw ? body : JSON.stringify(body)),
     });
@@ -696,6 +701,8 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const aAdmin = await loginM("admin-a@mx.local");
   const aStaff = await loginM("staff-a@mx.local");
   ok("fixture logins minted", !!aAdmin && !!aStaff, { aAdmin: !!aAdmin, aStaff: !!aStaff });
+  const cb = await mfetch("GET", "/gmail/callback", null);
+  ok("a public route's redirect is this server's answer, not followed off the machine", cb.status === 302, { status: cb.status });
 
   const tampered = aAdmin.slice(0, -4) + "AAAA";
   const expired = sign({ userId: `u_${A}_admin`, orgId: A, email: "admin-a@mx.local", role: "admin" }, { expiresIn: -60 });
