@@ -675,6 +675,18 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
 
 (async () => {
   console.log("tenant-matrix (BUILD-75 Phase B)");
+  // Every request the in-process server is handed, so a request it drops
+  // without an answer can be named (read by mfetch below).
+  const unanswered = [];
+  const httpEmit = require("http").Server.prototype.emit;
+  require("http").Server.prototype.emit = function (ev, req, res) {
+    if (ev === "request") {
+      let done = false;
+      res.on("finish", () => { done = true; });
+      res.on("close", () => { if (!done) unanswered.push(`${req.method} ${req.url} (headersSent=${res.headersSent})`); });
+    }
+    return httpEmit.apply(this, arguments);
+  };
   const app = require("../server.js");
   await new Promise(r => setTimeout(r, 3500)); // boot DDL settles
 
@@ -687,13 +699,21 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   // the app's OAuth landing page: on CI that is the live www.stewardapp.dev
   // (every run fetched production, and the day its connection reset the suite
   // died as "fetch failed"); locally it is a port nobody listens on.
+  // A request the server drops without an answer is named: the route, the
+  // input and what the server saw. A bare "fetch failed" cost a day (18 Oct).
   const mfetch = async (method, p, token, body, raw) => {
-    const r = await fetch(M + p, {
-      method, redirect: "manual",
-      headers: { "Content-Type": raw ? "application/octet-stream" : "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
-      body: body == null ? undefined : (raw ? body : JSON.stringify(body)),
-    });
-    const text = await r.text();
+    let r, text;
+    try {
+      r = await fetch(M + p, {
+        method, redirect: "manual",
+        headers: { "Content-Type": raw ? "application/octet-stream" : "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+        body: body == null ? undefined : (raw ? body : JSON.stringify(body)),
+      });
+      text = await r.text();
+    } catch (e) {
+      await new Promise(res => setTimeout(res, 200));
+      throw new Error(`${method} ${p} (body ${body == null ? "none" : raw ? "raw bytes" : JSON.stringify(body)}, ${token ? "signed in" : "anonymous"}) got no answer: ${e.cause?.code || e.message}. Server saw unanswered: ${unanswered.slice(-3).join("; ") || "nothing"}`);
+    }
     return { status: r.status, text };
   };
   const loginM = async email => (JSON.parse((await mfetch("POST", "/auth/login", null, { email, password: "loadtest1234" })).text)).token;
