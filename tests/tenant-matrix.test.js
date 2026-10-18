@@ -677,10 +677,17 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   console.log("tenant-matrix (BUILD-75 Phase B)");
   // Every request the in-process server is handed, so a request it drops
   // without an answer can be named (read by mfetch below).
-  const unanswered = [];
+  const unanswered = [], serverEvents = [];
+  let lastAnswer = Date.now();
   const httpEmit = require("http").Server.prototype.emit;
   require("http").Server.prototype.emit = function (ev, req, res) {
+    if (ev === "connection") {
+      const sock = req, opened = Date.now();
+      sock.on("close", hadErr => serverEvents.push(`${Date.now() - lastAnswer}ms after last answer: server socket closed (open ${Date.now() - opened}ms, error=${hadErr})`));
+    }
+    if (ev === "clientError") serverEvents.push(`clientError ${req && (req.code || req.message)}`);
     if (ev === "request") {
+      res.on("finish", () => { lastAnswer = Date.now(); });
       let done = false;
       res.on("finish", () => { done = true; });
       res.on("close", () => { if (!done) unanswered.push(`${req.method} ${req.url} (headersSent=${res.headersSent})`); });
@@ -703,6 +710,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   // input and what the server saw. A bare "fetch failed" cost a day (18 Oct).
   const mfetch = async (method, p, token, body, raw) => {
     let r, text;
+    const t0 = Date.now(), lastAnswerBefore = lastAnswer;
     try {
       r = await fetch(M + p, {
         method, redirect: "manual",
@@ -712,7 +720,7 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
       text = await r.text();
     } catch (e) {
       await new Promise(res => setTimeout(res, 200));
-      throw new Error(`${method} ${p} (body ${body == null ? "none" : raw ? "raw bytes" : JSON.stringify(body)}, ${token ? "signed in" : "anonymous"}) got no answer: ${e.cause?.code || e.message}. Server saw unanswered: ${unanswered.slice(-3).join("; ") || "nothing"}`);
+      throw new Error(`${method} ${p} (body ${body == null ? "none" : raw ? "raw bytes" : JSON.stringify(body)}, ${token ? "signed in" : "anonymous"}) got no answer: ${e.cause?.code || e.message}. Server saw unanswered: ${unanswered.slice(-3).join("; ") || "nothing"}. Idle before it: ${t0 - lastAnswerBefore}ms. Server connection events: ${serverEvents.slice(-4).join("; ") || "none"}`);
     }
     return { status: r.status, text };
   };
