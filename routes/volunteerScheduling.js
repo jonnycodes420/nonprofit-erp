@@ -1626,7 +1626,7 @@ async function scheduleRows(orgId, { from = null, to = null, slotIds = null, opp
     const rs = (rolesBy.get(s.id) || []).map(r => {
       const mine = ps.filter(p => p.role_id === r.id);
       const st = VS.roleState({ needed: r.needed, confirmed: count(mine, "confirmed"), completed: count(mine, "completed"), waitlisted: count(mine, "waitlisted") });
-      return { id: r.id, name: r.name, needed: r.needed, scheduled: st.scheduled, waitlisted: st.waitlisted, short: st.short,
+      return { id: r.id, name: r.name, needed: r.needed, picture: r.picture || null, scheduled: st.scheduled, waitlisted: st.waitlisted, short: st.short,
         full: st.full, people: mine.map(shapePerson) };
     });
     const hundredths = VS.slotHundredths({ startTime: s.start_time, endTime: s.end_time }) || 0;

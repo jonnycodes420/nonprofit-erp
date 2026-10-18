@@ -3,6 +3,15 @@
 Read this when you touch giving pages, the giving-page builder, widgets, peer-to-peer or form configs.
 
 ## Rules
+- **Anything you can add, you can remove, through the one Remove** (FIX-41). `removal.js` is the
+  registry: each kind names its table, what is attached, and whether removing it retires, archives,
+  deletes or (for an auction winner) unassigns. Something with money or people on it is RETIRED
+  (`retired_at`/`retired_by`, hidden from new use, kept on every past record and report); a page with
+  gifts, fundraisers or sign-ups is ARCHIVED, never deleted, whichever route asks. The confirm sentence
+  is built there from what is attached; a screen shows it as given (`RemoveMenu.jsx`). Every change is
+  kept in `deleted_records` (the whole row for a delete, the old column values otherwise), so
+  `POST /removals/undo` is exact. Removing never refunds, emails or touches a payment. A new add-able
+  list gets a row in `docs/fix-41/inventory.md`, which `tests/fix41-remove-and-pictures.test.js` reads.
 - **A giving page's own fields are drafted and published in the one editor** (GIVE-EDIT-1). Headline,
   story, photo, goal bar, fund/campaign and the form wait in `giving_pages.draft_settings`; Publish writes
   them with the blocks, never touches the slug, and adds a `giving_page_versions` row with its actor.

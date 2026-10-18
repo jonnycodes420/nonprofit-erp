@@ -8,6 +8,7 @@
 // Before this build "opening" a campaign only scrolled its card into view and
 // outlined it: the URL changed and no page ever rendered. A campaign now has
 // a page at /app/fundraising?fr=campaigns&campaign=<id>, which Back leaves.
+import RemoveMenu from "./RemoveMenu";
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, StartHere, EmptyState } from "./shared";
@@ -117,13 +118,17 @@ function CampaignFacts({ g }) {
   );
 }
 
-export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel }) {
+export function CampaignsView({ goals, isReadOnly, roTip, onNew, onEdit, openId, onOpenCampaign, onBack, onNavigate, templates, planPanel, onRemoved }) {
   const [tpl, setTpl] = useState(null);
   const loadTpl = () => apiFetch("/campaign-templates").then(setTpl).catch(() => setTpl({ templates: [] }));
   useEffect(() => { loadTpl(); }, []);
   const openPerson = id => { if (id && onNavigate) onNavigate("donors", { selectDonorId: id }); };
   const editBtn = c => !isReadOnly ? (
-    <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
+    <span style={{ display: "inline-flex", gap: 6, flexShrink: 0 }}>
+      <button onClick={() => onEdit(c)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 12, color: T.ink3, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>Edit</button>
+      {/* FIX-41: a campaign with gifts is retired, never deleted. */}
+      {c.retired ? <span style={{ fontSize: 11.5, color: T.ink3, alignSelf: "center" }}>Retired</span> : <RemoveMenu kind="campaign" id={c.id} onDone={onRemoved} />}
+    </span>
   ) : null;
 
   const open = openId ? goals.find(g => g.id === openId) : null;

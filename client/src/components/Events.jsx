@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
+import RemoveMenu, { removeOne } from "./RemoveMenu";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { usePeoplePicker } from "../lib/people";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal, stageName } from "./shared";
-import { offerUndo } from "./EditHistory";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink, useUrlWriter } from "./RecordLink";
@@ -452,9 +452,9 @@ function EventSeating({ eventId }) {
       .then(r => { if (r) setEditing(null); });
   };
 
-  const removeTable = t =>
-    write(`/events/${eventId}/tables/${t.id}`, { method: "DELETE" }, { undoLabel: "Put the table back" })
-      .then(r => { if (r && Array.isArray(r.undo) && r.undo.length) setUndo({ label: "Put the table back", restore: { ...r.undo[0] }, moves: r.undo }); });
+  // FIX-41: the one Remove. It asks once, saying how many guests go back to
+  // Not seated, and Undo puts the table and those guests back as they were.
+  const removeTable = t => removeOne({ kind: "table", id: t.id, onDone: load });
 
   const previewEveryone = () =>
     apiFetch(`/events/${eventId}/seat-everyone`, { method: "POST", body: JSON.stringify({}) })
@@ -1321,11 +1321,6 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
     setSavingAtt(null);
   };
 
-  const removeAttendee = async (attId) => {
-    const r = await apiFetch(`/events/${eventId}/attendees/${attId}`, { method: "DELETE" });
-    setEvent(ev => ({ ...ev, attendees: ev.attendees.filter(a => a.id !== attId) }));
-    offerUndo(r, "attendee", () => apiFetch(`/events/${eventId}`).then(ev => ev && ev.id && setEvent(ev)).catch(() => {}));
-  };
 
   const saveNotes = async () => {
     setNotesSaving(true);
@@ -1599,7 +1594,7 @@ function EventDetail({ eventId, onClose, onEventUpdated }) {
                         </button>
                       )}
                     </div>
-                    <button onClick={() => removeAttendee(a.id)} style={{ background: "none", border: "none", color: T.terracotta+"66", fontSize: 16, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+                    <RemoveMenu kind="guest" id={a.id} label="⋯" onDone={reload} />
                   </div>
                 ))}
               </div>

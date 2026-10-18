@@ -36,6 +36,10 @@ const TOP_BIDS_SQL = `
   SELECT DISTINCT ON (b.item_id) b.item_id, b.id AS bid_id, b.bidder_id, b.amount, b.created_at, b.buy_now
     FROM auction_bids b
    WHERE b.org_id = ? AND b.auction_id = ?
+     -- FIX-41: a removed winner leaves the item unassigned. Bids up to that
+     -- instant stay on record and count as bids; none of them wins.
+     AND NOT EXISTS (SELECT 1 FROM auction_items ui WHERE ui.id = b.item_id AND ui.org_id = b.org_id
+                      AND ui.unassigned_at IS NOT NULL AND b.created_at <= ui.unassigned_at)
    ORDER BY b.item_id, b.amount DESC, b.created_at ASC, b.id ASC`;
 
 // Every item of one auction with its high bid, its bid count and whether it
@@ -46,6 +50,7 @@ const ITEM_STATE_SQL = `
   SELECT i.id, i.auction_id, i.title, i.description, i.category, i.photos, i.donor_id,
          i.fmv::text AS fmv, i.starting_bid::text AS starting_bid, i.bid_increment::text AS bid_increment,
          i.buy_now::text AS buy_now, i.position, i.closed_at, i.in_kind_gift_id, i.paid_gift_id, i.paid_at, i.paid_payment_id,
+         i.retired_at, i.unassigned_at,
          dd.name AS donor_name,
          top.bid_id, top.bidder_id, top.amount::text AS high_amount, top.created_at AS high_at, top.buy_now AS bought_now,
          bd.name AS bidder_name, bd.email AS bidder_email, bd.bidder_number, bd.donor_id AS bidder_donor_id,
