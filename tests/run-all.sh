@@ -258,6 +258,7 @@ CORE=(
   profile1-everything-clicks
   fix40-comms-opens
   fix41-remove-and-pictures
+  reconcile1-checks
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

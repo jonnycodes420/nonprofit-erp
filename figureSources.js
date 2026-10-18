@@ -1397,6 +1397,30 @@ const SOURCES = {
       };
     },
   },
+  // RECONCILE-1 · WHAT YOUR BOOKS SAY YOU RECEIVED. Every line Steward read
+  // from QuickBooks on an income account ticked as a donation account, dated
+  // in the period, counted once however many reads saw it (the newest read's
+  // copy). Read from Steward's own record of its reads: nothing here calls
+  // QuickBooks, and a read that was undone is not counted.
+  "qbo-contributions": {
+    label: "Contributions in QuickBooks",
+    measure: () => "sum",
+    params: { from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every line Steward read from QuickBooks on an account ticked as a donation account, dated ${dd(p.from)} to ${dd(p.to)}, counted once however many times it was read. A read that was undone is left out.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT * FROM (
+              SELECT DISTINCT ON (l.line_key) l.id, 'quickbooks line' AS type, l.donor_id,
+                     COALESCE(d.name, l.customer_name, 'No name') AS name, l.txn_date AS date,
+                     ROUND(l.cents::numeric / 100, 2) AS amount,
+                     CONCAT_WS(' · ', l.txn_type || ' ' || l.txn_id, l.account_name) AS detail
+                FROM qbo_read_lines l JOIN qbo_read_runs r ON r.id = l.run_id AND r.org_id = l.org_id
+                LEFT JOIN donors d ON d.id = l.donor_id AND d.org_id = l.org_id
+               WHERE l.org_id = ? AND r.undone_at IS NULL AND l.txn_date >= ? AND l.txn_date <= ?
+                 AND l.bucket IN ('gift','ambiguous','unmatched','already_in_steward','steward_sent','payout','already_read')
+               ORDER BY l.line_key, r.created_at DESC) x`,
+      args: [orgId, p.from, p.to],
+    }),
+  },
   "one-gift": {
     label: "The gift",
     measure: () => "sum",
@@ -2537,20 +2561,35 @@ async function retentionBlank(orgId, r, dd) {
 // that kind if there are several, so two files are never added together.
 // Returns null when no imported total covers the period. The value is the
 // `historical-totals` source's value for that one file, so it opens and foots.
+//
+// RECONCILE-1: `baseline: true` is the stand-in a COMPARISON uses (the giving
+// summary's last year, the Board's, the board pack's, Goals): only the report
+// a person chose with "Use as last year's total", never one picked for her.
+// Without it, the old report is shown BESIDE Steward's number, as before.
 const GIVING_KIND_RANK = { giving_summary: 1, board_report: 1, by_fund: 2 };
-async function historicalGiving(orgId, from, to) {
+async function historicalGiving(orgId, from, to, { baseline = false } = {}) {
+  let only = null;
+  if (baseline) {
+    const [b] = await query(
+      `SELECT b.sheet_id FROM old_report_baselines b
+         JOIN stored_sheets s ON s.id = b.sheet_id AND s.org_id = b.org_id AND s.removed_at IS NULL
+        WHERE b.org_id = ? AND b.period_from >= ? AND b.period_to <= ?
+        ORDER BY b.created_at DESC LIMIT 1`, [orgId, from, to]);
+    if (!b) return null;
+    only = b.sheet_id;
+  }
   const rows = await query(
     `SELECT h.sheet_id, h.report_kind, MAX(h.created_at) AS at, MAX(h.source_system) AS system, MAX(h.file_name) AS file_name
        FROM historical_totals h
-      WHERE h.org_id = ? AND h.counts_as_giving AND h.period_from >= ? AND h.period_to <= ?
-      GROUP BY h.sheet_id, h.report_kind`, [orgId, from, to]);
+      WHERE h.org_id = ? AND h.counts_as_giving AND h.period_from >= ? AND h.period_to <= ?${only ? " AND h.sheet_id = ?" : ""}
+      GROUP BY h.sheet_id, h.report_kind`, only ? [orgId, from, to, only] : [orgId, from, to]);
   if (!rows.length) return null;
   rows.sort((a, b) => (GIVING_KIND_RANK[a.report_kind] || 9) - (GIVING_KIND_RANK[b.report_kind] || 9) || new Date(b.at) - new Date(a.at));
   const pick = rows[0];
   const source = { key: "historical-totals", params: { from, to, sheet: pick.sheet_id, giving: true } };
   const f = await figureValue(orgId, source);
   return { value: f.value, cents: f.cents, source, system: pick.system || null, fileName: pick.file_name || null,
-    label: "From your old system", note: `From your old system: ${pick.system || "an old system"}, ${pick.file_name || "a file"}. Kept beside Steward's numbers, never added into them.` };
+    label: "From your old system", baseline: !!only, note: `From your old system: ${pick.system || "an old system"}, ${pick.file_name || "a file"}.${only ? " Chosen as the total to compare against, because Steward has no gifts for that time." : ""} Kept beside Steward's numbers, never added into them.` };
 }
 
 // ── THE ENGINE ─────────────────────────────────────────────────────────────

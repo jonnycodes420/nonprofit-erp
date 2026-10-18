@@ -557,6 +557,8 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
                 labelled, beside Steward's number and never added into it. */}
             {y.imported && <div data-testid="three-year-imported" style={{ fontSize: 11.5, color: T.ink, marginTop: 6, lineHeight: 1.4 }}>
               <Figure variant="inline" kind="money" value={y.imported.value} label={`${y.label}, from your old system`} definition={y.imported.note} source={y.imported.source} /> from your old system{y.imported.system ? ` (${y.imported.system})` : ""}
+              {/* RECONCILE-1: when Steward has gifts for the year too, say both. */}
+              {y.total > 0 && y.source && <span data-testid="three-year-steward-has">, Steward has <Figure variant="inline" kind="money" value={y.total} label={`Giving in ${y.label}, in Steward`} source={y.source} /></span>}
             </div>}
           </div>)}
         </div>
@@ -745,7 +747,7 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
         {onBoardPack && <BoardPackPanel onNavigate={onNavigate}
           onOpenSettings={() => onNavigate && onNavigate("settings", { section: "org", focus: "board-pack" })} />}
 
-        {onStored && <StoredReports />}
+        {onStored && <StoredReports onNavigate={onNavigate} />}
 
         {!isTab && !onDashboard && !onSavedDashboard && !onBoardPack && !onNewDashboard && !onStored && active !== BUILD_ID
           && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}

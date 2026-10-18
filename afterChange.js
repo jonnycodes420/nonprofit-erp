@@ -34,6 +34,9 @@ const DOORS = [
   "giving_source_read", "qbo_read", "event_checkin", "volunteer_hours", "logged_touch", "mail_calendar_sync",
 ];
 
+// The doors that write gifts: after any of them, an old report's check may move.
+const GIFT_DOORS = new Set(["gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "giving_source_read", "qbo_read"]);
+
 let deps = null;
 // server.js hands its helpers over at boot (this file is required by routes
 // that load after server.js has defined them; a require cycle is avoided).
@@ -190,6 +193,9 @@ async function afterChange(orgId, donorIds, { door, history = false, fire = null
     deps.scheduleScores(orgId);
     // SCALE-2: the org's stored Home figures are recomputed off the request path.
     require("./orgSummary").scheduleRefresh(orgId);
+    // RECONCILE-1: a door that writes gifts re-checks the org's old reports
+    // against Steward, once, a moment later ("Checked Oct 14, 2026").
+    if (GIFT_DOORS.has(door)) require("./reconcile").scheduleRecheck(orgId);
   } catch (e) {
     console.error(`[after-change] ${door} for ${ids.length}:`, e.message);
     result.error = e.message;
