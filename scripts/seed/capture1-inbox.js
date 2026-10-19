@@ -6,7 +6,8 @@
 //
 //   · three checks photographed as one batch with their deposit slip, which
 //     totals what the checks do ($1,825.00): one matched by the printed name,
-//     one by name and address with a fund Steward is unsure of, one nobody
+//     one by name and address whose memo ("for the boathouse") is placed by a
+//     close word (FIX-45), one nobody
 //     has a record of (New person, prefilled from the check);
 //   · a pledge form (matched by email), and a donor-advised fund grant letter
 //     (the fund is the giver, the advisor it names gets the soft credit);
@@ -49,7 +50,7 @@ async function seedCapture1(q, ORG) {
   await q(`DELETE FROM capture_items WHERE org_id=$1 AND id LIKE $2`, [ORG, PRE + "%"]);
   await q(`DELETE FROM capture_batches WHERE org_id=$1 AND id LIKE $2`, [ORG, PRE + "%"]);
 
-  const [org] = await q(`SELECT timezone, default_fund_id FROM orgs WHERE id=$1`, [ORG]);
+  const [org] = await q(`SELECT name, timezone, default_fund_id FROM orgs WHERE id=$1`, [ORG]);
   if (!org) throw new Error("capture1 seed: Harborlight is not there");
   const [gen] = await q(`SELECT id, name FROM fin_funds WHERE org_id=$1 AND name='General Operating'`, [ORG]);
   if (!gen) throw new Error("capture1 seed: Harborlight has no General Operating fund");
@@ -128,13 +129,21 @@ async function seedCapture1(q, ORG) {
       fund: { id: building.id, name: building.name, unsure: false, why: "the memo line says Building Fund" } },
     headline: `Log ${usd(f1.cents)} check from ${f1.payer}, Building Fund?`,
     sentence: `Check ${f1.number} from ${f1.payer} for ${usd(f1.cents)}, dated October 12. The figures and the words agree, and the memo names the Building Fund.` });
+  // FIX-45: check 2's memo is placed by the same close-word step the server
+  // runs on a real read ("boathouse" is close to the Harbor Skills Boat
+  // fund), so the demo shows what Harborlight would actually see.
+  const funds = await q(`SELECT id, name, public_name FROM fin_funds WHERE org_id=$1 ORDER BY name`, [ORG]);
+  const close2 = require("../../capture").closeFund(f2.memo, funds, org.name);
+  const fund2 = close2
+    ? { id: close2.f.id, name: close2.f.name, unsure: false, why: `the memo says "${close2.pairs[0][0]}", close to ${close2.f.name}` }
+    : { id: defaultFund.id, name: defaultFund.name, unsure: true, why: `the memo says "for the boathouse", which is not the name of a fund, so this is your default fund until you choose` };
   await item("check2", { kind: "check", stakes: "money", source: "photo", batch: BATCH, file: "check-2.png", minutesAgo: 47,
     read: checkRead(f2),
     proposal: { amount: settled(f2), date: "2026-10-13",
       donor: { state: "matched", selectedId: okafor, choices: [{ id: okafor, name: f2.payer, why: "the name and street on the check" }], prefill: null, by: "name_address" },
-      fund: { id: defaultFund.id, name: defaultFund.name, unsure: true, why: `the memo says "for the boathouse", which is not the name of a fund, so this is your default fund until you choose` } },
-    headline: `Log ${usd(f2.cents)} check from ${f2.payer}, ${defaultFund.name}?`,
-    sentence: `Check ${f2.number} from ${f2.payer} for ${usd(f2.cents)}. The figures and the words agree. The memo says "for the boathouse", so check the fund.` });
+      fund: fund2 },
+    headline: `Log ${usd(f2.cents)} check from ${f2.payer}, ${fund2.name}?`,
+    sentence: `Check ${f2.number} from ${f2.payer} for ${usd(f2.cents)}. The figures and the words agree.${fund2.unsure ? ` The memo says "for the boathouse", so check the fund.` : ` The memo says "for the boathouse", so it's proposed for ${fund2.name}.`}` });
   await item("check3", { kind: "check", stakes: "money", source: "photo", batch: BATCH, file: "check-3.png", minutesAgo: 46,
     read: checkRead(f3),
     proposal: { amount: settled(f3), date: "2026-10-14",
