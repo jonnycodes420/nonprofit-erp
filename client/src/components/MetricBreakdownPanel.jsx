@@ -39,7 +39,10 @@ const UNITS = { months: "months", days: "days", points: "points", hours: "hours"
 // and the rows behind the board pack's "Volunteer hours" have to add up to the
 // figure on it — rounding 6.5 to 7 here would make a drill-through that does
 // not foot, which is the one thing the panel exists to guarantee.
-const UNIT_DECIMALS = new Set(["points", "hours"]);
+// CAPTURE-1: and DAYS. Every earlier days source is whole (they read the
+// same), but the gift-to-thank-you clock is an average of 8.75 and 1.5, and
+// "9 days" beside a 2.63 mean would not foot.
+const UNIT_DECIMALS = new Set(["points", "hours", "days"]);
 const unitAmount = (v, unit) => UNIT_DECIMALS.has(unit)
   ? `${Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 })} ${unit}`
   : `${Math.round(v)} ${unit}`;

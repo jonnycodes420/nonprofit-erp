@@ -493,28 +493,47 @@ async function undoLow(orgId, cardId, who) {
 // thanked (a thank-you sent, a call, a note). One row per gift, its days to two
 // places, slowest first; the line's number is the mean of exactly these rows.
 const CLOCK_DAYS = 30;
+// Dates are the ORG's days, never the database session's (on a UTC database a
+// gift thanked at 9pm in New York would land on tomorrow): the zone is read
+// once, checked against Postgres's own list, New York when unset or unknown.
+const ORG_ZONE = `(SELECT COALESCE((SELECT z.name FROM orgs o JOIN pg_timezone_names z ON z.name = o.timezone WHERE o.id = ?), 'America/New_York') AS tz)`;
 function clockSql(orgId) {
   return {
-    sql: `SELECT g.id, 'gift' AS type, g.donor_id, d.name, TO_CHAR(g.thanked_at, 'YYYY-MM-DD') AS date,
+    sql: `WITH zone AS ${ORG_ZONE}
+          SELECT g.id, 'gift' AS type, g.donor_id, d.name, TO_CHAR(g.thanked_at AT TIME ZONE zone.tz, 'YYYY-MM-DD') AS date,
                  ROUND((GREATEST(EXTRACT(EPOCH FROM (g.thanked_at - COALESCE(g.received_at, g.created_at))), 0) / 86400.0)::numeric, 2) AS amount,
-                 '$' || TO_CHAR(g.amount, 'FM999,999,990.00') || ' gift, came in ' || TO_CHAR(COALESCE(g.received_at, g.created_at), 'Mon FMDD')
-                   || ', thanked ' || TO_CHAR(g.thanked_at, 'Mon FMDD') AS detail
-            FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+                 '$' || TO_CHAR(g.amount, 'FM999,999,990.00') || ' gift, came in ' || TO_CHAR(COALESCE(g.received_at, g.created_at) AT TIME ZONE zone.tz, 'Mon FMDD')
+                   || ', thanked ' || TO_CHAR(g.thanked_at AT TIME ZONE zone.tz, 'Mon FMDD') AS detail
+            FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id CROSS JOIN zone
            WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.amount > 0 AND g.thanked_at IS NOT NULL
              AND g.thanked_at > NOW() - INTERVAL '${CLOCK_DAYS} days'`,
-    args: [orgId],
+    args: [orgId, orgId],
     order: "amount DESC, id",
   };
 }
 const CLOCK_SENTENCE = `Every gift thanked in the last ${CLOCK_DAYS} days, by a thank-you sent, a call or a note: the days from when it came in to when it was thanked, slowest first. A receipt is not a thank-you, so it does not stop the clock.`;
+// The line, plus Home's tile: the same rows by the org's day they were
+// thanked (30 bars ending today, a day with nothing thanked is null), and how
+// many cards wait in To confirm.
 async function clock(orgId) {
   const q = clockSql(orgId);
   const [r] = await D.query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(ROUND(amount*100)),0)::bigint AS c FROM (${q.sql}) x`, q.args);
   const n = Number(r.n) || 0;
   const days = n ? Math.round(Number(r.c) / n) / 100 : null;
+  const byDay = await D.query(`SELECT date, COUNT(*)::int AS n, SUM(ROUND(amount*100))::bigint AS c FROM (${q.sql}) x GROUP BY date`, q.args);
+  const [t] = await D.query(`WITH zone AS ${ORG_ZONE} SELECT TO_CHAR((NOW() AT TIME ZONE zone.tz)::date, 'YYYY-MM-DD') AS today FROM zone`, [orgId]);
+  const map = new Map(byDay.map(b => [b.date, b]));
+  const trend = [];
+  const end = new Date(t.today + "T12:00:00Z");
+  for (let i = CLOCK_DAYS - 1; i >= 0; i--) {
+    const date = new Date(end.getTime() - i * 86400000).toISOString().slice(0, 10);
+    const b = map.get(date);
+    trend.push({ date, count: b ? b.n : 0, days: b ? Math.round(Number(b.c) / b.n) / 100 : null });
+  }
+  const [w] = await D.query("SELECT COUNT(*)::int AS n FROM capture_items WHERE org_id=? AND status='waiting' AND stakes='money'", [orgId]);
   return { days, count: n, source: "gift-to-thanked",
-    sentence: n ? `Average time from gift to thank-you, last ${CLOCK_DAYS} days: ${days.toFixed(1)} days` : `No gifts were thanked in the last ${CLOCK_DAYS} days.`,
-    definition: CLOCK_SENTENCE };
+    sentence: n ? `Average time from gift to thank-you, last ${CLOCK_DAYS} days: ${days} ${days === 1 ? "day" : "days"}` : `No gifts were thanked in the last ${CLOCK_DAYS} days.`,
+    definition: CLOCK_SENTENCE, trend, waiting: w.n };
 }
 
 module.exports = {

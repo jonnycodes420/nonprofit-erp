@@ -1313,8 +1313,8 @@ function ThankClock() {
       Average time from gift to thank-you, last 30 days:{" "}
       {c.days == null ? <span style={{ color: T.ink3 }}>no gifts thanked yet</span> : (
         <strong>
-          <Figure variant="inline" kind="count" value={Math.round(Number(c.days) * 10) / 10} suffix={Number(c.days) === 1 ? " day" : " days"}
-            label="Average time from gift to thank-you" definition={c.sentence} source={{ key: c.source || "gift-to-thanked", params: {} }} figureKey="gift-to-thanked" />
+          <Figure variant="inline" kind="count" value={Number(c.days)} suffix={Number(c.days) === 1 ? " day" : " days"}
+            label="Average time from gift to thank-you" definition={c.definition} source={{ key: c.source || "gift-to-thanked", params: {} }} figureKey="gift-to-thanked" />
         </strong>
       )}
     </div>

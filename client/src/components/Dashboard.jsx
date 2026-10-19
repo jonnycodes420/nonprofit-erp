@@ -35,6 +35,7 @@ import { displayName } from "../../../shared/displayName.js";
 import { stepInSentence, ORG_NAME_RE } from "../../../shared/stepCase.js";
 import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
+import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
@@ -2895,6 +2896,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             work: "how did the meeting go?" when one just ended, then the
             Thread's first thing (threadList[0], threadRank's own answer). */}
         {!editMode&&<div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:14}}>
+          {/* CAPTURE-1: the gift-to-thank-you clock, approved from the mockup. */}
+          <HomeThankClock onNavigate={onNavigate}/>
           <MailboxBanner onNavigate={onNavigate}/>
           <MorningBrief compact onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/>
           {threadList.length>0&&(()=>{
