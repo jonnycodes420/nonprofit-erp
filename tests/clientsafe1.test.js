@@ -59,6 +59,7 @@ const LOGS = [];
 for (const k of ["log", "error", "warn", "info"]) { const o = console[k]; console[k] = (...a) => { LOGS.push(a.map(String).join(" ")); o(...a); }; }
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { testNow } = require("./clock");
 
 const A = "org_cs1a", B = "org_cs1b", C = "org_cs1c";
 const ORGS = [A, B, C];
@@ -71,7 +72,7 @@ const CLIENT_SUBJECT = "Hazel's riding session and her new medication";
 const em = (who, o) => `${who}@${o}.example`;
 
 const b64 = s => Buffer.from(s).toString("base64url");
-const msg = (id, from, to, cc, subject, text) => ({ id, threadId: "t_" + id, internalDate: String(Date.now() - 3600e3), labelIds: ["INBOX"],
+const msg = (id, from, to, cc, subject, text) => ({ id, threadId: "t_" + id, internalDate: String(testNow() - 3600e3), labelIds: ["INBOX"],
   payload: { mimeType: "text/plain", headers: [{ name: "From", value: from }, { name: "To", value: to }, ...(cc ? [{ name: "Cc", value: cc }] : []),
     { name: "Subject", value: subject }], body: { data: b64(text) } } });
 const healthBody = secret => `Thank you so much for the barn tour on Saturday. My son was diagnosed with ${secret} last month and starts a new medication on Monday. We would love to sponsor a horse this spring.`;
