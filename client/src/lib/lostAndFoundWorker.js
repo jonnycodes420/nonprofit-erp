@@ -19,12 +19,14 @@
 // whether "1.234,56" is a thousand or a decimal. The audit half is
 // `shared/lostAndFound.js`. Both are pure; this file is the seam.
 
+import "./lostAndFoundEnv.js";
 import * as XLSX from "xlsx";
 import {
   parseCsvRecords, detectHeaderRow, decodeSpreadsheetBytes,
   inferDateConvention, inferAmountConvention,
 } from "../../../shared/importShape.js";
 import { mapColumns, fileReadiness, giftFromRow, audit } from "../../../shared/lostAndFound.js";
+import { rescuePlan } from "../../../shared/lostAndFoundRescue.js";
 
 // XLSX first, CSV otherwise, decided by the BYTES rather than by the file
 // name: a .csv that is really an xlsx is a thing people send, and so is the
@@ -102,6 +104,8 @@ function run({ bytes, name, today }) {
   const result = audit(gifts, { today });
   return {
     ...result,
+    // AUDIT-2 · the rescue plan: each donor judged against their own rhythm.
+    rescue: rescuePlan(gifts, { today }),
     file: { name: name || "your file", sheet, headers, rowCount: body.length, skipped,
       dateConvention: dateConvention && dateConvention.convention,
       sentence: `${gifts.length.toLocaleString()} gifts read from ${body.length.toLocaleString()} rows`

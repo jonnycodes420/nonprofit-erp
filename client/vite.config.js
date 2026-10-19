@@ -17,6 +17,10 @@ const buildSha = (() => {
 
 export default defineConfig({
   build: {
+    // AUDIT-2 · Lost & Found's worker bundles Drift (drift.js + orgTime.js,
+    // CommonJS at the repo root) so the free audit judges donors the way
+    // Steward does. Rollup converts only what this names.
+    commonjsOptions: { include: [/node_modules/, /[\\/]drift\.js$/, /[\\/]orgTime\.js$/] },
     // Gated on the same token that drives the Sentry plugin below, not just
     // "true" — if SENTRY_AUTH_TOKEN is unset (local dev, a PR preview build
     // missing the secret), no maps are generated at all, so there's never a
