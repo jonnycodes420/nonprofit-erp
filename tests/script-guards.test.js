@@ -541,6 +541,12 @@ ok(nulFiles.length === 0,
     const paid = /scripts\/nightly-ai\/run\.js|ANTHROPIC_EVAL_KEY|uses: \.\/\.github\/workflows\/nightly-ai/.test(src);
     ok(!(automatic && paid), `${f} runs on its own and reaches the paid AI suite`);
   }
+  // The error digest is one issue per day on the workflow's own token: no
+  // branch, no pull request, no permission beyond reading code and writing issues.
+  const dg = fs.readFileSync(path.join(wfDir, "error-digest.yml"), "utf8");
+  const perms = (dg.match(/^permissions:\s*\n((?:[ \t]+.*\n)*)/m) || ["", ""])[1];
+  ok(/issues: write/.test(perms) && !/contents: write|pull-requests/.test(perms), "the error digest asks only for issues write (and reads the code)");
+  ok(!/gh pr |git push|git commit/.test(dg) && /gh issue create/.test(dg) && /gh issue edit/.test(dg), "the error digest opens or edits an issue, and never a branch or a pull request");
   const ci = fs.readFileSync(path.join(wfDir, "ci.yml"), "utf8");
   ok(/node scripts\/prod-ai-smoke\.js/.test(ci), "the post-deploy prod AI smoke still runs in ci.yml");
 }

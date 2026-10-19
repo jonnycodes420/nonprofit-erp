@@ -135,9 +135,9 @@ Reading a first number over 12 as the day is unambiguous but changes the BUILD-8
 
 - **Run the repair on prod, dry run first.** From `~/nonprofit-erp` after `git pull`: `railway run -- node scripts/repair-runs-state.js --i-know-this-is-prod`. It writes nothing. Read it: each org with a count, one line per person ("now runs, restore to X"), then LEFT ALONE (people whose state changed after the Agent's write, or who read runs with no Agent write; those are yours to fix by hand on the profile). Check the restore values look like real states. Then apply, in one transaction with an audit row on each person's History: `railway run -- node scripts/repair-runs-state.js --apply --i-know-this-is-prod`. A second dry run should print "Nothing to repair". If anything looks wrong afterwards, `--undo --i-know-this-is-prod` reverses exactly what --apply changed.
 
-## 0-HARDEN-1 · THE NIGHTLY AI RUN NEEDS ITS OWN KEY (2026-10-07)
+## 0-FIX-44 · THE REAL-AI RUN IS YOURS TO START (2026-10-19)
 
-- **Add the `ANTHROPIC_EVAL_KEY` repository secret** (an Anthropic key on a workspace with a monthly spend limit, about $60 covers 30 nights at $1.30 to $2): github.com/jonnycodes420/nonprofit-erp, Settings, Secrets and variables, Actions, New repository secret (https://github.com/jonnycodes420/nonprofit-erp/settings/secrets/actions/new). Until it exists the Nightly AI workflow fails every night with one sentence saying so.
+- **Start it when you want it:** `gh workflow run nightly-ai.yml --ref main`, then `gh run watch`. It no longer runs on a schedule. Each run is capped at $2 (one full run measured $1.91) and its first summary line says what it spent. The `ANTHROPIC_EVAL_KEY` secret it needs is already set.
 
 ## 0-WIRE-1 · RE-SEED THE PROD DEMO FOR THE WHOLE PERSON (2026-10-06)
 
