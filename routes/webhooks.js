@@ -2923,9 +2923,17 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
   if (!senderRows.length) { await recordInboundDrop(org.id, "sender_not_user"); return res.json({ received: true, action: "drop" }); }
 
   const userRows = await query("SELECT email FROM users WHERE org_id = ?", [org.id]);
-  const donorRows = await query(
+  // CLIENT-SAFE-1: a message with somebody marked as a client on it is
+  // dropped whole, before anything of it is read into a row.
+  const CSV = require("../clientSafe");
+  const privacy = await CSV.privacyFor(org.id);
+  if (privacy.on && IE.recipientAddresses(payload).some(a => privacy.clientEmails.has(String(a || "").trim().toLowerCase()))) {
+    await recordInboundDrop(org.id, "client");
+    return res.json({ received: true, action: "drop" });
+  }
+  const donorRows = (await query(
     "SELECT id, name, email FROM donors WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email <> ''",
-    [org.id]);
+    [org.id])).filter(d => !privacy.clientIds.has(d.id));
 
   const inboundTzOrg = await orgTz(org.id);
   const decision = IE.classifyInbound(payload, {
@@ -2942,6 +2950,9 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
     await recordInboundDrop(org.id, decision.reason);
     return res.json({ received: true, action: "drop" });
   }
+  // CLIENT-SAFE-1: health sentences held back before the row is written.
+  const screened = await CSV.screenForStore(org.id, { subject: decision.subject, body: decision.body }, privacy);
+  decision.subject = screened.subject; decision.body = screened.body;
 
   // 3 · exactly one donor → an `email` activity on that donor, now. Synchronous
   //     on the webhook, no queue: the director who BCCs a test wants to see it
@@ -2978,8 +2989,9 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
       [id, org.id, decision.donorId, "email", note, decision.date,
        "system:inbound-email", senderRows[0].name || from,
        JSON.stringify({ via: "inbound_email", from, to: decision.to, subject: decision.subject, direction: "outbound",
-                        message_id: bccId })]
+                        message_id: bccId, ...(screened.held ? { held_back: "health" } : {}), ...(screened.metadataOnly ? { metadata_only: true } : {}) })]
     );
+    if (screened.held) await CSV.recordHold(org.id, { donorIds: [decision.donorId], interactionId: id, source: "bcc", actorId: "system:inbound-email" });
     const grant = await routeGrant(note);
     return res.json({ received: true, action: "log", donorId: decision.donorId, ...(grant ? { grant } : {}) });
   }

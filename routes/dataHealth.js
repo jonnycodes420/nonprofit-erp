@@ -54,6 +54,7 @@ const MERGE_REFS = [
   ["donor_address_history", "donor_id"], ["donor_designations", "donor_id"], ["donor_materials", "donor_id"],
   ["donor_relationships", "donor_id_a"], ["donor_relationships", "donor_id_b"], ["donor_scores", "donor_id"],
   ["donor_rhythm", "donor_id"], ["group_crossings", "donor_id"], ["readout_events", "donor_id"],   // LIVE-1
+  ["privacy_holds", "donor_id"], ["client_email_removals", "donor_id"],   // CLIENT-SAFE-1
   ["email_marketing_activity", "donor_id"], ["event_attendees", "donor_id"], ["fin_transactions", "donor_id"],
   ["gift_duplicate_questions", "donor_id"], ["gift_soft_credits", "donor_id"], ["gifts", "donor_id"],
   ["gifts", "tribute_donor_id"], ["gifts", "match_employer_id"], ["giving_recurring", "donor_id", "refuse"],
@@ -131,7 +132,8 @@ const FILL_IF_EMPTY = ["stripe_customer_id", "stripe_subscription_id", "stripe_s
   "wealth_screen_source", "wealth_screen_rating", "wealth_screen_capacity", "wealth_screen_date", "suggested_stage",
   "external_household_id"];
 const OR_FLAGS = ["deceased", "do_not_contact", "do_not_solicit", "do_not_mail", "do_not_email", "planned_giving",
-  "board_member", "in_pipeline", "imported_sustainer"];
+  "board_member", "in_pipeline", "imported_sustainer",
+  "is_client"];   // CLIENT-SAFE-1: a merge never lets a client be captured again
 
 const cents = v => Math.round(Number(v || 0) * 100);
 const dollars = c => `$${(c / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

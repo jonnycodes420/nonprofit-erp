@@ -19,6 +19,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
 import { ConnectionsPage } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
+import { PrivacyPanel } from "./PrivacyPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
@@ -2673,6 +2674,8 @@ const SETTINGS_TABS=[
   // the tab list enforces here and the route enforces again: the log names who
   // signed in, whose role changed and who downloaded a donor file.
   {id:"audit",label:"Audit log",adminOnly:true},
+  // CLIENT-SAFE-1 — "We serve clients whose details are private".
+  {id:"privacy",label:"Privacy"},
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
   // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
@@ -3816,6 +3819,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         : <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",fontSize:13,color:T.ink3}}>
             The audit log is available to your organization's admins.
           </div>)}
+
+      {section==="privacy"&&<PrivacyPanel isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {section==="data"&&<>
       {/* CLEAN-1 4d: said plainly, where an admin looks for what Steward does with addresses. */}

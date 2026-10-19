@@ -196,6 +196,15 @@ async function finish(req, m, ids, read) {
 }
 
 // ── THE MEMO ────────────────────────────────────────────────────────────────
+// CLIENT-SAFE-1: the sentence when any person the memo is about is a client.
+async function clientRefusal(orgId, ids) {
+  if (!ids || !ids.length) return null;
+  const p = await require("../clientSafe").privacyFor(orgId);
+  const hit = p.on ? ids.find(id => p.clientIds.has(id)) : null;
+  if (!hit) return null;
+  const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [hit, orgId]);
+  return (await import("../shared/clientSafe.js")).MEMO_REFUSED(d && d.name);
+}
 app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const V = await VM();
@@ -217,6 +226,11 @@ app.post("/voice/memos", requireAuth, checkWriteAccess, wrap(async (req, res) =>
     if (!d) return res.status(404).json({ error: "Donor not found" });
     ids = [d.id, ...ids.filter(x => x !== d.id)];
   }
+
+  // CLIENT-SAFE-1: a memo about a person marked as a client is not logged,
+  // not read by the model and not kept.
+  const refusedFor = await clientRefusal(orgId, ids);
+  if (refusedFor) return res.status(409).json({ error: "client", sentence: refusedFor });
 
   const gate = await agentGate(orgId);
   const today = orgToday(await orgTz(orgId));
@@ -293,6 +307,11 @@ app.post("/voice/memos/:id/people", requireAuth, checkWriteAccess, wrap(async (r
     ids.push(r.body.id);
   }
   if (!ids.length) return res.status(400).json({ error: "memo_needs_person", sentence: "Pick who the memo is about." });
+  const refusedFor = await clientRefusal(orgId, ids);
+  if (refusedFor) {
+    await run("DELETE FROM voice_memos WHERE id=? AND org_id=? AND status='needs_people'", [m.id, orgId]);
+    return res.status(409).json({ error: "client", sentence: refusedFor });
+  }
   await run("UPDATE voice_memos SET donor_ids=?, status='planned' WHERE id=? AND org_id=? AND status='needs_people'", [JSON.stringify(ids), m.id, orgId]);
   const out = await finish(req, { ...m, donor_ids: ids }, ids, read);
   return out.error ? res.status(out.error).json(out.body) : res.status(201).json(out.body);

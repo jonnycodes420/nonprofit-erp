@@ -690,6 +690,12 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
   const httpEmit = require("http").Server.prototype.emit;
   require("http").Server.prototype.emit = function (ev, req, res) {
     if (ev === "connection") {
+      // CLIENT-SAFE-1: the setup between the last login and the first probe
+      // (hashing org B, walking the router) runs past Node's 5s keep-alive on
+      // CI's runners, the server closes the idle socket, and the first probe
+      // reuses it: ECONNRESET on /stripe/webhook, twice in a row on PR #212.
+      // The server here is this suite's own; hold idle sockets for a minute.
+      if (this.keepAliveTimeout < 60000) { this.keepAliveTimeout = 60000; this.headersTimeout = 61000; }
       const sock = req, opened = Date.now();
       sock.on("close", hadErr => serverEvents.push(`${Date.now() - lastAnswer}ms after last answer: server socket closed (open ${Date.now() - opened}ms, error=${hadErr})`));
     }
