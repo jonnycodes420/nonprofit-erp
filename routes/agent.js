@@ -753,7 +753,11 @@ const AGENT_EXECUTORS = {
     if (!kind) return { failed: "a conversation is a call, a meeting or an email" };
     const date = /^\d{4}-\d{2}-\d{2}$/.test(String(step.date || "")) ? step.date : ctx.today;
     if (date > ctx.today) return { failed: "a conversation that has not happened yet is a next step, not a log" };
-    const r = await AC.call(ctx, "POST", `/donors/${donor.id}/interactions`, { type: kind, note: String(step.note || "").slice(0, 2000), date });
+    // VOICE-1: a memo's conversation says how it happened (a lunch is a
+    // meeting whose line says Lunch) and carries the memo it came from.
+    const meta = step.memoId ? { memoId: String(step.memoId), how: String(step.how || "").slice(0, 20) || null,
+      linkedDonorIds: Array.isArray(step.linkedDonorIds) ? step.linkedDonorIds.map(String).slice(0, 10) : [] } : undefined;
+    const r = await AC.call(ctx, "POST", `/donors/${donor.id}/interactions`, { type: kind, note: String(step.note || "").slice(0, 2000), date, ...(meta ? { metadata: meta } : {}) });
     if (r.status >= 300) return { failed: refusal(r) };
     const id = r.body && r.body.id;
     const [row] = id ? await query("SELECT id FROM interactions WHERE id=? AND org_id=? AND donor_id=? AND type=?", [id, ctx.orgId, donor.id, kind])
@@ -1723,7 +1727,10 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {}, auth =
         if (cite.length) { withheld++; withheldReasons.push(cite[0]); outcome(a, A.OUTCOME_NOT_DONE, "Steward could not point at the record it came from"); continue; }
         // 4 · no invented rule reaches a screen (shared/thresholds.js).
         const text = [a.body, a.note, a.title, a.label, a.subject].filter(Boolean).join(" \n ");
-        const ungrounded = TH.ungroundedClaims(text, { groundedValues });
+        // VOICE-1: a memo's own words are her words, not an invented rule:
+        // "circle back in two weeks" is what she said.
+        const ungrounded = TH.ungroundedClaims(text, { groundedValues })
+          .filter(c => !(instruction.grounded && String(instruction.grounded).toLowerCase().includes(String(c.raw).toLowerCase())));
         if (ungrounded.length) { withheld++; withheldReasons.push(TH.ungroundedSentence(ungrounded)); outcome(a, A.OUTCOME_NOT_DONE, "it said something the record does not"); continue; }
 
         const r = await AGENT_EXECUTORS[a.tool](ctx, a);
@@ -3413,6 +3420,9 @@ app.post("/workflows/run-sweeps", requireAuth, requireAdmin, wrap(async (req, re
   await processWorkflowSweeps(req.user.orgId);
   res.json({ success: true });
 }));
+// VOICE-1: the engine's own runner, undo and name matcher, for the memo route
+// (routes/voice.js), so a memo is planned, run and undone by the same code.
+routers.engine = { agentRunPlan, agentUndoWrite, agentNamedIn, agentWhich, agentReadPeople, AGENT_ACTOR };
 }
 
 module.exports = { routers, mount };

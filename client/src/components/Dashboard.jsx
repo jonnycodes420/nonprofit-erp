@@ -37,6 +37,7 @@ import { DonorLink } from "./RecordLink";
 import { CallsToMake } from "./CallsToMake";
 import { HomeThankClock } from "./HomeThankClock";
 import { AskHero } from "./AskRail";
+import { TellStewardButton } from "./TellSteward";   // VOICE-1
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel, driftSinceYesterday } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -3207,6 +3208,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             agent={{available:!(agentDaily&&agentDaily.available===false),line:agentDaily&&agentDaily.line,
               onSend:t=>onNavigate("agent",{agentText:t,autoAsk:true}),
               onOpen:()=>onNavigate("agent",{agentView:((agentDaily&&agentDaily.waiting)||0)>0?"waiting":"guardrails"})}}/>
+          {/* VOICE-1 — after a meeting: talk, and the paperwork is done. */}
+          {!isReadOnly&&<div className="home-tell" style={{marginTop:12,maxWidth:420}}><TellStewardButton/></div>}
         </div>
       )}
       </>);

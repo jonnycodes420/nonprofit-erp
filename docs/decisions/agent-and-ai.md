@@ -170,6 +170,11 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   Show me's templates (the model's filter form only when a campaign, event or ask is named) and hands the
   model exactly those people. (FIX-27)
 
+- **Tell Steward (VOICE-1).** A memo is an instruction with the Notes persona, run by `agentRunPlan`; the
+  conversation, Thread step, interest and draft are done for her with one Undo, and money, contact changes and
+  personal details are cards. The model never supplies a date, an amount, a fund or a person: `shared/voiceMemo.js`
+  and `agentNamedIn` do. A sensitive sentence is held back from everything filed until she saves it in neutral words.
+
 ## Gotchas
 - **A strict tool may hold at most 16 union-typed params and 24 optional ones**, or the API refuses the whole
   request (400). One nullable field per filter is the shape that breaks it; use one array of `{ field, value }`

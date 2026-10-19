@@ -3555,6 +3555,28 @@ async function runSchemaInit(pool) {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       PRIMARY KEY (org_id, phrase)
     )`);
+  // VOICE-1 · Tell Steward. One row per memo: the words as filed (a sensitive
+  // sentence is held back from them), the people it is about, the runs that
+  // did its work (each write is on agent_writes, so Undo is one loop), and the
+  // cards waiting for her yes. No audio column: audio is never stored.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS voice_memos (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      text TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'typed',
+      status TEXT NOT NULL DEFAULT 'done',
+      ai TEXT NOT NULL DEFAULT 'on',
+      donor_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      read JSONB,
+      cards JSONB NOT NULL DEFAULT '[]'::jsonb,
+      instruction_id TEXT,
+      run_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      undone_at TIMESTAMPTZ, undone_by TEXT, undone_by_name TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_voice_memos_org ON voice_memos (org_id, created_at DESC)`);
   // The gift-to-thanked clock. received_at: the check's date or the email's
   // arrival, whichever is later and not in the future (a live door: when it
   // came in). thanked_at: a thank-you sent, a thank-you call, or a note marked
