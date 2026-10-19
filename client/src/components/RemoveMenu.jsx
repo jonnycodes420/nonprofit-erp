@@ -4,7 +4,7 @@
 // (removal.js: retire when people or money are attached, archive a page with
 // gifts, otherwise delete) and writes the confirm sentence from what is
 // attached; this file only shows it, asks once, does it, and offers the shared
-// Undo toast for ten seconds. A screen never words its own confirm.
+// Undo toast (a minute, then Recent changes, FIX-45). A screen never words its own confirm.
 //
 //   <RemoveMenu kind="ticket_type" id={l.id} onDone={reload} />
 //       a "More" button on the row, with Remove (and any `items` before it)
@@ -36,6 +36,7 @@ function offer(kind, r, onDone, onError) {
   offerUndo({
     message: r.sentence,
     undoSeconds: r.undoSeconds,
+    listed: true,   // FIX-45: the trash row is in Recent changes already
     undoAction: async () => { const x = await post(base(kind) + "/undo", { undoIds: r.undoIds }); onDone && onDone(); return x; },
   }, kind);
   onDone && onDone(r);

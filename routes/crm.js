@@ -6854,7 +6854,8 @@ async function trashRow(table, id, req) {
     return trashId;
   });
 }
-const UNDO_SECONDS = 10;
+// FIX-45: a minute on the toast; Recent changes lists the trash row after that.
+const UNDO_SECONDS = 60;
 
 // DELETE /interactions/:id — remove a mis-logged touchpoint. Per convention,
 // DELETE routes get no checkWriteAccess. Gmail-synced rows are deliberately
@@ -6907,6 +6908,9 @@ app.post("/deleted-records/:id/restore", requireAuth, wrap(async (req, res) => {
         [JSON.stringify(t.row_data)]);
       const data = typeof t.row_data === "string" ? JSON.parse(t.row_data) : t.row_data;
       if (RESTORE_WITH[t.table_name]) await RESTORE_WITH[t.table_name](client, data && data.__with, t.record_id, req.user.orgId);
+      // FIX-45: any picture the row names comes back out of the retention window with it.
+      const assetIds = [...new Set(JSON.stringify(data || {}).match(/pa_[a-f0-9]{24}/g) || [])];
+      if (assetIds.length) await runTx(client, "UPDATE portal_assets SET deleted_at = NULL WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NOT NULL", [req.user.orgId, assetIds]);
       await runTx(client, "UPDATE deleted_records SET restored_at = NOW() WHERE id = ?", [t.id]);
     });
   } catch (e) {

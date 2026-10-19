@@ -165,6 +165,14 @@ app.post("/capture/:id/unskip", requireAuth, checkWriteAccess, wrap(async (req, 
   res.json({ card: cardOut(req.user.orgId, r[0]) });
 }));
 
+// FIX-45: the cards skipped in the last 30 days, for To confirm's Skipped
+// filter, each with Bring back (POST /capture/:id/unskip).
+app.get("/capture/skipped", requireAuth, wrap(async (req, res) => {
+  const rows = await query(`SELECT * FROM capture_items WHERE org_id=? AND status='skipped' AND decided_at > NOW() - INTERVAL '30 days'
+                             ORDER BY decided_at DESC LIMIT 100`, [req.user.orgId]);
+  res.json({ skipped: rows.map(c => cardOut(req.user.orgId, c)) });
+}));
+
 app.post("/capture/:id/undo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const out = await K.undoLow(req.user.orgId, req.params.id, await whoOf(req));
   if (out.error === "not_found") return res.status(404).json({ error: "not_found" });

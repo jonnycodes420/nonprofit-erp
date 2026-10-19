@@ -20,6 +20,7 @@ import Picture from "./Picture";
 import { errorMessage } from "../lib/domainError";
 import { DonorLink } from "./RecordLink";
 import RemoveMenu, { removeOne, removeMany } from "./RemoveMenu";
+import { UNDONE } from "../lib/recentUndo";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 8 };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -111,6 +112,8 @@ function AuctionDetail({ id, donors, isReadOnly, onBack, onNavigate }) {
   const load = () => apiFetch(`/auctions/${id}`).then(r => { setD(r); setTimes({ opensLocal: r.auction.opensLocal, closesLocal: r.auction.closesLocal }); })
     .catch(e => setMsg(errorMessage(e, "Could not load the auction.")));
   useEffect(() => { load(); }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // FIX-45: an Undo from Recent changes reloads the items from the server.
+  useEffect(() => { const f = () => load(); window.addEventListener(UNDONE, f); return () => window.removeEventListener(UNDONE, f); }, [id]);   // eslint-disable-line react-hooks/exhaustive-deps
   const act = async (fn, okMsg) => {
     setMsg("");
     try { const r = await fn(); setMsg(typeof okMsg === "function" ? okMsg(r) : okMsg || ""); await load(); }

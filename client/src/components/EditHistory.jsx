@@ -6,7 +6,8 @@
 //   · EditedMarker  "Edited" with who and when; tapping it shows the previous
 //                   versions, read from the audit log (the only copy of an old
 //                   value once an edit is saved).
-//   · useUndo       Delete happens at once, then offers Undo for ten seconds.
+//   · useUndo       Delete happens at once, then offers Undo for a minute
+//                   (FIX-45), and Recent changes keeps it after that.
 //                   The server moved the row aside rather than destroying it,
 //                   so Undo puts back exactly what was there. (FIX-22: no
 //                   browser confirm in front of a delete that can be undone.)
@@ -18,8 +19,11 @@ import { createRoot } from "react-dom/client";
 import { apiFetch } from "../api";
 import { T, firstNameOf } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { rememberOffer, markUndone, announceUndone } from "../lib/recentUndo";
+import { openRecentChanges } from "./RecentChanges";
 
 const linkBtn = { background: "none", border: "none", padding: 0, font: "inherit", cursor: "pointer" };
+const UNDO_TOAST_SECONDS = 60;   // FIX-45: a minute, or until dismissed
 
 // When, in the organisation's zone, with the zone named.
 export function fmtInZone(iso, tz) {
@@ -100,8 +104,13 @@ export function EditedMarker({ item }) {
   );
 }
 
-// Delete, then Undo for ten seconds. Returns [toast, offer]. `offer` takes
-// the server's delete response and what to do once it is back.
+// Delete, then Undo. Returns [toast, offer]. `offer` takes the server's
+// delete response and what to do once it is back.
+// FIX-45: the toast stays until it is dismissed or for a minute (ten seconds
+// lost three Undos in one walk), "See all" opens Recent changes, and a second
+// tap on Undo while the first is on its way does nothing. Every offer is also
+// remembered for Recent changes, and after an Undo every screen listening for
+// UNDONE reloads from the server instead of trusting what it drew before.
 // FIX-25: the ten seconds count only while someone could be reading it. The
 // clock stops while the pointer or focus is on the toast, and while the tab is
 // in the background, so Undo is never gone before the person looks for it.
@@ -119,27 +128,40 @@ export function useUndo() {
   // values back through the item's own route (an audited write like any).
   const offer = (resp, label, onRestored) => {
     if (!resp || !(resp.undoId || typeof resp.undoAction === "function")) return;
-    setState({ undoId: resp.undoId || null, action: resp.undoAction || null, message: resp.message || null, label, onRestored, left: resp.undoSeconds || 10, err: "" });
+    // A trash row (undoId) or an offer the server already lists (`listed`) is
+    // in Recent changes from the server; anything else is kept for this tab.
+    const entry = resp.undoId || resp.listed ? null : rememberOffer({ message: resp.message, action: resp.undoAction, label });
+    setState({ undoId: resp.undoId || null, action: resp.undoAction || null, message: resp.message || null, label, onRestored, entry,
+      left: Math.max(Number(resp.undoSeconds) || 0, UNDO_TOAST_SECONDS), err: "", busy: false });
   };
   const undo = async () => {
-    const s = state; if (!s) return;
+    const s = state; if (!s || s.busy) return;
+    setState({ ...s, busy: true });
     try {
       const r = s.action ? await s.action() : await apiFetch(`/deleted-records/${s.undoId}/restore`, { method: "POST" });
-      setState(null);
+      markUndone(s.entry);
+      setState(cur => (cur && cur.undoId === s.undoId && cur.action === s.action ? null : cur));
+      announceUndone({ undoId: s.undoId || null });
       s.onRestored && s.onRestored(r);
-    } catch (e) { setState({ ...s, err: errorMessage(e, "It could not be put back.") }); }
+    } catch (e) { setState(cur => (cur ? { ...cur, busy: false, err: errorMessage(e, "It could not be put back.") } : cur)); }
   };
-  return [<UndoToastView key="undo" state={state} onUndo={undo} onHold={hold} />, offer];
+  const dismiss = () => setState(null);
+  return [<UndoToastView key="undo" state={state} onUndo={undo} onHold={hold} onDismiss={dismiss} />, offer];
 }
 
-function UndoToastView({ state, onUndo, onHold }) {
+function UndoToastView({ state, onUndo, onHold, onDismiss }) {
   if (!state) return null;
   return (
     <div role="status" data-testid="undo-toast"
       onMouseEnter={() => onHold(true)} onMouseLeave={() => onHold(false)} onFocus={() => onHold(true)} onBlur={() => onHold(false)}
-      style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.white, borderRadius: 12, padding: "12px 18px", display: "flex", gap: 14, alignItems: "center", fontSize: 13, boxShadow: "0 8px 24px rgba(15,26,18,0.25)", maxWidth: "calc(100vw - 32px)" }}>
-      <span>{state.err || state.message || `Deleted the ${state.label}.`}</span>
-      <button type="button" onClick={onUndo} style={{ ...linkBtn, color: T.gold, fontWeight: 800 }}>Undo ({state.left})</button>
+      style={{ position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 400, background: T.ink, color: T.white, borderRadius: 12, padding: "12px 18px", display: "flex", gap: 14, alignItems: "center", fontSize: 13, boxShadow: "0 8px 24px rgba(15,26,18,0.25)", maxWidth: "calc(100vw - 32px)", boxSizing: "border-box" }}>
+      {/* FIX-45: on a phone the toast spans the width above the bottom bar,
+          so the sentence wraps across it instead of down a narrow column. */}
+      <style>{`@media (max-width: 768px) { [data-testid="undo-toast"] { width: calc(100vw - 32px); bottom: calc(84px + env(safe-area-inset-bottom, 0px)) !important; } }`}</style>
+      <span style={{ flex: "1 1 auto", minWidth: 0 }}>{state.err || state.message || `Deleted the ${state.label}.`}</span>
+      <button type="button" data-testid="undo-toast-undo" onClick={onUndo} disabled={state.busy} style={{ ...linkBtn, color: T.gold, fontWeight: 800, whiteSpace: "nowrap" }}>{state.busy ? "Putting back…" : "Undo"}</button>
+      <button type="button" data-testid="undo-toast-see-all" onClick={() => { onDismiss(); openRecentChanges(); }} style={{ ...linkBtn, color: T.white, textDecoration: "underline", whiteSpace: "nowrap" }}>See all</button>
+      <button type="button" data-testid="undo-toast-dismiss" aria-label="Dismiss" onClick={onDismiss} style={{ ...linkBtn, color: T.white, fontSize: 16, lineHeight: 1, padding: "0 2px" }}>×</button>
     </div>
   );
 }

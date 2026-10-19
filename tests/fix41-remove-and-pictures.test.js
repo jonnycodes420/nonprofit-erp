@@ -280,8 +280,51 @@ async function main() {
   // ── §pictures ──────────────────────────────────────────────────────────
   await pictures(T);
 
+  // ── §recent (FIX-45): Undo lasts, and Recent changes lists what can still be undone
+  await recent(T, T2);
+
   if (mock) mock.close();
   await wipe();
+}
+
+// ── §recent (FIX-45) ──────────────────────────────────────────────────────
+// The walk lost three Undos to a ten-second toast. The toast now offers a
+// minute, and Recent changes lists this person's undoable changes from the
+// seams that already undo them: the trash, a skipped To confirm card, a person
+// added by hand. Each row carries the request that undoes it, and running it
+// puts the CURRENT row back.
+async function recent(T, T2) {
+  await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,created_by,created_by_name) VALUES ('el_fix45_tmp',$1,$2,'ticket','Student',10,0,'u_fix41','Fix Admin')`, [ORG, EV]);
+  const rm = await api("POST", `/removals/ticket_type/el_fix45_tmp`, T, {});
+  ok("§recent a removal offers Undo for a minute, not ten seconds", rm.status === 200 && rm.body?.undoSeconds >= 60, JSON.stringify(rm.body));
+  await q(`INSERT INTO capture_items (id,org_id,kind,stakes,status,source,headline,created_by) VALUES ('cap_fix45_pl',$1,'pledge','money','waiting','upload','A pledge form from Ada Gala','u_fix41')`, [ORG]);
+  const sk = await api("POST", `/capture/cap_fix45_pl/skip`, T, { reason: "duplicate" });
+  const skipped = await api("GET", `/capture/skipped`, T);
+  ok("§recent a skipped card is listed under Skipped", sk.status === 200 && (skipped.body?.skipped || []).some(c => c.id === "cap_fix45_pl" && c.status === "skipped"), JSON.stringify(skipped.body).slice(0, 200));
+  const added = await api("POST", `/donors`, T, { name: "Fay Added", email: "fay@fix45.test" });
+  const list = await api("GET", `/recent-changes`, T);
+  const rows = list.body?.rows || [];
+  const byId = id => rows.find(r => r.id === id);
+  const rmRow = byId(rm.body?.undoIds?.[0]), skRow = byId("skip:cap_fix45_pl"), addRow = byId("add:" + added.body?.id);
+  ok("§recent Recent changes lists the removal, the skipped card and the added person, newest first, each with its Undo",
+    list.status === 200 && !!rmRow && !!skRow && !!addRow && rmRow.undo?.path === "/removals/undo" && skRow.undo?.path === "/capture/cap_fix45_pl/unskip"
+      && addRow.undo?.method === "DELETE" && rows.indexOf(addRow) < rows.indexOf(rmRow) && rows.length <= 50,
+    JSON.stringify(rows.map(r => [r.id, r.sentence])).slice(0, 400));
+  ok("§recent each row says what it was in words", /Student/.test(rmRow?.sentence || "") && /Ada Gala/.test(skRow?.sentence || "") && /Fay Added/.test(addRow?.sentence || ""),
+    JSON.stringify([rmRow?.sentence, skRow?.sentence, addRow?.sentence]));
+  const other = await api("GET", `/recent-changes`, T2);
+  ok("§recent another org sees none of it", other.status === 200 && !(other.body?.rows || []).some(r => [rmRow?.id, skRow?.id, addRow?.id].includes(r.id)), JSON.stringify(other.body).slice(0, 200));
+  const run = r => api(r.undo.method, r.undo.path, T, r.undo.body);
+  const u1 = await run(rmRow), u2 = await run(skRow), u3 = await run(addRow);
+  const [lv] = await q(`SELECT 1 AS n FROM event_levels WHERE id='el_fix45_tmp'`);
+  const [cp] = await q(`SELECT status FROM capture_items WHERE id='cap_fix45_pl'`);
+  const [fd] = await q(`SELECT deleted_at FROM donors WHERE id=$1`, [added.body?.id]);
+  ok("§recent each Undo from the list puts it back: the ticket type, the card (waiting again), the person taken out",
+    u1.status === 200 && u2.status === 200 && u3.status === 200 && !!lv && cp?.status === "waiting" && !!fd?.deleted_at,
+    `${u1.status} ${u2.status} ${u3.status} ${!!lv} ${cp?.status} ${fd?.deleted_at}`);
+  const after = await api("GET", `/recent-changes`, T);
+  ok("§recent what was undone leaves the list", !(after.body?.rows || []).some(r => [rmRow?.id, skRow?.id, addRow?.id].includes(r.id)),
+    JSON.stringify((after.body?.rows || []).map(r => r.id)));
 }
 
 // ── §pictures (Part 2) ────────────────────────────────────────────────────
@@ -316,6 +359,21 @@ async function pictures(T) {
   const five = await api("PUT", `/auction-items/${add.body?.id}`, T, { photos: Array.from({ length: 7 }, () => ({ url: up.body.url })) });
   const kept = await q(`SELECT jsonb_array_length(photos) AS n FROM auction_items WHERE id=$1`, [add.body?.id]);
   ok("§pictures an item keeps at most five photos", five.status === 200 && kept[0].n === 5, five.status + " " + kept[0]?.n);
+
+  // FIX-45: Undo brings a removed item back WITH its photos. While the item sat
+  // in the trash nothing pointed at its picture, so a prune of that kind may
+  // have marked it deleted (the retention window: bytes kept, URL 404). The
+  // plant below is exactly that mark; Undo must clear it.
+  const assetId = up.body.url.slice("/portal-assets/".length);
+  const gone = await api("POST", `/removals/auction_item/${add.body?.id}`, T, {});
+  await q(`UPDATE portal_assets SET deleted_at = NOW() WHERE id=$1`, [assetId]);
+  const dark = await fetch(`${h.BASE}${up.body.url}`);
+  const back = await api("POST", `/removals/undo`, T, { undoIds: gone.body?.undoIds });
+  const lit = await fetch(`${h.BASE}${up.body.url}`);
+  const backRow = await q(`SELECT jsonb_array_length(photos) AS n FROM auction_items WHERE id=$1`, [add.body?.id]);
+  ok("§pictures (FIX-45) Undo of a removed auction item brings back its photos, not only the row",
+    gone.body?.mode === "delete" && dark.status === 404 && back.status === 200 && backRow[0]?.n === 5 && lit.status === 200,
+    `mode ${gone.body?.mode} before-undo ${dark.status} undo ${back.status} photos ${backRow[0]?.n} after ${lit.status}`);
 
   // A page cover drafted in the editor names who saved it. Before FIX-41 only
   // Publish wrote the pointer history, so a draft cover had no author on record.
