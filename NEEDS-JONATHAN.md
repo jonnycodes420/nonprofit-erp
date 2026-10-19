@@ -847,3 +847,5 @@ hand.
 - **ONBOARD-1: one real Salesforce Contacts + Donations pair (CKRH or Justin's Place) would retire the guesses** in
   `shared/setupFiles.js` (Contact ID on the gift report, "General Accounting Unit" as the fund). Until then setup is
   checked against the hand-built fixture only.
+- **CLIENT-SAFE-1: re-seed so Meadowbrook Riding Center exists for the privacy-mode demo** (director@meadowbrook.demo /
+  demo-meadowbrook-2026; privacy mode on, 6 clients, 2 held-back details). Same command as the earlier re-seeds.

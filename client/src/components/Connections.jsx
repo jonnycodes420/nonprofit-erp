@@ -25,6 +25,7 @@ import QboSync from "./QboSync";
 import XeroSync from "./XeroSync";
 import { CreditCard, HandCoins, Smartphone, FileSpreadsheet, Mail, AtSign, Send, BookOpen, FileText, Store,
   KeyRound, Webhook, Zap } from "lucide-react";
+import { PrivacyLine, usePrivacy } from "./PrivacyPanel";
 
 const h = { fontSize: 11, fontWeight: 800, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em" };
 const btn = primary => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3,
@@ -1000,6 +1001,7 @@ function ConnCard({ card, open, onButton, isAdmin, isReadOnly }) {
           {card.status === "connected" && card.synced && <span style={{ fontSize: 12, color: T.ink3 }}>· {card.synced}</span>}
         </div>
         {card.reason && <div data-testid="conn-reason" style={{ fontSize: 12.5, color: att ? T.gold700 : T.ink3, lineHeight: 1.5, marginTop: 4 }}>{card.reason}</div>}
+        {card.note}
       </div>
     </div>
   );
@@ -1010,6 +1012,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
   renderGivingSources, bccPanel = null, apiKeysPanel = null }) {
   const [d, setD] = useState(null);
   const [mail] = useMailbox();
+  const [privacy] = usePrivacy();
   const [inbound, setInbound] = useState(null);
   const [keys, setKeys] = useState(null);
   const [hooks, setHooks] = useState(null);
@@ -1121,7 +1124,7 @@ export function ConnectionsPage({ isReadOnly, isAdmin = true, onNavigate, focus 
     cards.push({ key: "inbox", section: "inbox", icon: "inbox", name: "Gmail and Outlook",
       line: "Emails and meetings with people on file land on their timeline. Each person connects their own.",
       status: st, reason: broken ? broken.lastError : st === "connected" ? `Connected as ${conn.map(p => p.address).filter(Boolean).join(", ")}.` : "",
-      synced: sinceWord(last),
+      synced: sinceWord(last), note: privacy && privacy.on ? <PrivacyLine data={privacy} /> : null,
       button: { kind: st === "attention" ? "fix" : st === "connected" ? "manage" : "connect", label: st === "attention" ? "Fix" : st === "connected" ? "Manage" : "Connect",
         opens: true, onClick: () => toggle("inbox"),
         detail: () => <InboxConnectCard isReadOnly={isReadOnly} onNavigate={onNavigate} /> } });

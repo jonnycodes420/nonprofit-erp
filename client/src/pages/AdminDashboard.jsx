@@ -396,6 +396,33 @@ function Overview({ metrics, orgs }) {
 // ONBOARD-1 — "Run setup for this org". The plan is prepared here; the
 // org's own admin presses Start, so every write carries her name. The minutes
 // from Start to ready are shown so real numbers can be quoted.
+// CLIENT-SAFE-1 · one org's privacy mode, as Steward support.
+function OrgPrivacy({ orgId, PSH }) {
+  const [p, setP] = useState(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { adminFetch("/admin/orgs/" + orgId + "/privacy").then(setP).catch(() => setP(null)); }, [orgId]);
+  if (!p) return null;
+  const flip = async on => {
+    setBusy(true); setNote("");
+    try { setP(await adminFetch("/admin/orgs/" + orgId + "/privacy", { method: "POST", body: JSON.stringify({ on }) })); setNote("Saved. Their audit log shows it was changed by Steward support."); }
+    catch (e) { setNote(errorMessage(e)); }
+    setBusy(false);
+  };
+  return (
+    <div data-testid="admin-org-privacy">
+      <div style={PSH}>Privacy</div>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: A.secondary, cursor: "pointer" }}>
+        <input type="checkbox" data-testid="admin-privacy-switch" checked={!!p.on} disabled={busy} onChange={e => flip(e.target.checked)} />
+        <span style={{ flex: 1 }}>{p.label}</span>
+      </label>
+      <div style={{ fontSize: 12, color: A.muted, marginTop: 6, lineHeight: 1.5 }}>{p.description}</div>
+      {p.line && <div style={{ fontSize: 12, color: A.ink, marginTop: 6 }}>{p.line}</div>}
+      {note && <div data-testid="admin-privacy-note" style={{ fontSize: 12, color: A.ink, marginTop: 6 }}>{note}</div>}
+    </div>
+  );
+}
+
 function OrgSetup({ orgId, PSH, PBTN }) {
   const [times, setTimes] = useState(null);
   const [files, setFiles] = useState([]);
@@ -579,6 +606,10 @@ function OrgPanel({ org, onClose, onRefresh }) {
           {/* ONBOARD-1: setup for this org. Jonathan prepares the plan on a call;
               the customer presses Start in her own session. */}
           <OrgSetup orgId={org.id} PSH={PSH} PBTN={PBTN} />
+
+          {/* CLIENT-SAFE-1: privacy mode, turned on here for an org that asked.
+              Their audit log records it as changed by Steward support. */}
+          <OrgPrivacy orgId={org.id} PSH={PSH} />
 
           {/* MAIL-1: this org's mail. A demonstration org shows it all locked, with why. */}
           {mail && (

@@ -3,6 +3,16 @@
 Read this when you touch anything that sends email: Resend, `donorMailDecision`, the mail block, appeals, bulk mail, sequences, notifications, digests, email links, Gmail or calendar links.
 
 ## Rules
+- **Privacy mode decides what capture may keep, and with it off nothing changes (CLIENT-SAFE-1).** `orgs.client_privacy`
+  plus `donors.is_client`. Every capture door asks `clientSafe.js` first: `privacyFor(orgId)` (who is a client) and
+  `screenForStore(...)` (what of an email may be stored). A client is never SEARCHED for, a message with one on it is
+  read for its From/To/Cc only and never fetched whole (Gmail `format=metadata`, Graph `$select` of addresses), the BCC
+  address drops it, a capture card is never made from it, a calendar meeting with one is not logged, and Tell Steward
+  refuses a memo about one and keeps nothing. Every other email has its health sentences replaced with
+  `HELD_LINE` before ANY write (subject included); with AI off, or a model read that failed, only the date, direction,
+  people and subject are kept. `privacy_holds` records that something was held, never what. Gifts are untouched.
+  Never claim HIPAA compliance in any copy: Steward is not compliant and has no business associate agreements.
+  `tests/clientsafe1.test.js`.
 - **An email is built from the same widget blocks as a page (EMAIL-1).** shared/pageWidgets.js has the
   "email" surface; shared/emailBlocks.js `renderEmail` turns blocks into table-based, inline-styled HTML with
   the org's ONE brand (portal_settings) read at render time, so a colour change reaches pages and emails at

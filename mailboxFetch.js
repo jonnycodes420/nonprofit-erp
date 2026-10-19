@@ -65,7 +65,10 @@ async function mapLimit(items, n, fn) {
  *   toMessage(full) → the normalized message (server.js gmailToMessage).
  *   onProgress(done, total) → after each search's addresses are finished.
  */
-async function readGmail({ ask, base, emails, toMessage, cap = 120, onProgress = null, max = queryMax() }) {
+// CLIENT-SAFE-1: `allow(id)` (privacy mode, with people marked as clients)
+// is asked BEFORE a message's content is: it reads only the From, To and Cc
+// addresses, and a message it refuses is never fetched at all.
+async function readGmail({ ask, base, emails, toMessage, cap = 120, onProgress = null, max = queryMax(), allow = null }) {
   const out = [];
   const seen = new Set();
   const state = { max: Math.max(1, max) };
@@ -86,7 +89,7 @@ async function readGmail({ ask, base, emails, toMessage, cap = 120, onProgress =
     for (const { id } of ids || []) if (id && !seen.has(String(id)) && !fresh.includes(String(id))) fresh.push(String(id));
     for (let k = 0; k < fresh.length && out.length < cap; ) {
       const slice = fresh.slice(k, k + (cap - out.length)); k += slice.length;
-      const fulls = await mapLimit(slice, GET_PARALLEL, id => ask(`${base}/gmail/v1/users/me/messages/${id}?format=full`));
+      const fulls = await mapLimit(slice, GET_PARALLEL, async id => (allow && !(await allow(id))) ? null : ask(`${base}/gmail/v1/users/me/messages/${id}?format=full`));
       for (const full of fulls) {
         const m = full ? toMessage(full) : null;
         if (m && m.id && !seen.has(String(m.id)) && out.length < cap) { seen.add(String(m.id)); out.push(m); }

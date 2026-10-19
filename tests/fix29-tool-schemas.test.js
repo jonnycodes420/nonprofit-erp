@@ -68,6 +68,7 @@ function count(schema) {
     { name: "drafts (Agent, ten at a time)", strict: true, schema: A.DRAFTS_SCHEMA },
     { name: "record_items (CAPTURE-1 To confirm)", strict: true, schema: require("../capture").READ_SCHEMA },
     { name: "memo_actions (VOICE-1 Tell Steward)", strict: true, schema: (await imp("shared/voiceMemo.js")).MEMO_TOOL.input_schema },
+    { name: "health_details (CLIENT-SAFE-1)", strict: true, schema: (await imp("shared/clientSafe.js")).HEALTH_TOOL.input_schema },
   ];
 
   for (const t of TOOLS) {
@@ -96,7 +97,8 @@ function count(schema) {
   // list above covers; a new one fails here until it is added.
   const EXPECTED = { "askQuery.js": 1, "shared/meetingNote.js": 2, "shared/askCatalog.js": 1, "shared/showMe.js": 1,
     "routes/crm.js": 3, "routes/agent.js": 3, "scripts/build95-cheque-drill.js": 1, "capture.js": 1,   // AGENT-3: the batched plan call is PLAN_SCHEMA again
-    "shared/voiceMemo.js": 1, "routes/voice.js": 1 };   // VOICE-1: the memo read, defined once and sent by the route
+    "shared/voiceMemo.js": 1, "routes/voice.js": 1,
+    "shared/clientSafe.js": 1, "clientSafe.js": 1 };   // CLIENT-SAFE-1: the health read, defined once and sent by clientSafe.js   // VOICE-1: the memo read, defined once and sent by the route
   const found = {};
   const scan = dir => {
     for (const e of fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })) {

@@ -8224,6 +8224,51 @@ async function runSchemaInit(pool) {
   await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS image_meta JSONB`);
   await pool.query(`ALTER TABLE portal_settings ADD COLUMN IF NOT EXISTS membership_cover JSONB`);
 
+  // CLIENT-SAFE-1 · "We serve clients whose details are private". Off by
+  // default. A person marked as a client is never brought in from email,
+  // documents or memos while it is on; their gifts are untouched.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS client_privacy BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS client_privacy_changed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS client_privacy_changed_by TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS is_client BOOLEAN DEFAULT false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_is_client ON donors (org_id) WHERE is_client`);
+  // One row per detail held back. It says THAT something was held and where,
+  // never what: there is no column that could carry the words.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS privacy_holds (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT,
+      interaction_id TEXT,
+      source TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_privacy_holds_org ON privacy_holds (org_id, created_at DESC)`);
+  // A bulk or uploaded marking, so Undo puts back exactly what it changed.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_marks (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      source TEXT NOT NULL,
+      donor_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      undone_at TIMESTAMPTZ)`);
+  // "Remove email already logged for this person": the rows are kept here for
+  // thirty days so Undo can put them back, then emptied for good.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS client_email_removals (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      rows JSONB,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      undone_at TIMESTAMPTZ,
+      purged_at TIMESTAMPTZ)`);
+
   // SCALE-2 · the per-org summary's change rows. LAST, so every table above is
   // watched: one statement trigger per write event on every table with org_id
   // (orgSummary.js says which few are not, and why).

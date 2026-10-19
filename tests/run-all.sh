@@ -263,6 +263,7 @@ CORE=(
   onboard1-setup
   voice1-tell-steward
   fix43-safe-fetch
+  clientsafe1
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

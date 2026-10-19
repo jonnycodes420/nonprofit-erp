@@ -23,10 +23,11 @@ const KIND_LABEL = {
 const COUNTED_KINDS = new Set(["customer", "prospect_trial"]);
 const countsAsCustomer = kind => COUNTED_KINDS.has(kind);
 
-// The demo orgs: the two mailPolicy.js and twoFactor.js name, and ONBOARD-1's
+// The demo orgs: the two mailPolicy.js and twoFactor.js name, ONBOARD-1's
 // Riverbend Food Pantry (seeded before setup, so it has no donors and the
-// cleanup would otherwise call it junk and delete it).
-const DEMO_ORG_IDS = ["org_b72demo", "org_creo", "org_riverbend_demo"];
+// cleanup would otherwise call it junk and delete it), and CLIENT-SAFE-1's
+// Meadowbrook Riding Center (privacy mode on).
+const DEMO_ORG_IDS = ["org_b72demo", "org_creo", "org_riverbend_demo", "org_meadowbrook_demo"];
 
 // Jonathan's addresses. A "+tag" alias of one is the same person. More can be
 // added without a deploy through STEWARD_INTERNAL_EMAILS (comma separated).
