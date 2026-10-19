@@ -221,6 +221,10 @@ const LOOPBACK_HARDCODED = [
   // AGENT-3: the Agent walk. Loopback only (refuses anything else); it plans,
   // runs and approves on the LOCAL scratch Harborlight it is pointed at.
   "agent3-walk",
+  // VOICE-1: the Tell Steward walk. Loopback only (refuses anything else and
+  // NODE_ENV production); it files memos, says yes to a card and undoes, on
+  // the LOCAL scratch Harborlight it is pointed at.
+  "voice1-walk",
   // FIX-30: the template-bridge walk. Loopback only (refuses anything else);
   // it drafts and saves on the LOCAL scratch database it is pointed at.
   "fix30-walk",

@@ -11,6 +11,8 @@ const { chromium } = require(path.join(process.env.PLAYWRIGHT_DIR || path.join(p
 const API = process.env.API || "http://localhost:5761";
 const APP = process.env.APP || "http://localhost:4183";
 const OUT = path.join(__dirname, "..", "docs", "voice-1");
+// It files memos, says yes to a card and undoes, so it runs only against a local stack.
+if (!/^http:\/\/localhost:\d+$/.test(APP) || !/^http:\/\/localhost:\d+$/.test(API) || process.env.NODE_ENV === "production") { console.error("REFUSED: loopback only."); process.exit(1); }
 let failures = 0;
 const ok = (label, cond, detail) => { console.log((cond ? "  PASS  " : "  FAIL  ") + label + (cond ? "" : ": " + String(JSON.stringify(detail) ?? "").slice(0, 300))); if (!cond) failures++; };
 
