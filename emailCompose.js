@@ -101,7 +101,8 @@ async function personFields(ctx, donor, { campaignName = "" } = {}) {
   }
   return {
     // Empty means "use the renderer's own fallback" ("friend", "your gift").
-    first_name: firstName,
+    // FIX-45: a joint record's first names, "Desmond and Ruth".
+    first_name: firstName && donor ? (await import("./shared/greeting.js")).firstNames({ ...donor, name: nameCase(donor.name) }) : firstName,
     last_name: lastName,
     last_gift_amount: last ? formatMoney(last.amount) : "",
     last_gift_date: last ? formatDate(last.date) : "",

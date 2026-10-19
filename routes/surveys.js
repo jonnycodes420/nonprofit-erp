@@ -199,7 +199,8 @@ app.post("/surveys/:id/drafts", requireAuth, checkWriteAccess, wrap(async (req, 
   for (const p of people) {
     if (have.has(p.id)) continue;
     const link = r.mode === "named" ? SL.personalUrl(o.org_slug, r.slug, r.id, p.id) : SL.publicUrl(o.org_slug, r.slug);
-    const first = String(p.name || "").trim().split(/\s+/)[0] || "there";
+    // FIX-45: the record's greeting, so a joint record reads both names.
+    const first = (await import("../shared/greeting.js")).greetingName(p) || "there";
     const body = `Dear ${first},\n\nWe would like to know what you think. It is a short survey and takes a few minutes:\n\n${link}\n\n`
       + (r.mode === "anonymous" ? "It is anonymous: we will see your answers but not who gave them.\n\n" : "Your answers come straight to us, with your name, so we can follow up.\n\n")
       + `Thank you,\n${o.name}`;

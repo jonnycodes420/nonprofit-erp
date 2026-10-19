@@ -931,6 +931,16 @@ const STAGE_BAR = ["prospect", "qualify", "cultivate", "solicit", "steward", "la
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
+  // FIX-45 1.5: the record's one read (GET /donors/:id) carries the gifts and
+  // the header's figures. It used to start last, behind ~27 other reads, and a
+  // failed attempt ended "loading" with nothing in it, so the tab said
+  // "Gifts & pledges 0" and the header had no figures until a reload. It now
+  // starts first (the warm-up below shares the request with loadGiftsFull),
+  // retries, ignores a reply for a record no longer open, and a count or an
+  // empty state shows only once the read has answered.
+  const [giftReadErr,setGiftReadErr]=useState(false);
+  const giftReadSeq=useRef(0);
+  useEffect(()=>{ apiFetch(`/donors/${donor.id}`).catch(()=>{}); },[donor.id]);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
   // FIX-14 Part 1 — the header's figures, refreshed from the same read after a
   // conversation is logged. They were the values from when the record opened,
@@ -1420,7 +1430,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   },[initialAddGift]);
 
   const loadGiftsFull=()=>{
-    apiFetch(`/donors/${donor.id}`).then(raw=>{
+    const seq=++giftReadSeq.current;
+    const id=donor.id;
+    const attempt=n=>apiFetch(`/donors/${id}`).catch(e=>{
+      if(n>=2||seq!==giftReadSeq.current)throw e;
+      return new Promise(r=>setTimeout(r,600*(n+1))).then(()=>attempt(n+1));
+    });
+    attempt(0).then(raw=>{
+      if(seq!==giftReadSeq.current)return;
+      setGiftReadErr(false);
       const g=(raw.gifts||[]).map(g=>({
         id:g.id,amount:parseFloat(g.amount)||0,date:g.date||g.created_at?.split("T")[0],
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
@@ -1436,7 +1454,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       if(raw.interactions) setLocalInts(raw.interactions.map(i=>({
         ...i, date:i.date||i.created_at?.split("T")[0], note:i.note||"",
       })));
-    }).catch(()=>setGiftLoading(false));
+    }).catch(()=>{ if(seq!==giftReadSeq.current)return; setGiftReadErr(true); setGiftLoading(false); });
   };
 
   // FIX-14 Part 1 — a touchpoint logged from the list's form lands on this
@@ -1953,7 +1971,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const contactPerson=donor.contactName||donor.contact_name||"";
 
   const sortedGifts=[...gifts].sort((a,b)=>new Date(b.date)-new Date(a.date));
-  const lastGiftDisplay=giftLoading?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
+  const lastGiftDisplay=giftLoading||giftReadErr?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
 
   return(
     <div className="fade-in fullscreen-takeover" style={{position:"fixed",top:52,left:0,right:0,bottom:0,background:T.bg,zIndex:200,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -2213,7 +2231,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               opens. */}
           <div className="dp-tabs" role="tablist" aria-label="Profile" data-testid="dp-tabs" style={{display:"flex",flexWrap:"wrap",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,padding:"0 12px",position:"sticky",top:0,zIndex:5}}>
             {PROFILE_TABS.map(([id,label])=>{
-              const n=id==="gifts"?giftCountReal:id==="asks"?(openProposals.length+opps.filter(o=>o.status==="open").length)
+              const n=id==="gifts"?(giftLoading||giftReadErr?null:giftCountReal):id==="asks"?(openProposals.length+opps.filter(o=>o.status==="open").length)
                 :id==="conversations"?(tlCounts.conversation||0):id==="emails"?(tlCounts.email||0):id==="tasks"?(tlCounts.task||0):null;
               return <button key={id} role="tab" data-tab={id} aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 10px",color:dpTab===id?T.ink:T.ink3,fontSize:13,fontWeight:dpTab===id?600:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,fontFamily:"inherit",...activeMark(dpTab===id,"bottom")}}>
                 {label}
@@ -2488,7 +2506,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           <div>
           {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
               other empty sections (FIX-14 Part 3), instead of an empty chart. */}
-          {!giftLoading&&!(giftsFull.length||gifts.length)
+          {!giftLoading&&!giftReadErr&&!(giftsFull.length||gifts.length)
           ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
             <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
@@ -2687,7 +2705,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>}
 
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
-              {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?(
+              {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftReadErr?(
+                <div data-testid="dp-gifts-error" style={{padding:"28px 24px",textAlign:"center",fontSize:13,color:T.ink2,lineHeight:1.6}}>
+                  Steward could not load the gifts on this record.{" "}
+                  <button type="button" onClick={()=>{setGiftLoading(true);loadGiftsFull();}} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:13}}>Try again</button>
+                </div>
+              ):giftsFull.length===0?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px",textAlign:"center",gap:0}}>
                   <div style={{marginBottom:16,color:T.greenDk,opacity:0.7}}>
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

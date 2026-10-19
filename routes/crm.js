@@ -571,7 +571,7 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const rows = await query(
     `SELECT t.id, t.donor_id, t.gift_id, t.body, t.voice, t.opened_at, t.created_at,
-            d.name AS donor_name, d.email AS donor_email,
+            d.name AS donor_name, d.email AS donor_email, d.salutation AS donor_salutation, d.spouse_name AS donor_spouse, d.kind AS donor_kind,
             g.amount::float AS amount, g.date AS gift_date, f.name AS fund_name
        FROM thank_you_drafts t
        JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
@@ -598,7 +598,8 @@ app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
       donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
       fundName: r.fund_name || null, voiceUsed: r.voice, opened: !!r.opened_at,
       // POLISH-2: signed by whoever is reading the queue, since she sends it.
-      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice }) })),
+      body: draftMod.signThankYou(r.body, { donorName: r.donor_name, senderName: me && me.name, orgName: org && org.name, voiceUsed: r.voice,
+        person: { salutation: r.donor_salutation, spouseName: r.donor_spouse, kind: r.donor_kind } }) })),
   });
 }));
 

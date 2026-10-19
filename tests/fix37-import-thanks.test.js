@@ -179,6 +179,22 @@ const file = (tag, n, perDonor = 1) => ({
   const pF = await api("GET", `/imports/${runF}/progress`, tok);
   ok("§5 its progress says it stopped", pF.body?.status === "cancelled", pF.body);
 
+  // ── §6 · FIX-45 1.4: A JOINT RECORD IS THANKED AS BOTH PEOPLE ──────────
+  // "Desmond & Ruth Okafor" used to open "Dear Desmond,". The draft and the
+  // queue read the record's greeting: both names, or its salutation.
+  const mk = async (name) => (await api("POST", "/donors", tok, { name, email: `${name.replace(/\W+/g, "").toLowerCase()}@${DOMAIN}` })).body;
+  const joint = await mk("Desmond & Ruth Okafor");
+  const saluted = await mk("Ann Lee");
+  await q(`UPDATE donors SET salutation='Dr. Lee' WHERE id=$1 AND org_id=$2`, [saluted.id, ORG]);
+  for (const d of [joint, saluted]) await api("POST", `/donors/${d.id}/gifts`, tok, { amount: 1500, date: civilPlusDays(0), paymentMethod: "Check" });
+  const draftOf = async id => (await q(`SELECT body FROM thank_you_drafts WHERE org_id=$1 AND donor_id=$2`, [ORG, id]))[0]?.body || "";
+  const jb = await draftOf(joint.id), sb = await draftOf(saluted.id);
+  ok("§6 a joint record's thank-you greets both people", /^Dear Desmond and Ruth,/.test(jb), jb.slice(0, 60));
+  ok("§6 a record's salutation is the greeting", /^Dear Dr\. Lee,/.test(sb), sb.slice(0, 60));
+  const queue = await api("GET", "/thank-yous", tok);
+  const qj = (queue.body?.drafts || []).find(d => d.donorId === joint.id);
+  ok("§6 …and the thank-you queue reads it the same way", !!qj && /^Dear Desmond and Ruth,/.test(qj.body), qj && qj.body.slice(0, 60));
+
   await wipe();
   await closeDb();
   summary();

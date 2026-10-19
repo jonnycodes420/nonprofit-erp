@@ -21,6 +21,7 @@
 // suites can drive it directly and nothing here can accidentally send.
 
 import { displayDate as dateWords } from "./displayDate.js";
+import { greetingName } from "./greeting.js";
 export const VOICE_SAMPLE_MIN = 3;
 
 const money = cents => {
@@ -57,11 +58,14 @@ export function voiceFrom(samples = []) {
 
 // Her greeting with her own donor's name swapped for this one. A greeting whose
 // name cannot be found is used as-is with the name appended, never mangled.
-function greetingFor(voice, donorName) {
-  const first = firstName(donorName) || "friend";
+// FIX-45: the name is the record's greeting (shared/greeting.js), so a joint
+// record reads both people, never the first word of "Desmond & Ruth Okafor".
+const who = (donorName, person) => greetingName({ ...(person || {}), name: donorName });
+function greetingFor(voice, donorName, person) {
+  const first = who(donorName, person) || "friend";
   if (!voice.greeting) return `Dear ${first},`;
   const swapped = voice.greeting.replace(/\b(?:dear|hi|hello|hey)\s+([A-Z][\w'’-]*)/i, (m, g0) => m.replace(g0, first));
-  return swapped === voice.greeting && !new RegExp(`\\b${first}\\b`, "i").test(voice.greeting)
+  return swapped === voice.greeting && !voice.greeting.toLowerCase().includes(first.toLowerCase())
     ? voice.greeting.replace(/[,:\s]*$/, "") + ` ${first},`
     : swapped;
 }
@@ -71,10 +75,10 @@ function greetingFor(voice, donorName) {
 // the sender's own name goes in above the org's when the queue is read, by
 // signThankYou, because whoever opens the queue is the one who sends it.
 export const PLAIN_SIGNOFF = "With thanks,";
-function wrap(voice, donorName, middle, orgName) {
-  if (!voice.ready) return [`Dear ${firstName(donorName) || "friend"},`, "", middle, "", [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n")].join("\n");
+function wrap(voice, donorName, middle, orgName, person = null) {
+  if (!voice.ready) return [`Dear ${who(donorName, person) || "friend"},`, "", middle, "", [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n")].join("\n");
   const tail = [voice.signoff || "Thank you", voice.signature || orgName || ""].filter(Boolean).join(",\n");
-  return [greetingFor(voice, donorName), "", middle, "", tail].join("\n");
+  return [greetingFor(voice, donorName, person), "", middle, "", tail].join("\n");
 }
 
 // ── B.3 — the thank-you ────────────────────────────────────────────────────
@@ -118,6 +122,7 @@ export function thankYouDraft({
   monthsSinceLastGift = null,  // whole months between this gift and the one before
   giftCountBefore = null,      // how many gifts they had before this one
   campaignName = null,         // the appeal it came to, when it came to one
+  person = null,               // FIX-45: { salutation, spouseName, kind } for the greeting
 } = {}) {
   const first = firstName(donorName) || "friend";
   const amt = money(giftCents);
@@ -153,7 +158,7 @@ export function thankYouDraft({
     middle = `Thank you for your gift of ${amt}${to}. It is a real help, and we are grateful you thought of us.`;
   }
 
-  const body = wrap(voice, donorName, middle, orgName);
+  const body = wrap(voice, donorName, middle, orgName, person);
   return { body, voice: voice.ready ? "org_samples" : "default", first, amount: amt,
            fundName: fundName || null, date, tier,
            basis: { isFirstGift, isRecurring, monthsSinceLastGift: months, giftCountBefore: before, campaignName } };
@@ -165,10 +170,10 @@ export function thankYouDraft({
 // before POLISH-2 (no greeting, no sign-off) is given both here, so a queue
 // already waiting reads the same as a new one. A draft in her own voice is
 // left exactly as written: her samples already carry her signature.
-export function signThankYou(body, { donorName, senderName, orgName, voiceUsed = "default" } = {}) {
+export function signThankYou(body, { donorName, senderName, orgName, voiceUsed = "default", person = null } = {}) {
   let text = String(body || "");
   if (voiceUsed === "org_samples" || !text.trim()) return text;
-  if (!/^dear\b/i.test(text.trim())) text = `Dear ${firstName(donorName) || "friend"},\n\n${text.trim()}`;
+  if (!/^dear\b/i.test(text.trim())) text = `Dear ${who(donorName, person) || "friend"},\n\n${text.trim()}`;
   const close = [PLAIN_SIGNOFF, orgName || ""].filter(Boolean).join("\n");
   if (!text.includes(PLAIN_SIGNOFF)) text = `${text.trimEnd()}\n\n${close}`;
   const name = String(senderName || "").trim();
@@ -184,14 +189,14 @@ export function signThankYou(body, { donorName, senderName, orgName, voiceUsed =
 // second deadline, no total outstanding unless she adds it. And it never goes
 // out by itself.
 export function pledgeReminderDraft({ donorName, installmentCents, dueDate, pledgeCents = null,
-                                      paidCents = null, orgName, voice = { ready: false } } = {}) {
+                                      paidCents = null, orgName, voice = { ready: false }, person = null } = {}) {
   const amt = money(installmentCents);
   const when = dueDate ? ` that was due ${dateWords(dueDate) || dueDate}` : "";
   const remaining = pledgeCents != null && paidCents != null && pledgeCents > paidCents
     ? ` That would leave ${money(pledgeCents - paidCents - installmentCents > 0 ? pledgeCents - paidCents - installmentCents : 0)} on the pledge.`
     : "";
   const middle = `I am writing about the ${amt} installment${when}. If it has already gone out, please ignore this. If it is easier to move the date, just say and we will.${remaining}`;
-  return { body: wrap(voice, donorName, middle, orgName), voice: voice.ready ? "org_samples" : "default", amount: amt, dueDate: dueDate || null };
+  return { body: wrap(voice, donorName, middle, orgName, person), voice: voice.ready ? "org_samples" : "default", amount: amt, dueDate: dueDate || null };
 }
 
 // The step a late instalment opens, from ONE place so the thread, the digest
@@ -206,10 +211,10 @@ export const PLEDGE_LATE_DAYS = 30;
 // sentence that claims it is the org's promise made in its absence. It never
 // goes out by itself.
 export const MEMBERSHIP_RENEWAL_STEP = { type: "membership_renewal", label: "Renew membership" };
-export function membershipRenewalDraft({ donorName, levelName, expiresOnLong, priceCents, orgName, voice = { ready: false } } = {}) {
+export function membershipRenewalDraft({ donorName, levelName, expiresOnLong, priceCents, orgName, voice = { ready: false }, person = null } = {}) {
   const amt = money(priceCents);
   const middle = `Your ${levelName} membership runs through ${expiresOnLong}. Renewing is ${amt} for another year, and your new year starts the day this one ends, so renewing early costs you nothing. We would love to have you with us again.`;
-  return { body: wrap(voice, donorName, middle, orgName), voice: voice.ready ? "org_samples" : "default", amount: amt };
+  return { body: wrap(voice, donorName, middle, orgName, person), voice: voice.ready ? "org_samples" : "default", amount: amt };
 }
 
 // ── FIX-3 B — the volunteer welcome ────────────────────────────────────────

@@ -8,6 +8,7 @@ import { offerUndo } from "./EditHistory";
 import { orgTodayPlus } from "../lib/orgToday";
 import { fmtDayShort } from "../lib/taskDue";
 import { TASK_VIEWS, TASK_KINDS, NEEDS_OUTCOME, TASK_OUTCOMES, recurPhrase, addDays, weekdayOf } from "../../../shared/taskShape.js";
+import { greetingName } from "../../../shared/greeting.js";
 
 // TASKS-2 — Tasks, the place a development director runs her week from.
 // Views (Today, Upcoming, Overdue, Later, No date, Done) each carry the count
@@ -583,7 +584,8 @@ function DraftSheet({ t, mode, onClose, onThanked, onEmailed }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const first = String(t.donor_name || "").trim().split(/\s+/)[0] || "";
+  // FIX-45: the record's greeting, so a joint record reads both names.
+  const first = greetingName({ name: t.donor_name, salutation: t.donor_salutation }) || "";
   useEffect(() => {
     let live = true;
     (async () => {

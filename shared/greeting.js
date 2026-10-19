@@ -1,0 +1,55 @@
+// shared/greeting.js · FIX-45 1.4. WHAT A DRAFT CALLS SOMEBODY.
+//
+// Every draft that opens "Dear ..." reads its name from here, so a record for
+// two people is greeted as two people. "Desmond & Ruth Okafor" used to open
+// "Dear Desmond," because every builder took the first word of the name.
+//
+// In order, the first one that applies:
+//   1. the record's own salutation, typed by a person or imported ("Dear Dr. Chen")
+//   2. an organisation: "Friends at <name>"
+//   3. a household or joint name, both people: "Desmond & Ruth Okafor" reads
+//      "Desmond and Ruth"; "Mr. and Mrs. Okafor" is used whole and "The Okafor
+//      Family" reads "Okafor Family", because neither first word is a name
+//   4. a spouse on the record: "<first> and <spouse's first>"
+//   5. the first name
+//
+// Pure: no clock, no database. The callers pass what they read.
+
+const TITLE = /^(mr|mrs|ms|miss|mx|dr|rev|fr|sr|br|prof|hon|pastor|rabbi)\.?$/i;
+const JOINT = /^(.+?)\s+(?:&|and|\+)\s+(.+)$/i;
+
+const firstWord = s => String(s || "").trim().split(/\s+/)[0] || "";
+
+export function greetingName(person = {}) {
+  const p = typeof person === "string" ? { name: person } : (person || {});
+  const salutation = String(p.salutation || "").trim().replace(/^dear\s+/i, "").replace(/[,:\s]+$/, "");
+  if (salutation) return salutation;
+  const name = String(p.name || "").trim().replace(/\s+/g, " ");
+  if (!name) return "";
+  if (p.kind === "organisation" || p.kind === "organization") return `Friends at ${name}`;
+  if (/^the\s/i.test(name)) return name.replace(/^the\s+/i, "");
+  const joint = name.match(JOINT);
+  if (joint) {
+    const a = firstWord(joint[1]), b = firstWord(joint[2]);
+    if (TITLE.test(a) || TITLE.test(b)) return name;
+    return `${a} and ${b}`;
+  }
+  const first = firstWord(name);
+  if (TITLE.test(first)) return name;
+  const spouse = firstWord(p.spouseName || p.spouse_name);
+  if (spouse && spouse.toLowerCase() !== first.toLowerCase()) return `${first} and ${spouse}`;
+  return first;
+}
+
+// The whole opening line, the same everywhere.
+export function dearLine(person, fallback = "friend") {
+  return `Dear ${greetingName(person) || fallback},`;
+}
+
+// The {{first_name}} merge field: the first names on the record, so a joint
+// record reads "Desmond and Ruth" there too. No salutation and no "Friends
+// at": a template that says "Dear {{first_name}}" chose first names.
+export function firstNames(person = {}) {
+  const p = typeof person === "string" ? { name: person } : (person || {});
+  return greetingName({ name: p.name, spouseName: p.spouseName || p.spouse_name });
+}

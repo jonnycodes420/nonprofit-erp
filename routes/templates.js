@@ -93,7 +93,7 @@ async function factsFor(org, donorId) {
   return {
     donor: { id: d.id, name: d.name, email: d.email || "", address: [d.address, [d.city, d.state, d.zip].filter(Boolean).join(" ")].filter(Boolean).join("\n") },
     values: {
-      first_name: String(d.name || "").trim().split(/\s+/)[0] || "", full_name: d.name || "",
+      first_name: (await import("../shared/greeting.js")).firstNames(d) || "", full_name: d.name || "",
       gift_amount: last ? fmt$(c(last.amount)) : "", gift_date: last ? longDate(last.date) : "", fund: last && last.fund ? last.fund : "",
       tribute: last && last.tribute_name ? `${last.tribute_type === "memory" ? "in memory of" : "in honor of"} ${last.tribute_name}` : "",
       year, year_total: c(tot.yr) > 0 ? fmt$(c(tot.yr)) : "", lifetime_total: c(tot.life) > 0 ? fmt$(c(tot.life)) : "",

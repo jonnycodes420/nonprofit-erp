@@ -1540,6 +1540,14 @@ async function recomputeAllScores() {
 // credit refuses the gift rather than leaving half of it behind.
 let GC = null;
 const GC_READY = import("./shared/giftCredit.js").then(m => { GC = m; return m; });
+// FIX-45: what a draft calls somebody (shared/greeting.js), so "Desmond &
+// Ruth Okafor" is greeted as both of them. Read through greetFor below.
+let GREET = null;
+const GREET_READY = import("./shared/greeting.js").then(m => { GREET = m; return m; });
+async function greetFor(person, fallback = "there") {
+  await GREET_READY;
+  return GREET.greetingName(person || {}) || fallback;
+}
 
 async function orgDonorIds(orgId, ids) {
   const list = [...new Set((ids || []).filter(Boolean).map(String))];
@@ -2744,7 +2752,7 @@ const THANK_YOU_PLEDGE_FLOOR_CENTS = 10000;
 
 async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null, type = "cash", reason = "gift", force = false, replace = false }) {
   const [d] = await query(
-    `SELECT id, name, kind, deceased, do_not_contact, is_sample FROM donors
+    `SELECT id, name, kind, salutation, spouse_name, deceased, do_not_contact, is_sample FROM donors
       WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return null;
   if (d.is_sample) return null;
@@ -2797,10 +2805,12 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
     monthsSinceLastGift: monthsSince,
     campaignName: (thisGift && thisGift.campaign) || null,
   };
+  // FIX-45: the greeting reads the record's salutation or both names on it.
+  const person = { salutation: d.salutation, spouseName: d.spouse_name, kind: d.kind };
   const draft = reason === "pledge_completed"
-    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice });
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, ...facts });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fundPublic || fund?.name || null, generalFund, orgName: org?.name, voice, person, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she
@@ -2842,7 +2852,8 @@ async function processPledgeInstallmentReminders(opts = {}) {
     const cutoff = orgTime.addDays(today, -draftMod.PLEDGE_LATE_DAYS);
     const late = await query(
       `SELECT i.id, i.pledge_id, i.due_date, i.amount, p.donor_id, p.amount AS pledge_amount,
-              d.name AS donor_name, d.assigned_to, d.assigned_to_name,
+              d.name AS donor_name, d.salutation AS donor_salutation, d.spouse_name AS donor_spouse, d.kind AS donor_kind,
+              d.assigned_to, d.assigned_to_name,
               COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id), 0) AS paid
          FROM pledge_installments i
          JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
@@ -2869,7 +2880,7 @@ async function processPledgeInstallmentReminders(opts = {}) {
       const draft = draftMod.pledgeReminderDraft({
         donorName: i.donor_name, installmentCents: instCents, dueDate: i.due_date,
         pledgeCents: money.toCents(i.pledge_amount) ?? null, paidCents: money.toCents(i.paid) ?? 0,
-        orgName: org.name, voice,
+        orgName: org.name, voice, person: { salutation: i.donor_salutation, spouseName: i.donor_spouse, kind: i.donor_kind },
       });
       const thread = await withTransaction(client => openThreadTx(client, {
         orgId: org.id, donorId: i.donor_id,
@@ -5217,7 +5228,7 @@ emailCompose.configure({ displayNameCase });
 // PERSON. The send and the "as sent" page (routes/emailsSent.js) both call
 // this, so the page shows exactly the words the send would write today.
 async function legacyCampaignBody(body, donor, orgName, year) {
-  const firstName   = donor.name.split(" ")[0];
+  const firstName   = (await GREET_READY).firstNames(donor);
   const lastName    = donor.name.split(" ").slice(1).join(" ");
   const totalGiving = donor.total_giving ? `$${Number(donor.total_giving).toLocaleString()}` : "$0";
   const giftRows    = await query("SELECT amount FROM gifts WHERE donor_id=? ORDER BY date DESC LIMIT 1", [donor.id]);
@@ -6782,7 +6793,7 @@ async function processSequences() {
         }
         const orgRows = await query("SELECT name FROM orgs WHERE id = ?", [enr.org_id]);
         const orgName = displayNameCase(orgRows[0]?.name) || "";
-        const firstName = recipient.name ? recipient.name.trim().split(/\s+/)[0] : "";
+        const firstName = recipient.name ? (await GREET_READY).firstNames(recipient) : "";
         const applyTokens = str => (str || "")
           .replace(/{{donor_name}}/g, recipient.name)
           .replace(/{{user_name}}/g, recipient.name)
@@ -7254,7 +7265,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
       .replace(/\{n\}/g, n);
   }
 
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "there";
+  const firstName = await greetFor(donor);
   const sinceMonth = donor.first_gift_date ? new Date(donor.first_gift_date).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : null;
   const milestoneDesc = meta.milestone_type === "anniversary"
     ? `This marks their ${meta.label || "giving"} anniversary with your organization.`
@@ -7271,7 +7282,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
       system: `You write short, warm donor thank-you emails for a nonprofit development team. The donor just reached a real giving milestone. Rules: no hype, no exclamation-point overload, absolutely no gamification language — never say "tier", "level up", "unlock", "badge", "milestone reward", "leaderboard", or "you're so close to your next milestone". Write like a staff member who personally noticed and cared, not an app tracking progress. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
-        content: `Donor first name: ${firstName}
+        content: `Greet the donor as (use exactly this after "Dear"): ${firstName}
 Organization: ${orgName}
 Total given to date: $${totalGiving.toLocaleString()}
 ${sinceMonth ? `Donor's first gift was in ${sinceMonth}.` : ""}
@@ -7319,7 +7330,7 @@ async function generateAtRiskDraft(recipient, orgId) {
   const totalGiving = Number(donor.total_giving) || 0;
   const daysSinceGift = donor.last_gift_date
     ? Math.floor((Date.now() - new Date(donor.last_gift_date).getTime()) / 86400000) : null;
-  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "there";
+  const firstName = await greetFor(donor);
 
   try {
     const client = anthropicFor(orgId);
@@ -7330,7 +7341,7 @@ async function generateAtRiskDraft(recipient, orgId) {
       system: `You write short, warm "checking in" emails for a nonprofit development team to a longtime donor who has quietly gone a while without giving. Rules: no guilt trip, no hard ask, no gamification language — never say "tier", "level up", "unlock", "badge", "lapsed", "at risk", or "we noticed you stopped giving". Write like a staff member who genuinely thought of them and wanted to reconnect, not a system flagging inactivity. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
-        content: `Donor first name: ${firstName}
+        content: `Greet the donor as (use exactly this after "Dear"): ${firstName}
 Organization: ${orgName}
 Total given to date: $${totalGiving.toLocaleString()}
 ${daysSinceGift ? `Days since their last gift: ${daysSinceGift}` : ""}
@@ -8414,7 +8425,7 @@ async function provisionNewOrgWorkflows(orgId) {
 // Execute one action. Returns a summary object for the run log, or null.
 async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey }) {
   const wfActor = sysWorkflow(recipeKey || "unknown"); // BUILD-75 C.1 — the workflow IS the actor
-  const firstName = donor?.name ? donor.name.trim().split(/\s+/)[0] : "there";
+  const firstName = donor ? await greetFor(donor) : "there";
   const amtStr = ctx.amount != null ? `$${Number(ctx.amount).toLocaleString()}` : "";
   const fill = s => String(s || "").replace(/{donor}/g, donor?.name || "the donor").replace(/{amount}/g, amtStr)
     .replace(/{reason}/g, ctx.reason || "past their own giving pattern")   // BUILD-76 — the drift reason, the donor's own words-worthy sentence

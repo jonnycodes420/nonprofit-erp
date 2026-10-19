@@ -356,6 +356,34 @@ async function seed() {
        JSON.stringify(tabs) === JSON.stringify(["Overview", "Gifts & pledges", "Asks & pipeline", "Conversations", "Emails", "Tasks", "Notes", "Funds", "Related", "Files"]), tabs);
     const acts = await page.$$eval('.dph-actions button', bs => bs.map(b => b.innerText.trim()).filter(Boolean));
     ok("§1 the header still carries its own buttons", acts.length >= 3, acts);
+
+    // FIX-45 1.5 · THE RECORD'S READ FAILS ONCE, SLOWLY. Margaret Chen's
+    // profile opened on "Gifts & pledges 0" with no header figures, and only a
+    // reload fixed it: a failed GET /donors/:id ended "loading" with nothing in
+    // it. The first attempt here is held for 1.5s and then fails. The tab may
+    // not claim 0 meanwhile, and the record recovers on its own.
+    // serviceWorkers: "block", or the worker's requests never reach page.route (FIX-21).
+    const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+    const p2 = await ctx2.newPage();
+    await p2.addInitScript(([t, u, o]) => {
+      localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
+    }, [login.body.token, JSON.stringify(login.body.user), JSON.stringify(login.body.org)]);
+    let held = 0;
+    const apiBase = process.env.BASE || "http://localhost:5601";
+    await p2.route(u => u.href.startsWith(apiBase) && /\/donors\/d_hf1$/.test(u.pathname), async route => {
+      if (route.request().method() === "GET" && held++ === 0) { await new Promise(r => setTimeout(r, 1500)); return route.abort("connectionreset"); }
+      return route.continue();
+    });
+    await p2.goto(`${APP}/donors/d_hf1`, { waitUntil: "domcontentloaded", timeout: 60000 });
+    const early = [];
+    for (let i = 0; i < 8; i++) {
+      early.push(await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 150 }).catch(() => null));
+      await p2.waitForTimeout(150);
+    }
+    ok("§1b while the record's read is out, the gifts tab shows no count rather than 0", !early.includes("0"), early);
+    const settled = await p2.locator('[data-tab-count="gifts"]').first().textContent({ timeout: 8000 }).catch(() => null);
+    ok("§1b after a failed first read, the record recovers by itself: Gifts & pledges 1", settled === "1" && held >= 2, { settled, held });
+    await ctx2.close();
     await browser.close();
     if (srv) srv.close();
   }

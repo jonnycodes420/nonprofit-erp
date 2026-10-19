@@ -1285,7 +1285,7 @@ async function noteMilestone(orgId, personId, previousHundredths) {
     const surveyLine = vs
       ? `If you have two minutes, tell us how it has been: ${vs.mode === "named" ? SL.personalUrl(vs.org_slug, vs.slug, vs.id, personId) : SL.publicUrl(vs.org_slug, vs.slug)}\n\n`
       : "";
-    const body = `Dear ${String(d.name || "").split(/\s+/)[0]},\n\n`
+    const body = `Dear ${(await import("../shared/greeting.js")).greetingName(d) || "there"},\n\n`
       + `You have now given ${crossed} hours to ${orgName}.\n\n`
       + `That is a lot of Saturdays, and we notice. Thank you.\n\n`
       + surveyLine
