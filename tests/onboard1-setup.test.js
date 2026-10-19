@@ -53,6 +53,7 @@ globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url))
 require("../safeFetch").observers.add(r => OUTBOUND.push(r.url));
 
 const { ok, summary, login, api, q, closeDb, waitFor, importWorkSettled } = require("./helpers");
+const { testNow } = require("./clock");
 const FX = path.join(__dirname, "fixtures", "onboard1");
 const ORG = "org_onb1", SLUG = "onb1-test", ADMIN = "onb1-admin@example.org", USER = "u_onb1";
 const EIN = "61-1234567";
@@ -214,7 +215,7 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
     const [grp] = gq ? await q(`SELECT kind, rules FROM audiences WHERE org_id=$1 AND id=$2`, [ORG, (gq.trigger_filters || {}).groupId]) : [];
     ok("§7b the gone-quiet journey watches the gave-last-year-not-this-year group by rule", !!gq && gq.trigger_key === "joined_group" && !!grp && /lybunt/.test(JSON.stringify(grp.rules)), { gq, grp });
     // Today minus a year is always inside the prior fiscal year, whatever month it starts.
-    const lastYear = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    const lastYear = new Date(testNow() - 365 * 864e5).toISOString().slice(0, 10);
     const lapse = async name => {
       const d = await api("POST", "/donors", tok, { name: `${name} Lapsed` });
       await api("POST", `/donors/${d.body.id}/gifts`, tok, { amount: 75, date: lastYear });

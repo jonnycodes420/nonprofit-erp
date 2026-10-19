@@ -163,5 +163,43 @@ for (const [line, why] of FINE) {
   ok(`§4 allowed: ${why}`, h2.length === 0, { line, hits: h2 });
 }
 
+// ── §5 · FIX-42 · A TEST READS THE CLOCK THROUGH tests/clock.js ──────────────
+// fix33-sync-proof put a reply "2.4 hours ago", which at 00:30 New York is
+// yesterday, before the step it was meant to close; it went red every night
+// after midnight. tests/clock.js gives one testNow() that the server and the
+// suite share (and STEWARD_TEST_NOW pins for a run). A test file may not read
+// the real clock (Date.now(), or new Date() with no argument) more times than
+// audit/test-clock-direct.json allows it; a file not listed may read it none.
+console.log("\n§5 · FIX-42 · real-clock reads may FALL, never rise");
+const DIRECT_RE = /Date\.now\(\s*\)|new Date\(\s*\)/g;
+const THE_CLOCK = "clock.js", SELF = path.basename(__filename);
+function directReads(sources = null) {
+  const srcs = sources || fs.readdirSync(DIR).filter(f => f.endsWith(".js") && f !== THE_CLOCK && f !== SELF)
+    .map(f => ({ f, lines: fs.readFileSync(path.join(DIR, f), "utf8").split("\n") }));
+  const out = {};
+  for (const { f, lines } of srcs) {
+    const n = lines.reduce((a, raw) => a + (raw.replace(/\/\/.*$/, "").match(DIRECT_RE) || []).length, 0);
+    if (n) out[f] = n;
+  }
+  return out;
+}
+const ALLOWED = JSON.parse(fs.readFileSync(path.join(ROOT, "audit/test-clock-direct.json"), "utf8")).files;
+const reads = directReads();
+const over = Object.entries(reads).filter(([f, n]) => n > (ALLOWED[f] || 0)).map(([f, n]) => ({ file: f, reads: n, allowed: ALLOWED[f] || 0 }));
+ok(`§5 no test file reads the real clock more than audit/test-clock-direct.json allows (${Object.values(reads).reduce((a, b) => a + b, 0)} reads in ${Object.keys(reads).length} files)`,
+   over.length === 0, over);
+const fell = Object.entries(ALLOWED).filter(([f, n]) => (reads[f] || 0) < n);
+if (fell.length) console.log(`  NOTE  ${fell.length} file(s) now read the real clock less: lower their counts in audit/test-clock-direct.json to lock it in.`);
+ok("§5 fix33-sync-proof reads only tests/clock.js", !reads["fix33-sync-proof.test.js"], reads["fix33-sync-proof.test.js"]);
+// Proven able to fail: a new file with one bare read is over its allowance of zero.
+const planted = directReads([{ f: "planted.test.js", lines: ['  const day = orgDay(Date.now());'] }]);
+ok("§5 a new file that reads Date.now() is refused (the plant goes red)", (planted["planted.test.js"] || 0) > (ALLOWED["planted.test.js"] || 0), planted);
+const C = require("./clock");
+ok("§5 the helper exists: testNow, earlierToday", typeof C.testNow === "function" && typeof C.earlierToday === "function");
+// earlierToday never crosses the org's midnight: at 00:30 New York, "2.4 hours ago" stays today.
+const half = Date.parse("2026-10-19T04:30:00Z");
+ok("§5 earlierToday(2.4) at 00:30 New York is still the same New York day",
+   C.civilDay(C.earlierToday(2.4, half)) === "2026-10-19" && C.earlierToday(2.4, half) < half, new Date(C.earlierToday(2.4, half)).toISOString());
+
 console.log(`\ntest-clock-seam: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
