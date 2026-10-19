@@ -46,6 +46,11 @@
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+// FIX-42: one clock for the fixtures. Every "hours ago" below is measured from
+// testNow(), and the reply that must land TODAY uses earlierToday(), because at
+// 00:30 "2.4 hours ago" is yesterday, before the Reply step opened (§3, and §7
+// and §10 after it, were red every night just after New York midnight).
+const { testNow, earlierToday } = require("./clock");
 
 const ORG = "org_fix33sp";
 const PW = bcrypt.hashSync("loadtest1234", 10);
@@ -59,8 +64,8 @@ const STRANGER = "stranger@elsewhere.invalid";
 const SECRET_SUBJECT = "Your biopsy results";
 const PERSONAL_TITLE = "Dentist appointment downtown";
 
-const iso = h => new Date(Date.now() + h * 3600e3).toISOString();
-const daysAgo = n => new Date(Date.now() - n * 864e5).toISOString();
+const iso = h => new Date(testNow() + h * 3600e3).toISOString();
+const daysAgo = n => new Date(testNow() - n * 864e5).toISOString();
 
 // ── the stand-in ────────────────────────────────────────────────────────────
 const S = {
@@ -165,10 +170,10 @@ async function reset() {
   // Lee's permission was withdrawn: an expired token and no refresh token.
   const dead = sealBag({ accessToken: "tok_dead", refreshToken: null, scope: null }, { aad: ORG });
   await q(`INSERT INTO mailbox_connections (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,calendar_granted,created_by,created_by_name) VALUES
-           ('mbx_fix33_dana',$1,'u_fix33_dana','microsoft',$2,'active',$5,NOW() + INTERVAL '1 day',true,'system:test','test'),
-           ('mbx_fix33_sam',$1,'u_fix33_sam','google',$3,'active',$5,NOW() + INTERVAL '1 day',true,'system:test','test'),
-           ('mbx_fix33_lee',$1,'u_fix33_lee','google',$4,'active',$6,NOW() - INTERVAL '1 hour',true,'system:test','test')`,
-    [ORG, DANA, SAM, LEE, sealed, dead]);
+           ('mbx_fix33_dana',$1,'u_fix33_dana','microsoft',$2,'active',$5,$7,true,'system:test','test'),
+           ('mbx_fix33_sam',$1,'u_fix33_sam','google',$3,'active',$5,$7,true,'system:test','test'),
+           ('mbx_fix33_lee',$1,'u_fix33_lee','google',$4,'active',$6,$8,true,'system:test','test')`,
+    [ORG, DANA, SAM, LEE, sealed, dead, iso(24), iso(-1)]);
 }
 
 const sinceCalls = n => S.calls.slice(n);
@@ -213,7 +218,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§2 the email Dana SENT Christine is on her timeline as outbound", cMail.some(r => r.mid === "out_c1" && r.dir === "outbound"), JSON.stringify(cMail));
   const relC = await api("GET", `/donors/${C}/relationship`, dana.token);
   ok("§1 Last email: the profile's email thread shows both messages", (relC.body.emailThreads || []).some(t => /lunch next week/i.test(t.subject) && t.count >= 2), JSON.stringify((relC.body.emailThreads || []).map(t => [t.subject, t.count])));
-  const today = orgDay(Date.now());
+  const today = orgDay(testNow());
   const ENG = require("../engagement"); const DB = require("../db");
   const touchC = await ENG.touchRows(DB.query, ORG, today, C);
   ok("§1 engagement counts Christine's email as a reply", touchC.some(t => t.part === "replies"), JSON.stringify(touchC.map(t => t.part)));
@@ -224,7 +229,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   await api("POST", "/mailbox/run-replies", dana.token, {});
   const mStep = await openThread(M);
   ok("§3 Margaret's unanswered email opened a Reply step", mStep && mStep.next_step_type === "reply", JSON.stringify(mStep && [mStep.next_step_type, mStep.next_step_label]));
-  S.sent.push(graphMsg("out_m1", DANA, ["margaret@example.com"], "Re: A question about my gift", "Here it is: $900 last year.", daysAgo(0.1)));
+  S.sent.push(graphMsg("out_m1", DANA, ["margaret@example.com"], "Re: A question about my gift", "Here it is: $900 last year.", new Date(earlierToday(2.4)).toISOString()));
   await api("POST", "/mailbox/microsoft/sync", dana.token, { what: "mail" });
   ok("§3 Dana's reply from Outlook closed it", !(await openThread(M)), JSON.stringify(await openThread(M)));
 
@@ -245,7 +250,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   ok("§5 'Lunch with David' could be two people: it asks, nobody is linked", (ev("ev_two").person_ids || []).length === 0
     && [...(ev("ev_two").candidate_ids || [])].sort().join() === [D1, D2].sort().join(), JSON.stringify(ev("ev_two")));
   ok("§5 a personal event stored nothing at all", !ev("ev_personal").pid && (await anywhere("Dentist")) === 0 && (await anywhere("clinic.invalid")) === 0);
-  const items = await api("GET", `/calendar/items?from=${today}&to=${orgDay(Date.now() + 20 * 864e5)}&scope=mine`, dana.token);
+  const items = await api("GET", `/calendar/items?from=${today}&to=${orgDay(testNow() + 20 * 864e5)}&scope=mine`, dana.token);
   const two = (items.body.items || []).find(i => i.type === "meeting" && /David/.test(i.title));
   ok("§5 the unsure event is on Steward's Calendar asking who, with both Davids offered", two && two.unsure === true && (two.candidates || []).length === 2, JSON.stringify(two));
   const evTwo = (await q(`SELECT id FROM calendar_events WHERE org_id=$1 AND provider_event_id='ev_two'`, [ORG]))[0];
@@ -260,11 +265,11 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   S.events = S.events.filter(e => e.id !== "ev_title");
   await api("POST", "/mailbox/microsoft/sync", dana.token, { what: "calendar" });
   ok("§7 the calendar event leaving took Christine's meeting step with it", !(await openThread(C)), JSON.stringify(await openThread(C)));
-  const dueBefore = orgDay(Date.now() + 2 * 864e5);
+  const dueBefore = orgDay(testNow() + 2 * 864e5);
   await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name,created_by,created_by_name)
            VALUES ('th_fix33_prev',$1,$2,'follow_up','Send the scholarship report',$3,$4,'u_fix33_dana','Dana Reyes','u_fix33_dana','Dana Reyes')`, [ORG, C, dueBefore, today]);
   // Friday 16:00 New York, nine days out, so the prep lands on a business day.
-  const start = new Date(Date.now() + 9 * 864e5); start.setUTCHours(18, 0, 0, 0);
+  const start = new Date(testNow() + 9 * 864e5); start.setUTCHours(18, 0, 0, 0);
   const startsAt = start.toISOString(), endsAt = new Date(start.getTime() + 3600e3).toISOString();
   mark = S.calls.length;
   const book = await api("POST", `/donors/${C}/book-visit`, dana.token, { startsAt, endsAt, location: "Drinklings" });
@@ -351,7 +356,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   console.log("\n· §8 · put my dates on my calendar");
   await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name,created_by,created_by_name)
            VALUES ('th_fix33_push',$1,$2,'follow_up','Call about the gala table',$3,$4,'u_fix33_dana','Dana Reyes','u_fix33_dana','Dana Reyes')`,
-    [ORG, D2, orgDay(Date.now() + 4 * 864e5), today]);
+    [ORG, D2, orgDay(testNow() + 4 * 864e5), today]);
   mark = S.calls.length;
   await api("POST", "/calendar/push-dates/run", dana.token, {});
   ok("§8 with the switch off, nothing is put on her calendar", !sinceCalls(mark).some(c => c.method === "POST" && c.path === "/v1.0/me/events"));
@@ -395,15 +400,15 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
   {
     const { sealBag } = await import("../shared/secretBox.js");
     await q(`INSERT INTO mailbox_connections (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,calendar_granted,created_by,created_by_name)
-             VALUES ('mbx_fix33_kim',$1,'u_fix33_kim','google',$2,'active',$3,NOW() + INTERVAL '1 day',false,'system:test','test')`,
-      [ORG, KIM, sealBag({ accessToken: "tok_kim", refreshToken: "ref_kim", scope: null }, { aad: ORG })]);
+             VALUES ('mbx_fix33_kim',$1,'u_fix33_kim','google',$2,'active',$3,$4,false,'system:test','test')`,
+      [ORG, KIM, sealBag({ accessToken: "tok_kim", refreshToken: "ref_kim", scope: null }, { aad: ORG }), iso(24)]);
   }
   const kim = { token: await login(KIM, "loadtest1234") };
   // Mail with people spread over the whole list (the first, the last, both
   // sides of every 15-address boundary), sent and received, one to two people,
   // and one from a stranger that must never be asked for or stored.
   S.gmail = {};
-  const msAgo = n => Date.now() - n * 864e5;
+  const msAgo = n => testNow() - n * 864e5;
   const s2 = [[0, 1], [14, 2], [15, 3], [150, 4], [299, 5], [451, 6], [598, 7], [599, 8]];
   for (const [i, d] of s2) S.gmail["s2_in_" + i] = gm("s2_in_" + i, `Supporter ${i} <${addr(i)}>`, KIM, `Hello from ${i}`, `A note from supporter ${i}.`, msAgo(d));
   S.gmail.s2_out_222 = gm("s2_out_222", KIM, addr(222), "Thank you", "Thank you for coming.", msAgo(2), ["SENT"]);
@@ -434,7 +439,7 @@ const orgDay = instant => new Date(instant).toLocaleDateString("en-CA", { timeZo
     [ORG, JSON.stringify({ connectionId: "mbx_fix33_kim" })]);
   const seenPct = [];
   let finished = false;
-  for (let t = Date.now(); Date.now() - t < 60000;) {
+  for (let t = testNow(); testNow() - t < 60000;) {
     const g = ((await api("GET", "/mailbox", kim.token)).body.providers || []).find(p => p.key === "google");
     if (g && g.health && g.health.reading) seenPct.push(g.health.reading.pct);
     const [j] = await q(`SELECT status FROM job_queue WHERE id='job_fix33_kim'`);

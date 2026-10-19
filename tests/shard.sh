@@ -71,6 +71,34 @@ if [ "${SHARD_REUSE_DB:-0}" != "1" ]; then
 fi
 DBURL="postgresql://${PGUSER_}@localhost:${PGHOSTP}/${DBNAME}"
 
+# ── FIX-42 · THE TEST CLOCK ────────────────────────────────────────────────
+# STEWARD_TEST_NOW=<ISO instant> runs this shard as if it were that instant:
+# tests/clock.js is preloaded into the server and every suite (NODE_OPTIONS),
+# and this shard's own database answers now() from the same clock (a now() in
+# a schema that sits ahead of pg_catalog on the search_path). That is how a
+# suite is proved at 00:30, 21:00 and noon New York without touching the
+# machine's clock. CURRENT_DATE and CURRENT_TIMESTAMP are keywords, not
+# functions, and still read the real clock. Unset: nothing changes.
+if [ -n "${STEWARD_TEST_NOW:-}" ]; then
+  off_ms=$(node -e 'const t=Date.parse(process.argv[1]);if(!Number.isFinite(t))process.exit(1);process.stdout.write(String(t-Date.now()))' "$STEWARD_TEST_NOW") \
+    || { say "STEWARD_TEST_NOW is not an instant: $STEWARD_TEST_NOW"; exit 2; }
+  psql -q -h localhost -p "$PGHOSTP" -U "$PGUSER_" -d "$DBNAME" -v ON_ERROR_STOP=1 >/dev/null <<SQL || { say "could not install the test clock in $DBNAME"; exit 2; }
+CREATE SCHEMA IF NOT EXISTS testclock;
+CREATE OR REPLACE FUNCTION testclock.now() RETURNS timestamptz LANGUAGE sql STABLE
+  AS \$\$ SELECT pg_catalog.now() + interval '$off_ms milliseconds' \$\$;
+ALTER DATABASE "$DBNAME" SET search_path = public, testclock, pg_catalog;
+SQL
+  export TEST_MODE=1 STEWARD_TEST_OFFSET_MS="$off_ms" NODE_OPTIONS="${NODE_OPTIONS:-} -r $(pwd)/tests/clock.js"
+  say "test clock: $STEWARD_TEST_NOW (database offset ${off_ms}ms)"
+fi
+# CI's Postgres runs in UTC and the scratch one in New York; STEWARD_TEST_DB_TZ=UTC
+# makes this shard's database answer the way CI's does (a session's TO_CHAR and
+# ::date read this zone).
+if [ -n "${STEWARD_TEST_DB_TZ:-}" ]; then
+  psql -q -h localhost -p "$PGHOSTP" -U "$PGUSER_" -d "$DBNAME" -v ON_ERROR_STOP=1 \
+    -c "ALTER DATABASE \"$DBNAME\" SET timezone = '$STEWARD_TEST_DB_TZ'" >/dev/null || { say "could not set the database zone"; exit 2; }
+fi
+
 # ── the server ─────────────────────────────────────────────────────────────
 # The boot env is the one documented in this file's sibling run-all.sh header,
 # with every port moved into this shard's block. CORS_ORIGIN points at THIS
