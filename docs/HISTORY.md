@@ -25,6 +25,14 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## CAPTURE-1 Home tile · Gift to thank-you on Home (2026-10-18)
+
+Approved from the mockup in `docs/capture-1/home-mockup/`. `HomeThankClock.jsx` sits first in the Today rail's
+resting view: the clock line (the exact mean, so it foots with its rows), a bar per org day for 30 days, and the money
+cards waiting in To confirm. `/thank-yous/clock` gained `trend` and `waiting`. Two defects in CAPTURE-1 found by looking:
+the clock dated rows in the database's zone (a thank-you at 11:30pm New York landed on tomorrow on a UTC database), and
+its drawer showed days as dollars (the source had no `amountKind`); days now show to two decimals so the rows foot.
+
 ## CAPTURE-1 · Zero-day thank-you, part one: nobody types a gift (2026-10-18)
 
 Before: a check reached Steward only by someone typing it on a donor's record or pasting a deposit slip (BUILD-88b),

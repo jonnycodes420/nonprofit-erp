@@ -67,6 +67,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   and Drift the first five; the rest open in place, and the Thread and Drift lists each fold away from a
   chevron by their title (remembered in that browser, `steward_home_fold`). Institutional givers are gold
   links to their records. List actions are outlines or text.
+- **The gift-to-thank-you tile is first in the Today rail's resting view** (CAPTURE-1, approved from the mockup). It
+  reads `/thank-yous/clock`, the same number as Acknowledgments, shown exact so it foots with its rows; it draws nothing
+  for an org with no thanked gift and no card waiting.
 - **The Today rail has two states and is never empty.** At rest it shows three numbers side by side, each
   definition on the label's "?" (the profile tiles' keyboard-reachable convention, BUILD-100). A number opens its
   list and a row opens the donor, so every tile goes somewhere. No tab strip. (BUILD-89, BUILD-88d)

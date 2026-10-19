@@ -267,8 +267,23 @@ async function reset() {
   ok("§7 two thanked gifts, 2 days and 1 day: the line says 1.5 days", clock.status === 200 && clock.body.count === 2 && clock.body.days === 1.5
     && clock.body.sentence === "Average time from gift to thank-you, last 30 days: 1.5 days", clock.body);
   const fig = await api("GET", "/figures/gift-to-thanked/rows", tok);
+  ok("§7 the drawer is told its rows are days, not dollars", fig.body.amountKind === "days", fig.body.amountKind);
   ok("§7 the number opens its gifts, slowest first, and is their mean", fig.status === 200 && fig.body.value === 1.5 && fig.body.rows.length === 2
     && fig.body.rows[0].id === gifts[0].id && fig.body.rows[0].amount === 2 && fig.body.rows[1].amount === 1, fig.body && { v: fig.body.value, rows: fig.body.rows });
+
+  // The ORG's day, not the database's: thanked at 11:30pm in New York is that
+  // New York day, even on a UTC database (CI's), where it is already tomorrow.
+  const nyDay = (offset = 0) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(Date.now() + offset * 86400000));
+  await q(`UPDATE gifts SET thanked_at = (((NOW() AT TIME ZONE 'America/New_York')::date - 1) + TIME '23:30') AT TIME ZONE 'America/New_York',
+                            received_at = (((NOW() AT TIME ZONE 'America/New_York')::date - 3) + TIME '23:30') AT TIME ZONE 'America/New_York'
+            WHERE org_id=$1 AND id=$2`, [ORG, dg.id]);
+  const fig2 = await api("GET", "/figures/gift-to-thanked/rows", tok);
+  const late = (fig2.body.rows || []).find(r => r.id === dg.id);
+  ok("§7 a gift thanked at 11:30pm in New York is dated that New York day", !!late && late.date === nyDay(-1), { late, want: nyDay(-1) });
+  const clock2 = await api("GET", "/thank-yous/clock", tok);
+  const tr = clock2.body.trend || [];
+  ok("§7 Home's trend is 30 org days ending today, and the late thank-you sits on its own day",
+    tr.length === 30 && tr[29].date === nyDay(0) && (tr.find(d => d.date === nyDay(-1)) || {}).count >= 1, { last: tr[29], want: nyDay(0), day: tr.find(d => d.date === nyDay(-1)) });
 
   // ── §8 AI off: the card still appears, the image beside an empty form ───
   console.log("\n§8 AI off");
@@ -278,6 +293,9 @@ async function reset() {
   const oc = off.body.cards && off.body.cards[0];
   ok("§8 a card with the image, an empty amount and the AI-off sentence; the model was not called", off.status === 201 && !!oc && !!oc.fileUrl
     && oc.amount.cents === null && oc.ai === "off" && /AI is off/.test(oc.sentence) && sentToModel.length === before, oc);
+  const clock3 = await api("GET", "/thank-yous/clock", tok);
+  const [wm] = await q(`SELECT COUNT(*)::int AS n FROM capture_items WHERE org_id=$1 AND status='waiting' AND stakes='money'`, [ORG]);
+  ok("§8 Home's tile counts the money cards waiting to be confirmed", clock3.body.waiting === wm.n && wm.n === 1, { waiting: clock3.body.waiting, wm });
 
   mock.close();
   await reset();

@@ -1426,6 +1426,7 @@ const SOURCES = {
   "gift-to-thanked": {
     label: "Gift to thank-you",
     measure: () => "mean",
+    amountKind: "days",   // each row's amount is its days, never dollars
     params: {},
     sentence: () => require("./capture").CLOCK_SENTENCE,
     sql: (orgId) => require("./capture").clockSql(orgId),
