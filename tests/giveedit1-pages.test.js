@@ -232,6 +232,27 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
       ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
       await pp.close();
     }
+
+    // §14 FIX-45 — a giving page can be removed from its card. Nothing came
+    // through the built page, so Remove deletes it; Undo brings it back.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForSelector('[data-testid="page-card"]', { timeout: 20000 }).catch(() => {});
+    const mores = await page.$$eval('[data-testid="page-card"] [data-testid="row-more"]', els => els.map(e => e.getAttribute("data-kind")));
+    ok("§14 every giving page card has a Remove menu", mores.length === cards && mores.every(k => k === "giving_page"), { mores, cards });
+    const builtCard = page.locator('[data-testid="page-card"]', { hasText: "Year-end" });
+    await builtCard.locator('[data-testid="row-more"]').click().catch(() => {});
+    await page.locator('[data-testid="row-remove"]').click({ timeout: 5000 }).catch(() => {});
+    const dialog = await page.locator('[data-testid="confirm-yes"]').first().evaluate(b => b.closest('[role="dialog"]') ? b.closest('[role="dialog"]').innerText : b.parentElement.parentElement.innerText).catch(() => "");
+    ok("§14 the confirm says it is deleted, since nothing came through it", /deleted/i.test(dialog), dialog.slice(0, 300));
+    await page.locator('[data-testid="confirm-yes"]').first().click({ timeout: 5000 }).catch(() => {});
+    await page.waitForFunction(() => ![...document.querySelectorAll('[data-testid="page-card"]')].some(c => c.innerText.includes("Year-end")), null, { timeout: 8000 }).catch(() => {});
+    const [gone] = await q(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE id='gp_ge1built'`);
+    ok("§14 the page is deleted", gone.n === 0, gone);
+    await page.locator('[data-testid="undo-toast"] button', { hasText: /^Undo/ }).click({ timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('[data-testid="page-card"]:has-text("Year-end")', { timeout: 8000 }).catch(() => {});
+    const [back] = await q(`SELECT status FROM giving_pages WHERE id='gp_ge1built'`);
+    const shown = await page.$$eval('[data-testid="page-card"]', els => els.some(e => e.innerText.includes("Year-end")));
+    ok("§14 Undo brings the page back, on the list too", !!back && back.status === "active" && shown, { back, shown });
     await browser.close();
   }
 
