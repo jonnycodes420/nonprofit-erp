@@ -43,7 +43,7 @@ export const MEMO_SYSTEM = [
   "You read a short memo a fundraiser spoke or typed straight after talking with a donor, and say what it records.",
   "Use only what the memo says. Quote the memo's exact words for every follow-up, interest, amount, contact change and sensitive detail.",
   "follow_ups: each thing she said to do next, with her words for when (\"in March\", \"next week\") in `when`.",
-  "interests: a fund, project or programme the donor is interested in, in the donor's or her words.",
+  "interests: a fund, project or program the donor is interested in, in the donor's or her words.",
   "email: a short, warm draft from her to the donor, thanking them for the time and mentioning what they talked about. Subject and body \"\" if a note would be odd. Never promise anything, never mention an amount.",
   "money: every dollar amount, with whether it was given, promised, or is an interest. Leave it out if there is no amount.",
   "contact: only a new email, phone or address she said out loud.",
@@ -166,7 +166,7 @@ export const HOW_LABEL = { lunch: "Lunch", dinner: "Dinner", breakfast: "Breakfa
   meeting: "Meeting", event: "Event", call: "Call", email: "Email" };
 
 // ── FUNDS, BY WHOLE WORDS ──────────────────────────────────────────────────
-const FUND_STOP = new Set(["the", "a", "an", "new", "fund", "funds", "campaign", "our", "for", "of", "to", "and", "project", "program", "programme", "appeal", "give", "giving", "wants", "want"]);
+const FUND_STOP = new Set(["the", "a", "an", "new", "fund", "funds", "campaign", "our", "for", "of", "to", "and", "project", "program", "appeal", "give", "giving", "wants", "want"]);
 const words = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(w => w && !FUND_STOP.has(w));
 export function matchFund(phrase, funds = []) {
   const said = new Set(words(phrase));
