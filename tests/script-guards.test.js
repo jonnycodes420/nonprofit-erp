@@ -520,6 +520,31 @@ const nulFiles = [];
 ok(nulFiles.length === 0,
    "no source file contains a raw NUL byte (grep reads such a file as binary and skips it): " + nulFiles.join(", "));
 
+// ── FIX-44 · NO PAID AI SUITE ON A TIMER ───────────────────────────────────
+// The real-AI run (scripts/nightly-ai/, the ANTHROPIC_EVAL_KEY secret) costs
+// about $2 a run, and Jonathan starts it by hand. Red if nightly-ai.yml grows a
+// schedule or a push trigger back, loses workflow_dispatch, or if any workflow
+// that runs on a schedule or a push reaches the paid suite. The prod AI smoke
+// (scripts/prod-ai-smoke.js, one Ask and one Agent plan after a deploy) stays.
+{
+  const wfDir = path.join(root, ".github", "workflows");
+  const wfs = fs.readdirSync(wfDir).filter(f => /\.ya?ml$/.test(f));
+  const onBlock = src => { const m = src.match(/^on:\s*\n((?:[ \t]+.*\n|\s*\n)*)/m); return m ? m[1] : ""; };
+  const nightly = fs.readFileSync(path.join(wfDir, "nightly-ai.yml"), "utf8");
+  const non = onBlock(nightly);
+  ok(/^\s+workflow_dispatch:/m.test(non), "nightly-ai.yml can still be started by hand (workflow_dispatch)");
+  ok(!/^\s+(schedule|push|pull_request|workflow_run):/m.test(non), "nightly-ai.yml has no schedule, push, pull_request or workflow_run trigger");
+  ok(/CAP_USD: "2"/.test(nightly), "the hand-started run keeps its $2 cap");
+  for (const f of wfs) {
+    const src = fs.readFileSync(path.join(wfDir, f), "utf8");
+    const automatic = /^\s+(schedule|push|pull_request|workflow_run):/m.test(onBlock(src));
+    const paid = /scripts\/nightly-ai\/run\.js|ANTHROPIC_EVAL_KEY|uses: \.\/\.github\/workflows\/nightly-ai/.test(src);
+    ok(!(automatic && paid), `${f} runs on its own and reaches the paid AI suite`);
+  }
+  const ci = fs.readFileSync(path.join(wfDir, "ci.yml"), "utf8");
+  ok(/node scripts\/prod-ai-smoke\.js/.test(ci), "the post-deploy prod AI smoke still runs in ci.yml");
+}
+
 // ── FIX-23 · THE DEMO TEARDOWN IS COMPLETE BY CONSTRUCTION ─────────────────
 // On prod, seed-demo.js refused with "the teardown could not remove org
 // org_b72demo; still refusing: (the orgs row itself)": every table it knew to

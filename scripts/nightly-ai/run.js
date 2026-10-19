@@ -331,10 +331,14 @@ async function spend() {
   if (creditLine) {
     console.log(`\n${creditLine}. Stopped; ${skipped.length} question(s) not judged. Summary at ${OUT}`);
     if (process.env.GITHUB_ACTIONS) console.log(`::error::${creditLine}`);
+    if (process.env.GITHUB_STEP_SUMMARY) { try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, creditLine + "\n"); } catch { /* logged above */ } }
     await db.end();
     process.exit(1);
   }
-  console.log(`\n${summary.passed}/${summary.total} passed · spend $${usd != null ? usd.toFixed(4) : "unknown"}${summary.capReached ? " · THE SPEND CAP WAS REACHED" : ""} · summary at ${OUT}`);
+  // FIX-44: the run is started by hand, so its cost is the one line on the run's page.
+  const line = `${summary.passed}/${summary.total} passed · spend $${usd != null ? usd.toFixed(2) : "unknown"} of the $${Number((endSpend && endSpend.cap) || 2).toFixed(2)} cap${summary.capReached ? " · THE SPEND CAP WAS REACHED" : ""}`;
+  if (process.env.GITHUB_STEP_SUMMARY) { try { fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n"); } catch { /* the log line below still says it */ } }
+  console.log(`\n${line} · summary at ${OUT}`);
   await db.end();
   process.exit(failed.length || summary.capReached ? 1 : 0);
 })().catch(e => { console.error("The nightly run could not finish:", e && e.message); process.exit(2); });

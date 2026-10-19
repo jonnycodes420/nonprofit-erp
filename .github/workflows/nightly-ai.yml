@@ -1,22 +1,26 @@
-# HARDEN-1 item 4 · THE NIGHTLY REAL-AI RUN.
+# HARDEN-1 item 4 · THE REAL-AI RUN (FIX-44: BY HAND ONLY).
 #
-# Once a night (and on demand) this boots a throwaway Postgres and the server
-# the way ci.yml's battery does, seeds the Harborlight demo story into that
-# throwaway database (never prod data), and asks 20 fixed questions, half Agent
-# instructions and half Ask questions, against the REAL model. The server holds
-# only a dummy key: its ANTHROPIC_BASE_URL points at scripts/nightly-ai/proxy.js,
-# which alone holds the real key, counts the spend at claude-opus-5 rates and
-# refuses every call past a $2 cap. One run measured $1.32 locally (2026-10-06).
+# This boots a throwaway Postgres and the server the way ci.yml's battery
+# does, seeds the Harborlight demo story into that throwaway database (never
+# prod data), and asks 21 fixed questions, half Agent instructions and half Ask
+# questions, against the REAL model. The server holds only a dummy key: its
+# ANTHROPIC_BASE_URL points at scripts/nightly-ai/proxy.js, which alone holds
+# the real key, counts the spend at claude-opus-5 rates and refuses every call
+# past a $2 cap. One full run measured $1.91 (2026-10-18).
+#
+# FIX-44: it is OFF. No schedule and no push trigger: it costs money, and
+# Jonathan runs the AI checks himself. It runs only when started by hand:
+#   gh workflow run nightly-ai.yml --ref main
+# tests/script-guards.test.js fails if a schedule or a push trigger comes back,
+# or if any scheduled workflow runs the paid suite.
 #
 # A failing question, or the cap reached, opens ONE GitHub issue listing the
 # failing questions and the spend, and the JSON summary is kept as an artifact.
 # With no ANTHROPIC_EVAL_KEY secret the job FAILS in its first step with one
-# sentence and opens no issue: a nightly check that cannot run is never green.
+# sentence and opens no issue: a check that cannot run is never green.
 name: Nightly AI
 
 on:
-  schedule:
-    - cron: "17 7 * * *"   # 07:17 UTC, about 3am in Boston
   workflow_dispatch:
 
 permissions:
@@ -123,7 +127,7 @@ jobs:
       - name: Seed the demo story into the throwaway database
         run: node scripts/seed-demo.js
 
-      - name: Ask the twenty questions
+      - name: Ask the questions
         run: node scripts/nightly-ai/run.js
 
       - name: Open an issue for the failures
