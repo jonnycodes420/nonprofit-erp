@@ -105,7 +105,7 @@ function addDays(ymd, n) { const p = parts(ymd); if (!p) return null; const t = 
 function weekday(ymd) { const p = parts(ymd); return new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay(); }
 
 // A follow-up's date: the next day she named, never today or before it.
-// Returns { due, exact } — exact false means she named no time and Steward
+// Returns { due, exact }: exact false means she named no time and Steward
 // proposes two weeks, and says so.
 export function dueFromMemo(words, today) {
   const t = String(words || "").toLowerCase();
