@@ -205,6 +205,38 @@ const n = async (sql) => Number((await q(sql, [ORG]))[0].n);
   ok("§7 Send makes one invitation and emails it once; a second press sends nothing", s1.status === 200 && s2.status === 409
     && (await n(`SELECT COUNT(*)::int n FROM invites WHERE org_id=$1`)) === 1 && mail.length === mail0 + 1, { s1: s1.status, s2: s2.status, mail: mail.length - mail0 });
 
+  // ── §7b FIX-43 Part 2: the gone-quiet journey fires on its group by rule ─
+  // Planted defect that turned this red: setup building the journey with no
+  // triggerFilters.groupId (the sweep watches only journeys that name a group).
+  console.log("\n§7b gone quiet fires");
+  {
+    const [gq] = await q(`SELECT id, trigger_key, trigger_filters FROM cultivation_templates WHERE org_id=$1 AND name LIKE 'Gone quiet%' AND archived_at IS NULL`, [ORG]);
+    const [grp] = gq ? await q(`SELECT kind, rules FROM audiences WHERE org_id=$1 AND id=$2`, [ORG, (gq.trigger_filters || {}).groupId]) : [];
+    ok("§7b the gone-quiet journey watches the gave-last-year-not-this-year group by rule", !!gq && gq.trigger_key === "joined_group" && !!grp && /lybunt/.test(JSON.stringify(grp.rules)), { gq, grp });
+    // Today minus a year is always inside the prior fiscal year, whatever month it starts.
+    const lastYear = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+    const lapse = async name => {
+      const d = await api("POST", "/donors", tok, { name: `${name} Lapsed` });
+      await api("POST", `/donors/${d.body.id}/gifts`, tok, { amount: 75, date: lastYear });
+      await api("POST", "/journeys/run-sweep", tok, {});
+      return d.body.id;
+    };
+    const plans = id => n(`SELECT COUNT(*)::int n FROM cultivation_plans WHERE org_id=$1 AND template_id='${gq && gq.id}' AND donor_id='${id}'`);
+    const paused1 = await lapse("Pia");
+    const on = await api("PATCH", `/journeys/${gq && gq.id}`, tok, { enabled: true });
+    const joined = await lapse("Quentin");
+    await api("POST", "/journeys/run-sweep", tok, {});
+    ok("§7b a person who enters the group after it is turned on starts the journey, once", on.status === 200 && (await plans(joined)) === 1, { on: on.status, plans: await plans(joined) });
+    ok("§7b somebody already in the group when it was turned on is not started (the starting line)", (await plans(paused1)) === 0);
+    await api("PATCH", `/journeys/${gq && gq.id}`, tok, { enabled: false });
+    const paused2 = await lapse("Rhea");
+    ok("§7b a paused journey starts nobody", (await plans(paused2)) === 0 && (await plans(paused1)) === 0);
+    // Back the way §8 expects it: no plans, none of these three people.
+    const ids = [paused1, joined, paused2].map(x => `'${x}'`).join(",");
+    for (const t of ["cultivation_plans", "tasks", "interactions", "fin_transactions", "gifts", "group_sweep_seen"]) await q(`DELETE FROM ${t} WHERE org_id=$1 AND donor_id IN (${ids})`, [ORG]).catch(() => {});
+    await q(`DELETE FROM donors WHERE org_id=$1 AND id IN (${ids})`, [ORG]).catch(e => console.log("cleanup:", e.message));
+  }
+
   // ── §8 undo all of setup ────────────────────────────────────────────────
   console.log("\n§8 Undo all of setup");
   const u = await api("POST", `/setup/runs/${R.id}/undo`, tok, {});
