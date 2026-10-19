@@ -240,6 +240,14 @@ async function collectLiveAssetRefs(orgId) {
   for (const r of await query(`SELECT cheque_asset_id FROM gifts${w}`, p)) {
     if (ASSET_ID_RE.test(String(r.cheque_asset_id || ""))) refs.add(r.cheque_asset_id);
   }
+  // CAPTURE-1: a card's check photo or letter, and a batch's deposit slip,
+  // waiting in To confirm (once confirmed the gift's cheque_asset_id holds it too).
+  for (const r of await query(`SELECT asset_id FROM capture_items${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+  }
+  for (const r of await query(`SELECT slip_asset_id FROM capture_batches${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.slip_asset_id || ""))) refs.add(r.slip_asset_id);
+  }
   // BUILD-100 (grants) Part 3 — a signed grant agreement and every report
   // submitted are the EVIDENCE a funder audit asks for, and they are the most
   // consequential files this product holds: an org that cannot produce the

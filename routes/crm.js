@@ -633,7 +633,7 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
     [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorName, d.gift_id,
      JSON.stringify({ via: "thank_you_queue", draftId: d.id })]);
   await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
-  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
   // The thread cycle: a thank-you thread this closes closes as an OUTCOME.
   const closed = await query(
     `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
@@ -675,7 +675,7 @@ app.post("/thank-yous/mark-all-sent", requireAuth, checkWriteAccess, wrap(async 
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
       ["int_" + uuid().slice(0, 8), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorNameAll,
        full.gift_id, JSON.stringify({ via: "thank_you_queue_all", draftId: d.id })]);
-    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
+    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
     marked++;
   }
   await run("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND sent_at IS NULL AND skipped_at IS NULL", [orgId]);
@@ -10739,7 +10739,7 @@ app.post("/acknowledgments/mark", requireAuth, checkWriteAccess, wrap(async (req
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const who = u?.name || actor(req).name;
   const rows = await query(
-    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()),
                       acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                       acknowledged_via=COALESCE(acknowledged_via, ?)
       WHERE org_id=? AND id = ANY(?) RETURNING id`, [actor(req).id, who, via, req.user.orgId, ids]);
@@ -18015,7 +18015,7 @@ app.post("/tasks/:id/thank", requireAuth, checkWriteAccess, wrap(async (req, res
   const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
   const whoName = u?.name || actor(req).name;
   await run(
-    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()), thanked_at=COALESCE(thanked_at, NOW()),
                       acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
                       acknowledged_via=COALESCE(acknowledged_via, 'email')
       WHERE org_id=? AND id=?`, [actor(req).id, whoName, orgId, g.id]);
@@ -28437,6 +28437,8 @@ const namedOrGivingSql = (a = "d") =>
 // other doors that record one (Agent → confirm). Filled once, here, when the
 // functions exist; the gift form above calls them directly.
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
+// CAPTURE-1: a pledge confirmed from a card gets its schedule from the one writer.
+giftHooks.writePledgeInstallments = writePledgeInstallments;
 giftHooks.calcWealthScore = calcWealthScore;
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
 // FIX-9 Part B.4 — `sendReportCsv` is THE csv writer: the injection guard and

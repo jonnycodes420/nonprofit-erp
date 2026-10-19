@@ -60,6 +60,8 @@ export const FR_SECTIONS = [
     id: "moneyin", label: "Money in",
     question: "What has come in, and who still needs thanking?",
     parts: [
+      // CAPTURE-1: checks and gift documents waiting for a person's tap.
+      { id: "toconfirm", label: "To confirm" },
       { id: "deposits", label: "Deposits" },
       { id: "acknowledgments", label: "Acknowledgments" },
       { id: "funds", label: "Funds" },
@@ -96,6 +98,8 @@ export const FR_LEGACY = {
   auctions:        { section: "campaigns",  part: "auctions",        label: "Auctions" },
   // PARITY-4 Part 2: a new part id, registered for the same reason.
   unfinished:      { section: "moneyin",    part: "unfinished",      label: "Started, not finished" },
+  // CAPTURE-1: a new part id, registered for the same reason.
+  toconfirm:       { section: "moneyin",    part: "toconfirm",       label: "To confirm" },
 };
 
 // Any id — an old tab id, a section id, or nothing — to {section, part}.

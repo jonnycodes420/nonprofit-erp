@@ -18,6 +18,7 @@ import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { PeerToPeerView } from "./PeerToPeer";
 import { AuctionsView } from "./Auctions";
 import { StartedNotFinished } from "./StartedNotFinished";
+import { CaptureInbox, CAPTURE_CHANGED } from "./CaptureInbox";
 import { HowDidItDo } from "./HowDidItDo";
 import { displayDate } from "../../../shared/displayDate";
 import { DonorLink, RecordLink, useUrlWriter } from "./RecordLink";
@@ -147,10 +148,21 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
     goUrl(tabHref("fundraising", { frSection: subtab }), true);
   }, [subtab]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  // CAPTURE-1: how many cards wait in To confirm, refreshed whenever a card
+  // is confirmed, skipped or read (the inbox announces CAPTURE_CHANGED).
+  const [toConfirm, setToConfirm] = useState(0);
+  useEffect(() => {
+    const read = () => apiFetch("/capture/count").then(r => setToConfirm(Number(r && r.waiting) || 0)).catch(() => {});
+    read();
+    window.addEventListener(CAPTURE_CHANGED, read);
+    return () => window.removeEventListener(CAPTURE_CHANGED, read);
+  }, []);
+
   // Counts on a part (never money — the figures live on the parts themselves).
   const PART_BADGE = {
     campaigns: campaigns.length || undefined,
     pages: pages.filter(p => p.status === "active").length || undefined,
+    toconfirm: toConfirm || undefined,
   };
 
 
@@ -190,7 +202,9 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
                 onClick={() => setPartOf(m => ({ ...m, [sec.id]: p.id }))}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.ink3, border: "none", borderRadius: "6px 6px 0 0", padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...activeMark(on, "bottom") }}>
                 {p.label}
-                {PART_BADGE[p.id] != null && <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>{PART_BADGE[p.id]}</span>}
+                {PART_BADGE[p.id] != null && (p.id === "toconfirm"
+                  ? <span data-testid="toconfirm-badge" style={{ fontSize: 10.5, fontWeight: 800, background: T.gold, color: T.ink, borderRadius: 99, padding: "1px 7px", lineHeight: "15px" }}>{PART_BADGE[p.id]}</span>
+                  : <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>{PART_BADGE[p.id]}</span>)}
               </button>
             );
           })}
@@ -227,6 +241,11 @@ export function Fundraising({ data, isReadOnly, isAdmin = false, onNavigate, ini
           `loading` true, which UNMOUNTS the view and takes the "it foots"
           confirmation with it the instant the deposit lands. The list reloads
           itself. */}
+      {/* CAPTURE-1: reloads itself, for the deposit sheet's reason below. */}
+      {!loading && subtab === "toconfirm" && (
+        <CaptureInbox isReadOnly={isReadOnly} onOpenThanks={onNavigate ? () => onNavigate("dashboard") : null} />
+      )}
+
       {!loading && subtab === "deposits" && (
         <DepositsView isReadOnly={isReadOnly} roTip={roTip} />
       )}
@@ -1282,6 +1301,26 @@ function DepositsView({ isReadOnly, roTip }) {
 }
 
 // ── BUILD-98 (switch) Part 2 — ACKNOWLEDGMENTS ─────────────────────────────
+// CAPTURE-1 · THE GIFT-TO-THANKED CLOCK. One line: how long, on average, a
+// gift waited between arriving and being thanked over the last 30 days. The
+// number opens its gifts, slowest first.
+function ThankClock() {
+  const [c, setC] = useState(null);
+  useEffect(() => { apiFetch("/thank-yous/clock").then(setC).catch(() => setC(null)); }, []);
+  if (!c) return null;
+  return (
+    <div data-testid="thank-clock" style={{ fontSize: 14, color: T.ink, lineHeight: 1.5 }}>
+      Average time from gift to thank-you, last 30 days:{" "}
+      {c.days == null ? <span style={{ color: T.ink3 }}>no gifts thanked yet</span> : (
+        <strong>
+          <Figure variant="inline" kind="count" value={Math.round(Number(c.days) * 10) / 10} suffix={Number(c.days) === 1 ? " day" : " days"}
+            label="Average time from gift to thank-you" definition={c.sentence} source={{ key: c.source || "gift-to-thanked", params: {} }} figureKey="gift-to-thanked" />
+        </strong>
+      )}
+    </div>
+  );
+}
+
 // The gifts nobody has thanked, older than the org's own N days. Pick them,
 // print one letter per donor (window-envelope address block), print labels,
 // then mark them sent. Printing changes nothing; marking is its own press,
@@ -1340,6 +1379,7 @@ function AcknowledgmentsView({ isReadOnly, roTip }) {
   if (!data) return <div style={{ padding: 32, color: T.ink3, fontSize: 13 }}>{msg || "Loading…"}</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="ack-view">
+      <ThankClock />
       <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, maxWidth: 620 }}>{data.sentence}</div>
         <label style={{ fontSize: 12, color: T.ink3, display: "flex", alignItems: "center", gap: 6 }}>

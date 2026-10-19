@@ -61,6 +61,8 @@ app.post("/gifts/:id/thank-call", requireAuth, checkWriteAccess, wrap(async (req
              VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [id, orgId, g.donor_id, "call", "Thank-you call", date, who.id, (u && u.name) || who.name || "", g.id,
      JSON.stringify({ via: "home_calls_to_make" })]);
+  // CAPTURE-1: a thank-you call is a thank-you, for the gift-to-thanked clock.
+  await run(`UPDATE gifts SET thanked_at = COALESCE(thanked_at, NOW()) WHERE id = ? AND org_id = ?`, [g.id, orgId]);
   res.status(201).json({ ok: true, interactionId: id, giftId: g.id, date });
 }));
 

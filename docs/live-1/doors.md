@@ -43,6 +43,7 @@ Every door calls the one after-change step (`afterChange.js`) once after it writ
 | Volunteer hours | `volunteer_hours`, coalesced per org | none | n/a |
 | Logged touches | `logged_touch` | recordGift if a gift is attached | unchanged |
 | Email and calendar sync | `mail_calendar_sync`, coalesced | none | n/a |
+| CAPTURE-1 To confirm | `capture`, inside recordGift on confirm; on an address or note applied or undone | recordGift | the usual draft; nothing sent |
 
 What the step recomputes, for the people it is given only: lifetime, count and last gift; this and last year's giving and the largest gift; rhythm (monthly, quarterly, yearly, year-end or no pattern yet) and expected next gift; Drift's state; who crossed into a group by rule; and it schedules the engagement recompute (a percentile compares a person with the whole org, so that one is org-wide by nature).
 

@@ -32,10 +32,11 @@ const ACTOR = { id: "system:after-change", name: "Steward (after a change)" };
 const DOORS = [
   "gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "old_reports_import",
   "giving_source_read", "qbo_read", "event_checkin", "volunteer_hours", "logged_touch", "mail_calendar_sync",
+  "capture",
 ];
 
 // The doors that write gifts: after any of them, an old report's check may move.
-const GIFT_DOORS = new Set(["gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "giving_source_read", "qbo_read"]);
+const GIFT_DOORS = new Set(["gift_form", "stripe_webhook", "giving_page", "csv_import", "history_import", "giving_source_read", "qbo_read", "capture"]);
 
 let deps = null;
 // server.js hands its helpers over at boot (this file is required by routes
