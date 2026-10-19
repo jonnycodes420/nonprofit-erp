@@ -5,6 +5,11 @@ import {
   money, benchmarkPayload, REPORT_FOOTER, PRIVACY_LINE, TOP_AT_RISK,
 } from "../../../shared/lostAndFound.js";
 
+// AUDIT-2 · the words at the end of the report, on the screen and in the
+// PDF. Kept here as a string rather than imported from the rescue module,
+// because that module carries Drift and belongs only in the worker.
+const REPORT_CLOSE = "Want this checked every week, with the call planned and the note drafted? That's Steward.";
+
 // ── LOST & FOUND · A PAID-CALIBER DONOR AUDIT, FREE ─────────────────────
 //
 // Steward's best salesperson. A development director uploads the export her
@@ -38,6 +43,7 @@ const SERIF = "'DM Serif Display',Georgia,serif";
 const fmtPct = v => (v === null || v === undefined ? "Not set" : v + "%");
 
 export default function LostAndFound() {
+  const [auditDone, setAuditDone] = useState(false);
   // The page owns its ground: index.html paints `body` ink, and an
   // overscroll on a phone showed a black bar above a cream page.
   useEffect(() => {
@@ -80,10 +86,12 @@ export default function LostAndFound() {
           </p>
         </div>
 
-        <LostAndFoundAudit />
+        <LostAndFoundAudit onDone={setAuditDone}/>
 
         {/* ── THE CLOSE: THIS WAS THE SNAPSHOT ─────────────────────── */}
-        <div data-testid="lf-close" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
+        {/* AUDIT-2 · once a report is on screen, the report's own end is
+            the close; this one would say it twice. */}
+        {!auditDone && <div data-testid="lf-close" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
           padding: "40px 32px", marginTop: 46, maxWidth: 860, marginLeft: "auto", marginRight: "auto",
           textAlign: "center" }}>
           <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
@@ -108,7 +116,7 @@ export default function LostAndFound() {
               Book a call
             </Link>
           </div>
-        </div>
+        </div>}
 
         {/* ── WHY FREE ─────────────────────────────────────────────── */}
         <div data-testid="lf-why-free" style={{ marginTop: 40, maxWidth: 720, marginLeft: "auto", marginRight: "auto",
@@ -129,6 +137,7 @@ export default function LostAndFound() {
           .lf-hide-sm{ display: none !important; }
           .lf-rails{ grid-template-columns: 1fr !important; }
           .lf-rail-right{ order: -1 !important; }
+          .lf-groups{ grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
@@ -141,7 +150,7 @@ export default function LostAndFound() {
 // run the audit. `compact` is the marketing layout: the drop zone alone
 // (no left rail), under the site's own hero. Everything this file promises
 // about what leaves the browser holds for both, because it is the same code.
-export function LostAndFoundAudit({ compact = false }) {
+export function LostAndFoundAudit({ compact = false, onDone }) {
   const [state, setState] = useState("idle");   // idle | reading | done | error
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -162,6 +171,20 @@ export function LostAndFoundAudit({ compact = false }) {
   }, []);
 
   useEffect(() => () => { if (workerRef.current) workerRef.current.terminate(); }, []);
+  useEffect(() => { if (onDone) onDone(state === "done"); }, [state, onDone]);
+
+  // THE FILE CANNOT TRAVEL, because it never left this browser, and carrying
+  // it in sessionStorage would break the one promise this page makes. What
+  // travels is the INTENT: signup remembers they came from an audit, and the
+  // import step after signup offers to take the same file, which they still
+  // have.
+  const rememberAudit = () => { try {
+    sessionStorage.setItem("steward_from_audit", JSON.stringify({
+      at: new Date().toISOString(),
+      fileName: (result && result.file && result.file.name) || null,
+      organization: form.organization.trim() || null,
+    }));
+  } catch { /* private window: the link still works */ } };
 
   const handleFile = useCallback((file) => {
     if (!file) return;
@@ -241,9 +264,9 @@ export function LostAndFoundAudit({ compact = false }) {
           gap: 20, alignItems: "start", marginTop: 44, maxWidth: 1000, marginLeft: "auto", marginRight: "auto" }}>
           {!compact && <div className="lf-rail-left" style={{ display: "grid", gap: 12 }}>
             {[
-              ["01", "The dollars walking away", "The exact figure your lapsed and drifting donors represent."],
-              ["02", "Your real retention rate", "What share of last year's donors gave again. Most orgs guess wrong."],
-              ["03", "Who to call first", "Every name, ranked by what is at stake, so Monday morning writes itself."],
+              ["01", "Who to call this week", "Each donor judged against their own rhythm, ranked by what a year of their giving is worth."],
+              ["02", "One true fact about each", "What your file shows: how they gave, and how long it has been. Nothing guessed."],
+              ["03", "Your real retention rate", "What share of last year's donors gave again, with the count behind it."],
             ].map(([n, t, d]) => (
               <div key={n} style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 14, padding: "18px 18px 20px" }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: BRASS, letterSpacing: "1px" }}>{n}</div>
@@ -301,53 +324,8 @@ export function LostAndFoundAudit({ compact = false }) {
         {/* ── THE RESULTS ──────────────────────────────────────────── */}
         {state === "done" && result && (
           <div data-testid="lf-results" style={{ marginTop: 40 }}>
-            <Headline result={result} onAnother={reset}/>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14, marginTop: 20 }}>
-              {result.sections.map(s => (
-                <button key={s.key} data-testid={"lf-section-" + s.key}
-                  onClick={() => setOpenSection(openSection === s.key ? null : s.key)}
-                  style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 16, padding: "20px 20px",
-                           textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>{s.label}</div>
-                  <div style={{ fontFamily: SERIF, fontSize: 44, lineHeight: 1.1, margin: "6px 0 8px" }}>{s.count}</div>
-                  <div style={{ fontSize: 14, color: INK, lineHeight: 1.55 }}>{s.sentence}</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: EMERALD, marginTop: 10 }}>
-                    {openSection === s.key ? "Hide the names" : "See the names"}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {openSection && (() => {
-              const s = result.sections.find(x => x.key === openSection);
-              if (!s) return null;
-              return (
-                <div data-testid="lf-rows" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 16,
-                  padding: "20px 22px", marginTop: 16 }}>
-                  <div style={{ fontFamily: SERIF, fontSize: 24, marginBottom: 4 }}>{s.label}</div>
-                  <p style={{ fontSize: 14, color: GREY, lineHeight: 1.55, margin: "0 0 14px" }}>{s.definition}</p>
-                  {!s.rows.length && <div style={{ fontSize: 14, color: GREY }}>Nobody.</div>}
-                  <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                    {s.rows.slice(0, 500).map((r, i) => (
-                      <div key={(r.email || r.name) + i}
-                        style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "baseline",
-                                 padding: "10px 0", borderBottom: `1px solid ${EDGE}` }}>
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ fontSize: 14.5, fontWeight: 600 }}>{r.name}</span>
-                          <span style={{ fontSize: 13, color: GREY, display: "block" }}>{r.note}</span>
-                        </span>
-                        <span style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.amount}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {s.rows.length > 500 && (
-                    <div style={{ fontSize: 13, color: GREY, marginTop: 10 }}>
-                      Showing the first 500 of {s.rows.length}. All of them are in the PDF.
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            <Headline result={result} onAnother={reset} open={openSection} setOpen={setOpenSection}/>
+            <Groups result={result} open={openSection} setOpen={setOpenSection}/>
 
             {/* ── THE PDF: THE PRIZE BEHIND THE EMAIL ─────────────── */}
             <div id="lf-report" data-testid="lf-report-form" style={{ background: INK, color: CREAM, borderRadius: 18,
@@ -359,8 +337,8 @@ export function LostAndFoundAudit({ compact = false }) {
                 Take this to your board meeting.
               </div>
               <p style={{ fontSize: 15, lineHeight: 1.6, color: "rgba(240,237,230,0.78)", margin: "0 0 18px", maxWidth: 640 }}>
-                The full audit as a clean PDF: every lapsed donor, every quiet donor, every dollar,
-                ranked and ready to forward. Your results above are free either way. We ask who you
+                The rescue plan as a clean PDF: who to call this week, who to call this month,
+                who is probably gone, with the fact behind every name, ready to forward. Your results above are free either way. We ask who you
                 are because we would like to know who we helped.
               </p>
               {formState === "sent" ? (
@@ -372,20 +350,7 @@ export function LostAndFoundAudit({ compact = false }) {
                                padding: "12px 20px", fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                       Download it again
                     </button>
-                    {/* THE FILE CANNOT TRAVEL, because it never left this
-                        browser — and carrying it in sessionStorage would
-                        break the one promise this page makes. What travels
-                        is the INTENT: signup remembers they came from an
-                        audit, and the import step after signup offers to
-                        take the same file, which they still have. */}
-                    <Link to="/signup" data-testid="lf-start-with-file"
-                      onClick={() => { try {
-                        sessionStorage.setItem("steward_from_audit", JSON.stringify({
-                          at: new Date().toISOString(),
-                          fileName: (result && result.file && result.file.name) || null,
-                          organization: form.organization.trim() || null,
-                        }));
-                      } catch { /* private window: the link still works */ } }}
+                    <Link to="/signup" data-testid="lf-start-with-file" onClick={rememberAudit}
                       style={{ background: EMERALD, color: WHITE, borderRadius: 10, padding: "12px 20px",
                                fontSize: 15, fontWeight: 700, textDecoration: "none" }}>
                       Start Steward with this file →
@@ -432,14 +397,35 @@ export function LostAndFoundAudit({ compact = false }) {
                 </form>
               )}
             </div>
+
+            {/* ── THE END OF THE REPORT: honest about what Steward adds ── */}
+            <div data-testid="lf-end" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
+              padding: "30px 28px", marginTop: 22, textAlign: "center" }}>
+              <div style={{ fontFamily: SERIF, fontSize: 28, lineHeight: 1.2, margin: "0 auto 18px", maxWidth: 620 }}>
+                {REPORT_CLOSE}
+              </div>
+              <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+                <Link to="/signup" data-testid="lf-end-start" onClick={rememberAudit}
+                  style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 26px",
+                    fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minHeight: 44 }}>
+                  Start Steward with this file
+                </Link>
+                <Link to="/demo" data-testid="lf-end-call"
+                  style={{ background: "transparent", color: INK, border: `1.5px solid ${INK}`, borderRadius: 12,
+                    padding: "15px 26px", fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minHeight: 44 }}>
+                  Book a call
+                </Link>
+              </div>
+            </div>
           </div>
         )}
     </>
   );
 }
 
-function Headline({ result, onAnother }) {
+function Headline({ result, onAnother, open, setOpen }) {
   const h = result.headline;
+  const plan = result.rescue;
   return (
     <div style={{ background: INK, color: CREAM, borderRadius: 18, padding: "30px 28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
@@ -449,11 +435,23 @@ function Headline({ result, onAnother }) {
       </div>
       <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase",
         color: BRASS, marginTop: 22 }}>At risk</div>
-      <div data-testid="lf-at-risk" style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.02, letterSpacing: "-1px" }}>
-        {h.dollarsAtRisk}
-      </div>
+      {/* AUDIT-2 · a year of giving from everybody past their own usual
+          time, all three groups. The number opens the names behind it. */}
+      <button type="button" data-testid="lf-at-risk" onClick={() => setOpen(open === "all" ? null : "all")}
+        aria-label={`${plan.atRisk} at risk. Show the donors behind it`}
+        style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.02, letterSpacing: "-1px", background: "none", border: "none",
+          color: CREAM, padding: 0, cursor: "pointer", display: "block" }}>
+        {plan.atRisk}
+      </button>
       <div style={{ fontSize: 15.5, color: "rgba(240,237,230,0.82)", lineHeight: 1.6, marginTop: 8, maxWidth: 640 }}>
-        {h.atRiskSentence}
+        {plan.atRiskSentence}{" "}
+        {plan.atRiskCount > 0 && (
+          <button type="button" onClick={() => setOpen(open === "all" ? null : "all")}
+            style={{ background: "none", border: "none", color: BRASS, fontSize: 15, fontWeight: 700, cursor: "pointer",
+              fontFamily: "inherit", padding: 0 }}>
+            {open === "all" ? "Hide the names" : `See all ${plan.atRiskCount}`}
+          </button>
+        )}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 20, marginTop: 26,
         paddingTop: 22, borderTop: "1px solid rgba(240,237,230,0.16)" }}>
@@ -472,6 +470,74 @@ function Headline({ result, onAnother }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// ── THE THREE GROUPS ─────────────────────────────────────────────────────
+// Call this week, call this month, probably gone. Each card's count and
+// dollars open the donors behind them; each donor carries one fact from the
+// file. `open` is a group key, or "all" from the headline figure.
+const GROUP_TONE = { week: EMERALD, month: BRASS, gone: GREY };
+function Groups({ result, open, setOpen }) {
+  const plan = result.rescue;
+  const shown = open === "all" ? plan.groups : plan.groups.filter(g => g.key === open);
+  return (
+    <>
+      <div className="lf-groups" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 14, marginTop: 20 }}>
+        {plan.groups.map(g => (
+          <button key={g.key} type="button" data-testid={"lf-group-" + g.key}
+            onClick={() => setOpen(open === g.key ? null : g.key)}
+            style={{ background: WHITE, border: `1px solid ${EDGE}`, borderTop: `4px solid ${GROUP_TONE[g.key]}`,
+              borderRadius: 16, padding: "20px 20px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: INK,
+              display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>{g.label}</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, margin: "6px 0 8px", flexWrap: "wrap" }}>
+              <span data-testid={"lf-group-count-" + g.key} style={{ fontFamily: SERIF, fontSize: 44, lineHeight: 1.1 }}>{g.count}</span>
+              <span data-testid={"lf-group-dollars-" + g.key} style={{ fontSize: 18, fontWeight: 700 }}>{money(g.cents)} a year</span>
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.55 }}>{g.sentence}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: EMERALD, marginTop: 10 }}>
+              {open === g.key ? "Hide the names" : "See the names"}
+            </div>
+          </button>
+        ))}
+      </div>
+      {plan.notJudgedSentence && (
+        <p data-testid="lf-not-judged" style={{ fontSize: 14, color: GREY, lineHeight: 1.55, margin: "12px 2px 0" }}>
+          {plan.notJudgedSentence}
+        </p>
+      )}
+      {shown.length > 0 && (
+        <div data-testid="lf-rows" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 16,
+          padding: "20px 22px", marginTop: 16 }}>
+          {shown.map(g => (
+            <div key={g.key} style={{ marginBottom: shown.length > 1 ? 22 : 0 }}>
+              <div style={{ fontFamily: SERIF, fontSize: 24, marginBottom: 4 }}>{g.label} · {money(g.cents)} a year</div>
+              <p style={{ fontSize: 14, color: GREY, lineHeight: 1.55, margin: "0 0 10px" }}>{g.definition}</p>
+              {!g.rows.length && <div style={{ fontSize: 14, color: GREY }}>Nobody.</div>}
+              <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                {g.rows.slice(0, 500).map((r, i) => (
+                  <div key={(r.email || r.name) + i} data-testid="lf-row"
+                    style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "baseline",
+                             padding: "10px 0", borderBottom: `1px solid ${EDGE}` }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ fontSize: 14.5, fontWeight: 600 }}>{r.name}</span>
+                      <span data-testid="lf-fact" style={{ fontSize: 13.5, color: GREY, display: "block", lineHeight: 1.5 }}>{r.fact}</span>
+                    </span>
+                    <span style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap" }}>{r.amount}</span>
+                  </div>
+                ))}
+              </div>
+              {g.rows.length > 500 && (
+                <div style={{ fontSize: 13, color: GREY, marginTop: 10 }}>
+                  Showing the first 500 of {g.rows.length}. All of them are in the PDF.
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -515,29 +581,33 @@ async function downloadPdf(result, orgName) {
   doc.text(`A donor audit for ${orgName || "your organization"} · ${result.today}`, M, 66);
   y = 124;
 
-  text(result.headline.dollarsAtRisk + " is at risk", { size: 22, bold: true, gap: 28 });
-  text(result.headline.atRiskSentence, { colour: [90, 85, 79] });
+  const plan = result.rescue;
+  text(plan.atRisk + " a year is at risk", { size: 22, bold: true, gap: 28 });
+  text(plan.atRiskSentence, { colour: [90, 85, 79] });
   nl(4);
   text(result.headline.retentionSentence, { colour: [90, 85, 79] });
   nl(4);
   text(result.file.sentence, { size: 10, colour: [90, 85, 79] });
+  if (plan.notJudgedSentence) { nl(4); text(plan.notJudgedSentence, { size: 10, colour: [90, 85, 79] }); }
   nl(16);
 
-  for (const s of result.sections) {
-    text(s.label, { size: 15, bold: true, gap: 20 });
-    text(s.sentence, { gap: 15 });
-    text(s.definition, { size: 9.5, colour: [90, 85, 79], gap: 12 });
+  // THE SAME THREE GROUPS AS THE SCREEN: each donor's name and a year of
+  // their giving on one line, the fact from the file under it.
+  for (const g of plan.groups) {
+    text(`${g.label} · ${g.count} · ${money(g.cents)} a year`, { size: 15, bold: true, gap: 20 });
+    text(g.sentence, { gap: 15 });
+    text(g.definition, { size: 9.5, colour: [90, 85, 79], gap: 12 });
     nl(4);
-    if (!s.rows.length) { text("Nobody.", { size: 10, colour: [90, 85, 79] }); nl(12); continue; }
-    for (const r of s.rows) {
-      if (y > H - M - 30) { doc.addPage(); y = M; }
-      doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(15, 26, 18);
-      doc.text(String(r.name).slice(0, 52), M, y);
-      doc.setTextColor(90, 85, 79);
-      doc.text(String(r.note || "").slice(0, 48), M + 210, y);
-      doc.setTextColor(15, 26, 18); doc.setFont("helvetica", "bold");
+    if (!g.rows.length) { text("Nobody.", { size: 10, colour: [90, 85, 79] }); nl(12); continue; }
+    for (const r of g.rows) {
+      if (y > H - M - 44) { doc.addPage(); y = M; }
+      doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(15, 26, 18);
+      doc.text(String(r.name).slice(0, 60), M, y);
       doc.text(String(r.amount), W - M, y, { align: "right" });
-      y += 14;
+      y += 12;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(90, 85, 79);
+      for (const line of doc.splitTextToSize(String(r.fact || ""), W - M * 2 - 70)) { doc.text(line, M, y); y += 11; }
+      y += 5;
     }
     nl(18);
   }

@@ -110,6 +110,65 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
      a.sections.every(s => typeof s.definition === "string" && s.definition.length > 40));
   ok("§1 dollars at risk is a real number", a.headline.dollarsAtRiskCents > 0, a.headline.dollarsAtRisk);
 
+  // ── §6 · THE RESCUE PLAN (AUDIT-2) ─────────────────────────────────────
+  // Each donor judged against their OWN rhythm with Drift's functions, sorted
+  // into three calls, ranked by a year of their giving, one fact each. Runs
+  // inside the recorder, so §2 below also proves the rescue sent nothing.
+  // The fixture is built for a pinned today of 2026-10-18: three donors per
+  // group, two with one gift, two still on time.
+  // WHAT WOULD MAKE THIS FAIL: judging by calendar year instead of the
+  // donor's own gap (the February and March givers fall out of "this week"),
+  // a recurring gift that stopped left to Drift's lapse line (Wren Albury
+  // lands in "probably gone"), a fact line that guesses, a total that counts
+  // a lifetime instead of a year, or a fetch added to any module the worker
+  // loads (§3).
+  {
+    const R = await import("../shared/lostAndFoundRescue.js");
+    const rcsv = fs.readFileSync(path.join(ROOT, "tests", "fixtures", "lost-and-found-rescue.csv"), "utf8");
+    const rrec = IS.parseCsvRecords(rcsv);
+    const rh = IS.detectHeaderRow(rrec);
+    const rheaders = rrec[rh.index].cells.map(h => String(h || "").trim());
+    const rbody = rrec.slice(rh.index + 1).map(r => r.cells).filter(r => r.some(c => String(c || "").trim() !== ""));
+    const rmap = LF.mapColumns(rheaders);
+    const rcol = h => { const i = rheaders.indexOf(h); return i < 0 ? [] : rbody.map(r => r[i]); };
+    const rdc = IS.inferDateConvention(rcol(rmap.date)), rac = IS.inferAmountConvention(rcol(rmap.amount));
+    const rgifts = rbody.map(r => { const o = {}; rheaders.forEach((h, i) => { o[h] = r[i]; });
+      return LF.giftFromRow(o, rmap, { dateConvention: rdc && rdc.convention, amountConvention: rac && rac.columnConvention }); }).filter(Boolean);
+    ok("§6 the rescue fixture reads every row", rgifts.length === 124, rgifts.length);
+    const plan = R.rescuePlan(rgifts, { today: "2026-10-18" });
+    const g = k => plan.groups.find(x => x.key === k) || { rows: [], cents: -1 };
+    const names = k => g(k).rows.map(r => r.name).join(", ");
+    ok("§6 call this week: past their own usual time, ranked by a year of giving",
+       names("week") === "Imogen Hale, Bertram Quill, Odette Marsh", names("week"));
+    ok("§6 call this month: further past, or a recurring gift that stopped",
+       names("month") === "Leopold Danvers, Cyrus Fenwick, Wren Albury", names("month"));
+    ok("§6 probably gone: past the lapse line",
+       names("gone") === "Sabine Thorne, Agnes Pyle, Rupert Gale", names("gone"));
+    ok("§6 the dollars per group are a year of giving: $7,200, $3,800, $5,600",
+       g("week").cents === 720000 && g("month").cents === 380000 && g("gone").cents === 560000,
+       [g("week").cents, g("month").cents, g("gone").cents]);
+    ok("§6 …and the overall figure foots to the three groups, $16,600 across 9 donors",
+       plan.atRiskCents === 1660000 && plan.atRiskCount === 9 && plan.atRisk === "$16,600", plan.atRisk);
+    ok("§6 each group opens exactly the donors it counts",
+       plan.groups.every(x => x.count === x.rows.length && x.cents === x.rows.reduce((a, r) => a + r.yearCents, 0)));
+    ok("§6 one-gift donors are counted as not judged, never guessed into a group",
+       plan.notJudged === 2 && !["Pippa Lowe", "Silas Moor"].some(n => plan.groups.some(x => x.rows.some(r => r.name === n))),
+       plan.notJudgedSentence);
+    ok("§6 donors on time are in no group",
+       !["Esme Carver", "Hugo Banks"].some(n => plan.groups.some(x => x.rows.some(r => r.name === n))));
+    const fact = n => (plan.groups.flatMap(x => x.rows).find(r => r.name === n) || {}).fact;
+    for (const [n, want] of [
+      ["Bertram Quill", "$1,200 every February since 2022. Nothing for over a year."],
+      ["Cyrus Fenwick", "$1,200 every December since 2022. Nothing for over a year."],
+      ["Wren Albury", "Monthly $50 since March 2024. Stopped in July."],
+      ["Leopold Danvers", "Gave about every three months for 2 years, usually around $500. Nothing for 6 months."],
+      ["Rupert Gale", "Two gifts on record, a year apart. Nothing for 3 years."],
+    ]) ok(`§6 the fact for ${n} is read off the file`, fact(n) === want, fact(n));
+    ok("§6 each group says it in one sentence, with its count and dollars",
+       g("week").sentence === "3 donors who gave $7,200 in their last year of giving are past their usual time. Call these this week.",
+       g("week").sentence);
+  }
+
   // ── §2 · NOTHING WENT ANYWHERE ─────────────────────────────────────────
   // The whole audit has now run on a file full of names, email addresses and
   // amounts, and the recorder is still empty.
@@ -151,7 +210,12 @@ global.Image = function () { calls.push({ how: "Image", args: [] }); };
   const strip = src => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const worker = strip(fs.readFileSync(path.join(ROOT, "client", "src", "lib", "lostAndFoundWorker.js"), "utf8"));
   const shared = strip(fs.readFileSync(path.join(ROOT, "shared", "lostAndFound.js"), "utf8"));
-  for (const [what, src] of [["the worker", worker], ["the audit module", shared]]) {
+  // AUDIT-2 · the worker now also loads the rescue plan, Drift and its date
+  // seam, and the empty-env shim. Each is read for the same tokens.
+  const readSrc = (...p) => strip(fs.readFileSync(path.join(ROOT, ...p), "utf8"));
+  for (const [what, src] of [["the worker", worker], ["the audit module", shared],
+    ["the rescue module", readSrc("shared", "lostAndFoundRescue.js")], ["drift.js", readSrc("drift.js")],
+    ["orgTime.js", readSrc("orgTime.js")], ["the worker's env shim", readSrc("client", "src", "lib", "lostAndFoundEnv.js")]]) {
     for (const bad of ["fetch(", "XMLHttpRequest", "sendBeacon", "new WebSocket", "EventSource", "new Image"]) {
       ok(`§3 ${what} contains no ${bad.replace(/[(]/, "")}`, !src.includes(bad), bad);
     }
