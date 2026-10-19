@@ -230,3 +230,21 @@ for (const p of [...PERSONAS, GENERAL]) {
 
 export default { PERSONAS, GENERAL, SETUP, SETUP_STEPS, PERSONA_IDS, PERSONA_TOOLS, PERSONA_FORBIDDEN_TOOLS,
                  getPersona, isValidPersona, personaToolSet, dropOutOfScope };
+
+// VOICE-1 — TELL STEWARD. The memo persona: she talks for thirty seconds after
+// a donor lunch and the paperwork lands where it belongs. Like HELP and SETUP
+// it is not a card anyone picks; it is reached from the Tell Steward button.
+// Its tools are the record-keeping half of the engine and nothing that leaves
+// the building: a draft waits in her queue, and money is a card she confirms
+// (prepare_gift), never a write. Checked here by the same guard as the rest.
+export const NOTES = P("notes", "Notes",
+  "Turns what you tell it after a meeting into the record.",
+  "It reads your memo and logs the conversation, puts the follow-up on the Thread with its date, notes what they are interested in and drafts the email. Money, contact changes and anything personal wait for your yes.",
+  "You read a memo a fundraiser spoke straight after talking with a donor, and say what it records. You quote her words for every item. You never send, never record money, and never file a personal detail about health, family, money troubles or a child without her yes.",
+  ["log_conversation", "set_next_step", "create_task", "log_note", "add_tag", "draft_note", "update_contact", "prepare_gift"],
+  [],
+  "It logs, schedules and drafts. Nothing is sent, and money and personal details wait for your yes.");
+for (const t of NOTES.tools) {
+  if (PERSONA_FORBIDDEN_TOOLS.includes(t) || !PERSONA_TOOLS.includes(t))
+    throw new Error(`agentPersonas: "notes" names ${t}, which it may not have`);
+}

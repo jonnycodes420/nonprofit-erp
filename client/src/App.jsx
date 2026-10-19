@@ -4,6 +4,7 @@ import { tabHref, parseAppUrl } from "./lib/appUrls";
 import { RecordLink } from "./components/RecordLink";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import { HelpPanel } from "./components/HelpPanel";
+import TellSteward, { MicGlyph, openTellSteward } from "./components/TellSteward";   // VOICE-1
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, ErrorBoundary, PhotoContext, FirstRunWelcome } from "./components/shared";
 import { CAPTURE_CHANGED } from "./components/CaptureInbox";
@@ -134,6 +135,13 @@ function AppShell() {
   const [stripeToast,setStripeToast]=useState(false);
   const [subscribedToast,setSubscribedToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
+  // VOICE-1 — Tell Steward: one sheet, opened from Home, a profile or the menu.
+  const [tell,setTell]=useState(null);
+  useEffect(()=>{
+    const on=e=>setTell({donor:(e.detail&&e.detail.donor)||null});
+    window.addEventListener("steward:tell",on);
+    return()=>window.removeEventListener("steward:tell",on);
+  },[]);
   // NAV-1 §4 — the person's own rail. `navSaved` is what the server holds
   // ([{id,visible}] or null for "never customized"); `navGroups` is that
   // merged with the canonical groups, which is what both the sidebar and the
@@ -713,6 +721,12 @@ function AppShell() {
             the work happens: one is the thing that drafts, the other is where
             you change how the product behaves. They sit under the rail's own
             rule rather than at the end of MONEY. */}
+        {/* VOICE-1 — Tell Steward, in the rail's own style, above Agent and Settings. */}
+        {!isReadOnly&&<button data-testid="sidebar-tell-steward" onClick={()=>openTellSteward(null)} title="Tell Steward what happened"
+          style={{...sideBtn(false),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
+          <span aria-hidden="true" style={{width:18,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.gold500||"#C9A84C"}}><MicGlyph size={16}/></span>
+          {!sidebarCollapsed&&"Tell Steward"}
+        </button>}
         <div data-nav-group="bottom">
           {navVisible.filter(g=>g.bottom).flatMap(g=>g.items).map(i=>navById[i.id]).filter(Boolean).map(navItem)}
         </div>
@@ -1013,6 +1027,11 @@ function AppShell() {
     {moreOpen&&<div className="mobile-more-overlay" onClick={()=>setMoreOpen(false)}>
       <div className="mobile-more-drawer slide-up" onClick={e=>e.stopPropagation()}>
         <div className="mobile-more-handle"/>
+        {/* VOICE-1 — Tell Steward, first in the phone's menu. */}
+        {!isReadOnly&&<button data-testid="mobile-tell-steward" onClick={()=>{setMoreOpen(false);openTellSteward(null);}} className="mobile-more-row" style={{fontWeight:700}}>
+          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><MicGlyph size={18}/></span>
+          <span style={{flex:1}}>Tell Steward</span>
+        </button>}
         {/* NAV-1 §1/§6 — THE PHONE MENU IS THE RAIL'S GROUPS, IN THE RAIL'S
             ORDER, and it reads from the same merged layout: an item somebody
             hid on their laptop is hidden on their phone too. It used to be a
@@ -1056,6 +1075,7 @@ function AppShell() {
     </div>}
 
     {mobileHelp&&<HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/>}
+    {tell&&<TellSteward donor={tell.donor} onClose={()=>{setTell(null);loadData();window.dispatchEvent(new CustomEvent("steward:told"));}} onNavigate={navigateTo}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>

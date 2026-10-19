@@ -48,6 +48,7 @@ import { WhyPanel } from "./WhyAnswer";
 import { AskButtons } from "./AskRail";
 import { useDonorStatus, StatusTags, ClosenessLine, ImportRefusalsLine, Highlights, NextLine, VolunteerLine } from "./ProfileStatus";
 import VideoThanksModal from "./VideoThanksModal";   // PARITY-1 Part F
+import { MicGlyph, openTellSteward } from "./TellSteward";   // VOICE-1
 import { ProfileGroups } from "./Groups";
 import { MONTHS as BIRTH_MONTHS, birthdayLabel } from "../../../shared/birthday.js";   // PARITY-3 6a
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
@@ -1810,6 +1811,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
+  // VOICE-1 — a memo filed from the sheet shows on this profile at once.
+  useEffect(()=>{
+    const on=()=>{ if(onInteractionAdded)onInteractionAdded(); };
+    window.addEventListener("steward:told",on);
+    return()=>window.removeEventListener("steward:told",on);
+  },[onInteractionAdded]);
   // MEMBERS-2 — one click sends this person the link to their own page. The
   // email goes out through the normal path and the token never comes back to
   // this screen: a staff member who could read it could open the page.
@@ -2066,6 +2073,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Plan a follow-up
           </button>}
+          {/* VOICE-1 — Tell Steward about this person: the memo is about them by default. */}
+          <button onClick={()=>openTellSteward(donor)} disabled={isReadOnly} data-testid="dp-tell-steward"
+            style={{background:T.white,border:"1px solid "+T.greenDk,borderRadius:9,padding:"9px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1,display:"inline-flex",alignItems:"center",gap:7}}>
+            <MicGlyph size={15}/>Tell Steward
+          </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
               Code intact, re-enable by uncommenting.
           <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>

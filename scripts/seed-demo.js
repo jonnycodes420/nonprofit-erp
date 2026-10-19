@@ -3742,6 +3742,7 @@ async function main() {
   await require("./seed/reconcile1-mismatch").seedReconcile1(q, ORG);   // RECONCILE-1: the 2024 DonorPerfect file differs from Steward by a known amount, for two reasons
   await require("./seed/capture1-inbox").seedCapture1(q, ORG);   // CAPTURE-1: six cards in To confirm (a batch of checks with its slip, a pledge form, a DAF letter, an address change done for you) + a month of gift-to-thank-you times
   await require("./seed/onboard1-setup").seedOnboard1(q, { teardownOrg, TZ });   // ONBOARD-1: a second demo org, Riverbend Food Pantry, before setup
+  await require("./seed/voice1-memos").seedVoice1(q, ORG, { TODAY, dAdd });   // VOICE-1: three memos from the last week, what each filed, and the two cards still waiting
 
   // PARITY-3 6b — ANALYZE what the seed just wrote. Without it Postgres plans
   // from no statistics, guesses one row per table, and the Mid group page took

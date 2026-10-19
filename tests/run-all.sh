@@ -261,6 +261,7 @@ CORE=(
   reconcile1-checks
   capture1-zero-day
   onboard1-setup
+  voice1-tell-steward
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
