@@ -616,11 +616,11 @@ app.put("/volunteers/:id", requireAuth, checkWriteAccess, wrap(async (req, res) 
       ).catch(() => {});
       const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75)
       await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES (?,?,?,'note',?,?)",
-        ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect — 20+ hours logged", today]).catch(() => {});
+        ["i_"+uuid().slice(0,8), orgId, donorId, "Volunteer prospect: 20+ hours logged", today]).catch(() => {});
     }
     const dueDate = orgToday(await orgTz(orgId), new Date(Date.now() + 7*24*60*60*1000));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
     await run("INSERT INTO tasks (id,org_id,title,priority,done,due,created_by,created_by_name) VALUES (?,?,?,'high',0,?,?,?)",
-      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect — 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
+      ["t_"+uuid().slice(0,8), orgId, `Cultivate volunteer ${name} as donor prospect: 20+ hours logged`, dueDate, SYS_AUTO.id, SYS_AUTO.name]).catch(() => {});
   }
 
   const rows = await query("SELECT * FROM volunteers WHERE id = ?", [req.params.id]);

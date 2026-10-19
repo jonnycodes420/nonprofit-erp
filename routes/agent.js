@@ -147,8 +147,8 @@ app.post("/ai/column-map", requireAuth, wrap(async (req, res) => {
       role: "user",
       content: `Map these CSV column headers to donor fields. Available target fields: name, _firstName, _lastName, email, phone, total, lastAmount, lastGift, gifts, status, city, state, notes. Use empty string to skip a column. Use _firstName/_lastName when separate first/last name columns are present instead of a single name column.
 
-RULES — follow these strictly:
-1. Negation/flag columns: if a header signals a negation or opt-out ("do not email", "do not call", "do not mail", "opt out", "unsubscribe", "do not contact", or any similar phrasing), map it to "" (skip) or "notes" — NEVER to the contact field it negates (email, phone, etc.).
+RULES, follow these strictly:
+1. Negation/flag columns: if a header signals a negation or opt-out ("do not email", "do not call", "do not mail", "opt out", "unsubscribe", "do not contact", or any similar phrasing), map it to "" (skip) or "notes", NEVER to the contact field it negates (email, phone, etc.).
 2. Email shape check: only map a column to "email" if the sample values actually look like email addresses (contain "@"). If the sample values are "Yes", "No", blank, or anything without "@", map to "" instead.
 3. Phone shape check: only map a column to "phone" if the sample values contain digits that look like phone numbers.
 4. Use the sample row values below to verify these shape rules before assigning a field.
@@ -1319,7 +1319,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // below is what guarantees it, and this is what makes the plan sensible.
   const toolList = A.AGENT_TOOLS
     .filter(t => A.PLANNABLE.includes(t.name) && allowed.has(t.name))
-    .map(t => `  ${t.name} — ${t.what}`).join("\n");
+    .map(t => `  ${t.name} · ${t.what}`).join("\n");
 
   const system = [
     // AGENTS-1 — the persona's own words, first. The general persona's line is
@@ -2138,7 +2138,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
         error: "agent_trial_allowance",
         used: allow.used, allowance: allow.allowance,
         sentence: `You have used all ${allow.allowance} Agent plans included in your free thirty days. `
-          + `The Agent comes back without a limit the moment your first charge goes through — nothing else `
+          + `The Agent comes back without a limit the moment your first charge goes through, nothing else `
           + `about Steward is affected, and every plan you have already written is still here.`,
       });
     }
@@ -2451,7 +2451,7 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
       showcase = {
         orgName: "Harborlight Youth Collective",
         isDemoData: true,
-        why: "You have not imported anyone yet, so this is what the Agent would do on the demo organization's real records — not yours, and not invented.",
+        why: "You have not imported anyone yet, so this is what the Agent would do on the demo organization's real records, not yours, and not invented.",
         instruction: "Thank everyone who gave in the last month, in my voice, and tell me who I should call.",
         people: demo.map(d => ({
           name: d.name,

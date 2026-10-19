@@ -103,7 +103,7 @@ export const UPLOAD_HEADING = "Upload a statement";
 // the mistake that put it there.
 export class DirectClaimRefused extends Error {
   constructor(key, why) {
-    super(`refused to show ${providerLabel(key)} as a direct connection — ${why}`);
+    super(`refused to show ${providerLabel(key)} as a direct connection · ${why}`);
     this.name = "DirectClaimRefused";
     this.code = "DIRECT_CLAIM_REFUSED";
   }

@@ -9,7 +9,7 @@
 // "put it on my calendar" will otherwise be read as sync:
 export const NOT_SYNC_NOTE =
   "This opens your calendar with the details filled in. Steward doesn't write to " +
-  "your calendar and doesn't read it — if you change the time there, change it here too.";
+  "your calendar and doesn't read it, if you change the time there, change it here too.";
 //
 // Pure: no DB, no network, no clock (every "now" is a parameter).
 

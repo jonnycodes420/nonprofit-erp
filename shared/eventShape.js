@@ -46,7 +46,7 @@ export function validateLevel(raw) {
   const fmv = raw?.fmv === undefined || raw?.fmv === null || raw?.fmv === "" ? 0 : toCents(raw.fmv);
   if (!Number.isFinite(fmv) || fmv < 0) errors.push("a fair-market value of zero or more");
   if (Number.isFinite(price) && Number.isFinite(fmv) && fmv > price)
-    errors.push("the fair-market value cannot be more than the price — the deductible part would be negative");
+    errors.push("the fair-market value cannot be more than the price, the deductible part would be negative");
   // EVENTS-2 — the member price. Null means the level has one price. It is
   // never above the full price and never below the fair-market value: a
   // ticket whose deductible part is negative is not a discount, it is a
@@ -89,7 +89,7 @@ export function quidProQuoDescription({ eventName, levelName, qty = 1, kind = "t
 // may write its own per level; otherwise the donor's name and the level.
 export function recognitionLine({ donorName, levelName, recognition }) {
   if (recognition) return recognition.replace(/\{\{\s*name\s*\}\}/g, donorName || "");
-  return `${donorName} — ${levelName}`;
+  return `${donorName} · ${levelName}`;
 }
 
 // Tables: a short label a person types ("Table 4", "Head table"). Normalised

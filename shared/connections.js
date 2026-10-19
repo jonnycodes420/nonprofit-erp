@@ -147,7 +147,7 @@ export function reconcile({ payoutCents, giftCents, feeCents, refundCents = 0 })
     expectedCents: expected, differenceCents, matches: differenceCents === 0,
     sentence: differenceCents === 0
       ? `${money(g)} in gifts, less ${money(f)} of fees${r ? ` and ${money(r)} refunded` : ""}, is ${money(p)} in the bank.`
-      : `${money(g)} in gifts, less ${money(f)} of fees${r ? ` and ${money(r)} refunded` : ""}, is ${money(expected)} — but ${money(p)} arrived. ${money(Math.abs(differenceCents))} ${differenceCents > 0 ? "more than" : "less than"} Steward can account for.`,
+      : `${money(g)} in gifts, less ${money(f)} of fees${r ? ` and ${money(r)} refunded` : ""}, is ${money(expected)}, but ${money(p)} arrived. ${money(Math.abs(differenceCents))} ${differenceCents > 0 ? "more than" : "less than"} Steward can account for.`,
   };
 }
 

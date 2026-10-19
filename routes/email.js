@@ -44,7 +44,7 @@ function givingAccountLink(slug, email) {
 function givingAccountEmailFooterHtml(slug, email, linkColor) {
   const color = linkColor || PORTAL_DEFAULT_THEME.primary;
   return `<p style="border-top:1px solid #e8e4db;margin-top:22px;padding-top:12px;color:#8fa896;font-size:12px;">
-    See all your giving in one place — receipts, recurring gifts, and year-end totals across every organization you support:
+    See all your giving in one place, receipts, recurring gifts, and year-end totals across every organization you support:
     <a href="${givingAccountLink(slug, email)}" style="color:${color};">create your free giving account</a>.</p>`;
 }
 
@@ -69,7 +69,7 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     const brand = await resolveOrgBrandTheme(org.id).catch(() => null);
     const html = await brandEmailHeaderHtml(org.id)
       + `<p>Hi ${escapeHtml(donor.name || "there")},</p>
-      <p>Thank you for your generous gift to <strong>${escapeHtml(dfName)}</strong> — your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
+      <p>Thank you for your generous gift to <strong>${escapeHtml(dfName)}</strong> your official ${snapshot.type === "year_end" ? "year-end giving statement" : "tax receipt"} is attached.</p>`
       // BUILD-54 §2 — the campaign's own org-authored copy (frozen in the
       // snapshot at issue time); absent when the campaign has no content.
       + (snapshot.campaignNote ? `<p>Your gift supports <strong>${escapeHtml(snapshot.campaignNote.name)}</strong>. ${escapeHtml(snapshot.campaignNote.description)}</p>` : "")
@@ -416,10 +416,10 @@ const DEFAULT_DUNNING_SUBJECT = "A quick fix to keep your support going";
 // "tier"/"level"/"badge"/"leaderboard" language anywhere — this is a
 // stewardship touch, not a collections notice (see CLAUDE.md "Strategic pivot").
 const DEFAULT_DUNNING_BODY = `<p>Hi {{first_name}},</p>
-<p>Thank you again for your ongoing gift of {{amount}} to {{org_name}} — support like yours is what makes our work possible.</p>
+<p>Thank you again for your ongoing gift of {{amount}} to {{org_name}}, support like yours is what makes our work possible.</p>
 <p>We tried to process your latest gift and the card on file didn't go through. This happens most often when a card has expired or been reissued, and it only takes a minute to fix.</p>
 <p style="text-align:center;margin:28px 0;"><a href="{{update_url}}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Update my card</a></p>
-<p>If you have any questions, just reply to this email — we're glad to help.</p>
+<p>If you have any questions, just reply to this email, we're glad to help.</p>
 <p>With gratitude,<br/>{{org_name}}</p>`;
 
 function applyDunningTokens(str, { donor, org, amount, updateUrl }) {
@@ -459,7 +459,7 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
   try {
     const [ps] = await query(`SELECT ps.enabled, o.org_slug FROM portal_settings ps JOIN orgs o ON o.id = ps.org_id WHERE ps.org_id = ?`, [org.id]);
     if (ps && ps.enabled === true && ps.org_slug) {
-      portalLine = `<p style="font-size:13px;color:#555;text-align:center;">Prefer to manage everything yourself? <a href="${publicAppUrl()}/portal/${ps.org_slug}">Sign in to your donor portal</a> — no password needed.</p>`;
+      portalLine = `<p style="font-size:13px;color:#555;text-align:center;">Prefer to manage everything yourself? <a href="${publicAppUrl()}/portal/${ps.org_slug}">Sign in to your donor portal</a> no password needed.</p>`;
     }
   } catch { /* portal line is optional */ }
   const bodyHtml = await brandEmailHeaderHtml(org.id)
@@ -529,10 +529,10 @@ async function sendCardExpiringEmail(org, donor, rs) {
     + `<div style="padding:22px;font-family:'DM Sans',Helvetica,Arial,sans-serif;color:#0f1a12;">
         <p>Hi ${escHtmlWf(firstName)},</p>
         <p>The card on your ${escHtmlWf(amountStr)} ${per} gift to ${escHtmlWf(dfName)}${last4} expires ${escHtmlWf(expLabel)}.
-           Nothing has gone wrong — we wanted to let you know before your next gift, so it does not
+           Nothing has gone wrong, we wanted to let you know before your next gift, so it does not
            get interrupted.</p>
         <p style="text-align:center;margin:28px 0;"><a href="${updateUrl}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Update my card</a></p>
-        <p style="font-size:13px;color:#555;">It takes a minute, and ${escHtmlWf(dfName)} never sees your card details — Stripe handles it.</p>
+        <p style="font-size:13px;color:#555;">It takes a minute, and ${escHtmlWf(dfName)} never sees your card details, Stripe handles it.</p>
         <p style="font-size:13px;color:#555;">Thank you for giving, month after month.</p>
       </div>`
     + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
@@ -662,10 +662,10 @@ const DEFAULT_PLEDGE_REMINDER_SUBJECT = "A quick reminder about your pledge to {
 // my card" CTA here — a pledge has no payment method on file to fix, so the
 // call to action is simply the org's existing public donation page.
 const DEFAULT_PLEDGE_REMINDER_BODY = `<p>Hi {{first_name}},</p>
-<p>Thank you again for your generous pledge of {{amount}} to {{org_name}}. We wanted to check in — that pledge was due {{due_date}}, and we don't show a matching gift yet.</p>
-<p>If you've already sent it, thank you — please disregard this note, it may have just crossed paths with your gift. If not, you can fulfill your pledge here:</p>
+<p>Thank you again for your generous pledge of {{amount}} to {{org_name}}. We wanted to check in, that pledge was due {{due_date}}, and we don't show a matching gift yet.</p>
+<p>If you've already sent it, thank you, please disregard this note, it may have just crossed paths with your gift. If not, you can fulfill your pledge here:</p>
 <p style="text-align:center;margin:28px 0;"><a href="{{give_url}}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Fulfill my pledge</a></p>
-<p>If you have any questions, just reply to this email — we're glad to help.</p>
+<p>If you have any questions, just reply to this email, we're glad to help.</p>
 <p>With gratitude,<br/>{{org_name}}</p>`;
 
 function applyPledgeReminderTokens(str, { donor, org, amount, dueDate, giveUrl }) {
@@ -723,12 +723,12 @@ function trialReminderEmailHtml({ orgName, sentence, cardBrand, cardLast4, cance
       <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
         <h1 style="margin:0 0 14px;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.25;">A week before your first charge</h1>
         <p style="margin:0 0 18px;font-size:15px;color:#0f1a12;line-height:1.6;"><strong>${sentence}</strong> It goes to ${card}.</p>
-        <p style="margin:0 0 26px;font-size:15px;color:#5A554F;line-height:1.6;">Nothing has been charged yet. If ${orgName ? displayNameCase(orgName) : "your organization"} is not going to keep using Steward, cancel before then and you pay nothing &mdash; one click, no phone call.</p>
+        <p style="margin:0 0 26px;font-size:15px;color:#5A554F;line-height:1.6;">Nothing has been charged yet. If ${orgName ? displayNameCase(orgName) : "your organization"} is not going to keep using Steward, cancel before then and you pay nothing, one click, no phone call.</p>
         <table cellpadding="0" cellspacing="0" style="margin-bottom:26px;"><tr><td style="border-radius:10px;border:1px solid #E8E4DB;">
           <a href="${cancelUrl}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:700;color:#0f1a12;text-decoration:none;">Cancel my subscription</a>
         </td></tr></table>
-        <p style="margin:0;font-size:14px;color:#5A554F;line-height:1.6;">If you are staying, there is nothing to do. Reply to this email with any question &mdash; it reaches me.</p>
-        <p style="margin:18px 0 0;font-size:14px;color:#5A554F;line-height:1.6;">&mdash; Jonathan</p>
+        <p style="margin:0;font-size:14px;color:#5A554F;line-height:1.6;">If you are staying, there is nothing to do. Reply to this email with any question, it reaches me.</p>
+        <p style="margin:18px 0 0;font-size:14px;color:#5A554F;line-height:1.6;">Jonathan</p>
       </td></tr>
       <tr><td style="padding-top:20px;text-align:center;font-size:12px;color:#8a857f;">Steward &middot; stewardapp.dev</td></tr>
     </table></td></tr>

@@ -56,7 +56,7 @@ const HKDF_INFO = "steward:giving-source-credentials";
 
 export class CredentialKeyMissing extends Error {
   constructor(msg) {
-    super(msg || `${CREDENTIAL_KEY_ENV} is not set — a giving source cannot be connected until it is`);
+    super(msg || `${CREDENTIAL_KEY_ENV} is not set: a giving source cannot be connected until it is`);
     this.name = "CredentialKeyMissing";
     this.code = "CREDENTIAL_KEY_MISSING";
   }

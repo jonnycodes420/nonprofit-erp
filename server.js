@@ -3289,7 +3289,7 @@ app.use(PORTAL_TIER_BLOCKED_PREFIXES, wrap(async (req, res, next) => {
   if (req.baseUrl === "/reports" && req.path.startsWith("/giving-summary")) return next();
   return res.status(403).json({
     error: "portal_tier",
-    message: "This is part of the Steward CRM. Your Portal plan covers the donor portal, gift recording, receipts, and impact updates — upgrade to Core to unlock the CRM.",
+    message: "This is part of the Steward CRM. Your Portal plan covers the donor portal, gift recording, receipts, and impact updates, upgrade to Core to unlock the CRM.",
   });
 }));
 
@@ -3383,7 +3383,7 @@ async function autoLapseOrg(orgId) {
       "UPDATE donors SET stage='lapsed', updated_at=NOW() WHERE id=? AND org_id=? AND stage=? RETURNING id",
       [d.id, orgId, d.stage]);
     if (!upd.length) continue;
-    await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed — no gift in ${months} months`);
+    await recordAutoMove(orgId, d.id, d.stage, "lapsed", `Auto: lapsed: no gift in ${months} months`);
     moved++;
   }
   return moved;
@@ -3636,7 +3636,7 @@ async function renderReceiptPdf(snapshot) {
     if (logoBuf) { try { doc.image(logoBuf, PW - 50 - 54, 18, { fit: [54, 54], align: "right" }); } catch {} }
     doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(isYearEnd ? "Y E A R - E N D   G I V I N G   S T A T E M E N T" : "D O N A T I O N   R E C E I P T", 50, 24);
     doc.font("Helvetica-Bold").fontSize(19).fillColor(HEADER_FG).text(snapshot.orgLegalName, 50, 40, { width: PW - 120 });
-    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(`EIN: ${snapshot.orgEin || "—"}`, 50, 68);
+    doc.font("Helvetica").fontSize(9).fillColor(HEADER_SUB).text(`EIN: ${snapshot.orgEin || "Not set"}`, 50, 68);
 
     let y = 112;
     doc.font("Helvetica").fontSize(9).fillColor(INK3).text(`Receipt #${snapshot.receiptNumber}`, 50, y);
@@ -3656,12 +3656,12 @@ async function renderReceiptPdf(snapshot) {
       doc.font("Helvetica").fontSize(7).fillColor(INK3).text("AMOUNT", 230, y + 10);
       doc.font("Helvetica-Bold").fontSize(11).fillColor(GREEN).text(fmtD(snapshot.amount), 230, y + 22);
       doc.font("Helvetica").fontSize(7).fillColor(INK3).text("PAYMENT METHOD", 390, y + 10);
-      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.paymentMethod || "—", 390, y + 22);
+      doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(snapshot.paymentMethod || "Not set", 390, y + 22);
       y += 84;
 
       if (snapshot.quidProQuoDesc) {
         doc.font("Helvetica").fontSize(9).fillColor(INK).text(
-          `In exchange for this contribution, ${snapshot.orgLegalName} provided: ${snapshot.quidProQuoDesc} (estimated fair market value ${fmtD(snapshot.quidProQuoValue)}). Only the amount of your contribution in excess of that value — ${fmtD(snapshot.deductibleAmount)} — is tax-deductible.`,
+          `In exchange for this contribution, ${snapshot.orgLegalName} provided: ${snapshot.quidProQuoDesc} (estimated fair market value ${fmtD(snapshot.quidProQuoValue)}). Only the amount of your contribution in excess of that value, ${fmtD(snapshot.deductibleAmount)}, is tax-deductible.`,
           50, y, { width: PW - 100, lineGap: 2 }
         );
       } else {
@@ -3677,7 +3677,7 @@ async function renderReceiptPdf(snapshot) {
       snapshot.lineItems.forEach((item, i) => {
         doc.rect(50, y, PW - 100, 18).fill(i % 2 === 0 ? "#ffffff" : BG);
         doc.font("Helvetica").fontSize(8).fillColor(INK).text(item.date, 58, y + 5, { width: 100 });
-        doc.fillColor(INK3).text(item.paymentMethod || "—", 170, y + 5, { width: 150 });
+        doc.fillColor(INK3).text(item.paymentMethod || "Not set", 170, y + 5, { width: 150 });
         doc.font("Helvetica-Bold").fillColor(GREEN).text(fmtD(item.amount), PW - 150, y + 5, { width: 100, align: "right" });
         y += 18;
       });
@@ -3730,8 +3730,8 @@ async function renderReceiptPdf(snapshot) {
         // COMMS-2 — the org's own tax language from its brand kit, when it wrote
         // one; the EIN always follows it.
         snapshot.taxLanguage
-          ? `${snapshot.taxLanguage} EIN: ${snapshot.orgEin || "—"}.`
-          : `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "—"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
+          ? `${snapshot.taxLanguage} EIN: ${snapshot.orgEin || "Not set"}.`
+          : `${snapshot.orgLegalName} is a tax-exempt organization. EIN: ${snapshot.orgEin || "Not set"}. This receipt is provided for your tax records. Please retain it. No portion of this document constitutes tax advice.`,
         50, doc.page.height - 40, { width: PW - 100, height: 30, align: "left" }
       );
     }
@@ -4445,7 +4445,7 @@ async function openSustainerLapseThread(orgId, donorId, { amount = null, interva
     const amt = amount != null && Number(amount) > 0
       ? "$" + Number(amount).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " " : "";
     const per = interval === "year" ? "yearly" : "monthly";
-    const label = sanitizeStepLabel(`Call about their ${amt}${per} gift — the card failed and our emails did not reach them`)
+    const label = sanitizeStepLabel(`Call about their ${amt}${per} gift: the card failed and our emails did not reach them`)
       || "Call about their recurring gift";
     // Due TODAY: by the time this fires the gift has already been failing for
     // a fortnight. A +N-day default would be the automation stalling twice.
@@ -4563,7 +4563,7 @@ async function bulkSendAddressGate(orgId) {
   return {
     ok: false,
     reason: "no_mailing_address",
-    message: "Every bulk email has to carry your organization's mailing address — it is the law for " +
+    message: "Every bulk email has to carry your organization's mailing address, it is the law for " +
              "commercial email, and Gmail and Yahoo both require it. Add it in Settings → Tax Receipts " +
              "and it appears in every footer from then on.",
   };
@@ -5636,7 +5636,7 @@ async function runSavedReportScheduleForOrg(org, { weekKey, force = false } = {}
       <table style="border-collapse:collapse">${head ? `<tr>${head}</tr>` : ""}${body}</table>
       ${out.totals.count > 20 ? `<p style="font-size:12px;color:#5a554f">and ${out.totals.count - 20} more.</p>` : ""}
       <p><a href="${link}">Open the report in Steward</a></p></div>`;
-    const ok = await sendGiftAlertEmail(org, owner.email, `${r.name} — your weekly report`, html);
+    const ok = await sendGiftAlertEmail(org, owner.email, `${r.name}: your weekly report`, html);
     if (!ok) { await run("DELETE FROM saved_report_sends WHERE id=?", [reserved[0].id]); skipped++; continue; }
     await run("UPDATE saved_reports SET last_sent_at=NOW() WHERE id=?", [r.id]);
     sent++;
@@ -5833,8 +5833,8 @@ function renderWeekInReviewBody(sec, win, headingName) {
   </div>`;
   const row = (a2, b) => `<div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;padding:5px 0;border-bottom:1px solid #eee7d8;">${a2}${b ? `<span style="float:right;color:#0d5c3a;font-weight:700;">${b}</span>` : ""}</div>`;
   const gifts = sec.gifts.map(g => row(digestEsc(g.donorName), digestMoney(g.amount))).join("");
-  const asks = sec.asks.map(a => row(`${digestEsc(a.donorName)}${a.name ? ` — ${digestEsc(a.name)}` : ""}`, digestMoney(a.targetAmount))).join("");
-  const moves = sec.moves.map(m => row(`${digestEsc(m.donorName)} · ${digestEsc(m.fromStage || "—")} → ${digestEsc(m.toStage)}<div style="font-size:12px;color:#6b7d70;">${digestEsc(m.description)}</div>`, "")).join("");
+  const asks = sec.asks.map(a => row(`${digestEsc(a.donorName)}${a.name ? ` ${digestEsc(a.name)}` : ""}`, digestMoney(a.targetAmount))).join("");
+  const moves = sec.moves.map(m => row(`${digestEsc(m.donorName)} · ${digestEsc(m.fromStage || "Not set")} → ${digestEsc(m.toStage)}<div style="font-size:12px;color:#6b7d70;">${digestEsc(m.description)}</div>`, "")).join("");
   const tasks = sec.pastDueTasks.map(t => row(`${digestEsc(t.title)}${t.donorName ? ` · ${digestEsc(t.donorName)}` : ""}`, `due ${digestEsc((t.due || "").slice(0, 10))}`)).join("");
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
     <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Week in Review</div>
@@ -5849,13 +5849,13 @@ function renderWeekInReviewBody(sec, win, headingName) {
     ${digestSectionHtml("Gifts received", gifts, "No gifts recorded this week.")}
     ${digestSectionHtml("Asks / pledges made", asks, "No new asks logged this week.")}
     ${digestSectionHtml("Moves", moves, "No pipeline moves this week.")}
-    ${digestSectionHtml("Past-due tasks", tasks, "Nothing past due — nice.")}
+    ${digestSectionHtml("Past-due tasks", tasks, "Nothing past due, nice.")}
   </div>`;
 }
 function renderOfficerMonthlyBody(rep, win) {
   const stat = (l, v) => `<div style="display:inline-block;min-width:130px;margin:6px 14px 6px 0;"><div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#6b7d70;">${l}</div><div style="font-size:20px;font-weight:800;color:#0f1a12;">${v}</div></div>`;
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(displayNameCase(rep.officerName))}</div>
+    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report · ${digestEsc(displayNameCase(rep.officerName))}</div>
     <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(win.start)} – ${digestEsc(win.end)}</div>
     <div style="margin-top:16px;padding:16px;background:#fff;border-radius:12px;border:1px solid #e5e0d5;">
       ${stat("Asks made", `${rep.asksMade} · ${digestMoney(rep.asksMadeAmount)}`)}
@@ -5947,7 +5947,7 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
         ? `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
             <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Week in Review</div>
             <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(wk.start)} – ${digestEsc(wk.end)}${isOfficerScope ? ` · ${digestEsc(displayNameCase(u.name))}` : ""}</div>
-            ${digestNudgeHtml(`A quiet week — nothing logged. <strong>${wkDue}</strong> donor${wkDue === 1 ? "" : "s"} ${isOfficerScope ? "in your portfolio " : ""}${wkDue === 1 ? "is" : "are"} due for a touch — a call or note this week keeps them from drifting.`, "Open Steward")}
+            ${digestNudgeHtml(`A quiet week, nothing logged. <strong>${wkDue}</strong> donor${wkDue === 1 ? "" : "s"} ${isOfficerScope ? "in your portfolio " : ""}${wkDue === 1 ? "is" : "are"} due for a touch, a call or note this week keeps them from drifting.`, "Open Steward")}
           </div>` + rollupLine
         : renderWeekInReviewBody(sec, wk, isOfficerScope ? displayNameCase(u.name) : null) + rollupLine;
       // FIX-15 Part 3: "sent" only when the provider took it.
@@ -5974,9 +5974,9 @@ async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], se
       if (allZero && moDue === 0) { out.monthly.skipped.push({ recipientUserId: u.id, suppressed: true }); continue; }
       const body = allZero
         ? `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-            <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report — ${digestEsc(displayNameCase(rep.officerName))}</div>
+            <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Monthly Report · ${digestEsc(displayNameCase(rep.officerName))}</div>
             <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(mo.start)} – ${digestEsc(mo.end)}</div>
-            ${digestNudgeHtml(`No moves logged this month — <strong>${moDue}</strong> prospect${moDue === 1 ? "" : "s"} in your portfolio ${moDue === 1 ? "is" : "are"} due for a touch. One conversation this week is next month's ask.`, "Open your pipeline")}
+            ${digestNudgeHtml(`No moves logged this month, <strong>${moDue}</strong> prospect${moDue === 1 ? "" : "s"} in your portfolio ${moDue === 1 ? "is" : "are"} due for a touch. One conversation this week is next month's ask.`, "Open your pipeline")}
           </div>`
         : renderOfficerMonthlyBody(rep, mo);
       if (await sendDigestEmail(org, u.email, `Your Monthly Report: ${displayNameCase(org.name)}`, body)) out.monthly.sent.push(payload);
@@ -6010,7 +6010,7 @@ function renderDailyTaskReminderBody(digest, org, user, today) {
       ? `<span style="color:#8a3a24;font-weight:700;">Overdue</span>`
       : `<span style="color:#8a6d1f;font-weight:700;">Today</span>`;
     const donor = t.donor_name ? ` · ${digestEsc(displayNameCase(t.donor_name))}` : "";
-    return `<li style="margin:6px 0;color:#0f1a12;">${digestEsc(t.title)} <span style="color:#6b7d70;">— ${badge}<span style="color:#6b7d70;"> ${digestEsc(String(t.due).slice(0, 10))}${donor}</span></span></li>`;
+    return `<li style="margin:6px 0;color:#0f1a12;">${digestEsc(t.title)} <span style="color:#6b7d70;">${badge}<span style="color:#6b7d70;"> ${digestEsc(String(t.due).slice(0, 10))}${donor}</span></span></li>`;
   };
   const overdueBlock = digest.overdue.length
     ? `<div style="font-weight:700;color:#8a3a24;margin-top:12px;">Overdue (${digest.overdue.length})</div><ul style="margin:4px 0 0;padding-left:18px;">${digest.overdue.map(li).join("")}</ul>` : "";
@@ -6312,7 +6312,7 @@ function morningBriefSubject(threads, taskCount, org, meetingCount = 0, readoutC
     return `${meetingCount} meeting${meetingCount === 1 ? "" : "s"} today · ${displayNameCase(org.name || "")}`;
   }
   if (threads.length === 0) {
-    return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today — ${displayNameCase(org.name || "")}`;
+    return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today · ${displayNameCase(org.name || "")}`;
   }
   // BUILD-86 FIX — the escalation names the thread the QUEUE says to do first,
   // not the one that has been open longest. `threads` arrives rank-ordered
@@ -6594,7 +6594,7 @@ async function composeStepReminders(orgId, today) {
 }
 
 function stepReminderSubject(t, timeLabel) {
-  return `${timeLabel} — ${t.next_step_label} · ${displayNameCase(t.donor_name || "")}`;
+  return `${timeLabel} · ${t.next_step_label} · ${displayNameCase(t.donor_name || "")}`;
 }
 
 function renderStepReminderBody(t, org, timeLabel) {
@@ -6838,7 +6838,7 @@ async function processSequences() {
           const today = orgToday(await orgTz(enr.org_id));   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
           await run(
             "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
-            [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name} — Step ${enr.current_step + 1}: ${step.subject}`, today]
+            [intId, enr.org_id, enr.donor_id, `Sequence: ${enr.seq_name}: Step ${enr.current_step + 1}: ${step.subject}`, today]
           );
         }
         const nextStep = steps[enr.current_step + 1];
@@ -7204,7 +7204,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
   }
   points.push(personalDetail
     ? `From their file: "${personalDetail.slice(0, 140)}${personalDetail.length > 140 ? "…" : ""}"`
-    : "No personal notes on file yet — worth asking what first drew them to this cause.");
+    : "No personal notes on file yet, worth asking what first drew them to this cause.");
 
   // 3. Something time-relevant — when the milestone itself is already an
   // anniversary (point 1), use recency of their last gift here instead so
@@ -7218,7 +7218,7 @@ async function computeNoteTalkingPoints(donorId, orgId, meta) {
     if (!isNaN(first.getTime())) {
       const years = Math.floor((Date.now() - first.getTime()) / (365.25 * 86400000));
       points.push(years >= 1
-        ? `They've been giving for ${years} year${years === 1 ? "" : "s"} — since ${first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}.`
+        ? `They've been giving for ${years} year${years === 1 ? "" : "s"}, since ${first.toLocaleDateString("en-US", { month: "long", year: "numeric" })}.`
         : `They made their first gift on ${first.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.`);
     }
   }
@@ -7279,7 +7279,7 @@ async function generateMilestoneDraft(recipient, orgId, meta) {
       // FIX-28: a short draft needs no thinking (the ASK-3 bug: thinking can eat
       // a small budget and leave the reply cut off or empty).
       thinking: { type: "disabled" },
-      system: `You write short, warm donor thank-you emails for a nonprofit development team. The donor just reached a real giving milestone. Rules: no hype, no exclamation-point overload, absolutely no gamification language — never say "tier", "level up", "unlock", "badge", "milestone reward", "leaderboard", or "you're so close to your next milestone". Write like a staff member who personally noticed and cared, not an app tracking progress. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
+      system: `You write short, warm donor thank-you emails for a nonprofit development team. The donor just reached a real giving milestone. Rules: no hype, no exclamation-point overload, absolutely no gamification language, never say "tier", "level up", "unlock", "badge", "milestone reward", "leaderboard", or "you're so close to your next milestone". Write like a staff member who personally noticed and cared, not an app tracking progress. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."}, no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
         content: `Greet the donor as (use exactly this after "Dear"): ${firstName}
@@ -7287,7 +7287,7 @@ Organization: ${orgName}
 Total given to date: $${totalGiving.toLocaleString()}
 ${sinceMonth ? `Donor's first gift was in ${sinceMonth}.` : ""}
 Milestone: ${milestoneDesc}
-${impactLine ? `Concrete impact to reference naturally (weave it in, don't just paste it verbatim): "${impactLine}"` : "No specific impact figure is configured for this giving level — keep it a genuine, specific thank-you about their giving without inventing outcome numbers."}
+${impactLine ? `Concrete impact to reference naturally (weave it in, don't just paste it verbatim): "${impactLine}"` : "No specific impact figure is configured for this giving level, keep it a genuine, specific thank-you about their giving without inventing outcome numbers."}
 
 Write the email now.`,
       }],
@@ -7338,7 +7338,7 @@ async function generateAtRiskDraft(recipient, orgId) {
       model: "claude-sonnet-4-6",
       max_tokens: 400,
       thinking: { type: "disabled" },   // FIX-28: the ASK-3 rule, as above
-      system: `You write short, warm "checking in" emails for a nonprofit development team to a longtime donor who has quietly gone a while without giving. Rules: no guilt trip, no hard ask, no gamification language — never say "tier", "level up", "unlock", "badge", "lapsed", "at risk", or "we noticed you stopped giving". Write like a staff member who genuinely thought of them and wanted to reconnect, not a system flagging inactivity. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."} — no markdown, no code fences, no explanation.`,
+      system: `You write short, warm "checking in" emails for a nonprofit development team to a longtime donor who has quietly gone a while without giving. Rules: no guilt trip, no hard ask, no gamification language, never say "tier", "level up", "unlock", "badge", "lapsed", "at risk", or "we noticed you stopped giving". Write like a staff member who genuinely thought of them and wanted to reconnect, not a system flagging inactivity. 3-5 sentences, plain language, specific, genuine. Return ONLY valid JSON: {"subject":"...","body":"..."}, no markdown, no code fences, no explanation.`,
       messages: [{
         role: "user",
         content: `Greet the donor as (use exactly this after "Dear"): ${firstName}
@@ -7720,7 +7720,7 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
            VALUES (?,?,?,'email',?,?,?)`,
           ["i_" + uuid().slice(0, 8), oid, enr.donor_id,
            `${SEQ.sendActorLine({ sequenceName: enr.seq_name, stepNumber: enr.current_step + 1,
-                                  turnedOnByName: enr.turned_on_by_name, turnedOnAt: civilOn })} — ${subj.text}`,
+                                  turnedOnByName: enr.turned_on_by_name, turnedOnAt: civilOn })} · ${subj.text}`,
            clock.date, "system:sequence"]);
         await advanceEnrollment(enr, steps);
         out.sent++;
@@ -7994,7 +7994,7 @@ const WORKFLOW_RECIPES = [
     conditions: [],
     actions: [
       { type: "add_tag", tag: "lapsing" },
-      { type: "create_task", title: "Re-engage {donor} — lapsing", priority: "medium", dueDays: 7 },
+      { type: "create_task", title: "Re-engage {donor}: lapsing", priority: "medium", dueDays: 7 },
     ],
     defaultConfig: { lapseDays: 365, sendEmail: false },
   },
@@ -8018,7 +8018,7 @@ const WORKFLOW_RECIPES = [
   {
     key: "instant_gift_thanks",
     name: "Gift received → notify the team to thank them",
-    description: "The instant a gift comes in, alert the executive director and/or the donor's assigned officer — in-app and by email — so a thank-you goes out fast. Set an amount threshold to only be pinged above a certain size.",
+    description: "The instant a gift comes in, alert the executive director and/or the donor's assigned officer, in-app and by email, so a thank-you goes out fast. Set an amount threshold to only be pinged above a certain size.",
     trigger: "gift_received",
     conditions: [{ field: "amount", op: "gte", value: 0 }],
     actions: [
@@ -8033,22 +8033,22 @@ const WORKFLOW_RECIPES = [
   {
     key: "quiet_past_pattern",
     name: "Donor quiet past their own pattern → task for their officer",
-    description: "When a donor goes meaningfully past their own giving rhythm — the same drift computation the home screen shows, high confidence only — create a task for their relationship owner carrying the reason. Earlier and more personal than the fixed lapse window.",
+    description: "When a donor goes meaningfully past their own giving rhythm, the same drift computation the home screen shows, high confidence only, create a task for their relationship owner carrying the reason. Earlier and more personal than the fixed lapse window.",
     trigger: "donor_drifting",
     conditions: [],
     actions: [
-      { type: "create_task", assignToOwner: true, title: "{donor} is drifting — {reason}", priority: "medium", dueDays: 5 },
+      { type: "create_task", assignToOwner: true, title: "{donor} is drifting: {reason}", priority: "medium", dueDays: 5 },
     ],
     defaultConfig: {},
   },
   {
     key: "pledge_due_soon",
     name: "Pledge payment coming due → task for their officer",
-    description: "A set number of days before an open pledge's due date, create a task for the donor's relationship owner so the ask never slips. Internal task only — the donor-facing pledge reminder emails are configured separately.",
+    description: "A set number of days before an open pledge's due date, create a task for the donor's relationship owner so the ask never slips. Internal task only, the donor-facing pledge reminder emails are configured separately.",
     trigger: "pledge_due",
     conditions: [],
     actions: [
-      { type: "create_task", assignToOwner: true, title: "Pledge due {dueDate}: {donor} — {amount} outstanding", priority: "medium", dueDays: 0 },
+      { type: "create_task", assignToOwner: true, title: "Pledge due {dueDate}: {donor}: {amount} outstanding", priority: "medium", dueDays: 0 },
     ],
     defaultConfig: { leadDays: 14 },
   },
@@ -8502,7 +8502,7 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       // The task lands with whoever should own the thank-you: the assigned
       // officer if there is one, else the first admin (the ED).
       const taskOwner = owner || recipients[0] || null;
-      const title = `Thank ${donor?.name || "a donor"} — ${amtStr || "a gift"} just came in`;
+      const title = `Thank ${donor?.name || "a donor"} · ${amtStr || "a gift"} just came in`;
       const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
       const taskId = "t_" + uuid().slice(0, 8);
       // FIX-10 Part C — the "just came in" task, stamped with its gift.
@@ -8511,9 +8511,9 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
         [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name, ctx.giftId || null]
       );
       // Email each distinct recipient (internal, no donor footer).
-      const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
+      const emailBody = `<p>A gift just came in, a good moment to say thank you.</p>
 <p style="font-size:16px"><strong>${escHtmlWf(donor?.name || "A donor")}</strong> gave <strong>${escHtmlWf(amtStr || "a gift")}</strong> to ${escHtmlWf(displayNameCase(org.name))}.</p>
-<p>Open Steward to send a thank-you while it's fresh — a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
+<p>Open Steward to send a thank-you while it's fresh, a fast, personal thank-you is the single biggest driver of a donor giving again.</p>`;
       // BUILD-36 A4: route through notifyUserOnce — respects the recipient's
       // per-user toggle AND dedups per gift event, so this gift-notify and the
       // major-gift owner alert never both email the same person for one gift.
@@ -8845,7 +8845,7 @@ async function processPledgeReminders() {
         await run(
           "INSERT INTO interactions (id,org_id,donor_id,type,note,date,metadata) VALUES (?,?,?,?,?,?,?)",
           ["int_" + uuid().slice(0, 8), p.org_id, p.donor_id, "pledge_reminder",
-           `Pledge reminder sent — $${Number(p.amount).toLocaleString()} pledge due ${new Date(p.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
+           `Pledge reminder sent · $${Number(p.amount).toLocaleString()} pledge due ${new Date(p.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`,
            orgToday(await orgTz(p.org_id)), JSON.stringify({ pledge_id: p.id, step: p.reminder_step })]   // ORG_TZ_SEAM_OK (FIX-14 Part 2b)
         );
 
@@ -9178,7 +9178,7 @@ async function sendTierNoticeEmail({ orgId, orgName, count, band, nextBandId, ef
   <p>You are paying for ${escapeHtml(band.band)}. ${escapeHtml(priceLine)}</p>
   <p><strong>Nothing has changed, and nothing will change before ${escapeHtml(when)}.</strong>
      Your card has not been charged differently and your plan has not moved. If the count looks
-     wrong to you, it usually means a file imported more people than you expected — reply to this
+     wrong to you, it usually means a file imported more people than you expected, reply to this
      message and we will look at it together.</p>
   <p style="color:#5A554F;font-size:13px">Steward &middot; stewardapp.dev</p>
 </div>`,
@@ -9199,8 +9199,8 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
         AND trial_reminder_sent_at IS NULL
         -- NO SUBSCRIPTION, NO CHARGE, NO WARNING. This email names an amount,
         -- a date and a card's last four digits. An org with no Stripe
-        -- subscription behind it — a manual super-admin grant, a demo org, a
-        -- legacy trial that never went through Checkout — has nothing coming,
+        -- subscription behind it, a manual super-admin grant, a demo org, a
+        -- legacy trial that never went through Checkout, has nothing coming,
         -- and telling it otherwise would be a lie about money.
         AND stripe_subscription_id IS NOT NULL
         -- ADMIN-CLEAN: nobody at a demo, internal test or fixture org is charged.
@@ -11081,17 +11081,17 @@ function imageBytesMatchMime(contentType, buffer) {
 
 function checkThemeImageDimensions(kind, contentType, buffer) {
   if (!imageBytesMatchMime(contentType, buffer)) {
-    return { ok: false, message: "That file doesn't parse as an image — try re-exporting it as PNG or JPEG." };
+    return { ok: false, message: "That file doesn't parse as an image, try re-exporting it as PNG or JPEG." };
   }
   if (contentType === "image/svg+xml") return { ok: true, width: null, height: null };
   let d;
   try { d = imageSize(buffer); } catch { d = null; }
   if (!d || !d.width || !d.height) {
-    return { ok: false, message: "That file doesn't parse as an image — try re-exporting it as PNG or JPEG." };
+    return { ok: false, message: "That file doesn't parse as an image, try re-exporting it as PNG or JPEG." };
   }
   if (kind === "header") {
     if (d.height >= d.width) {
-      return { ok: false, message: "Header images render as a wide banner — this image is as tall as it is wide and would crop badly. Use a landscape image (at least 1200×300 works well)." };
+      return { ok: false, message: "Header images render as a wide banner, this image is as tall as it is wide and would crop badly. Use a landscape image (at least 1200×300 works well)." };
     }
     if (d.width < 600) {
       return { ok: false, message: "Header images need to be at least 600px wide to look sharp as a banner." };
@@ -11138,7 +11138,7 @@ function uploadImageError(dataUri) {
   if (typeof dataUri !== "string") return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
   const m = dataUri.match(/^data:([^;]+);base64,/);
   if (!m || !PORTAL_IMG_MIMES.includes(m[1])) return "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, WebP, or SVG image.";
-  if (dataUri.length > MAX_UPLOAD_STR) return "That image is unusually large. Please use a photo under 15 MB — a normal photo from a phone or camera is well within that.";
+  if (dataUri.length > MAX_UPLOAD_STR) return "That image is unusually large. Please use a photo under 15 MB, a normal photo from a phone or camera is well within that.";
   return null;
 }
 
@@ -11496,7 +11496,7 @@ async function processNetworkGate() {
     await run(`UPDATE portal_settings SET network_listed = false, updated_at = NOW() WHERE org_id = ?`, [a.org_id]);
     delisted++;
     await sendDonorLifecycleEmail("admin_delist", process.env.FOUNDER_EMAIL || "jonathan@stewardapp.dev",
-      `Network delisting — ${a.name}`,
+      `Network delisting · ${a.name}`,
       consumerEmailHtml(`<p><strong>${escHtmlWf(a.name)}</strong> (org ${escHtmlWf(a.org_id)}) was auto-delisted from donor dashboards.</p><p>Reason: ${escHtmlWf(reason)}.</p><p>Its portal stays up for existing donors; new gifts are blocked until re-approval.</p>`));
   }
   return { checked: approved.length, delisted };

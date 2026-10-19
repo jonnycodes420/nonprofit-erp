@@ -23,7 +23,7 @@
 import { greetingName } from "./greeting.js";
 
 export const ACK_MERGE_FIELDS = [
-  { key: "salutation", label: "Salutation", hint: "Dear Margaret — their salutation if set, otherwise their first name" },
+  { key: "salutation", label: "Salutation", hint: "Dear Margaret: their salutation if set, otherwise their first name" },
   { key: "first", label: "First name" },
   { key: "name", label: "Full name" },
   { key: "gift_amount", label: "Gift amount", hint: "one gift, or the total when a donor has several in the batch" },

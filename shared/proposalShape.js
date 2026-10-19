@@ -100,7 +100,7 @@ export function normalizeProbability(raw) {
 // else" carries the note, so nothing is lost — it is just not pretending to be
 // a category.
 export const DECLINE_REASONS = [
-  { key: "not_now",        label: "Not now — timing" },
+  { key: "not_now",        label: "Not now: timing" },
   { key: "amount_too_big", label: "The amount was too much" },
   { key: "other_priority", label: "Giving elsewhere this year" },
   { key: "no_capacity",    label: "They told us they cannot" },
@@ -165,7 +165,7 @@ export function validateProposal(input = {}, { mode = "create" } = {}) {
   }
   if (has("probability")) {
     if (normalizeProbability(input.probability) === undefined) {
-      errors.push({ field: "probability", message: `Probability must be one of ${PROBABILITIES.join(", ")} — or left blank.` });
+      errors.push({ field: "probability", message: `Probability must be one of ${PROBABILITIES.join(", ")}, or left blank.` });
     }
   }
   // A declined proposal owes a reason and a date. The stage is not a feeling;
@@ -198,7 +198,7 @@ export function declineReopenRefusal(fromStage, toStage, { acknowledged } = {}) 
   if (acknowledged === true) return null;
   return {
     code: "decline_reopen_unacknowledged",
-    message: "This proposal was declined. Reopening it keeps the decline on the record — confirm to go ahead.",
+    message: "This proposal was declined. Reopening it keeps the decline on the record, confirm to go ahead.",
   };
 }
 
@@ -229,7 +229,7 @@ export function weightedSentence(w, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!w || w.openCount === 0) return "No open proposals yet.";
   if (w.counted === 0) {
-    return `${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"}, none with a probability set yet — so there is no weighted total.`;
+    return `${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"}, none with a probability set yet, so there is no weighted total.`;
   }
   const head = `${fm(w.cents)} weighted, from ${w.counted} ${w.counted === 1 ? "proposal" : "proposals"} at the probabilities you set.`;
   if (w.unset === 0) return head;
@@ -255,7 +255,7 @@ export function stageTileSentence(row, formatMoney) {
   const fm = typeof formatMoney === "function" ? formatMoney : (c => String(c));
   if (!row) return "";
   const n = row.count;
-  if (n === 0) return `No proposals at ${row.label} — ${stageFor(row.stage)?.blurb || ""}.`;
+  if (n === 0) return `No proposals at ${row.label}, ${stageFor(row.stage)?.blurb || ""}.`;
   return `${fm(row.askCents)} asked for across ${n} ${n === 1 ? "proposal" : "proposals"} at ${row.label}: ${stageFor(row.stage)?.blurb || ""}.`;
 }
 

@@ -67,7 +67,7 @@ export function validateTemplate({ name, steps } = {}) {
   const errors = [];
   const clean = [];
   const n = sanitizeName(name);
-  if (!n) errors.push({ field: "name", message: "Give the plan a name — this is a template the organization keeps." });
+  if (!n) errors.push({ field: "name", message: "Give the plan a name, this is a template the organization keeps." });
   const list = Array.isArray(steps) ? steps : [];
   if (!list.length) errors.push({ field: "steps", message: "A plan needs at least one step." });
   if (list.length > MAX_STEPS) errors.push({ field: "steps", message: `A plan holds at most ${MAX_STEPS} steps.` });
@@ -76,7 +76,7 @@ export function validateTemplate({ name, steps } = {}) {
     const label = sanitizeLabel(s && s.label);
     const type = String((s && s.type) || "").trim();
     const off = Number(s && (s.offsetDays !== undefined ? s.offsetDays : s.offset_days));
-    if (!label) errors.push({ field: `steps.${i}.label`, message: `Step ${i + 1} needs a label — it is what the officer will read.` });
+    if (!label) errors.push({ field: `steps.${i}.label`, message: `Step ${i + 1} needs a label, it is what the officer will read.` });
     if (!PLAN_TYPE_KEYS.includes(type)) {
       errors.push({ field: `steps.${i}.type`, message: `Step ${i + 1}'s type must be one the follow-up engine knows: ${PLAN_TYPE_KEYS.join(", ")}.` });
     }
@@ -149,7 +149,7 @@ export function planSentence(p, templateName) {
   if (!p || !p.total) return `${name} has no steps.`;
   if (p.done + p.skipped === p.total) {
     const tail = p.skipped ? `, ${p.skipped} of them skipped` : "";
-    return `${name} is finished — all ${p.total} steps${tail}.`;
+    return `${name} is finished, all ${p.total} steps${tail}.`;
   }
   const pos = p.done + p.skipped + 1;
   if (p.open === 0) {

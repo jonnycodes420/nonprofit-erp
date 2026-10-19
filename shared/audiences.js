@@ -81,7 +81,7 @@ export function validateAudience(input) {
   const description = String(input?.description || "").trim();
   const mode = String(input?.mode || "").trim();
 
-  if (!name) errors.push("An audience needs a name — it is how you will find it again.");
+  if (!name) errors.push("An audience needs a name, it is how you will find it again.");
   else if (name.length > AUDIENCE_NAME_MAX) errors.push(`Keep the name under ${AUDIENCE_NAME_MAX} characters.`);
   if (description.length > AUDIENCE_DESC_MAX) errors.push(`Keep the description under ${AUDIENCE_DESC_MAX} characters.`);
   if (!SAVABLE_MODES.includes(mode)) errors.push("That is not an audience this product knows how to keep.");

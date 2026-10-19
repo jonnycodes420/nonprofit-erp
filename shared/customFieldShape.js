@@ -353,8 +353,8 @@ export function proposalEvidenceText(type, evidence) {
     const failed = evidence.failed || 0;
     return `${(evidence.parsed || 0).toLocaleString()} ${ofN} values ${word}.` + (failed ? ` ${failed.toLocaleString()} do not.` : "");
   }
-  if (type === "select") return `${n.toLocaleString()} values, only ${evidence.distinct} distinct — looks like a fixed set of choices.`;
-  if (type === "long_text") return `Long free-text values — stored up to ${CF_LIMITS.LONG_TEXT_MAX.toLocaleString()} characters.`;
+  if (type === "select") return `${n.toLocaleString()} values, only ${evidence.distinct} distinct, looks like a fixed set of choices.`;
+  if (type === "long_text") return `Long free-text values, stored up to ${CF_LIMITS.LONG_TEXT_MAX.toLocaleString()} characters.`;
   return `Free text.` + (evidence.distinct ? ` ${evidence.distinct.toLocaleString()} distinct values across ${n.toLocaleString()}.` : "");
 }
 
@@ -469,7 +469,7 @@ export function buildMapperPlan({ headers = [], fields = [], rows = [], txMap = 
     // select. The builder consumes it as a cadence claim.
     if (isFrequencyHeader(base.field)) {
       columns.push({ ...base, status: "flag", flag: "frequency", via: "header",
-        matchedValues: [], evidenceText: "maps to the recurring surface — a cadence claim the gift pattern can override" });
+        matchedValues: [], evidenceText: "maps to the recurring surface, a cadence claim the gift pattern can override" });
       return;
     }
     // Part 2 — the trap. Detected exclusion shape routes to the flag family

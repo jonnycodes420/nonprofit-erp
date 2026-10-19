@@ -286,13 +286,13 @@ async function main() {
   if (dbName !== health.database)
     refuse(`the server at ${BASE} reports database "${health.database}" but this connection is to "${dbName}". One of them is not what you think.`);
   if (KB_DB.test(dbName))
-    refuse(`"${dbName}" is a Kingdom Builders database name. This seed writes STEWARD demo fiction and must never touch it — no flag overrides this.`);
+    refuse(`"${dbName}" is a Kingdom Builders database name. This seed writes STEWARD demo fiction and must never touch it, no flag overrides this.`);
   const isProdRun = dbName === PROD_DB;
   if (isProdRun) {
     // The deliberate path: prod db + non-loopback BASE (writerBase already
     // demanded --i-know-this-is-prod for that BASE) + identity match above.
     if (guard.isLoopback(BASE))
-      refuse(`database "${dbName}" is production but BASE (${BASE}) is loopback — refusing a mismatched pair. A prod run points BASE at the prod backend so the identity check is against the server that owns this database.`);
+      refuse(`database "${dbName}" is production but BASE (${BASE}) is loopback, refusing a mismatched pair. A prod run points BASE at the prod backend so the identity check is against the server that owns this database.`);
     console.log(`\n*** PRODUCTION SEED ***`);
     console.log(`*** This drops and recreates ONLY the Harborlight demo org (${ORG}) — fiction, no real donors. ***`);
     console.log(`*** Every DELETE and INSERT below is pinned to org_id='${ORG}'. Nothing else is touched. ***\n`);
@@ -847,7 +847,7 @@ async function main() {
   console.log("[seed] pledges (partial + overpaid surplus)…");
   const plPartial = "pl_b72_part", plOver = "pl_b72_over";
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,status)
-           VALUES ($1,$2,$3,10000,$4,'Capital pledge — three-year commitment','camp_b72demo','open')`,
+           VALUES ($1,$2,$3,10000,$4,'Capital pledge: three-year commitment','camp_b72demo','open')`,
           [plPartial, ORG, pledgeDonorA, dateIn(YEAR, 12, 31)]);
   // FIX-3 C — a payment dated after today moves back a year (a January run
   // used to seed May's payment in the future).
@@ -2139,7 +2139,7 @@ async function main() {
     await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
              VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
             [`int_b72_${++ic}`, ORG, did, i % 2 ? "meeting" : "call",
-             i % 2 ? "Coffee — talked about the studio program." : "Left a voicemail about the spring showcase.",
+             i % 2 ? "Coffee, talked about the studio program." : "Left a voicemail about the spring showcase.",
              // ≥35 days back on purpose: a meaningful contact inside
              // HANDLED_SNOOZE_DAYS (30) would suppress that donor from the
              // drift LIST — the first run of the fixed seed hid one of the
@@ -2840,7 +2840,7 @@ async function main() {
         feeSource: g.processor_fee_source,
       });
       if (!F.footsToTheCent(f)) {
-        throw new Error(`REFUSED: gift ${g.id} does not foot — ${JSON.stringify(f)}`);
+        throw new Error(`REFUSED: gift ${g.id} does not foot · ${JSON.stringify(f)}`);
       }
     }
     console.log(`[assert] ${covered.length} covered-fee gifts foot to the cent (charged = intended + covered = received + fee)`);
@@ -3121,7 +3121,7 @@ async function main() {
   const MERGE_FIXTURE = "osric ravensmere";   // the deliberate two-record person
   for (const d of dupNames) {
     if (d.k === MERGE_FIXTURE && d.n === 2) continue;
-    shapeFail.push(`${d.n} people are called "${d.shown}" (${d.ids.join(", ")}) — every demo person has their own name`);
+    shapeFail.push(`${d.n} people are called "${d.shown}" (${d.ids.join(", ")}): every demo person has their own name`);
   }
   const [fillerNames] = await q(
     `SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND name ~ '^Donor [0-9]+ '`, [ORG]);
@@ -3962,8 +3962,8 @@ async function writeAll(client, donors, gifts) {
 async function removeRealPeople(q, orgId, { seededUserEmails = SEEDED_USER_EMAILS, log = console.log } = {}) {
   const found = await findRealPeople(q, orgId, { seededUserEmails });
   if (!found.length) { log(`[real-people] no real person in ${orgId}`); return []; }
-  log(`[real-people] ${found.length} row(s) in ${orgId} are real people — removing them:`);
-  for (const r of found) log(`[real-people]   ${r.table} ${r.id}  ${r.name || "(no name)"} <${r.email || "no email"}>  — ${r.reason}`);
+  log(`[real-people] ${found.length} row(s) in ${orgId} are real people: removing them:`);
+  for (const r of found) log(`[real-people]   ${r.table} ${r.id}  ${r.name || "(no name)"} <${r.email || "no email"}>  ${r.reason}`);
   const ids = t => found.filter(r => r.table === t).map(r => r.id);
   const donorIds = ids("donors"), guestIds = ids("event_attendees"), userIds = ids("users");
   const giftIds = donorIds.length
@@ -4100,9 +4100,9 @@ async function teardownOrg(q, orgId, { exit = true } = {}) {
     const lines = [];
     for (const f of fks.filter(f => f.parent === "orgs" && !f.cols.includes(","))) {
       const { rows, error } = await step(`SELECT COUNT(*)::int AS n FROM "${f.child}" WHERE "${f.cols}" = $1`, [orgId]);
-      if (error) { lines.push(`  ${f.child}.${f.cols} — could not be read (${error.message}), constraint ${f.conname}`); continue; }
+      if (error) { lines.push(`  ${f.child}.${f.cols}: could not be read (${error.message}), constraint ${f.conname}`); continue; }
       const n = rows[0].n;
-      if (n) lines.push(`  ${f.child}.${f.cols} — ${n} row(s), constraint ${f.conname}`);
+      if (n) lines.push(`  ${f.child}.${f.cols} · ${n} row(s), constraint ${f.conname}`);
     }
     for (const t of pending) {
       const e = lastError[t] || {};
@@ -4110,7 +4110,7 @@ async function teardownOrg(q, orgId, { exit = true } = {}) {
     }
     for (const f of uncovered) lines.push(`  ${f.child}.${f.cols} → ${f.parent} has no org_id to pin by (constraint ${f.conname})`);
     msg = `the teardown could not remove org ${orgId}, and rolled back (nothing was deleted).\n`
-      + (orgError ? `  DELETE FROM orgs: ${orgError.message}${orgError.detail ? ` — ${orgError.detail}` : ""}`
+      + (orgError ? `  DELETE FROM orgs: ${orgError.message}${orgError.detail ? ` ${orgError.detail}` : ""}`
           + `${orgError.constraint ? ` [table ${orgError.table || "?"}, constraint ${orgError.constraint}]` : ""}\n` : "")
       + (lines.length ? lines.join("\n") : "  (no remaining row points at it; the org row itself refused)");
   } catch (e) {

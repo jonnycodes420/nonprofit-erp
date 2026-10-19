@@ -52,7 +52,7 @@ export function validateLevel(raw) {
   const fmvCents = raw?.fmv === undefined || raw?.fmv === null || raw?.fmv === "" ? 0 : toCents(raw.fmv);
   if (!Number.isFinite(fmvCents) || fmvCents < 0) errors.push("a fair-market value of zero or more");
   if (Number.isFinite(priceCents) && Number.isFinite(fmvCents) && fmvCents > priceCents)
-    errors.push("the fair-market value cannot be more than the price — the deductible part would be negative");
+    errors.push("the fair-market value cannot be more than the price, the deductible part would be negative");
   const term = TERMS.includes(raw?.term) ? raw.term : null;
   if (!term) errors.push(`a term: ${TERMS.map(t => TERM_LABEL[t]).join(", ")}`);
   const scope = SCOPES.includes(raw?.scope) ? raw.scope : "individual";

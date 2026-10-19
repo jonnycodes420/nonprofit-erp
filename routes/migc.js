@@ -155,7 +155,7 @@ router.post("/contact", contactLimiter, wrap(async (req, res) => {
       from,
       to,
       replyTo: email, // resend 6.x key — snake_case reply_to is silently dropped
-      subject: `MiGulfCoast.org contact — ${name}`,
+      subject: `MiGulfCoast.org contact · ${name}`,
       html: `<div style="font-family:Georgia,serif;line-height:1.7;color:#232f3d">
         <p><strong>${esc(name)}</strong> (${esc(email)})${org ? "<br/>" + esc(org) : ""}</p>
         <p style="white-space:pre-wrap">${esc(message)}</p>

@@ -860,7 +860,7 @@ function handleBillingConfigError(err, res, { plan, surface } = {}) {
     );
     res.status(400).json({
       error: "plan_mode_mismatch",
-      message: "Billing isn't configured correctly — the Stripe key and price IDs are in different modes (test vs live). Ask your Steward admin to align them.",
+      message: "Billing isn't configured correctly, the Stripe key and price IDs are in different modes (test vs live). Ask your Steward admin to align them.",
     });
     return true;
   }
@@ -872,7 +872,7 @@ function handleBillingConfigError(err, res, { plan, surface } = {}) {
   );
   res.status(400).json({
     error: "plan_not_configured",
-    message: "Billing isn't configured correctly — a plan's Stripe price ID couldn't be found. Ask your Steward admin to check it.",
+    message: "Billing isn't configured correctly, a plan's Stripe price ID couldn't be found. Ask your Steward admin to check it.",
   });
   return true;
 }
@@ -988,7 +988,7 @@ app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, r
       console.error(`[billing] Customer Portal not configured for the ${String(billingStripeMode()).toUpperCase()} mode: ${msg}`);
       return res.status(400).json({
         error: "portal_not_configured",
-        message: "The billing portal isn't set up yet — ask your Steward admin to configure the Stripe Customer Portal.",
+        message: "The billing portal isn't set up yet, ask your Steward admin to configure the Stripe Customer Portal.",
       });
     }
     throw err;
@@ -1410,7 +1410,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
   const estimateRaw = b.estimatedDonors;
 
   if (!orgName) return res.status(400).json({ error: "org_name_required", message: "Your organization's name is required." });
-  if (!contactName) return res.status(400).json({ error: "contact_name_required", message: "Your name is required — it goes on the agreement." });
+  if (!contactName) return res.status(400).json({ error: "contact_name_required", message: "Your name is required, it goes on the agreement." });
   if (!EMAIL_SHAPE.test(contactEmail)) return res.status(400).json({ error: "contact_email_invalid", message: "A valid email address is required." });
   if (!PRICING.BILLING_INTERVALS.includes(interval))
     return res.status(400).json({ error: "interval_invalid", message: "Choose monthly or yearly." });
@@ -1469,7 +1469,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
     console.error(`[signup] ${plan.env} is not set — the public page offers ${tier.band} ${interval} and Checkout cannot be started.`);
     return res.status(503).json({
       error: "plan_not_configured",
-      message: "That plan is not available to buy online yet. Write to us and we will set it up by hand — nothing has been created.",
+      message: "That plan is not available to buy online yet. Write to us and we will set it up by hand, nothing has been created.",
     });
   }
   if (!billingStripe) return res.status(503).json({ error: "stripe_not_configured", message: "Checkout is not available right now. Nothing has been created." });
@@ -1488,7 +1488,7 @@ app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
         + `but ${plan.name} is $${planAmountUsd(plan)} every ${wantInterval}. Refusing to sell it.`);
       return res.status(503).json({
         error: "plan_price_mismatch",
-        message: "We cannot take a card for that plan right now. Write to us — nothing has been created.",
+        message: "We cannot take a card for that plan right now. Write to us, nothing has been created.",
       });
     }
   } catch (err) {
@@ -1572,7 +1572,7 @@ async function notifyFounderOfSignup({ closeLinkId, orgName, contactName, contac
   ];
   await resend.emails.send({
     from, to, replyTo: to,
-    subject: `New Steward signup — ${orgName}`,
+    subject: `New Steward signup · ${orgName}`,
     html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">`
       + lines.map(l => `<div>${String(l).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</div>`).join("")
       + `</div>`,
@@ -2017,7 +2017,7 @@ function cancelPageHtml({ state, orgName, sentence, token, periodEnd }) {
     <form method="POST" action="/billing/cancel/${token}">
       <button type="submit" style="background:#0D5C3A;border:none;border-radius:10px;padding:13px 26px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Cancel my subscription</button>
     </form>
-    <p style="margin:18px 0 0;font-size:13px;color:#8a857f;line-height:1.5;">Changed your mind? Close this page &mdash; nothing happens unless you press the button.</p>`);
+    <p style="margin:18px 0 0;font-size:13px;color:#8a857f;line-height:1.5;">Changed your mind? Close this page, nothing happens unless you press the button.</p>`);
 }
 
 app.get("/billing/cancel/:token", wrap(async (req, res) => {

@@ -4227,7 +4227,7 @@ app.post("/finance/transactions", requireAuth, checkWriteAccess, wrap(async (req
     LEFT JOIN fin_funds f ON f.id = ft.fund_id
     WHERE ft.id = ?`, [id]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "created", "transaction", id, {
-    description: `Added ${type === "income" ? "+" : "-"}$${parseFloat(amount).toFixed(2)} — ${description} (${rows[0]?.account_name || "No account"}, ${rows[0]?.fund_name || "No fund"})`,
+    description: `Added ${type === "income" ? "+" : "-"}$${parseFloat(amount).toFixed(2)} · ${description} (${rows[0]?.account_name || "No account"}, ${rows[0]?.fund_name || "No fund"})`,
     new: { amount: parseFloat(amount), type, description, account: rows[0]?.account_name, fund: rows[0]?.fund_name, date, vendorDonor }
   }).catch(() => {});
   res.status(201).json(rows[0]);
@@ -4243,7 +4243,7 @@ app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (r
   if (!txnToDelete) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   await run("DELETE FROM fin_transactions WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "transaction", req.params.id, {
-    description: txnToDelete ? `Deleted ${txnToDelete.type === "income" ? "+" : "-"}$${parseFloat(txnToDelete.amount).toFixed(2)} — ${txnToDelete.description}` : "Deleted transaction",
+    description: txnToDelete ? `Deleted ${txnToDelete.type === "income" ? "+" : "-"}$${parseFloat(txnToDelete.amount).toFixed(2)} · ${txnToDelete.description}` : "Deleted transaction",
     old: txnToDelete ? { amount: parseFloat(txnToDelete.amount), type: txnToDelete.type, description: txnToDelete.description, account: txnToDelete.account_name, fund: txnToDelete.fund_name, date: txnToDelete.date } : {}
   }).catch(() => {});
   res.json({ success: true });

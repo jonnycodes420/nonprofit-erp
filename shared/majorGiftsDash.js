@@ -33,7 +33,7 @@ export const METRICS = [
     kind: "money" },
   { id: "committedThisYear",
     label: "Committed this year",
-    definition: "What people actually said yes to in this fiscal year — the gift amount when one is linked, otherwise the amount they committed to.",
+    definition: "What people actually said yes to in this fiscal year, the gift amount when one is linked, otherwise the amount they committed to.",
     kind: "money" },
   { id: "conversationsThisMonth",
     label: "Conversations logged this month",
@@ -74,7 +74,7 @@ export function askedVsCommitted({ askedCents, committedCents }, formatMoney) {
   if (a === 0 && c === 0) return "Nothing asked for and nothing committed this year yet.";
   if (a === 0) return `${fm(c)} committed this year, from proposals that reached Asked before this year began.`;
   const pct = Math.round((c / a) * 100);
-  return `${fm(c)} committed against ${fm(a)} asked for this year — ${pct}% of what you asked for.`;
+  return `${fm(c)} committed against ${fm(a)} asked for this year, ${pct}% of what you asked for.`;
 }
 
 // ── THE EMPTY STATE, WHICH HAS TO BE HONEST ───────────────────────────────
@@ -86,7 +86,7 @@ export function emptySentence({ proposalCount, officerCount }) {
   if ((Number(officerCount) || 0) <= 1) {
     return "No proposals on file yet. Open one from somebody's record and this screen starts answering questions about it.";
   }
-  return "No proposals on file yet — every figure here would be zero, so nothing is shown. Open one from somebody's record.";
+  return "No proposals on file yet, every figure here would be zero, so nothing is shown. Open one from somebody's record.";
 }
 
 export function tileSentence(id, value, formatMoney) {

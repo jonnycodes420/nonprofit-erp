@@ -870,7 +870,7 @@ const SOURCES = {
     label: "Open ask",
     measure: () => "sum",
     params: { donor: "id:required" },
-    sentence: () => "What this person is being asked for right now: every proposal still in flight — identified, cultivating or asked — at the amount it asks for. A proposal they have said yes or no to is no longer open and is not counted.",
+    sentence: () => "What this person is being asked for right now: every proposal still in flight, identified, cultivating or asked, at the amount it asks for. A proposal they have said yes or no to is no longer open and is not counted.",
     // Async: what counts as open is OPEN_STAGE_KEYS in shared/proposalShape.js,
     // and the stage's words are that file's labels, so neither is retyped here.
     sql: async (orgId, p) => {
