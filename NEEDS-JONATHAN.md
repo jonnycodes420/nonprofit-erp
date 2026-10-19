@@ -840,3 +840,10 @@ hand.
   `reported` and `unconfirmed` — because no real file was in hand. A wrong column
   spelling is then one line in `shared/grantImport.js` and a suite that fails by
   name, never a file importing quietly wrong. NPSP's are documented.
+- **ONBOARD-1: re-seed so Riverbend Food Pantry exists for the live demo.** The seed now adds a second demo org,
+  before setup: sign in as director@riverbend.demo / demo-riverbend-2026, open Setup, give it the two files from
+  `<API>/demo-site/riverbend/riverbend-salesforce-contacts.csv` and `…-donations.csv`, and the website
+  `<API>/demo-site/riverbend/`. A re-seed puts it back to before setup. Same command as the earlier re-seeds.
+- **ONBOARD-1: one real Salesforce Contacts + Donations pair (CKRH or Justin's Place) would retire the guesses** in
+  `shared/setupFiles.js` (Contact ID on the gift report, "General Accounting Unit" as the fund). Until then setup is
+  checked against the hand-built fixture only.

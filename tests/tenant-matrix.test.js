@@ -341,6 +341,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // ONBOARD-1 — a setup run and a prepared invitation, per org. Org A must not
+  // start, undo or answer org B's setup, nor send org B's invitation.
+  await q(`INSERT INTO setup_runs (id,org_id,status,created_by,created_by_name) VALUES ($1,$2,'planned','system:test','test')`,
+    [`sr_${o}`, o]).catch(() => {});
+  await q(`INSERT INTO setup_invites (id,org_id,run_id,name,email,created_by,created_by_name) VALUES ($1,$2,$3,'Probe Person','probe@example.org','system:test','test')`,
+    [`si_${o}`, o, `sr_${o}`]).catch(() => {});
   // PARITY-1 Part D — a Group kept by hand, with one member, per org.
   await q(`INSERT INTO audiences (id,org_id,name,description,segment,kind)
            VALUES ($1,$2,$3,'probe','{"mode":"group"}'::jsonb,'static')`,
@@ -437,6 +443,8 @@ function bResolver(routePath, param) {
   // at it and 404 for the wrong reason.
   if (seg1 === "calendar" && param === "id") return `cal_${B}`;
   if (seg1 === "me" && routePath.includes("/sessions/") && param === "id") return `ses_${B}`;
+  // ONBOARD-1 — two kinds of row under /setup: a run and a prepared invitation.
+  if (seg1 === "setup" && param === "id") return routePath.includes("/invites/") ? `si_${B}` : `sr_${B}`;
   if (seg1 === "webhooks") {
     return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
   }

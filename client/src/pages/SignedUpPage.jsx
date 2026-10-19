@@ -44,7 +44,7 @@ export default function SignedUpPage() {
         localStorage.setItem("npe_token", d.token);
         localStorage.setItem("npe_user", JSON.stringify(d.user));
         localStorage.setItem("npe_org", JSON.stringify(d.org));
-        window.location.href = Number(d.org && d.org.onboarding_complete) ? "/dashboard" : "/welcome";
+        window.location.href = Number(d.org && d.org.onboarding_complete) ? "/dashboard" : "/setup";   // ONBOARD-1
         return;
       }
       if (r && r.status === 410) { setState({ phase: "invalid", orgName: d.orgName || "" }); return; }

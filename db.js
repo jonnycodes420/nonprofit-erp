@@ -3500,6 +3500,9 @@ async function runSchemaInit(pool) {
       PRIMARY KEY (org_id, period_from, period_to)
     )`);
 
+  // ── ONBOARD-1 · SET UP STEWARD FOR ME (schema lives beside its module) ────
+  await require("./setup").ensureSchema(pool);
+
   // ── CAPTURE-1 · NOBODY TYPES A GIFT ──────────────────────────────────────
   // A check photo, a pledge form, a DAF letter: each becomes ONE card waiting
   // in "To confirm". A card PROPOSES; money is recorded only by a person's

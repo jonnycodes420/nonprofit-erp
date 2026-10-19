@@ -3505,6 +3505,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* FIX-1 D — the organisation's own people: staff and board. */}
       {section==="org"&&<StaffBoardList onNavigate={onNavigate}/>}
+      {/* ONBOARD-1 — the same "Set up Steward for me" a new org lands on. */}
+      {section==="org"&&isAdmin&&<div data-testid="settings-setup-door" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"18px 24px",marginTop:16,display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{flex:"1 1 260px"}}>
+          <div style={{fontSize:14.5,fontWeight:700,color:T.ink}}>Set up Steward for me</div>
+          <div style={{fontSize:12.5,color:T.ink3,marginTop:3,lineHeight:1.5}}>Hand Steward your donor files and your website. It shows its plan first, and every step can be undone.</div>
+        </div>
+        <a href="/setup" style={{background:T.green600,color:T.white,borderRadius:10,padding:"9px 15px",fontSize:13,fontWeight:700,textDecoration:"none"}}>Open setup</a>
+      </div>}
 
       {/* REPORTS-3 — who gets the board pack, directly under the staff and
           board list it is about. It belongs on this tab and not beside the

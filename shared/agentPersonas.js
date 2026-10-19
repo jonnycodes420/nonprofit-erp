@@ -150,6 +150,28 @@ export const MEETING_NOTE = P("meeting_note", "After the meeting",
   [],
   "No tools. Suggestions only; nothing is recorded until she presses save.");
 
+// ONBOARD-1 — SET UP STEWARD FOR ME. The seventh persona, and like HELP it is
+// not a card: it is reached from the Setup screen, never picked to plan
+// free-form work, so it plans with NO engine tools. What it does instead is
+// a fixed list of setup steps (setup.js STEPS), each one a call to the route
+// a person's click already uses. That list is checked here, at load, against
+// the same forbidden words as every persona: it may never send and never
+// record money, and a step named here that setup.js does not run is a
+// load-time failure in that module's suite.
+export const SETUP_STEPS = ["read_site", "profile", "import", "funds", "groups", "templates", "journeys", "invites", "connections", "finish"];
+export const SETUP = { ...P("setup", "Setup",
+  "Sets Steward up from your files and your website.",
+  "It reads your donor files and your website, shows you its plan, and after your one Start it imports and checks to the cent, fills in your profile and branding, creates your funds and starter groups, drafts thank-yous in your words and builds three journeys, all paused. Invitations and connections are prepared for your click.",
+  "You set up a nonprofit's Steward from its own files and website. Every count, total and match is computed in code; you only phrase sentences. You never send, never turn a journey on and never record money a person has not seen.",
+  [],
+  [],
+  "It never emails anybody, never turns a journey or receipt on, and every change it makes is undone by one button."),
+  steps: SETUP_STEPS };
+for (const s of SETUP.steps) {
+  if (/send|refund|pledge|receipt|record_gift|subscription/.test(s))
+    throw new Error(`agentPersonas: setup step ${s} names something no persona may ever do`);
+}
+
 export const PERSONA_IDS = PERSONAS.map(p => p.id);
 
 export function isValidPersona(id) {
@@ -206,5 +228,5 @@ for (const p of [...PERSONAS, GENERAL]) {
   }
 }
 
-export default { PERSONAS, GENERAL, PERSONA_IDS, PERSONA_TOOLS, PERSONA_FORBIDDEN_TOOLS,
+export default { PERSONAS, GENERAL, SETUP, SETUP_STEPS, PERSONA_IDS, PERSONA_TOOLS, PERSONA_FORBIDDEN_TOOLS,
                  getPersona, isValidPersona, personaToolSet, dropOutOfScope };

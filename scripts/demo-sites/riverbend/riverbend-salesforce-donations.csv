@@ -1,0 +1,101 @@
+Opportunity ID,Contact ID,Primary Contact,Amount,Close Date,Stage,General Accounting Unit,Primary Campaign Source,Payment Method
+006Hs000000001,003Hs000001000,Ada Pellworth,5025.00,1/1/2023,Closed Won,Weekend Backpacks,Spring Appeal,Check
+006Hs000000002,003Hs000001001,Bram Quarrington,50.00,4/2/2023,Closed Won,General Operating,,Credit Card
+006Hs000000003,003Hs000001001,Bram Quarrington,100.00,9/13/2024,Closed Won,Mobile Pantry,,PayPal
+006Hs000000004,003Hs000001002,Celia Rasmore,100.00,7/3/2023,Closed Won,Mobile Pantry,,PayPal
+006Hs000000005,003Hs000001002,Celia Rasmore,250.00,12/14/2024,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000006,003Hs000001002,Celia Rasmore,35.50,5/25/2023,Closed Won,General Operating,,Check
+006Hs000000007,003Hs000001003,Dov Stellby,250.00,10/4/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000008,003Hs000001003,Dov Stellby,35.50,3/15/2024,Closed Won,General Operating,,Check
+006Hs000000009,003Hs000001003,Dov Stellby,1200.00,8/26/2023,Closed Won,Mobile Pantry,,Credit Card
+006Hs000000010,003Hs000001003,Dov Stellby,75.25,1/10/2024,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000011,003Hs000001004,Esme Thorncastle,35.50,1/5/2023,Closed Won,General Operating,,Check
+006Hs000000012,003Hs000001005,Fenn Underhay,1200.00,4/6/2023,Closed Won,Mobile Pantry,Spring Appeal,Credit Card
+006Hs000000013,003Hs000001005,Fenn Underhay,75.25,9/17/2024,Closed Won,Weekend Backpacks,Spring Appeal,PayPal
+006Hs000000014,003Hs000001006,Gale Vantreese,75.25,7/7/2023,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000015,003Hs000001006,Gale Vantreese,25.00,12/18/2024,Closed Won,General Operating,,Zeffy
+006Hs000000016,003Hs000001006,Gale Vantreese,50.00,5/2/2023,Closed Won,Mobile Pantry,,Check
+006Hs000000017,003Hs000001007,Hollis Whitlock,25.00,10/8/2023,Closed Won,General Operating,,Zeffy
+006Hs000000018,003Hs000001007,Hollis Whitlock,50.00,3/19/2024,Closed Lost,Mobile Pantry,,Check
+006Hs000000019,003Hs000001007,Hollis Whitlock,100.00,8/3/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000020,003Hs000001007,Hollis Whitlock,250.00,1/14/2024,Closed Won,General Operating,,PayPal
+006Hs000000021,003Hs000001008,Ines Yarrowby,50.00,1/9/2023,Closed Won,Mobile Pantry,,Check
+006Hs000000022,003Hs000001009,Jory Zellmer,100.00,4/10/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000023,003Hs000001009,Jory Zellmer,250.00,9/21/2024,Closed Won,General Operating,,PayPal
+006Hs000000024,003Hs000001010,Kit Pellworth,250.00,7/11/2023,Closed Won,General Operating,Spring Appeal,PayPal
+006Hs000000025,003Hs000001010,Kit Pellworth,35.50,12/22/2024,Closed Won,Mobile Pantry,Spring Appeal,Zeffy
+006Hs000000026,003Hs000001010,Kit Pellworth,1200.00,5/6/2023,Closed Won,Weekend Backpacks,Spring Appeal,Check
+006Hs000000027,003Hs000001011,Lark Quarrington,35.50,10/12/2023,Closed Won,Mobile Pantry,,Zeffy
+006Hs000000028,003Hs000001011,Lark Quarrington,1200.00,3/23/2024,Closed Won,Weekend Backpacks,,Check
+006Hs000000029,003Hs000001011,Lark Quarrington,75.25,8/7/2023,Closed Won,General Operating,,Credit Card
+006Hs000000030,003Hs000001011,Lark Quarrington,25.00,1/18/2024,Closed Won,Mobile Pantry,,PayPal
+006Hs000000031,003Hs000001012,Milo Rasmore,1200.00,1/13/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000032,003Hs000001013,Nell Stellby,75.25,4/14/2024,Closed Won,General Operating,,Credit Card
+006Hs000000033,003Hs000001013,Nell Stellby,25.00,9/25/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000034,003Hs000001014,Orin Thorncastle,25.00,7/15/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000035,003Hs000001014,Orin Thorncastle,50.00,12/26/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000036,003Hs000001014,Orin Thorncastle,100.00,5/10/2024,Closed Won,General Operating,,Check
+006Hs000000037,003Hs000001015,Pia Underhay,50.00,10/16/2023,Closed Won,Weekend Backpacks,Spring Appeal,Zeffy
+006Hs000000038,003Hs000001015,Pia Underhay,100.00,3/27/2024,Closed Won,General Operating,Spring Appeal,Check
+006Hs000000039,003Hs000001015,Pia Underhay,250.00,8/11/2025,Closed Won,Mobile Pantry,Spring Appeal,Credit Card
+006Hs000000040,003Hs000001015,Pia Underhay,35.50,1/22/2023,Closed Won,Weekend Backpacks,Spring Appeal,PayPal
+006Hs000000041,003Hs000001016,Quill Vantreese,100.00,1/17/2024,Closed Won,General Operating,,Check
+006Hs000000042,003Hs000001017,Rhea Whitlock,250.00,4/18/2025,Closed Won,Mobile Pantry,,Credit Card
+006Hs000000043,003Hs000001017,Rhea Whitlock,35.50,9/2/2023,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000044,003Hs000001018,Sol Yarrowby,35.50,7/19/2023,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000045,003Hs000001018,Sol Yarrowby,1200.00,12/3/2024,Closed Won,General Operating,,Zeffy
+006Hs000000046,003Hs000001018,Sol Yarrowby,75.25,5/14/2025,Closed Won,Mobile Pantry,,Check
+006Hs000000047,003Hs000001019,Tamsin Zellmer,1200.00,10/20/2024,Closed Won,General Operating,,Zeffy
+006Hs000000048,003Hs000001019,Tamsin Zellmer,75.25,3/4/2025,Closed Won,Mobile Pantry,,Check
+006Hs000000049,003Hs000001019,Tamsin Zellmer,25.00,8/15/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000050,003Hs000001019,Tamsin Zellmer,50.00,1/26/2024,Closed Won,General Operating,,PayPal
+006Hs000000051,003Hs000001020,Ulla Pellworth,75.25,1/21/2025,Closed Won,Mobile Pantry,Spring Appeal,Check
+006Hs000000052,003Hs000001021,Vito Quarrington,25.00,4/22/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000053,003Hs000001021,Vito Quarrington,50.00,9/6/2024,Closed Won,General Operating,,PayPal
+006Hs000000054,003Hs000001022,Wren Rasmore,50.00,7/23/2024,Closed Won,General Operating,,PayPal
+006Hs000000055,003Hs000001022,Wren Rasmore,100.00,12/7/2025,Closed Won,Mobile Pantry,,Zeffy
+006Hs000000056,003Hs000001022,Wren Rasmore,250.00,5/18/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000057,003Hs000001023,Xan Stellby,100.00,10/24/2025,Closed Won,Mobile Pantry,,Zeffy
+006Hs000000058,003Hs000001023,Xan Stellby,250.00,3/8/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000059,003Hs000001023,Xan Stellby,35.50,8/19/2024,Closed Won,General Operating,,Credit Card
+006Hs000000060,003Hs000001023,Xan Stellby,1200.00,1/3/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000061,003Hs000001024,Yara Thorncastle,250.00,1/25/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000062,003Hs000001025,Zev Underhay,35.50,4/26/2024,Closed Won,General Operating,Spring Appeal,Credit Card
+006Hs000000063,003Hs000001025,Zev Underhay,1200.00,9/10/2025,Closed Won,Mobile Pantry,Spring Appeal,PayPal
+006Hs000000064,003Hs000001026,Briar Vantreese,1200.00,7/27/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000065,003Hs000001026,Briar Vantreese,75.25,12/11/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000066,003Hs000001026,Briar Vantreese,25.00,5/22/2024,Closed Won,General Operating,,Check
+006Hs000000067,003Hs000001027,Cass Whitlock,75.25,10/1/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000068,003Hs000001027,Cass Whitlock,25.00,3/12/2024,Closed Won,General Operating,,Check
+006Hs000000069,003Hs000001027,Cass Whitlock,50.00,8/23/2025,Closed Won,Mobile Pantry,,Credit Card
+006Hs000000070,003Hs000001027,Cass Whitlock,100.00,1/7/2023,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000071,003Hs000001028,Dell Yarrowby,25.00,1/2/2024,Closed Won,General Operating,,Check
+006Hs000000072,003Hs000001029,Emory Zellmer,50.00,4/3/2025,Closed Won,Mobile Pantry,,Credit Card
+006Hs000000073,003Hs000001029,Emory Zellmer,100.00,9/14/2023,Closed Won,Weekend Backpacks,,PayPal
+006Hs000000074,003Hs000001030,Faye Pellworth,100.00,7/4/2023,Closed Won,Weekend Backpacks,Spring Appeal,PayPal
+006Hs000000075,003Hs000001030,Faye Pellworth,250.00,12/15/2024,Closed Won,General Operating,Spring Appeal,Zeffy
+006Hs000000076,003Hs000001030,Faye Pellworth,35.50,5/26/2025,Closed Won,Mobile Pantry,Spring Appeal,Check
+006Hs000000077,003Hs000001031,Garnet Quarrington,250.00,10/5/2024,Closed Won,General Operating,,Zeffy
+006Hs000000078,003Hs000001031,Garnet Quarrington,35.50,3/16/2025,Closed Won,Mobile Pantry,,Check
+006Hs000000079,003Hs000001031,Garnet Quarrington,1200.00,8/27/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000080,003Hs000001031,Garnet Quarrington,75.25,1/11/2024,Closed Won,General Operating,,PayPal
+006Hs000000081,003Hs000001032,Hale Rasmore,35.50,1/6/2025,Closed Won,Mobile Pantry,,Check
+006Hs000000082,003Hs000001033,Ivo Stellby,1200.00,4/7/2023,Closed Won,Weekend Backpacks,,Credit Card
+006Hs000000083,003Hs000001033,Ivo Stellby,75.25,9/18/2024,Closed Won,General Operating,,PayPal
+006Hs000000084,003Hs000001034,Juno Thorncastle,75.25,7/8/2024,Closed Won,General Operating,,PayPal
+006Hs000000085,003Hs000001034,Juno Thorncastle,25.00,12/19/2025,Closed Won,Mobile Pantry,,Zeffy
+006Hs000000086,003Hs000001034,Juno Thorncastle,50.00,5/3/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000087,003Hs000001035,Kiran Underhay,25.00,10/9/2025,Closed Won,Mobile Pantry,Spring Appeal,Zeffy
+006Hs000000088,003Hs000001035,Kiran Underhay,50.00,3/20/2023,Closed Won,Weekend Backpacks,Spring Appeal,Check
+006Hs000000089,003Hs000001035,Kiran Underhay,100.00,8/4/2024,Closed Won,General Operating,Spring Appeal,Credit Card
+006Hs000000090,003Hs000001035,Kiran Underhay,250.00,1/15/2025,Closed Won,Mobile Pantry,Spring Appeal,PayPal
+006Hs000000091,003Hs000001036,Lio Vantreese,50.00,1/10/2023,Closed Won,Weekend Backpacks,,Check
+006Hs000000092,003Hs000001037,Mabry Whitlock,100.00,4/11/2024,Closed Won,General Operating,,Credit Card
+006Hs000000093,003Hs000001037,Mabry Whitlock,250.00,9/22/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000094,003Hs000001038,Noor Yarrowby,250.00,7/12/2025,Closed Won,Mobile Pantry,,PayPal
+006Hs000000095,003Hs000001038,Noor Yarrowby,35.50,12/23/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000096,003Hs000001038,Noor Yarrowby,1200.00,5/7/2024,Closed Won,General Operating,,Check
+006Hs000000097,003Hs000001039,Oakley Zellmer,35.50,10/13/2023,Closed Won,Weekend Backpacks,,Zeffy
+006Hs000000098,003Hs000001039,Oakley Zellmer,1200.00,3/24/2024,Closed Won,General Operating,,Check
+006Hs000000099,003Hs000001039,Oakley Zellmer,75.25,8/8/2025,Closed Won,Mobile Pantry,,Credit Card
+006Hs000000100,003Hs000001039,Oakley Zellmer,25.00,1/19/2023,Closed Won,Weekend Backpacks,,PayPal

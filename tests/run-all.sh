@@ -260,6 +260,7 @@ CORE=(
   fix41-remove-and-pictures
   reconcile1-checks
   capture1-zero-day
+  onboard1-setup
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
