@@ -333,6 +333,10 @@ app.set("trust proxy", 1);
 // stays byte-identical and the global cors() never terminates a /api/migc
 // preflight before the router's policy can answer it.
 app.use("/api/migc", require("./routes/migc").router);
+// ONBOARD-1: the Riverbend demo's saved website and sample export, public and
+// fictional, so "Set up Steward for me" can be shown live without reading a
+// real organization's site. Static files only; nothing here reads the database.
+app.use("/demo-site", express.static(require("path").join(__dirname, "scripts", "demo-sites"), { index: "index.html", dotfiles: "deny", fallthrough: true }));
 
 // Fail closed: an explicit, comma-separated allowlist is required to enable
 // cross-origin browser access. If CORS_ORIGIN is ever unset in the deploy
@@ -600,6 +604,8 @@ const { BILLING_PLAN_VALUES, planFromSubscription } = require("./billingPlans");
 app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], express.json({ limit: "64mb" }));
 // IMPORT-2: a history file of up to 25 MB arrives as rows, which is larger as JSON.
 app.use(["/history-import/preview", "/history-import/commit"], express.json({ limit: "64mb" }));
+// ONBOARD-1: setup carries every donor file at once, as text.
+app.use(["/setup/runs", "/admin/orgs/:id/setup"], express.json({ limit: "64mb" }));
 // BUILD-65 Part 1 — image-upload routes accept a real camera photo (~15MB of
 // image ≈ 20MB of base64 + JSON). The global 5mb cap below still guards every
 // other route. Without this a phone photo is rejected by the body parser
@@ -4225,6 +4231,7 @@ app.use(require("./routes/sheets").routers.r0);        // SHEETS-1 old spreadshe
 app.use(require("./routes/emailsSent").routers.r0);    // FIX-40 every email as sent, and who it went to
 app.use(require("./routes/oldReports").routers.r0);    // REPORTS-5 old reports
 app.use(require("./routes/capture").routers.r0);       // CAPTURE-1 To confirm
+app.use(require("./routes/setup").routers.r0);         // ONBOARD-1 Set up Steward for me
 app.use(require("./routes/media").routers.r0);         // EMAIL-1 the media library
 app.use(require("./routes/emailTemplates").routers.r0); // EMAIL-1 email templates  // GRANTS-1 the grants reports
 app.use(require("./routes/homeBundle").routers.r0);    // SCALE-2 Home's first reads in one request
@@ -11916,6 +11923,7 @@ require("./capture").configure({ query, run, aiGate, anthropicFor, recordAiFallb
   afterChange: (...a) => AFTER.afterChange(...a) });
 require("./routes/capture").mount({ ...GRANTS1_CTX, recordGift, openGiftThread, openThreadTx, aiGate, checkGiftExtras,
   giftHooks: require("./routes/crm").giftHooks });
+require("./routes/setup").mount({ ...GRANTS1_CTX, requireSuperAdmin, aiGate, anthropicFor, recordAiFallback });
 // EMAIL-1: the media library and email templates share the grant modules'
 // context plus the mail seams they render and test-send through.
 const EMAIL1_CTX = { ...GRANTS1_CTX, resolveOrgBrandTheme, portalCardTheme, normalizeUploadImage,

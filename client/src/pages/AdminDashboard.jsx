@@ -393,6 +393,47 @@ function Overview({ metrics, orgs }) {
 }
 
 // ── Org detail panel ────────────────────────────────────────────────────────
+// ONBOARD-1 — "Run setup for this org". The plan is prepared here; the
+// org's own admin presses Start, so every write carries her name. The minutes
+// from Start to ready are shown so real numbers can be quoted.
+function OrgSetup({ orgId, PSH, PBTN }) {
+  const [times, setTimes] = useState(null);
+  const [files, setFiles] = useState([]);
+  const [site, setSite] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    adminFetch("/admin/setup-times").then(r => setTimes((r.orgs || []).find(o => o.orgId === orgId) || null)).catch(() => setTimes(null));
+  }, [orgId]);
+  const prepare = async () => {
+    setBusy(true); setNote("");
+    try {
+      const read = await Promise.all(files.map(async f => ({ name: f.name, text: await f.text() })));
+      const r = await adminFetch("/admin/orgs/" + orgId + "/setup", { method: "POST", body: JSON.stringify({ files: read, siteUrl: site }) });
+      setNote(`Plan ready (${r.plan && r.plan.counts ? `${r.plan.counts.donors} people, ${r.plan.counts.gifts} gifts` : "no files"}). They open Setup in their account and press Start.`);
+    } catch (e) { setNote(errorMessage(e)); }
+    setBusy(false);
+  };
+  return (
+    <div data-testid="admin-org-setup">
+      <div style={PSH}>Setup</div>
+      <div style={{ fontSize: 13, color: A.secondary, marginBottom: 8 }} data-testid="admin-setup-minutes">
+        {times && times.startedAt
+          ? (times.completedAt ? `Set up in ${times.minutes} minutes, from Start to ready.` : `Setup started ${fmtDate(times.startedAt)} and has not finished.`)
+          : "Setup has not been run for this org."}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+        <input type="file" multiple accept=".csv,.txt" onChange={e => setFiles([...e.target.files])} />
+        <input value={site} onChange={e => setSite(e.target.value)} placeholder="their website" style={{ border: `1px solid ${A.border}`, borderRadius: 6, padding: "6px 8px" }} />
+        <button onClick={prepare} disabled={busy || (!files.length && !site)} data-testid="admin-run-setup" style={{ ...PBTN, alignSelf: "flex-start" }}>
+          {busy ? "Reading…" : "Run setup for this org"}
+        </button>
+        {note && <div style={{ fontSize: 12.5, color: A.ink }}>{note}</div>}
+      </div>
+    </div>
+  );
+}
+
 function OrgPanel({ org, onClose, onRefresh }) {
   const [detail, setDetail] = useState(null);
   const [extDays, setExtDays] = useState("14");
@@ -534,6 +575,10 @@ function OrgPanel({ org, onClose, onRefresh }) {
               </div>
             ))}
           </div>
+
+          {/* ONBOARD-1: setup for this org. Jonathan prepares the plan on a call;
+              the customer presses Start in her own session. */}
+          <OrgSetup orgId={org.id} PSH={PSH} PBTN={PBTN} />
 
           {/* MAIL-1: this org's mail. A demonstration org shows it all locked, with why. */}
           {mail && (

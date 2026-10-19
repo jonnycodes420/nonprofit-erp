@@ -45,8 +45,10 @@ async function seed() {
   // A paying customer on the $499 plan whose Stripe subscription really
   // charges $123: MRR must say $123. Its login is a real-looking address so
   // the kind is inferred from the subscription, not set.
+  // (Not "Riverbend": ONBOARD-1 seeds a demo org by that name, and two orgs
+  // with one name is the cleanup's DECIDE rule, not the KEEP this checks.)
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_customer_id,stripe_subscription_id)
-           VALUES ($1,'Riverbend Food Pantry','acm-riverbend',1,'trialing','team','cus_acm_paying','sub_acm_paying')`, [PAY]);
+           VALUES ($1,'Millbrook Food Pantry','acm-millbrook',1,'trialing','team','cus_acm_paying','sub_acm_paying')`, [PAY]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_acm_pay',$1,'director@riverbend-pantry.org',$2,'Dee','admin')`, [PAY, hash]);
   // A demo org "on" Team, active, with a subscription id and an amount: the
   // exact shape that put Harborlight and CREO into MRR.
@@ -139,7 +141,7 @@ const snapshot = async () => JSON.stringify(await q(
   ok("the org list shows the demo org's MRR as $0, not $499", demoRow && demoRow.monthly_revenue === 0 && demoRow.kind === "demo", JSON.stringify(demoRow && { k: demoRow.kind, m: demoRow.monthly_revenue }));
 
   console.log("\n§3 · an org with a Stripe subscription can't be deleted");
-  const del = await api("DELETE", "/admin/orgs/" + PAY, supr, { confirm: true, confirmName: "Riverbend Food Pantry" });
+  const del = await api("DELETE", "/admin/orgs/" + PAY, supr, { confirm: true, confirmName: "Millbrook Food Pantry" });
   const still = await q(`SELECT id FROM orgs WHERE id=$1`, [PAY]);
   ok("delete is refused with 409 and says why", del.status === 409 && /subscription/.test(del.body.message || ""), del.status + " " + JSON.stringify(del.body));
   ok("…and the org is still there", still.length === 1);
@@ -161,6 +163,10 @@ const snapshot = async () => JSON.stringify(await q(
   ok("…never proposes deleting the paying customer", !new RegExp(`DELETE\\s+\\S+( \\S+)?\\s+${PAY}`).test(out)
      && new RegExp(`KEEP\\s+Customer\\s+${PAY}`).test(out));
   ok("…and keeps the internal test org", new RegExp(`KEEP\\s+Internal test\\s+${HQ}`).test(out));
+  // ONBOARD-1: Riverbend is a demo seeded BEFORE setup, so it has no donor;
+  // the cleanup proposed deleting it until it joined the demo list.
+  ok("…and keeps the Riverbend demo, which is empty on purpose",
+     !/DELETE\s+\S+\s+org_riverbend_demo/.test(out) && (!/org_riverbend_demo/.test(out) || /KEEP\s+Demo\s+org_riverbend_demo/.test(out)), out.split("\n").filter(l => /riverbend/.test(l)));
   ok("nothing in orgs changed", (await snapshot()) === before);
   ok("…and no audit row was written",
      (await q(`SELECT COUNT(*)::int AS c FROM fin_audit_log WHERE user_id='system:scripts/admin-clean'`))[0].c === auditBefore);

@@ -2107,7 +2107,7 @@ function deleteBlockers(org, facts) {
   if (org.stripe_subscription_id) out.push("it has a Stripe subscription");
   if (facts.payments > 0) out.push(`it has ${facts.payments} paid Steward invoice${facts.payments === 1 ? "" : "s"}`);
   if (facts.realDonors > 0) out.push(`it has ${facts.realDonors} real (non-sample) donor${facts.realDonors === 1 ? "" : "s"}`);
-  if (ORG_KIND.DEMO_ORG_IDS.includes(org.id)) out.push("it is one of the two demo orgs");
+  if (ORG_KIND.DEMO_ORG_IDS.includes(org.id)) out.push("it is one of the demo orgs");
   return out;
 }
 

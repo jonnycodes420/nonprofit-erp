@@ -21,6 +21,7 @@ import MarketingPage from "./marketing/Site";
 import { ROUTES as MARKETING_ROUTES } from "./marketing/routes";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
+const SetupPage          = React.lazy(() => import("./pages/SetupPage"));   // ONBOARD-1
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
@@ -136,7 +137,8 @@ function RequireAuth({ children }) {
 function RequireOnboarded({ children }) {
   const { auth } = useAuth();
   if (!auth) return <Navigate to={loginWithNext()} replace />;
-  if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
+  // ONBOARD-1: a new org's first stop is "Set up Steward for me".
+  if (!auth.org?.onboarding_complete) return <Navigate to="/setup" replace />;
   return children;
 }
 
@@ -144,7 +146,7 @@ function PublicOnly({ children }) {
   const { auth } = useAuth();
   if (auth) {
     if (auth.user?.isSuperAdmin) return <Navigate to="/admin" replace />;
-    if (!auth.org?.onboarding_complete) return <Navigate to="/welcome" replace />;
+    if (!auth.org?.onboarding_complete) return <Navigate to="/setup" replace />;
     // FIX-13 Part 6 — already signed in (another tab did it): go straight to
     // the page the sign-in was for.
     let next = null;
@@ -225,6 +227,9 @@ function Root() {
               first, and /invite/:token is still the token-gated half. */}
           <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
+          {/* ONBOARD-1 — "Set up Steward for me". A new org lands here after
+              Checkout; the step-by-step /welcome is one link away. */}
+          <Route path="/setup"     element={<RequireAuth><SetupPage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
           {/* NAV-1 §2 — the dashboards folded into Reports, so an old
               /dashboards bookmark lands on the board dashboard inside it.

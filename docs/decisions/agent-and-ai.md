@@ -202,3 +202,16 @@ The sections below were moved verbatim from the old CLAUDE.md. Build entries the
 ## The line that does not get crossed (moved from the old CRITICAL WORKING RULES)
 
 - **THE LINE THAT DOES NOT GET CROSSED (BUILD-75 C.2): agents read, draft and propose. A human commits anything that moves money or reaches a donor.** No automation, workflow, AI feature, or future agent may charge/refund/reprice money or send donor-facing communication without a human having committed that specific action — the existing transactional exceptions (receipt auto-send, failed-card dunning, recurring-change confirmations) are documented product decisions about TRANSACTIONAL mail made by humans in advance, and the set must not grow without the same deliberate decision. An agent emailing the wrong thing to a major donor costs a relationship built over ten years, and there is no undo for that.
+
+## The Setup persona (ONBOARD-1)
+- **SETUP is a persona with no engine tools.** It is reached only from `/setup` and does a fixed list of steps
+  (`SETUP_STEPS` in `shared/agentPersonas.js`, run by `setup.js`), each through the route a person's click uses
+  (`agentCall.js`). Its instruction is an `agent_instructions` row (persona `setup`) and every write it makes is an
+  `agent_writes` row with a before-image; "Undo all of setup" walks them newest first.
+- **Facts are read in code, never by a model.** `setupSite.js` reads the website with patterns and says what it
+  did not find as a question; `shared/setupFiles.js` counts and totals the files. AI may only rephrase the three
+  thank-you drafts (`thankYouWords`), keeps every `{{token}}`, adds no number, and falls back to template words.
+- **A website fetch never reaches a private address.** http(s) only, DNS checked against private ranges,
+  redirects followed only on the same host, robots.txt honoured, four pages, 600KB each. `SETUP_SITE_ALLOW_LOCAL=1`
+  is the test seam and is refused when `NODE_ENV=production`.
+
