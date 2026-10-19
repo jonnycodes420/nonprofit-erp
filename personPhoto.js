@@ -100,8 +100,8 @@ function initialsFor(name, kind) {
 //   • no cloud metadata endpoint (169.254.169.254 and friends)
 //   • no credentials in the URL, no non-standard port
 // A hostname that RESOLVES into a private range is caught at fetch time by
-// checking the socket's remote address (fetchRemoteImage below) — this
-// function catches everything that can be decided from the string alone.
+// safeFetch.js, which resolves once and connects to the address it checked
+// (FIX-43) — this function catches everything the string alone can decide.
 const METADATA_HOSTS = new Set([
   "169.254.169.254", "metadata.google.internal", "metadata.goog",
   "instance-data", "metadata",

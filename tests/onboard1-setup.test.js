@@ -49,6 +49,8 @@ delete process.env.ANTHROPIC_API_KEY;   // AI off: the template words must carry
 const OUTBOUND = [];
 const realFetch = globalThis.fetch;
 globalThis.fetch = (url, opts) => { OUTBOUND.push(String(url && url.url || url)); return realFetch(url, opts); };
+// Setup reads the site through safeFetch.js (FIX-43), not the global fetch.
+require("../safeFetch").observers.add(r => OUTBOUND.push(r.url));
 
 const { ok, summary, login, api, q, closeDb, waitFor, importWorkSettled } = require("./helpers");
 const FX = path.join(__dirname, "fixtures", "onboard1");

@@ -32,6 +32,7 @@
 const { query, run, uuid } = require("./db");
 const AC = require("./agentCall");
 const site = require("./setupSite");
+const SF = require("./safeFetch");
 
 const ACTOR = { id: "system:setup", name: "Steward (setup)" };
 const STEP_KEYS = ["read_site", "profile", "import", "funds", "groups", "templates", "journeys", "invites", "connections", "finish"];
@@ -517,14 +518,12 @@ async function fetchLogo(url) {
     const n = site.normaliseSiteUrl(url);
     if (!n.ok) return null;
     // The logo address comes from THEIR page, so it gets the same wall as the
-    // page itself: never a private, loopback or link-local host.
-    if (!(await site.hostIsSafe(n.url))) return null;
-    const r = await fetch(n.url.href, { redirect: "manual", signal: AbortSignal.timeout(8000) });
+    // page itself, through the one safe fetch (FIX-43).
+    const r = await SF.safeFetch(n.url.href, { headers: { accept: "image/*" }, maxBytes: 400 * 1024, timeoutMs: 8000, allowLocal: site.allowLocal() });
     if (!r.ok) return null;
     const type = String(r.headers.get("content-type") || "").split(";")[0].trim();
     if (!/^image\/(png|jpeg|gif|webp|svg\+xml)$/.test(type)) return null;
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > 400 * 1024) return null;
+    const buf = r.body;
     return `data:${type};base64,${buf.toString("base64")}`;
   } catch { return null; }
 }
