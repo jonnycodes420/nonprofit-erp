@@ -455,6 +455,36 @@ async function agentLeg(H) {
   const t10 = (await api("GET", `/donors/${H.tobias}`, dana)).body;
   ok("J10 his record shows both gifts, $90.30", (t10.gifts || []).length === 2 && (t10.gifts || []).reduce((x, g) => x + cents(g.amount), 0) === 9030, t10.gifts);
 
+
+  // ── J12 Ask names the people it found ────────────────────────────────────
+  // FIX-44 (issue #209): a list answer said "149 people match." and carried
+  // no people, and "gave for the first time this month" had no filter, so the
+  // Agent read it as new (first gift in 12 months) and gave this month. Red on
+  // main: the first-time question was refused and no list carried `people`.
+  console.log("\nJ12 Ask names the people it found");
+  const mg12 = await api("POST", `/donors/${H.marisol}/gifts`, dana, { amount: "20.00", date: today, type: "cash", paymentMethod: "Cash" });
+  ok("J12 Marisol gives again today (her first gift was months ago)", mg12.status === 201, mg12.body);
+  // The truth straight from SQL, never through the code under test.
+  const truth = async sql => (await q(sql, [ORG])).map(r => r.id).sort().join();
+  const wantFirst = await truth(`SELECT donor_id AS id FROM gifts WHERE org_id=$1 AND amount > 0 GROUP BY donor_id HAVING MIN(LEFT(date,10)) >= '${monthStart}'`);
+  const wantYear = await truth(`SELECT DISTINCT g.donor_id AS id FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id=$1 AND g.amount > 0 AND d.deleted_at IS NULL AND LEFT(g.date,4) = '${year}'`);
+  // "List everyone…" is read by the donor-list filters, the same reading the
+  // Agent's people-finder uses (routes/agent.js agentFindPeople).
+  const first = (await api("POST", "/ask", dana, { text: "List everyone who gave for the first time this month" })).body;
+  const firstIds = (first.people || []).map(p => p.donorId).sort();
+  ok("J12 first time this month is everyone whose first gift is this month, never Marisol", first.answered === true && first.peopleCount === firstIds.length
+    && firstIds.join() === wantFirst && firstIds.includes(H.tobias) && !firstIds.includes(H.marisol) && /Tobias Wrenfield|Lantern/.test(first.sentence || ""), { sentence: first.sentence, refused: first.refused, firstIds, wantFirst });
+  const ft = (await api("POST", "/ask", dana, { text: "Show me first-time donors this month" })).body;
+  ok("J12 show me first-time donors lists them, not a bare count", ft.answered === true && (ft.people || []).map(p => p.donorId).sort().join() === wantFirst,
+    { sentence: ft.sentence, kind: ft.plan && ft.plan.kind, n: (ft.people || []).length });
+  const yr12 = (await api("POST", "/ask", dana, { text: "Show me donors who gave this year" })).body;
+  const yrIds = (yr12.people || []).map(p => p.donorId).sort();
+  ok("J12 a list answer carries its people and names them in the sentence", yr12.answered === true && yr12.kind === "list" && yr12.peopleCount === yr12.count
+    && yrIds.join() === wantYear && yrIds.includes(H.marisol) && /Marisol Okafor-Venn/.test(yr12.sentence) && /Tobias Wrenfield/.test(yr12.sentence), { sentence: yr12.sentence, yrIds, wantYear });
+  const none12 = (await api("POST", "/ask", dana, { text: "Show me donors in Nowhereville" })).body;
+  ok("J12 nobody found says which filter found nobody", none12.answered === true && none12.count === 0 && (none12.people || []).length === 0
+    && /Nowhereville/.test(none12.sentence || ""), none12.sentence);
+
   await wipe();
 
   // ── J11 sign up through Checkout, land signed in on onboarding ──────────

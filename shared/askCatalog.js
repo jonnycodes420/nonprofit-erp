@@ -380,6 +380,10 @@ export function templatePlan(text, ctx = {}) {
   // the plan is the count, and the value rides along as a second metric.
   if (/\bhow many monthly donors\b/.test(String(text).toLowerCase()) && /\ba month\b/.test(String(text).toLowerCase())) { out.metric = "recurring_donors"; out.also = "recurring_monthly_value"; }
   delete out._also;
+  // FIX-44: "show me / list / which first-time donors" asks for the people, so
+  // a count of people is answered with the people (it read as a bare count).
+  if (out.kind === "metric" && /^\s*(show( me)?|list|find|pull up|give me|which)\b/i.test(String(text)) && !/\bhow many\b/i.test(String(text))
+      && ["new_donor_count", "donor_count", "recaptured_count"].includes(out.metric)) out.kind = "who";
   const periodSaid = !!out._periodSaid; delete out._periodSaid;
 
   if (!out.metric && !saidByName && (out.compare || out.groupBy)) { out.metric = "raised"; if (!out.period) out.period = { kind: "this_year" }; }

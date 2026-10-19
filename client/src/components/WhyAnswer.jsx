@@ -177,7 +177,7 @@ function ShowMeAnswer({ answer, isReadOnly }) {
         <div data-testid="show-me-words" style={{ fontSize: 15, color: T.ink, lineHeight: 1.5, marginTop: 2 }}>{(answer.words || []).join(" · ")}</div>
       </div>
       <div data-testid="show-me-count" style={{ fontSize: 17, lineHeight: 1.5, color: T.ink, fontFamily: "'Fraunces', Georgia, serif" }}>
-        <Figure value={answer.count} kind="count" label="People who match" definition={answer.countDefinition} source={answer.countSource} variant="inline" /> {answer.count === 1 ? "person matches" : "people match"}.
+        {answer.count === 0 && answer.sentence ? answer.sentence : <><Figure value={answer.count} kind="count" label="People who match" definition={answer.countDefinition} source={answer.countSource} variant="inline" /> {answer.count === 1 ? "person matches" : "people match"}.</>}
       </div>
       {rows.length > 0 && <div>
         {rows.map(r => (

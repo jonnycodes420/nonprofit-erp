@@ -155,6 +155,13 @@ async function buildDonorFilter(orgId, q = {}, opts = {}) {
     where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0 AND LEFT(gv.date,10) >= ? AND LEFT(gv.date,10) <= ?)");
     params.push(dateOr(q.gaveFrom, "1900-01-01"), dateOr(q.gaveTo, "2999-12-31"));
   }
+  // FIX-44: a first gift EVER on or after a day ("gave for the first time this
+  // month"). "New" is first gift in the last 12 months, so "new and gave this
+  // month" also took people whose first gift was in May.
+  if (q.firstGiftFrom) {
+    where.push("(SELECT MIN(LEFT(gn.date,10)) FROM gifts gn WHERE gn.org_id = donors.org_id AND gn.donor_id = donors.id AND gn.amount > 0) >= ?");
+    params.push(dateOr(q.firstGiftFrom, "2999-12-31"));
+  }
   // PARITY-4 Part 3 · SHOW ME. Five rules so a plain question ("donors who
   // gave last year but not this year", "monthly donors in Lexington",
   // "everyone who gave over $1,000 to the gala") is a list here and not a
@@ -499,7 +506,9 @@ const RULE_KEYS = ["role", "stage", "status", "assignedTo", "designation", "hous
   // GROUPS-2: the starters' rules, each a definition that already exists.
   "bunt", "firstGiftThisYear", "gaveMore", "topTenth", "awaitingThanks", "noHistory", "boardMember", "doNotSolicit", "solicitable",
   // JOURNEYS-4: event guests, four ways, at any event or one.
-  "eventGuest", "eventGuestEvent"];
+  "eventGuest", "eventGuestEvent",
+  // FIX-44: a first gift ever on or after a day.
+  "firstGiftFrom"];
 const KINDS = ["static", "dynamic"];
 const ROLE_WORDS = { donor: "donors", volunteer: "volunteers", staff_board: "staff and board" };
 
@@ -534,6 +543,7 @@ function normalizeRules(raw) {
   }
   if (rules.gaveOver !== undefined && !(Number(rules.gaveOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
   if (rules.unthankedOver !== undefined && !(Number(rules.unthankedOver) >= 0)) errors.push("An amount is a number of dollars, 0 or more.");
+  if (rules.firstGiftFrom !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(rules.firstGiftFrom)) errors.push("A first-gift date is YYYY-MM-DD.");
   if (rules.state && !/^[A-Z]{2}$/.test(String(rules.state))) errors.push("A state is its two-letter code, like NC.");
   if (rules.grantReportDue !== undefined && !(/^\d{1,3}$/.test(rules.grantReportDue) && Number(rules.grantReportDue) >= 1 && Number(rules.grantReportDue) <= 366))
     errors.push("A grant report window is a number of days, 1 to 366.");
@@ -582,6 +592,7 @@ function rulesSentence(rules = {}) {
   if (rules.volHoursMin) parts.push(`with at least ${rules.volHoursMin} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
   if (rules.volHoursMax) parts.push(`with fewer than ${rules.volHoursMax} hours${rules.volHoursFrom || rules.volHoursTo ? ` from ${rules.volHoursFrom || "the start"} to ${rules.volHoursTo || "today"}` : ""}`);
   if (rules.gaveFrom || rules.gaveTo) parts.push(`who gave ${rules.gaveFrom || "any time"} to ${rules.gaveTo || "today"}`);
+  if (rules.firstGiftFrom) parts.push(`whose first gift came on or after ${rules.firstGiftFrom}`);
   if (rules.notGaveFrom || rules.notGaveTo) parts.push(`with nothing given ${rules.notGaveFrom || "any time"} to ${rules.notGaveTo || "today"}`);
   if (rules.monthly) parts.push("giving monthly");
   if (rules.city) parts.push(`in ${rules.city}`);
