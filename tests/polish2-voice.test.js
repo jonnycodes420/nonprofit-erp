@@ -3,6 +3,7 @@
 // The copy and craft sweep from Muse's PREMIUM-1 audit (docs/polish-1/
 // PREMIUM-1.pdf). Five guards, each of which failed on main (1f7937b):
 //   §spell    no en-GB spelling in a sentence a person reads (tests/polish2/enGb.js)
+//   §dash     no em dash a person can read (FIX-45, same file)
 //   §iso      no raw ISO date put into on-screen text (tests/polish2/isoDates.js)
 //   §glued    no word glued to an expression across a JSX line break (tests/polish2/glued.js)
 //   §log      "Log a call" is the only label for logging a conversation
@@ -24,7 +25,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const h = require("./helpers");
 const { ok, api, q } = h;
-const { scanEnGb } = require("./polish2/enGb");
+const { scanEnGb, scanEmDash } = require("./polish2/enGb");
 const { scanIsoDates, ISO_IN_TEXT, NUMERIC_DATE_IN_TEXT } = require("./polish2/isoDates");
 const { scanGlued, GLUED_RENDERED } = require("./polish2/glued");
 const B = require("./polish1/browser-p567");
@@ -73,6 +74,11 @@ function logLabels() {
   // §spell, §iso, §glued, §log — the source, read once.
   const gb = scanEnGb(ROOT);
   ok("§spell no en-GB spelling in a sentence a person reads", gb.length === 0, show(gb));
+  // FIX-45: docs/MESSAGING.md says "No em dashes." The sweep that removed the
+  // 381 found on 19 Oct is scripts/fix45-no-em-dash.js; run it, then this.
+  const dashes = scanEmDash(ROOT);
+  ok("§dash no em dash in a sentence, label, email, PDF, page title or changelog a person reads", dashes.length === 0,
+    dashes.slice(0, 12).map(h => `${h.file}:${h.line} ${h.text}`));
   const iso = scanIsoDates(ROOT);
   ok("§iso no raw ISO date put into on-screen text", iso.length === 0, show(iso));
   const glued = scanGlued(ROOT);
