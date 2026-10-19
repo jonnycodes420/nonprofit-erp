@@ -5721,7 +5721,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     const wanted = new Map();   // key → the file's own spelling (first wins)
     for (const g of giftsToInsert) { const k = fundKey(g.fund); if (k && !wanted.has(k)) wanted.set(k, String(g.fund).trim()); }
     if (wanted.size) {
-      const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+      // FIX-45: oldest first, so a name two funds share resolves the same way every time.
+      const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY created_at, id", [orgId]);
       for (const f of existing) { const k = fundKey(f.name); if (k && !fundIdByKey.has(k)) fundIdByKey.set(k, f.id); }
       const toCreate = [...wanted.entries()].filter(([k]) => !fundIdByKey.has(k));
       for (let fi = 0; fi < toCreate.length; fi += 200) {

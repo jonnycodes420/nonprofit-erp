@@ -8972,9 +8972,15 @@ async function seedOrgData(orgId) {
     );
   }
 
-  // Single General Operating fund
+  // Single General Operating fund. FIX-45: only when the org has no
+  // unrestricted fund yet. An org that made its funds before its chart (the
+  // ledger heal in ensureOrgLedger) got a SECOND "General Operating", and every
+  // lookup by name then chose between the two by row order: an import put its
+  // gifts in one and the old-report check counted the other (reconcile1-checks
+  // went red on CI whenever the physical order flipped).
   await pool.query(
-    `INSERT INTO fin_funds (id, org_id, name, description, restricted) VALUES ($1, $2, $3, $4, $5)`,
+    `INSERT INTO fin_funds (id, org_id, name, description, restricted)
+     SELECT $1, $2, $3, $4, $5 WHERE NOT EXISTS (SELECT 1 FROM fin_funds WHERE org_id = $2 AND restricted = false)`,
     [`ff_${uuid().slice(0, 8)}`, orgId, "General Operating", "General unrestricted operating fund", false]
   );
 }
