@@ -214,6 +214,24 @@ const pub = slug => api("GET", `/org/${SLUG}/giving-page/${slug}/public`, null);
     const [{ n: cards }] = await q(`SELECT COUNT(*)::int AS n FROM giving_pages WHERE org_id=$1 AND status='active'`, [ORG]);
     ok("§12 a card for every page, and one for the donation form", rows.length === cards + 1, { rows: rows.length, cards });
     ok("§12 every card has the same four buttons", rows.length > 0 && rows.every(r => JSON.stringify(r) === want), rows);
+
+    // §13 FIX-45 — the cover photo is the picture at the TOP of the public
+    // page, above the gift form, in a 16:9 box, on a desktop and a phone. It
+    // sat inside the story column (order 2) and rendered below the form.
+    await q(`UPDATE giving_pages SET image_url=$2, image_meta=$3::jsonb WHERE id=$1`,
+      ["gp_ge1plain", APP + "/favicon.svg", JSON.stringify({ alt: "Boats on the bay", fx: 0.5, fy: 0.5 })]);
+    for (const width of [1440, 390]) {
+      const pp = await browser.newPage({ viewport: { width, height: 900 } });
+      await pp.goto(`${APP}/give/${SLUG}/spring-paddle`, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await pp.waitForSelector('[data-testid="page-cover"]', { timeout: 20000 }).catch(() => {});
+      const geo = await pp.evaluate(() => {
+        const box = el => { if (!el) return null; const r = el.getBoundingClientRect(); return { top: r.top, w: r.width, h: r.height }; };
+        return { cover: box(document.querySelector('[data-testid="page-cover"]')), form: box(document.getElementById("give-form")) };
+      });
+      ok(`§13 the cover is above the gift form at ${width}`, !!geo.cover && !!geo.form && geo.cover.top < geo.form.top, geo);
+      ok(`§13 the cover is a 16:9 box at ${width}`, !!geo.cover && geo.cover.h > 0 && Math.abs(geo.cover.w / geo.cover.h - 16 / 9) < 0.03, geo.cover);
+      await pp.close();
+    }
     await browser.close();
   }
 

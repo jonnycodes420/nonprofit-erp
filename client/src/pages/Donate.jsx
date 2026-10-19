@@ -1382,6 +1382,17 @@ export default function Donate() {
           </div>
         ) : givingPage ? (
           <>
+          {/* FIX-41, FIX-45: the cover leads the page in a fixed 16:9 box, built
+              or not, unless the page already opens with a picture block of its
+              own. Its own block at order 0, above the form (order 1 when the
+              form leads) and the story (order 2): inside the story column it
+              rendered BELOW the form, though the editor calls it the picture at
+              the top. */}
+          {(givingPage.cover || givingPage.imageUrl) && !(Array.isArray(givingPage.page) && givingPage.page[0] && givingPage.page[0].type === "hero" && givingPage.page[0].image) && (
+            <div data-testid="page-cover-top" style={{ width: "100%", maxWidth: 480, marginBottom: 20, order: 0 }}>
+              <Picture value={givingPage.cover || givingPage.imageUrl} alt={givingPage.title} ratio="16 / 9" radius={16} testid="page-cover" />
+            </div>
+          )}
           {isCampaignPage && (
             <div data-testid="campaign-top" style={{ width: "100%", maxWidth: 480, marginBottom: 20, order: 0 }}>
               {builtHero || (
@@ -1416,11 +1427,6 @@ export default function Donate() {
             </div>
           )}
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 28, order: 2 }}>
-            {/* FIX-41: the cover leads the page in a fixed 16:9 box, built or not,
-                unless the page already opens with a picture block of its own. */}
-            {(givingPage.cover || givingPage.imageUrl) && !(Array.isArray(givingPage.page) && givingPage.page[0] && givingPage.page[0].type === "hero" && givingPage.page[0].image) && (
-              <div style={{ marginBottom: 20 }}><Picture value={givingPage.cover || givingPage.imageUrl} alt={givingPage.title} ratio="16 / 9" radius={16} testid="page-cover" /></div>
-            )}
             {builtPage}
             {!builtPage && (
               <div style={{ textAlign: "center", marginBottom: 18 }}>
